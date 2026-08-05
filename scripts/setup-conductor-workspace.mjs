@@ -300,7 +300,7 @@ const slackSecret = createdLocalDeployment
     randomBytes(32).toString("hex");
 const slackWebhookSecret = createdLocalDeployment
   ? randomBytes(32).toString("hex")
-  : optionalConvexEnv(convex, "PHOTON_WEBHOOK_SIGNING_SECRET") ||
+  : optionalConvexEnv(convex, "SLACK_SIGNING_SECRET") ||
     randomBytes(32).toString("hex");
 const localAppUrl = `http://localhost:${web}`;
 const overridesPath = path.join(contextDirectory, "convex-local-overrides.env");
@@ -324,7 +324,7 @@ try {
     SLACK_MODE: "mock",
     SLACK_WORKER_URL: `http://127.0.0.1:${slack}`,
     SLACK_WORKER_SECRET: slackSecret,
-    PHOTON_WEBHOOK_SIGNING_SECRET: slackWebhookSecret,
+    SLACK_SIGNING_SECRET: slackWebhookSecret,
     EXTRACTION_WORKER_MODE: "external",
     EXTRACTION_WORKER_URL: `http://127.0.0.1:${extraction}`,
     EXTRACTION_WORKER_SECRET: extractionSecret,
@@ -387,7 +387,7 @@ writeRuntimeEnv("slack-worker.env", {
   GLASS_ENV: "local",
   SLACK_WORKER_MODE: "mock",
   SLACK_WORKER_SECRET: slackSecret,
-  PHOTON_WEBHOOK_SIGNING_SECRET: slackWebhookSecret,
+  SLACK_SIGNING_SECRET: slackWebhookSecret,
 });
 
 run("npm", ["run", "check:agent-workers"]);

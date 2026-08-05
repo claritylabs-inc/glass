@@ -74,6 +74,10 @@ export function AgentChannelsSection({
     api.agentChannels.getForOperator,
     isOperator ? { clientOrgId } : "skip",
   );
+  const hostStatus = useQuery(
+    api.agentChannels.getSlackHostStatus,
+    isOperator ? {} : "skip",
+  );
   const result = isOperator ? operatorResult : customerResult;
   const canEdit =
     isOperator ||
@@ -89,6 +93,7 @@ export function AgentChannelsSection({
     api.agentChannels.bindPrimaryChannelForOperator,
   );
   const beginOAuth = useAction(api.actions.slackOAuth.begin);
+  const beginHostOAuth = useAction(api.actions.slackOAuth.beginHost);
   const disconnect = useAction(api.actions.slackOAuth.disconnect);
   const provisionPrimary = useAction(api.actions.slackOnboarding.createPrimaryChannel);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -137,6 +142,21 @@ export function AgentChannelsSection({
       window.location.assign(url);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Slack setup could not start");
+      setBusy(null);
+    }
+  }
+
+  async function installHost() {
+    setBusy("host-oauth");
+    try {
+      const { url } = await beginHostOAuth({});
+      window.location.assign(url);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Clarity Slack setup could not start",
+      );
       setBusy(null);
     }
   }
@@ -407,6 +427,28 @@ export function AgentChannelsSection({
             description="Create the private channel in claritylabsinc.slack.com and send the customer invitation. This action is audited."
           />
           <OperationalPanelBody className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-base font-medium text-foreground">
+                  Clarity host installation
+                </p>
+                <p className="mt-0.5 text-base text-muted-foreground">
+                  {hostStatus?.installation
+                    ? `${hostStatus.installation.teamName} · rotating credentials active`
+                    : "Install the native app before creating Connect channels."}
+                </p>
+              </div>
+              <PillButton
+                variant="secondary"
+                onClick={() => void installHost()}
+                disabled={busy !== null || hostStatus === undefined}
+              >
+                {busy === "host-oauth" ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                {hostStatus?.installation ? "Reinstall host app" : "Install host app"}
+              </PillButton>
+            </div>
             <div>
               <p className="mb-2 text-label text-muted-foreground">
                 Your operator identity

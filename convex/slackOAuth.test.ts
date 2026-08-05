@@ -5,14 +5,20 @@ import schema from "./schema";
 import { createOAuthState } from "./agentChannels";
 import {
   begin,
+  beginHost,
   complete,
   disconnect,
 } from "./actions/slackOAuth";
-import { SLACK_CUSTOMER_SCOPES } from "./lib/slackOAuthPolicy";
+import {
+  SLACK_CUSTOMER_SCOPES,
+  SLACK_HOST_SCOPES,
+} from "./lib/slackOAuthPolicy";
+import { encryptSlackCredential } from "./lib/slackCredentials";
 
 const modules = import.meta.glob("./**/*.ts");
 const createOAuthStateFn = createOAuthState as any;
 const beginFn = begin as any;
+const beginHostFn = beginHost as any;
 const completeFn = complete as any;
 const disconnectFn = disconnect as any;
 
@@ -22,8 +28,8 @@ beforeEach(() => {
   vi.stubEnv("SLACK_CLIENT_SECRET", "slack-client-secret");
   vi.stubEnv("CONVEX_SITE_URL", "https://convex.example.test");
   vi.stubEnv("APP_URL", "https://app.example.test");
-  vi.stubEnv("PHOTON_PROJECT_ID", "00000000-0000-4000-8000-000000000001");
-  vi.stubEnv("PHOTON_PROJECT_SECRET", "photon-secret");
+  vi.stubEnv("SLACK_TOKEN_ENCRYPTION_KEY", "slack-encryption-test-key");
+  vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-CLARITY");
 });
 
 afterEach(() => {
@@ -84,6 +90,60 @@ function slackTokenResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Slack OAuth actions", () => {
+  test("installs the host app only for an authenticated Glass operator", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert("users", {
+        name: "Glass Operator",
+        email: "operator@claritylabs.test",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId: id,
+        email: "operator@claritylabs.test",
+        role: "operator",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return id;
+    });
+    const operator = t.withIdentity({ subject: `${userId}|session` });
+    const { url } = await operator.action(beginHostFn, {});
+    const authorizeUrl = new URL(url);
+    const state = authorizeUrl.searchParams.get("state");
+    expect(authorizeUrl.searchParams.get("scope")?.split(",")).toEqual(
+      SLACK_HOST_SCOPES,
+    );
+    expect(state).toBeTruthy();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          slackTokenResponse({
+            scope: SLACK_HOST_SCOPES.join(","),
+            team: { id: "T-CLARITY", name: "Clarity Labs" },
+          }),
+        ),
+      ),
+    );
+    const redirect = await t.action(completeFn, {
+      code: "host-oauth-code",
+      state,
+    });
+    expect(redirect).toContain("slack_host=connected");
+    const records = await t.run(async (ctx) => ({
+      installation: await ctx.db.query("slackInstallations").first(),
+      connection: await ctx.db.query("slackWorkspaceConnections").first(),
+    }));
+    expect(records.installation).toMatchObject({
+      teamId: "T-CLARITY",
+      kind: "host",
+      status: "active",
+    });
+    expect(records.connection).toBeNull();
+  });
+
   test("starts an acknowledged, org-bound installation without exposing state at rest", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, userId } = await seedAdmin(t);
@@ -112,7 +172,7 @@ describe("Slack OAuth actions", () => {
     expect(stored?.stateHash).not.toBe(state);
   });
 
-  test("exchanges OAuth server-side, registers Photon, and stores safe metadata", async () => {
+  test("exchanges OAuth server-side and stores encrypted installation credentials", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, userId } = await seedAdmin(t);
     const state = await oauthState(t, clientOrgId, userId);
@@ -120,12 +180,6 @@ describe("Slack OAuth actions", () => {
       const url = String(input);
       if (url === "https://slack.com/api/oauth.v2.access") {
         return jsonResponse(slackTokenResponse());
-      }
-      if (url.includes("/slack/installations/T-CUSTOMER") && init?.method === "PUT") {
-        return jsonResponse({
-          succeed: true,
-          data: { installationId: "installation-1" },
-        });
       }
       throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
     });
@@ -135,17 +189,24 @@ describe("Slack OAuth actions", () => {
     expect(redirect).toContain("slack=connected");
     const records = await t.run(async (ctx) => ({
       connection: await ctx.db.query("slackWorkspaceConnections").first(),
+      installation: await ctx.db.query("slackInstallations").first(),
       channelSettings: await ctx.db.query("agentChannelSettings").first(),
       deliverySettings: await ctx.db.query("policyDeliverySettings").first(),
     }));
     expect(records.connection).toMatchObject({
       clientOrgId,
       teamId: "T-CUSTOMER",
-      installationId: "installation-1",
       botUserId: "U-GLASS",
       status: "active",
     });
-    expect(JSON.stringify(records.connection)).not.toContain("xoxb-test-token");
+    expect(records.installation).toMatchObject({
+      teamId: "T-CUSTOMER",
+      kind: "customer",
+      status: "active",
+    });
+    expect(JSON.stringify(records.installation)).not.toContain("xoxb-test-token");
+    expect(records.installation?.encryptedBotToken).toBeTruthy();
+    expect(records.installation?.encryptedRefreshToken).toBeTruthy();
     expect(records.channelSettings?.slackEnabled).toBe(true);
     expect(records.deliverySettings).toMatchObject({
       deliveryOwnerOrgId: clientOrgId,
@@ -153,11 +214,9 @@ describe("Slack OAuth actions", () => {
       channels: ["slack"],
       defaultAction: "auto_send",
     });
-    const photonRequest = fetchMock.mock.calls[1][1] as RequestInit;
-    expect(JSON.parse(String(photonRequest.body))).toMatchObject({
-      botToken: "xoxb-test-token",
-      botRefreshToken: "xoxe-test-refresh-token",
-      botTokenExpiresInSec: 43_200,
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      Authorization: expect.stringMatching(/^Basic /),
     });
 
     const callsAfterSuccess = fetchMock.mock.calls.length;
@@ -177,7 +236,7 @@ describe("Slack OAuth actions", () => {
           slackTokenResponse({ scope: "app_mentions:read,chat:write" }),
         );
       }
-      if (url === "https://slack.com/api/auth.revoke") {
+      if (url === "https://slack.com/api/apps.uninstall") {
         return jsonResponse({ ok: true });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -192,7 +251,7 @@ describe("Slack OAuth actions", () => {
     ).resolves.toHaveLength(0);
   });
 
-  test("rolls Photon and Slack back when a workspace mapping collides", async () => {
+  test("uninstalls Slack when a workspace mapping collides", async () => {
     const t = convexTest(schema, modules);
     const existing = await seedAdmin(t, "Existing Client");
     const target = await seedAdmin(t, "Target Client");
@@ -220,13 +279,7 @@ describe("Slack OAuth actions", () => {
       if (url === "https://slack.com/api/oauth.v2.access") {
         return jsonResponse(slackTokenResponse());
       }
-      if (url.includes("/slack/installations/T-CUSTOMER")) {
-        return jsonResponse({
-          succeed: true,
-          data: { installationId: "installation-collision" },
-        });
-      }
-      if (url === "https://slack.com/api/auth.revoke") {
+      if (url === "https://slack.com/api/apps.uninstall") {
         return jsonResponse({ ok: true });
       }
       throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
@@ -242,15 +295,7 @@ describe("Slack OAuth actions", () => {
       })),
     ).toEqual([
       { url: "https://slack.com/api/oauth.v2.access", method: "POST" },
-      {
-        url: "https://spectrum.photon.codes/projects/00000000-0000-4000-8000-000000000001/slack/installations/T-CUSTOMER",
-        method: "PUT",
-      },
-      {
-        url: "https://spectrum.photon.codes/projects/00000000-0000-4000-8000-000000000001/slack/installations/T-CUSTOMER",
-        method: "DELETE",
-      },
-      { url: "https://slack.com/api/auth.revoke", method: "POST" },
+      { url: "https://slack.com/api/apps.uninstall", method: "POST" },
     ]);
     const targetConnection = await t.run((ctx) =>
       ctx.db
@@ -261,7 +306,7 @@ describe("Slack OAuth actions", () => {
     expect(targetConnection).toBeNull();
   });
 
-  test("removes the Photon installation before disconnecting Glass", async () => {
+  test("uninstalls the native Slack app before disconnecting Glass", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, userId } = await seedAdmin(t);
     const connectionId = await t.run(async (ctx) => {
@@ -270,10 +315,25 @@ describe("Slack OAuth actions", () => {
         accountKind: "customer",
         serviceAccountKind: "slack",
       });
+      const nativeInstallationId = await ctx.db.insert("slackInstallations", {
+        teamId: "T-CUSTOMER",
+        teamName: "Customer workspace",
+        kind: "customer",
+        botUserId: "U-GLASS",
+        encryptedBotToken: encryptSlackCredential(
+          "xoxb-test-token",
+          "T-CUSTOMER",
+        ),
+        grantedScopes: [...SLACK_CUSTOMER_SCOPES],
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
       const id = await ctx.db.insert("slackWorkspaceConnections", {
         clientOrgId,
         teamId: "T-CUSTOMER",
         teamName: "Customer workspace",
+        nativeInstallationId,
         grantedScopes: [...SLACK_CUSTOMER_SCOPES],
         status: "active",
         serviceUserId,
@@ -296,7 +356,7 @@ describe("Slack OAuth actions", () => {
     });
     const fetchMock = vi.fn(
       async (_input: string | URL | Request, _init?: RequestInit) =>
-        jsonResponse({ succeed: true }),
+        jsonResponse({ ok: true }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -305,7 +365,10 @@ describe("Slack OAuth actions", () => {
       .action(disconnectFn, { clientOrgId });
     expect(result).toEqual({ disconnected: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][1]?.method).toBe("DELETE");
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "https://slack.com/api/apps.uninstall",
+    );
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST");
     const records = await t.run(async (ctx) => ({
       connection: await ctx.db.get(connectionId),
       settings: await ctx.db.query("agentChannelSettings").first(),

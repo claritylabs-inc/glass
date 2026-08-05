@@ -3,19 +3,19 @@ import { convexTest } from "convex-test";
 import dayjs from "dayjs";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import schema from "./schema";
-import { signSpectrumWebhook } from "./lib/slackSecurity";
+import { signSlackRequest } from "./lib/slackSecurity";
 
 const modules = import.meta.glob("./**/*.ts");
 const SIGNING_SECRET = "slack-http-test-secret";
 
 beforeEach(() => {
   process.env.SLACK_ENABLED = "true";
-  process.env.PHOTON_WEBHOOK_SIGNING_SECRET = SIGNING_SECRET;
+  process.env.SLACK_SIGNING_SECRET = SIGNING_SECRET;
 });
 
 afterEach(() => {
   delete process.env.SLACK_ENABLED;
-  delete process.env.PHOTON_WEBHOOK_SIGNING_SECRET;
+  delete process.env.SLACK_SIGNING_SECRET;
 });
 
 async function seedConnection(t: ReturnType<typeof convexTest>) {
@@ -75,23 +75,20 @@ async function seedConnection(t: ReturnType<typeof convexTest>) {
 
 function messagePayload(overrides: Record<string, unknown> = {}) {
   return {
-    event: "messages",
-    space: {
-      id: "C-PRIMARY",
-      teamId: "T-CUSTOMER",
-      platform: "slack",
-      type: "channel",
-    },
-    message: {
-      id: "1800000000.100",
-      platform: "slack",
-      timestamp: dayjs().toISOString(),
+    type: "event_callback",
+    team_id: "T-CUSTOMER",
+    api_app_id: "A-GLASS",
+    event_id: "Ev-1800000000.100",
+    event_time: dayjs().unix(),
+    event: {
+      type: "app_mention",
       ts: "1800000000.100",
-      threadTs: "1800000000.100",
-      sender: {
-        id: "U-CUSTOMER",
-      },
-      content: { type: "text", text: "<@U-GLASS> show my policy" },
+      thread_ts: "1800000000.100",
+      event_ts: "1800000000.100",
+      channel: "C-PRIMARY",
+      channel_type: "channel",
+      user: "U-CUSTOMER",
+      text: "<@U-GLASS> show my policy",
       ...overrides,
     },
   };
@@ -106,20 +103,32 @@ async function signedRequest(
   const timestamp = options.timestamp ?? String(dayjs().unix());
   const signature =
     options.signature ??
-    (await signSpectrumWebhook(SIGNING_SECRET, timestamp, rawBody));
-  return await t.fetch("/spectrum-slack-inbound", {
+    (await signSlackRequest(SIGNING_SECRET, timestamp, rawBody));
+  return await t.fetch("/slack/events", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Spectrum-Webhook-Id": "webhook-fixture",
-      "X-Spectrum-Timestamp": timestamp,
-      "X-Spectrum-Signature": signature,
+      "X-Slack-Request-Timestamp": timestamp,
+      "X-Slack-Signature": signature,
     },
     body: rawBody,
   });
 }
 
-describe("Slack Photon HTTP webhook", () => {
+describe("Slack Events API webhook", () => {
+  test("answers signed URL verification while event processing is disabled", async () => {
+    const t = convexTest(schema, modules);
+    process.env.SLACK_ENABLED = "false";
+    const response = await signedRequest(t, {
+      type: "url_verification",
+      challenge: "native-slack-challenge",
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      challenge: "native-slack-challenge",
+    });
+  });
+
   test("verifies, durably deduplicates, and acknowledges inbound messages", async () => {
     const t = convexTest(schema, modules);
     await seedConnection(t);
@@ -137,7 +146,7 @@ describe("Slack Photon HTTP webhook", () => {
     );
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      eventKey: "webhook-fixture:1800000000.100",
+      eventKey: "T-CUSTOMER:C-PRIMARY:1800000000.100:message",
       status: "queued",
       mentionsGlass: true,
       isPrimaryChannel: true,
@@ -165,9 +174,12 @@ describe("Slack Photon HTTP webhook", () => {
   test("ignores DMs and bot echoes at the HTTP boundary", async () => {
     const t = convexTest(schema, modules);
     await seedConnection(t);
-    const dm = messagePayload();
-    dm.space = { ...dm.space, id: "D-DIRECT", type: "dm" };
-    const echo = messagePayload({ id: "1800000000.200", isFromMe: true });
+    const dm = messagePayload({ channel: "D-DIRECT", channel_type: "im" });
+    const echo = messagePayload({
+      ts: "1800000000.200",
+      event_ts: "1800000000.200",
+      bot_id: "B-GLASS",
+    });
 
     expect(await (await signedRequest(t, dm)).json()).toMatchObject({
       ok: true,
@@ -187,8 +199,9 @@ describe("Slack Photon HTTP webhook", () => {
     const { connectionId } = await seedConnection(t);
 
     const response = await signedRequest(t, {
-      event: "app_uninstalled",
-      teamId: "T-CUSTOMER",
+      type: "event_callback",
+      event: { type: "app_uninstalled" },
+      team_id: "T-CUSTOMER",
     });
     expect(response.status).toBe(200);
     const state = await t.run(async (ctx) => ({

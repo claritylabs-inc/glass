@@ -248,6 +248,20 @@ describe("Slack channel state and authorization", () => {
       t.mutation(prepareBatchFn, { eventIds: [claim.eventId] }),
     ).resolves.toMatchObject({ orgId: clientOrgId, channelId: "C-HOST" });
     await expect(
+      t.mutation(claimInboundFn, {
+        eventKey: "T-CUSTOMER:C-PRIMARY:1800000000.075:message",
+        providerEventId: "Ev-customer-mirror",
+        teamId: "T-CUSTOMER",
+        channelId: "C-PRIMARY",
+        threadTs: "1800000000.075",
+        messageTs: "1800000000.075",
+        senderUserId: "U-CUSTOMER",
+        content: "<@U-GLASS> show my policy",
+        eventType: "message",
+        receivedAt: BASE_TIME,
+      }),
+    ).resolves.toMatchObject({ duplicate: true });
+    await expect(
       t.query(getSendTargetFn, { connectionId, channelId: "C-HOST" }),
     ).resolves.toMatchObject({ teamId: "T-GLASS" });
     await expect(
@@ -287,7 +301,7 @@ describe("Slack channel state and authorization", () => {
           (q) =>
             q
               .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-HOST")
+              .eq("slackChannelId", "C-PRIMARY")
               .eq("slackThreadTs", "1800000000.075"),
         )
         .unique(),

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import {
   missingSlackCustomerScopes,
+  missingSlackHostScopes,
   SLACK_CUSTOMER_SCOPES,
+  SLACK_HOST_SCOPES,
 } from "./slackOAuthPolicy";
 
 describe("Slack OAuth scope policy", () => {
@@ -15,5 +17,13 @@ describe("Slack OAuth scope policy", () => {
         (scope) => scope !== "app_mentions:read" && scope !== "chat:write",
       ),
     );
+  });
+
+  test("requires Slack Connect channel scopes for the host installation", () => {
+    expect(missingSlackHostScopes(SLACK_HOST_SCOPES)).toEqual([]);
+    expect(missingSlackHostScopes(SLACK_CUSTOMER_SCOPES)).toEqual([
+      "groups:write",
+      "conversations.connect:write",
+    ]);
   });
 });

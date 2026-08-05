@@ -1,20 +1,21 @@
+export type SlackInboundAttachment = {
+  providerFileId: string;
+  filename: string;
+  contentType: string;
+  size?: number;
+};
+
 export type SlackInboundPayload = {
   eventKey: string;
-  spectrumMessageId: string;
+  providerEventId?: string;
   teamId: string;
   channelId: string;
   threadTs: string;
   messageTs: string;
   senderTeamId?: string;
   senderUserId: string;
-  senderDisplayName?: string;
   content: string;
-  attachment?: {
-    providerFileId: string;
-    filename: string;
-    contentType: string;
-    size?: number;
-  };
+  attachments?: SlackInboundAttachment[];
   eventType: "message" | "edit";
   isDirectMessage: boolean;
   isBotEcho: boolean;
@@ -30,68 +31,94 @@ function string(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-export function parseSlackWebhookPayload(
+function number(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function slackFiles(value: unknown): SlackInboundAttachment[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const files = value.flatMap((candidate) => {
+    const file = record(candidate);
+    const id = string(file?.id);
+    if (!id) return [];
+    const size = number(file?.size);
+    return [{
+      providerFileId: id,
+      filename: string(file?.name ?? file?.title) ?? "Slack attachment",
+      contentType: string(file?.mimetype) ?? "application/octet-stream",
+      ...(size === undefined ? {} : { size }),
+    }];
+  });
+  return files.length ? files : undefined;
+}
+
+export function parseSlackEventPayload(
   value: unknown,
-  webhookId?: string,
 ): SlackInboundPayload | null {
   const envelope = record(value);
-  const message = record(envelope?.message);
-  const space = record(envelope?.space) ?? record(message?.space);
-  const sender = record(message?.sender);
-  const content = record(message?.content);
-  const platform = string(message?.platform ?? space?.platform)?.toLowerCase();
-  if (envelope?.event !== "messages" || platform !== "slack") return null;
+  const outerEvent = record(envelope?.event);
+  const outerType = string(outerEvent?.type)?.toLowerCase();
+  if (
+    envelope?.type !== "event_callback" ||
+    (outerType !== "message" && outerType !== "app_mention")
+  ) {
+    return null;
+  }
 
-  const spectrumMessageId = string(message?.id);
-  const channelId = string(space?.id);
-  const teamId = string(space?.teamId ?? message?.teamId);
-  const senderUserId = string(sender?.id);
-  if (!spectrumMessageId || !channelId || !teamId || !senderUserId) return null;
+  const subtype = string(outerEvent?.subtype)?.toLowerCase();
+  if (subtype === "message_deleted" || subtype === "message_replied") {
+    return null;
+  }
+  const isEdit = subtype === "message_changed";
+  const message = isEdit ? record(outerEvent?.message) : outerEvent;
+  const messageSubtype = string(message?.subtype)?.toLowerCase();
+  if (!message || messageSubtype === "message_deleted") return null;
 
-  const contentType = string(content?.type);
-  if (contentType === "reaction") return null;
-  const text = contentType === "text" ? string(content?.text) ?? "" : "";
-  const providerFileId =
-    contentType === "attachment" ? string(content?.id) : undefined;
-  if (!text && !providerFileId) return null;
+  const teamId = string(envelope?.team_id ?? outerEvent?.team);
+  const channelId = string(outerEvent?.channel ?? message?.channel);
+  const messageTs = string(message?.ts);
+  const senderUserId = string(message?.user);
+  if (!teamId || !channelId || !messageTs || !senderUserId) return null;
 
-  const messageTs =
-    string(message?.ts) ?? string(message?.timestamp) ?? spectrumMessageId;
-  const threadTs = string(message?.threadTs) ?? messageTs;
-  const subtype = string(message?.subtype)?.toLowerCase();
-  const senderTeamId = string(
-    sender?.teamId ?? sender?.team_id ?? message?.userTeam,
+  const content = string(message?.text) ?? "";
+  const attachments = slackFiles(message?.files);
+  if (!content && !attachments?.length) return null;
+
+  const eventType = isEdit ? "edit" : "message";
+  const revisionTs = string(
+    outerEvent?.event_ts ?? record(message?.edited)?.ts,
   );
-  const spaceType = string(space?.type)?.toLowerCase();
-
-  return {
-    eventKey: `${webhookId ? `${webhookId}:` : ""}${spectrumMessageId}`,
-    spectrumMessageId,
+  const eventKey = [
     teamId,
     channelId,
-    threadTs,
     messageTs,
-    ...(senderTeamId ? { senderTeamId } : {}),
+    eventType,
+    ...(eventType === "edit" && revisionTs ? [revisionTs] : []),
+  ].join(":");
+  const channelType = string(outerEvent?.channel_type)?.toLowerCase();
+
+  return {
+    eventKey,
+    ...(string(envelope?.event_id)
+      ? { providerEventId: string(envelope?.event_id) }
+      : {}),
+    teamId,
+    channelId,
+    threadTs: string(message?.thread_ts) ?? messageTs,
+    messageTs,
+    ...(string(message?.user_team ?? outerEvent?.user_team)
+      ? { senderTeamId: string(message?.user_team ?? outerEvent?.user_team) }
+      : {}),
     senderUserId,
-    senderDisplayName: string(sender?.displayName ?? sender?.name),
-    content: text,
-    attachment: providerFileId
-      ? {
-          providerFileId,
-          filename: string(content?.name) ?? "Slack attachment",
-          contentType:
-            string(content?.mimeType) ?? "application/octet-stream",
-          ...(typeof content?.size === "number" ? { size: content.size } : {}),
-        }
-      : undefined,
-    eventType:
-      subtype === "message_changed" || subtype === "message_edited"
-        ? "edit"
-        : "message",
-    isDirectMessage: spaceType === "dm" || channelId.startsWith("D"),
+    content,
+    ...(attachments ? { attachments } : {}),
+    eventType,
+    isDirectMessage: channelType === "im" || channelId.startsWith("D"),
     isBotEcho:
-      message?.isFromMe === true ||
-      subtype === "bot_message" ||
-      sender?.isBot === true,
+      Boolean(string(message?.bot_id ?? outerEvent?.bot_id)) ||
+      messageSubtype === "bot_message" ||
+      subtype === "bot_message",
   };
 }

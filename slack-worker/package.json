@@ -2,7 +2,7 @@
   "name": "@glass/slack-worker",
   "version": "1.0.0",
   "private": true,
-  "description": "Glass Slack outbound and attachment worker",
+  "description": "Glass native Slack Web API adapter",
   "packageManager": "npm@11.12.1",
   "type": "module",
   "engines": {
@@ -15,9 +15,7 @@
     "test": "node --test dist/tests/*.test.js"
   },
   "dependencies": {
-    "@spectrum-ts/slack": "^5.0.0",
-    "dayjs": "^1.11.13",
-    "spectrum-ts": "^5.0.0"
+    "dayjs": "^1.11.13"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
