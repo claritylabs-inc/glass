@@ -1035,11 +1035,32 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_clientOrgId", ["clientOrgId"]),
 
+  slackInstallations: defineTable({
+    teamId: v.string(),
+    teamName: v.string(),
+    kind: v.union(v.literal("customer"), v.literal("host")),
+    appId: v.optional(v.string()),
+    botUserId: v.optional(v.string()),
+    encryptedBotToken: v.optional(v.string()),
+    encryptedRefreshToken: v.optional(v.string()),
+    botTokenExpiresAt: v.optional(v.number()),
+    refreshLeaseExpiresAt: v.optional(v.number()),
+    grantedScopes: v.array(v.string()),
+    status: v.union(
+      v.literal("active"),
+      v.literal("revoked"),
+      v.literal("disconnected"),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_teamId_and_status", ["teamId", "status"]),
+
   slackWorkspaceConnections: defineTable({
     clientOrgId: v.id("organizations"),
     teamId: v.string(),
     teamName: v.string(),
     appId: v.optional(v.string()),
+    nativeInstallationId: v.optional(v.id("slackInstallations")),
     installationId: v.optional(v.string()),
     botUserId: v.optional(v.string()),
     grantedScopes: v.array(v.string()),
@@ -1104,7 +1125,8 @@ export default defineSchema({
 
   slackOAuthStates: defineTable({
     stateHash: v.string(),
-    clientOrgId: v.id("organizations"),
+    purpose: v.optional(v.union(v.literal("customer"), v.literal("host"))),
+    clientOrgId: v.optional(v.id("organizations")),
     initiatedByUserId: v.optional(v.id("users")),
     initiatedByOperatorUserId: v.optional(v.id("users")),
     expiresAt: v.number(),
@@ -3268,6 +3290,8 @@ export default defineSchema({
 
   slackInboundEvents: defineTable({
     eventKey: v.string(),
+    canonicalEventKey: v.optional(v.string()),
+    providerEventId: v.optional(v.string()),
     spectrumMessageId: v.optional(v.string()),
     connectionId: v.optional(v.id("slackWorkspaceConnections")),
     teamId: v.string(),
@@ -3288,6 +3312,17 @@ export default defineSchema({
         fileId: v.optional(v.id("_storage")),
       }),
     ),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          providerFileId: v.string(),
+          filename: v.string(),
+          contentType: v.string(),
+          size: v.optional(v.number()),
+          fileId: v.optional(v.id("_storage")),
+        }),
+      ),
+    ),
     eventType: v.union(v.literal("message"), v.literal("edit")),
     isPrimaryChannel: v.boolean(),
     mentionsGlass: v.boolean(),
@@ -3306,6 +3341,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_eventKey", ["eventKey"])
+    .index("by_canonicalEventKey", ["canonicalEventKey"])
     .index("by_connectionId_and_channelId_and_threadTs", [
       "connectionId",
       "channelId",

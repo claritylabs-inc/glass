@@ -12,6 +12,7 @@
     "imessageWorkerHealthUrl": "https://glass-production-4618.up.railway.app/health",
     "slackWorkerHealthUrlEnv": "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL",
     "slack": {
+      "appId": "A0BMW4TG7JB",
       "enabled": false,
       "mode": "slack",
       "required": false
@@ -48,6 +49,7 @@
     "imessageWorkerHealthUrl": "https://imessage-worker-staging.up.railway.app/health",
     "slackWorkerHealthUrlEnv": "GLASS_STAGING_SLACK_WORKER_HEALTH_URL",
     "slack": {
+      "appId": "A0BNBFDE25Q",
       "enabled": true,
       "mode": "mock",
       "required": true

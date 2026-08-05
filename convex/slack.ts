@@ -121,6 +121,26 @@ async function primaryBinding(
     .first();
 }
 
+function canonicalEventKey(
+  connectionId: Id<"slackWorkspaceConnections">,
+  args: {
+    eventKey: string;
+    providerEventId?: string;
+    teamId: string;
+    channelId: string;
+    messageTs: string;
+    eventType: "message" | "edit";
+  },
+) {
+  const editPrefix = `${args.teamId}:${args.channelId}:${args.messageTs}:edit:`;
+  const revisionKey = args.eventType === "edit"
+    ? args.eventKey.startsWith(editPrefix)
+      ? args.eventKey.slice(editPrefix.length)
+      : args.providerEventId ?? args.eventKey
+    : "";
+  return `${connectionId}:${args.messageTs}:${args.eventType}:${revisionKey}`;
+}
+
 async function createHandoff(
   ctx: MutationCtx,
   args: {
@@ -170,7 +190,8 @@ async function createHandoff(
 export const claimInbound = internalMutation({
   args: {
     eventKey: v.string(),
-    spectrumMessageId: v.string(),
+    providerEventId: v.optional(v.string()),
+    spectrumMessageId: v.optional(v.string()),
     teamId: v.string(),
     channelId: v.string(),
     threadTs: v.string(),
@@ -180,6 +201,7 @@ export const claimInbound = internalMutation({
     senderDisplayName: v.optional(v.string()),
     content: v.string(),
     attachment: v.optional(attachmentValidator),
+    attachments: v.optional(v.array(attachmentValidator)),
     eventType: v.union(v.literal("message"), v.literal("edit")),
     receivedAt: v.number(),
   },
@@ -209,6 +231,16 @@ export const claimInbound = internalMutation({
       }
     }
     if (!connection) return { duplicate: false, status: "unknown_workspace" as const };
+    const logicalEventKey = canonicalEventKey(connection._id, args);
+    const mirroredDuplicate = await ctx.db
+      .query("slackInboundEvents")
+      .withIndex("by_canonicalEventKey", (q) =>
+        q.eq("canonicalEventKey", logicalEventKey),
+      )
+      .first();
+    if (mirroredDuplicate) {
+      return { duplicate: true, status: mirroredDuplicate.status };
+    }
     const settings = await ctx.db
       .query("agentChannelSettings")
       .withIndex("by_clientOrgId", (q) =>
@@ -257,6 +289,7 @@ export const claimInbound = internalMutation({
     }
     const eventId = await ctx.db.insert("slackInboundEvents", {
       ...args,
+      canonicalEventKey: logicalEventKey,
       connectionId: connection._id,
       isPrimaryChannel,
       mentionsGlass,
@@ -315,15 +348,29 @@ export const claimBatch = internalMutation({
 export const attachInboundFile = internalMutation({
   args: {
     eventId: v.id("slackInboundEvents"),
+    providerFileId: v.string(),
     fileId: v.id("_storage"),
   },
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId);
-    if (!event?.attachment) return;
-    await ctx.db.patch(event._id, {
-      attachment: { ...event.attachment, fileId: args.fileId },
-      updatedAt: dayjs().valueOf(),
-    });
+    if (!event) return;
+    if (event.attachments?.length) {
+      await ctx.db.patch(event._id, {
+        attachments: event.attachments.map((attachment) =>
+          attachment.providerFileId === args.providerFileId
+            ? { ...attachment, fileId: args.fileId }
+            : attachment,
+        ),
+        updatedAt: dayjs().valueOf(),
+      });
+      return;
+    }
+    if (event.attachment?.providerFileId === args.providerFileId) {
+      await ctx.db.patch(event._id, {
+        attachment: { ...event.attachment, fileId: args.fileId },
+        updatedAt: dayjs().valueOf(),
+      });
+    }
   },
 });
 
@@ -370,6 +417,7 @@ export const prepareBatch = internalMutation({
     if (!first?.connectionId) return null;
     const connection = await ctx.db.get(first.connectionId);
     if (!connection || connection.status !== "active") return null;
+    const binding = await primaryBinding(ctx, connection._id);
 
     let trigger:
       | {
@@ -391,6 +439,9 @@ export const prepareBatch = internalMutation({
         continue;
       }
 
+      const threadChannelId = event.isPrimaryChannel && binding
+        ? binding.customerChannelId ?? binding.hostChannelId
+        : event.channelId;
       const existingThread = await ctx.db
         .query("threads")
         .withIndex(
@@ -398,7 +449,7 @@ export const prepareBatch = internalMutation({
           (q) =>
             q
               .eq("slackConnectionId", connection._id)
-              .eq("slackChannelId", event.channelId)
+              .eq("slackChannelId", threadChannelId)
               .eq("slackThreadTs", event.threadTs),
         )
         .first();
@@ -451,7 +502,7 @@ export const prepareBatch = internalMutation({
           lastMessageAt: event.receivedAt,
           originChannel: "slack",
           slackConnectionId: connection._id,
-          slackChannelId: event.channelId,
+          slackChannelId: threadChannelId,
           slackThreadTs: event.threadTs,
           slackState:
             (actor.classification === "customer_member" ||
@@ -464,16 +515,18 @@ export const prepareBatch = internalMutation({
         if (!thread) throw new Error("Could not create Slack thread");
       }
 
-      const attachments = event.attachment?.fileId
-        ? [
-            {
-              filename: event.attachment.filename,
-              contentType: event.attachment.contentType,
-              size: event.attachment.size ?? 0,
-              fileId: event.attachment.fileId,
-            },
-          ]
-        : undefined;
+      const inboundAttachments = event.attachments ??
+        (event.attachment ? [event.attachment] : []);
+      const attachments = inboundAttachments.flatMap((attachment) =>
+        attachment.fileId
+          ? [{
+              filename: attachment.filename,
+              contentType: attachment.contentType,
+              size: attachment.size ?? 0,
+              fileId: attachment.fileId,
+            }]
+          : [],
+      );
       const messageId = await ctx.db.insert("threadMessages", {
         threadId: thread._id,
         orgId: connection.clientOrgId,
@@ -485,8 +538,10 @@ export const prepareBatch = internalMutation({
         slackTeamId: event.teamId,
         slackUserId: event.senderUserId,
         slackMessageTs: event.messageTs,
-        content: event.content || `[Attached ${event.attachment?.filename ?? "file"}]`,
-        attachments,
+        content:
+          event.content ||
+          `[Attached ${inboundAttachments.map((attachment) => attachment.filename).join(", ") || "file"}]`,
+        attachments: attachments.length ? attachments : undefined,
       });
       await ctx.db.patch(thread._id, { lastMessageAt: event.receivedAt });
 

@@ -21,34 +21,40 @@ async function fetchAttachment(
   ctx: ActionCtx,
   event: Doc<"slackInboundEvents">,
 ) {
-  if (!event.attachment || event.attachment.fileId) return;
+  const attachments = event.attachments ??
+    (event.attachment ? [event.attachment] : []);
+  const pending = attachments.filter((attachment) => !attachment.fileId);
+  if (pending.length === 0) return;
   const worker = workerConfig();
-  const response = await fetch(`${worker.url}/attachment`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${worker.secret}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      teamId: event.teamId,
-      fileId: event.attachment.providerFileId,
-    }),
-    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    throw new Error(`Slack attachment retrieval failed (${response.status})`);
-  }
-  const bytes = await response.arrayBuffer();
-  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
-    throw new Error("Slack attachment exceeds the 25 MB ingestion limit");
-  }
-  const fileId = await ctx.storage.store(
-    new Blob([bytes], { type: event.attachment.contentType }),
-  );
-  await ctx.runMutation(internalApi.slack.attachInboundFile, {
-    eventId: event._id,
-    fileId,
-  });
+  await Promise.all(pending.map(async (attachment) => {
+    const response = await fetch(`${worker.url}/attachment`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${worker.secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        teamId: event.teamId,
+        fileId: attachment.providerFileId,
+      }),
+      signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`Slack attachment retrieval failed (${response.status})`);
+    }
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new Error("Slack attachment exceeds the 25 MB ingestion limit");
+    }
+    const fileId = await ctx.storage.store(
+      new Blob([bytes], { type: attachment.contentType }),
+    );
+    await ctx.runMutation(internalApi.slack.attachInboundFile, {
+      eventId: event._id,
+      providerFileId: attachment.providerFileId,
+      fileId,
+    });
+  }));
 }
 
 async function enrichActor(

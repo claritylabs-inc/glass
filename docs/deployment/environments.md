@@ -6,9 +6,10 @@ worktree uses native local Convex plus local workers.
 
 Slack environment/app setup, the client-owned policy-delivery migration, and
 the staged release gates are documented in [Slack privileged service
-channel](./slack.md). Staging and production remain disabled in
-`config/deployments.json` until their separate Slack apps, Photon projects, and
-workers are explicitly authorized and validated.
+channel](./slack.md). Staging and production own separate native Slack apps and
+workers; enable each lane in `config/deployments.json` only after its direct
+Slack credentials, signed Events API route, and worker are validated. Photon is
+not part of the Slack deployment path.
 
 ## cl-router
 

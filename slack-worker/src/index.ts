@@ -1,9 +1,8 @@
 import http from "node:http";
 import { Buffer } from "node:buffer";
 import dayjs from "dayjs";
-import { Spectrum, attachment, markdown, type ContentInput } from "spectrum-ts";
-import { slack } from "@spectrum-ts/slack";
 import { SendIdempotency, type SendResult } from "./idempotency.js";
+import { toSlackMrkdwn } from "./mrkdwn.js";
 
 type SendRequest = {
   clientMessageId: string;
@@ -21,6 +20,7 @@ type SlackInstallation = {
   teamId: string;
   botToken: string;
   botUserId?: string;
+  expiresAt?: number;
 };
 type ActorResolution = {
   teamId: string;
@@ -29,19 +29,29 @@ type ActorResolution = {
   isBot: boolean;
   botUserId?: string;
 };
+type SlackResponse = { ok?: boolean; error?: string };
+type SlackFile = {
+  id?: string;
+  shares?: Record<string, Record<string, Array<{ ts?: string }>>>;
+};
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const INSTALLATION_CACHE_MS = 5 * 60 * 1_000;
 const mode = process.env.SLACK_WORKER_MODE === "mock" ? "mock" : "slack";
-const glassEnv = process.env.GLASS_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
+const glassEnv =
+  process.env.GLASS_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
 const workerSecret = process.env.SLACK_WORKER_SECRET?.trim() ?? "";
-const projectId = process.env.PHOTON_PROJECT_ID?.trim();
-const projectSecret = process.env.PHOTON_PROJECT_SECRET?.trim();
+const convexSiteUrl = process.env.CONVEX_SITE_URL?.trim().replace(/\/$/, "");
+const slackApiBaseUrl =
+  process.env.SLACK_API_BASE_URL?.trim().replace(/\/$/, "") ??
+  "https://slack.com/api";
 const clarityTeamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
 const idempotency = new SendIdempotency();
 const installationCache = new Map<
   string,
   { installation: SlackInstallation; expiresAt: number }
 >();
+const installationInFlight = new Map<string, Promise<SlackInstallation>>();
 const actorCache = new Map<
   string,
   { actor: ActorResolution; expiresAt: number }
@@ -52,24 +62,10 @@ if (!workerSecret) {
   console.error("SLACK_WORKER_SECRET is required");
   process.exit(1);
 }
-function livePhotonConfig() {
-  if (!projectId || !projectSecret) {
-    console.error("PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET are required in live mode");
-    process.exit(1);
-  }
-  return { projectId, projectSecret };
+if (mode === "slack" && !convexSiteUrl) {
+  console.error("CONVEX_SITE_URL is required in live mode");
+  process.exit(1);
 }
-
-const photonConfig = mode === "slack" ? livePhotonConfig() : null;
-const spectrum =
-  photonConfig
-    ? await Spectrum({
-        projectId: photonConfig.projectId,
-        projectSecret: photonConfig.projectSecret,
-        providers: [slack.config({})],
-      })
-    : null;
-const slackClient = spectrum ? slack(spectrum) : null;
 
 function authorized(request: http.IncomingMessage) {
   return request.headers.authorization === `Bearer ${workerSecret}`;
@@ -101,20 +97,152 @@ function validateSend(input: SendRequest) {
   }
 }
 
-function sentMessageId(message: { id: string }) {
-  const timestamp = (message as { ts?: unknown }).ts;
-  return typeof timestamp === "string" ? timestamp : message.id;
+async function fetchCustomerInstallation(
+  teamId: string,
+): Promise<SlackInstallation> {
+  const response = await fetch(`${convexSiteUrl}/slack-worker/installation`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${workerSecret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ teamId }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const payload = (await response.json()) as Partial<SlackInstallation> & {
+    error?: string;
+  };
+  if (!response.ok || !payload.botToken || payload.teamId !== teamId) {
+    throw new Error(payload.error ?? "Slack installation lookup failed");
+  }
+  return {
+    teamId,
+    botToken: payload.botToken,
+    botUserId: payload.botUserId,
+    expiresAt: payload.expiresAt,
+  };
 }
 
-async function sendContent(
-  space: Awaited<ReturnType<NonNullable<typeof slackClient>["space"]["get"]>>,
-  content: ContentInput,
-  threadTs?: string,
-) {
-  if (!threadTs) return await space.send(content);
-  const target = await space.getMessage(threadTs);
-  if (!target) throw new Error("Slack thread root was not found");
-  return await target.reply(content);
+async function slackInstallation(teamId: string): Promise<SlackInstallation> {
+  if (mode === "mock") {
+    return { teamId, botToken: "mock", botUserId: "U-GLASS" };
+  }
+  const cached = installationCache.get(teamId);
+  if (cached && cached.expiresAt > dayjs().valueOf()) {
+    return cached.installation;
+  }
+  const pending = installationInFlight.get(teamId);
+  if (pending) return await pending;
+  const request = fetchCustomerInstallation(teamId);
+  installationInFlight.set(teamId, request);
+  try {
+    const installation = await request;
+    const cacheUntil = Math.min(
+      dayjs().add(INSTALLATION_CACHE_MS, "millisecond").valueOf(),
+      installation.expiresAt
+        ? dayjs(installation.expiresAt).subtract(1, "minute").valueOf()
+        : Number.POSITIVE_INFINITY,
+    );
+    installationCache.set(teamId, { installation, expiresAt: cacheUntil });
+    return installation;
+  } finally {
+    installationInFlight.delete(teamId);
+  }
+}
+
+async function slackApi<T extends SlackResponse>(
+  method: string,
+  token: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(`${slackApiBaseUrl}/${method}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const payload = (await response.json()) as T;
+  if (!response.ok || !payload.ok) {
+    const retryAfter = response.headers.get("retry-after");
+    throw new Error(
+      `${payload.error ?? `${method} failed (${response.status})`}${retryAfter ? `; retry after ${retryAfter}s` : ""}`,
+    );
+  }
+  return payload;
+}
+
+function slackFileMessageTs(file: SlackFile | undefined, channelId: string) {
+  if (!file?.shares) return undefined;
+  for (const scope of ["private", "public"]) {
+    const messages = file.shares[scope]?.[channelId];
+    const timestamp = messages?.find((message) => message.ts)?.ts;
+    if (timestamp) return timestamp;
+  }
+  return undefined;
+}
+
+async function uploadSlackFile(args: {
+  token: string;
+  channelId: string;
+  threadTs?: string;
+  url: string;
+  filename: string;
+  contentType: string;
+}) {
+  const source = await fetch(args.url, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!source.ok) {
+    throw new Error(`Attachment download failed (${source.status})`);
+  }
+  const bytes = Buffer.from(await source.arrayBuffer());
+  const upload = await slackApi<
+    SlackResponse & { upload_url?: string; file_id?: string }
+  >("files.getUploadURLExternal", args.token, {
+    filename: args.filename,
+    length: bytes.length,
+  });
+  if (!upload.upload_url || !upload.file_id) {
+    throw new Error("Slack did not return an external file upload URL");
+  }
+  const uploaded = await fetch(upload.upload_url, {
+    method: "POST",
+    headers: {
+      "Content-Type": args.contentType || "application/octet-stream",
+      "Content-Length": String(bytes.length),
+    },
+    body: bytes,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!uploaded.ok) {
+    throw new Error(`Slack file upload failed (${uploaded.status})`);
+  }
+  const completed = await slackApi<
+    SlackResponse & { files?: SlackFile[] }
+  >("files.completeUploadExternal", args.token, {
+    files: [{ id: upload.file_id, title: args.filename }],
+    channel_id: args.channelId,
+    ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+  });
+  if (args.threadTs) return args.threadTs;
+  const completedFile = completed.files?.find(
+    (file) => file.id === upload.file_id,
+  );
+  const completedTs = slackFileMessageTs(completedFile, args.channelId);
+  if (completedTs) return completedTs;
+  const info = await slackApi<SlackResponse & { file?: SlackFile }>(
+    "files.info",
+    args.token,
+    { file: upload.file_id },
+  );
+  const messageTs = slackFileMessageTs(info.file, args.channelId);
+  if (!messageTs) {
+    throw new Error("Slack did not return the uploaded file message timestamp");
+  }
+  return messageTs;
 }
 
 async function sendSlack(input: SendRequest): Promise<SendResult> {
@@ -136,27 +264,34 @@ async function sendSlack(input: SendRequest): Promise<SendResult> {
       attachmentFailures,
     };
   }
-  if (!slackClient) throw new Error("Slack client is unavailable");
-  const space = await slackClient.space.get(input.channelId, {
-    teamId: input.teamId,
-  });
+
+  const installation = await slackInstallation(input.teamId);
   let messageId: string | undefined;
   if (input.text.trim()) {
-    const sent = await sendContent(space, markdown(input.text), input.threadTs);
-    if (sent) messageId = sentMessageId(sent);
+    const sent = await slackApi<SlackResponse & { ts?: string }>(
+      "chat.postMessage",
+      installation.botToken,
+      {
+        channel: input.channelId,
+        text: toSlackMrkdwn(input.text),
+        mrkdwn: true,
+        ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
+      },
+    );
+    if (!sent.ts) throw new Error("Slack did not return a message timestamp");
+    messageId = sent.ts;
   }
+
   const attachmentFailures: SendResult["attachmentFailures"] = [];
   for (const file of input.attachments ?? []) {
     try {
-      const sent = await sendContent(
-        space,
-        attachment(new URL(file.url), {
-          name: file.filename,
-          mimeType: file.contentType,
-        }),
-        input.threadTs,
-      );
-      if (!messageId && sent) messageId = sentMessageId(sent);
+      const uploadedTs = await uploadSlackFile({
+        token: installation.botToken,
+        channelId: input.channelId,
+        threadTs: input.threadTs,
+        ...file,
+      });
+      messageId ??= uploadedTs;
     } catch (error) {
       attachmentFailures.push({
         filename: file.filename,
@@ -167,71 +302,29 @@ async function sendSlack(input: SendRequest): Promise<SendResult> {
   return { messageId, attachmentFailures };
 }
 
-function photonAuthorization() {
-  if (!photonConfig) throw new Error("Photon is unavailable in mock mode");
-  return `Basic ${Buffer.from(`${photonConfig.projectId}:${photonConfig.projectSecret}`).toString("base64")}`;
-}
-
-async function slackInstallation(teamId: string) {
-  if (!photonConfig) throw new Error("Photon is unavailable in mock mode");
-  const cached = installationCache.get(teamId);
-  if (cached && cached.expiresAt > dayjs().valueOf()) {
-    return cached.installation;
-  }
-  const response = await fetch(
-    `https://spectrum.photon.codes/projects/${encodeURIComponent(photonConfig.projectId)}/slack/installations`,
-    {
-      headers: { Authorization: photonAuthorization() },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  );
-  const payload = (await response.json()) as {
-    data?: { installations?: SlackInstallation[] };
-    message?: string;
-  };
-  if (!response.ok) throw new Error(payload.message ?? "Photon installation lookup failed");
-  const installation = payload.data?.installations?.find(
-    (candidate) => candidate.teamId === teamId,
-  );
-  if (!installation?.botToken) throw new Error("Slack installation was not found");
-  installationCache.set(teamId, {
-    installation,
-    expiresAt: dayjs().add(5, "minute").valueOf(),
-  });
-  return installation;
-}
-
-async function botToken(teamId: string) {
-  return (await slackInstallation(teamId)).botToken;
-}
-
 async function fetchSlackAttachment(input: AttachmentRequest) {
-  if (mode === "mock") throw new Error("Mock mode has no remote Slack attachments");
-  const token = await botToken(input.teamId);
-  const infoResponse = await fetch(
-    `https://slack.com/api/files.info?file=${encodeURIComponent(input.fileId)}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  );
-  const info = (await infoResponse.json()) as {
-    ok?: boolean;
-    error?: string;
-    file?: { url_private_download?: string; url_private?: string };
-  };
-  const url = info.file?.url_private_download ?? info.file?.url_private;
-  if (!infoResponse.ok || !info.ok || !url) {
-    throw new Error(info.error ?? "Slack file metadata is unavailable");
+  if (mode === "mock") {
+    throw new Error("Mock mode has no remote Slack attachments");
   }
+  const token = (await slackInstallation(input.teamId)).botToken;
+  const info = await slackApi<
+    SlackResponse & {
+      file?: { url_private_download?: string; url_private?: string };
+    }
+  >("files.info", token, { file: input.fileId });
+  const url = info.file?.url_private_download ?? info.file?.url_private;
+  if (!url) throw new Error("Slack file metadata is unavailable");
   const fileResponse = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!fileResponse.ok) throw new Error(`Slack file download failed (${fileResponse.status})`);
+  if (!fileResponse.ok) {
+    throw new Error(`Slack file download failed (${fileResponse.status})`);
+  }
   return {
     bytes: Buffer.from(await fileResponse.arrayBuffer()),
-    contentType: fileResponse.headers.get("content-type") ?? "application/octet-stream",
+    contentType:
+      fileResponse.headers.get("content-type") ?? "application/octet-stream",
   };
 }
 
@@ -252,32 +345,27 @@ async function resolveSlackActor(input: ActorRequest) {
   const cached = actorCache.get(cacheKey);
   if (cached && cached.expiresAt > dayjs().valueOf()) return cached.actor;
   const installation = await slackInstallation(input.teamId);
-  const response = await fetch("https://slack.com/api/users.info", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${installation.botToken}`,
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify({ user: input.userId }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  const payload = (await response.json()) as {
-    ok?: boolean;
-    error?: string;
-    user?: {
-      id?: string;
-      team_id?: string;
-      name?: string;
-      real_name?: string;
-      is_bot?: boolean;
-      is_app_user?: boolean;
-      profile?: { display_name?: string; real_name?: string; team?: string };
-    };
-  };
+  const payload = await slackApi<
+    SlackResponse & {
+      user?: {
+        id?: string;
+        team_id?: string;
+        name?: string;
+        real_name?: string;
+        is_bot?: boolean;
+        is_app_user?: boolean;
+        profile?: {
+          display_name?: string;
+          real_name?: string;
+          team?: string;
+        };
+      };
+    }
+  >("users.info", installation.botToken, { user: input.userId });
   const actor = payload.user;
   const teamId = actor?.team_id ?? actor?.profile?.team;
-  if (!response.ok || !payload.ok || !actor?.id || !teamId) {
-    throw new Error(payload.error ?? "Slack actor metadata is unavailable");
+  if (!actor?.id || !teamId) {
+    throw new Error("Slack actor metadata is unavailable");
   }
   const resolved = {
     teamId,
@@ -307,45 +395,33 @@ function channelName(clientSlug: string) {
   return `glass-${slug}`;
 }
 
-async function slackApi<T extends { ok?: boolean; error?: string }>(
-  method: string,
-  token: string,
-  body: Record<string, unknown>,
-) {
-  const response = await fetch(`https://slack.com/api/${method}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json; charset=utf-8",
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  const payload = (await response.json()) as T;
-  if (!response.ok || !payload.ok) {
-    throw new Error(payload.error ?? `${method} failed (${response.status})`);
-  }
-  return payload;
-}
-
 async function createConnectChannel(input: ConnectChannelRequest) {
   if (mode === "mock") {
     const name = channelName(input.clientSlug);
-    return { channelId: `mock-${name}`, channelName: name, inviteId: "mock-invite" };
+    return {
+      channelId: `mock-${name}`,
+      channelName: name,
+      inviteId: "mock-invite",
+    };
   }
-  if (!clarityTeamId) throw new Error("SLACK_CLARITY_TEAM_ID is not configured");
-  const token = await botToken(clarityTeamId);
+  if (!clarityTeamId) {
+    throw new Error("Clarity Slack installation is not configured");
+  }
+  const installation = await slackInstallation(clarityTeamId);
   const name = channelName(input.clientSlug);
-  const created = await slackApi<{
-    ok: boolean;
-    channel?: { id?: string; name?: string };
-  }>("conversations.create", token, { name, is_private: true });
+  const created = await slackApi<
+    SlackResponse & { channel?: { id?: string; name?: string } }
+  >("conversations.create", installation.botToken, { name, is_private: true });
   const channelId = created.channel?.id;
   if (!channelId) throw new Error("Slack did not return the created channel ID");
-  const invited = await slackApi<{ ok: boolean; invite_id?: string }>(
+  const invited = await slackApi<SlackResponse & { invite_id?: string }>(
     "conversations.inviteShared",
-    token,
-    { channel: channelId, emails: [input.inviteEmail], external_limited: false },
+    installation.botToken,
+    {
+      channel: channelId,
+      emails: [input.inviteEmail],
+      external_limited: false,
+    },
   );
   return {
     channelId,
@@ -356,17 +432,22 @@ async function createConnectChannel(input: ConnectChannelRequest) {
 
 const server = http.createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/health") {
+    const tokenBrokerConfigured =
+      mode === "mock" || Boolean(convexSiteUrl && workerSecret);
     return json(response, 200, {
       ok: true,
       service: "glass-slack-worker",
       glassEnv,
       mode,
       workerSecretConfigured: Boolean(workerSecret),
-      photonConfigured: Boolean(projectId && projectSecret),
-      outboundEnabled: mode === "mock" || Boolean(slackClient),
-      attachmentRetrievalEnabled: mode === "slack" && Boolean(projectId && projectSecret),
-      actorResolutionEnabled: mode === "mock" || Boolean(projectId && projectSecret),
-      connectProvisioningEnabled: mode === "mock" || Boolean(clarityTeamId),
+      tokenBrokerConfigured,
+      clarityTeamConfigured:
+        mode === "mock" || Boolean(clarityTeamId),
+      outboundEnabled: tokenBrokerConfigured,
+      attachmentRetrievalEnabled: mode === "slack" && tokenBrokerConfigured,
+      actorResolutionEnabled: mode === "mock" || tokenBrokerConfigured,
+      connectProvisioningEnabled:
+        mode === "mock" || Boolean(clarityTeamId && tokenBrokerConfigured),
     });
   }
   if (!authorized(request)) return json(response, 401, { error: "Unauthorized" });
@@ -426,7 +507,6 @@ server.listen(port, () => {
 
 async function shutdown() {
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await spectrum?.stop();
 }
 
 process.on("SIGTERM", () => void shutdown());

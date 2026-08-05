@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 
 const SIGNATURE_PREFIX = "v0=";
-export const SLACK_WEBHOOK_REPLAY_WINDOW_SECONDS = 5 * 60;
+export const SLACK_REQUEST_REPLAY_WINDOW_SECONDS = 5 * 60;
 
 function hex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes), (byte) =>
@@ -18,7 +18,7 @@ function equalConstantTime(left: string, right: string): boolean {
   return difference === 0;
 }
 
-export async function signSpectrumWebhook(
+export async function signSlackRequest(
   secret: string,
   timestamp: string,
   rawBody: string,
@@ -38,7 +38,7 @@ export async function signSpectrumWebhook(
   return `${SIGNATURE_PREFIX}${hex(signature)}`;
 }
 
-export async function verifySpectrumWebhook(args: {
+export async function verifySlackRequest(args: {
   secret: string;
   timestamp: string | null;
   signature: string | null;
@@ -54,12 +54,12 @@ export async function verifySpectrumWebhook(args: {
   if (
     !Number.isFinite(timestampSeconds) ||
     Math.abs(nowSeconds - timestampSeconds) >
-      SLACK_WEBHOOK_REPLAY_WINDOW_SECONDS
+      SLACK_REQUEST_REPLAY_WINDOW_SECONDS
   ) {
     return { ok: false, reason: "stale_timestamp" };
   }
 
-  const expected = await signSpectrumWebhook(
+  const expected = await signSlackRequest(
     args.secret,
     args.timestamp,
     args.rawBody,

@@ -1,26 +1,31 @@
 import { describe, expect, test } from "vitest";
-import { parseSlackWebhookPayload } from "./slackPayload";
+import { parseSlackEventPayload } from "./slackPayload";
 
 function payload(overrides: Record<string, unknown> = {}) {
   return {
-    event: "messages",
-    message: {
-      id: "message-1",
+    type: "event_callback",
+    team_id: "T-CUSTOMER",
+    event_id: "Ev-message-1",
+    event: {
+      type: "app_mention",
       ts: "1800000000.100",
-      threadTs: "1800000000.000",
-      platform: "slack",
-      sender: { id: "U-CUSTOMER", teamId: "T-CUSTOMER", displayName: "Avery" },
-      content: { type: "text", text: "<@U-GLASS> show my policy" },
+      thread_ts: "1800000000.000",
+      event_ts: "1800000000.100",
+      channel: "C-SERVICE",
+      channel_type: "channel",
+      user: "U-CUSTOMER",
+      user_team: "T-CUSTOMER",
+      text: "<@U-GLASS> show my policy",
       ...overrides,
     },
-    space: { id: "C-SERVICE", teamId: "T-CUSTOMER", type: "channel" },
   };
 }
 
 describe("Slack webhook payload narrowing", () => {
   test("normalizes mentions, threads, and edits", () => {
-    expect(parseSlackWebhookPayload(payload(), "webhook-1")).toMatchObject({
-      eventKey: "webhook-1:message-1",
+    expect(parseSlackEventPayload(payload())).toMatchObject({
+      eventKey: "T-CUSTOMER:C-SERVICE:1800000000.100:message",
+      providerEventId: "Ev-message-1",
       teamId: "T-CUSTOMER",
       channelId: "C-SERVICE",
       threadTs: "1800000000.000",
@@ -31,56 +36,60 @@ describe("Slack webhook payload narrowing", () => {
       isBotEcho: false,
     });
     expect(
-      parseSlackWebhookPayload(payload({ subtype: "message_changed" })),
+      parseSlackEventPayload(payload({
+        type: "message",
+        subtype: "message_changed",
+        message: {
+          ts: "1800000000.100",
+          thread_ts: "1800000000.000",
+          user: "U-CUSTOMER",
+          user_team: "T-CUSTOMER",
+          text: "edited",
+        },
+      })),
     ).toMatchObject({ eventType: "edit" });
 
     const serialized = payload();
-    const serializedSender = serialized.message.sender as {
-      id: string;
-      teamId?: string;
-      displayName?: string;
-    };
-    delete serializedSender.teamId;
-    delete serializedSender.displayName;
-    expect(parseSlackWebhookPayload(serialized)).not.toHaveProperty(
+    delete (serialized.event as { user_team?: string }).user_team;
+    expect(parseSlackEventPayload(serialized)).not.toHaveProperty(
       "senderTeamId",
     );
   });
 
   test("normalizes attachments and ignores reactions, bots, and DMs", () => {
     expect(
-      parseSlackWebhookPayload(
+      parseSlackEventPayload(
         payload({
-          content: {
-            type: "attachment",
-            id: "F-1",
-            name: "policy.pdf",
-            mimeType: "application/pdf",
-            size: 1024,
-          },
+          text: "",
+          files: [
+            {
+              id: "F-1",
+              name: "policy.pdf",
+              mimetype: "application/pdf",
+              size: 1024,
+            },
+          ],
         }),
       ),
     ).toMatchObject({
-      attachment: {
-        providerFileId: "F-1",
-        filename: "policy.pdf",
-        contentType: "application/pdf",
-        size: 1024,
-      },
+      attachments: [
+        {
+          providerFileId: "F-1",
+          filename: "policy.pdf",
+          contentType: "application/pdf",
+          size: 1024,
+        },
+      ],
     });
     expect(
-      parseSlackWebhookPayload(payload({ content: { type: "reaction" } })),
+      parseSlackEventPayload(payload({ subtype: "message_deleted", text: "" })),
     ).toBeNull();
     expect(
-      parseSlackWebhookPayload(
-        payload({ subtype: "message_deleted", content: { type: "text", text: "" } }),
-      ),
-    ).toBeNull();
-    expect(
-      parseSlackWebhookPayload(payload({ isFromMe: true })),
+      parseSlackEventPayload(payload({ bot_id: "B-GLASS" })),
     ).toMatchObject({ isBotEcho: true });
     const dm = payload();
-    dm.space = { id: "D-PRIVATE", teamId: "T-CUSTOMER", type: "dm" };
-    expect(parseSlackWebhookPayload(dm)).toMatchObject({ isDirectMessage: true });
+    dm.event.channel = "D-PRIVATE";
+    dm.event.channel_type = "im";
+    expect(parseSlackEventPayload(dm)).toMatchObject({ isDirectMessage: true });
   });
 });

@@ -10,8 +10,8 @@ import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { getEmailDeliveryMode } from "./lib/resend";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import { canAccessThread } from "./lib/threadAccess";
-import { parseSlackWebhookPayload } from "./lib/slackPayload";
-import { verifySpectrumWebhook } from "./lib/slackSecurity";
+import { parseSlackEventPayload } from "./lib/slackPayload";
+import { verifySlackRequest } from "./lib/slackSecurity";
 import { getSlackMode } from "./lib/slackConfig";
 import {
   type McpPolicySummarySource,
@@ -48,9 +48,6 @@ http.route({
   path: "/slack/oauth/callback",
   method: "GET",
   handler: httpAction(async (ctx, request) => {
-    if (process.env.SLACK_ENABLED !== "true") {
-      return jsonResponse({ error: "Slack is not enabled" }, 404);
-    }
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
@@ -73,19 +70,16 @@ http.route({
 });
 
 http.route({
-  path: "/spectrum-slack-inbound",
+  path: "/slack/events",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    if (process.env.SLACK_ENABLED !== "true") {
-      return jsonResponse({ error: "Slack is not enabled" }, 404);
-    }
-    const secret = process.env.PHOTON_WEBHOOK_SIGNING_SECRET?.trim();
+    const secret = process.env.SLACK_SIGNING_SECRET?.trim();
     if (!secret) return jsonResponse({ error: "Slack webhook is not configured" }, 503);
     const rawBody = await request.text();
-    const verification = await verifySpectrumWebhook({
+    const verification = await verifySlackRequest({
       secret,
-      timestamp: request.headers.get("X-Spectrum-Timestamp"),
-      signature: request.headers.get("X-Spectrum-Signature"),
+      timestamp: request.headers.get("X-Slack-Request-Timestamp"),
+      signature: request.headers.get("X-Slack-Signature"),
       rawBody,
     });
     if (!verification.ok) {
@@ -99,46 +93,51 @@ http.route({
       return jsonResponse({ error: "Invalid JSON" }, 400);
     }
     const envelope = rawPayload as Record<string, unknown>;
+    if (envelope.type === "url_verification") {
+      const challenge =
+        typeof envelope.challenge === "string" ? envelope.challenge : undefined;
+      return challenge
+        ? jsonResponse({ challenge })
+        : jsonResponse({ error: "Missing Slack challenge" }, 400);
+    }
+    if (process.env.SLACK_ENABLED !== "true") {
+      return jsonResponse({ error: "Slack is not enabled" }, 404);
+    }
+    const slackEvent =
+      envelope.event && typeof envelope.event === "object"
+        ? (envelope.event as Record<string, unknown>)
+        : undefined;
     if (
-      envelope.event === "app_uninstalled" ||
-      envelope.event === "tokens_revoked"
+      slackEvent?.type === "app_uninstalled" ||
+      slackEvent?.type === "tokens_revoked"
     ) {
       const teamId =
-        typeof envelope.teamId === "string"
-          ? envelope.teamId
-          : typeof envelope.team_id === "string"
-            ? envelope.team_id
-            : undefined;
+        typeof envelope.team_id === "string" ? envelope.team_id : undefined;
       if (teamId) {
         await ctx.runMutation(internalApi.agentChannels.revokeByTeamId, { teamId });
       }
       return jsonResponse({ ok: true });
     }
 
-    const payload = parseSlackWebhookPayload(
-      rawPayload,
-      request.headers.get("X-Spectrum-Webhook-Id") ?? undefined,
-    );
+    const payload = parseSlackEventPayload(rawPayload);
     if (!payload || payload.isBotEcho || payload.isDirectMessage) {
       return jsonResponse({ ok: true, ignored: true });
     }
-    const message = (envelope.message ?? {}) as Record<string, unknown>;
     const timestamp =
-      typeof message.timestamp === "string"
-        ? dayjs(message.timestamp).valueOf()
+      typeof envelope.event_time === "number"
+        ? dayjs.unix(envelope.event_time).valueOf()
         : dayjs().valueOf();
     await ctx.runMutation(internalApi.slack.claimInbound, {
       eventKey: payload.eventKey,
-      spectrumMessageId: payload.spectrumMessageId,
+      providerEventId: payload.providerEventId,
       teamId: payload.teamId,
       channelId: payload.channelId,
       threadTs: payload.threadTs,
       messageTs: payload.messageTs,
       senderTeamId: payload.senderTeamId,
       senderUserId: payload.senderUserId,
-      senderDisplayName: payload.senderDisplayName,
       content: payload.content,
-      attachment: payload.attachment,
+      attachments: payload.attachments,
       eventType: payload.eventType,
       receivedAt: Number.isFinite(timestamp) ? timestamp : dayjs().valueOf(),
     });
@@ -147,11 +146,54 @@ http.route({
 });
 
 http.route({
+  path: "/slack-worker/installation",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.SLACK_WORKER_SECRET?.trim();
+    if (
+      !secret ||
+      request.headers.get("Authorization") !== `Bearer ${secret}`
+    ) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+    let body: { teamId?: unknown };
+    try {
+      body = (await request.json()) as { teamId?: unknown };
+    } catch {
+      return jsonResponse({ error: "Invalid JSON" }, 400);
+    }
+    const teamId =
+      typeof body.teamId === "string" ? body.teamId.trim() : "";
+    if (!teamId) return jsonResponse({ error: "teamId is required" }, 400);
+    try {
+      return jsonResponse(
+        await ctx.runAction(
+          internalApi.actions.slackCredentials.resolveInstallation,
+          { teamId },
+        ),
+      );
+    } catch (error) {
+      return jsonResponse(
+        { error: error instanceof Error ? error.message : String(error) },
+        404,
+      );
+    }
+  }),
+});
+
+http.route({
   path: "/agent-health",
   method: "GET",
-  handler: httpAction(async () => {
+  handler: httpAction(async (ctx) => {
     const slackEnabled = process.env.SLACK_ENABLED === "true";
     const slackMode = getSlackMode();
+    const slackHostInstallation =
+      slackEnabled && slackMode === "slack"
+        ? await ctx.runQuery(
+            internalApi.agentChannels.getActiveSlackHostInstallation,
+            {},
+          )
+        : null;
     const checks = {
       imessageInboundEnabled: isImessageInboundEnabled(),
       imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
@@ -166,7 +208,15 @@ http.route({
         !slackEnabled ||
         Boolean(process.env.SLACK_WORKER_URL && process.env.SLACK_WORKER_SECRET),
       slackWebhookConfigured:
-        !slackEnabled || Boolean(process.env.PHOTON_WEBHOOK_SIGNING_SECRET),
+        !slackEnabled || Boolean(process.env.SLACK_SIGNING_SECRET),
+      slackTokenEncryptionConfigured:
+        !slackEnabled ||
+        slackMode === "mock" ||
+        Boolean(process.env.SLACK_TOKEN_ENCRYPTION_KEY),
+      slackHostInstallationConfigured:
+        !slackEnabled ||
+        slackMode === "mock" ||
+        Boolean(slackHostInstallation),
       slackOAuthConfigured:
         !slackEnabled ||
         slackMode === "mock" ||
@@ -193,12 +243,16 @@ http.route({
           workerUrlConfigured: Boolean(process.env.SLACK_WORKER_URL),
           workerSecretConfigured: Boolean(process.env.SLACK_WORKER_SECRET),
           webhookSigningSecretConfigured: Boolean(
-            process.env.PHOTON_WEBHOOK_SIGNING_SECRET,
+            process.env.SLACK_SIGNING_SECRET,
+          ),
+          tokenEncryptionConfigured: Boolean(
+            process.env.SLACK_TOKEN_ENCRYPTION_KEY,
           ),
           oauthConfigured: Boolean(
             process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET,
           ),
           clarityTeamConfigured: Boolean(process.env.SLACK_CLARITY_TEAM_ID),
+          hostInstallationConfigured: Boolean(slackHostInstallation),
         },
         checks,
       }),

@@ -18,10 +18,10 @@ function option(name, fallback) {
 const workerEnv = parseEnvFile(
   path.join(repoRoot, ".context", "slack-worker.env"),
 );
-const signingSecret = workerEnv.get("PHOTON_WEBHOOK_SIGNING_SECRET")?.trim();
+const signingSecret = workerEnv.get("SLACK_SIGNING_SECRET")?.trim();
 if (!signingSecret) {
   throw new Error(
-    "PHOTON_WEBHOOK_SIGNING_SECRET is missing. Run npm run conductor:setup first.",
+    "SLACK_SIGNING_SECRET is missing. Run npm run conductor:setup first.",
   );
 }
 
@@ -30,24 +30,21 @@ const messageTs = `${now.unix()}.${String(now.millisecond()).padStart(3, "0")}`;
 const threadTs = option("thread", messageTs);
 const text = option("text", "<@U-GLASS> summarize my current policy");
 const payload = {
-  event: "messages",
-  message: {
-    id: `fixture-${randomUUID()}`,
+  type: "event_callback",
+  team_id: option("team", "T-COVE-FIXTURE"),
+  api_app_id: "A-GLASS-FIXTURE",
+  event_id: `fixture-${randomUUID()}`,
+  event_time: now.unix(),
+  event: {
+    type: "app_mention",
     ts: messageTs,
-    threadTs,
-    timestamp: now.toISOString(),
-    platform: "slack",
-    sender: {
-      id: option("user", "U-COVE-ADMIN"),
-      teamId: option("team", "T-COVE-FIXTURE"),
-      displayName: option("name", "Cove Admin"),
-    },
-    content: { type: "text", text },
-  },
-  space: {
-    id: option("channel", "C-COVE-FIXTURE"),
-    teamId: option("team", "T-COVE-FIXTURE"),
-    type: "channel",
+    thread_ts: threadTs,
+    event_ts: messageTs,
+    channel: option("channel", "C-COVE-FIXTURE"),
+    channel_type: "channel",
+    user: option("user", "U-COVE-ADMIN"),
+    user_team: option("team", "T-COVE-FIXTURE"),
+    text,
   },
 };
 const rawBody = JSON.stringify(payload);
@@ -57,14 +54,13 @@ const signature = `v0=${createHmac("sha256", signingSecret)
   .digest("hex")}`;
 const { convexSite } = conductorPorts();
 const response = await fetch(
-  `http://127.0.0.1:${convexSite}/spectrum-slack-inbound`,
+  `http://127.0.0.1:${convexSite}/slack/events`,
   {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Spectrum-Timestamp": timestamp,
-      "X-Spectrum-Signature": signature,
-      "X-Spectrum-Webhook-Id": `fixture-${randomUUID()}`,
+      "X-Slack-Request-Timestamp": timestamp,
+      "X-Slack-Signature": signature,
     },
     body: rawBody,
   },

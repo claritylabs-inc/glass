@@ -12,6 +12,7 @@
     "conductor:archive": "node scripts/archive-conductor-workspace.mjs",
     "conductor:dev": "node scripts/run-conductor-dev.mjs",
     "conductor:slack-fixture": "node scripts/send-conductor-slack-fixture.mjs",
+    "slack:provision-apps": "node scripts/provision-slack-apps.mjs",
     "check:cl-router-contract": "node scripts/check-cl-router-contract.mjs",
     "check:shared-package-versions": "node scripts/check-shared-package-versions.mjs",
     "prebuild": "npm run check:shared-package-versions",

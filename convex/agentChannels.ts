@@ -141,6 +141,18 @@ async function deactivateConnection(
   },
 ) {
   const now = dayjs().valueOf();
+  if (connection.nativeInstallationId) {
+    const installation = await ctx.db.get(connection.nativeInstallationId);
+    if (installation) {
+      await ctx.db.patch(installation._id, {
+        status,
+        encryptedBotToken: undefined,
+        encryptedRefreshToken: undefined,
+        botTokenExpiresAt: undefined,
+        updatedAt: now,
+      });
+    }
+  }
   await ctx.db.patch(connection._id, {
     status,
     disconnectedAt: now,
@@ -302,10 +314,27 @@ export const createOAuthState = internalMutation({
     const now = dayjs().valueOf();
     await ctx.db.insert("slackOAuthStates", {
       stateHash: await sha256(state),
+      purpose: "customer",
       clientOrgId: args.clientOrgId,
       ...(args.actorKind === "operator"
         ? { initiatedByOperatorUserId: args.userId }
         : { initiatedByUserId: args.userId }),
+      expiresAt: dayjs(now).add(10, "minute").valueOf(),
+      createdAt: now,
+    });
+    return state;
+  },
+});
+
+export const createHostOAuthState = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const state = randomState();
+    const now = dayjs().valueOf();
+    await ctx.db.insert("slackOAuthStates", {
+      stateHash: await sha256(state),
+      purpose: "host",
+      initiatedByOperatorUserId: args.userId,
       expiresAt: dayjs(now).add(10, "minute").valueOf(),
       createdAt: now,
     });
@@ -328,12 +357,77 @@ export const claimOAuthState = internalMutation({
   },
 });
 
+async function upsertNativeSlackInstallation(
+  ctx: MutationCtx,
+  args: {
+    teamId: string;
+    teamName: string;
+    kind: "customer" | "host";
+    appId?: string;
+    botUserId?: string;
+    encryptedBotToken: string;
+    encryptedRefreshToken?: string;
+    botTokenExpiresAt?: number;
+    grantedScopes: string[];
+  },
+) {
+  const active = await ctx.db
+    .query("slackInstallations")
+    .withIndex("by_teamId_and_status", (q) =>
+      q.eq("teamId", args.teamId).eq("status", "active"),
+    )
+    .first();
+  if (active && active.kind !== args.kind) {
+    throw new Error("This Slack workspace already has a different Glass role");
+  }
+  const reusable = active ??
+    (await ctx.db
+      .query("slackInstallations")
+      .withIndex("by_teamId_and_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "disconnected"),
+      )
+      .first()) ??
+    (await ctx.db
+      .query("slackInstallations")
+      .withIndex("by_teamId_and_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "revoked"),
+      )
+      .first());
+  if (reusable && reusable.kind !== args.kind) {
+    throw new Error("This Slack workspace already has a different Glass role");
+  }
+  const now = dayjs().valueOf();
+  if (reusable) {
+    await ctx.db.patch(reusable._id, {
+      teamName: args.teamName,
+      appId: args.appId,
+      botUserId: args.botUserId,
+      encryptedBotToken: args.encryptedBotToken,
+      encryptedRefreshToken: args.encryptedRefreshToken,
+      botTokenExpiresAt: args.botTokenExpiresAt,
+      grantedScopes: args.grantedScopes,
+      status: "active",
+      updatedAt: now,
+    });
+    return reusable._id;
+  }
+  return await ctx.db.insert("slackInstallations", {
+    ...args,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 export const upsertSlackConnection = internalMutation({
   args: {
     clientOrgId: v.id("organizations"),
     teamId: v.string(),
     teamName: v.string(),
     appId: v.optional(v.string()),
+    encryptedBotToken: v.optional(v.string()),
+    encryptedRefreshToken: v.optional(v.string()),
+    botTokenExpiresAt: v.optional(v.number()),
     installationId: v.optional(v.string()),
     botUserId: v.optional(v.string()),
     grantedScopes: v.array(v.string()),
@@ -356,6 +450,19 @@ export const upsertSlackConnection = internalMutation({
     }
 
     const now = dayjs().valueOf();
+    const nativeInstallationId = args.encryptedBotToken
+      ? await upsertNativeSlackInstallation(ctx, {
+          teamId: args.teamId,
+          teamName: args.teamName,
+          kind: "customer",
+          appId: args.appId,
+          botUserId: args.botUserId,
+          encryptedBotToken: args.encryptedBotToken,
+          encryptedRefreshToken: args.encryptedRefreshToken,
+          botTokenExpiresAt: args.botTokenExpiresAt,
+          grantedScopes: args.grantedScopes,
+        })
+      : undefined;
     const reusableConnection =
       clientConnection ??
       (await ctx.db
@@ -379,6 +486,7 @@ export const upsertSlackConnection = internalMutation({
       await ctx.db.patch(reusableConnection._id, {
         teamName: args.teamName,
         appId: args.appId,
+        ...(nativeInstallationId ? { nativeInstallationId } : {}),
         installationId: args.installationId,
         botUserId: args.botUserId,
         grantedScopes: args.grantedScopes,
@@ -406,6 +514,7 @@ export const upsertSlackConnection = internalMutation({
         teamId: args.teamId,
         teamName: args.teamName,
         appId: args.appId,
+        nativeInstallationId,
         installationId: args.installationId,
         botUserId: args.botUserId,
         grantedScopes: args.grantedScopes,
@@ -494,6 +603,40 @@ export const upsertSlackConnection = internalMutation({
       });
     }
     return connectionId;
+  },
+});
+
+export const upsertSlackHostInstallation = internalMutation({
+  args: {
+    teamId: v.string(),
+    teamName: v.string(),
+    appId: v.optional(v.string()),
+    botUserId: v.optional(v.string()),
+    encryptedBotToken: v.string(),
+    encryptedRefreshToken: v.optional(v.string()),
+    botTokenExpiresAt: v.optional(v.number()),
+    grantedScopes: v.array(v.string()),
+    installedByOperatorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const installationId = await upsertNativeSlackInstallation(ctx, {
+      teamId: args.teamId,
+      teamName: args.teamName,
+      kind: "host",
+      appId: args.appId,
+      botUserId: args.botUserId,
+      encryptedBotToken: args.encryptedBotToken,
+      encryptedRefreshToken: args.encryptedRefreshToken,
+      botTokenExpiresAt: args.botTokenExpiresAt,
+      grantedScopes: args.grantedScopes,
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: args.installedByOperatorUserId,
+      type: "setup_write",
+      summary: "Installed or refreshed the Clarity Slack host workspace",
+      metadata: { teamId: args.teamId, teamName: args.teamName },
+    });
+    return installationId;
   },
 });
 
@@ -634,16 +777,151 @@ export const disconnectInternal = internalMutation({
   },
 });
 
+export const getSlackCredentialsByTeamId = internalQuery({
+  args: { teamId: v.string() },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("slackInstallations")
+      .withIndex("by_teamId_and_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "active"),
+      )
+      .first(),
+});
+
+export const updateSlackCredentials = internalMutation({
+  args: {
+    installationId: v.id("slackInstallations"),
+    encryptedBotToken: v.string(),
+    encryptedRefreshToken: v.optional(v.string()),
+    botTokenExpiresAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const installation = await ctx.db.get(args.installationId);
+    if (!installation || installation.status !== "active") {
+      throw new Error("Slack installation is not active");
+    }
+    await ctx.db.patch(installation._id, {
+      encryptedBotToken: args.encryptedBotToken,
+      encryptedRefreshToken: args.encryptedRefreshToken,
+      botTokenExpiresAt: args.botTokenExpiresAt,
+      refreshLeaseExpiresAt: undefined,
+      updatedAt: dayjs().valueOf(),
+    });
+  },
+});
+
+export const claimSlackCredentialRefresh = internalMutation({
+  args: { installationId: v.id("slackInstallations") },
+  handler: async (ctx, args) => {
+    const installation = await ctx.db.get(args.installationId);
+    if (!installation || installation.status !== "active") {
+      throw new Error("Slack installation is not active");
+    }
+    const now = dayjs().valueOf();
+    if (
+      installation.botTokenExpiresAt &&
+      installation.botTokenExpiresAt > dayjs(now).add(5, "minute").valueOf()
+    ) {
+      return { claimed: false as const, reason: "fresh" as const, installation };
+    }
+    if (
+      installation.refreshLeaseExpiresAt &&
+      installation.refreshLeaseExpiresAt > now
+    ) {
+      return {
+        claimed: false as const,
+        reason: "in_progress" as const,
+        installation,
+      };
+    }
+    await ctx.db.patch(installation._id, {
+      refreshLeaseExpiresAt: dayjs(now).add(45, "second").valueOf(),
+      updatedAt: now,
+    });
+    return { claimed: true as const, installation };
+  },
+});
+
+export const releaseSlackCredentialRefresh = internalMutation({
+  args: { installationId: v.id("slackInstallations") },
+  handler: async (ctx, args) => {
+    const installation = await ctx.db.get(args.installationId);
+    if (!installation) return;
+    await ctx.db.patch(installation._id, {
+      refreshLeaseExpiresAt: undefined,
+      updatedAt: dayjs().valueOf(),
+    });
+  },
+});
+
+export const getActiveSlackHostInstallation = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const teamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
+    if (!teamId) return null;
+    const installation = await ctx.db
+      .query("slackInstallations")
+      .withIndex("by_teamId_and_status", (q) =>
+        q.eq("teamId", teamId).eq("status", "active"),
+      )
+      .first();
+    return installation?.kind === "host" ? installation : null;
+  },
+});
+
+export const getSlackHostStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireOperator(ctx);
+    const teamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
+    if (!teamId) return { configured: false, installation: null };
+    const installation = await ctx.db
+      .query("slackInstallations")
+      .withIndex("by_teamId_and_status", (q) =>
+        q.eq("teamId", teamId).eq("status", "active"),
+      )
+      .first();
+    return {
+      configured: true,
+      installation:
+        installation?.kind === "host"
+          ? {
+              teamId: installation.teamId,
+              teamName: installation.teamName,
+              botUserId: installation.botUserId,
+              grantedScopes: installation.grantedScopes,
+              updatedAt: installation.updatedAt,
+            }
+          : null,
+    };
+  },
+});
+
 export const revokeByTeamId = internalMutation({
   args: { teamId: v.string() },
   handler: async (ctx, args) => {
+    const installation = await ctx.db
+      .query("slackInstallations")
+      .withIndex("by_teamId_and_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "active"),
+      )
+      .first();
+    if (installation) {
+      await ctx.db.patch(installation._id, {
+        status: "revoked",
+        encryptedBotToken: undefined,
+        encryptedRefreshToken: undefined,
+        botTokenExpiresAt: undefined,
+        updatedAt: dayjs().valueOf(),
+      });
+    }
     const connection = await ctx.db
       .query("slackWorkspaceConnections")
       .withIndex("by_teamId_and_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first();
-    if (!connection) return null;
+    if (!connection) return installation?._id ?? null;
     await deactivateConnection(ctx, connection, "revoked", {});
     return connection._id;
   },
@@ -661,5 +939,16 @@ export const authorizeDisconnect = internalQuery({
     const connection = await activeConnection(ctx, args.clientOrgId);
     if (!connection) return null;
     return { actorKind, connection };
+  },
+});
+
+export const authorizeSlackHostSetup = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("operatorProfiles")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .first();
+    return profile?.status === "active";
   },
 });

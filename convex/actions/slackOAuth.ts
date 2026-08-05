@@ -6,14 +6,21 @@ import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
+  missingSlackHostScopes,
   missingSlackCustomerScopes,
   SLACK_CUSTOMER_SCOPES,
+  SLACK_HOST_SCOPES,
 } from "../lib/slackOAuthPolicy";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "../lib/userFacingErrors";
 import { isSlackMockMode } from "../lib/slackConfig";
+import {
+  encryptSlackCredential,
+  resolveSlackInstallation,
+} from "../lib/slackCredentials";
+import dayjs from "dayjs";
 
 const internalApi = internal as any;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -31,9 +38,9 @@ function redirectUri(): string {
   );
 }
 
-function photonAuthorization(): string {
+function slackOAuthAuthorization(): string {
   return `Basic ${Buffer.from(
-    `${requiredEnv("PHOTON_PROJECT_ID")}:${requiredEnv("PHOTON_PROJECT_SECRET")}`,
+    `${requiredEnv("SLACK_CLIENT_ID")}:${requiredEnv("SLACK_CLIENT_SECRET")}`,
   ).toString("base64")}`;
 }
 
@@ -97,6 +104,34 @@ export const begin = action({
   },
 });
 
+export const beginHost = action({
+  args: {},
+  handler: async (ctx) => {
+    if (isSlackMockMode()) {
+      throw new Error("Slack OAuth is unavailable in mock mode");
+    }
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    const authorized = await ctx.runQuery(
+      internalApi.agentChannels.authorizeSlackHostSetup,
+      { userId },
+    );
+    if (!authorized) {
+      throwUserFacingError(userFacingErrorCodes.operatorRequired);
+    }
+    const state = await ctx.runMutation(
+      internalApi.agentChannels.createHostOAuthState,
+      { userId },
+    );
+    const url = new URL("https://slack.com/oauth/v2/authorize");
+    url.searchParams.set("client_id", requiredEnv("SLACK_CLIENT_ID"));
+    url.searchParams.set("scope", SLACK_HOST_SCOPES.join(","));
+    url.searchParams.set("redirect_uri", redirectUri());
+    url.searchParams.set("state", state);
+    return { url: url.toString() };
+  },
+});
+
 type SlackOAuthResponse = {
   ok?: boolean;
   error?: string;
@@ -109,35 +144,19 @@ type SlackOAuthResponse = {
   team?: { id?: string; name?: string };
 };
 
-type PhotonInstallationResponse = {
-  succeed?: boolean;
-  data?: { installationId?: string };
-  message?: string;
-};
-
-async function revokeSlackToken(token: string): Promise<void> {
-  await fetch("https://slack.com/api/auth.revoke", {
+async function uninstallSlackApp(token: string): Promise<void> {
+  await fetch("https://slack.com/api/apps.uninstall", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
+    body: new URLSearchParams({
+      client_id: requiredEnv("SLACK_CLIENT_ID"),
+      client_secret: requiredEnv("SLACK_CLIENT_SECRET"),
+    }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   }).catch(() => undefined);
-}
-
-async function removePhotonInstallation(
-  projectId: string,
-  teamId: string,
-): Promise<Response> {
-  return await fetch(
-    `https://spectrum.photon.codes/projects/${encodeURIComponent(projectId)}/slack/installations/${encodeURIComponent(teamId)}`,
-    {
-      method: "DELETE",
-      headers: { Authorization: photonAuthorization() },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    },
-  );
 }
 
 export const complete = internalAction({
@@ -156,10 +175,11 @@ export const complete = internalAction({
 
     const tokenResponse = await fetch("https://slack.com/api/oauth.v2.access", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: {
+        Authorization: slackOAuthAuthorization(),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
       body: new URLSearchParams({
-        client_id: requiredEnv("SLACK_CLIENT_ID"),
-        client_secret: requiredEnv("SLACK_CLIENT_SECRET"),
         code: args.code,
         redirect_uri: redirectUri(),
       }),
@@ -173,77 +193,100 @@ export const complete = internalAction({
       }, state.clientOrgId);
     }
 
+    const purpose = state.purpose ?? "customer";
+    const clientOrgId = state.clientOrgId;
+    if (purpose === "customer" && !clientOrgId) {
+      await uninstallSlackApp(token.access_token);
+      return settingsRedirect({
+        slack: "error",
+        reason: "missing_customer_organization",
+      });
+    }
+    if (
+      purpose === "host" &&
+      token.team.id !== requiredEnv("SLACK_CLARITY_TEAM_ID")
+    ) {
+      await uninstallSlackApp(token.access_token);
+      return settingsRedirect({
+        slack: "error",
+        reason: "wrong_host_workspace",
+      });
+    }
+
     const grantedScopes = (token.scope ?? "")
       .split(",")
       .map((scope) => scope.trim())
       .filter(Boolean);
-    const missingScopes = missingSlackCustomerScopes(grantedScopes);
+    const missingScopes = purpose === "host"
+      ? missingSlackHostScopes(grantedScopes)
+      : missingSlackCustomerScopes(grantedScopes);
     if (missingScopes.length > 0) {
-      await revokeSlackToken(token.access_token);
+      await uninstallSlackApp(token.access_token);
       return settingsRedirect({
         slack: "error",
         reason: "missing_scopes",
         scopes: missingScopes.join(","),
-      }, state.clientOrgId);
-    }
-
-    const projectId = requiredEnv("PHOTON_PROJECT_ID");
-    const photonResponse = await fetch(
-      `https://spectrum.photon.codes/projects/${encodeURIComponent(projectId)}/slack/installations/${encodeURIComponent(token.team.id)}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: photonAuthorization(),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          teamName: token.team.name || token.team.id,
-          appId: token.app_id || requiredEnv("SLACK_CLIENT_ID"),
-          botToken: token.access_token,
-          botRefreshToken: token.refresh_token,
-          botTokenExpiresInSec: token.expires_in,
-          botUserId: token.bot_user_id || "unknown",
-          grantedScopes,
-        }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      },
-    );
-    const installation =
-      (await photonResponse.json()) as PhotonInstallationResponse;
-    if (!photonResponse.ok || !installation.succeed) {
-      await revokeSlackToken(token.access_token);
-      return settingsRedirect({
-        slack: "error",
-        reason: installation.message || "photon_registration_failed",
-      }, state.clientOrgId);
+      }, clientOrgId);
     }
 
     try {
-      await ctx.runMutation(
-        internalApi.agentChannels.upsertSlackConnection,
-        {
-          clientOrgId: state.clientOrgId,
-          teamId: token.team.id,
-          teamName: token.team.name || token.team.id,
-          appId: token.app_id,
-          installationId: installation.data?.installationId,
-          botUserId: token.bot_user_id,
-          grantedScopes,
-          installedByUserId: state.initiatedByUserId,
-          installedByOperatorUserId: state.initiatedByOperatorUserId,
-        },
-      );
+      const credentialArgs = {
+        teamId: token.team.id,
+        teamName: token.team.name || token.team.id,
+        appId: token.app_id,
+        encryptedBotToken: encryptSlackCredential(
+          token.access_token,
+          token.team.id,
+        ),
+        encryptedRefreshToken: token.refresh_token
+          ? encryptSlackCredential(token.refresh_token, token.team.id)
+          : undefined,
+        botTokenExpiresAt: token.expires_in
+          ? dayjs().add(token.expires_in, "second").valueOf()
+          : undefined,
+        botUserId: token.bot_user_id,
+        grantedScopes,
+      };
+      if (purpose === "host") {
+        if (!state.initiatedByOperatorUserId) {
+          throw new Error("Slack host installation requires an operator");
+        }
+        await ctx.runMutation(
+          internalApi.agentChannels.upsertSlackHostInstallation,
+          {
+            ...credentialArgs,
+            installedByOperatorUserId: state.initiatedByOperatorUserId,
+          },
+        );
+      } else {
+        await ctx.runMutation(
+          internalApi.agentChannels.upsertSlackConnection,
+          {
+            ...credentialArgs,
+            clientOrgId,
+            installedByUserId: state.initiatedByUserId,
+            installedByOperatorUserId: state.initiatedByOperatorUserId,
+          },
+        );
+      }
     } catch (error) {
-      await removePhotonInstallation(projectId, token.team.id).catch(
-        () => undefined,
-      );
-      await revokeSlackToken(token.access_token);
+      await uninstallSlackApp(token.access_token);
+      await ctx
+        .runMutation(internalApi.agentChannels.revokeByTeamId, {
+          teamId: token.team.id,
+        })
+        .catch(() => undefined);
       return settingsRedirect({
         slack: "error",
         reason: error instanceof Error ? error.message : "connection_failed",
-      }, state.clientOrgId);
+      }, clientOrgId);
     }
-    return settingsRedirect({ slack: "connected" }, state.clientOrgId);
+    return settingsRedirect(
+      purpose === "host"
+        ? { slack_host: "connected" }
+        : { slack: "connected" },
+      clientOrgId,
+    );
   },
 });
 
@@ -258,14 +301,26 @@ export const disconnect = action({
     );
     if (!authorized) return { disconnected: false };
 
-    if (!isSlackMockMode()) {
-      const projectId = requiredEnv("PHOTON_PROJECT_ID");
-      const response = await removePhotonInstallation(
-        projectId,
+    if (!isSlackMockMode() && authorized.connection.nativeInstallationId) {
+      const installation = await resolveSlackInstallation(
+        ctx,
         authorized.connection.teamId,
       );
-      if (!response.ok && response.status !== 404) {
-        throw new Error(`Photon disconnect failed (${response.status})`);
+      const response = await fetch("https://slack.com/api/apps.uninstall", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${installation.botToken}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          client_id: requiredEnv("SLACK_CLIENT_ID"),
+          client_secret: requiredEnv("SLACK_CLIENT_SECRET"),
+        }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      const result = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || `Slack uninstall failed (${response.status})`);
       }
     }
     await ctx.runMutation(internalApi.agentChannels.disconnectInternal, {

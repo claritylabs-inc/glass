@@ -297,7 +297,11 @@ const checks = [
         service: "glass-slack-worker",
         mode: deployment.slack.mode,
         workerSecretConfigured: true,
+        tokenBrokerConfigured: true,
+        clarityTeamConfigured: true,
         outboundEnabled: true,
+        actorResolutionEnabled: true,
+        connectProvisioningEnabled: true,
       };
       const failures = Object.entries(expected)
         .filter(([key, value]) => payload[key] !== value)

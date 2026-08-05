@@ -1,0 +1,51 @@
+{
+  "_metadata": {
+    "major_version": 2
+  },
+  "display_information": {
+    "name": "Glass",
+    "description": "Privileged insurance service channel for Glass clients",
+    "background_color": "#171717"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Glass",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://merry-platypus-82.convex.site/slack/oauth/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "conversations.connect:write",
+        "files:read",
+        "files:write",
+        "groups:history",
+        "groups:read",
+        "groups:write",
+        "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://merry-platypus-82.convex.site/slack/events",
+      "bot_events": [
+        "app_mention",
+        "app_uninstalled",
+        "message.channels",
+        "message.groups",
+        "tokens_revoked"
+      ]
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": true
+  }
+}

@@ -86,7 +86,11 @@ function slackWorkerHealth() {
     glassEnv: "staging",
     mode: "mock",
     workerSecretConfigured: true,
+    tokenBrokerConfigured: true,
+    clarityTeamConfigured: true,
     outboundEnabled: true,
+    actorResolutionEnabled: true,
+    connectProvisioningEnabled: true,
   };
 }
 

@@ -3,77 +3,118 @@
 Slack is Glass's privileged client service channel. Email and iMessage remain
 AI-only. A Slack-enabled client has one customer-owned workspace connection and
 one private `#glass-<client-slug>` Slack Connect channel hosted by
-`claritylabsinc.slack.com`. Glass operators answer in that channel with their
-normal Slack identities; the canonical conversation, agent actions, delivery
-evidence, and failures are stored in Convex.
+`claritylabsinc.slack.com`. Glass operators answer with their normal Slack
+identities. Convex stores the canonical conversation, agent actions, delivery
+evidence, retries, and failures.
 
-Production uses a distributed Slack app in the production Photon project.
-Staging is intentionally a mock-only lane: it exercises the signed inbound,
-durable processing, and worker contracts without Slack OAuth or Photon
-credentials. Never copy production Photon or Slack app credentials into
-staging.
+Glass owns two native Slack apps:
 
-Before customer OAuth, configure the environment's Slack app in its Photon
-project. Either use Photon's manifest setup flow (`POST
-/projects/{projectId}/slack/setup`) or upsert the credentials returned by Slack
-to `PUT /projects/{projectId}/slack/`, then verify `GET
-/projects/{projectId}/slack/` returns one active app config. The installation
-endpoint returns `409` when this prerequisite is missing. A Slack workspace
-admin config token is accepted only by the one-time manifest setup flow; never
-send or persist it through the app-config endpoint or Convex.
+- `slack-worker/manifests/production.json` configures production app
+  `A0BMW4TG7JB` against `merry-platypus-82`.
+- `slack-worker/manifests/staging.json` configures test app `A0BNBFDE25Q`
+  against `flexible-greyhound-425`.
 
-## Slack and Photon configuration
+Do not route Slack through Photon or Spectrum. Photon remains the production
+iMessage provider only. Local development keeps the signed native-event fixture
+and mock worker; staging uses the test app when exercising real Slack and may be
+returned to mock mode for isolated regression testing.
 
-Configure the customer-installed app with OAuth v2 and these bot token scopes:
+## Native app provisioning
+
+Install and authenticate the official Slack CLI, then create a short-lived
+service/configuration token. The token can manage manifests, expires, and is not
+a bot token or runtime credential.
+
+```bash
+slack login
+slack auth token
+SLACK_SERVICE_TOKEN='...' npm run slack:provision-apps
+```
+
+The provisioning script calls `apps.manifest.create` (or
+`apps.manifest.update` when `config/deployments.json` already records an app ID)
+through `slack api`. It never prints returned credentials and writes create
+responses to gitignored permission-0600 files under `.context/slack-apps/`.
+Transfer the credentials immediately to the matching Convex deployment, record
+each non-secret app ID in deployment config, then delete the local response
+files and unset the temporary token.
+
+If the native `/slack/events` route has not reached a lane yet, create the app
+without Events API subscriptions using
+`npm run slack:provision-apps -- --bootstrap <environment>`. This is only a
+bootstrap: after the route and signing secret are deployed, rerun the normal
+command for that environment so `apps.manifest.update` applies and verifies the
+complete manifest before enabling Slack.
+
+The app manifests enable token rotation and subscribe the Events API to the
+environment's `<CONVEX_SITE_URL>/slack/events` route. They request these bot
+scopes:
 
 - `app_mentions:read`
 - `chat:write`
 - `channels:read`, `channels:history`
-- `groups:read`, `groups:history`
+- `groups:read`, `groups:history`, `groups:write`
 - `files:read`, `files:write`
 - `users:read`
+- `conversations.connect:write`
 
-Subscribe Photon to messages that cover `app_mention`, public/private channel
-messages, and message edits. Keep app uninstall, token revocation, and channel
-lifecycle subscriptions enabled when Photon exposes those event types. Glass
-currently treats edits as recorded revisions and does not regenerate an answer;
-reactions and deletions do not affect agent behavior. Slack DMs are unsupported.
-The bot must be installed in the customer workspace and invited to a channel
-before Slack sends channel mentions to it.
+Customer OAuth requests the narrower set in
+`convex/lib/slackOAuthPolicy.ts`; the Clarity-host installation also needs
+`groups:write` and `conversations.connect:write` for private Connect channel
+creation and invitations. Enable app distribution before sending customer
+install links.
 
-Photon's serialized Slack message identifies the installation workspace but
-does not guarantee the sender's native workspace. Before authorizing a message,
-the Slack worker resolves the sender with Slack `users.info` using the existing
-`users:read` scope. Convex retries when that lookup is unavailable and treats an
-unresolved sender as unauthorized; it never assumes the sender belongs to the
-customer workspace. This lookup is what distinguishes customer members, Glass
-operators, and third-party Slack Connect participants.
+## Request and credential boundaries
 
-Slack Connect events can be delivered through either installation. Convex maps
-Clarity-side events through the binding's host team/channel pair and sends the
-reply with the host installation; customer-side and other-channel traffic uses
-the customer's installation. Do not collapse the two channel IDs or force all
-outbound sends through the customer token.
+Slack sends Events API requests directly to `POST /slack/events`. Convex checks
+the exact raw body with `X-Slack-Request-Timestamp`, `X-Slack-Signature`, and the
+environment's `SLACK_SIGNING_SECRET`; requests outside the five-minute replay
+window are rejected. Native provider event IDs are recorded for diagnostics,
+while the durable event key deduplicates overlapping `app_mention` and
+`message.*` subscriptions and host/customer Slack Connect mirrors for the same
+Slack message. Mirrored primary-channel events also resolve to one canonical
+thread even when Slack assigns different channel IDs to each workspace.
 
-Use these environment-specific HTTPS endpoints:
+The OAuth callback exchanges codes directly with `oauth.v2.access`, validates
+the granted customer scopes, and AES-GCM encrypts bot and refresh tokens with
+`SLACK_TOKEN_ENCRYPTION_KEY`. The workspace team ID is authenticated additional
+data, so ciphertext cannot be moved between workspace records. Ciphertext never
+appears in user-facing channel queries. The stateless worker retrieves a current
+customer installation only from the bearer-authenticated
+`POST /slack-worker/installation` token broker. Convex refreshes expiring tokens
+through Slack, persists the replacement access and one-use refresh tokens, and
+returns only the current installation to the worker. A short database refresh
+lease serializes rotation across concurrent worker requests so Slack's one-use
+refresh token is never redeemed twice.
 
-| Purpose | Endpoint |
-| --- | --- |
-| Slack OAuth redirect | `<CONVEX_SITE_URL>/slack/oauth/callback` |
-| Photon signed webhook | `<CONVEX_SITE_URL>/spectrum-slack-inbound` |
+The Clarity workspace is one environment-level host installation rather than a
+customer connection. Operators install it through the Agent channels setup
+surface with the broader host scopes. Its rotating credentials use the same
+encrypted Convex installation store and private worker token broker as customer
+installations. No Slack bot token belongs in Railway variables. Disconnect
+calls `apps.uninstall`, then clears encrypted local credentials and disables the
+connection. Native `app_uninstalled` and `tokens_revoked` events also revoke the
+matching installation.
 
-Photon must sign the raw webhook body with the environment's signing secret.
-Glass verifies the `v0:{timestamp}:{rawBody}` HMAC, rejects timestamps outside
-the five-minute replay window, durably claims Photon and provider event IDs, and
-acknowledges before processing. Do not put a JSON-rewriting proxy in front of
-this route.
+## Direct Web API transport
 
-Install the same environment's app in the Clarity workspace as well. That
-installation needs the customer scopes above plus `groups:write` and
-`conversations.connect:write` so the operator onboarding action can create a
-private channel and call `conversations.inviteShared`. If Slack reports a paid
-plan, organization policy, or external-invitation restriction, the operator UI
-returns a manual-setup instruction instead of pretending the invitation worked.
+`slack-worker/` calls Slack Web API directly. It owns:
+
+- `chat.postMessage` with Slack-mrkdwn conversion;
+- `files.getUploadURLExternal` plus `files.completeUploadExternal` for outbound
+  files (never retired `files.upload`);
+- `files.info` and authenticated private downloads for inbound files;
+- `users.info` to resolve a Slack Connect sender's native workspace before
+  Convex authorizes that actor;
+- `conversations.create` and `conversations.inviteShared` using the separate
+  Clarity-host installation.
+
+Never infer that a sender belongs to the installation workspace when native
+event data omits `user_team`. Actor resolution must succeed before
+authorization. Slack Connect events can arrive through either installation.
+Convex maps Clarity-side events through the binding's host team/channel pair and
+sends with the host installation; customer-side and other-channel traffic uses
+the customer's encrypted installation.
 
 ## Environment contract
 
@@ -81,72 +122,55 @@ Convex requires:
 
 | Variable | Purpose |
 | --- | --- |
-| `SLACK_ENABLED` | `true` only after the lane passes the rollout gates |
-| `SLACK_MODE` | `slack` in production; `mock` in staging/local |
-| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Environment-specific Slack OAuth app |
-| `SLACK_OAUTH_REDIRECT_URI` | Optional explicit callback; otherwise the Convex site callback above |
-| `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET` | Register OAuth tokens with Photon and remove installations |
-| `PHOTON_WEBHOOK_SIGNING_SECRET` | Verify the raw Photon webhook |
-| `SLACK_CLARITY_TEAM_ID` | Clarity workspace installation used for Connect provisioning |
-| `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Private outbound/attachment worker endpoint and bearer secret |
+| `SLACK_ENABLED` | `true` only after the lane passes rollout gates |
+| `SLACK_MODE` | `slack` for native live testing; `mock` for the isolated fixture |
+| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Credentials for that lane's native app |
+| `SLACK_SIGNING_SECRET` | Verify native Slack requests |
+| `SLACK_TOKEN_ENCRYPTION_KEY` | Encrypt customer bot and refresh tokens |
+| `SLACK_OAUTH_REDIRECT_URI` | Optional callback override |
+| `SLACK_CLARITY_TEAM_ID` | Clarity host workspace ID |
+| `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret |
 | `NEXT_PUBLIC_APP_URL` or `APP_URL` | Post-OAuth settings redirect |
 
-The isolated Railway `slack-worker` always requires `GLASS_ENV`,
-`SLACK_WORKER_SECRET`, and Railway's `PORT`. Production additionally requires
-`SLACK_WORKER_MODE=slack`, `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`, and
-`SLACK_CLARITY_TEAM_ID`. Staging uses `SLACK_WORKER_MODE=mock`, has no Photon
-credentials, and uses a non-production fixture team ID. Convex must use the
-matching `SLACK_MODE`. The worker's `/health` response must report the expected
-environment and mode before `SLACK_ENABLED` is changed. Configure its public
-health URL through
-`GLASS_STAGING_SLACK_WORKER_HEALTH_URL` or
-`GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL`; set the matching deployment
-configuration's Slack `required` flag only when the worker is part of that
-lane's release contract.
+The Railway worker requires `GLASS_ENV`, `SLACK_WORKER_MODE`,
+`SLACK_WORKER_SECRET`, and `PORT`. Native live mode additionally requires
+`CONVEX_SITE_URL` and `SLACK_CLARITY_TEAM_ID`. The worker retrieves both host
+and customer installations through the token broker. The worker and Convex must
+use the same mode and worker secret.
 
-Convex stores no Slack token. The OAuth action exchanges the code server-side,
-validates the exact granted scope set, sends the bot token directly to Photon,
-forwards Slack token-rotation refresh/expiry fields when Slack returns them,
-and persists only workspace/app metadata. OAuth state is single-use,
-organization-bound, hashed at rest, and expires after ten minutes. Reinstalling
-the same workspace refreshes the connection; a second active customer workspace
-for the client is rejected. Disconnect removes the Photon installation before
-marking the Glass connection disconnected.
+Use `GLASS_STAGING_SLACK_WORKER_HEALTH_URL` and
+`GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
+health must report `tokenBrokerConfigured`, `outboundEnabled`,
+`actorResolutionEnabled`, and `clarityTeamConfigured` before enabling a lane.
+The Convex agent health endpoint separately verifies that the Clarity host
+workspace has an active encrypted installation; worker configuration alone
+cannot prove that OAuth installation exists.
 
 ## Onboarding and operating model
 
-1. A Glass operator records their Clarity `{teamId,userId}` identity in the
-   operator client setup surface.
-2. The operator creates `#glass-<client-slug>` and sends the Slack Connect
-   invitation. If automated creation is unavailable, create the private Connect
-   channel manually and bind its IDs through the audited setup action.
-3. A client admin accepts the invitation, acknowledges that every participant
-   in any invited channel can see Glass's responses, and installs the app with
-   OAuth. If Slack assigns a different customer-side channel ID, the first
-   `@Glass` mention in the new primary channel records that ID and completes the
-   binding; make that first mention in the Connect channel, not another channel.
-4. Confirm the workspace and primary channel health in Agent channels. Safe
-   customer compliance/policy-change alerts and policy delivery default on;
-   vendor alerts default off. Personal-mailbox, extraction, broker-internal,
-   onboarding, and other operational notifications are never Slack-routed.
-5. Invite `@Glass` only to approved customer or third-party channels. Connected
-   customer workspace members have client-admin-equivalent agent authority;
-   recognized Glass operators can pause service by replying. External
-   participants cannot invoke Glass, although they can see responses in the
-   shared channel.
+1. An operator uses Agent channels to OAuth-install the matching native app in
+   the Clarity workspace, persisting its rotating credentials in Convex.
+2. A Glass operator records their Clarity `{teamId,userId}` identity.
+3. The operator creates `#glass-<client-slug>` and sends the Slack Connect
+   invitation. Plan/policy failures fall back to audited manual binding.
+4. A client admin accepts the invite, acknowledges channel-wide visibility, and
+   installs the same lane's app with OAuth.
+5. If Slack assigns a different customer-side channel ID, the first `@Glass`
+   mention in the new primary Connect channel completes the binding.
+6. Confirm connection and primary-channel health. Safe customer alerts and
+   policy delivery default on; vendor alerts default off.
 
-The primary channel is recorded from connection onward. A mention starts or
-resumes AI, unmentioned customer replies continue an active thread, an operator
-reply pauses AI, and `@Glass resolve` closes the thread. Outside the primary
-channel, only mentions and active-thread replies are retained. A human request
-there posts only a link and content-free notice into the primary channel.
+Primary-channel messages are canonical from connection onward. A mention starts
+or resumes AI, unmentioned customer replies continue an active thread, an
+operator reply pauses AI, and `@Glass resolve` closes the thread. Outside the
+primary channel, only mentions and active-thread replies are retained. A human
+request posts only a content-free link notice into the primary channel. DMs are
+unsupported.
 
 ## Policy-delivery migration
 
-Policy delivery is now client-owned. `deliveryOwnerOrgId` is intentionally
-optional during the widening release so old broker-owned rows remain readable.
-Run each backfill as a dry run, inspect its counts, then run the migration runner
-on the approved lane:
+Policy delivery is client-owned. Run each owner migration as a dry run, inspect
+its counts, then run the migration runner on the approved lane:
 
 ```bash
 npx convex run migrations:backfillPolicyDeliverySettingOwners '{"dryRun":true}'
@@ -157,36 +181,31 @@ npx convex run migrations:runPolicyDeliveryOwnerBackfill
 npx convex run policyDelivery:verifyDeliveryOwnerBackfill
 ```
 
-The verifier must return zero missing owners before a later narrow release makes
-`deliveryOwnerOrgId` required. Do not narrow in the same deployment that first
-introduces the fields. `brokerOrgId` and `broker_review` remain optional legacy
-context during and after the backfill.
+The verifier must return zero missing owners before a later narrowing release.
+`brokerOrgId` and `broker_review` remain optional legacy context.
 
 ## Rollout and rollback
 
-Roll out one client at a time: local signed fixture and mock worker, internal
-staging fixture, a real staging workspace, production shadow ingestion,
-mentions, then proactive alerts and policy delivery. Before each progression,
-run the Slack-focused tests, worker build/tests, root/Convex typechecks, lint,
-build, worker checks, deployment health audit, and `git diff --check`.
+Roll out local fixture, staging test app/workspace, then production. For each
+live lane verify OAuth, native signature rejection/acceptance, uninstall and
+reinstall, Connect actor identity, mentions, thread replies, edits, multiple
+inbound files, outbound PDF upload, proactive alerts, and policy delivery.
 
-For rollback, disable Slack for the client in Agent channels. For a lane-wide
-stop, set `SLACK_ENABLED=false` and leave the durable records intact. Disconnect
-only when the customer requests removal or the installation has been revoked;
-disconnecting removes the Photon installation and prevents outbound retries.
+Before progression run Slack-focused tests, worker build/tests, root and Convex
+typechecks, lint, build, worker checks, deployment health, and
+`git diff --check`.
 
-Live OAuth, Slack Connect, Photon delivery, uninstall/revocation, and real file
-round trips are production-only. Staging validates the mock worker and signed
-fixture path; those results do not substitute for production Photon and Slack
-installation checks.
+For rollback, disable Slack for the client. For a lane-wide stop set
+`SLACK_ENABLED=false` and leave durable records intact. Disconnect only for a
+requested removal or revoked installation; it uninstalls the native app and
+prevents outbound retries.
 
-After `npm run conductor:setup` and while `npm run conductor:dev` is running,
-exercise the seeded Cove channel with:
+For local testing after `npm run conductor:setup` and while
+`npm run conductor:dev` is running:
 
 ```bash
 npm run conductor:slack-fixture -- --text "<@U-GLASS> summarize my policy"
 ```
 
-The command reads the worktree-only signing secret, signs the exact raw body,
-and posts to native local Convex. The response is delivered through the local
-mock worker and recorded in the same durable Slack tables as deployed traffic.
+The command signs a native Slack Events API fixture with the worktree-only
+secret and records the response through the same durable Slack tables.
