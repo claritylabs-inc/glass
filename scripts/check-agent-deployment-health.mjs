@@ -60,6 +60,24 @@ function optionalClRouterHealthUrl() {
   return undefined;
 }
 
+function optionalSlackWorkerHealthUrl() {
+  const explicit = process.env.GLASS_SLACK_WORKER_HEALTH_URL?.trim();
+  if (explicit) return explicit;
+  const configured = deployment.slackWorkerHealthUrlEnv
+    ? process.env[deployment.slackWorkerHealthUrlEnv]?.trim()
+    : undefined;
+  if (configured) return configured;
+  if (deployment.slackWorkerHealthUrl) return deployment.slackWorkerHealthUrl;
+  if (deployment.slack?.required) {
+    return envOrDefault(
+      deployment.slackWorkerHealthUrlEnv,
+      deployment.slackWorkerHealthUrl,
+      "Slack worker health URL",
+    );
+  }
+  return undefined;
+}
+
 const urls = {
   convexAgentHealth:
     process.env.GLASS_CONVEX_AGENT_HEALTH_URL ??
@@ -83,6 +101,7 @@ const urls = {
       "extraction worker health URL",
     ),
   clRouterHealth: optionalClRouterHealthUrl(),
+  slackWorkerHealth: optionalSlackWorkerHealthUrl(),
 };
 
 function validateGlassEnv(payload) {
@@ -185,6 +204,12 @@ const checks = [
         );
       }
       convexAgentPayload = payload;
+      const slackEnabled = payload.slack?.enabled ?? false;
+      if (slackEnabled !== deployment.slack?.enabled) {
+        throw new Error(
+          `slack.enabled expected ${String(deployment.slack?.enabled)} got ${String(slackEnabled)}`,
+        );
+      }
     },
   },
   {
@@ -259,6 +284,24 @@ const checks = [
       }
     },
   },
+  ...(urls.slackWorkerHealth ? [{
+    name: "Slack worker",
+    url: urls.slackWorkerHealth,
+    validate(payload) {
+      const expected = {
+        ok: true,
+        service: "glass-slack-worker",
+        mode: deployment.slack.mode,
+        workerSecretConfigured: true,
+        outboundEnabled: true,
+      };
+      const failures = Object.entries(expected)
+        .filter(([key, value]) => payload[key] !== value)
+        .map(([key, value]) => `${key} expected ${String(value)} got ${String(payload[key])}`);
+      if (failures.length > 0) throw new Error(failures.join("; "));
+      validateGlassEnv(payload);
+    },
+  }] : []),
 ];
 
 async function fetchJson(check) {

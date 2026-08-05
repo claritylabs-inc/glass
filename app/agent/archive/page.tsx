@@ -7,7 +7,7 @@ import { ActionSurface } from "@/components/ui/action-surface";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
 import { toast } from "sonner";
-import { ArchiveRestore, Mail, MessageCircle } from "lucide-react";
+import { ArchiveRestore, Hash, Mail, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { Id } from "@/convex/_generated/dataModel";
 import {
@@ -52,6 +52,8 @@ export default function ArchivePage() {
                 <div className="shrink-0 text-muted-foreground/30">
                   {thread.originChannel === "imessage" ? (
                     <MessageCircle className="w-4 h-4" />
+                  ) : thread.originChannel === "slack" ? (
+                    <Hash className="w-4 h-4" />
                   ) : thread.originChannel === "email" ? (
                     <Mail className="w-4 h-4" />
                   ) : null}
@@ -69,6 +71,8 @@ export default function ArchivePage() {
                     )}
                     {thread.originChannel === "imessage"
                       ? " · iMessage"
+                      : thread.originChannel === "slack"
+                        ? " · Slack"
                       : thread.originChannel === "email"
                         ? " · Email"
                         : " · Chat"}

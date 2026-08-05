@@ -128,6 +128,7 @@ describe("agent deployment safeguards", () => {
       "npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build",
     );
     expect(workflow).toContain("working-directory: imessage-worker");
+    expect(workflow).toContain("working-directory: slack-worker");
     expect(workflow).toContain("working-directory: extraction-worker");
     expect(workflow).toContain("node --check mailbox-scan-worker/src/index.js");
     expect(packageJson).toContain("check:agent-workers");
@@ -146,6 +147,7 @@ describe("agent deployment safeguards", () => {
       "npm run build",
       "working-directory: extraction-worker",
       "working-directory: imessage-worker",
+      "working-directory: slack-worker",
       "node --check mailbox-scan-worker/src/index.js",
       "package:\n          - cli\n          - operator-cli",
     ]) {

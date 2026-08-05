@@ -110,6 +110,14 @@ const LOCAL_FIXTURE = {
 
 const DEFAULT_BROKER_PHONE = "+16472921666";
 const DEFAULT_CLIENT_PHONE = "+12025550102";
+const LOCAL_SLACK_FIXTURE = {
+  clarityTeamId: "T-CLARITY-FIXTURE",
+  operatorUserId: "U-GLASS-OPERATOR",
+  customerTeamId: "T-COVE-FIXTURE",
+  botUserId: "U-GLASS",
+  channelId: "C-COVE-FIXTURE",
+  channelName: "glass-cove",
+} as const;
 
 type LocalFixtureResult = {
   operatorUserId: Id<"users">;
@@ -267,6 +275,36 @@ export const seed = action({
       internal.seed.insertLocalFixture,
       phones,
     );
+    const connectionId = await ctx.runMutation(
+      internal.agentChannels.upsertSlackConnection,
+      {
+        clientOrgId: fixture.clientOrgId,
+        teamId: LOCAL_SLACK_FIXTURE.customerTeamId,
+        teamName: `${LOCAL_FIXTURE.client.name} local fixture`,
+        botUserId: LOCAL_SLACK_FIXTURE.botUserId,
+        grantedScopes: [
+          "app_mentions:read",
+          "chat:write",
+          "channels:read",
+          "channels:history",
+          "groups:read",
+          "groups:history",
+          "files:read",
+          "files:write",
+          "users:read",
+        ],
+        installedByOperatorUserId: fixture.operatorUserId,
+      },
+    );
+    if (!connectionId) throw new Error("Could not seed the local Slack connection");
+    await ctx.runMutation(internal.agentChannels.bindPrimaryChannelInternal, {
+      clientOrgId: fixture.clientOrgId,
+      connectionId,
+      operatorUserId: fixture.operatorUserId,
+      hostTeamId: LOCAL_SLACK_FIXTURE.clarityTeamId,
+      hostChannelId: LOCAL_SLACK_FIXTURE.channelId,
+      channelName: LOCAL_SLACK_FIXTURE.channelName,
+    });
     const brokerLogo = await ctx.runAction(
       internal.actions.extractCompanyInfo.importOrgLogoForOrgInternal,
       {
@@ -463,6 +501,8 @@ export const insertLocalFixture = internalMutation({
         email: LOCAL_FIXTURE.operator.email,
         role: "operator",
         status: "active",
+        slackTeamId: LOCAL_SLACK_FIXTURE.clarityTeamId,
+        slackUserId: LOCAL_SLACK_FIXTURE.operatorUserId,
         updatedAt: now,
       });
     } else {
@@ -471,6 +511,8 @@ export const insertLocalFixture = internalMutation({
         email: LOCAL_FIXTURE.operator.email,
         role: "operator",
         status: "active",
+        slackTeamId: LOCAL_SLACK_FIXTURE.clarityTeamId,
+        slackUserId: LOCAL_SLACK_FIXTURE.operatorUserId,
         createdAt: now,
         updatedAt: now,
       });
@@ -711,7 +753,7 @@ export const insertLocalFixture = internalMutation({
       brokerPhone,
       clientPhone,
       summary:
-        "Seeded local fixture: Terry operator, Montgomery Risk broker with white-labeling disabled, Cove client, stored favicon logos, and one final Cove policy",
+        "Seeded local fixture: Terry operator, Montgomery Risk broker with white-labeling disabled, Cove client, mock Slack service channel, stored favicon logos, and one final Cove policy",
     };
   },
 });

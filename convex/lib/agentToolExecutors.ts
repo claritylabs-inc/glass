@@ -39,7 +39,7 @@ import {
 import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
 import { lookupMapboxAddress } from "./mapboxAddress";
 
-type AgentToolSurface = "web" | "email" | "imessage" | "mcp";
+type AgentToolSurface = "web" | "email" | "imessage" | "slack" | "mcp";
 
 type ToolAttachment = {
   filename: string;
@@ -93,7 +93,13 @@ function certificateSourceForSurface(surface: AgentToolSurface) {
 }
 
 function orgMemorySourceForSurface(surface: AgentToolSurface) {
-  if (surface === "email" || surface === "imessage") return surface;
+  if (
+    surface === "email" ||
+    surface === "imessage" ||
+    surface === "slack"
+  ) {
+    return surface;
+  }
   return "chat" as const;
 }
 

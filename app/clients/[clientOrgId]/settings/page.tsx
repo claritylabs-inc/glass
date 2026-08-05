@@ -4,14 +4,14 @@ import { useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { Id } from "@/convex/_generated/dataModel";
 import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
-import { ClientEmailRoutingSection } from "@/components/settings/client-email-routing-section";
+import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
 import { PolicyDeliverySection } from "@/components/settings/policy-delivery-section";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useClientDetailActions } from "../layout";
 
 const CLIENT_SETTINGS_TABS = [
   { id: "broker", label: "Broker contact" },
-  { id: "agent-email", label: "Agent email" },
+  { id: "agent-channels", label: "Agent channels" },
   { id: "policy-delivery", label: "Policy delivery" },
 ] as const;
 
@@ -67,8 +67,8 @@ export default function ClientSettingsPage() {
       </div>
 
       {activeTab === "broker" ? <BrokerIdentitySection orgId={orgId} /> : null}
-      {activeTab === "agent-email" ? (
-        <ClientEmailRoutingSection clientOrgId={orgId} />
+      {activeTab === "agent-channels" ? (
+        <AgentChannelsSection clientOrgId={orgId} showEmailRouting />
       ) : null}
       {activeTab === "policy-delivery" ? (
         <PolicyDeliverySection

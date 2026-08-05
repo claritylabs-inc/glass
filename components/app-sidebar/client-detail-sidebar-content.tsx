@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Mail, MessageCircle, MessageSquare, Pin } from "lucide-react";
+import { Hash, Mail, MessageCircle, MessageSquare, Pin } from "lucide-react";
 import {
   CLIENT_DETAIL_NAV,
   CLIENT_LIST_NAV_ITEM,
@@ -128,7 +128,9 @@ export function ClientDetailSidebarContent({
                     isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
-                  {item.kind === "email" ? (
+                  {item.kind === "slack" ? (
+                    <Hash className="w-3.5 h-3.5 shrink-0" />
+                  ) : item.kind === "email" ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                   ) : (
                     <MessageSquare className="w-3.5 h-3.5 shrink-0" />

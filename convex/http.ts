@@ -1,4 +1,5 @@
 import { httpRouter } from "convex/server";
+import dayjs from "dayjs";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -9,6 +10,8 @@ import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { getEmailDeliveryMode } from "./lib/resend";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import { canAccessThread } from "./lib/threadAccess";
+import { parseSlackWebhookPayload } from "./lib/slackPayload";
+import { verifySpectrumWebhook } from "./lib/slackSecurity";
 import {
   type McpPolicySummarySource,
   policyMatchesMcpFilters,
@@ -31,6 +34,7 @@ import {
   toPolicyVersionDto,
 } from "./lib/apiDto";
 const http = httpRouter();
+const internalApi = internal as any;
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -40,9 +44,112 @@ function jsonResponse(data: unknown, status = 200): Response {
 auth.addHttpRoutes(http);
 
 http.route({
+  path: "/slack/oauth/callback",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    if (process.env.SLACK_ENABLED !== "true") {
+      return jsonResponse({ error: "Slack is not enabled" }, 404);
+    }
+    const url = new URL(request.url);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    const error = url.searchParams.get("error");
+    if (!code || !state || error) {
+      const redirect = new URL(
+        "/settings?section=agent&tab=channels",
+        process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://app.glass.insure",
+      );
+      redirect.searchParams.set("slack", "error");
+      redirect.searchParams.set("reason", error || "missing_oauth_parameters");
+      return Response.redirect(redirect.toString(), 302);
+    }
+    const redirect = await ctx.runAction(
+      internalApi.actions.slackOAuth.complete,
+      { code, state },
+    );
+    return Response.redirect(redirect, 302);
+  }),
+});
+
+http.route({
+  path: "/spectrum-slack-inbound",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (process.env.SLACK_ENABLED !== "true") {
+      return jsonResponse({ error: "Slack is not enabled" }, 404);
+    }
+    const secret = process.env.PHOTON_WEBHOOK_SIGNING_SECRET?.trim();
+    if (!secret) return jsonResponse({ error: "Slack webhook is not configured" }, 503);
+    const rawBody = await request.text();
+    const verification = await verifySpectrumWebhook({
+      secret,
+      timestamp: request.headers.get("X-Spectrum-Timestamp"),
+      signature: request.headers.get("X-Spectrum-Signature"),
+      rawBody,
+    });
+    if (!verification.ok) {
+      return jsonResponse({ error: verification.reason }, 401);
+    }
+
+    let rawPayload: unknown;
+    try {
+      rawPayload = JSON.parse(rawBody);
+    } catch {
+      return jsonResponse({ error: "Invalid JSON" }, 400);
+    }
+    const envelope = rawPayload as Record<string, unknown>;
+    if (
+      envelope.event === "app_uninstalled" ||
+      envelope.event === "tokens_revoked"
+    ) {
+      const teamId =
+        typeof envelope.teamId === "string"
+          ? envelope.teamId
+          : typeof envelope.team_id === "string"
+            ? envelope.team_id
+            : undefined;
+      if (teamId) {
+        await ctx.runMutation(internalApi.agentChannels.revokeByTeamId, { teamId });
+      }
+      return jsonResponse({ ok: true });
+    }
+
+    const payload = parseSlackWebhookPayload(
+      rawPayload,
+      request.headers.get("X-Spectrum-Webhook-Id") ?? undefined,
+    );
+    if (!payload || payload.isBotEcho || payload.isDirectMessage) {
+      return jsonResponse({ ok: true, ignored: true });
+    }
+    const message = (envelope.message ?? {}) as Record<string, unknown>;
+    const timestamp =
+      typeof message.timestamp === "string"
+        ? dayjs(message.timestamp).valueOf()
+        : dayjs().valueOf();
+    await ctx.runMutation(internalApi.slack.claimInbound, {
+      eventKey: payload.eventKey,
+      spectrumMessageId: payload.spectrumMessageId,
+      teamId: payload.teamId,
+      channelId: payload.channelId,
+      threadTs: payload.threadTs,
+      messageTs: payload.messageTs,
+      senderTeamId: payload.senderTeamId,
+      senderUserId: payload.senderUserId,
+      senderDisplayName: payload.senderDisplayName,
+      content: payload.content,
+      attachment: payload.attachment,
+      eventType: payload.eventType,
+      receivedAt: Number.isFinite(timestamp) ? timestamp : dayjs().valueOf(),
+    });
+    return jsonResponse({ ok: true });
+  }),
+});
+
+http.route({
   path: "/agent-health",
   method: "GET",
   handler: httpAction(async () => {
+    const slackEnabled = process.env.SLACK_ENABLED === "true";
     const checks = {
       imessageInboundEnabled: isImessageInboundEnabled(),
       imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
@@ -53,6 +160,14 @@ http.route({
       connectedEmailEncryptionConfigured: Boolean(
         process.env.EMAIL_CONNECTIONS_ENCRYPTION_KEY,
       ),
+      slackWorkerConfigured:
+        !slackEnabled ||
+        Boolean(process.env.SLACK_WORKER_URL && process.env.SLACK_WORKER_SECRET),
+      slackWebhookConfigured:
+        !slackEnabled || Boolean(process.env.PHOTON_WEBHOOK_SIGNING_SECRET),
+      slackOAuthConfigured:
+        !slackEnabled || process.env.GLASS_ENV === "local" ||
+        Boolean(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET),
     };
     const ok = Object.values(checks).every(Boolean);
     return new Response(
@@ -67,6 +182,18 @@ http.route({
           mode: process.env.EXTRACTION_WORKER_MODE ?? "internal",
           expectedProtocolVersion: process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION ?? null,
           expectedClSdkVersion: process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION ?? null,
+        },
+        slack: {
+          enabled: slackEnabled,
+          workerUrlConfigured: Boolean(process.env.SLACK_WORKER_URL),
+          workerSecretConfigured: Boolean(process.env.SLACK_WORKER_SECRET),
+          webhookSigningSecretConfigured: Boolean(
+            process.env.PHOTON_WEBHOOK_SIGNING_SECRET,
+          ),
+          oauthConfigured: Boolean(
+            process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET,
+          ),
+          clarityTeamConfigured: Boolean(process.env.SLACK_CLARITY_TEAM_ID),
         },
         checks,
       }),

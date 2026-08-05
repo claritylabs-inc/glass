@@ -5,7 +5,6 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
 import {
-  generateAgentTextForOrg,
   generatedTextFromResult,
 } from "../lib/models";
 import {
@@ -58,6 +57,7 @@ import { runImessageDeterministicControls } from "../lib/imessageDeterministicCo
 import { postProcessImessageResponseText } from "../lib/imessageResponsePostProcessing";
 import { collectToolAudit } from "../lib/agentToolAudit";
 import { createImessageAgentRunState } from "../lib/imessageAgentRunState";
+import { runChannelAgent } from "../lib/channelAgentRunner";
 import {
   buildFallbackImessageChatGuid,
   buildImessageParticipantInputs,
@@ -766,18 +766,19 @@ export const processInbound = internalAction({
           : {}),
       };
 
-      const result = await generateAgentTextForOrg(
-        ctx,
+      const result = await runChannelAgent(ctx, {
+        execution: "direct",
+        surface: "imessage",
         orgId,
-        "chat",
-        {
+        task: "chat",
+        options: {
           maxOutputTokens: 512,
           system: systemPrompt,
           messages: modelMessages,
           tools: imessageTools,
           stopWhen: stepCountIs(8),
         },
-        {
+        run: {
           taskKind: "query_reason",
           sessionKey: String(threadId),
           trace: {
@@ -788,7 +789,7 @@ export const processInbound = internalAction({
             channel: "imessage",
           },
         },
-      );
+      });
 
       const { usedTools, toolCalls, workflowOutcomes } =
         collectToolAudit(result);

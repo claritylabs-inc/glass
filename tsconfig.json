@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "imessage-worker", "extraction-worker"]
+  "exclude": [
+    "node_modules",
+    "imessage-worker",
+    "extraction-worker",
+    "slack-worker"
+  ]
 }

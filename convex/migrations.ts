@@ -6,6 +6,7 @@ import { effectiveExtractionDataStage } from "./backfillDeclarationFacts";
 import { recordCarrierIdentityBackfillResult } from "./carrierIdentityBackfill";
 import { replacePolicyDeclarationFacts } from "./declarationFacts";
 import { carrierIdentityBackfillSkipReason } from "./lib/carrierIdentityBackfill";
+import { resolveLegacyDeliveryOwner } from "./lib/policyDeliveryMigration";
 import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 import {
   applyCarrierIdentityEnrichment,
@@ -108,6 +109,46 @@ export const rebuildCarrierIdentitiesFromStoredSources = migrations.define({
   },
 });
 
+export const backfillPolicyDeliverySettingOwners = migrations.define({
+  table: "policyDeliverySettings",
+  batchSize: 50,
+  migrateOne: async (ctx, settings) => {
+    const deliveryOwnerOrgId = resolveLegacyDeliveryOwner(settings);
+    if (!deliveryOwnerOrgId || settings.deliveryOwnerOrgId) return;
+    await ctx.db.patch(settings._id, { deliveryOwnerOrgId });
+  },
+});
+
+export const backfillPolicyDeliveryRuleOwners = migrations.define({
+  table: "policyDeliveryRules",
+  batchSize: 50,
+  migrateOne: async (ctx, rule) => {
+    const deliveryOwnerOrgId = resolveLegacyDeliveryOwner(rule);
+    if (!deliveryOwnerOrgId || rule.deliveryOwnerOrgId) return;
+    await ctx.db.patch(rule._id, { deliveryOwnerOrgId });
+  },
+});
+
+export const backfillPolicyDeliveryJobOwners = migrations.define({
+  table: "policyDeliveryJobs",
+  batchSize: 50,
+  migrateOne: async (ctx, job) => {
+    if (job.deliveryOwnerOrgId) return;
+    await ctx.db.patch(job._id, { deliveryOwnerOrgId: job.clientOrgId });
+  },
+});
+
+export const backfillPolicyDeliveryAttemptOwners = migrations.define({
+  table: "policyDeliveryAttempts",
+  batchSize: 50,
+  migrateOne: async (ctx, attempt) => {
+    if (attempt.deliveryOwnerOrgId) return;
+    await ctx.db.patch(attempt._id, {
+      deliveryOwnerOrgId: attempt.clientOrgId,
+    });
+  },
+});
+
 export const runDeclarationFactsBackfill = migrations.runner([
   internal.migrations.backfillDeclarationFacts,
   internal.migrations.syncDeclarationFactProfiles,
@@ -115,4 +156,11 @@ export const runDeclarationFactsBackfill = migrations.runner([
 
 export const runCarrierIdentityBackfill = migrations.runner([
   internal.migrations.rebuildCarrierIdentitiesFromStoredSources,
+]);
+
+export const runPolicyDeliveryOwnerBackfill = migrations.runner([
+  internal.migrations.backfillPolicyDeliverySettingOwners,
+  internal.migrations.backfillPolicyDeliveryRuleOwners,
+  internal.migrations.backfillPolicyDeliveryJobOwners,
+  internal.migrations.backfillPolicyDeliveryAttemptOwners,
 ]);

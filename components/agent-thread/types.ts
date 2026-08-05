@@ -9,7 +9,7 @@ export type ThreadMessage = {
   threadId: Id<"threads">;
   orgId: Id<"organizations">;
   clientMutationId?: string;
-  channel: "chat" | "email" | "imessage";
+  channel: "chat" | "email" | "imessage" | "slack";
   role: "user" | "agent" | "system";
   userId?: Id<"users">;
   userName?: string;
@@ -26,6 +26,11 @@ export type ThreadMessage = {
   };
   imessageSenderAddress?: string;
   imessageParticipantLabel?: string;
+  slackActorId?: Id<"slackActors">;
+  slackTeamId?: string;
+  slackUserId?: string;
+  slackMessageTs?: string;
+  slackEditedAt?: number;
   fromEmail?: string;
   fromName?: string;
   toAddresses?: string[];

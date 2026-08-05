@@ -14,8 +14,10 @@ process.chdir(repoRoot);
 const requiredPaths = [
   ".context/extraction-worker.env",
   ".context/imessage-worker.env",
+  ".context/slack-worker.env",
   ".convex/local/default/config.json",
   "imessage-worker/dist/index.js",
+  "slack-worker/dist/src/index.js",
   "node_modules/.bin/concurrently",
   "node_modules/.bin/convex",
   "node_modules/.bin/next",
@@ -31,10 +33,10 @@ for (const relativePath of requiredPaths) {
   }
 }
 
-const { web, extraction, imessage, convexCloud, convexSite } = conductorPorts();
+const { web, extraction, imessage, slack, convexCloud, convexSite } = conductorPorts();
 const logDirectory = path.join(repoRoot, ".context", "logs");
 mkdirSync(logDirectory, { recursive: true });
-for (const name of ["web", "convex", "extraction"]) {
+for (const name of ["web", "convex", "extraction", "slack"]) {
   writeFileSync(path.join(logDirectory, `${name}.log`), "");
 }
 
@@ -46,6 +48,7 @@ const commands = [
   `CONVEX_AGENT_MODE=anonymous ./node_modules/.bin/convex dev --local-cloud-port ${convexCloud} --local-site-port ${convexSite} >> .context/logs/convex.log 2>&1`,
   `PORT=${extraction} node scripts/run-local-extraction-container.mjs >> .context/logs/extraction.log 2>&1`,
   `PORT=${imessage} node scripts/run-conductor-imessage-terminal.mjs`,
+  `PORT=${slack} node --env-file=.context/slack-worker.env slack-worker/dist/src/index.js >> .context/logs/slack.log 2>&1`,
 ];
 
 const runEnvironment = {
@@ -57,9 +60,10 @@ delete runEnvironment.NO_COLOR;
 console.log(`Glass web:              http://localhost:${web}`);
 console.log(`Extraction worker:      http://localhost:${extraction}/health`);
 console.log(`Spectrum terminal HTTP: http://localhost:${imessage}/health`);
+console.log(`Slack mock worker:       http://localhost:${slack}/health`);
 console.log(`Convex:                  http://127.0.0.1:${convexCloud}`);
 console.log(
-  "Background logs:        .context/logs/{web,convex,extraction}.log",
+  "Background logs:        .context/logs/{web,convex,extraction,slack}.log",
 );
 console.log("The Run terminal opens the interactive Spectrum iMessage TUI.\n");
 
@@ -72,7 +76,7 @@ const child = spawn(
     "--default-input-target",
     "imessage",
     "--names",
-    "web,convex,extraction,imessage",
+    "web,convex,extraction,imessage,slack",
     ...commands,
   ],
   {

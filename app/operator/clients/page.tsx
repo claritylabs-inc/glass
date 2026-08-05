@@ -9,6 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
+import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
 import { OperationalPanel } from "@/components/ui/operational-panel";
@@ -796,6 +797,9 @@ export default function OperatorClientsPage() {
                 disabled={savingFeatureFlagId !== null}
               />
             ))}
+          </section>
+          <section className="border-t border-foreground/8 pt-4">
+            <AgentChannelsSection clientOrgId={selected._id} />
           </section>
         </fieldset>
       ) : null}

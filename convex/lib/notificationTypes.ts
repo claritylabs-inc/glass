@@ -67,6 +67,28 @@ export function isProactiveNotificationType(
   return PROACTIVE_NOTIFICATION_TYPE_SET.has(type as NotificationType);
 }
 
+const SLACK_SAFE_NOTIFICATION_TYPES = new Set<NotificationType>([
+  "own_compliance_gap",
+  "own_compliance_resolved",
+  "policy_change_needs_info",
+  "policy_change_completed",
+]);
+
+const SLACK_VENDOR_NOTIFICATION_TYPES = new Set<NotificationType>([
+  "vendor_compliance_met",
+  "vendor_compliance_gap",
+  "vendor_policy_expiring",
+  "vendor_policy_expired",
+]);
+
+export function slackNotificationCategory(
+  type: NotificationType,
+): "safe" | "vendor" | null {
+  if (SLACK_SAFE_NOTIFICATION_TYPES.has(type)) return "safe";
+  if (SLACK_VENDOR_NOTIFICATION_TYPES.has(type)) return "vendor";
+  return null;
+}
+
 export const NOTIFICATION_SEVERITY: Record<StoredNotificationType, NotificationSeverity> = {
   broker_action: "info",
   incomplete_extraction: "warning",

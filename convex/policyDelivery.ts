@@ -5,15 +5,22 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireCurrentOrgAccess } from "./lib/access";
 import { requireBrokerAccessToClient } from "./lib/access";
+import { requireCurrentOrgAdminWrite } from "./lib/access";
+import { requireOperator, writeOperatorAudit } from "./lib/operatorIdentity";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
 
-const channelValidator = v.union(v.literal("email"), v.literal("imessage"));
+const channelValidator = v.union(
+  v.literal("email"),
+  v.literal("imessage"),
+  v.literal("slack"),
+);
 const actionValidator = v.union(
   v.literal("auto_send"),
   v.literal("broker_review"),
+  v.literal("service_review"),
   v.literal("do_not_send"),
 );
 const statusValidator = v.union(
@@ -40,10 +47,142 @@ function normalizeText(value: string | undefined) {
   return trimmed ? trimmed : undefined;
 }
 
-function normalizeChannels(channels: Array<"email" | "imessage"> | undefined) {
+type DeliveryChannel = "email" | "imessage" | "slack";
+
+function normalizeChannels(channels: DeliveryChannel[] | undefined) {
   const unique = [...new Set(channels ?? [])];
-  return unique.filter((channel) => channel === "email" || channel === "imessage");
+  return unique.filter(
+    (channel) =>
+      channel === "email" || channel === "imessage" || channel === "slack",
+  );
 }
+
+export const getClientOwnedSettings = query({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    await getOrgAccessForClientDelivery(ctx, args.clientOrgId);
+    const owned = await ctx.db
+      .query("policyDeliverySettings")
+      .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+        q
+          .eq("deliveryOwnerOrgId", args.clientOrgId)
+          .eq("clientOrgId", args.clientOrgId),
+      )
+      .first();
+    if (owned) return owned;
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client?.brokerOrgId) return null;
+    return await ctx.db
+      .query("policyDeliverySettings")
+      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+        q.eq("brokerOrgId", client.brokerOrgId).eq("clientOrgId", args.clientOrgId),
+      )
+      .first();
+  },
+});
+
+async function getOrgAccessForClientDelivery(
+  ctx: Parameters<typeof requireCurrentOrgAccess>[0],
+  clientOrgId: Id<"organizations">,
+) {
+  const current = await requireCurrentOrgAccess(ctx);
+  if (current.orgId === clientOrgId) return current;
+  await requireBrokerAccessToClient(ctx, clientOrgId);
+  return current;
+}
+
+async function upsertClientOwnedSettings(
+  ctx: Parameters<typeof requireCurrentOrgAdminWrite>[0],
+  args: {
+    clientOrgId: Id<"organizations">;
+    enabled: boolean;
+    channels: DeliveryChannel[];
+    defaultAction: "auto_send" | "broker_review" | "service_review" | "do_not_send";
+    deliverBeforeClientAcceptance: boolean;
+    copyInstructions?: string;
+    updatedByUserId: Id<"users">;
+  },
+) {
+  const existing = await ctx.db
+    .query("policyDeliverySettings")
+    .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+      q
+        .eq("deliveryOwnerOrgId", args.clientOrgId)
+        .eq("clientOrgId", args.clientOrgId),
+    )
+    .first();
+  const now = dayjs().valueOf();
+  const patch = {
+    deliveryOwnerOrgId: args.clientOrgId,
+    clientOrgId: args.clientOrgId,
+    enabled: args.enabled,
+    channels: normalizeChannels(args.channels),
+    defaultAction: args.defaultAction,
+    deliverBeforeClientAcceptance: args.deliverBeforeClientAcceptance,
+    copyInstructions: normalizeText(args.copyInstructions),
+    updatedByUserId: args.updatedByUserId,
+    updatedAt: now,
+  };
+  if (existing) {
+    await ctx.db.patch(existing._id, patch);
+    return existing._id;
+  }
+  return await ctx.db.insert("policyDeliverySettings", {
+    ...patch,
+    createdAt: now,
+  });
+}
+
+export const updateClientOwnedSettings = mutation({
+  args: {
+    enabled: v.boolean(),
+    channels: v.array(channelValidator),
+    defaultAction: actionValidator,
+    deliverBeforeClientAcceptance: v.boolean(),
+    copyInstructions: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireCurrentOrgAdminWrite(ctx);
+    if ((access.org.type ?? "client") !== "client") {
+      throw new Error("Policy delivery is owned by a client organization");
+    }
+    return await upsertClientOwnedSettings(ctx, {
+      clientOrgId: access.orgId,
+      ...args,
+      updatedByUserId: access.userId,
+    });
+  },
+});
+
+export const updateClientOwnedSettingsForOperator = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    enabled: v.boolean(),
+    channels: v.array(channelValidator),
+    defaultAction: actionValidator,
+    deliverBeforeClientAcceptance: v.boolean(),
+    copyInstructions: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const id = await upsertClientOwnedSettings(ctx, {
+      ...args,
+      updatedByUserId: operator.userId,
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: "Updated client-owned policy delivery settings",
+      metadata: {
+        enabled: args.enabled,
+        channels: args.channels,
+        defaultAction: args.defaultAction,
+      },
+    });
+    return id;
+  },
+});
 
 async function requireBrokerAdmin(ctx: Parameters<typeof requireCurrentOrgAccess>[0]) {
   const access = await requireCurrentOrgAccess(ctx);
@@ -171,6 +310,7 @@ export const updateClientOverride = mutation({
     const access = await requireBrokerAdminAccessToClient(ctx, args.clientOrgId);
     const now = dayjs().valueOf();
     const patch = {
+      deliveryOwnerOrgId: args.clientOrgId,
       enabled: args.enabled,
       channels: normalizeChannels(args.channels),
       defaultAction: args.defaultAction,
@@ -215,14 +355,25 @@ export const clearClientOverride = mutation({
 export const listRules = query({
   args: { clientOrgId: v.optional(v.id("organizations")) },
   handler: async (ctx, args) => {
+    const current = await requireCurrentOrgAccess(ctx);
+    if ((current.org.type ?? "client") === "client") {
+      if (args.clientOrgId && args.clientOrgId !== current.orgId) return [];
+      return await ctx.db
+        .query("policyDeliveryRules")
+        .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+          q
+            .eq("deliveryOwnerOrgId", current.orgId)
+            .eq("clientOrgId", current.orgId),
+        )
+        .collect()
+        .then((rows) => rows.sort((a, b) => a.priority - b.priority));
+    }
     let brokerOrgId: Id<"organizations">;
     if (args.clientOrgId) {
       const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
       brokerOrgId = access.brokerOrgId;
     } else {
-      const access = await requireCurrentOrgAccess(ctx);
-      if ((access.org.type ?? "client") !== "broker") return [];
-      brokerOrgId = access.orgId;
+      brokerOrgId = current.orgId;
     }
     const rows = await ctx.db
       .query("policyDeliveryRules")
@@ -248,6 +399,44 @@ export const upsertRule = mutation({
     copyInstructions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const current = await requireCurrentOrgAccess(ctx);
+    if ((current.org.type ?? "client") === "client") {
+      if (current.role !== "admin") {
+        throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
+      }
+      if (args.clientOrgId && args.clientOrgId !== current.orgId) {
+        throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+      }
+      const now = dayjs().valueOf();
+      const patch = {
+        brokerOrgId: current.org.brokerOrgId,
+        deliveryOwnerOrgId: current.orgId,
+        clientOrgId: current.orgId,
+        name: args.name.trim() || "Delivery rule",
+        enabled: args.enabled,
+        priority: args.priority,
+        filters: args.filters,
+        llmRuleText: normalizeText(args.llmRuleText),
+        action: args.action,
+        channels: args.channels ? normalizeChannels(args.channels) : undefined,
+        copyInstructions: normalizeText(args.copyInstructions),
+        updatedByUserId: current.userId,
+        updatedAt: now,
+      };
+      if (args.id) {
+        const existing = await ctx.db.get(args.id);
+        if (!existing || existing.deliveryOwnerOrgId !== current.orgId) {
+          throw new Error("Rule not found");
+        }
+        await ctx.db.patch(args.id, patch);
+        return args.id;
+      }
+      return await ctx.db.insert("policyDeliveryRules", {
+        ...patch,
+        createdByUserId: current.userId,
+        createdAt: now,
+      });
+    }
     const clientAccess = args.clientOrgId
       ? await requireBrokerAdminAccessToClient(ctx, args.clientOrgId)
       : null;
@@ -263,6 +452,7 @@ export const upsertRule = mutation({
     const now = dayjs().valueOf();
     const patch = {
       brokerOrgId,
+      deliveryOwnerOrgId: args.clientOrgId,
       clientOrgId: args.clientOrgId,
       name: args.name.trim() || "Delivery rule",
       enabled: args.enabled,
@@ -292,9 +482,16 @@ export const upsertRule = mutation({
 export const deleteRule = mutation({
   args: { id: v.id("policyDeliveryRules") },
   handler: async (ctx, args) => {
-    const access = await requireBrokerAdmin(ctx);
     const existing = await ctx.db.get(args.id);
-    if (!existing || existing.brokerOrgId !== access.orgId) throw new Error("Rule not found");
+    if (!existing) throw new Error("Rule not found");
+    const current = await requireCurrentOrgAccess(ctx);
+    if ((current.org.type ?? "client") === "client") {
+      if (current.role !== "admin" || existing.deliveryOwnerOrgId !== current.orgId) {
+        throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
+      }
+    } else if (current.role !== "admin" || existing.brokerOrgId !== current.orgId) {
+      throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
+    }
     await ctx.db.delete(args.id);
   },
 });
@@ -418,7 +615,7 @@ export const enqueueInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
-    if (!policy?.orgId || policy.deletedAt || !policy.uploadedByBrokerOrgId) {
+    if (!policy?.orgId || policy.deletedAt) {
       return null;
     }
     if ((policy.documentType ?? "policy") !== "policy") return null;
@@ -436,6 +633,7 @@ export const enqueueInternal = internalMutation({
     const now = dayjs().valueOf();
     const jobId = await ctx.db.insert("policyDeliveryJobs", {
       brokerOrgId: policy.uploadedByBrokerOrgId,
+      deliveryOwnerOrgId: policy.orgId,
       clientOrgId: policy.orgId,
       policyId: args.policyId,
       policyFileId: args.policyFileId,
@@ -464,13 +662,22 @@ export const getContextInternal = internalQuery({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
     if (!job) return null;
+    const deliveryOwnerOrgId = job.deliveryOwnerOrgId ?? job.clientOrgId;
     const [broker, client, policy, policyFile] = await Promise.all([
-      ctx.db.get(job.brokerOrgId),
+      job.brokerOrgId ? ctx.db.get(job.brokerOrgId) : Promise.resolve(null),
       ctx.db.get(job.clientOrgId),
       ctx.db.get(job.policyId),
       job.policyFileId ? ctx.db.get(job.policyFileId) : Promise.resolve(null),
     ]);
     if (!policy || policy.deletedAt) return null;
+    const ownerSettings = await ctx.db
+      .query("policyDeliverySettings")
+      .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+        q
+          .eq("deliveryOwnerOrgId", deliveryOwnerOrgId)
+          .eq("clientOrgId", job.clientOrgId),
+      )
+      .first();
     const brokerSettings = await ctx.db
       .query("policyDeliverySettings")
       .withIndex("by_brokerOrgId_clientOrgId", (q) =>
@@ -483,13 +690,28 @@ export const getContextInternal = internalQuery({
         q.eq("brokerOrgId", job.brokerOrgId).eq("clientOrgId", job.clientOrgId),
       )
       .first();
-    const allRules = await ctx.db
+    const ownerRules = await ctx.db
       .query("policyDeliveryRules")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", job.brokerOrgId))
+      .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+        q
+          .eq("deliveryOwnerOrgId", deliveryOwnerOrgId)
+          .eq("clientOrgId", job.clientOrgId),
+      )
       .collect();
+    const allRules = job.brokerOrgId
+      ? await ctx.db
+          .query("policyDeliveryRules")
+          .withIndex("by_brokerOrgId", (q) =>
+            q.eq("brokerOrgId", job.brokerOrgId),
+          )
+          .collect()
+      : [];
     const clientRules = allRules.filter((rule) => rule.enabled && rule.clientOrgId === job.clientOrgId);
     const brokerRules = allRules.filter((rule) => rule.enabled && rule.clientOrgId === undefined);
-    const rules = [...clientRules, ...brokerRules].sort((a, b) => a.priority - b.priority);
+    const rules = (ownerRules.length > 0
+      ? ownerRules.filter((rule) => rule.enabled)
+      : [...clientRules, ...brokerRules]
+    ).sort((a, b) => a.priority - b.priority);
     const members = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId", (q) => q.eq("orgId", job.clientOrgId))
@@ -501,23 +723,51 @@ export const getContextInternal = internalQuery({
     const uploadedBy = policy?.uploadedByUserId
       ? await ctx.db.get(policy.uploadedByUserId)
       : null;
-    const brokerMembers = await ctx.db
-      .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", job.brokerOrgId))
-      .collect();
+    const brokerOrgId = job.brokerOrgId;
+    const brokerMembers = brokerOrgId
+      ? await ctx.db
+          .query("orgMemberships")
+          .withIndex("by_orgId", (q) => q.eq("orgId", brokerOrgId))
+          .collect()
+      : [];
+    const connection = await ctx.db
+      .query("slackWorkspaceConnections")
+      .withIndex("by_clientOrgId_and_status", (q) =>
+        q.eq("clientOrgId", job.clientOrgId).eq("status", "active"),
+      )
+      .first();
+    const primarySlackChannel = connection
+      ? await ctx.db
+          .query("slackChannelBindings")
+          .withIndex("by_connectionId_and_status", (q) =>
+            q.eq("connectionId", connection._id).eq("status", "active"),
+          )
+          .first()
+      : null;
+    const agentChannels = await ctx.db
+      .query("agentChannelSettings")
+      .withIndex("by_clientOrgId", (q) =>
+        q.eq("clientOrgId", job.clientOrgId),
+      )
+      .first();
     return {
       job,
       broker,
       client,
       policy,
       policyFile,
+      ownerSettings,
       brokerSettings,
       clientSettings,
       rules,
       members: members.map((membership, index) => ({ ...membership, user: users[index] })),
       primaryInsuranceContact,
       uploadedBy,
-      fallbackUserId: policy?.uploadedByUserId ?? brokerMembers[0]?.userId,
+      connection,
+      primarySlackChannel,
+      agentChannels,
+      fallbackUserId:
+        policy?.uploadedByUserId ?? members[0]?.userId ?? brokerMembers[0]?.userId,
     };
   },
 });
@@ -538,6 +788,7 @@ export const patchJobInternal = internalMutation({
     threadId: v.optional(v.id("threads")),
     emailSentAt: v.optional(v.number()),
     imessageSentAt: v.optional(v.number()),
+    slackSentAt: v.optional(v.number()),
     sentAt: v.optional(v.number()),
     lastError: v.optional(v.string()),
   },
@@ -553,7 +804,8 @@ export const patchJobInternal = internalMutation({
 export const insertAttemptInternal = internalMutation({
   args: {
     jobId: v.id("policyDeliveryJobs"),
-    brokerOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    deliveryOwnerOrgId: v.optional(v.id("organizations")),
     clientOrgId: v.id("organizations"),
     policyId: v.id("policies"),
     channel: channelValidator,
@@ -566,5 +818,53 @@ export const insertAttemptInternal = internalMutation({
       ...args,
       createdAt: dayjs().valueOf(),
     });
+  },
+});
+
+export const verifyDeliveryOwnerBackfill = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const [settings, rules, jobs, attempts] = await Promise.all([
+      ctx.db
+        .query("policyDeliverySettings")
+        .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+          q.eq("deliveryOwnerOrgId", undefined),
+        )
+        .first(),
+      ctx.db
+        .query("policyDeliveryRules")
+        .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+          q.eq("deliveryOwnerOrgId", undefined),
+        )
+        .first(),
+      ctx.db
+        .query("policyDeliveryJobs")
+        .withIndex("by_deliveryOwnerOrgId_and_status_and_updatedAt", (q) =>
+          q.eq("deliveryOwnerOrgId", undefined),
+        )
+        .first(),
+      ctx.db
+        .query("policyDeliveryAttempts")
+        .withIndex("by_deliveryOwnerOrgId_and_createdAt", (q) =>
+          q.eq("deliveryOwnerOrgId", undefined),
+        )
+        .first(),
+    ]);
+    const missing = {
+      settings: Number(Boolean(settings)),
+      rules: Number(Boolean(rules)),
+      jobs: Number(Boolean(jobs)),
+      attempts: Number(Boolean(attempts)),
+    };
+    return {
+      sampleIds: {
+        settings: settings?._id,
+        rules: rules?._id,
+        jobs: jobs?._id,
+        attempts: attempts?._id,
+      },
+      missing,
+      complete: Object.values(missing).every((count) => count === 0),
+    };
   },
 });

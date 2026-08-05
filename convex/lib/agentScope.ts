@@ -6,8 +6,15 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./userFacingErrors";
+import type { ActorRef } from "./actorRef";
 
-export type AgentSurface = "web" | "email" | "imessage" | "mcp" | "cli";
+export type AgentSurface =
+  | "web"
+  | "email"
+  | "imessage"
+  | "slack"
+  | "mcp"
+  | "cli";
 
 export type AgentScopeOrg = {
   orgId: Id<"organizations">;
@@ -31,6 +38,7 @@ export type AgentScope = {
   orgs: AgentScopeOrg[];
   focusedOrgId?: Id<"organizations">;
   brokerInternal: boolean;
+  actorRef?: ActorRef;
   operatorInitiated?: {
     operatorUserId: Id<"users">;
     operatorEmail?: string;
@@ -162,16 +170,66 @@ export const resolveForAction = internalQuery({
       v.literal("web"),
       v.literal("email"),
       v.literal("imessage"),
+      v.literal("slack"),
       v.literal("mcp"),
       v.literal("cli"),
     ),
     focusedOrgId: v.optional(v.id("organizations")),
     allowBrokerPortfolio: v.optional(v.boolean()),
     operatorInitiatedUserMessageId: v.optional(v.id("threadMessages")),
+    slackActorId: v.optional(v.id("slackActors")),
   },
   handler: async (ctx, args): Promise<AgentScope> => {
     const primaryOrg = await ctx.db.get(args.orgId);
     if (!primaryOrg) throw new Error("Organization not found");
+
+    if (args.surface === "slack") {
+      if (!args.slackActorId) {
+        throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+      }
+      const actor = await ctx.db.get(args.slackActorId);
+      const connection = actor ? await ctx.db.get(actor.connectionId) : null;
+      const settings = actor
+        ? await ctx.db
+            .query("agentChannelSettings")
+            .withIndex("by_clientOrgId", (q) =>
+              q.eq("clientOrgId", actor.clientOrgId),
+            )
+            .first()
+        : null;
+      if (
+        !actor ||
+        !connection ||
+        connection.status !== "active" ||
+        connection.clientOrgId !== args.orgId ||
+        connection.serviceUserId !== args.userId ||
+        (actor.classification !== "customer_member" &&
+          actor.classification !== "glass_operator") ||
+        settings?.slackEnabled !== true
+      ) {
+        throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
+      }
+      return {
+        mode: "client",
+        surface: "slack",
+        primaryOrgId: primaryOrg._id,
+        readOrgIds: [primaryOrg._id],
+        writableOrgIds: [primaryOrg._id],
+        orgs: [
+          await summarizeOrg(ctx, primaryOrg, {
+            primaryOrgId: primaryOrg._id,
+            canWrite: true,
+          }),
+        ],
+        brokerInternal: false,
+        actorRef: {
+          kind: "slack",
+          actorId: actor._id,
+          teamId: actor.teamId,
+          userId: actor.slackUserId,
+        },
+      };
+    }
 
     const membership = await ctx.db
       .query("orgMemberships")
@@ -192,6 +250,27 @@ export const resolveForAction = internalQuery({
 
     const primaryType = (primaryOrg.type as "broker" | "client") ?? "client";
     const allowBrokerPortfolio = args.allowBrokerPortfolio ?? true;
+
+    if (
+      primaryType === "client" &&
+      (args.surface === "email" || args.surface === "imessage")
+    ) {
+      const settings = await ctx.db
+        .query("agentChannelSettings")
+        .withIndex("by_clientOrgId", (q) =>
+          q.eq("clientOrgId", primaryOrg._id),
+        )
+        .first();
+      const enabled = args.surface === "email"
+        ? settings?.emailEnabled !== false
+        : settings?.imessageEnabled !== false;
+      if (!enabled) {
+        throwUserFacingError(
+          userFacingErrorCodes.orgAccessRequired,
+          `${args.surface === "email" ? "Email" : "iMessage"} agent access is disabled for this client.`,
+        );
+      }
+    }
 
     if (primaryType !== "broker" || !allowBrokerPortfolio) {
       return {

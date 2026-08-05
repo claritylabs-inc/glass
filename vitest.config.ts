@@ -13,6 +13,7 @@ export default defineConfig({
       ".claude/**",
       ".context/**",
       "extraction-worker/tests/**",
+      "slack-worker/**",
       "convex/tests/applicationReturnFlow.test.ts",
     ],
   },

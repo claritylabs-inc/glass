@@ -93,8 +93,8 @@ export function parseEnvFile(filePath) {
 
 export function conductorPorts() {
   const basePort = Number.parseInt(process.env.CONDUCTOR_PORT ?? "8080", 10);
-  if (!Number.isInteger(basePort) || basePort <= 0 || basePort > 65531) {
-    throw new Error("CONDUCTOR_PORT must be an integer between 1 and 65531");
+  if (!Number.isInteger(basePort) || basePort <= 0 || basePort > 65530) {
+    throw new Error("CONDUCTOR_PORT must be an integer between 1 and 65530");
   }
   return {
     web: basePort,
@@ -102,6 +102,7 @@ export function conductorPorts() {
     imessage: basePort + 2,
     convexCloud: basePort + 3,
     convexSite: basePort + 4,
+    slack: basePort + 5,
   };
 }
 
@@ -120,7 +121,7 @@ export function conductorImageTag(workerName, workspacePath = repoRoot) {
 }
 
 export function conductorImageTags(workspacePath = repoRoot) {
-  return ["extraction-worker", "imessage-worker", "mailbox-scan-worker"].map(
+  return ["extraction-worker", "imessage-worker", "slack-worker", "mailbox-scan-worker"].map(
     (workerName) => conductorImageTag(workerName, workspacePath),
   );
 }

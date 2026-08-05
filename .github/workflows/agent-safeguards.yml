@@ -6,6 +6,7 @@ on:
       - "convex/**"
       - "extraction-worker/**"
       - "imessage-worker/**"
+      - "slack-worker/**"
       - "mailbox-scan-worker/**"
       - "scripts/check-agent-deployment-health.mjs"
       - ".github/workflows/agent-safeguards.yml"
@@ -15,6 +16,7 @@ on:
       - "convex/**"
       - "extraction-worker/**"
       - "imessage-worker/**"
+      - "slack-worker/**"
       - "mailbox-scan-worker/**"
       - "scripts/check-agent-deployment-health.mjs"
       - ".github/workflows/agent-safeguards.yml"
@@ -50,6 +52,10 @@ jobs:
       - name: Build iMessage worker
         working-directory: imessage-worker
         run: npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build
+
+      - name: Build and test Slack worker
+        working-directory: slack-worker
+        run: npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build && npm test
 
       - name: Build extraction worker
         working-directory: extraction-worker
@@ -95,4 +101,5 @@ jobs:
           GLASS_STAGING_CONVEX_AGENT_HEALTH_URL: ${{ vars.GLASS_STAGING_CONVEX_AGENT_HEALTH_URL }}
           GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL }}
           GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL }}
+          GLASS_STAGING_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_SLACK_WORKER_HEALTH_URL }}
           GLASS_STAGING_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_STAGING_CL_ROUTER_HEALTH_URL }}

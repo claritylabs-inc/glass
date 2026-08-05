@@ -4,6 +4,12 @@
 production, `staging` is the shared integration lane, and each Conductor
 worktree uses native local Convex plus local workers.
 
+Slack environment/app setup, the client-owned policy-delivery migration, and
+the staged release gates are documented in [Slack privileged service
+channel](./slack.md). Staging and production remain disabled in
+`config/deployments.json` until their separate Slack apps, Photon projects, and
+workers are explicitly authorized and validated.
+
 ## cl-router
 
 `cl-router` is a separate Node 24/Fastify service with its own Railway

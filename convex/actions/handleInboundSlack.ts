@@ -1,0 +1,174 @@
+"use node";
+
+import { v } from "convex/values";
+import { internalAction, type ActionCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
+import { runChannelAgent } from "../lib/channelAgentRunner";
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const WORKER_TIMEOUT_MS = 30_000;
+const internalApi = internal as any;
+
+function workerConfig() {
+  const url = process.env.SLACK_WORKER_URL?.trim();
+  const secret = process.env.SLACK_WORKER_SECRET?.trim();
+  if (!url || !secret) throw new Error("Slack worker is not configured");
+  return { url: url.replace(/\/$/, ""), secret };
+}
+
+async function fetchAttachment(
+  ctx: ActionCtx,
+  event: Doc<"slackInboundEvents">,
+) {
+  if (!event.attachment || event.attachment.fileId) return;
+  const worker = workerConfig();
+  const response = await fetch(`${worker.url}/attachment`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${worker.secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      teamId: event.teamId,
+      fileId: event.attachment.providerFileId,
+    }),
+    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`Slack attachment retrieval failed (${response.status})`);
+  }
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+    throw new Error("Slack attachment exceeds the 25 MB ingestion limit");
+  }
+  const fileId = await ctx.storage.store(
+    new Blob([bytes], { type: event.attachment.contentType }),
+  );
+  await ctx.runMutation(internalApi.slack.attachInboundFile, {
+    eventId: event._id,
+    fileId,
+  });
+}
+
+async function enrichActor(
+  ctx: ActionCtx,
+  event: Doc<"slackInboundEvents">,
+) {
+  const worker = workerConfig();
+  const response = await fetch(`${worker.url}/actor`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${worker.secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      teamId: event.teamId,
+      userId: event.senderUserId,
+    }),
+    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+  });
+  const actor = (await response.json()) as {
+    teamId?: string;
+    userId?: string;
+    displayName?: string;
+    isBot?: boolean;
+    botUserId?: string;
+    error?: string;
+  };
+  if (
+    !response.ok ||
+    !actor.teamId ||
+    actor.userId !== event.senderUserId ||
+    typeof actor.isBot !== "boolean"
+  ) {
+    throw new Error(
+      actor.error ?? `Slack actor resolution failed (${response.status})`,
+    );
+  }
+  await ctx.runMutation(internalApi.slack.enrichInboundActor, {
+    eventId: event._id,
+    senderTeamId: actor.teamId,
+    senderDisplayName: actor.displayName,
+    senderIsBot: actor.isBot,
+    installationBotUserId: actor.botUserId,
+  });
+}
+
+export const processDebounced = internalAction({
+  args: { eventId: v.id("slackInboundEvents") },
+  handler: async (ctx, args) => {
+    const batch = (await ctx.runMutation(
+      internalApi.slack.claimBatch,
+      args,
+    )) as Array<Doc<"slackInboundEvents">>;
+    if (batch.length === 0) return;
+    const eventIds = batch.map((event: Doc<"slackInboundEvents">) => event._id);
+    try {
+      await Promise.all(
+        batch.map((event: Doc<"slackInboundEvents">) =>
+          Promise.all([
+            fetchAttachment(ctx, event),
+            enrichActor(ctx, event),
+          ]),
+        ),
+      );
+      const prepared = await ctx.runMutation(internalApi.slack.prepareBatch, {
+        eventIds,
+      });
+      if (!prepared) return;
+
+      await runChannelAgent(ctx, {
+        execution: "thread",
+        surface: "slack",
+        threadId: prepared.threadId,
+        orgId: prepared.orgId,
+        userId: prepared.serviceUserId,
+        userMessageId: prepared.userMessageId,
+        agentMessageId: prepared.agentMessageId,
+        slackActorId: prepared.actorId,
+      });
+      const response = (await ctx.runQuery(internalApi.slack.getMessage, {
+        messageId: prepared.agentMessageId,
+      })) as Doc<"threadMessages"> | null;
+      if (!response?.content.trim()) return;
+      if (response.toolCalls?.length) {
+        await ctx.runMutation(internalApi.slack.recordAgentActions, {
+          orgId: prepared.orgId,
+          threadId: prepared.threadId,
+          threadMessageId: response._id,
+          slackActorId: prepared.actorId,
+          toolCalls: response.toolCalls,
+        });
+      }
+      const attachments = (response.attachments ?? []).flatMap((attachment) =>
+        attachment.fileId
+          ? [
+              {
+                fileId: attachment.fileId,
+                filename: attachment.filename,
+                contentType: attachment.contentType,
+              },
+            ]
+          : [],
+      );
+      await ctx.runAction(internalApi.actions.sendSlack.send, {
+        idempotencyKey: `agent:${response._id}`,
+        orgId: prepared.orgId,
+        threadId: prepared.threadId,
+        threadMessageId: response._id,
+        connectionId: prepared.connectionId,
+        channelId: prepared.channelId,
+        threadTs: prepared.threadTs,
+        content: response.content,
+        attachments: attachments.length ? attachments : undefined,
+      });
+    } catch (error) {
+      await ctx.runMutation(internalApi.slack.failEvents, {
+        eventIds,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  },
+});

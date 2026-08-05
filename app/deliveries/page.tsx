@@ -37,6 +37,8 @@ type DeliveryStatus =
   | "suppressed"
   | "cancelled";
 
+type DeliveryChannel = "email" | "imessage" | "slack";
+
 type DeliveryJob = {
   _id: Id<"policyDeliveryJobs">;
   clientOrgId: Id<"organizations">;
@@ -44,7 +46,7 @@ type DeliveryJob = {
   sourceKind: "policy" | "endorsement";
   status: DeliveryStatus;
   action: string;
-  channels: Array<"email" | "imessage">;
+  channels: DeliveryChannel[];
   ruleName?: string;
   decisionSummary?: string;
   recipientName?: string;
@@ -63,7 +65,7 @@ type DeliveryJob = {
   };
   attempts?: Array<{
     _id: Id<"policyDeliveryAttempts">;
-    channel: "email" | "imessage";
+    channel: DeliveryChannel;
     status: "sent" | "failed" | "skipped";
     error?: string;
     createdAt: number;
@@ -98,17 +100,23 @@ function statusVariant(status: DeliveryStatus): "default" | "secondary" | "outli
   return "outline";
 }
 
-function channelLabel(channels: Array<"email" | "imessage">) {
-  if (channels.length === 2) return "Email + iMessage";
-  if (channels[0] === "imessage") return "iMessage";
-  if (channels[0] === "email") return "Email";
-  return "None";
+function channelLabel(channels: DeliveryChannel[]) {
+  return channels.length > 0
+    ? channels
+        .map((channel) =>
+          channel === "imessage"
+            ? "iMessage"
+            : channel[0].toUpperCase() + channel.slice(1),
+        )
+        .join(" + ")
+    : "None";
 }
 
 function actionLabel(action: string) {
   const normalized = action.trim().toLowerCase();
   if (normalized === "do_not_send" || normalized === "suppress") return "Do not deliver";
   if (normalized === "broker_review" || normalized === "review") return "Needs review";
+  if (normalized === "service_review") return "Needs Glass service review";
   if (normalized === "auto_send") return "Send automatically";
   return normalized
     .split("_")
@@ -226,7 +234,7 @@ function DeliveryDrawer({
             <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6">
               {(job.attempts ?? []).map((attempt) => (
                 <div key={attempt._id} className="flex items-center justify-between gap-3 px-3 py-2 text-base">
-                  <span>{attempt.channel === "email" ? "Email" : "iMessage"}</span>
+                  <span>{channelLabel([attempt.channel])}</span>
                   <span className="text-muted-foreground">{attempt.status}</span>
                 </div>
               ))}

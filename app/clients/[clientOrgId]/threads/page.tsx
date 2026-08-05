@@ -5,7 +5,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ActionSurfaceButton } from "@/components/ui/action-surface";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Mail, MessageCircle } from "lucide-react";
+import { Hash, Mail, MessageCircle } from "lucide-react";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { formatDisplayDateTime } from "@/lib/date-format";
 
@@ -26,7 +26,7 @@ export default function ClientThreadsPage() {
         _creationTime: number;
         title: string;
         lastMessageAt?: number;
-        originChannel?: "chat" | "email" | "imessage";
+        originChannel?: "chat" | "email" | "imessage" | "slack";
         threadPhone?: string;
       }>
     | undefined;
@@ -57,6 +57,8 @@ export default function ClientThreadsPage() {
               <div className="shrink-0 text-muted-foreground/30">
                 {thread.originChannel === "imessage" ? (
                   <MessageCircle className="w-4 h-4" />
+                ) : thread.originChannel === "slack" ? (
+                  <Hash className="w-4 h-4" />
                 ) : thread.originChannel === "email" ? (
                   <Mail className="w-4 h-4" />
                 ) : null}
@@ -71,6 +73,8 @@ export default function ClientThreadsPage() {
                   )}
                   {thread.originChannel === "imessage"
                     ? " · iMessage"
+                    : thread.originChannel === "slack"
+                      ? " · Slack"
                     : thread.originChannel === "email"
                       ? " · Email"
                       : " · Chat"}

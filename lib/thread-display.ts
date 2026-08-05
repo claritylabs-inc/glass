@@ -6,12 +6,12 @@ export type ThreadDisplayLike = {
   _creationTime: number;
   title: string;
   lastMessageAt?: number;
-  originChannel?: "chat" | "email" | "imessage";
+  originChannel?: "chat" | "email" | "imessage" | "slack";
   threadPhone?: string;
 };
 
 export type ThreadConversationItem = {
-  kind: "email" | "chat" | "imessage";
+  kind: "email" | "chat" | "imessage" | "slack";
   id: string;
   label: string;
   time: number;
@@ -51,6 +51,8 @@ export function toThreadConversationItem(
 ): ThreadConversationItem {
   const kind = isImessageThread(thread)
     ? "imessage"
+    : thread.originChannel === "slack"
+      ? "slack"
     : thread.originChannel === "email"
       ? "email"
       : "chat";
