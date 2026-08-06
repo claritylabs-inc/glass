@@ -44,6 +44,11 @@ interface ManagedElement {
   stopObservingResize: () => void;
 }
 
+interface PlannedElement {
+  plan: SmoothCornerPlan | null;
+  transitionActive: boolean;
+}
+
 interface ParsedRadius {
   horizontal: number;
   vertical: number;
@@ -320,6 +325,46 @@ function captureBackground(styles: CSSStyleDeclaration): BackgroundLayers {
   };
 }
 
+function hasActiveTransition(styles: CSSStyleDeclaration): boolean {
+  return (
+    styles.transitionProperty !== "none" &&
+    styles.transitionDuration
+      .split(",")
+      .some((duration) => Number.parseFloat(duration) > 0)
+  );
+}
+
+function withTransitionsSuppressed<T>(
+  element: HTMLElement,
+  transitionActive: boolean,
+  operation: () => T,
+): T {
+  if (!transitionActive) return operation();
+
+  const inlineProperty = element.style.getPropertyValue("transition-property");
+  const inlinePriority = element.style.getPropertyPriority(
+    "transition-property",
+  );
+  element.style.setProperty("transition-property", "none", "important");
+  void getComputedStyle(element).transitionProperty;
+
+  try {
+    const result = operation();
+    void getComputedStyle(element).transitionProperty;
+    return result;
+  } finally {
+    if (inlineProperty) {
+      element.style.setProperty(
+        "transition-property",
+        inlineProperty,
+        inlinePriority,
+      );
+    } else {
+      element.style.removeProperty("transition-property");
+    }
+  }
+}
+
 export function createSmoothCornersEngine(options?: { smoothing?: number }) {
   const smoothing = options?.smoothing ?? DEFAULT_SMOOTHING;
   const managed = new Map<HTMLElement, ManagedElement>();
@@ -421,94 +466,116 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     }
   }
 
-  function planFor(element: HTMLElement): SmoothCornerPlan | null {
+  function planFor(element: HTMLElement): PlannedElement {
     const existing = managed.get(element);
-    if (existing) restoreStyles(element, existing.original);
-    if (!element.isConnected || shouldSkipElement(element)) return null;
-
-    const styles = getComputedStyle(element);
-    if (
-      styles.display === "inline" &&
-      !REPLACED_ELEMENTS.has(element.tagName)
-    ) {
-      return null;
-    }
-    if (
-      element.tagName === "FIELDSET" &&
-      element.querySelector(":scope > legend")
-    ) {
-      return null;
+    if (!element.isConnected || shouldSkipElement(element)) {
+      return { plan: null, transitionActive: false };
     }
 
-    const cornerShape = styles.getPropertyValue("corner-shape");
-    if (
-      cornerShape &&
-      cornerShape
-        .trim()
-        .split(/\s+/)
-        .some(
-          (shape) => shape !== "round" && shape !== "superellipse(1)",
-        )
-    ) {
-      return null;
-    }
+    const currentStyles = getComputedStyle(element);
+    const transitionActive = hasActiveTransition(currentStyles);
+    const readPlan = () => {
+      if (existing) restoreStyles(element, existing.original);
 
-    const { width, height } = getLayoutSize(element);
-    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+      const styles =
+        existing || transitionActive
+          ? getComputedStyle(element)
+          : currentStyles;
+      if (
+        styles.display === "inline" &&
+        !REPLACED_ELEMENTS.has(element.tagName)
+      ) {
+        return null;
+      }
+      if (
+        element.tagName === "FIELDSET" &&
+        element.querySelector(":scope > legend")
+      ) {
+        return null;
+      }
 
-    const parsed = readRadii(styles, width, height);
-    if (!parsed) return null;
-    if (Math.max(...Object.values(parsed.radii)) < MIN_SMOOTH_RADIUS) {
-      return null;
-    }
+      const cornerShape = styles.getPropertyValue("corner-shape");
+      if (
+        cornerShape &&
+        cornerShape
+          .trim()
+          .split(/\s+/)
+          .some(
+            (shape) => shape !== "round" && shape !== "superellipse(1)",
+          )
+      ) {
+        return null;
+      }
 
-    const border = {
-      top: readBorderSide(styles, "top"),
-      right: readBorderSide(styles, "right"),
-      bottom: readBorderSide(styles, "bottom"),
-      left: readBorderSide(styles, "left"),
+      const { width, height } = getLayoutSize(element);
+      if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+
+      const parsed = readRadii(styles, width, height);
+      if (!parsed) return null;
+      if (Math.max(...Object.values(parsed.radii)) < MIN_SMOOTH_RADIUS) {
+        return null;
+      }
+
+      const border = {
+        top: readBorderSide(styles, "top"),
+        right: readBorderSide(styles, "right"),
+        bottom: readBorderSide(styles, "bottom"),
+        left: readBorderSide(styles, "left"),
+      };
+      const bounds = element.getBoundingClientRect();
+      const background = captureBackground(styles);
+      const paintsNothing =
+        isTransparent(styles.backgroundColor) &&
+        (background.image === "none" || background.image === "") &&
+        styles.boxShadow === "none" &&
+        styles.overflowX === "visible" &&
+        styles.overflowY === "visible";
+
+      return computeSmoothCornerPlan({
+        width,
+        height,
+        radii: parsed.radii,
+        elliptical: parsed.elliptical,
+        circle: isTrueCircle(width, height, parsed.radii),
+        border,
+        hasBorderImage:
+          styles.borderImageSource !== "none" &&
+          styles.borderImageSource !== "",
+        background,
+        paintsNothing,
+        hasOutline: hasVisibleOutline(styles),
+        pseudoOutside: pseudoEscapes(element, width, height),
+        childOutside: childrenEscape(element, styles),
+        boxShadow: styles.boxShadow,
+        focusRingVisible: element.contains(document.activeElement),
+        existingFilter: styles.filter,
+        pageLeft: bounds.left + window.scrollX,
+        pageTop: bounds.top + window.scrollY,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        smoothing,
+      });
     };
-    const bounds = element.getBoundingClientRect();
-    const background = captureBackground(styles);
-    const paintsNothing =
-      isTransparent(styles.backgroundColor) &&
-      (background.image === "none" || background.image === "") &&
-      styles.boxShadow === "none" &&
-      styles.overflowX === "visible" &&
-      styles.overflowY === "visible";
 
-    return computeSmoothCornerPlan({
-      width,
-      height,
-      radii: parsed.radii,
-      elliptical: parsed.elliptical,
-      circle: isTrueCircle(width, height, parsed.radii),
-      border,
-      hasBorderImage:
-        styles.borderImageSource !== "none" &&
-        styles.borderImageSource !== "",
-      background,
-      paintsNothing,
-      hasOutline: hasVisibleOutline(styles),
-      pseudoOutside: pseudoEscapes(element, width, height),
-      childOutside: childrenEscape(element, styles),
-      boxShadow: styles.boxShadow,
-      focusRingVisible: element.contains(document.activeElement),
-      existingFilter: styles.filter,
-      pageLeft: bounds.left + window.scrollX,
-      pageTop: bounds.top + window.scrollY,
-      devicePixelRatio: window.devicePixelRatio || 1,
-      smoothing,
-    });
+    return {
+      plan: withTransitionsSuppressed(
+        element,
+        transitionActive,
+        readPlan,
+      ),
+      transitionActive,
+    };
   }
 
   function applyPlan(
     element: HTMLElement,
     plan: SmoothCornerPlan | null,
+    transitionActive: boolean,
   ): void {
     if (!plan || plan.action === "skip") {
       deferredCandidates.delete(element);
-      unmanage(element);
+      withTransitionsSuppressed(element, transitionActive, () => {
+        unmanage(element);
+      });
       return;
     }
 
@@ -520,23 +587,25 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     }
     deferredCandidates.delete(element);
 
-    element.style.clipPath = plan.clipPath;
-    element.style.filter = plan.filter ?? original.filter;
-    if (plan.border) {
-      element.style.borderColor = "transparent";
-      element.style.backgroundImage = plan.border.image;
-      element.style.backgroundOrigin = plan.border.origin;
-      element.style.backgroundClip = plan.border.clip;
-      element.style.backgroundRepeat = plan.border.repeat;
-      element.style.backgroundSize = plan.border.size;
-    } else {
-      element.style.borderColor = original.borderColor;
-      element.style.backgroundImage = original.backgroundImage;
-      element.style.backgroundOrigin = original.backgroundOrigin;
-      element.style.backgroundClip = original.backgroundClip;
-      element.style.backgroundRepeat = original.backgroundRepeat;
-      element.style.backgroundSize = original.backgroundSize;
-    }
+    withTransitionsSuppressed(element, transitionActive, () => {
+      element.style.clipPath = plan.clipPath;
+      element.style.filter = plan.filter ?? original.filter;
+      if (plan.border) {
+        element.style.borderColor = "transparent";
+        element.style.backgroundImage = plan.border.image;
+        element.style.backgroundOrigin = plan.border.origin;
+        element.style.backgroundClip = plan.border.clip;
+        element.style.backgroundRepeat = plan.border.repeat;
+        element.style.backgroundSize = plan.border.size;
+      } else {
+        element.style.borderColor = original.borderColor;
+        element.style.backgroundImage = original.backgroundImage;
+        element.style.backgroundOrigin = original.backgroundOrigin;
+        element.style.backgroundClip = original.backgroundClip;
+        element.style.backgroundRepeat = original.backgroundRepeat;
+        element.style.backgroundSize = original.backgroundSize;
+      }
+    });
 
     if (entry) {
       entry.lastStyleAttribute = element.getAttribute("style") ?? "";
@@ -556,12 +625,13 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     const operations: Array<{
       element: HTMLElement;
       plan: SmoothCornerPlan | null;
+      transitionActive: boolean;
     }> = [];
     let readCount = 0;
 
     for (const element of queue) {
       queue.delete(element);
-      operations.push({ element, plan: planFor(element) });
+      operations.push({ element, ...planFor(element) });
       readCount += 1;
       if (
         readCount % READ_CHUNK_SIZE === 0 &&
@@ -572,7 +642,11 @@ export function createSmoothCornersEngine(options?: { smoothing?: number }) {
     }
 
     for (const operation of operations) {
-      applyPlan(operation.element, operation.plan);
+      applyPlan(
+        operation.element,
+        operation.plan,
+        operation.transitionActive,
+      );
     }
     if (queue.size) {
       animationFrame = requestAnimationFrame(flush);

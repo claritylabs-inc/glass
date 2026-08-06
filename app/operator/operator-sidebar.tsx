@@ -7,6 +7,7 @@ import {
   LogOut,
   MessageSquareText,
   Route,
+  Radio,
   SlidersHorizontal,
   Users,
   Wrench,
@@ -33,6 +34,7 @@ export function OperatorSidebar({
     | "clients"
     | "demo-leads"
     | "models"
+    | "channels"
     | "routing"
     | "tools"
     | "extractions";
@@ -78,6 +80,13 @@ export function OperatorSidebar({
         </div>
         <SectionHeader label="DevOps" collapsed={collapsed} />
         <div className="flex flex-col gap-1">
+          <SidebarMenuItem
+            href="/operator/channels"
+            label="Channels"
+            icon={Radio}
+            active={active === "channels"}
+            collapsed={collapsed}
+          />
           <SidebarMenuItem
             href="/operator/models"
             label="Models"

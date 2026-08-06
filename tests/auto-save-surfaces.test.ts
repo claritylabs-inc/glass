@@ -10,7 +10,7 @@ function read(path: string) {
 
 const AUTO_SAVE_SURFACES = [
   "app/operator/page.tsx",
-  "app/operator/clients/page.tsx",
+  "app/operator/clients/[clientOrgId]/page.tsx",
   "app/policies/[id]/policy-breakdown-editor.tsx",
   "app/profile/page.tsx",
   "components/compliance-page.tsx",
@@ -65,7 +65,7 @@ describe("auto-save surfaces", () => {
     const hook = read("lib/sync/use-local-first-auto-save.ts");
     const profile = read("app/profile/page.tsx");
     const broker = read("app/operator/page.tsx");
-    const client = read("app/operator/clients/page.tsx");
+    const client = read("app/operator/clients/[clientOrgId]/page.tsx");
 
     expect(hook).toContain("sequencer.run");
     expect(hook).not.toContain("enqueueMutation");
@@ -107,13 +107,13 @@ describe("auto-save surfaces", () => {
 
   it("checks operator identifiers before edit auto-save", () => {
     const operatorPage = read("app/operator/page.tsx");
-    const clientPage = read("app/operator/clients/page.tsx");
+    const clientPage = read("app/operator/clients/[clientOrgId]/page.tsx");
     const backend = read("convex/operator.ts");
 
     expect(operatorPage).toContain("editIdentifierCheck");
     expect(operatorPage).toContain("ownerOrgId: selected._id");
-    expect(clientPage).toContain("editHandleAvailability");
-    expect(clientPage).toContain("excludeOrgId: selected?._id");
+    expect(clientPage).toContain("handleAvailability");
+    expect(clientPage).toContain("excludeOrgId: client._id");
     expect(backend).toContain('ownerOrgId: v.optional(v.id("organizations"))');
   });
 
@@ -180,38 +180,39 @@ describe("auto-save surfaces", () => {
 
   it("drains operator saves before dependent actions", () => {
     const broker = read("app/operator/page.tsx");
-    const client = read("app/operator/clients/page.tsx");
+    const client = read("app/operator/clients/[clientOrgId]/page.tsx");
     const organization = read(
       "components/settings/organization-section.tsx",
     );
 
-    for (const [source, helper, autoSave] of [
-      [
-        broker,
-        "saveBrokerSettingsBeforeTransition",
-        "brokerSettingsAutoSave",
-      ],
-      [client, "saveClientSettingsBeforeAction", "clientSettingsAutoSave"],
-    ] as const) {
-      expect(source).toContain(`return ${autoSave}.saveNow()`);
-      expect(source).not.toContain("settingsDirty");
-      expect(source.indexOf(`await ${helper}()`)).toBeLessThan(
-        source.indexOf("await startImpersonation"),
-      );
-    }
+    expect(broker).toContain("return brokerSettingsAutoSave.saveNow()");
+    expect(broker).not.toContain("settingsDirty");
+    expect(
+      broker.indexOf("await saveBrokerSettingsBeforeTransition()"),
+    ).toBeLessThan(broker.indexOf("await startImpersonation"));
 
-    expect(broker.indexOf("await saveBrokerSettingsBeforeTransition()")).toBeLessThan(
-      broker.indexOf("await launchBroker"),
+    const clientImpersonation = client.slice(
+      client.indexOf("async function impersonate"),
+      client.indexOf("async function launch"),
     );
-    expect(client.indexOf("await saveClientSettingsBeforeAction()")).toBeLessThan(
-      client.indexOf("await launchClient"),
+    expect(
+      clientImpersonation.indexOf("await clientSettingsAutoSave.saveNow()"),
+    ).toBeLessThan(clientImpersonation.indexOf("await startImpersonation"));
+    const clientLaunch = client.slice(
+      client.indexOf("async function launch"),
+      client.indexOf("async function disableAccount"),
     );
+    expect(
+      clientLaunch.indexOf("await clientSettingsAutoSave.saveNow()"),
+    ).toBeLessThan(clientLaunch.indexOf("await launchClient"));
+
+    expect(
+      broker.indexOf("await saveBrokerSettingsBeforeTransition()"),
+    ).toBeLessThan(broker.indexOf("await launchBroker"));
     expect(broker).toContain(
       '<fieldset disabled={busy} className="space-y-3">',
     );
-    expect(client).toContain(
-      '<fieldset disabled={busy} className="space-y-4">',
-    );
+    expect(client).toContain("autoSave: !textFieldFocused");
     expect(organization).toContain("slug === currentSlug ||");
   });
 });

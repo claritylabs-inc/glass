@@ -90,14 +90,12 @@ async function channelOverview(
     readSettings(ctx, clientOrgId),
     activeConnection(ctx, clientOrgId),
   ]);
-  const primaryChannel = connection
-    ? await ctx.db
-        .query("slackChannelBindings")
-        .withIndex("by_connectionId_and_status", (q) =>
-          q.eq("connectionId", connection._id).eq("status", "active"),
-        )
-        .first()
-    : null;
+  const primaryChannel = await ctx.db
+    .query("slackChannelBindings")
+    .withIndex("by_clientOrgId_and_status", (q) =>
+      q.eq("clientOrgId", clientOrgId).eq("status", "active"),
+    )
+    .first();
   return { settings, connection, primaryChannel };
 }
 

@@ -50,9 +50,9 @@ describe("policy delivery automation surfaces", () => {
       'id: "policy-delivery", label: "Policy delivery"',
     );
     expect(clientSettings).toContain('searchParams.get("tab")');
-    expect(agentChannels).toContain("Email and iMessage are AI-only");
-    expect(agentChannels).toContain("Privileged AI and human service");
-    expect(agentChannels).toContain("third-party Slack Connect participants");
+    expect(agentChannels).toContain('title="Channel access"');
+    expect(agentChannels).toContain('title="Client Slack workspace"');
+    expect(agentChannels).toMatch(/third-party Slack\s+Connect participants/);
     expect(delivery).toContain('title="Automatic policy delivery"');
     expect(delivery).toContain("Customize for this client");
     expect(delivery).toContain("Rules are checked in order");
