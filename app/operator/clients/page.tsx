@@ -8,13 +8,16 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
-import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { Badge } from "@/components/ui/badge";
-import { OperationalPanel } from "@/components/ui/operational-panel";
+import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+  OperationalPanel,
+} from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
+import { Input } from "@/components/ui/input";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import {
   Select,
@@ -37,53 +40,18 @@ import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { OperatorSidebar } from "../operator-sidebar";
 import { getPublicAgentDomain } from "@/lib/domains";
 import {
-  betaFeatureFlagsForOrgType,
-  isFeatureEnabled,
-  setFeatureFlagPatch,
-  type FeatureFlagId,
-  type FeatureFlagMap,
-} from "@/convex/lib/featureFlags";
-import {
   useCachedOperatorBrokers,
   useCachedOperatorClients,
   useCachedOperatorCurrent,
   useOperatorClientCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
-import { AutoSaveStatus } from "@/components/ui/auto-save-status";
-import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { formatDisplayDate } from "@/lib/date-format";
+import {
+  operatorClientStatusLabel,
+  type OperatorClientRow,
+} from "./client-model";
 
-type ClientRow = {
-  _id: Id<"organizations">;
-  name: string;
-  website?: string;
-  iconUrl?: string | null;
-  agentHandle?: string;
-  operatorStatus: "onboarding" | "live";
-  inviteStatus?: "draft" | "invited";
-  primaryContactName?: string;
-  primaryContactEmail?: string;
-  primaryContactPhone?: string;
-  featureFlags?: FeatureFlagMap;
-  adminUserId?: Id<"users">;
-  adminName?: string;
-  adminEmail?: string;
-  adminPhone?: string;
-  brokerOrgId?: Id<"organizations">;
-  brokerName?: string;
-  createdAt: number;
-};
-
-type BrokerOption = {
-  _id: Id<"organizations">;
-  name: string;
-  website?: string;
-  iconUrl?: string | null;
-};
-
-const INPUT_CLASSES =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
 const AFFIXED_INPUT_CLASSES =
   "h-full min-w-0 flex-1 bg-transparent px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none";
 const STANDALONE_VALUE = "__standalone__";
@@ -92,11 +60,6 @@ const AGENT_DOMAIN = getPublicAgentDomain();
 function normalizeIdentifierInput(value: string) {
   const withoutDomain = value.trim().toLowerCase().split("@")[0] ?? "";
   return withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
-}
-
-function isValidOptionalEmail(value: string) {
-  const trimmed = value.trim();
-  return !trimmed || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
 }
 
 function isValidOptionalPhone(value: string) {
@@ -115,16 +78,22 @@ function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-label font-medium text-muted-foreground">{label}</span>
+      <span className="text-label font-medium text-muted-foreground">
+        {label}
+      </span>
       {children}
-      {error ? <span className="block text-label text-destructive">{error}</span> : null}
+      {error ? (
+        <span className="block text-label text-destructive">{error}</span>
+      ) : null}
     </label>
   );
 }
 
 export default function OperatorClientsPage() {
   const router = useRouter();
-  const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(null);
+  const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(
+    null,
+  );
   const [panelMode, setPanelMode] = useState<"create" | "details" | null>(null);
   const [name, setName] = useState("");
   const [brokerOrgId, setBrokerOrgId] = useState<string>(STANDALONE_VALUE);
@@ -133,23 +102,14 @@ export default function OperatorClientsPage() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
   const [adminPhone, setAdminPhone] = useState("");
-  const [editBrokerOrgId, setEditBrokerOrgId] = useState<string>(STANDALONE_VALUE);
-  const [editWebsite, setEditWebsite] = useState("");
-  const [editAgentHandle, setEditAgentHandle] = useState("");
-  const [editPrimaryContactName, setEditPrimaryContactName] = useState("");
-  const [editPrimaryContactEmail, setEditPrimaryContactEmail] = useState("");
-  const [editPrimaryContactPhone, setEditPrimaryContactPhone] = useState("");
   const [busy, setBusy] = useState(false);
-  const [savingFeatureFlagId, setSavingFeatureFlagId] = useState<FeatureFlagId | null>(null);
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
-  const [debouncedEditAgentHandle, setDebouncedEditAgentHandle] = useState("");
   const [debouncedAdminPhone, setDebouncedAdminPhone] = useState("");
-  const [debouncedEditPrimaryContactPhone, setDebouncedEditPrimaryContactPhone] = useState("");
 
   const current = useCachedOperatorCurrent();
-  const clients = useCachedOperatorClients() as ClientRow[] | undefined;
-  const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
-  const { seedClient, patchClientStatus, patchClientSettings } = useOperatorClientCacheActions();
+  const clients = useCachedOperatorClients();
+  const brokers = useCachedOperatorBrokers();
+  const { seedClient } = useOperatorClientCacheActions();
   const handleAvailability = useQuery(
     api.orgs.checkHandleAvailability,
     debouncedAgentHandle ? { handle: debouncedAgentHandle } : "skip",
@@ -161,10 +121,6 @@ export default function OperatorClientsPage() {
     createShouldCheckPhone ? { phone: debouncedAdminPhone } : "skip",
   );
   const createClient = useAction(api.operator.createSoloClient);
-  const launchClient = useAction(api.operator.launchSoloClient);
-  const setClientStatus = useMutation(api.operator.setSoloClientStatus);
-  const updateClientSettings = useMutation(api.operator.updateClientSettings);
-  const setClientFeatureFlag = useMutation(api.operator.setClientFeatureFlag);
   const startImpersonation = useMutation(api.operator.startImpersonation);
   const stopOperatorImpersonation = useStopOperatorImpersonation();
 
@@ -176,97 +132,37 @@ export default function OperatorClientsPage() {
     () => brokers?.find((broker) => broker._id === brokerOrgId) ?? null,
     [brokerOrgId, brokers],
   );
-  const selectedEditBroker = useMemo(
-    () => brokers?.find((broker) => broker._id === editBrokerOrgId) ?? null,
-    [editBrokerOrgId, brokers],
-  );
-  const editPhoneValid = isValidOptionalPhone(editPrimaryContactPhone);
-  const editPhoneChanged =
-    editPrimaryContactPhone.trim() !== (selected?.primaryContactPhone ?? "");
-  const editShouldCheckPhone = !!editPrimaryContactPhone.trim() && editPhoneValid && editPhoneChanged;
-  const editPhoneAvailability = useQuery(
-    api.operator.checkUserPhoneAvailability,
-    editShouldCheckPhone
-      ? {
-          phone: debouncedEditPrimaryContactPhone,
-          ownerUserId: selected?.adminUserId,
-        }
+  const channelOverview = useQuery(
+    api.agentChannels.getForOperator,
+    selected && panelMode === "details"
+      ? { clientOrgId: selected._id }
       : "skip",
   );
-  const currentEditAgentHandle = selected?.agentHandle ?? "";
-  const editAgentHandleChanged = editAgentHandle !== currentEditAgentHandle;
-  const editHandleAvailability = useQuery(
-    api.orgs.checkHandleAvailability,
-    editAgentHandleChanged && editAgentHandle
-      ? {
-          handle: debouncedEditAgentHandle,
-          excludeOrgId: selected?._id,
-        }
-      : "skip",
-  );
-  const editHandleChecking =
-    editAgentHandleChanged &&
-    !!editAgentHandle &&
-    (debouncedEditAgentHandle !== editAgentHandle ||
-      editHandleAvailability === undefined);
-  function clientSettingsError() {
-    if (!isValidOptionalEmail(editPrimaryContactEmail)) {
-      return "Enter a valid email";
-    }
-    if (!editPhoneValid) return "Enter a valid phone number";
-    if (editHandleChecking) return "Checking agent handle";
-    if (
-      editAgentHandleChanged &&
-      editAgentHandle &&
-      editHandleAvailability?.available === false
-    ) {
-      return editHandleAvailability.reason ?? "Agent handle is not available";
-    }
-    if (
-      editShouldCheckPhone &&
-      (debouncedEditPrimaryContactPhone !== editPrimaryContactPhone.trim() ||
-        editPhoneAvailability === undefined)
-    ) {
-      return "Checking phone number";
-    }
-    if (editShouldCheckPhone && editPhoneAvailability?.available === false) {
-      return "This phone number is already used by another user";
-    }
-    return null;
-  }
-
-  const clientSettingsValidationError = clientSettingsError();
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedAgentHandle(agentHandle), 250);
+    const timer = window.setTimeout(
+      () => setDebouncedAgentHandle(agentHandle),
+      250,
+    );
     return () => window.clearTimeout(timer);
   }, [agentHandle]);
   useEffect(() => {
     const timer = window.setTimeout(
-      () => setDebouncedEditAgentHandle(editAgentHandle),
-      250,
-    );
-    return () => window.clearTimeout(timer);
-  }, [editAgentHandle]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedAdminPhone(adminPhone.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [adminPhone]);
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setDebouncedEditPrimaryContactPhone(editPrimaryContactPhone.trim()),
+      () => setDebouncedAdminPhone(adminPhone.trim()),
       300,
     );
     return () => window.clearTimeout(timer);
-  }, [editPrimaryContactPhone]);
+  }, [adminPhone]);
 
   const handleChecking =
     agentHandle.length >= 3 &&
     (agentHandle !== debouncedAgentHandle || handleAvailability === undefined);
-  const handleUnavailable = !!agentHandle && handleAvailability?.available === false;
+  const handleUnavailable =
+    !!agentHandle && handleAvailability?.available === false;
   const createPhoneChecking =
     createShouldCheckPhone &&
-    (debouncedAdminPhone !== adminPhone.trim() || createPhoneAvailability === undefined);
+    (debouncedAdminPhone !== adminPhone.trim() ||
+      createPhoneAvailability === undefined);
   const createPhoneUnavailable =
     createShouldCheckPhone && createPhoneAvailability?.available === false;
   const createPhoneError = !createPhoneValid
@@ -284,9 +180,10 @@ export default function OperatorClientsPage() {
     try {
       const result = await createClient({
         name,
-        brokerOrgId: brokerOrgId === STANDALONE_VALUE
-          ? undefined
-          : brokerOrgId as Id<"organizations">,
+        brokerOrgId:
+          brokerOrgId === STANDALONE_VALUE
+            ? undefined
+            : (brokerOrgId as Id<"organizations">),
         website: website || undefined,
         agentHandle: agentHandle || undefined,
         adminEmail,
@@ -298,9 +195,10 @@ export default function OperatorClientsPage() {
         await seedClient({
           clientOrgId: result.clientOrgId,
           name,
-          brokerOrgId: brokerOrgId === STANDALONE_VALUE
-            ? undefined
-            : brokerOrgId as Id<"organizations">,
+          brokerOrgId:
+            brokerOrgId === STANDALONE_VALUE
+              ? undefined
+              : (brokerOrgId as Id<"organizations">),
           brokerName: selectedBroker?.name,
           website: website || undefined,
           agentHandle: agentHandle || undefined,
@@ -308,7 +206,7 @@ export default function OperatorClientsPage() {
           adminName: adminName || undefined,
           adminPhone: adminPhone || undefined,
         });
-        setSelectedId(result.clientOrgId);
+        router.push(`/operator/clients/${result.clientOrgId}`);
       }
       setName("");
       setBrokerOrgId(STANDALONE_VALUE);
@@ -325,11 +223,13 @@ export default function OperatorClientsPage() {
     }
   }
 
-  async function impersonate(client: ClientRow) {
+  async function impersonate(client: OperatorClientRow) {
     setBusy(true);
     try {
-      if (!(await saveClientSettingsBeforeAction())) return;
-      await startImpersonation({ targetOrgId: client._id, targetRole: "admin" });
+      await startImpersonation({
+        targetOrgId: client._id,
+        targetRole: "admin",
+      });
       router.push("/policies");
     } catch (error) {
       toast.error(
@@ -340,103 +240,21 @@ export default function OperatorClientsPage() {
     }
   }
 
-  async function launch(client: ClientRow) {
-    setBusy(true);
-    try {
-      if (!(await saveClientSettingsBeforeAction())) return;
-      await launchClient({ clientOrgId: client._id });
-      await patchClientStatus(client._id, "live");
-      toast.success("Client launched and login email sent");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Failed to launch client"));
-    } finally {
-      setBusy(false);
-    }
+  function contactEmail(client: OperatorClientRow) {
+    return client.primaryContactEmail ?? client.adminEmail;
   }
 
-  function contactEmail(client: ClientRow) {
-    return client.adminEmail ?? client.primaryContactEmail;
-  }
-
-  function brokerLabel(client: ClientRow) {
+  function brokerLabel(client: OperatorClientRow) {
     return client.brokerName ?? "Standalone";
   }
 
-  function primeEditState(client: ClientRow) {
-    setEditBrokerOrgId(client.brokerOrgId ?? STANDALONE_VALUE);
-    setEditWebsite(client.website ?? "");
-    setEditAgentHandle(client.agentHandle ?? "");
-    setEditPrimaryContactName(client.primaryContactName ?? client.adminName ?? "");
-    setEditPrimaryContactEmail(client.primaryContactEmail ?? client.adminEmail ?? "");
-    setEditPrimaryContactPhone(client.primaryContactPhone ?? "");
-  }
-
-  const nextBrokerOrgId =
-    editBrokerOrgId === STANDALONE_VALUE
-      ? undefined
-      : editBrokerOrgId as Id<"organizations">;
-  const clientSettingsArgs = {
-    clientOrgId: selected?._id ?? ("" as Id<"organizations">),
-    brokerOrgId: nextBrokerOrgId,
-    website: editWebsite || undefined,
-    agentHandle: editAgentHandle || undefined,
-    primaryContactName: editPrimaryContactName || undefined,
-    primaryContactEmail: editPrimaryContactEmail || undefined,
-    primaryContactPhone: editPrimaryContactPhone || undefined,
-  };
-  const clientSettingsValueKey = JSON.stringify(clientSettingsArgs);
-  const clientSettingsAutoSave = useLocalFirstAutoSave({
-    mutationName: "operator.updateClientSettings",
-    args: clientSettingsArgs,
-    valueKey: clientSettingsValueKey,
-    resetKey: selected?._id ?? "none",
-    enabled: panelMode === "details" && !!selected,
-    canSave: !clientSettingsValidationError,
-    delayMs: 800,
-    flush: async (args) => {
-      await updateClientSettings(args);
-      const { clientOrgId, ...patch } = args;
-      await patchClientSettings(clientOrgId, {
-        ...patch,
-        brokerName: brokers?.find((broker) => broker._id === patch.brokerOrgId)?.name,
-        adminName: patch.primaryContactName,
-        adminPhone: patch.primaryContactPhone,
-      });
-    },
-    errorMessage: (error) =>
-      getUserFacingErrorMessage(error, "Client settings could not be saved."),
-  });
-
-  async function saveClientSettingsBeforeAction() {
-    if (panelMode !== "details" || !selected) return true;
-    return clientSettingsAutoSave.saveNow();
-  }
-
-  async function openDetails(client: ClientRow) {
-    if (panelMode === "details" && selected?._id === client._id) return;
-    if (!(await saveClientSettingsBeforeAction())) return;
+  function openDetails(client: OperatorClientRow) {
     setSelectedId(client._id);
-    primeEditState(client);
     setPanelMode("details");
   }
 
-  async function openCreate() {
-    if (!(await saveClientSettingsBeforeAction())) return;
+  function openCreate() {
     setPanelMode("create");
-  }
-
-  async function moveToOnboarding(client: ClientRow) {
-    setBusy(true);
-    try {
-      if (!(await saveClientSettingsBeforeAction())) return;
-      await setClientStatus({ clientOrgId: client._id, status: "onboarding" });
-      await patchClientStatus(client._id, "onboarding");
-      toast.success("Client account disabled");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Failed to update client"));
-    } finally {
-      setBusy(false);
-    }
   }
 
   const actions = (
@@ -446,7 +264,6 @@ export default function OperatorClientsPage() {
           variant="secondary"
           size="compact"
           onClick={async () => {
-            if (!(await saveClientSettingsBeforeAction())) return;
             await stopOperatorImpersonation();
             toast.success("Impersonation stopped");
           }}
@@ -454,47 +271,29 @@ export default function OperatorClientsPage() {
           Stop impersonating
         </PillButton>
       ) : null}
-      <PillButton
-        size="compact"
-        variant="secondary"
-        onClick={() => void openCreate()}
-      >
+      <PillButton size="compact" variant="secondary" onClick={openCreate}>
         Create client
       </PillButton>
     </>
   );
-  const clientBetaFlags = betaFeatureFlagsForOrgType("client");
-
-  async function updateClientFeatureFlag(
-    client: ClientRow,
-    flagId: FeatureFlagId,
-    enabled: boolean,
-  ) {
-    const previousFlags = client.featureFlags;
-    const nextFlags = setFeatureFlagPatch(previousFlags, flagId, enabled);
-    setSavingFeatureFlagId(flagId);
-    await patchClientSettings(client._id, { featureFlags: nextFlags });
-    try {
-      await setClientFeatureFlag({ clientOrgId: client._id, flagId, enabled });
-      toast.success("Beta feature updated");
-    } catch (error) {
-      await patchClientSettings(client._id, { featureFlags: previousFlags });
-      toast.error(
-        getUserFacingErrorMessage(error, "Failed to update beta feature"),
-      );
-    } finally {
-      setSavingFeatureFlagId(null);
-    }
-  }
+  const enabledChannels = channelOverview
+    ? [
+        channelOverview.settings.emailEnabled ? "Email" : null,
+        channelOverview.settings.imessageEnabled ? "iMessage" : null,
+        channelOverview.settings.slackEnabled ? "Slack" : null,
+      ]
+        .filter(Boolean)
+        .join(", ") || "None"
+    : null;
 
   const rightPanel = (
     <SettingsDrawer
       open={panelMode !== null}
       onOpenChange={(open) => {
-        if (open) return;
-        void saveClientSettingsBeforeAction().then((saved) => {
-          if (saved) setPanelMode(null);
-        });
+        if (!open) {
+          setPanelMode(null);
+          setSelectedId(null);
+        }
       }}
       title={
         panelMode === "create" || !selected ? (
@@ -503,10 +302,15 @@ export default function OperatorClientsPage() {
           <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
             <span className="min-w-0 truncate">{selected.name}</span>
             <span className="flex shrink-0 items-center gap-2">
-              <Badge variant={selected.operatorStatus === "live" ? "default" : "secondary"}>
-                {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
+              <Badge
+                variant={
+                  selected.operatorStatus === "live" && !selected.inviteStatus
+                    ? "default"
+                    : "secondary"
+                }
+              >
+                {operatorClientStatusLabel(selected)}
               </Badge>
-              <AutoSaveStatus status={clientSettingsAutoSave.status} />
             </span>
           </span>
         )
@@ -516,7 +320,13 @@ export default function OperatorClientsPage() {
           <PillButton
             type="submit"
             form="operator-create-client-form"
-            disabled={busy || !name || !adminEmail || handleUnavailable || !!createPhoneError}
+            disabled={
+              busy ||
+              !name ||
+              !adminEmail ||
+              handleUnavailable ||
+              !!createPhoneError
+            }
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Create for setup
@@ -524,41 +334,27 @@ export default function OperatorClientsPage() {
         ) : selected ? (
           <>
             <PillButton
-              type="button"
               variant="secondary"
               disabled={busy}
               onClick={() => void impersonate(selected)}
             >
               Impersonate
             </PillButton>
-            {selected.operatorStatus === "onboarding" ? (
-              <PillButton
-                type="button"
-                disabled={busy}
-                onClick={() => void launch(selected)}
-              >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Send activation email
-              </PillButton>
-            ) : (
-              <PillButton
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => void moveToOnboarding(selected)}
-              >
-                Disable account
-              </PillButton>
-            )}
+            <PillButton href={`/operator/clients/${selected._id}`}>
+              Manage client
+            </PillButton>
           </>
         ) : null
       }
     >
       {panelMode === "create" ? (
-        <form id="operator-create-client-form" onSubmit={submitClient} className="space-y-3">
+        <form
+          id="operator-create-client-form"
+          onSubmit={submitClient}
+          className="space-y-3"
+        >
           <Field label="Client name">
-            <input
-              className={INPUT_CLASSES}
+            <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="ReLease"
@@ -568,7 +364,9 @@ export default function OperatorClientsPage() {
           <Field label="Broker">
             <Select
               value={brokerOrgId}
-              onValueChange={(value) => setBrokerOrgId(value ?? STANDALONE_VALUE)}
+              onValueChange={(value) =>
+                setBrokerOrgId(value ?? STANDALONE_VALUE)
+              }
             >
               <SelectTrigger className="w-full">
                 <SelectValue>
@@ -606,8 +404,7 @@ export default function OperatorClientsPage() {
             </Select>
           </Field>
           <Field label="Website">
-            <input
-              className={INPUT_CLASSES}
+            <Input
               value={website}
               onChange={(event) => setWebsite(event.target.value)}
               placeholder="https://releaserent.com"
@@ -618,7 +415,9 @@ export default function OperatorClientsPage() {
               <input
                 className={AFFIXED_INPUT_CLASSES}
                 value={agentHandle}
-                onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
+                onChange={(event) =>
+                  setAgentHandle(normalizeIdentifierInput(event.target.value))
+                }
                 placeholder="release"
               />
               <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
@@ -632,14 +431,17 @@ export default function OperatorClientsPage() {
               current=""
               currentLabel="Existing agent handle"
               availability={
-                agentHandle === debouncedAgentHandle ? handleAvailability : undefined
+                agentHandle === debouncedAgentHandle
+                  ? handleAvailability
+                  : undefined
               }
-              renderAvailablePreview={(value) => `${value}@${AGENT_DOMAIN} is available`}
+              renderAvailablePreview={(value) =>
+                `${value}@${AGENT_DOMAIN} is available`
+              }
             />
           </Field>
           <Field label="Client admin email">
-            <input
-              className={INPUT_CLASSES}
+            <Input
               value={adminEmail}
               onChange={(event) => setAdminEmail(event.target.value)}
               placeholder="terry@example.com"
@@ -648,8 +450,7 @@ export default function OperatorClientsPage() {
             />
           </Field>
           <Field label="Client admin name">
-            <input
-              className={INPUT_CLASSES}
+            <Input
               value={adminName}
               onChange={(event) => setAdminName(event.target.value)}
               placeholder="Terry Wang"
@@ -665,143 +466,75 @@ export default function OperatorClientsPage() {
           </Field>
         </form>
       ) : selected ? (
-        <fieldset disabled={busy} className="space-y-4">
-          <section className="space-y-3">
-            <Field label="Broker">
-              <Select
-                value={editBrokerOrgId}
-                onValueChange={(value) =>
-                  setEditBrokerOrgId(value ?? STANDALONE_VALUE)
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue>
-                    {selectedEditBroker ? (
-                      <span className="flex min-w-0 items-center gap-2">
-                        <OrgBrandIcon
-                          name={selectedEditBroker.name}
-                          iconUrl={selectedEditBroker.iconUrl}
-                          website={selectedEditBroker.website}
-                          size="sm"
-                        />
-                        <span className="truncate">{selectedEditBroker.name}</span>
-                      </span>
-                    ) : (
-                      "Standalone"
-                    )}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={STANDALONE_VALUE}>Standalone</SelectItem>
-                  {(brokers ?? []).map((broker) => (
-                    <SelectItem key={broker._id} value={broker._id}>
-                      <span className="flex min-w-0 items-center gap-2">
-                        <OrgBrandIcon
-                          name={broker.name}
-                          iconUrl={broker.iconUrl}
-                          website={broker.website}
-                          size="sm"
-                        />
-                        <span className="truncate">{broker.name}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Website">
-              <input
-                className={INPUT_CLASSES}
-                value={editWebsite}
-                onChange={(event) => setEditWebsite(event.target.value)}
-                placeholder="https://client.com"
-              />
-            </Field>
-            <Field label="Agent handle">
-              <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-                <input
-                  className={AFFIXED_INPUT_CLASSES}
-                  value={editAgentHandle}
-                  onChange={(event) =>
-                    setEditAgentHandle(normalizeIdentifierInput(event.target.value))
-                  }
-                  placeholder="client"
-                />
-                <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
-                  @{AGENT_DOMAIN}
-                </span>
-              </div>
-              <HandleAvailability
-                saving={clientSettingsAutoSave.saving}
-                checking={editHandleChecking}
-                input={editAgentHandle}
-                current={currentEditAgentHandle}
-                currentLabel="Current agent handle"
-                availability={
-                  editAgentHandle === debouncedEditAgentHandle
-                    ? editHandleAvailability
-                    : undefined
-                }
-                renderAvailablePreview={(value) =>
-                  `${value}@${AGENT_DOMAIN} is available`
-                }
-              />
-            </Field>
-            <Field label="Primary contact name">
-              <input
-                className={INPUT_CLASSES}
-                value={editPrimaryContactName}
-                onChange={(event) =>
-                  setEditPrimaryContactName(event.target.value)
-                }
-                placeholder="Client contact"
-              />
-            </Field>
-            <Field
-              label="Primary contact email"
-              error={!isValidOptionalEmail(editPrimaryContactEmail) ? "Enter a valid email" : null}
-            >
-              <input
-                className={INPUT_CLASSES}
-                value={editPrimaryContactEmail}
-                onChange={(event) =>
-                  setEditPrimaryContactEmail(event.target.value)
-                }
-                placeholder="client@example.com"
-                type="email"
-              />
-            </Field>
-            <Field
-              label="Primary contact phone"
-              error={!isValidOptionalPhone(editPrimaryContactPhone) ? "Enter a valid phone number" : null}
-            >
-              <PhoneInput
-                value={editPrimaryContactPhone}
-                onChange={(value) => setEditPrimaryContactPhone(value ?? "")}
-                defaultCountry="US"
-                placeholder="(555) 123-4567"
-              />
-            </Field>
-          </section>
-          <section className="space-y-3 border-t border-foreground/8 pt-4">
-            <p className="text-base font-medium text-foreground">Beta Features</p>
-            {clientBetaFlags.map((flag) => (
-              <FeatureFlagToggleRow
-                key={flag.id}
-                flag={flag}
-                enabled={isFeatureEnabled(selected, flag.id)}
-                onChange={(enabled) =>
-                  void updateClientFeatureFlag(selected, flag.id, enabled)
-                }
-                loading={savingFeatureFlagId === flag.id}
-                disabled={savingFeatureFlagId !== null}
-              />
-            ))}
-          </section>
-          <section className="border-t border-foreground/8 pt-4">
-            <AgentChannelsSection clientOrgId={selected._id} />
-          </section>
-        </fieldset>
+        <div className="space-y-5">
+          <div className="flex items-center gap-3">
+            <OrgBrandIcon
+              name={selected.name}
+              iconUrl={selected.iconUrl}
+              website={selected.website}
+              size="lg"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-base font-medium text-foreground">
+                {selected.primaryContactName ??
+                  selected.adminName ??
+                  "No primary contact"}
+              </p>
+              <p className="truncate text-base text-muted-foreground">
+                {contactEmail(selected) ?? "No contact email"}
+              </p>
+            </div>
+          </div>
+
+          <OperationalLabelValueList>
+            <OperationalLabelValueRow
+              label="Broker"
+              value={brokerLabel(selected)}
+            />
+            <OperationalLabelValueRow
+              label="Website"
+              value={selected.website ?? "Not set"}
+            />
+            <OperationalLabelValueRow
+              label="Agent email"
+              value={
+                selected.agentHandle
+                  ? `${selected.agentHandle}@${AGENT_DOMAIN}`
+                  : "Not set"
+              }
+            />
+            <OperationalLabelValueRow
+              label="Active channels"
+              value={
+                enabledChannels ?? (
+                  <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                )
+              }
+            />
+            <OperationalLabelValueRow
+              label="Slack"
+              value={
+                channelOverview ? (
+                  channelOverview.connection ? (
+                    `${channelOverview.connection.teamName}${
+                      channelOverview.primaryChannel
+                        ? ` · #${channelOverview.primaryChannel.channelName}`
+                        : " · No service channel"
+                    }`
+                  ) : (
+                    "Not connected"
+                  )
+                ) : (
+                  <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                )
+              }
+            />
+            <OperationalLabelValueRow
+              label="Created"
+              value={formatDisplayDate(selected.createdAt)}
+            />
+          </OperationalLabelValueList>
+        </div>
       ) : null}
     </SettingsDrawer>
   );
@@ -829,24 +562,42 @@ export default function OperatorClientsPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[25%] px-4 text-label text-muted-foreground">Client</TableHead>
-                <TableHead className="w-[20%] text-label text-muted-foreground">Broker</TableHead>
-                <TableHead className="w-[22%] text-label text-muted-foreground">Admin</TableHead>
-                <TableHead className="w-[18%] text-label text-muted-foreground">Website</TableHead>
-                <TableHead className="w-[10%] text-label text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">Created</TableHead>
+                <TableHead className="w-[25%] px-4 text-label text-muted-foreground">
+                  Client
+                </TableHead>
+                <TableHead className="w-[20%] text-label text-muted-foreground">
+                  Broker
+                </TableHead>
+                <TableHead className="w-[22%] text-label text-muted-foreground">
+                  Admin
+                </TableHead>
+                <TableHead className="w-[18%] text-label text-muted-foreground">
+                  Website
+                </TableHead>
+                <TableHead className="w-[10%] text-label text-muted-foreground">
+                  Status
+                </TableHead>
+                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">
+                  Created
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {clients === undefined ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="h-32 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={6}
+                    className="h-32 text-center text-muted-foreground"
+                  >
                     <Loader2 className="mx-auto h-5 w-5 animate-spin" />
                   </TableCell>
                 </TableRow>
               ) : clients.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="h-32 px-4 text-base text-muted-foreground">
+                  <TableCell
+                    colSpan={6}
+                    className="h-32 px-4 text-base text-muted-foreground"
+                  >
                     No client accounts found.
                   </TableCell>
                 </TableRow>
@@ -855,11 +606,11 @@ export default function OperatorClientsPage() {
                   <TableRow
                     key={client._id}
                     tabIndex={0}
-                    onClick={() => void openDetails(client)}
+                    onClick={() => openDetails(client)}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
-                      void openDetails(client);
+                      openDetails(client);
                     }}
                     className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
                       selectedId === client._id ? "bg-muted/50" : ""
@@ -873,7 +624,9 @@ export default function OperatorClientsPage() {
                           website={client.website}
                           size="md"
                         />
-                        <p className="truncate font-medium text-foreground">{client.name}</p>
+                        <p className="truncate font-medium text-foreground">
+                          {client.name}
+                        </p>
                       </div>
                     </TableCell>
                     <TableCell className="max-w-48 truncate text-muted-foreground">
@@ -886,14 +639,15 @@ export default function OperatorClientsPage() {
                       {client.website ?? "Not set"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={client.operatorStatus === "live" && !client.inviteStatus ? "default" : "secondary"}>
-                        {client.inviteStatus === "draft"
-                          ? "Draft"
-                          : client.inviteStatus === "invited"
-                            ? "Invited"
-                            : client.operatorStatus === "live"
-                              ? "Live"
-                              : "Onboarding"}
+                      <Badge
+                        variant={
+                          client.operatorStatus === "live" &&
+                          !client.inviteStatus
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        {operatorClientStatusLabel(client)}
                       </Badge>
                     </TableCell>
                     <TableCell className="px-4 text-muted-foreground">

@@ -32,7 +32,7 @@ describe("coverage recovery integration", () => {
 
   test("uses the client settings and operator client-management owners", () => {
     const betaSettings = source("components/settings/beta-features-section.tsx");
-    const operatorClients = source("app/operator/clients/page.tsx");
+    const operatorClients = source("app/operator/clients/[clientOrgId]/page.tsx");
     const orgs = source("convex/orgs.ts");
 
     expect(betaSettings).toContain("betaFeatureFlagsForOrgType(getFeatureFlagOrgType(org))");

@@ -106,6 +106,66 @@ describe("createSmoothCornersEngine", () => {
     expect(field.style.clipPath).toBe("");
   });
 
+  test("does not capture its own transparent border during color transitions", async () => {
+    document.body.innerHTML = `
+      <div
+        id="field"
+        style="width: 240px; height: 120px; border: 1px solid rgb(0, 0, 0); border-image-source: none; border-radius: 16px; background: white; background-image: none"
+      ></div>
+    `;
+    const field = document.querySelector<HTMLElement>("#field")!;
+    const readStyles = globalThis.getComputedStyle;
+    let emulateTransitionFromManagedBorder = false;
+    let poisonedBorderReads = 0;
+    vi.spyOn(globalThis, "getComputedStyle").mockImplementation(
+      (element, pseudoElement) => {
+        const styles = readStyles(element, pseudoElement);
+        if (element !== field) return styles;
+        return new Proxy(styles, {
+          get(target, property) {
+            if (property === "borderImageSource") return "none";
+            if (property === "transitionProperty") {
+              return field.style.transitionProperty;
+            }
+            if (property === "transitionDuration") {
+              return field.style.transitionDuration;
+            }
+            if (
+              emulateTransitionFromManagedBorder &&
+              field.style.borderColor !== "transparent" &&
+              field.style.transitionProperty !== "none" &&
+              (property === "borderTopColor" ||
+                property === "borderRightColor" ||
+                property === "borderBottomColor" ||
+                property === "borderLeftColor")
+            ) {
+              poisonedBorderReads += 1;
+              return "oklab(0 0 0 / 0)";
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    );
+    const engine = createSmoothCornersEngine();
+    destroyEngine = () => engine.destroy();
+
+    await flushFrames();
+    expect(field.style.clipPath).not.toBe("");
+    expect(field.style.borderColor).toBe("transparent");
+
+    field.style.transitionProperty = "border-color";
+    field.style.transitionDuration = "100ms";
+    emulateTransitionFromManagedBorder = true;
+    field.dispatchEvent(new Event("transitionend", { bubbles: true }));
+    await flushFrames();
+
+    expect(poisonedBorderReads).toBe(0);
+    expect(field.style.transitionProperty).toBe("border-color");
+    expect(field.style.clipPath).not.toBe("");
+  });
+
   test("reapplies managed styles after the root theme changes", async () => {
     document.body.innerHTML = `
       <div class="themed-card" style="width: 120px; height: 60px; border-radius: 16px; background: white"></div>
