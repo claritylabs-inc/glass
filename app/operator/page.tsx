@@ -9,7 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
@@ -390,9 +390,9 @@ export default function OperatorPage() {
           <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
             <span className="min-w-0 truncate">{selected.name}</span>
             <span className="flex shrink-0 items-center gap-2">
-              <Badge variant={selected.operatorStatus === "live" ? "default" : "secondary"}>
+              <StatusTag tone={selected.operatorStatus === "live" ? "success" : "warning"}>
                 {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
-              </Badge>
+              </StatusTag>
               <AutoSaveStatus status={brokerSettingsAutoSave.status} />
             </span>
           </span>
@@ -721,9 +721,9 @@ export default function OperatorPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{broker.clientCount}</TableCell>
                     <TableCell>
-                      <Badge variant={broker.operatorStatus === "live" ? "default" : "secondary"}>
+                      <StatusTag tone={broker.operatorStatus === "live" ? "success" : "warning"}>
                         {broker.operatorStatus === "live" ? "Live" : "Onboarding"}
-                      </Badge>
+                      </StatusTag>
                     </TableCell>
                     <TableCell className="px-4 text-muted-foreground">
                       {formatDisplayDate(broker.createdAt)}

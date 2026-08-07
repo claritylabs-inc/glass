@@ -11,7 +11,7 @@ describe("UI simplification", () => {
     const detail = source.slice(source.indexOf("export function CertificateDetailPanel"));
     expect(detail).not.toContain("actions={");
     expect(source).toContain("Current");
-    expect(source).toContain("versionBadge(version)");
+    expect(source).toContain("versionTag(version)");
   });
 
   it("removes overview policy tags and coverage form sublines", () => {

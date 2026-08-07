@@ -24,6 +24,10 @@ import { PolicyCitation } from "@/components/context-reference-card";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { ActionSurface } from "@/components/ui/action-surface";
 import { Badge } from "@/components/ui/badge";
+import {
+  StatusTag,
+  type StatusTagTone,
+} from "@/components/ui/status-tag";
 import { FileDropZone } from "@/components/ui/file-drop";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
@@ -335,45 +339,45 @@ function statusMeta(status?: ComplianceStatus) {
     case "met":
       return {
         label: "Met",
-        className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-500",
+        tone: "success" as StatusTagTone,
         icon: CheckCircle2,
       };
     case "expiring_soon":
       return {
         label: "Expiring",
-        className: "border-amber-500/25 bg-amber-500/10 text-amber-500",
+        tone: "warning" as StatusTagTone,
         icon: Clock,
       };
     case "unverified":
       return {
         label: "Unverified",
-        className: "border-amber-500/25 bg-amber-500/10 text-amber-500",
+        tone: "warning" as StatusTagTone,
         icon: AlertCircle,
       };
     case "expired":
     case "not_met":
       return {
         label: status === "expired" ? "Expired" : "Not met",
-        className: "border-red-500/25 bg-red-500/10 text-red-500",
+        tone: "danger" as StatusTagTone,
         icon: AlertCircle,
       };
     default:
       return {
         label: "Defined",
-        className: "border-foreground/10 bg-muted text-muted-foreground",
+        tone: "neutral" as StatusTagTone,
         icon: ShieldCheck,
       };
   }
 }
 
-function StatusBadge({ status }: { status?: ComplianceStatus }) {
+function ComplianceStatusTag({ status }: { status?: ComplianceStatus }) {
   const meta = statusMeta(status);
   const Icon = meta.icon;
   return (
-    <Badge variant="outline" className={`gap-1 ${meta.className}`}>
+    <StatusTag tone={meta.tone}>
       <Icon className="h-3 w-3" />
       {meta.label}
-    </Badge>
+    </StatusTag>
   );
 }
 
@@ -501,26 +505,17 @@ function OverviewTab({
                   {lineDisplayLabel(lob)}
                 </p>
                 {groupAttention > 0 ? (
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 border-red-500/25 bg-red-500/10 text-red-500"
-                  >
+                  <StatusTag tone="danger" className="shrink-0">
                     {groupAttention} needs attention
-                  </Badge>
+                  </StatusTag>
                 ) : groupExpiring > 0 ? (
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 border-amber-500/25 bg-amber-500/10 text-amber-500"
-                  >
+                  <StatusTag tone="warning" className="shrink-0">
                     {groupExpiring} expiring
-                  </Badge>
+                  </StatusTag>
                 ) : (
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
-                  >
+                  <StatusTag tone="success" className="shrink-0">
                     Met
-                  </Badge>
+                  </StatusTag>
                 )}
               </div>
               <p className="mt-2 text-label text-muted-foreground">
@@ -612,7 +607,7 @@ function RequirementsTable({
                 </TableCell>
                 <TableCell>
                   {requirement.complianceCheck ? (
-                    <StatusBadge status={requirement.complianceCheck.status} />
+                    <ComplianceStatusTag status={requirement.complianceCheck.status} />
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
@@ -719,7 +714,7 @@ function RequirementDrawer({
         if (!open) onClose();
       }}
       title={requirement.title}
-      actions={check ? <StatusBadge status={check.status} /> : undefined}
+      actions={check ? <ComplianceStatusTag status={check.status} /> : undefined}
       footer={
         <>
           {canManage && requirement.canArchive !== false ? (
@@ -1114,8 +1109,8 @@ function RequirementEditForm({
           <span className="text-destructive">Requirement text is required.</span>
         ) : null}
       </label>
-      <div className="flex items-center justify-between gap-3">
-        <AutoSaveStatus status={autoSave.status} />
+      <AutoSaveStatus status={autoSave.status} />
+      <div className="flex items-center justify-end gap-3">
         <PillButton
           type="button"
           size="compact"
@@ -1204,7 +1199,6 @@ function SourceDrawer({
         if (!open) onClose();
       }}
       title="Requirement source"
-      actions={canManage ? <AutoSaveStatus status={sourceAutoSave.status} /> : undefined}
       footer={
         canManage ? (
           <PillButton
@@ -1223,6 +1217,9 @@ function SourceDrawer({
         ) : null
       }
     >
+      {canManage ? (
+        <AutoSaveStatus status={sourceAutoSave.status} />
+      ) : null}
       <div className="space-y-5">
         <section className="space-y-3">
           <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">

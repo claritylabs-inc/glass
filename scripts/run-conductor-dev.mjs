@@ -16,19 +16,21 @@ const requiredPaths = [
   ".context/imessage-worker.env",
   ".context/slack-worker.env",
   ".convex/local/default/config.json",
+  "extraction-worker/dist/index.js",
   "imessage-worker/dist/index.js",
   "slack-worker/dist/src/index.js",
   "node_modules/.bin/concurrently",
   "node_modules/.bin/convex",
   "node_modules/.bin/next",
   "scripts/run-conductor-imessage-terminal.mjs",
+  "scripts/watch-conductor-email-captures.mjs",
   "scripts/run-conductor-web.mjs",
   "scripts/run-local-extraction-container.mjs",
 ];
 for (const relativePath of requiredPaths) {
   if (!existsSync(path.join(repoRoot, relativePath))) {
     throw new Error(
-      `${relativePath} is missing. Run npm run conductor:setup before starting local development.`,
+      `${relativePath} is missing. Run npm run conductor:setup before starting Conductor development.`,
     );
   }
 }
@@ -43,12 +45,17 @@ for (const name of ["web", "convex", "extraction", "slack"]) {
 const markerPath = path.join(repoRoot, ".context", "conductor-run-marker");
 writeFileSync(markerPath, `${randomBytes(16).toString("hex")}\n`);
 
+const isCloud = process.env.CONDUCTOR_IS_LOCAL === "0";
+const extractionCommand = isCloud
+  ? `PORT=${extraction} node --env-file=.context/extraction-worker.env extraction-worker/dist/index.js >> .context/logs/extraction.log 2>&1`
+  : `PORT=${extraction} node scripts/run-local-extraction-container.mjs >> .context/logs/extraction.log 2>&1`;
 const commands = [
   "node scripts/run-conductor-web.mjs >> .context/logs/web.log 2>&1",
   `CONVEX_AGENT_MODE=anonymous ./node_modules/.bin/convex dev --local-cloud-port ${convexCloud} --local-site-port ${convexSite} >> .context/logs/convex.log 2>&1`,
-  `PORT=${extraction} node scripts/run-local-extraction-container.mjs >> .context/logs/extraction.log 2>&1`,
+  extractionCommand,
   `PORT=${imessage} node scripts/run-conductor-imessage-terminal.mjs`,
   `PORT=${slack} node --env-file=.context/slack-worker.env slack-worker/dist/src/index.js >> .context/logs/slack.log 2>&1`,
+  "node scripts/watch-conductor-email-captures.mjs",
 ];
 
 const runEnvironment = {
@@ -65,7 +72,10 @@ console.log(`Convex:                  http://127.0.0.1:${convexCloud}`);
 console.log(
   "Background logs:        .context/logs/{web,convex,extraction,slack}.log",
 );
-console.log("The Run terminal opens the interactive Spectrum iMessage TUI.\n");
+console.log(
+  "Email and OTP capture:  shown here automatically; full messages are in convex.log",
+);
+console.log("The Run terminal also opens the interactive Spectrum iMessage TUI.\n");
 
 const child = spawn(
   path.join(repoRoot, "node_modules", ".bin", "concurrently"),
@@ -76,7 +86,7 @@ const child = spawn(
     "--default-input-target",
     "imessage",
     "--names",
-    "web,convex,extraction,imessage,slack",
+    "web,convex,extraction,imessage,slack,email",
     ...commands,
   ],
   {

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusTag } from "@/components/ui/status-tag";
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   lookup_policy: "Searched policies",
@@ -65,20 +65,14 @@ export function ToolCallCard({
         </span>
         <span className="ml-3 flex shrink-0 items-center gap-2">
           {isRunning ? (
-            <Badge
-              className="h-4 gap-1 border-foreground/10 bg-foreground/[0.03] px-1.5 text-label font-medium text-muted-foreground/60"
-              variant="outline"
-            >
+            <StatusTag tone="info" className="h-4 px-1.5 text-label">
               <Loader2 className="h-2.5 w-2.5 animate-spin" />
               Running
-            </Badge>
+            </StatusTag>
           ) : (
-            <Badge
-              className="h-4 gap-1 border-success/20 bg-success/10 px-1.5 text-label font-medium text-success/75"
-              variant="outline"
-            >
+            <StatusTag tone="success" className="h-4 px-1.5 text-label">
               Completed
-            </Badge>
+            </StatusTag>
           )}
           <span className="text-label font-medium text-muted-foreground/35">
             {isOpen ? "Hide" : "Show"}

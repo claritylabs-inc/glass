@@ -6,10 +6,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import {
-  OperationalPanel,
-  OperationalPanelHeader,
-} from "@/components/ui/operational-panel";
+import { OperationalPanel } from "@/components/ui/operational-panel";
 import {
   Select,
   SelectContent,
@@ -162,11 +159,13 @@ function SearchProviderRow({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-base font-medium text-foreground">
-            Search and retrieval
+            Web search
           </p>
-          <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
-            {webRetrieval.primary === "parallel" ? "Default" : "Override"}
-          </span>
+          {webRetrieval.primary !== "parallel" ? (
+            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
+              Override
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="flex w-full flex-col gap-2 justify-self-start xl:w-auto xl:flex-row xl:justify-self-end">
@@ -260,7 +259,7 @@ export default function OperatorToolsPage() {
       disableCommandPalette
       showBrokerShare={false}
     >
-      <main className="flex w-full flex-col">
+      <main className="flex w-full max-w-4xl flex-col">
         {settings === undefined ? (
           <OperationalPanel>
             <div className="flex h-40 items-center justify-center text-muted-foreground">
@@ -269,8 +268,7 @@ export default function OperatorToolsPage() {
           </OperationalPanel>
         ) : (
           <OperationalPanel>
-            <OperationalPanelHeader title="Web" />
-            <div className="divide-y divide-foreground/6 px-4">
+            <div className="px-4">
               <SearchProviderRow
                 webRetrieval={settings.webRetrieval}
                 providers={settings.webRetrievalProviders}

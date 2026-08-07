@@ -9,7 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { HandleAvailability } from "@/components/settings/handle-availability";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
@@ -302,15 +302,15 @@ export default function OperatorClientsPage() {
           <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
             <span className="min-w-0 truncate">{selected.name}</span>
             <span className="flex shrink-0 items-center gap-2">
-              <Badge
-                variant={
+              <StatusTag
+                tone={
                   selected.operatorStatus === "live" && !selected.inviteStatus
-                    ? "default"
-                    : "secondary"
+                    ? "success"
+                    : "warning"
                 }
               >
                 {operatorClientStatusLabel(selected)}
-              </Badge>
+              </StatusTag>
             </span>
           </span>
         )
@@ -486,7 +486,7 @@ export default function OperatorClientsPage() {
             </div>
           </div>
 
-          <OperationalLabelValueList>
+          <OperationalLabelValueList title="Client details">
             <OperationalLabelValueRow
               label="Broker"
               value={brokerLabel(selected)}
@@ -496,19 +496,26 @@ export default function OperatorClientsPage() {
               value={selected.website ?? "Not set"}
             />
             <OperationalLabelValueRow
-              label="Agent email"
-              value={
-                selected.agentHandle
-                  ? `${selected.agentHandle}@${AGENT_DOMAIN}`
-                  : "Not set"
-              }
+              label="Created"
+              value={formatDisplayDate(selected.createdAt)}
             />
+          </OperationalLabelValueList>
+
+          <OperationalLabelValueList title="Agent channels">
             <OperationalLabelValueRow
               label="Active channels"
               value={
                 enabledChannels ?? (
                   <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
                 )
+              }
+            />
+            <OperationalLabelValueRow
+              label="Email"
+              value={
+                selected.agentHandle
+                  ? `${selected.agentHandle}@${AGENT_DOMAIN}`
+                  : "Not set"
               }
             />
             <OperationalLabelValueRow
@@ -528,10 +535,6 @@ export default function OperatorClientsPage() {
                   <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
                 )
               }
-            />
-            <OperationalLabelValueRow
-              label="Created"
-              value={formatDisplayDate(selected.createdAt)}
             />
           </OperationalLabelValueList>
         </div>
@@ -639,16 +642,16 @@ export default function OperatorClientsPage() {
                       {client.website ?? "Not set"}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant={
+                      <StatusTag
+                        tone={
                           client.operatorStatus === "live" &&
                           !client.inviteStatus
-                            ? "default"
-                            : "secondary"
+                            ? "success"
+                            : "warning"
                         }
                       >
                         {operatorClientStatusLabel(client)}
-                      </Badge>
+                      </StatusTag>
                     </TableCell>
                     <TableCell className="px-4 text-muted-foreground">
                       {formatDisplayDate(client.createdAt)}

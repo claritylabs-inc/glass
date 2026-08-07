@@ -7,8 +7,11 @@ import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  StatusTag,
+  type StatusTagTone,
+} from "@/components/ui/status-tag";
 import { ThreadAttachmentChip } from "../thread-attachment-chip";
 import {
   useCachedQuery,
@@ -376,6 +379,13 @@ function getEmailStatusLabel(message: ThreadMessage) {
   return "Email";
 }
 
+function getEmailStatusTone(message: ThreadMessage): StatusTagTone {
+  if (message.status === "draft_email") return "warning";
+  if (message.status === "cancelled") return "danger";
+  if (message.role === "agent") return "success";
+  return "neutral";
+}
+
 export function EmailStackCard({
   messages,
   onOpen,
@@ -498,12 +508,9 @@ export function EmailStackCard({
                       {attachmentCount} file{attachmentCount === 1 ? "" : "s"}
                     </span>
                   ) : null}
-                  <Badge
-                    variant="outline"
-                    className="h-5 border-foreground/10 px-1.5 font-medium text-muted-foreground/60"
-                  >
+                  <StatusTag tone={getEmailStatusTone(message)}>
                     {getEmailStatusLabel(message)}
-                  </Badge>
+                  </StatusTag>
                 </span>
               </span>
             </button>
@@ -620,9 +627,17 @@ export function EmailThreadSidebar({
             {message.subject ||
               (message.role === "agent" ? "Sent email" : "Received email")}
           </h2>
-          <Badge
-            variant="outline"
-            className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55"
+          <StatusTag
+            tone={
+              isDraft
+                ? "warning"
+                : isCancelled
+                  ? "danger"
+                  : isSent
+                    ? "success"
+                    : "neutral"
+            }
+            className="shrink-0"
           >
             {isDraft
               ? "Draft"
@@ -631,7 +646,7 @@ export function EmailThreadSidebar({
                 : isSent
                   ? "Sent"
                   : "Email"}
-          </Badge>
+          </StatusTag>
         </div>
         <PillButton
           size="compact"

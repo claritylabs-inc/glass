@@ -180,14 +180,14 @@ export function ClientEmailRoutingSection({
   }
 
   return (
-    <OperationalPanel>
+    <>
+      {canEdit ? <AutoSaveStatus status={autoSave.status} /> : null}
+      <OperationalPanel>
       <OperationalPanelHeader
         title="Inbound email access"
         description="Choose who Glass can identify as this client when they email your agent address."
         action={
-          canEdit ? (
-            <AutoSaveStatus status={autoSave.status} />
-          ) : (
+          canEdit ? undefined : (
             <span className="text-label text-muted-foreground">
               Broker admins can edit
             </span>
@@ -395,6 +395,7 @@ export function ClientEmailRoutingSection({
           </div>
         ) : null}
       </OperationalPanelBody>
-    </OperationalPanel>
+      </OperationalPanel>
+    </>
   );
 }

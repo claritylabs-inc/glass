@@ -25,6 +25,16 @@ const AUTO_SAVE_SURFACES = [
 ];
 
 describe("auto-save surfaces", () => {
+  it("mounts one global status host and keeps individual save state out of page chrome", () => {
+    const layout = read("app/layout.tsx");
+    const status = read("components/ui/auto-save-status.tsx");
+
+    expect(layout).toContain("AutoSaveStatusProvider");
+    expect(status).toContain("SLOW_SAVE_DELAY_MS = 3_000");
+    expect(status).not.toContain('saved: "Saved"');
+    expect(status).toContain("fixed inset-x-0");
+  });
+
   it("uses the shared persistence and status primitives everywhere", () => {
     for (const path of AUTO_SAVE_SURFACES) {
       const source = read(path);
@@ -192,11 +202,11 @@ describe("auto-save surfaces", () => {
     ).toBeLessThan(broker.indexOf("await startImpersonation"));
 
     const clientImpersonation = client.slice(
-      client.indexOf("async function impersonate"),
+      client.indexOf("const impersonate = useCallback"),
       client.indexOf("async function launch"),
     );
     expect(
-      clientImpersonation.indexOf("await clientSettingsAutoSave.saveNow()"),
+      clientImpersonation.indexOf("await saveClientSettingsNow()"),
     ).toBeLessThan(clientImpersonation.indexOf("await startImpersonation"));
     const clientLaunch = client.slice(
       client.indexOf("async function launch"),

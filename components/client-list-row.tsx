@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { PillButton } from "@/components/ui/pill-button";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { useMutation } from "convex/react";
@@ -69,12 +69,12 @@ const STATUS_LABELS: Record<string, string> = {
   active: "Active",
 };
 
-const STATUS_VARIANTS: Record<string, "secondary" | "outline" | "default"> = {
-  draft: "outline",
-  invited: "outline",
-  onboarding: "secondary",
-  active: "default",
-};
+const STATUS_TONES = {
+  draft: "neutral",
+  invited: "info",
+  onboarding: "warning",
+  active: "success",
+} as const;
 
 export function ClientListRow({ row }: { row: ClientRow }) {
   const revokeInvite = useMutation(api.clientInvitations.revoke);
@@ -127,10 +127,10 @@ export function ClientListRow({ row }: { row: ClientRow }) {
     </div>
   );
 
-  const badge = (
-    <Badge variant={STATUS_VARIANTS[row.onboardingStatus]} className="shrink-0">
+  const statusTag = (
+    <StatusTag tone={STATUS_TONES[row.onboardingStatus]} className="shrink-0">
       {STATUS_LABELS[row.onboardingStatus]}
-    </Badge>
+    </StatusTag>
   );
 
   const timestamp = (label: string) => (
@@ -143,7 +143,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
     return (
       <div className={rowClass}>
         {nameBlock}
-        {badge}
+        {statusTag}
         {timestamp(dayjs(row.createdAt).fromNow())}
         <PillButton
           type="button"
@@ -170,7 +170,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
     return (
       <div className={rowClass}>
         {nameBlock}
-        {badge}
+        {statusTag}
         {timestamp(dayjs(row.createdAt).fromNow())}
         <PillButton
           type="button"
@@ -228,7 +228,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
       <span className="hidden max-w-40 truncate text-label text-muted-foreground lg:block">
         {brokerContactLabel}
       </span>
-      {badge}
+      {statusTag}
       {timestamp(activityLabel)}
       <PillButton type="button" size="compact" variant="secondary" className="shrink-0">
         View

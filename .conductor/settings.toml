@@ -11,10 +11,15 @@ archive = "npm run conductor:archive"
 run_mode = "concurrent"
 
 [scripts.run.dev]
-available_in = [ "local" ]
+available_in = [ "local", "cloud" ]
 command = "npm run conductor:dev"
 default = true
 icon = "rocket"
+
+[scripts.run.email-deliveries]
+available_in = [ "local", "cloud" ]
+command = "npm run conductor:emails"
+icon = "mail"
 
 [scripts.run.web]
 available_in = [ "local" ]

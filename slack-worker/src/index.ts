@@ -16,6 +16,12 @@ type SendRequest = {
 type AttachmentRequest = { teamId: string; fileId: string };
 type ActorRequest = { teamId: string; userId: string };
 type ConnectChannelRequest = { clientSlug: string; inviteEmail: string };
+type ListChannelsRequest = {
+  teamId: string;
+  currentChannelId?: string;
+  currentChannelName?: string;
+};
+type SlackChannel = { id: string; name: string };
 type SlackInstallation = {
   teamId: string;
   botToken: string;
@@ -220,13 +226,15 @@ async function uploadSlackFile(args: {
   if (!uploaded.ok) {
     throw new Error(`Slack file upload failed (${uploaded.status})`);
   }
-  const completed = await slackApi<
-    SlackResponse & { files?: SlackFile[] }
-  >("files.completeUploadExternal", args.token, {
-    files: [{ id: upload.file_id, title: args.filename }],
-    channel_id: args.channelId,
-    ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
-  });
+  const completed = await slackApi<SlackResponse & { files?: SlackFile[] }>(
+    "files.completeUploadExternal",
+    args.token,
+    {
+      files: [{ id: upload.file_id, title: args.filename }],
+      channel_id: args.channelId,
+      ...(args.threadTs ? { thread_ts: args.threadTs } : {}),
+    },
+  );
   if (args.threadTs) return args.threadTs;
   const completedFile = completed.files?.find(
     (file) => file.id === upload.file_id,
@@ -413,7 +421,8 @@ async function createConnectChannel(input: ConnectChannelRequest) {
     SlackResponse & { channel?: { id?: string; name?: string } }
   >("conversations.create", installation.botToken, { name, is_private: true });
   const channelId = created.channel?.id;
-  if (!channelId) throw new Error("Slack did not return the created channel ID");
+  if (!channelId)
+    throw new Error("Slack did not return the created channel ID");
   const invited = await slackApi<SlackResponse & { invite_id?: string }>(
     "conversations.inviteShared",
     installation.botToken,
@@ -430,6 +439,68 @@ async function createConnectChannel(input: ConnectChannelRequest) {
   };
 }
 
+async function listSlackChannels(input: ListChannelsRequest) {
+  if (!input.teamId?.trim()) throw new Error("teamId is required");
+  if (mode === "mock") {
+    const channels: SlackChannel[] = [
+      ...(input.currentChannelId && input.currentChannelName
+        ? [
+            {
+              id: input.currentChannelId,
+              name: input.currentChannelName,
+            },
+          ]
+        : []),
+      { id: `mock-${input.teamId}-general`, name: "general" },
+      { id: `mock-${input.teamId}-policies`, name: "policy-updates" },
+    ];
+    return {
+      channels: channels.filter(
+        (channel, index) =>
+          channels.findIndex((candidate) => candidate.id === channel.id) ===
+          index,
+      ),
+    };
+  }
+
+  const installation = await slackInstallation(input.teamId);
+  const channels: SlackChannel[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await slackApi<
+      SlackResponse & {
+        channels?: Array<{
+          id?: string;
+          name?: string;
+          is_archived?: boolean;
+          is_member?: boolean;
+        }>;
+        response_metadata?: { next_cursor?: string };
+      }
+    >("conversations.list", installation.botToken, {
+      types: "public_channel,private_channel",
+      exclude_archived: true,
+      limit: 200,
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const channel of result.channels ?? []) {
+      if (
+        channel.id &&
+        channel.name &&
+        !channel.is_archived &&
+        channel.is_member
+      ) {
+        channels.push({ id: channel.id, name: channel.name });
+      }
+    }
+    cursor = result.response_metadata?.next_cursor?.trim() || undefined;
+  } while (cursor);
+
+  return {
+    channels: channels.sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
 const server = http.createServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/health") {
     const tokenBrokerConfigured =
@@ -441,8 +512,7 @@ const server = http.createServer(async (request, response) => {
       mode,
       workerSecretConfigured: Boolean(workerSecret),
       tokenBrokerConfigured,
-      clarityTeamConfigured:
-        mode === "mock" || Boolean(clarityTeamId),
+      clarityTeamConfigured: mode === "mock" || Boolean(clarityTeamId),
       outboundEnabled: tokenBrokerConfigured,
       attachmentRetrievalEnabled: mode === "slack" && tokenBrokerConfigured,
       actorResolutionEnabled: mode === "mock" || tokenBrokerConfigured,
@@ -450,7 +520,8 @@ const server = http.createServer(async (request, response) => {
         mode === "mock" || Boolean(clarityTeamId && tokenBrokerConfigured),
     });
   }
-  if (!authorized(request)) return json(response, 401, { error: "Unauthorized" });
+  if (!authorized(request))
+    return json(response, 401, { error: "Unauthorized" });
 
   try {
     if (request.method === "POST" && request.url === "/send") {
@@ -489,8 +560,15 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === "POST" && request.url === "/connect-channel") {
       const input = await readJson<ConnectChannelRequest>(request);
-      if (!input.inviteEmail?.trim()) throw new Error("inviteEmail is required");
+      if (!input.inviteEmail?.trim())
+        throw new Error("inviteEmail is required");
       return json(response, 200, await createConnectChannel(input));
+    }
+    if (request.method === "POST" && request.url === "/channels") {
+      const result = await listSlackChannels(
+        await readJson<ListChannelsRequest>(request),
+      );
+      return json(response, 200, result);
     }
     return json(response, 404, { error: "Not found" });
   } catch (error) {

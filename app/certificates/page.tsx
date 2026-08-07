@@ -21,7 +21,7 @@ import {
   type CertificateVersionRecord,
   type PolicyCertificateRecord,
 } from "@/components/certificates/certificate-workspace";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import {
   OperationalItem,
   OperationalPanel,
@@ -100,11 +100,12 @@ function filterCertificates({
   );
 }
 
-function jobBadge(status: string) {
-  if (status === "failed" || status === "blocked_missing_contact") return "destructive" as const;
-  if (status === "review_required") return "secondary" as const;
-  if (status === "sent") return "default" as const;
-  return "outline" as const;
+function jobTone(status: string) {
+  if (status === "failed" || status === "blocked_missing_contact") return "danger" as const;
+  if (status === "review_required") return "warning" as const;
+  if (status === "sent") return "success" as const;
+  if (status === "sending") return "info" as const;
+  return "neutral" as const;
 }
 
 function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
@@ -116,9 +117,9 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
             <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
               {job.holder?.displayName ?? job.recipientName ?? "Certificate holder"}
             </p>
-            <Badge variant={jobBadge(job.status)} className="capitalize">
+            <StatusTag tone={jobTone(job.status)} className="capitalize">
               {job.status.replace(/_/g, " ")}
-            </Badge>
+            </StatusTag>
           </div>
           <p className="mt-1 text-base leading-5 text-muted-foreground">
             {job.reason ?? job.lastError ?? "Certificate review queued"}

@@ -11,7 +11,7 @@ import { AppShell } from "@/components/app-shell";
 import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { ActionSurfaceButton } from "@/components/ui/action-surface";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -93,11 +93,12 @@ const STATUS_LABELS: Record<DeliveryStatus, string> = {
   cancelled: "Cancelled",
 };
 
-function statusVariant(status: DeliveryStatus): "default" | "secondary" | "outline" | "destructive" {
-  if (status === "sent") return "default";
-  if (status === "failed" || status === "blocked") return "destructive";
-  if (status === "review_required" || status === "partially_sent") return "secondary";
-  return "outline";
+function statusTone(status: DeliveryStatus) {
+  if (status === "sent") return "success" as const;
+  if (status === "failed" || status === "blocked") return "danger" as const;
+  if (status === "review_required" || status === "partially_sent") return "warning" as const;
+  if (status === "queued" || status === "sending") return "info" as const;
+  return "neutral" as const;
 }
 
 function channelLabel(channels: DeliveryChannel[]) {
@@ -212,7 +213,7 @@ function DeliveryDrawer({
                 {job.clientName ?? "Client"} · {job.policy?.carrier ?? job.policy?.security ?? "Carrier"}
               </p>
             </div>
-            <Badge variant={statusVariant(job.status)}>{STATUS_LABELS[job.status]}</Badge>
+            <StatusTag tone={statusTone(job.status)}>{STATUS_LABELS[job.status]}</StatusTag>
           </div>
           <p className="text-base text-muted-foreground">{statusDescription(job)}</p>
         </section>
@@ -235,7 +236,18 @@ function DeliveryDrawer({
               {(job.attempts ?? []).map((attempt) => (
                 <div key={attempt._id} className="flex items-center justify-between gap-3 px-3 py-2 text-base">
                   <span>{channelLabel([attempt.channel])}</span>
-                  <span className="text-muted-foreground">{attempt.status}</span>
+                  <StatusTag
+                    tone={
+                      attempt.status === "sent"
+                        ? "success"
+                        : attempt.status === "failed"
+                          ? "danger"
+                          : "neutral"
+                    }
+                    className="capitalize"
+                  >
+                    {attempt.status}
+                  </StatusTag>
                 </div>
               ))}
             </div>
@@ -369,7 +381,7 @@ export default function DeliveriesPage() {
                     <TableCell className="text-muted-foreground">{channelLabel(job.channels)}</TableCell>
                     <TableCell className="max-w-44 truncate text-muted-foreground">{job.ruleName ?? "Default"}</TableCell>
                     <TableCell>
-                      <Badge variant={statusVariant(job.status)}>{STATUS_LABELS[job.status]}</Badge>
+                      <StatusTag tone={statusTone(job.status)}>{STATUS_LABELS[job.status]}</StatusTag>
                     </TableCell>
                     <TableCell className="px-4 text-muted-foreground">
                       {formatDisplayDateTime(job.updatedAt)}

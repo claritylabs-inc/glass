@@ -9,7 +9,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { PolicyUploadDrawer } from "@/components/policy-upload-drawer";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import {
   Table,
@@ -74,6 +74,18 @@ function displayStatus(
   }
   if (!status || status === "running") return "extracting";
   return status.replace(/_/g, " ");
+}
+
+function statusTone(
+  status?: string | null,
+  extractionDataStage?: string | null,
+) {
+  const display = displayStatus(status, extractionDataStage);
+  if (display === "complete") return "success" as const;
+  if (display === "error" || display === "failed") return "danger" as const;
+  if (display === "paused") return "warning" as const;
+  if (display === "extracting" || display === "enriching") return "info" as const;
+  return "neutral" as const;
 }
 
 function displayUploadedBy(side?: BrokerPolicyRow["uploadedBySide"]) {
@@ -441,15 +453,18 @@ export default function ClientPoliciesPage() {
                       {displayUploadedBy(policy.uploadedBySide)}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className="font-normal text-muted-foreground"
+                      <StatusTag
+                        tone={statusTone(
+                          policy.pipelineStatus,
+                          policy.extractionDataStage,
+                        )}
+                        className="font-normal"
                       >
                         {displayStatus(
                           policy.pipelineStatus,
                           policy.extractionDataStage,
                         )}
-                      </Badge>
+                      </StatusTag>
                     </TableCell>
                     <TableCell className="max-w-60 px-4 truncate text-muted-foreground">
                       {cleanField(policy.fileName) ?? "-"}

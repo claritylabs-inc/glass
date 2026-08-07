@@ -1,8 +1,8 @@
 "use client";
 
 import { AlertTriangle, Copy, FileLock2, Mail } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
 
 type CertificateHoldArtifact = {
   type?: string;
@@ -102,12 +102,9 @@ export function CertificateHoldArtifacts({
                     <p className="text-base font-medium leading-5 text-foreground/90">
                       Certificate on hold
                     </p>
-                    <Badge
-                      variant="outline"
-                      className="h-5 border-amber-500/25 px-1.5 capitalize text-amber-700"
-                    >
+                    <StatusTag tone="warning" className="capitalize">
                       broker review
-                    </Badge>
+                    </StatusTag>
                   </div>
                   <p className="mt-1 text-base leading-5 text-muted-foreground">
                     {message}

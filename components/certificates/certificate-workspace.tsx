@@ -12,7 +12,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { AddressAutofillInput } from "@/components/ui/address-autofill-input";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -228,13 +228,13 @@ export function formatCertificateTime(value?: number) {
   return formatDisplayDateTime(value, "Not issued");
 }
 
-function versionBadge(version?: CertificateVersionRecord | null) {
-  if (!version) return { label: "No version", variant: "outline" as const };
-  if (version.status === "issued") return { label: "Issued", variant: "secondary" as const };
-  if (version.status === "void") return { label: "Void", variant: "destructive" as const };
+function versionTag(version?: CertificateVersionRecord | null) {
+  if (!version) return { label: "No version", tone: "neutral" as const };
+  if (version.status === "issued") return { label: "Issued", tone: "success" as const };
+  if (version.status === "void") return { label: "Void", tone: "danger" as const };
   return {
     label: version.status.replace(/_/g, " "),
-    variant: "outline" as const,
+    tone: "neutral" as const,
   };
 }
 
@@ -482,7 +482,7 @@ function CertificateVersionRow({
   version: CertificateVersionRecord;
   isCurrent: boolean;
 }) {
-  const badge = versionBadge(version);
+  const tag = versionTag(version);
   return (
     <CertificatePdfItem
       url={version.url}
@@ -499,13 +499,13 @@ function CertificateVersionRow({
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {isCurrent ? (
-            <Badge variant="secondary">
+            <StatusTag tone="success">
               Current
-            </Badge>
+            </StatusTag>
           ) : null}
-          <Badge variant={badge.variant} className="capitalize">
-            {badge.label}
-          </Badge>
+          <StatusTag tone={tag.tone} className="capitalize">
+            {tag.label}
+          </StatusTag>
         </div>
       </div>
     </CertificatePdfItem>

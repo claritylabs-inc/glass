@@ -5,7 +5,7 @@ import { useParams, usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 
 const ClientDetailActionsContext = createContext<{
@@ -47,9 +47,9 @@ export default function ClientDetailLayout({
   const actions = (
     <div className="flex items-center gap-2">
       {clientOrg && isClientRoot ? (
-        <Badge variant={status === "active" ? "default" : "secondary"}>
+        <StatusTag tone={status === "active" ? "success" : "warning"}>
           {statusLabel}
-        </Badge>
+        </StatusTag>
       ) : null}
       {pageActions}
     </div>

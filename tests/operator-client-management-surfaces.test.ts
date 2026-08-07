@@ -12,6 +12,16 @@ describe("operator client management surfaces", () => {
 
     expect(clients).toContain("OperationalLabelValueList");
     expect(clients).toContain("Manage client");
+    expect(clients).toContain(
+      '<OperationalLabelValueList title="Client details">',
+    );
+    expect(clients).toContain(
+      '<OperationalLabelValueList title="Agent channels">',
+    );
+    expect(clients).toContain('label="Active channels"');
+    expect(clients).toContain('label="Email"');
+    expect(clients).toContain('label="Slack"');
+    expect(clients).not.toContain("AGENT_TEXT_NUMBER_DISPLAY");
     expect(clients).not.toContain("FeatureFlagToggleRow");
     expect(clients).not.toContain("AgentChannelsSection");
     expect(clients).not.toContain("updateClientSettings");
@@ -26,6 +36,15 @@ describe("operator client management surfaces", () => {
     expect(client).toContain("useLocalFirstAutoSave");
     expect(client).toContain("FeatureFlagToggleRow");
     expect(client).toContain("AgentChannelsSection");
+    expect(client).toContain('aria-labelledby="client-identity-title"');
+    expect(client).toContain('breadcrumbDetail={client?.name ?? "Client"}');
+    expect(client).toContain(
+      '<FormSection title="Agent address" divided={false}>',
+    );
+    expect(client).toContain(
+      '<FormSection title="Primary contact" divided={false}>',
+    );
+    expect(client).not.toContain("showPanelDescriptions");
   });
 
   it("separates global Slack infrastructure from client setup", () => {
@@ -36,10 +55,38 @@ describe("operator client management surfaces", () => {
     const sidebar = read("app/operator/operator-sidebar.tsx");
 
     expect(operatorChannels).toContain("getSlackHostStatus");
+    expect(operatorChannels).toContain("listOperatorSlackIdentities");
     expect(operatorChannels).toContain("beginHost");
     expect(operatorChannels).toContain("setOperatorSlackIdentity");
+    expect(operatorChannels).toContain("Connect workspace");
+    expect(operatorChannels).toContain("Slack not enabled");
+    expect(operatorChannels).toContain("Clarity workspace");
+    expect(operatorChannels).toContain("Test mode");
+    expect(operatorChannels).toContain("Slack workspace name");
+    expect(operatorChannels).toContain("Slack team ID");
+    expect(operatorChannels).toContain("Operator Slack identities");
+    expect(operatorChannels).toContain("Other Glass operators");
+    expect(operatorChannels).toContain("Slack member ID");
+    expect(operatorChannels).toContain("How to find your member ID");
+    expect(operatorChannels).toContain("Copy member ID");
+    expect(operatorChannels).toContain("Save identity");
+    expect(operatorChannels).toContain("Workspace mismatch");
+    expect(operatorChannels).toContain(
+      '<TabsTrigger value="slack">Slack</TabsTrigger>',
+    );
+    expect(operatorChannels).toContain('<TabsContent value="slack">');
+    expect(operatorChannels).toContain("<SettingsDrawer");
+    expect(operatorChannels).toContain("rightPanel={rightPanel}");
+    expect(operatorChannels).toContain('className="space-y-3"');
+    expect(operatorChannels).toContain("bg-popover px-4 py-3");
+    expect(operatorChannels).not.toContain("SLACK_CLARITY_TEAM_ID");
+    expect(operatorChannels).not.toContain(
+      "Connect the Clarity workspace once",
+    );
+    expect(operatorChannels).not.toContain("host workspace fixture");
+    expect(operatorChannels).not.toContain("max-w-4xl");
     expect(sidebar).toContain('href="/operator/channels"');
-    expect(clientChannels).toContain('title="Service channel invitation"');
+    expect(clientChannels).toContain("<SettingsDrawer");
     expect(clientChannels).not.toContain("getSlackHostStatus");
     expect(clientChannels).not.toContain("beginHost");
     expect(clientChannels).not.toContain("setOperatorSlackIdentity");

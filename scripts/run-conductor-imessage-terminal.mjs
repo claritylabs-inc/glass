@@ -29,9 +29,18 @@ const terminalEnvironment = {
 };
 delete terminalEnvironment.FORCE_COLOR;
 
+const scriptArguments =
+  process.platform === "darwin"
+    ? ["-q", "/dev/null", process.execPath, "imessage-worker/dist/index.js"]
+    : [
+        "-q",
+        "-c",
+        `"${process.execPath}" imessage-worker/dist/index.js`,
+        "/dev/null",
+      ];
 const child = spawn(
   "script",
-  ["-q", "/dev/null", process.execPath, "imessage-worker/dist/index.js"],
+  scriptArguments,
   {
     cwd: repoRoot,
     env: terminalEnvironment,

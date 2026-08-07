@@ -322,6 +322,7 @@ try {
     IMESSAGE_WORKER_SECRET: imessageSecret,
     SLACK_ENABLED: "true",
     SLACK_MODE: "mock",
+    SLACK_CLARITY_TEAM_ID: "T-CLARITY-FIXTURE",
     SLACK_WORKER_URL: `http://127.0.0.1:${slack}`,
     SLACK_WORKER_SECRET: slackSecret,
     SLACK_SIGNING_SECRET: slackWebhookSecret,
@@ -398,5 +399,5 @@ if (process.env.CONDUCTOR_IS_LOCAL !== "0") {
 }
 
 console.log(
-  "\nConductor workspace ready with its own local Convex database. Run the default Local dev template to start Glass, Convex, extraction, Spectrum terminal, and the Slack mock worker.",
+  "\nConductor workspace ready with its own local Convex database. Run the default Dev template to start Glass, Convex, extraction, Spectrum terminal, the Slack mock worker, and automatic email/OTP capture.",
 );

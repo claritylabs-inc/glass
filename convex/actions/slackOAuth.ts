@@ -15,7 +15,10 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "../lib/userFacingErrors";
-import { isSlackMockMode } from "../lib/slackConfig";
+import {
+  getSlackHostConfiguration,
+  isSlackMockMode,
+} from "../lib/slackConfig";
 import {
   encryptSlackCredential,
   resolveSlackInstallation,
@@ -73,9 +76,6 @@ export const begin = action({
     if (process.env.SLACK_ENABLED !== "true") {
       throw new Error("Slack is not enabled for this environment");
     }
-    if (isSlackMockMode()) {
-      throw new Error("Slack OAuth is unavailable in mock mode");
-    }
     if (!args.thirdPartyVisibilityAcknowledged) {
       throw new Error(
         "Acknowledge that everyone in a channel can see Glass responses before installing.",
@@ -87,6 +87,24 @@ export const begin = action({
       internalApi.agentChannels.authorizeSetup,
       { clientOrgId: args.clientOrgId, userId },
     );
+    if (isSlackMockMode()) {
+      const existing = await ctx.runQuery(
+        internalApi.agentChannels.getSlackConnectionForMockSetup,
+        { clientOrgId: args.clientOrgId },
+      );
+      await ctx.runMutation(internalApi.agentChannels.upsertSlackConnection, {
+        clientOrgId: args.clientOrgId,
+        teamId: existing?.teamId ?? `T-MOCK-${args.clientOrgId}`,
+        teamName:
+          existing?.teamName ?? `${permission.org.name} local workspace`,
+        botUserId: existing?.botUserId ?? "U-GLASS",
+        grantedScopes: [...SLACK_CUSTOMER_SCOPES],
+        ...(permission.kind === "operator"
+          ? { installedByOperatorUserId: userId }
+          : { installedByUserId: userId }),
+      });
+      return { url: null, mockRefreshed: true as const };
+    }
     const state = await ctx.runMutation(
       internalApi.agentChannels.createOAuthState,
       {
@@ -100,15 +118,19 @@ export const begin = action({
     url.searchParams.set("scope", SLACK_CUSTOMER_SCOPES.join(","));
     url.searchParams.set("redirect_uri", redirectUri());
     url.searchParams.set("state", state);
-    return { url: url.toString() };
+    return { url: url.toString(), mockRefreshed: false as const };
   },
 });
 
 export const beginHost = action({
   args: {},
   handler: async (ctx) => {
-    if (isSlackMockMode()) {
+    const configuration = getSlackHostConfiguration();
+    if (configuration.mode === "mock") {
       throw new Error("Slack OAuth is unavailable in mock mode");
+    }
+    if (!configuration.configured) {
+      throw new Error("Slack host setup is not configured for this environment");
     }
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);

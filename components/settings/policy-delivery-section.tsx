@@ -11,6 +11,7 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import {
   OperationalPanel,
   OperationalPanelHeader,
@@ -457,6 +458,9 @@ function PolicyDeliveryEditor({
 
   return (
     <div className="space-y-4">
+      {canEdit && !isInheritedClientSettings ? (
+        <AutoSaveStatus status={settingsAutoSave.status} />
+      ) : null}
       <OperationalPanel>
         <OperationalPanelHeader
           title="Automatic policy delivery"
@@ -466,7 +470,7 @@ function PolicyDeliveryEditor({
             isInheritedClientSettings ? (
               <Badge variant="outline">Broker defaults</Badge>
             ) : canEdit ? (
-              <AutoSaveStatus status={settingsAutoSave.status} />
+              undefined
             ) : (
               <span className="text-label text-muted-foreground">
                 Client admins and Glass operators can edit
@@ -649,7 +653,7 @@ function PolicyDeliveryEditor({
                   <TableCell className="px-4">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-foreground">{rule.name}</span>
-                      <Badge variant={rule.enabled ? "secondary" : "outline"}>{rule.enabled ? "On" : "Off"}</Badge>
+                      <StatusTag tone={rule.enabled ? "success" : "neutral"}>{rule.enabled ? "On" : "Off"}</StatusTag>
                     </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{ACTION_LABELS[rule.action]}</TableCell>

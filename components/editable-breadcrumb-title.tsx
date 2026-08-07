@@ -103,7 +103,7 @@ export function EditableBreadcrumbTitle({
           />
         </span>
         {showSaveStatus ? (
-          <AutoSaveStatus status={autoSave.status} className="min-w-0" />
+          <AutoSaveStatus status={autoSave.status} />
         ) : null}
       </span>
     );
@@ -123,7 +123,7 @@ export function EditableBreadcrumbTitle({
         {display}
       </button>
       {showSaveStatus ? (
-        <AutoSaveStatus status={autoSave.status} className="min-w-0" />
+        <AutoSaveStatus status={autoSave.status} />
       ) : null}
     </span>
   );

@@ -75,8 +75,7 @@ before(async () => {
       const teamId = String(body.teamId);
       return respond(response, {
         teamId,
-        botToken:
-          teamId === "T-CLARITY" ? "xoxb-clarity" : "xoxb-customer",
+        botToken: teamId === "T-CLARITY" ? "xoxb-clarity" : "xoxb-customer",
         botUserId: "U-GLASS",
       });
     }
@@ -101,6 +100,26 @@ before(async () => {
     }
     if (request.url === "/api/conversations.inviteShared") {
       return respond(response, { ok: true, invite_id: "I-1" });
+    }
+    if (request.url === "/api/conversations.list") {
+      return respond(response, {
+        ok: true,
+        channels: [
+          {
+            id: "C-CUSTOMER",
+            name: "client-service",
+            is_member: true,
+            is_archived: false,
+          },
+          {
+            id: "C-NOT-JOINED",
+            name: "general",
+            is_member: false,
+            is_archived: false,
+          },
+        ],
+        response_metadata: { next_cursor: "" },
+      });
     }
     response.writeHead(404).end();
   });
@@ -195,5 +214,26 @@ describe("native Slack worker HTTP adapter", () => {
     );
     assert.equal(calls.length, 2);
     assert(calls.every((call) => call.authorization === "Bearer xoxb-clarity"));
+  });
+
+  test("lists channels the app has joined in the customer workspace", async () => {
+    const response = await workerRequest("/channels", {
+      teamId: "T-CUSTOMER",
+    });
+    assert.deepEqual(await response.json(), {
+      channels: [{ id: "C-CUSTOMER", name: "client-service" }],
+    });
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/conversations.list"),
+      {
+        path: "/api/conversations.list",
+        authorization: "Bearer xoxb-customer",
+        body: {
+          types: "public_channel,private_channel",
+          exclude_archived: true,
+          limit: 200,
+        },
+      },
+    );
   });
 });

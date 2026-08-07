@@ -34,25 +34,71 @@ describe("policy delivery automation surfaces", () => {
 
   it("adds broker UI for settings, overrides, and delivery queue", () => {
     expect(read("app/settings/page.tsx")).toContain("PolicyDeliverySection");
-    expect(read("app/clients/[clientOrgId]/settings/page.tsx")).toContain("PolicyDeliverySection");
-    expect(read("app/deliveries/page.tsx")).toContain("policyDelivery.listQueue");
-    expect(read("components/app-sidebar/nav-config.tsx")).toContain('href: "/deliveries"');
+    expect(read("app/clients/[clientOrgId]/settings/page.tsx")).toContain(
+      "PolicyDeliverySection",
+    );
+    expect(read("app/deliveries/page.tsx")).toContain(
+      "policyDelivery.listQueue",
+    );
+    expect(read("components/app-sidebar/nav-config.tsx")).toContain(
+      'href: "/deliveries"',
+    );
   });
 
   it("separates client contact, agent channels, and delivery settings", () => {
     const clientSettings = read("app/clients/[clientOrgId]/settings/page.tsx");
-    const agentChannels = read("components/settings/agent-channels-section.tsx");
+    const agentChannels = read(
+      "components/settings/agent-channels-section.tsx",
+    );
+    const channelDrawerStart = agentChannels.indexOf(
+      "useEffect(() =>",
+      agentChannels.indexOf("const isMockSlack"),
+    );
+    const channelDrawer = agentChannels.slice(
+      channelDrawerStart,
+      agentChannels.indexOf("if (!result)", channelDrawerStart),
+    );
+    const channelList = agentChannels.slice(
+      agentChannels.indexOf("const resolvedSettings"),
+    );
     const delivery = read("components/settings/policy-delivery-section.tsx");
 
     expect(clientSettings).toContain('id: "broker", label: "Broker contact"');
-    expect(clientSettings).toContain('id: "agent-channels", label: "Agent channels"');
+    expect(clientSettings).toContain(
+      'id: "agent-channels", label: "Agent channels"',
+    );
     expect(clientSettings).toContain(
       'id: "policy-delivery", label: "Policy delivery"',
     );
     expect(clientSettings).toContain('searchParams.get("tab")');
-    expect(agentChannels).toContain('title="Channel access"');
-    expect(agentChannels).toContain('title="Client Slack workspace"');
-    expect(agentChannels).toMatch(/third-party Slack\s+Connect participants/);
+    expect(agentChannels).toContain('aria-label="Agent channels"');
+    expect(agentChannels).toContain(
+      "rounded-lg border border-foreground/6 bg-popover px-4 py-3",
+    );
+    expect(agentChannels).not.toContain("<OperationalPanel");
+    expect(agentChannels).toContain("<SettingsDrawer");
+    expect(agentChannels).not.toContain("I understand");
+    expect(agentChannels).not.toContain("Continue setup");
+    expect(agentChannels).toContain(
+      'type ChannelDrawer = "email" | "imessage" | "slack"',
+    );
+    expect(channelDrawer).toContain("<ClientEmailRoutingSection");
+    expect(channelDrawer).toContain('title="Available by iMessage"');
+    expect(channelDrawer).toContain('title="Available in Slack"');
+    expect(agentChannels).toContain('id="slack-workspace-name"');
+    expect(agentChannels).toContain('id="slack-channel-name"');
+    expect(agentChannels).toContain("useLocalFirstAutoSave");
+    expect(agentChannels).toContain("listAvailableChannels");
+    expect(agentChannels).toContain("selectPrimaryChannel");
+    expect(agentChannels).toContain("`#${selectedChannel.name}`");
+    expect(agentChannels).toContain("<SelectItem");
+    expect(channelDrawer).toContain('title="Vendor alerts"');
+    expect(channelDrawer).toContain('title="Policy and endorsement delivery"');
+    expect(channelList).not.toContain('title="Vendor alerts"');
+    expect(channelList).not.toContain(
+      'title="Policy and endorsement delivery"',
+    );
+    expect(agentChannels).toContain("Select a channel.");
     expect(delivery).toContain('title="Automatic policy delivery"');
     expect(delivery).toContain("Customize for this client");
     expect(delivery).toContain("Rules are checked in order");
@@ -67,10 +113,12 @@ describe("policy delivery automation surfaces", () => {
     const chat = read("convex/actions/processThreadChat.ts");
 
     expect(delivery).not.toContain("replyTo: thread?.threadEmail");
-    expect(delivery).toContain("\"Message-ID\": outboundMessageId");
+    expect(delivery).toContain('"Message-ID": outboundMessageId');
     expect(delivery).toContain("messageId: outboundMessageId");
     expect(pending).not.toContain("payload.reply_to = thread.threadEmail");
-    expect(chat).not.toContain("thread?.threadEmail ?? emailIdentity.agentAddress");
+    expect(chat).not.toContain(
+      "thread?.threadEmail ?? emailIdentity.agentAddress",
+    );
     expect(chat).not.toContain("agentAddress: thread?.threadEmail");
   });
 

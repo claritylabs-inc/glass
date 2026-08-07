@@ -4,6 +4,10 @@ import Link from "next/link";
 import { AlertTriangle, Check, Clock, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
+import {
+  StatusTag,
+  type StatusTagTone,
+} from "@/components/ui/status-tag";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { VendorComplianceArtifactData, VendorComplianceArtifactRef } from "../types";
 import { formatDisplayDate } from "@/lib/date-format";
@@ -83,38 +87,45 @@ function vendorStatusLabel(status?: string) {
   }
 }
 
+function vendorStatusTone(status?: string): StatusTagTone {
+  if (status === "compliant") return "success";
+  if (status === "non_compliant") return "danger";
+  if (status === "waiting_on_policies") return "warning";
+  return "neutral";
+}
+
 function checkStatusMeta(status?: string) {
   switch (status) {
     case "met":
       return {
         label: "Meets requirement",
         icon: Check,
-        className: "border-success/20 bg-success/10 text-success/75",
+        tone: "success" as StatusTagTone,
       };
     case "expiring_soon":
       return {
         label: "Expiring soon",
         icon: Clock,
-        className: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+        tone: "warning" as StatusTagTone,
       };
     case "expired":
       return {
         label: "Expired",
         icon: AlertTriangle,
-        className: "border-red-500/20 bg-red-500/10 text-red-400",
+        tone: "danger" as StatusTagTone,
       };
     case "unverified":
       return {
         label: "Unverified",
         icon: AlertTriangle,
-        className: "border-amber-500/20 bg-amber-500/10 text-amber-400",
+        tone: "warning" as StatusTagTone,
       };
     case "not_met":
     default:
       return {
         label: status === "unverified" ? "Unverified" : "Not met",
         icon: X,
-        className: "border-red-500/20 bg-red-500/10 text-red-400",
+        tone: "danger" as StatusTagTone,
       };
   }
 }
@@ -158,9 +169,9 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                     <h3 className="min-w-0 truncate text-base font-medium text-foreground">
                       {row.name ?? "Vendor"}
                     </h3>
-                    <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 font-medium text-muted-foreground/60">
+                    <StatusTag tone={vendorStatusTone(row.status)}>
                       {vendorStatusLabel(row.status)}
-                    </Badge>
+                    </StatusTag>
                   </div>
                   <p className="mt-1 text-label text-muted-foreground/45">
                     {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
@@ -191,10 +202,10 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                         <span className="min-w-0 flex-1 truncate text-label font-medium text-foreground/85">
                           {check.title ?? "Requirement"}
                         </span>
-                        <Badge variant="outline" className={`h-5 gap-1 px-1.5 font-medium ${meta.className}`}>
+                        <StatusTag tone={meta.tone}>
                           <StatusIcon className="h-3 w-3" />
                           {meta.label}
-                        </Badge>
+                        </StatusTag>
                       </div>
                       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label text-muted-foreground/55">
                         {requiredLimits ? <span>Required: {requiredLimits}</span> : null}

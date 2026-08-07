@@ -15,6 +15,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
+import { getSlackHostConfiguration } from "./lib/slackConfig";
 
 export const DEFAULT_AGENT_CHANNEL_SETTINGS = {
   emailEnabled: true,
@@ -24,6 +25,8 @@ export const DEFAULT_AGENT_CHANNEL_SETTINGS = {
   slackVendorAlertsEnabled: false,
   slackPolicyDeliveryEnabled: true,
 } as const;
+
+const OPERATOR_SLACK_ROSTER_LIMIT = 250;
 
 type AgentChannelSettingsInput = {
   emailEnabled: boolean;
@@ -46,7 +49,9 @@ const settingsArgs = {
 function randomState(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 async function sha256(input: string): Promise<string> {
@@ -96,7 +101,12 @@ async function channelOverview(
       q.eq("clientOrgId", clientOrgId).eq("status", "active"),
     )
     .first();
-  return { settings, connection, primaryChannel };
+  return {
+    settings: settingsInput(settings),
+    connection,
+    primaryChannel,
+    slackMode: getSlackHostConfiguration().mode,
+  };
 }
 
 async function setupActorKind(
@@ -118,7 +128,9 @@ async function setupActorKind(
   return profile?.status === "active" ? ("operator" as const) : null;
 }
 
-function settingsInput(settings: AgentChannelSettingsInput): AgentChannelSettingsInput {
+function settingsInput(
+  settings: AgentChannelSettingsInput,
+): AgentChannelSettingsInput {
   return {
     emailEnabled: settings.emailEnabled,
     imessageEnabled: settings.imessageEnabled,
@@ -237,7 +249,29 @@ export const setOperatorSlackIdentity = mutation({
     const operator = await requireOperator(ctx);
     const teamId = args.teamId.trim();
     const slackUserId = args.userId.trim();
-    if (!teamId || !slackUserId) throw new Error("Slack team and user IDs are required");
+    if (!teamId || !slackUserId)
+      throw new Error("Slack team and user IDs are required");
+    const configuration = getSlackHostConfiguration();
+    const hostTeamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
+    if (!configuration.configured || !hostTeamId) {
+      throw new Error("The Clarity Slack workspace is not configured");
+    }
+    if (teamId !== hostTeamId) {
+      throw new Error(
+        "The operator identity must belong to the configured Clarity Slack workspace",
+      );
+    }
+    if (configuration.mode === "slack") {
+      const installation = await ctx.db
+        .query("slackInstallations")
+        .withIndex("by_teamId_and_status", (q) =>
+          q.eq("teamId", hostTeamId).eq("status", "active"),
+        )
+        .first();
+      if (installation?.kind !== "host") {
+        throw new Error("Connect the Clarity Slack workspace first");
+      }
+    }
     const collision = await ctx.db
       .query("operatorProfiles")
       .withIndex("by_slackTeamId_and_slackUserId", (q) =>
@@ -257,6 +291,36 @@ export const setOperatorSlackIdentity = mutation({
       type: "setup_write",
       summary: "Connected operator Slack identity",
       metadata: { teamId, slackUserId },
+    });
+  },
+});
+
+export const listOperatorSlackIdentities = query({
+  args: {},
+  handler: async (ctx) => {
+    const current = await requireOperator(ctx);
+    const profiles = await ctx.db
+      .query("operatorProfiles")
+      .take(OPERATOR_SLACK_ROSTER_LIMIT);
+    const operators = await Promise.all(
+      profiles.map(async (profile) => {
+        const user = await ctx.db.get(profile.userId);
+        return {
+          userId: profile.userId,
+          name: user?.name ?? null,
+          email: profile.email,
+          role: profile.role,
+          status: profile.status,
+          slackTeamId: profile.slackTeamId ?? null,
+          slackUserId: profile.slackUserId ?? null,
+          isCurrent: profile._id === current.profile._id,
+        };
+      }),
+    );
+    return operators.sort((a, b) => {
+      if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+      if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+      return a.email.localeCompare(b.email);
     });
   },
 });
@@ -299,6 +363,35 @@ export const authorizeSetup = internalQuery({
     if (!kind) throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
     return { kind, org, userId: args.userId };
   },
+});
+
+export const getSlackConnectionForMockSetup = internalQuery({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) =>
+    (await activeConnection(ctx, args.clientOrgId)) ??
+    (await ctx.db
+      .query("slackWorkspaceConnections")
+      .withIndex("by_clientOrgId_and_status", (q) =>
+        q.eq("clientOrgId", args.clientOrgId).eq("status", "disconnected"),
+      )
+      .first()) ??
+    (await ctx.db
+      .query("slackWorkspaceConnections")
+      .withIndex("by_clientOrgId_and_status", (q) =>
+        q.eq("clientOrgId", args.clientOrgId).eq("status", "revoked"),
+      )
+      .first()),
+});
+
+export const getPrimarySlackBindingForSetup = internalQuery({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("slackChannelBindings")
+      .withIndex("by_clientOrgId_and_status", (q) =>
+        q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
+      )
+      .first(),
 });
 
 export const createOAuthState = internalMutation({
@@ -378,7 +471,8 @@ async function upsertNativeSlackInstallation(
   if (active && active.kind !== args.kind) {
     throw new Error("This Slack workspace already has a different Glass role");
   }
-  const reusable = active ??
+  const reusable =
+    active ??
     (await ctx.db
       .query("slackInstallations")
       .withIndex("by_teamId_and_status", (q) =>
@@ -440,7 +534,9 @@ export const upsertSlackConnection = internalMutation({
       )
       .first();
     if (teamConnection && teamConnection.clientOrgId !== args.clientOrgId) {
-      throw new Error("This Slack workspace is already connected to another client");
+      throw new Error(
+        "This Slack workspace is already connected to another client",
+      );
     }
     const clientConnection = await activeConnection(ctx, args.clientOrgId);
     if (clientConnection && clientConnection.teamId !== args.teamId) {
@@ -476,7 +572,9 @@ export const upsertSlackConnection = internalMutation({
         )
         .first());
     if (reusableConnection && reusableConnection.teamId !== args.teamId) {
-      throw new Error("This client already has a Slack workspace history; disconnect it before changing workspaces");
+      throw new Error(
+        "This client already has a Slack workspace history; disconnect it before changing workspaces",
+      );
     }
 
     let connectionId = reusableConnection?._id;
@@ -554,7 +652,8 @@ export const upsertSlackConnection = internalMutation({
     if (!deliverySettings) {
       if (!connectionId) throw new Error("Slack connection was not created");
       const persistedConnection = await ctx.db.get(connectionId);
-      if (!persistedConnection) throw new Error("Slack connection was not found");
+      if (!persistedConnection)
+        throw new Error("Slack connection was not found");
       await ctx.db.insert("policyDeliverySettings", {
         deliveryOwnerOrgId: args.clientOrgId,
         clientOrgId: args.clientOrgId,
@@ -649,7 +748,8 @@ export const bindPrimaryChannelForOperator = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const connection = await activeConnection(ctx, args.clientOrgId);
-    if (!connection) throw new Error("Connect the customer Slack workspace first");
+    if (!connection)
+      throw new Error("Connect the customer Slack workspace first");
     const existing = await ctx.db
       .query("slackChannelBindings")
       .withIndex("by_clientOrgId_and_status", (q) =>
@@ -739,9 +839,54 @@ export const bindPrimaryChannelInternal = internalMutation({
       type: "setup_write",
       targetOrgId: args.clientOrgId,
       summary: `Created #${args.channelName} as the primary Slack service channel`,
-      metadata: { hostTeamId: args.hostTeamId, hostChannelId: args.hostChannelId },
+      metadata: {
+        hostTeamId: args.hostTeamId,
+        hostChannelId: args.hostChannelId,
+      },
     });
     return bindingId;
+  },
+});
+
+export const selectPrimarySlackChannelInternal = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    customerChannelId: v.string(),
+    channelName: v.string(),
+    actorUserId: v.id("users"),
+    actorKind: v.union(v.literal("client_admin"), v.literal("operator")),
+  },
+  handler: async (ctx, args) => {
+    const binding = await ctx.db
+      .query("slackChannelBindings")
+      .withIndex("by_clientOrgId_and_status", (q) =>
+        q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
+      )
+      .first();
+    if (!binding) throw new Error("The primary Slack channel was not found");
+    await ctx.db.patch(binding._id, {
+      connectionId: args.connectionId,
+      customerChannelId: args.customerChannelId,
+      channelName: args.channelName,
+      updatedAt: dayjs().valueOf(),
+    });
+    if (args.actorKind === "operator") {
+      await writeOperatorAudit(ctx, {
+        operatorUserId: args.actorUserId,
+        type: "setup_write",
+        targetOrgId: args.clientOrgId,
+        summary: `Selected #${args.channelName} as the primary Slack channel`,
+        metadata: {
+          connectionId: args.connectionId,
+          previousCustomerChannelId: binding.customerChannelId,
+          customerChannelId: args.customerChannelId,
+          previousChannelName: binding.channelName,
+          channelName: args.channelName,
+        },
+      });
+    }
+    return binding._id;
   },
 });
 
@@ -820,7 +965,11 @@ export const claimSlackCredentialRefresh = internalMutation({
       installation.botTokenExpiresAt &&
       installation.botTokenExpiresAt > dayjs(now).add(5, "minute").valueOf()
     ) {
-      return { claimed: false as const, reason: "fresh" as const, installation };
+      return {
+        claimed: false as const,
+        reason: "fresh" as const,
+        installation,
+      };
     }
     if (
       installation.refreshLeaseExpiresAt &&
@@ -871,16 +1020,23 @@ export const getSlackHostStatus = query({
   args: {},
   handler: async (ctx) => {
     await requireOperator(ctx);
-    const teamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
-    if (!teamId) return { configured: false, installation: null };
+    const configuration = getSlackHostConfiguration();
+    const hostTeamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
+    if (configuration.mode === "mock") {
+      return { ...configuration, hostTeamId, installation: null };
+    }
+    if (!configuration.configured || !hostTeamId) {
+      return { ...configuration, hostTeamId, installation: null };
+    }
     const installation = await ctx.db
       .query("slackInstallations")
       .withIndex("by_teamId_and_status", (q) =>
-        q.eq("teamId", teamId).eq("status", "active"),
+        q.eq("teamId", hostTeamId).eq("status", "active"),
       )
       .first();
     return {
-      configured: true,
+      ...configuration,
+      hostTeamId,
       installation:
         installation?.kind === "host"
           ? {
@@ -933,7 +1089,8 @@ export const authorizeDisconnect = internalQuery({
       throw new Error("Client organization not found");
     }
     const actorKind = await setupActorKind(ctx, args.clientOrgId, args.userId);
-    if (!actorKind) throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
+    if (!actorKind)
+      throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
     const connection = await activeConnection(ctx, args.clientOrgId);
     if (!connection) return null;
     return { actorKind, connection };

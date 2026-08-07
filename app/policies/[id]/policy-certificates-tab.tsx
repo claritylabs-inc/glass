@@ -6,7 +6,7 @@ import { isValidPhoneNumber } from "react-phone-number-input";
 import { BadgeCheck, Copy, Eye, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PhoneInput } from "@/components/ui/phone-input";
@@ -135,7 +135,7 @@ function CertificateHoldState({
           <p className="text-base font-medium text-foreground">
             Certificate not issued
           </p>
-          <Badge variant="outline">Broker action</Badge>
+          <StatusTag tone="warning">Broker action</StatusTag>
         </div>
         <p className="mt-2 text-base leading-5 text-muted-foreground">
           {hold.reasonMessage ??
@@ -559,9 +559,9 @@ function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
             <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
               {holderName}
             </p>
-            <Badge variant="outline">
+            <StatusTag tone="warning">
               Held
-            </Badge>
+            </StatusTag>
           </div>
           <p className="mt-1 text-base leading-5 text-muted-foreground">
             {reason}

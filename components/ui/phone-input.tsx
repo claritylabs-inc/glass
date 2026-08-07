@@ -1,11 +1,14 @@
 "use client"
 
 import * as React from "react"
-import PhoneInputOriginal, {
+import PhoneNumberInput, {
+  getCountries,
   getCountryCallingCode,
+  parsePhoneNumber,
   type Country,
-} from "react-phone-number-input"
+} from "react-phone-number-input/input"
 import flags from "react-phone-number-input/flags"
+import countryLabels from "react-phone-number-input/locale/en"
 import { cn } from "@/lib/utils"
 import {
   Command,
@@ -20,46 +23,107 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { CheckIcon, ChevronDownIcon } from "lucide-react"
 
 export type PhoneInputValue = string | undefined
 
 interface PhoneInputProps
-  extends Omit<React.ComponentProps<typeof PhoneInputOriginal>, "onChange"> {
+  extends Omit<
+    React.ComponentProps<typeof PhoneNumberInput>,
+    "country" | "international" | "onChange" | "value"
+  > {
+  value?: PhoneInputValue
   onChange?: (value: PhoneInputValue) => void
+  defaultCountry?: Country
+  countries?: Country[]
 }
 
 type CountryOption = {
-  value?: Country
+  value: Country
   label: string
-  divider?: boolean
 }
 
 type CountrySelectProps = {
-  value?: Country
-  options?: CountryOption[]
-  onChange: (country?: Country) => void
+  value: Country
+  options: CountryOption[]
+  onChange: (country: Country) => void
   disabled?: boolean
   readOnly?: boolean
-  iconComponent: React.ComponentType<{
-    country?: Country
-    label: string
-  }>
+}
+
+const ALL_COUNTRIES = getCountries()
+
+function phoneNumber(value?: string) {
+  if (!value) return undefined
+  try {
+    return parsePhoneNumber(value)
+  } catch {
+    return undefined
+  }
+}
+
+function countryForValue(
+  value: string | undefined,
+  countries: Country[],
+  fallback?: Country,
+) {
+  const parsed = phoneNumber(value)
+  if (parsed?.country && countries.includes(parsed.country)) {
+    return parsed.country
+  }
+  if (parsed?.countryCallingCode) {
+    if (
+      fallback &&
+      getCountryCallingCode(fallback) === parsed.countryCallingCode
+    ) {
+      return fallback
+    }
+    return countries.find(
+      (country) =>
+        getCountryCallingCode(country) === parsed.countryCallingCode,
+    )
+  }
+  return undefined
+}
+
+function valueUsesCountry(value: string | undefined, country: Country) {
+  return value?.startsWith(`+${getCountryCallingCode(country)}`) ?? false
+}
+
+function nationalDigits(value: string | undefined, country: Country) {
+  if (!value) return ""
+  const callingCode = getCountryCallingCode(country)
+  const parsed = phoneNumber(value)
+  if (parsed?.countryCallingCode === callingCode) {
+    return parsed.nationalNumber
+  }
+  const digits = value.replace(/\D/g, "")
+  return digits.startsWith(callingCode)
+    ? digits.slice(callingCode.length)
+    : digits
+}
+
+function CountryFlag({ country, label }: { country: Country; label: string }) {
+  const Flag = flags[country]
+  if (!Flag) return null
+  return (
+    <span className="w-5 shrink-0 overflow-hidden [&>svg]:block [&>svg]:h-auto [&>svg]:w-full">
+      <Flag title={label} />
+    </span>
+  )
 }
 
 function CountrySelect({
   value,
-  options = [],
+  options,
   onChange,
   disabled,
   readOnly,
-  iconComponent: Icon,
 }: CountrySelectProps) {
   const [open, setOpen] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
   const selected = options.find((option) => option.value === value)
   const isDisabled = disabled || readOnly
-  const countries = options.filter((option) => option.value && !option.divider)
+  const callingCode = getCountryCallingCode(value)
 
   React.useEffect(() => {
     if (!open) return
@@ -76,13 +140,18 @@ function CountrySelect({
           <button
             {...props}
             type="button"
-            className="inline-flex h-full shrink-0 items-center gap-2 rounded-md px-2 text-base text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50"
+            data-slot="phone-country-select"
+            className="inline-flex h-full shrink-0 items-center gap-2 rounded-l-lg rounded-r-none border-r border-foreground/8 px-3 text-base text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50"
             disabled={isDisabled}
-            aria-label="Select country"
+            aria-label={`Country: ${selected?.label ?? value} (+${callingCode})`}
           >
-            <Icon country={value} label={selected?.label ?? "Select country"} />
-            <span className="text-muted-foreground">+{value ? getCountryCallingCode(value) : ""}</span>
-            <ChevronDownIcon className="size-4 text-muted-foreground" />
+            <CountryFlag country={value} label={selected?.label ?? value} />
+            <span
+              data-slot="phone-country-prefix"
+              className="min-w-8 text-right tabular-nums text-muted-foreground"
+            >
+              +{callingCode}
+            </span>
           </button>
         )}
       />
@@ -93,23 +162,30 @@ function CountrySelect({
           <CommandList>
             <CommandEmpty>No country found.</CommandEmpty>
             <CommandGroup>
-              {countries.map((option) => {
-                const country = option.value as Country
-                const isSelected = country === value
+              {options.map((option) => {
+                const country = option.value
+                const optionCallingCode = getCountryCallingCode(country)
 
                 return (
                   <CommandItem
                     key={country}
-                    value={`${option.label} +${getCountryCallingCode(country)} ${country}`}
+                    data-country={country}
+                    data-current={country === value}
+                    className="data-[current=true]:bg-foreground/[0.035] [&>svg:last-child]:hidden"
+                    value={`${option.label} +${optionCallingCode} ${country}`}
                     onSelect={() => {
                       onChange(country)
                       setOpen(false)
                     }}
                   >
-                    <Icon country={country} label={option.label} />
+                    <CountryFlag country={country} label={option.label} />
                     <span className="truncate">{option.label}</span>
-                    <span className="ml-auto text-label text-muted-foreground">+{getCountryCallingCode(country)}</span>
-                    {isSelected ? <CheckIcon className="text-foreground" /> : null}
+                    <span
+                      data-slot="phone-country-option-prefix"
+                      className="ml-auto w-14 text-right text-label tabular-nums text-muted-foreground"
+                    >
+                      +{optionCallingCode}
+                    </span>
                   </CommandItem>
                 )
               })}
@@ -129,7 +205,7 @@ const PhoneInputField = React.forwardRef<
     <input
       ref={ref}
       className={cn(
-        "h-full w-full bg-transparent px-3 text-base placeholder:text-muted-foreground/40 outline-none",
+        "h-full w-full min-w-0 bg-transparent px-3 text-base placeholder:text-muted-foreground/40 outline-none",
         className
       )}
       {...props}
@@ -141,21 +217,93 @@ PhoneInputField.displayName = "PhoneInputField"
 export function PhoneInput({
   className,
   onChange,
+  onPaste,
   placeholder = "Enter phone number",
+  value,
+  defaultCountry = "US",
+  countries,
+  disabled,
+  readOnly,
   ...props
 }: PhoneInputProps) {
+  const availableCountries = React.useMemo(
+    () => (countries?.length ? countries : ALL_COUNTRIES),
+    [countries]
+  )
+  const fallbackCountry = availableCountries.includes(defaultCountry)
+    ? defaultCountry
+    : availableCountries[0] ?? "US"
+  const [selectedCountry, setSelectedCountry] = React.useState<Country>(
+    () =>
+      countryForValue(value, availableCountries, fallbackCountry) ??
+      fallbackCountry
+  )
+  const valueCountry = valueUsesCountry(value, selectedCountry)
+    ? selectedCountry
+    : countryForValue(value, availableCountries, fallbackCountry)
+  const resolvedCountry = valueCountry ?? selectedCountry
+  const options = React.useMemo(
+    () =>
+      availableCountries
+        .map((country) => ({
+          value: country,
+          label: countryLabels[country],
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    [availableCountries]
+  )
+
+  function changeCountry(nextCountry: Country) {
+    const digits = nationalDigits(value, resolvedCountry)
+    setSelectedCountry(nextCountry)
+    onChange?.(
+      digits ? `+${getCountryCallingCode(nextCountry)}${digits}` : undefined
+    )
+  }
+
+  function pasteInternationalNumber(event: React.ClipboardEvent<HTMLInputElement>) {
+    onPaste?.(event)
+    if (event.defaultPrevented) return
+    const pasted = event.clipboardData.getData("text").trim()
+    if (!pasted.startsWith("+")) return
+    const parsed = phoneNumber(pasted)
+    const nextCountry = countryForValue(
+      pasted,
+      availableCountries,
+      selectedCountry
+    )
+    if (!parsed?.number || !nextCountry) return
+    event.preventDefault()
+    setSelectedCountry(nextCountry)
+    onChange?.(parsed.number)
+  }
+
   return (
-    <PhoneInputOriginal
-      countrySelectComponent={CountrySelect}
-      flags={flags}
-      inputComponent={PhoneInputField}
+    <div
       className={cn(
-        "PhoneInput flex h-9 items-center rounded-lg border border-foreground/8 bg-popover px-2 transition-colors focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8 [&_.PhoneInputCountry]:h-full [&_.PhoneInputCountry]:shrink-0 [&_.PhoneInputCountry]:pr-2 [&_.PhoneInputCountry]:border-r [&_.PhoneInputCountry]:border-foreground/8 [&_.PhoneInputInput]:min-w-0",
+        "PhoneInput flex h-9 items-center rounded-lg border border-foreground/8 bg-popover transition-colors focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8",
         className
       )}
-      onChange={(value) => onChange?.(value)}
-      placeholder={placeholder}
-      {...props}
-    />
+    >
+      <CountrySelect
+        value={resolvedCountry}
+        options={options}
+        onChange={changeCountry}
+        disabled={disabled}
+        readOnly={readOnly}
+      />
+      <PhoneNumberInput
+        {...props}
+        value={value}
+        onChange={(nextValue) => onChange?.(nextValue)}
+        onPaste={pasteInternationalNumber}
+        country={resolvedCountry}
+        international={false}
+        inputComponent={PhoneInputField}
+        placeholder={placeholder}
+        disabled={disabled}
+        readOnly={readOnly}
+      />
+    </div>
   )
 }

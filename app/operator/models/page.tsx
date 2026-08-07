@@ -276,10 +276,7 @@ export default function OperatorModelsPage() {
               if (tasks.length === 0) return null;
               return (
                 <OperationalPanel key={group.id}>
-                  <OperationalPanelHeader
-                    title={group.label}
-                    description={`${group.description} These choices seed new autonomous routing policies; they do not pin an active route.`}
-                  />
+                  <OperationalPanelHeader title={group.label} />
                   <div className="divide-y divide-foreground/6 px-4">
                     {tasks.map((task) => {
                       const route = settings.routes[task.id] ?? null;
@@ -319,9 +316,11 @@ export default function OperatorModelsPage() {
                               <p className="text-base font-medium text-foreground">
                                 {task.label}
                               </p>
-                              <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
-                                {displayRoute ? "Custom seed" : "Code seed"}
-                              </span>
+                              {displayRoute ? (
+                                <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
+                                  Custom seed
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                           <div className="flex w-full flex-col gap-2 justify-self-start xl:w-auto xl:flex-row xl:justify-self-end">

@@ -381,10 +381,8 @@ export function PolicyBreakdownEditor({
       open={open}
       onOpenChange={handleOpenChange}
       title="Edit extracted fields"
-      footer={
-        <AutoSaveStatus status={policyFieldAutoSave.status} />
-      }
     >
+      <AutoSaveStatus status={policyFieldAutoSave.status} />
       <div className="space-y-5">
         <div className="grid grid-cols-1 gap-3">
           {fields.map(({ key, label, kind }) => (

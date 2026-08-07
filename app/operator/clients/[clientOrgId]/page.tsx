@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { isValidPhoneNumber } from "react-phone-number-input";
@@ -19,7 +19,15 @@ import { AgentChannelsSection } from "@/components/settings/agent-channels-secti
 import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import {
@@ -39,7 +47,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
-import { formatDisplayDate } from "@/lib/date-format";
 import { getPublicAgentDomain } from "@/lib/domains";
 import {
   useCachedOperatorBrokers,
@@ -128,9 +135,13 @@ function Field({
 function ClientWorkspace({
   client,
   brokers,
+  setShellActions,
+  setRightPanel,
 }: {
   client: OperatorClientRow;
   brokers: OperatorBrokerRow[];
+  setShellActions: (actions: React.ReactNode) => void;
+  setRightPanel: (panel: React.ReactNode) => void;
 }) {
   const clientOrgId = client._id;
   const router = useRouter();
@@ -157,6 +168,7 @@ function ClientWorkspace({
   const [debouncedContactPhone, setDebouncedContactPhone] = useState("");
   const [textFieldFocused, setTextFieldFocused] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [disableDialogOpen, setDisableDialogOpen] = useState(false);
   const [savingFeatureFlagId, setSavingFeatureFlagId] =
     useState<FeatureFlagId | null>(null);
 
@@ -285,10 +297,12 @@ function ClientWorkspace({
     void clientSettingsAutoSave.saveNow();
   }
 
-  async function impersonate() {
+  const saveClientSettingsNow = clientSettingsAutoSave.saveNow;
+
+  const impersonate = useCallback(async () => {
     setBusy(true);
     try {
-      if (!(await clientSettingsAutoSave.saveNow())) return;
+      if (!(await saveClientSettingsNow())) return;
       await startImpersonation({
         targetOrgId: client._id,
         targetRole: "admin",
@@ -301,7 +315,7 @@ function ClientWorkspace({
     } finally {
       setBusy(false);
     }
-  }
+  }, [client._id, router, saveClientSettingsNow, startImpersonation]);
 
   async function launch() {
     setBusy(true);
@@ -317,19 +331,20 @@ function ClientWorkspace({
     }
   }
 
-  async function disableAccount() {
+  const disableAccount = useCallback(async () => {
     setBusy(true);
     try {
-      if (!(await clientSettingsAutoSave.saveNow())) return;
+      if (!(await saveClientSettingsNow())) return;
       await setClientStatus({ clientOrgId: client._id, status: "onboarding" });
       await patchClientStatus(client._id, "onboarding");
+      setDisableDialogOpen(false);
       toast.success("Client account disabled");
     } catch (error) {
       toast.error(getUserFacingErrorMessage(error, "Failed to update client"));
     } finally {
       setBusy(false);
     }
-  }
+  }, [client._id, patchClientStatus, saveClientSettingsNow, setClientStatus]);
 
   async function updateFeatureFlag(flagId: FeatureFlagId, enabled: boolean) {
     const previousFlags = client.featureFlags;
@@ -349,281 +364,326 @@ function ClientWorkspace({
     }
   }
 
-  return (
-    <main className="w-full space-y-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <OrgBrandIcon
-            name={client.name}
-            iconUrl={client.iconUrl}
-            website={client.website}
-            size="lg"
-          />
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <h1 className="truncate text-xl font-medium text-foreground">
-                {client.name}
-              </h1>
-              <Badge
-                variant={
-                  client.operatorStatus === "live" && !client.inviteStatus
-                    ? "default"
-                    : "secondary"
-                }
-              >
-                {operatorClientStatusLabel(client)}
-              </Badge>
-            </div>
-            <p className="mt-0.5 text-base text-muted-foreground">
-              {client.brokerName ?? "Standalone"} · Created{" "}
-              {formatDisplayDate(client.createdAt)}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <AutoSaveStatus status={clientSettingsAutoSave.status} />
-          <PillButton
-            size="compact"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => void impersonate()}
-          >
-            Impersonate
-          </PillButton>
-        </div>
-      </header>
-
-      <div className="-mx-1 overflow-x-auto px-1 scrollbar-hide">
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => navigate(value as ClientTab)}
+  useEffect(() => {
+    setShellActions(
+      <>
+        <AutoSaveStatus status={clientSettingsAutoSave.status} />
+        <PillButton
+          size="compact"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => void impersonate()}
         >
-          <TabsList variant="pill" className="min-w-max">
-            {CLIENT_TABS.map((tab) => (
-              <TabsTrigger key={tab.id} value={tab.id}>
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
+          Impersonate
+        </PillButton>
+      </>,
+    );
+  }, [busy, clientSettingsAutoSave.status, impersonate, setShellActions]);
 
-      {activeTab === "overview" ? (
-        <div className="space-y-5">
-          <OperationalPanel>
-            <OperationalPanelHeader
-              title="Client details"
-              description="Account ownership, agent address, and primary contact."
-            />
-            <OperationalPanelBody className="space-y-5">
-              <FormSection title="Account" divided={false}>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Broker">
-                    <Select
-                      value={brokerOrgId}
-                      onValueChange={(value) =>
-                        setBrokerOrgId(value ?? STANDALONE_VALUE)
+  useEffect(
+    () => () => {
+      setShellActions(null);
+    },
+    [setShellActions],
+  );
+
+  return (
+    <>
+      <main className="w-full space-y-6">
+        <div className="-mx-1 overflow-x-auto px-1 scrollbar-hide">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => navigate(value as ClientTab)}
+          >
+            <TabsList variant="pill" className="min-w-max">
+              {CLIENT_TABS.map((tab) => (
+                <TabsTrigger key={tab.id} value={tab.id}>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {activeTab === "overview" ? (
+          <div className="space-y-5">
+            <OperationalPanel aria-labelledby="client-identity-title">
+              <OperationalPanelBody className="flex min-w-0 items-center gap-3 px-4 py-4">
+                <OrgBrandIcon
+                  name={client.name}
+                  iconUrl={client.iconUrl}
+                  website={client.website}
+                  size="lg"
+                />
+                <h1
+                  id="client-identity-title"
+                  className="min-w-0 flex-1 truncate text-base font-medium text-foreground"
+                >
+                  {client.name}
+                </h1>
+                <StatusTag
+                  className="ml-auto"
+                  tone={
+                    client.operatorStatus === "live" && !client.inviteStatus
+                      ? "success"
+                      : "warning"
+                  }
+                >
+                  {operatorClientStatusLabel(client)}
+                </StatusTag>
+              </OperationalPanelBody>
+            </OperationalPanel>
+
+            <OperationalPanel>
+              <OperationalPanelBody>
+                <FormSection title="Account" divided={false}>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Broker">
+                      <Select
+                        value={brokerOrgId}
+                        onValueChange={(value) =>
+                          setBrokerOrgId(value ?? STANDALONE_VALUE)
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue>
+                            {selectedBroker ? (
+                              <span className="flex min-w-0 items-center gap-2">
+                                <OrgBrandIcon
+                                  name={selectedBroker.name}
+                                  iconUrl={selectedBroker.iconUrl}
+                                  website={selectedBroker.website}
+                                  size="sm"
+                                />
+                                <span className="truncate">
+                                  {selectedBroker.name}
+                                </span>
+                              </span>
+                            ) : (
+                              "Standalone"
+                            )}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={STANDALONE_VALUE}>
+                            Standalone
+                          </SelectItem>
+                          {brokers.map((broker) => (
+                            <SelectItem key={broker._id} value={broker._id}>
+                              <span className="flex min-w-0 items-center gap-2">
+                                <OrgBrandIcon
+                                  name={broker.name}
+                                  iconUrl={broker.iconUrl}
+                                  website={broker.website}
+                                  size="sm"
+                                />
+                                <span className="truncate">{broker.name}</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Website">
+                      <Input
+                        value={website}
+                        onChange={(event) => setWebsite(event.target.value)}
+                        onFocus={() => setTextFieldFocused(true)}
+                        onBlur={finishTextEdit}
+                        placeholder="https://client.com"
+                      />
+                    </Field>
+                  </div>
+                </FormSection>
+              </OperationalPanelBody>
+            </OperationalPanel>
+
+            <OperationalPanel>
+              <OperationalPanelBody>
+                <FormSection title="Agent address" divided={false}>
+                  <Field label="Email handle">
+                    <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+                      <input
+                        className="min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground/40"
+                        value={agentHandle}
+                        onChange={(event) =>
+                          setAgentHandle(
+                            normalizeIdentifierInput(event.target.value),
+                          )
+                        }
+                        onFocus={() => setTextFieldFocused(true)}
+                        onBlur={finishTextEdit}
+                        placeholder="client"
+                      />
+                      <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
+                        @{AGENT_DOMAIN}
+                      </span>
+                    </div>
+                    <HandleAvailability
+                      saving={clientSettingsAutoSave.saving}
+                      checking={handleChecking}
+                      input={agentHandle}
+                      current={currentAgentHandle}
+                      currentLabel="Current agent handle"
+                      availability={
+                        agentHandle === debouncedAgentHandle
+                          ? handleAvailability
+                          : undefined
+                      }
+                      renderAvailablePreview={(value) =>
+                        `${value}@${AGENT_DOMAIN} is available`
+                      }
+                    />
+                  </Field>
+                </FormSection>
+              </OperationalPanelBody>
+            </OperationalPanel>
+
+            <OperationalPanel>
+              <OperationalPanelBody>
+                <FormSection title="Primary contact" divided={false}>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Name">
+                      <Input
+                        value={contactName}
+                        onChange={(event) => setContactName(event.target.value)}
+                        onFocus={() => setTextFieldFocused(true)}
+                        onBlur={finishTextEdit}
+                        placeholder="Client contact"
+                      />
+                    </Field>
+                    <Field
+                      label="Email"
+                      error={!emailValid ? "Enter a valid email" : null}
+                    >
+                      <Input
+                        type="email"
+                        value={contactEmail}
+                        onChange={(event) =>
+                          setContactEmail(event.target.value)
+                        }
+                        onFocus={() => setTextFieldFocused(true)}
+                        onBlur={finishTextEdit}
+                        placeholder="client@example.com"
+                      />
+                    </Field>
+                    <Field
+                      label="Phone"
+                      className="md:col-span-2"
+                      error={
+                        !phoneValid
+                          ? "Enter a valid phone number"
+                          : phoneUnavailable
+                            ? "This phone number is already used by another user"
+                            : null
                       }
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue>
-                          {selectedBroker ? (
-                            <span className="flex min-w-0 items-center gap-2">
-                              <OrgBrandIcon
-                                name={selectedBroker.name}
-                                iconUrl={selectedBroker.iconUrl}
-                                website={selectedBroker.website}
-                                size="sm"
-                              />
-                              <span className="truncate">
-                                {selectedBroker.name}
-                              </span>
-                            </span>
-                          ) : (
-                            "Standalone"
-                          )}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={STANDALONE_VALUE}>
-                          Standalone
-                        </SelectItem>
-                        {brokers.map((broker) => (
-                          <SelectItem key={broker._id} value={broker._id}>
-                            <span className="flex min-w-0 items-center gap-2">
-                              <OrgBrandIcon
-                                name={broker.name}
-                                iconUrl={broker.iconUrl}
-                                website={broker.website}
-                                size="sm"
-                              />
-                              <span className="truncate">{broker.name}</span>
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Website">
-                    <Input
-                      value={website}
-                      onChange={(event) => setWebsite(event.target.value)}
-                      onFocus={() => setTextFieldFocused(true)}
-                      onBlur={finishTextEdit}
-                      placeholder="https://client.com"
-                    />
-                  </Field>
-                </div>
-              </FormSection>
-
-              <FormSection title="Agent address">
-                <Field label="Email handle">
-                  <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-                    <input
-                      className="min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground/40"
-                      value={agentHandle}
-                      onChange={(event) =>
-                        setAgentHandle(
-                          normalizeIdentifierInput(event.target.value),
-                        )
-                      }
-                      onFocus={() => setTextFieldFocused(true)}
-                      onBlur={finishTextEdit}
-                      placeholder="client"
-                    />
-                    <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
-                      @{AGENT_DOMAIN}
-                    </span>
+                      <PhoneInput
+                        value={contactPhone}
+                        onChange={(value) => setContactPhone(value ?? "")}
+                        onFocus={() => setTextFieldFocused(true)}
+                        onBlur={finishTextEdit}
+                        defaultCountry="US"
+                        placeholder="(555) 123-4567"
+                      />
+                    </Field>
                   </div>
-                  <HandleAvailability
-                    saving={clientSettingsAutoSave.saving}
-                    checking={handleChecking}
-                    input={agentHandle}
-                    current={currentAgentHandle}
-                    currentLabel="Current agent handle"
-                    availability={
-                      agentHandle === debouncedAgentHandle
-                        ? handleAvailability
-                        : undefined
-                    }
-                    renderAvailablePreview={(value) =>
-                      `${value}@${AGENT_DOMAIN} is available`
-                    }
-                  />
-                </Field>
-              </FormSection>
+                </FormSection>
+              </OperationalPanelBody>
+            </OperationalPanel>
 
-              <FormSection title="Primary contact">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="Name">
-                    <Input
-                      value={contactName}
-                      onChange={(event) => setContactName(event.target.value)}
-                      onFocus={() => setTextFieldFocused(true)}
-                      onBlur={finishTextEdit}
-                      placeholder="Client contact"
-                    />
-                  </Field>
-                  <Field
-                    label="Email"
-                    error={!emailValid ? "Enter a valid email" : null}
-                  >
-                    <Input
-                      type="email"
-                      value={contactEmail}
-                      onChange={(event) => setContactEmail(event.target.value)}
-                      onFocus={() => setTextFieldFocused(true)}
-                      onBlur={finishTextEdit}
-                      placeholder="client@example.com"
-                    />
-                  </Field>
-                  <Field
-                    label="Phone"
-                    className="md:col-span-2"
-                    error={
-                      !phoneValid
-                        ? "Enter a valid phone number"
-                        : phoneUnavailable
-                          ? "This phone number is already used by another user"
-                          : null
-                    }
-                  >
-                    <PhoneInput
-                      value={contactPhone}
-                      onChange={(value) => setContactPhone(value ?? "")}
-                      onFocus={() => setTextFieldFocused(true)}
-                      onBlur={finishTextEdit}
-                      defaultCountry="US"
-                      placeholder="(555) 123-4567"
-                    />
-                  </Field>
-                </div>
-              </FormSection>
-            </OperationalPanelBody>
-          </OperationalPanel>
-
-          <OperationalPanel>
-            <OperationalPanelHeader
-              title="Account access"
-              description={
-                client.operatorStatus === "live"
-                  ? "The client can sign in and use Glass."
-                  : "The account stays private until an activation email is sent."
-              }
-              action={
-                client.operatorStatus === "onboarding" ? (
-                  <PillButton disabled={busy} onClick={() => void launch()}>
-                    {busy ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : null}
-                    Send activation email
-                  </PillButton>
-                ) : (
-                  <PillButton
-                    variant="destructive"
-                    disabled={busy}
-                    onClick={() => void disableAccount()}
-                  >
-                    Disable account
-                  </PillButton>
-                )
-              }
-            />
-          </OperationalPanel>
-        </div>
-      ) : null}
-
-      {activeTab === "features" ? (
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-base font-medium text-foreground">
-              Beta features
-            </h2>
-            <p className="mt-1 text-base text-muted-foreground">
-              Enable client-specific capabilities before their general release.
-            </p>
+            <OperationalPanel>
+              <OperationalPanelHeader
+                className="items-center border-b-0"
+                title="Account access"
+                description={
+                  client.operatorStatus === "onboarding"
+                    ? "Send an activation email to let this client access Glass."
+                    : "Disable access and return this client to onboarding."
+                }
+                action={
+                  client.operatorStatus === "onboarding" ? (
+                    <PillButton disabled={busy} onClick={() => void launch()}>
+                      {busy ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : null}
+                      Send activation email
+                    </PillButton>
+                  ) : (
+                    <PillButton
+                      variant="destructive"
+                      disabled={busy}
+                      onClick={() => setDisableDialogOpen(true)}
+                    >
+                      Disable account
+                    </PillButton>
+                  )
+                }
+              />
+            </OperationalPanel>
           </div>
-          {betaFeatureFlagsForOrgType("client").map((flag) => (
-            <FeatureFlagToggleRow
-              key={flag.id}
-              flag={flag}
-              enabled={isFeatureEnabled(client, flag.id)}
-              onChange={(enabled) => void updateFeatureFlag(flag.id, enabled)}
-              loading={savingFeatureFlagId === flag.id}
-              disabled={savingFeatureFlagId !== null}
-            />
-          ))}
-        </section>
-      ) : null}
+        ) : null}
 
-      {activeTab === "channels" ? (
-        <AgentChannelsSection
-          clientOrgId={client._id}
-          defaultClientSlug={slackChannelSlug(client)}
-          defaultInviteEmail={client.primaryContactEmail ?? client.adminEmail}
-        />
-      ) : null}
-    </main>
+        {activeTab === "features" ? (
+          <section className="space-y-3" aria-label="Beta features">
+            {betaFeatureFlagsForOrgType("client").map((flag) => (
+              <FeatureFlagToggleRow
+                key={flag.id}
+                flag={flag}
+                enabled={isFeatureEnabled(client, flag.id)}
+                onChange={(enabled) => void updateFeatureFlag(flag.id, enabled)}
+                loading={savingFeatureFlagId === flag.id}
+                disabled={savingFeatureFlagId !== null}
+              />
+            ))}
+          </section>
+        ) : null}
+
+        {activeTab === "channels" ? (
+          <AgentChannelsSection
+            clientOrgId={client._id}
+            defaultClientSlug={slackChannelSlug(client)}
+            defaultInviteEmail={client.primaryContactEmail ?? client.adminEmail}
+            setRightPanel={setRightPanel}
+          />
+        ) : null}
+      </main>
+
+      <Dialog
+        open={disableDialogOpen}
+        onOpenChange={(open) => {
+          if (!busy) setDisableDialogOpen(open);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Disable account</DialogTitle>
+            <DialogDescription>
+              Disable <strong>{client.name}</strong>? The client will lose
+              access to Glass and return to onboarding. You can send a new
+              activation email later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <PillButton
+              variant="secondary"
+              disabled={busy}
+              onClick={() => setDisableDialogOpen(false)}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              disabled={busy}
+              onClick={() => void disableAccount()}
+            >
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {busy ? "Disabling…" : "Disable account"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -633,8 +693,11 @@ export default function OperatorClientPage() {
   const clients = useCachedOperatorClients();
   const brokers = useCachedOperatorBrokers();
   const stopOperatorImpersonation = useStopOperatorImpersonation();
+  const [workspaceActions, setWorkspaceActions] =
+    useState<React.ReactNode>(null);
+  const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
   const client = clients?.find((item) => item._id === clientOrgId) ?? null;
-  const actions = current?.activeImpersonation ? (
+  const stopImpersonationAction = current?.activeImpersonation ? (
     <PillButton
       variant="secondary"
       size="compact"
@@ -646,11 +709,19 @@ export default function OperatorClientPage() {
       Stop impersonating
     </PillButton>
   ) : null;
+  const actions =
+    workspaceActions || stopImpersonationAction ? (
+      <>
+        {workspaceActions}
+        {stopImpersonationAction}
+      </>
+    ) : null;
 
   return (
     <AppShell
       actions={actions}
       breadcrumbDetail={client?.name ?? "Client"}
+      rightPanel={rightPanel}
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
@@ -684,6 +755,8 @@ export default function OperatorClientPage() {
           key={client._id}
           client={client}
           brokers={brokers ?? []}
+          setShellActions={setWorkspaceActions}
+          setRightPanel={setRightPanel}
         />
       )}
     </AppShell>

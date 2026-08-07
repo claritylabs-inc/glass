@@ -308,10 +308,7 @@ export default function OperatorRoutingPage() {
         </OperationalLabelValueList>
 
         <OperationalPanel>
-          <OperationalPanelHeader
-            title="Last 24 hours"
-            description="Router rollups plus Glass workflow outcomes."
-          />
+          <OperationalPanelHeader title="Last 24 hours" />
           {dashboard?.rollups.error ? (
             <OperationalPanelBody className="text-base text-destructive">
               {dashboard.rollups.error}
@@ -365,10 +362,7 @@ export default function OperatorRoutingPage() {
         </OperationalPanel>
 
         <OperationalPanel>
-          <OperationalPanelHeader
-            title="Task policies"
-            description="Current frozen route, primary candidate, challengers, and online score."
-          />
+          <OperationalPanelHeader title="Task policies" />
           {dashboard?.policy.error ? (
             <OperationalPanelBody className="text-base text-destructive">
               {dashboard.policy.error}
@@ -432,10 +426,7 @@ export default function OperatorRoutingPage() {
         </OperationalPanel>
 
         <OperationalPanel>
-          <OperationalPanelHeader
-            title="Recent routing"
-            description="Actual route, shadow choice, request ID, fallback, and error evidence from Glass."
-          />
+          <OperationalPanelHeader title="Recent routing" />
           {events === undefined ? (
             <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
               <Loader2 className="size-5 animate-spin" />
