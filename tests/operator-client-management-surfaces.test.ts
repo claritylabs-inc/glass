@@ -7,8 +7,25 @@ function read(path: string) {
 }
 
 describe("operator client management surfaces", () => {
+  it("uses clients as the operator home and keeps brokers addressable", () => {
+    const home = read("app/operator/page.tsx");
+    const brokers = read("app/operator/brokers/page.tsx");
+    const sidebar = read("app/operator/operator-sidebar.tsx");
+
+    expect(home).toContain(
+      'import OperatorClientsPage from "./clients/operator-clients-page"',
+    );
+    expect(sidebar.indexOf('label="Clients"')).toBeLessThan(
+      sidebar.indexOf('label="Brokers"'),
+    );
+    expect(sidebar).toContain('href="/operator/brokers"');
+    expect(sidebar).toContain('href="/operator"');
+    expect(brokers).toContain('searchParams.get("broker")');
+    expect(brokers).toContain("setPanelMode(\"details\")");
+  });
+
   it("keeps the client list drawer as a compact preview", () => {
-    const clients = read("app/operator/clients/page.tsx");
+    const clients = read("app/operator/clients/operator-clients-page.tsx");
 
     expect(clients).toContain("OperationalLabelValueList");
     expect(clients).toContain("Manage client");
@@ -61,6 +78,7 @@ describe("operator client management surfaces", () => {
     expect(operatorChannels).toContain("getSlackHostStatus");
     expect(operatorChannels).toContain("listOperatorSlackIdentities");
     expect(operatorChannels).toContain("beginHost");
+    expect(operatorChannels).toContain("openOAuthTab");
     expect(operatorChannels).toContain("setOperatorSlackIdentity");
     expect(operatorChannels).toContain("Connect workspace");
     expect(operatorChannels).toContain("Slack not enabled");
@@ -91,6 +109,9 @@ describe("operator client management surfaces", () => {
     expect(operatorChannels).not.toContain("max-w-4xl");
     expect(sidebar).toContain('href="/operator/channels"');
     expect(clientChannels).toContain("<SettingsDrawer");
+    expect(clientChannels).toContain("openOAuthTab");
+    expect(clientChannels).not.toContain("window.location.assign(url)");
+    expect(operatorChannels).not.toContain("window.location.assign(url)");
     expect(clientChannels).not.toContain("getSlackHostStatus");
     expect(clientChannels).not.toContain("beginHost");
     expect(clientChannels).not.toContain("setOperatorSlackIdentity");

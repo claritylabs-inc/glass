@@ -3,6 +3,22 @@ import { describe, expect, it } from "vitest";
 import { PolicyListItem } from "../components/policy-list-item";
 
 describe("PolicyListItem", () => {
+  it("shows queued placeholder policies as extracting", () => {
+    const markup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Extracting..."
+        policyNumber="Extracting..."
+        extractionDataStage="placeholder"
+        pipelineStatus="idle"
+      />,
+    );
+
+    expect(markup).toContain("Extracting");
+    expect(markup).toContain("Pending classification");
+    expect(markup).toContain("Pending extraction");
+    expect(markup).not.toContain("Not classified");
+  });
+
   it("gives interactive policy cards restrained surface, press, and focus states", () => {
     const interactiveMarkup = renderToStaticMarkup(
       <PolicyListItem

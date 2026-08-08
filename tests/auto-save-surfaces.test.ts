@@ -9,7 +9,7 @@ function read(path: string) {
 }
 
 const AUTO_SAVE_SURFACES = [
-  "app/operator/page.tsx",
+  "app/operator/brokers/page.tsx",
   "app/operator/clients/[clientOrgId]/page.tsx",
   "app/policies/[id]/policy-breakdown-editor.tsx",
   "app/profile/page.tsx",
@@ -74,7 +74,7 @@ describe("auto-save surfaces", () => {
   it("keeps dirty-state decisions in the hook and stale writes out of the durable outbox", () => {
     const hook = read("lib/sync/use-local-first-auto-save.ts");
     const profile = read("app/profile/page.tsx");
-    const broker = read("app/operator/page.tsx");
+    const broker = read("app/operator/brokers/page.tsx");
     const client = read("app/operator/clients/[clientOrgId]/page.tsx");
 
     expect(hook).toContain("sequencer.run");
@@ -116,7 +116,7 @@ describe("auto-save surfaces", () => {
   });
 
   it("checks operator identifiers before edit auto-save", () => {
-    const operatorPage = read("app/operator/page.tsx");
+    const operatorPage = read("app/operator/brokers/page.tsx");
     const clientPage = read("app/operator/clients/[clientOrgId]/page.tsx");
     const backend = read("convex/operator.ts");
 
@@ -189,7 +189,7 @@ describe("auto-save surfaces", () => {
   });
 
   it("drains operator saves before dependent actions", () => {
-    const broker = read("app/operator/page.tsx");
+    const broker = read("app/operator/brokers/page.tsx");
     const client = read("app/operator/clients/[clientOrgId]/page.tsx");
     const organization = read(
       "components/settings/organization-section.tsx",

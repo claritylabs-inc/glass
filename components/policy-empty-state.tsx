@@ -286,7 +286,7 @@ function DropZone({
       ) : null}
 
       {staged.length > 0 ? (
-        <div className="rounded-lg border border-foreground/6 bg-white overflow-hidden">
+        <div className="rounded-lg border border-foreground/6 bg-card text-card-foreground overflow-hidden">
           {staged.map((file, i) => (
             <div
               key={`${file.name}:${file.size}:${i}`}
