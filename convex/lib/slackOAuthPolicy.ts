@@ -5,9 +5,11 @@ export const SLACK_CUSTOMER_SCOPES = [
   "channels:history",
   "groups:read",
   "groups:history",
+  "im:history",
   "files:read",
   "files:write",
   "users:read",
+  "users:read.email",
 ] as const;
 
 export const SLACK_INSTALL_INVITE_EXPIRATION_DAYS = 7;

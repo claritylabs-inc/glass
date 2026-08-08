@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Hash, Mail, MessageCircle, MessageSquare, Pin } from "lucide-react";
+import { Mail, MessageCircle, MessageSquare, Pin } from "lucide-react";
+import { SiSlack } from "react-icons/si";
 import {
   CLIENT_DETAIL_NAV,
   CLIENT_LIST_NAV_ITEM,
@@ -38,7 +39,7 @@ export function ClientDetailSidebarContent({
   clientThreads?: ClientThreadItem[];
   onToggleCollapse: () => void;
 }) {
-  const { agentConversations, imessageConversations } =
+  const { agentConversations, pinnedConversations } =
     splitThreadConversations(clientThreads);
 
   function isClientNavActive(href: string) {
@@ -100,7 +101,7 @@ export function ClientDetailSidebarContent({
                 No threads
               </p>
             )}
-            {imessageConversations.map((item) => {
+            {pinnedConversations.map((item) => {
               const href = `/clients/${clientDetailId}/threads/${item.id}`;
               const isConvActive = pathname === href;
               return (
@@ -111,7 +112,11 @@ export function ClientDetailSidebarContent({
                     isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
-                  <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  {item.kind === "imessage" ? (
+                    <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                  ) : (
+                    <SiSlack className="w-3.5 h-3.5 shrink-0" />
+                  )}
                   <span className="truncate flex-1">{item.label}</span>
                   <Pin className="w-3 h-3 shrink-0 rotate-45 text-muted-foreground/35" />
                 </Link>
@@ -129,7 +134,7 @@ export function ClientDetailSidebarContent({
                   }`}
                 >
                   {item.kind === "slack" ? (
-                    <Hash className="w-3.5 h-3.5 shrink-0" />
+                    <SiSlack className="w-3.5 h-3.5 shrink-0" />
                   ) : item.kind === "email" ? (
                     <Mail className="w-3.5 h-3.5 shrink-0" />
                   ) : (

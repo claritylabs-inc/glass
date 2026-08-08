@@ -171,27 +171,37 @@ describe("Slack Events API webhook", () => {
     ).resolves.toHaveLength(0);
   });
 
-  test("ignores DMs and bot echoes at the HTTP boundary", async () => {
+  test("claims DMs and still ignores bot echoes at the HTTP boundary", async () => {
     const t = convexTest(schema, modules);
     await seedConnection(t);
-    const dm = messagePayload({ channel: "D-DIRECT", channel_type: "im" });
+    const dm = messagePayload({
+      type: "message",
+      channel: "D-DIRECT",
+      channel_type: "im",
+      thread_ts: undefined,
+      text: "show my policy",
+    });
     const echo = messagePayload({
       ts: "1800000000.200",
       event_ts: "1800000000.200",
       bot_id: "B-GLASS",
     });
 
-    expect(await (await signedRequest(t, dm)).json()).toMatchObject({
-      ok: true,
-      ignored: true,
-    });
+    expect(await (await signedRequest(t, dm)).json()).toMatchObject({ ok: true });
     expect(await (await signedRequest(t, echo)).json()).toMatchObject({
       ok: true,
       ignored: true,
     });
-    await expect(
-      t.run((ctx) => ctx.db.query("slackInboundEvents").collect()),
-    ).resolves.toHaveLength(0);
+    const events = await t.run((ctx) =>
+      ctx.db.query("slackInboundEvents").collect(),
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      channelId: "D-DIRECT",
+      threadTs: "D-DIRECT",
+      isDirectMessage: true,
+      status: "queued",
+    });
   });
 
   test("records a signed installation revocation and disables Slack", async () => {

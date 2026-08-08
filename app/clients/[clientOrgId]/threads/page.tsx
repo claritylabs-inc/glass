@@ -5,7 +5,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { ActionSurfaceButton } from "@/components/ui/action-surface";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Hash, Mail, MessageCircle } from "lucide-react";
+import { Mail, MessageCircle } from "lucide-react";
+import { SiSlack } from "react-icons/si";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { formatDisplayDateTime } from "@/lib/date-format";
 
@@ -58,7 +59,7 @@ export default function ClientThreadsPage() {
                 {thread.originChannel === "imessage" ? (
                   <MessageCircle className="w-4 h-4" />
                 ) : thread.originChannel === "slack" ? (
-                  <Hash className="w-4 h-4" />
+                  <SiSlack className="w-4 h-4" />
                 ) : thread.originChannel === "email" ? (
                   <Mail className="w-4 h-4" />
                 ) : null}

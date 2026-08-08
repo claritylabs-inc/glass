@@ -56,7 +56,7 @@ describe("Slack webhook payload narrowing", () => {
     );
   });
 
-  test("normalizes attachments and ignores reactions, bots, and DMs", () => {
+  test("normalizes attachments, bot echoes, and stable DM conversation keys", () => {
     expect(
       parseSlackEventPayload(
         payload({
@@ -90,6 +90,10 @@ describe("Slack webhook payload narrowing", () => {
     const dm = payload();
     dm.event.channel = "D-PRIVATE";
     dm.event.channel_type = "im";
-    expect(parseSlackEventPayload(dm)).toMatchObject({ isDirectMessage: true });
+    expect(parseSlackEventPayload(dm)).toMatchObject({
+      isDirectMessage: true,
+      channelId: "D-PRIVATE",
+      threadTs: "D-PRIVATE",
+    });
   });
 });

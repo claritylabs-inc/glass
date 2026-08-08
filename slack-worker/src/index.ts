@@ -32,6 +32,7 @@ type ActorResolution = {
   teamId: string;
   userId: string;
   displayName?: string;
+  email?: string;
   isBot: boolean;
   botUserId?: string;
 };
@@ -365,6 +366,7 @@ async function resolveSlackActor(input: ActorRequest) {
         profile?: {
           display_name?: string;
           real_name?: string;
+          email?: string;
           team?: string;
         };
       };
@@ -383,6 +385,7 @@ async function resolveSlackActor(input: ActorRequest) {
       actor.profile?.real_name ||
       actor.real_name ||
       actor.name,
+    email: actor.profile?.email,
     isBot: actor.is_bot === true || actor.is_app_user === true,
     botUserId: installation.botUserId,
   };

@@ -67,5 +67,7 @@ describe("Slack install invitation email", () => {
     expect(email.html).toContain("This one-time invitation expires in 7 days");
     expect(email.text).toContain("Choose the Cove & Co. Slack workspace");
     expect(email.text).toContain("Add @Glass to #glass-cove");
+    expect(email.text).toContain("private 1:1 message");
+    expect(email.text).toContain("Direct messages stay between that Slack member and Glass");
   });
 });

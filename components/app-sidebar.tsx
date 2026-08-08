@@ -174,13 +174,13 @@ export function AppSidebar({
     api.notifications.unreadCount,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as number | undefined;
-  const { agentConversations, imessageConversations } = useMemo(
+  const { agentConversations, pinnedConversations } = useMemo(
     () => splitThreadConversations(unifiedThreads),
     [unifiedThreads],
   );
   const shortcutConversations = useMemo(
-    () => [...imessageConversations, ...agentConversations],
-    [agentConversations, imessageConversations],
+    () => [...pinnedConversations, ...agentConversations],
+    [agentConversations, pinnedConversations],
   );
 
   function toggleCollapse() {
@@ -329,7 +329,7 @@ export function AppSidebar({
         isDesktop={isDesktop}
         orgId={currentOrg?.orgId}
         agentConversations={agentConversations}
-        imessageConversations={imessageConversations}
+        pinnedConversations={pinnedConversations}
         archivedThreadCount={archivedThreads?.length ?? 0}
         broker={brokerContact}
         fallbackAgentHandle={fallbackAgentHandle}
