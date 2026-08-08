@@ -55,16 +55,16 @@ export function OperatorSidebar({
         <div className="flex flex-col gap-1">
           <SidebarMenuItem
             href="/operator"
-            label="Brokers"
-            icon={Building2}
-            active={active === "brokers"}
-            collapsed={collapsed}
-          />
-          <SidebarMenuItem
-            href="/operator/clients"
             label="Clients"
             icon={Users}
             active={active === "clients"}
+            collapsed={collapsed}
+          />
+          <SidebarMenuItem
+            href="/operator/brokers"
+            label="Brokers"
+            icon={Building2}
+            active={active === "brokers"}
             collapsed={collapsed}
           />
         </div>

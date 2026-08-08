@@ -9,7 +9,9 @@ import { api } from "@/convex/_generated/api";
 type OperatorImpersonationContext = {
   user?: { email?: string };
   activeImpersonation?: {
+    targetOrgId: string;
     targetOrgName?: string;
+    targetOrgType: "broker" | "client";
     targetRole: "admin" | "member";
     targetOrgOperatorStatus?: "onboarding" | "live";
   } | null;
@@ -19,11 +21,13 @@ export function OperatorImpersonationBanner() {
   const bannerRef = useRef<HTMLDivElement>(null);
   const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
   const operatorContext = useCachedQuery(
-    "operator.current.banner",
+    "operator.current",
     api.operator.current,
     viewer?.accountKind === "operator" ? {} : "skip",
   ) as OperatorImpersonationContext | undefined;
-  const stopOperatorImpersonation = useStopOperatorImpersonation();
+  const stopOperatorImpersonation = useStopOperatorImpersonation(
+    operatorContext?.activeImpersonation,
+  );
   const impersonation = operatorContext?.activeImpersonation;
   const hasImpersonation = Boolean(impersonation);
   const isReadOnly =
