@@ -50,6 +50,21 @@ describe("external extraction document gate", () => {
     expect(gateBody).toContain("Document gate failed; continuing extraction");
   });
 
+  it("allows specimen policy fixtures through the shared classifier", () => {
+    const actions = read("convex/actions/policyExtraction.ts");
+    const classifierBody = actions.slice(
+      actions.indexOf("async function classifyInsuranceExtractability"),
+      actions.indexOf("function shouldRejectDocument"),
+    );
+
+    expect(classifierBody).toContain("isSpecimenPolicyDocument(params.sourceSpans)");
+    expect(classifierBody).toContain('classification: "specimen_policy_document"');
+    expect(classifierBody.indexOf("isSpecimenPolicyDocument(params.sourceSpans)"))
+      .toBeLessThan(classifierBody.indexOf('makeGenerateObject("classification"'));
+    expect(actions).toContain('decision.classification === "specimen_policy_document"');
+    expect(actions).toContain("A disclaimer such as \"not an actual policy\"");
+  });
+
   it("auto-archives only new uploads rejected as non-insurance", () => {
     const policies = read("convex/policies.ts");
     const actions = read("convex/actions/policyExtraction.ts");
