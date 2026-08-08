@@ -10,6 +10,8 @@ export const SLACK_CUSTOMER_SCOPES = [
   "users:read",
 ] as const;
 
+export const SLACK_INSTALL_INVITE_EXPIRATION_DAYS = 7;
+
 export const SLACK_HOST_SCOPES = [
   ...SLACK_CUSTOMER_SCOPES,
   "groups:write",

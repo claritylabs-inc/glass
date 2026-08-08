@@ -10,6 +10,7 @@ import {
   missingSlackCustomerScopes,
   SLACK_CUSTOMER_SCOPES,
   SLACK_HOST_SCOPES,
+  SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
 } from "../lib/slackOAuthPolicy";
 import {
   throwUserFacingError,
@@ -23,6 +24,9 @@ import {
   encryptSlackCredential,
   resolveSlackInstallation,
 } from "../lib/slackCredentials";
+import { buildSlackInstallInviteEmail } from "../lib/emailTemplate";
+import { getAuthFromAddress, sendResendEmail } from "../lib/resend";
+import { getAuthSiteUrl } from "../lib/domains";
 import dayjs from "dayjs";
 
 const internalApi = internal as any;
@@ -45,6 +49,23 @@ function slackOAuthAuthorization(): string {
   return `Basic ${Buffer.from(
     `${requiredEnv("SLACK_CLIENT_ID")}:${requiredEnv("SLACK_CLIENT_SECRET")}`,
   ).toString("base64")}`;
+}
+
+function customerOAuthUrl(state: string): string {
+  const url = new URL("https://slack.com/oauth/v2/authorize");
+  url.searchParams.set("client_id", requiredEnv("SLACK_CLIENT_ID"));
+  url.searchParams.set("scope", SLACK_CUSTOMER_SCOPES.join(","));
+  url.searchParams.set("redirect_uri", redirectUri());
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
+function normalizeInviteEmail(value: string): string {
+  const email = value.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error("Enter a valid client admin email address");
+  }
+  return email;
 }
 
 function settingsRedirect(
@@ -113,12 +134,69 @@ export const begin = action({
         actorKind: permission.kind,
       },
     );
-    const url = new URL("https://slack.com/oauth/v2/authorize");
-    url.searchParams.set("client_id", requiredEnv("SLACK_CLIENT_ID"));
-    url.searchParams.set("scope", SLACK_CUSTOMER_SCOPES.join(","));
-    url.searchParams.set("redirect_uri", redirectUri());
-    url.searchParams.set("state", state);
-    return { url: url.toString(), mockRefreshed: false as const };
+    return { url: customerOAuthUrl(state), mockRefreshed: false as const };
+  },
+});
+
+export const sendInstallInvite = action({
+  args: {
+    clientOrgId: v.id("organizations"),
+    recipientEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (process.env.SLACK_ENABLED !== "true") {
+      throw new Error("Slack is not enabled for this environment");
+    }
+    if (isSlackMockMode()) {
+      throw new Error("Slack install invitations require live Slack mode");
+    }
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    const recipientEmail = normalizeInviteEmail(args.recipientEmail);
+    const context = await ctx.runQuery(
+      internalApi.agentChannels.authorizeSlackInstallInvite,
+      { clientOrgId: args.clientOrgId, userId },
+    );
+    const state = await ctx.runMutation(
+      internalApi.agentChannels.createSlackInstallInviteOAuthState,
+      {
+        clientOrgId: args.clientOrgId,
+        operatorUserId: userId,
+        expiresInDays: SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
+      },
+    );
+    const email = buildSlackInstallInviteEmail({
+      clientName: context.clientName,
+      channelName: context.channelName,
+      installUrl: customerOAuthUrl(state),
+      expiresInDays: SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
+      siteUrl: getAuthSiteUrl(),
+    });
+    const result = await sendResendEmail(
+      {
+        from: getAuthFromAddress(),
+        to: recipientEmail,
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+      },
+      { retries: 2 },
+    );
+    if (!result.ok) {
+      throw new Error(`Failed to send Slack install invitation: ${result.error}`);
+    }
+    await ctx.runMutation(
+      internalApi.agentChannels.recordSlackInstallInviteSent,
+      {
+        clientOrgId: args.clientOrgId,
+        operatorUserId: userId,
+        recipientEmail,
+      },
+    );
+    return {
+      recipientEmail,
+      expiresInDays: SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
+    };
   },
 });
 

@@ -8,6 +8,7 @@ import {
   beginHost,
   complete,
   disconnect,
+  sendInstallInvite,
 } from "./actions/slackOAuth";
 import {
   SLACK_CUSTOMER_SCOPES,
@@ -21,6 +22,7 @@ const beginFn = begin as any;
 const beginHostFn = beginHost as any;
 const completeFn = complete as any;
 const disconnectFn = disconnect as any;
+const sendInstallInviteFn = sendInstallInvite as any;
 
 beforeEach(() => {
   vi.stubEnv("SLACK_ENABLED", "true");
@@ -33,6 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -90,6 +93,121 @@ function slackTokenResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Slack OAuth actions", () => {
+  test("lets an operator email a seven-day Slack app install invitation", async () => {
+    vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
+    vi.stubEnv("GLASS_ENV", "local");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const t = convexTest(schema, modules);
+    const { clientOrgId, operatorUserId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Cove & Co.",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", {
+        name: "Glass Operator",
+        email: "operator@glass.insure",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId,
+        email: "operator@glass.insure",
+        role: "operator",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("slackChannelBindings", {
+        clientOrgId: orgId,
+        kind: "primary",
+        hostTeamId: "T-CLARITY",
+        hostChannelId: "C-HOST",
+        channelName: "glass-cove",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { clientOrgId: orgId, operatorUserId: userId };
+    });
+
+    await expect(
+      t
+        .withIdentity({ subject: `${operatorUserId}|session` })
+        .action(sendInstallInviteFn, {
+          clientOrgId,
+          recipientEmail: " Admin@Cove.Test ",
+        }),
+    ).resolves.toEqual({
+      recipientEmail: "admin@cove.test",
+      expiresInDays: 7,
+    });
+
+    const capture = String(logSpy.mock.calls[0]?.[0] ?? "");
+    expect(capture).toContain("to: admin@cove.test");
+    expect(capture).toContain(
+      "subject: Install the Glass Slack app for Cove & Co.",
+    );
+    expect(capture).toContain("Glass is a Slack app");
+    expect(capture).toContain(
+      "https://platform.slack-edge.com/img/add_to_slack.png",
+    );
+    expect(capture).toContain("#glass-cove");
+
+    const records = await t.run(async (ctx) => ({
+      state: await ctx.db.query("slackOAuthStates").first(),
+      audits: await ctx.db.query("operatorAuditEvents").collect(),
+    }));
+    expect(records.state).toMatchObject({
+      clientOrgId,
+      purpose: "customer",
+      initiatedByOperatorUserId: operatorUserId,
+    });
+    expect(records.state!.expiresAt - records.state!.createdAt).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    );
+    expect(records.audits).toMatchObject([
+      {
+        operatorUserId,
+        targetOrgId: clientOrgId,
+        type: "setup_write",
+        summary: "Sent client Slack app install invitation",
+        metadata: { recipientEmail: "admin@cove.test" },
+      },
+    ]);
+  });
+
+  test("does not let a client admin send the operator install invitation", async () => {
+    vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
+    vi.stubEnv("GLASS_ENV", "local");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const t = convexTest(schema, modules);
+    const { clientOrgId, userId } = await seedAdmin(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("slackChannelBindings", {
+        clientOrgId,
+        kind: "primary",
+        hostTeamId: "T-CLARITY",
+        hostChannelId: "C-HOST",
+        channelName: "glass-client",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await expect(
+      t.withIdentity({ subject: `${userId}|session` }).action(
+        sendInstallInviteFn,
+        {
+          clientOrgId,
+          recipientEmail: "admin@client.test",
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      t.run((ctx) => ctx.db.query("slackOAuthStates").collect()),
+    ).resolves.toHaveLength(0);
+  });
+
   test("installs the host app only for an authenticated Glass operator", async () => {
     const t = convexTest(schema, modules);
     const userId = await t.run(async (ctx) => {

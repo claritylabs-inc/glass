@@ -365,6 +365,42 @@ export const authorizeSetup = internalQuery({
   },
 });
 
+export const authorizeSlackInstallInvite = internalQuery({
+  args: { clientOrgId: v.id("organizations"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const org = await ctx.db.get(args.clientOrgId);
+    if (!org || (org.type ?? "client") !== "client") {
+      throw new Error("Client organization not found");
+    }
+    const profile = await ctx.db
+      .query("operatorProfiles")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .first();
+    if (!profile || profile.status !== "active") {
+      throwUserFacingError(userFacingErrorCodes.operatorRequired);
+    }
+    const [connection, primaryChannel] = await Promise.all([
+      activeConnection(ctx, args.clientOrgId),
+      ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
+        )
+        .first(),
+    ]);
+    if (connection) {
+      throw new Error("This client already has an active Slack workspace");
+    }
+    if (!primaryChannel) {
+      throw new Error("Create the client Slack channel before sending an invite");
+    }
+    return {
+      clientName: org.name,
+      channelName: primaryChannel.channelName,
+    };
+  },
+});
+
 export const getSlackConnectionForMockSetup = internalQuery({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) =>
@@ -414,6 +450,62 @@ export const createOAuthState = internalMutation({
       createdAt: now,
     });
     return state;
+  },
+});
+
+export const createSlackInstallInviteOAuthState = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    operatorUserId: v.id("users"),
+    expiresInDays: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (
+      !Number.isInteger(args.expiresInDays) ||
+      args.expiresInDays < 1 ||
+      args.expiresInDays > 14
+    ) {
+      throw new Error("Slack install invitation expiration must be 1-14 days");
+    }
+    const state = randomState();
+    const now = dayjs().valueOf();
+    await ctx.db.insert("slackOAuthStates", {
+      stateHash: await sha256(state),
+      purpose: "customer",
+      clientOrgId: args.clientOrgId,
+      initiatedByOperatorUserId: args.operatorUserId,
+      expiresAt: dayjs(now).add(args.expiresInDays, "day").valueOf(),
+      createdAt: now,
+    });
+    return state;
+  },
+});
+
+export const recordSlackInstallInviteSent = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    operatorUserId: v.id("users"),
+    recipientEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db
+      .query("operatorProfiles")
+      .withIndex("by_userId", (q) => q.eq("userId", args.operatorUserId))
+      .first();
+    if (!profile || profile.status !== "active") {
+      throwUserFacingError(userFacingErrorCodes.operatorRequired);
+    }
+    const org = await ctx.db.get(args.clientOrgId);
+    if (!org || (org.type ?? "client") !== "client") {
+      throw new Error("Client organization not found");
+    }
+    await writeOperatorAudit(ctx, {
+      operatorUserId: args.operatorUserId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: "Sent client Slack app install invitation",
+      metadata: { recipientEmail: args.recipientEmail },
+    });
   },
 });
 
