@@ -2,6 +2,7 @@ const RESEND_API = "https://api.resend.com/emails";
 const DEFAULT_AGENT_DOMAIN = "glass.insure";
 const DEFAULT_NOTIFICATION_EMAIL_DOMAIN = "notifications.glass.insure";
 const DEFAULT_AUTH_EMAIL_DOMAIN = "auth.glass.insure";
+const DEFAULT_AUTH_EMAIL_FROM_NAME = "Glass from Clarity Labs";
 const DEFAULT_LEGACY_AGENT_DOMAINS = ["glass.claritylabs.inc", "dev.claritylabs.inc"];
 
 function normalizeDomain(domain: string): string {
@@ -64,12 +65,11 @@ function sanitizeFromName(value: string): string {
 }
 
 export function getAuthFromAddress(fromName?: string): string {
-  const fallback = `Glass from Clarity Labs <noreply@${getAuthEmailDomain()}>`;
+  const fallback = `${DEFAULT_AUTH_EMAIL_FROM_NAME} <noreply@${getAuthEmailDomain()}>`;
   const configured = process.env.AUTH_EMAIL_FROM;
-  if (!fromName) return configured ?? fallback;
-
   const address = extractEmailAddress(configured ?? fallback);
-  return `${sanitizeFromName(fromName)} <${address}>`;
+  const displayName = sanitizeFromName(fromName ?? DEFAULT_AUTH_EMAIL_FROM_NAME);
+  return `${displayName} <${address}>`;
 }
 
 export type ResendPayload = {
