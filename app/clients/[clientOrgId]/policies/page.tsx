@@ -72,6 +72,12 @@ function displayStatus(
   if (extractionDataStage === "preview" && status !== "complete") {
     return "enriching";
   }
+  if (
+    extractionDataStage === "placeholder" &&
+    (!status || status === "idle" || status === "running")
+  ) {
+    return "extracting";
+  }
   if (!status || status === "running") return "extracting";
   return status.replace(/_/g, " ");
 }

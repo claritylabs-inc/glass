@@ -105,8 +105,16 @@ export function PolicyListItem({
 }: PolicyListItemProps) {
   const isProvisional =
     extractionDataStage === "preview" && pipelineStatus !== "complete";
+  const isPlaceholderProcessing =
+    extractionDataStage === "placeholder" &&
+    (!pipelineStatus ||
+      pipelineStatus === "idle" ||
+      pipelineStatus === "running");
   const isProcessing =
-    !isProvisional && (pipelineStatus === "running" || !pipelineStatus);
+    !isProvisional &&
+    (isPlaceholderProcessing ||
+      pipelineStatus === "running" ||
+      !pipelineStatus);
   const generalAgentClean = cleanField(generalAgent);
   const policyNumberClean = cleanField(policyNumber);
   const productNameClean = cleanField(
