@@ -57,6 +57,7 @@ describe("operator client management surfaces", () => {
     expect(client).toContain("OrganizationInsuranceProfile");
     expect(client).toContain("TeamSection");
     expect(client).toContain("getClientSupportDetails");
+    expect(client).not.toContain("Login and activation email");
     expect(client).toContain('aria-labelledby="client-identity-title"');
     expect(client).toContain('breadcrumbDetail={client?.name ?? "Client"}');
     expect(client).toContain(
@@ -66,6 +67,16 @@ describe("operator client management surfaces", () => {
       '<FormSection title="Primary contact" divided={false}>',
     );
     expect(client).not.toContain("showPanelDescriptions");
+  });
+
+  it("sends client activation emails from admin rows on the Team tab", () => {
+    const team = read("components/settings/team-section.tsx");
+
+    expect(team).toContain("api.operator.launchSoloClient");
+    expect(team).toContain('member.role === "admin"');
+    expect(team).toContain('"Send activation"');
+    expect(team).toContain('"Resend activation"');
+    expect(team).toContain("adminUserId: member.userId");
   });
 
   it("separates global Slack infrastructure from client setup", () => {

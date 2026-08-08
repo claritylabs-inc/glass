@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { isValidPhoneNumber } from "react-phone-number-input";
@@ -211,7 +211,6 @@ function ClientWorkspace({
   );
   const setClientFeatureFlag = useMutation(api.operator.setClientFeatureFlag);
   const setClientStatus = useMutation(api.operator.setSoloClientStatus);
-  const launchClient = useAction(api.operator.launchSoloClient);
   const startImpersonation = useMutation(api.operator.startImpersonation);
 
   useEffect(() => {
@@ -389,20 +388,6 @@ function ClientWorkspace({
       setBusy(false);
     }
   }, [client._id, router, saveClientSettingsNow, startImpersonation]);
-
-  async function launch() {
-    setBusy(true);
-    try {
-      if (!(await clientSettingsAutoSave.saveNow())) return;
-      await launchClient({ clientOrgId: client._id });
-      await patchClientStatus(client._id, "live");
-      toast.success("Client launched and login email sent");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Failed to launch client"));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const disableAccount = useCallback(async () => {
     setBusy(true);
@@ -705,16 +690,16 @@ function ClientWorkspace({
                 title="Account access"
                 description={
                   client.operatorStatus === "onboarding"
-                    ? "Send an activation email to let this client access Glass."
-                    : "Disable access and return this client to onboarding."
+                    ? "Send an activation email to an admin from Team to enable access."
+                    : "Activation emails can be resent to any admin from Team."
                 }
                 action={
                   client.operatorStatus === "onboarding" ? (
-                    <PillButton disabled={busy} onClick={() => void launch()}>
-                      {busy ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : null}
-                      Send activation email
+                    <PillButton
+                      variant="secondary"
+                      onClick={() => navigate("team")}
+                    >
+                      Open team
                     </PillButton>
                   ) : (
                     <PillButton
@@ -750,6 +735,9 @@ function ClientWorkspace({
           <TeamSection
             operatorClient={supportDetails}
             setOperatorRightPanel={setRightPanel}
+            onOperatorActivationSent={() =>
+              patchClientStatus(client._id, "live")
+            }
           />
         ) : null}
 

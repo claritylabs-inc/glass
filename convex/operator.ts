@@ -1468,8 +1468,15 @@ export const launchBroker = action({
 });
 
 export const launchSoloClient = action({
-  args: { clientOrgId: v.id("organizations") },
-  handler: async (ctx, args): Promise<{ loginUrl: string }> => {
+  args: {
+    clientOrgId: v.id("organizations"),
+    adminUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args): Promise<{
+    loginUrl: string;
+    recipientEmail: string;
+    adminUserId: Id<"users">;
+  }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
@@ -1479,9 +1486,16 @@ export const launchSoloClient = action({
       adminUserId?: Id<"users">;
       adminEmail?: string;
       adminName?: string;
-    } | null = await ctx.runQuery(internalApi.operator.getSoloClientLaunchContextInternal, args);
-    if (!launch) throw new Error("Client launch context not found");
-    if (!launch.adminEmail) throw new Error("Client has no admin email");
+    } | null = await ctx.runQuery(
+      internalApi.operator.getSoloClientLaunchContextInternal,
+      {
+        clientOrgId: args.clientOrgId,
+        adminUserId: args.adminUserId,
+      },
+    );
+    if (!launch?.adminUserId || !launch.adminEmail) {
+      throw new Error("Client admin not found");
+    }
 
     const siteUrl = getAuthSiteUrl();
     const loginUrl = `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
@@ -1520,8 +1534,14 @@ export const launchSoloClient = action({
       clientOrgId: args.clientOrgId,
       operatorUserId: userId,
       adminUserId: launch.adminUserId,
+      recipientEmail: launch.adminEmail,
+      resendEmailId: result.id,
     });
-    return { loginUrl };
+    return {
+      loginUrl,
+      recipientEmail: launch.adminEmail,
+      adminUserId: launch.adminUserId,
+    };
   },
 });
 
@@ -1937,17 +1957,34 @@ export const getBrokerLaunchContextInternal = internalQuery({
 });
 
 export const getSoloClientLaunchContextInternal = internalQuery({
-  args: { clientOrgId: v.id("organizations") },
+  args: {
+    clientOrgId: v.id("organizations"),
+    adminUserId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args) => {
     const client = await ctx.db.get(args.clientOrgId);
     if (!client || client.type !== "client") return null;
-    const admin = await getOrgAdmin(ctx, args.clientOrgId);
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.clientOrgId))
+      .take(200);
+    const adminMembership = args.adminUserId
+      ? memberships.find(
+          (membership) =>
+            membership.userId === args.adminUserId &&
+            membership.role === "admin",
+        )
+      : memberships.find((membership) => membership.role === "admin");
+    const admin = adminMembership
+      ? await ctx.db.get(adminMembership.userId)
+      : null;
+    if (!admin || admin.serviceAccountKind) return null;
     return {
       clientOrgId: client._id,
       name: client.name,
-      adminUserId: admin?._id,
-      adminEmail: admin?.email ?? client.primaryContactEmail,
-      adminName: admin?.name ?? client.primaryContactName,
+      adminUserId: admin._id,
+      adminEmail: admin.email,
+      adminName: admin.name,
     };
   },
 });
@@ -1976,18 +2013,25 @@ export const markSoloClientLaunchedInternal = internalMutation({
   args: {
     clientOrgId: v.id("organizations"),
     operatorUserId: v.id("users"),
-    adminUserId: v.optional(v.id("users")),
+    adminUserId: v.id("users"),
+    recipientEmail: v.string(),
+    resendEmailId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const client = await ctx.db.get(args.clientOrgId);
     if (!client || client.type !== "client") throw new Error("Client not found");
+    const wasLive = (client.operatorStatus ?? "live") === "live";
     await ctx.db.patch(args.clientOrgId, { operatorStatus: "live", onboardingComplete: true });
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "client_launch_email_sent",
       targetOrgId: args.clientOrgId,
       targetUserId: args.adminUserId,
-      summary: `Launched ${client.name} and sent client login email`,
+      summary: `${wasLive ? "Resent activation email for" : "Launched"} ${client.name}; email provider accepted client login email`,
+      metadata: {
+        recipientEmail: args.recipientEmail,
+        resendEmailId: args.resendEmailId,
+      },
     });
   },
 });

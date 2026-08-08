@@ -26,14 +26,17 @@ import {
 type OperatorClientTeamTarget = {
   _id: Id<"organizations">;
   primaryInsuranceContactId?: Id<"users">;
+  operatorStatus?: "onboarding" | "live";
 };
 
 export function TeamSection({
   operatorClient,
   setOperatorRightPanel,
+  onOperatorActivationSent,
 }: {
   operatorClient?: OperatorClientTeamTarget;
   setOperatorRightPanel?: (node: React.ReactNode) => void;
+  onOperatorActivationSent?: () => void | Promise<void>;
 } = {}) {
   const operatorClientOrgId = operatorClient?._id;
   const teamQueryArgs = useMemo(
@@ -84,6 +87,7 @@ export function TeamSection({
   const updateMemberRole = useMutation(api.orgs.updateMemberRole);
   const updateMemberProfile = useMutation(api.orgs.updateMemberProfile);
   const requestMemberEmailChange = useAction(api.orgs.requestMemberEmailChange);
+  const launchSoloClient = useAction(api.operator.launchSoloClient);
   const cancelMemberEmailChange = useMutation(api.orgs.cancelMemberEmailChange);
   const setPrimaryContact = useMutation(api.orgs.setPrimaryInsuranceContact);
   const ensurePrimaryContact = useMutation(
@@ -107,6 +111,8 @@ export function TeamSection({
   const [cancellingEmailChange, setCancellingEmailChange] = useState(false);
   const [removingMember, setRemovingMember] = useState(false);
   const [settingPrimaryContactUserId, setSettingPrimaryContactUserId] =
+    useState<Id<"users"> | null>(null);
+  const [activationUserId, setActivationUserId] =
     useState<Id<"users"> | null>(null);
 
   const {
@@ -379,6 +385,30 @@ export function TeamSection({
     ],
   );
 
+  const sendOperatorActivation = useCallback(
+    async (member: TeamMember) => {
+      if (!operatorClientOrgId || member.role !== "admin" || !member.email) {
+        return;
+      }
+      setActivationUserId(member.userId);
+      try {
+        const result = await launchSoloClient({
+          clientOrgId: operatorClientOrgId,
+          adminUserId: member.userId,
+        });
+        await onOperatorActivationSent?.();
+        toast.success(`Activation email queued for ${result.recipientEmail}`);
+      } catch (error) {
+        toast.error(
+          getUserFacingErrorMessage(error, "Failed to send activation email"),
+        );
+      } finally {
+        setActivationUserId(null);
+      }
+    },
+    [launchSoloClient, onOperatorActivationSent, operatorClientOrgId],
+  );
+
   useEffect(() => {
     if (operatorClientOrgId) return;
     setSettingsActions(
@@ -525,6 +555,33 @@ export function TeamSection({
         viewerUserId={viewerUserId}
         canEditMembers={orgData?.membership?.role === "admin"}
         primaryContactId={primaryContactId}
+        renderMemberAction={
+          operatorClientOrgId
+            ? (member) =>
+                member.role === "admin" ? (
+                  <PillButton
+                    size="compact"
+                    variant="secondary"
+                    disabled={activationUserId !== null || !member.email}
+                    title={
+                      member.email
+                        ? undefined
+                        : "This admin does not have an email address"
+                    }
+                    onClick={() => void sendOperatorActivation(member)}
+                  >
+                    {activationUserId === member.userId ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : null}
+                    {activationUserId === member.userId
+                      ? "Sending…"
+                      : operatorClient?.operatorStatus === "onboarding"
+                        ? "Send activation"
+                        : "Resend activation"}
+                  </PillButton>
+                ) : null
+            : undefined
+        }
         onEditMember={openEditMember}
         onCancelInvitation={(invitation) =>
           void cancelPendingInvitation(invitation)
