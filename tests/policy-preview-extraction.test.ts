@@ -100,10 +100,11 @@ describe("policy preview extraction", () => {
     expect(policies).toContain('status === "complete" ? { extractionPreviewError: undefined } : {}');
   });
 
-  it("keeps placeholder uploads hidden until preview, final, or error", () => {
+  it("shows placeholder uploads immediately while preserving later extraction states", () => {
     const policies = read("convex/policies.ts");
 
     expect(policies).toContain("function isVisiblePolicyListRow");
+    expect(policies).toContain('if (policy.extractionDataStage === "placeholder") return true');
     expect(policies).toContain("if (isPreviewReadablePolicy(policy)) return true");
     expect(policies).toContain('if (policy.pipelineStatus === "error") return true');
     expect(policies).toContain("isVisiblePolicyListRow(p)");
@@ -111,7 +112,7 @@ describe("policy preview extraction", () => {
     expect(policies).toContain("Boolean(p.deletedAt)");
   });
 
-  it("uses extraction toasts instead of inline placeholder rows", () => {
+  it("keeps extraction toasts alongside inline placeholder rows", () => {
     const extractionToast = read("components/shared/extraction-banner.tsx");
     const policyList = read("app/policies/page.tsx");
     const brokerPolicyList = read("app/clients/[clientOrgId]/policies/page.tsx");
@@ -124,6 +125,9 @@ describe("policy preview extraction", () => {
     expect(policyList).toContain("pendingExtractionToasts");
     expect(policyList).toContain("showPolicyExtractionQueuedToast");
     expect(policyList).not.toContain('carrier: "Extracting..."');
+    expect(read("components/policy-list-item.tsx")).toContain(
+      'extractionDataStage === "placeholder"',
+    );
     expect(brokerPolicyList).toContain("pendingExtractionToasts");
     expect(brokerPolicyList).toContain("showPolicyExtractionReadyToast");
     expect(brokerPolicyList).not.toContain("upsertBrokerPolicies");

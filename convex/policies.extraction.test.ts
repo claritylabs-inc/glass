@@ -7,6 +7,7 @@ import {
   pipelineReconcileTerminalState,
   pipelineRejectExternalJob,
   pipelineSetStatus,
+  listForClient,
   updateExtractionInternal,
   updatePreviewExtractionInternal,
 } from "./policies";
@@ -17,9 +18,58 @@ const pipelineCompleteLeaseFn = pipelineCompleteLease as any;
 const pipelineReconcileTerminalStateFn = pipelineReconcileTerminalState as any;
 const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
 const pipelineSetStatusFn = pipelineSetStatus as any;
+const listForClientFn = listForClient as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
 const updatePreviewExtractionInternalFn =
   updatePreviewExtractionInternal as any;
+
+describe("policy list extraction visibility", () => {
+  test("returns a placeholder row before its extraction run starts", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, policyId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", {
+        name: "Client Admin",
+        email: "client@example.com",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId,
+        userId,
+        role: "admin",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Extracting...",
+        policyNumber: "Extracting...",
+        insuredName: "Extracting...",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "Extracting...",
+        expirationDate: "Extracting...",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+        extractionDataStage: "placeholder",
+      });
+      return { userId, policyId };
+    });
+
+    const rows = await t
+      .withIdentity({ subject: `${userId}|session` })
+      .query(listForClientFn, { documentType: "policy" });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        _id: policyId,
+        extractionDataStage: "placeholder",
+        pipelineStatus: "idle",
+      }),
+    ]);
+  });
+});
 
 describe("policy extraction retry source selection", () => {
   const policy = {

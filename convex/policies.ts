@@ -202,6 +202,7 @@ function isVisiblePolicyListRow(policy: {
   coverages?: unknown[];
 }) {
   if (policy.deletedAt) return false;
+  if (policy.extractionDataStage === "placeholder") return true;
   if (isPreviewReadablePolicy(policy)) return true;
   if (policy.pipelineStatus === "error") return true;
   return (
