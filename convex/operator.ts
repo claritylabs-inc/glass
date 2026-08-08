@@ -120,15 +120,6 @@ function validateAgentHandle(handle: string | undefined) {
   }
 }
 
-function normalizeOptionalContactEmail(value: string | undefined) {
-  const email = normalizeOperatorEmail(value);
-  if (!email) return undefined;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error("Enter a valid contact email");
-  }
-  return email;
-}
-
 function normalizeOptionalContactPhone(value: string | undefined) {
   const phone = value?.trim();
   if (!phone) return undefined;
@@ -1254,9 +1245,6 @@ export const updateClientSettings = mutation({
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
     relatedLegalEntities: v.optional(v.array(relatedLegalEntityValidator)),
-    primaryContactName: v.optional(v.string()),
-    primaryContactEmail: v.optional(v.string()),
-    primaryContactPhone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
@@ -1282,13 +1270,6 @@ export const updateClientSettings = mutation({
       }
     }
 
-    const primaryContactEmail = normalizeOptionalContactEmail(args.primaryContactEmail);
-    const admin = await getOrgAdmin(ctx, args.clientOrgId);
-    const primaryContactPhone = await normalizeAvailableUserPhone(
-      ctx,
-      args.primaryContactPhone,
-      admin?._id,
-    );
     const patch = {
       name,
       brokerOrgId: args.brokerOrgId,
@@ -1302,18 +1283,9 @@ export const updateClientSettings = mutation({
           legalName: entity.legalName.trim(),
         }))
         .filter((entity) => entity.legalName),
-      primaryContactName: args.primaryContactName?.trim() || undefined,
-      primaryContactEmail,
-      primaryContactPhone,
     };
 
     await ctx.db.patch(args.clientOrgId, patch);
-    if (admin && normalizeOperatorEmail(admin.email) === primaryContactEmail) {
-      await ctx.db.patch(admin._id, {
-        name: patch.primaryContactName,
-        phone: primaryContactPhone,
-      });
-    }
     await writeOperatorAudit(ctx, {
       operatorUserId: operator.userId,
       type: "setup_write",
@@ -1326,7 +1298,6 @@ export const updateClientSettings = mutation({
         nextBrokerOrgId: args.brokerOrgId,
         website: patch.website,
         agentHandle,
-        primaryContactEmail,
       },
     });
   },
@@ -1493,9 +1464,8 @@ export const launchSoloClient = action({
         adminUserId: args.adminUserId,
       },
     );
-    if (!launch?.adminUserId || !launch.adminEmail) {
-      throw new Error("Client admin not found");
-    }
+    if (!launch?.adminUserId) throw new Error("Client admin not found");
+    if (!launch.adminEmail) throw new Error("Client admin has no email");
 
     const siteUrl = getAuthSiteUrl();
     const loginUrl = `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
