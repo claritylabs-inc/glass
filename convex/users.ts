@@ -27,6 +27,7 @@ import {
 import {
   assertCustomerUser,
   isBootstrapOperatorEmail,
+  requireOperatorForUser,
 } from "./lib/operatorIdentity";
 import {
   throwUserFacingError,
@@ -468,7 +469,12 @@ export const createEmailChangeRequestInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const target = await assertCustomerUser(ctx, args.targetUserId);
-    await assertCustomerUser(ctx, args.requestedByUserId);
+    const requestedBy = await ctx.db.get(args.requestedByUserId);
+    if (requestedBy?.accountKind === "operator") {
+      await requireOperatorForUser(ctx, args.requestedByUserId);
+    } else {
+      await assertCustomerUser(ctx, args.requestedByUserId);
+    }
     const normalized = normalizeEmailForChange(args.newEmail);
     const availability = await emailAvailabilityForTarget(
       ctx,

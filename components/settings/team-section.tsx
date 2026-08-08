@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { useAction, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -23,27 +23,59 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 
-export function TeamSection() {
+type OperatorClientTeamTarget = {
+  _id: Id<"organizations">;
+  primaryInsuranceContactId?: Id<"users">;
+};
+
+export function TeamSection({
+  operatorClient,
+  setOperatorRightPanel,
+}: {
+  operatorClient?: OperatorClientTeamTarget;
+  setOperatorRightPanel?: (node: React.ReactNode) => void;
+} = {}) {
+  const operatorClientOrgId = operatorClient?._id;
+  const teamQueryArgs = useMemo(
+    () => operatorClientOrgId ? { operatorClientOrgId } : {},
+    [operatorClientOrgId],
+  );
+  const cacheScope = operatorClientOrgId ?? "current";
+  const membersCacheKey = operatorClientOrgId
+    ? `settings.team.listMembers.${cacheScope}`
+    : "settings.team.listMembers";
+  const invitationsCacheKey = operatorClientOrgId
+    ? `settings.team.listInvitations.${cacheScope}`
+    : "settings.team.listInvitations";
   const viewer = useCachedQuery("settings.team.viewer", api.users.viewer, {});
-  const orgData = useCachedViewerOrg();
+  const currentOrgData = useCachedViewerOrg();
+  const orgData = useMemo(
+    () => operatorClient
+      ? {
+          org: operatorClient,
+          membership: { role: "admin" as const },
+        }
+      : currentOrgData,
+    [currentOrgData, operatorClient],
+  );
   const members = useCachedQuery(
-    "settings.team.listMembers",
+    membersCacheKey,
     api.orgs.listMembers,
-    {},
+    teamQueryArgs,
   ) as TeamMember[] | undefined;
   const invitations = useCachedQuery(
-    "settings.team.listInvitations",
+    invitationsCacheKey,
     api.orgs.listInvitations,
-    {},
+    teamQueryArgs,
   ) as TeamInvitation[] | undefined;
   const updateCachedMembers = useUpdateCachedQuery<
     TeamMember[],
-    Record<string, never>
-  >("settings.team.listMembers");
+    { operatorClientOrgId?: Id<"organizations"> }
+  >(membersCacheKey);
   const updateCachedInvitations = useUpdateCachedQuery<
     TeamInvitation[],
-    Record<string, never>
-  >("settings.team.listInvitations");
+    { operatorClientOrgId?: Id<"organizations"> }
+  >(invitationsCacheKey);
   const updateCachedViewerOrg = useUpdateCachedQuery<
     ViewerOrgData,
     Record<string, never>
@@ -77,7 +109,11 @@ export function TeamSection() {
   const [settingPrimaryContactUserId, setSettingPrimaryContactUserId] =
     useState<Id<"users"> | null>(null);
 
-  const { setActions, setRightPanel } = useSettingsActions();
+  const {
+    setActions: setSettingsActions,
+    setRightPanel: setSettingsRightPanel,
+  } = useSettingsActions();
+  const setRightPanel = setOperatorRightPanel ?? setSettingsRightPanel;
   const adminCount =
     members?.filter((member) => member.role === "admin").length ?? 0;
   const primaryContactId =
@@ -86,6 +122,7 @@ export function TeamSection() {
 
   const patchCachedPrimaryContact = useCallback(
     async (userId: Id<"users"> | undefined) => {
+      if (operatorClientOrgId) return;
       await updateCachedViewerOrg({}, (current) =>
         current?.org
           ? {
@@ -98,14 +135,14 @@ export function TeamSection() {
           : current,
       );
     },
-    [updateCachedViewerOrg],
+    [operatorClientOrgId, updateCachedViewerOrg],
   );
 
   const updatePrimaryContact = useCallback(
     async (userId: Id<"users">) => {
       setSettingPrimaryContactUserId(userId);
       try {
-        await setPrimaryContact({ userId });
+        await setPrimaryContact({ userId, operatorClientOrgId });
         await patchCachedPrimaryContact(userId);
         toast.success("Primary contact updated");
       } catch (error) {
@@ -119,7 +156,7 @@ export function TeamSection() {
         setSettingPrimaryContactUserId(null);
       }
     },
-    [patchCachedPrimaryContact, setPrimaryContact],
+    [operatorClientOrgId, patchCachedPrimaryContact, setPrimaryContact],
   );
 
   const openEditMember = useCallback((member: TeamMember) => {
@@ -138,8 +175,9 @@ export function TeamSection() {
       try {
         const result = await removeMember({
           membershipId: member.membershipId,
+          operatorClientOrgId,
         });
-        await updateCachedMembers({}, (current) =>
+        await updateCachedMembers(teamQueryArgs, (current) =>
           current.filter((row) => row.membershipId !== member.membershipId),
         );
         await patchCachedPrimaryContact(
@@ -153,7 +191,13 @@ export function TeamSection() {
         setRemovingMember(false);
       }
     },
-    [patchCachedPrimaryContact, removeMember, updateCachedMembers],
+    [
+      operatorClientOrgId,
+      patchCachedPrimaryContact,
+      removeMember,
+      teamQueryArgs,
+      updateCachedMembers,
+    ],
   );
 
   const saveTeamMember = useCallback(
@@ -166,6 +210,7 @@ export function TeamSection() {
           membershipId: member.membershipId,
           name: editName,
           title: editTitle,
+          operatorClientOrgId,
           ...(editPhone.trim() !== (member.phone ?? "").trim()
             ? { phone: editPhone }
             : {}),
@@ -174,9 +219,10 @@ export function TeamSection() {
           await updateMemberRole({
             membershipId: member.membershipId,
             role: nextRole,
+            operatorClientOrgId,
           });
         }
-        await updateCachedMembers({}, (current) =>
+        await updateCachedMembers(teamQueryArgs, (current) =>
           current.map((row) =>
             row.membershipId === member.membershipId
               ? {
@@ -204,6 +250,8 @@ export function TeamSection() {
       editPhone,
       editRole,
       editTitle,
+      operatorClientOrgId,
+      teamQueryArgs,
       updateCachedMembers,
       updateMemberProfile,
       updateMemberRole,
@@ -220,8 +268,9 @@ export function TeamSection() {
         await cancelMemberEmailChange({
           membershipId: member.membershipId,
           requestId: member.pendingEmailChange.requestId,
+          operatorClientOrgId,
         });
-        await updateCachedMembers({}, (current) =>
+        await updateCachedMembers(teamQueryArgs, (current) =>
           current.map((row) =>
             row.membershipId === member.membershipId
               ? { ...row, pendingEmailChange: undefined }
@@ -245,7 +294,12 @@ export function TeamSection() {
         setCancellingEmailChange(false);
       }
     },
-    [cancelMemberEmailChange, updateCachedMembers],
+    [
+      cancelMemberEmailChange,
+      operatorClientOrgId,
+      teamQueryArgs,
+      updateCachedMembers,
+    ],
   );
 
   const requestPendingEmailChange = useCallback(
@@ -259,6 +313,7 @@ export function TeamSection() {
         const result = await requestMemberEmailChange({
           membershipId: member.membershipId,
           email: nextEmail,
+          operatorClientOrgId,
         });
         const pendingEmailChange = {
           requestId: result.requestId,
@@ -267,7 +322,7 @@ export function TeamSection() {
           expiresAt: result.expiresAt,
           requestedByUserId: viewerUserId,
         };
-        await updateCachedMembers({}, (current) =>
+        await updateCachedMembers(teamQueryArgs, (current) =>
           current.map((row) =>
             row.membershipId === member.membershipId
               ? { ...row, pendingEmailChange }
@@ -292,14 +347,23 @@ export function TeamSection() {
         setRequestingEmailChange(false);
       }
     },
-    [requestMemberEmailChange, updateCachedMembers, viewerUserId],
+    [
+      operatorClientOrgId,
+      requestMemberEmailChange,
+      teamQueryArgs,
+      updateCachedMembers,
+      viewerUserId,
+    ],
   );
 
   const cancelPendingInvitation = useCallback(
     async (invitation: TeamInvitation) => {
       try {
-        await cancelInvitation({ invitationId: invitation._id });
-        await updateCachedInvitations({}, (current) =>
+        await cancelInvitation({
+          invitationId: invitation._id,
+          operatorClientOrgId,
+        });
+        await updateCachedInvitations(teamQueryArgs, (current) =>
           current.filter((row) => row._id !== invitation._id),
         );
         toast.success("Invitation cancelled");
@@ -307,11 +371,17 @@ export function TeamSection() {
         toast.error("Failed to cancel invitation");
       }
     },
-    [cancelInvitation, updateCachedInvitations],
+    [
+      cancelInvitation,
+      operatorClientOrgId,
+      teamQueryArgs,
+      updateCachedInvitations,
+    ],
   );
 
   useEffect(() => {
-    setActions(
+    if (operatorClientOrgId) return;
+    setSettingsActions(
       <PillButton
         size="compact"
         variant="secondary"
@@ -321,15 +391,15 @@ export function TeamSection() {
         Invite Member
       </PillButton>,
     );
-    return () => setActions(null);
-  }, [setActions]);
+    return () => setSettingsActions(null);
+  }, [operatorClientOrgId, setSettingsActions]);
 
   useEffect(() => {
     if (orgData === undefined || members === undefined) return;
     if (org?.primaryInsuranceContactId || members.length !== 1) return;
 
     let cancelled = false;
-    void ensurePrimaryContact()
+    void ensurePrimaryContact({ operatorClientOrgId })
       .then(async (result) => {
         if (cancelled || !result.userId) return;
         await patchCachedPrimaryContact(result.userId);
@@ -342,6 +412,7 @@ export function TeamSection() {
   }, [
     ensurePrimaryContact,
     members,
+    operatorClientOrgId,
     org?.primaryInsuranceContactId,
     orgData,
     patchCachedPrimaryContact,
@@ -393,7 +464,11 @@ export function TeamSection() {
       return () => setRightPanel(null);
     }
     setRightPanel(
-      <InviteMemberDrawer open={inviteOpen} onOpenChange={setInviteOpen} />,
+      <InviteMemberDrawer
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        operatorClientOrgId={operatorClientOrgId}
+      />,
     );
     return () => setRightPanel(null);
   }, [
@@ -405,6 +480,7 @@ export function TeamSection() {
     editTitle,
     editingMember,
     inviteOpen,
+    operatorClientOrgId,
     adminCount,
     primaryContactId,
     cancellingEmailChange,
@@ -431,6 +507,18 @@ export function TeamSection() {
 
   return (
     <div className="space-y-4">
+      {operatorClientOrgId ? (
+        <div className="flex justify-end">
+          <PillButton
+            size="compact"
+            variant="secondary"
+            onClick={() => setInviteOpen(true)}
+          >
+            <UserPlus className="size-3.5" />
+            Invite member
+          </PillButton>
+        </div>
+      ) : null}
       <TeamMembersList
         members={members}
         invitations={invitations}

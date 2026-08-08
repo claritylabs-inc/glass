@@ -28,6 +28,9 @@ import {
   assertImpersonatedSetupWrite,
   getActiveOperatorImpersonation,
   isBootstrapOperatorEmail,
+  requireOperator,
+  requireOperatorForUser,
+  writeOperatorAudit,
 } from "./lib/operatorIdentity";
 import {
   assertFeatureFlagAllowedForOrg,
@@ -52,11 +55,18 @@ async function createMemberInvitation(
     email: string;
     role: "admin" | "member";
     invitedByUserId?: Id<"users">;
+    operatorClientOrgId?: Id<"organizations">;
   },
 ) {
-  const access = args.invitedByUserId
-    ? await requireOrgAdminForUser(ctx, args.invitedByUserId)
-    : await requireOrgAdminWrite(ctx);
+  const access = args.operatorClientOrgId && args.invitedByUserId
+    ? await requireOperatorClientForUser(
+        ctx,
+        args.invitedByUserId,
+        args.operatorClientOrgId,
+      )
+    : args.invitedByUserId
+      ? await requireOrgAdminForUser(ctx, args.invitedByUserId)
+      : await requireOrgAdminWrite(ctx);
   const { userId, orgId } = access;
   const email = normalizeEmail(args.email);
   if (!email) throw new Error("Email is required");
@@ -125,6 +135,69 @@ async function requireOrgAdminForUser(
   const org = await ctx.db.get(membership.orgId);
   if (!org) throw new Error("Organization not found");
   return { userId, orgId: membership.orgId, role: membership.role, org };
+}
+
+async function requireOperatorClientForUser(
+  ctx: QueryCtx | MutationCtx,
+  userId: Id<"users">,
+  clientOrgId: Id<"organizations">,
+) {
+  await requireOperatorForUser(ctx, userId);
+  const org = await ctx.db.get(clientOrgId);
+  if (!org || org.type !== "client") throw new Error("Client not found");
+  return { userId, orgId: org._id, role: "admin" as const, org };
+}
+
+async function getTeamReadOrgId(
+  ctx: QueryCtx,
+  operatorClientOrgId?: Id<"organizations">,
+) {
+  if (operatorClientOrgId) {
+    await requireOperator(ctx);
+    const client = await ctx.db.get(operatorClientOrgId);
+    if (!client || client.type !== "client") throw new Error("Client not found");
+    return client._id;
+  }
+  return (await requireOrgAccess(ctx)).orgId;
+}
+
+async function getTeamAdminWriteAccess(
+  ctx: MutationCtx,
+  operatorClientOrgId?: Id<"organizations">,
+) {
+  if (operatorClientOrgId) {
+    const operator = await requireOperator(ctx);
+    const client = await ctx.db.get(operatorClientOrgId);
+    if (!client || client.type !== "client") throw new Error("Client not found");
+    return {
+      orgId: client._id,
+      org: client,
+      userId: operator.userId,
+      operatorUserId: operator.userId,
+    };
+  }
+  const access = await requireOrgAdminWrite(ctx);
+  return { ...access, operatorUserId: undefined };
+}
+
+async function writeTeamSupportAudit(
+  ctx: MutationCtx,
+  access: { operatorUserId?: Id<"users">; orgId: Id<"organizations"> },
+  args: {
+    summary: string;
+    targetUserId?: Id<"users">;
+    metadata?: unknown;
+  },
+) {
+  if (!access.operatorUserId) return;
+  await writeOperatorAudit(ctx, {
+    operatorUserId: access.operatorUserId,
+    type: "setup_write",
+    targetOrgId: access.orgId,
+    targetUserId: args.targetUserId,
+    summary: args.summary,
+    metadata: args.metadata,
+  });
 }
 
 // ── Queries ──
@@ -249,9 +322,9 @@ export const viewerOrg = query({
 });
 
 export const listMembers = query({
-  args: {},
-  handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+  args: { operatorClientOrgId: v.optional(v.id("organizations")) },
+  handler: async (ctx, args) => {
+    const orgId = await getTeamReadOrgId(ctx, args.operatorClientOrgId);
     const now = dayjs().valueOf();
 
     const memberships = await ctx.db
@@ -298,11 +371,12 @@ export const listMembers = query({
 });
 
 export const listInvitations = query({
-  args: {},
-  handler: async (ctx) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    const { orgId } = access;
+  args: { operatorClientOrgId: v.optional(v.id("organizations")) },
+  handler: async (ctx, args) => {
+    const orgId = args.operatorClientOrgId
+      ? await getTeamReadOrgId(ctx, args.operatorClientOrgId)
+      : (await getOrgAccess(ctx))?.orgId;
+    if (!orgId) return [];
 
     return await ctx.db
       .query("orgInvitations")
@@ -986,10 +1060,15 @@ function normalizedProfileAddress(
 
 export const updateOrganizationProfile = mutation({
   args: {
+    operatorClientOrgId: v.optional(v.id("organizations")),
     profile: v.union(editableOrganizationProfileValidator, v.null()),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId, org } = await requireOrgAdminWrite(ctx);
+    const access = await getTeamAdminWriteAccess(
+      ctx,
+      args.operatorClientOrgId,
+    );
+    const { orgId, userId, org } = access;
     if ((org.type ?? "client") !== "client") {
       throw new Error("Organization insurance profiles are available for clients only");
     }
@@ -998,6 +1077,9 @@ export const updateOrganizationProfile = mutation({
         profileOverrides: undefined,
         profileOverridesUpdatedAt: undefined,
         profileOverridesUpdatedByUserId: undefined,
+      });
+      await writeTeamSupportAudit(ctx, access, {
+        summary: `Restored the extracted organization profile for ${org.name}`,
       });
       const refreshed = await ctx.db.get(orgId);
       return refreshed
@@ -1027,6 +1109,9 @@ export const updateOrganizationProfile = mutation({
       profileOverrides: storedProfile,
       profileOverridesUpdatedAt: dayjs().valueOf(),
       profileOverridesUpdatedByUserId: userId,
+    });
+    await writeTeamSupportAudit(ctx, access, {
+      summary: `Updated the organization profile for ${org.name}`,
     });
     return {
       ...storedProfile,
@@ -1090,10 +1175,16 @@ export const sendMemberInvitation = action({
   args: {
     email: v.string(),
     role: v.union(v.literal("admin"), v.literal("member")),
+    operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    if (args.operatorClientOrgId) {
+      await ctx.runQuery(internal.operator.requireOperatorForUserInternal, {
+        userId,
+      });
+    }
 
     const invitationResult = await ctx.runMutation(internal.orgs.createMemberInvitationInternal, {
       ...args,
@@ -1162,6 +1253,19 @@ export const sendMemberInvitation = action({
       throw new Error(`Failed to send invitation email: ${result.error}`);
     }
 
+    if (args.operatorClientOrgId) {
+      await ctx.runMutation(internal.orgs.writeTeamSupportAuditInternal, {
+        operatorUserId: userId,
+        clientOrgId: args.operatorClientOrgId,
+        summary: `Invited ${invitedEmail} to ${orgName} as ${roleLabel}`,
+        metadata: {
+          invitationId,
+          email: invitedEmail,
+          role: context.invitation.role,
+        },
+      });
+    }
+
     return invitationId;
   },
 });
@@ -1170,16 +1274,23 @@ export const requestMemberEmailChange = action({
   args: {
     membershipId: v.id("orgMemberships"),
     email: v.string(),
+    operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    if (args.operatorClientOrgId) {
+      await ctx.runQuery(internal.operator.requireOperatorForUserInternal, {
+        userId,
+      });
+    }
 
     const target = await ctx.runQuery(
       internal.orgs.getMemberEmailChangeTargetInternal,
       {
         membershipId: args.membershipId,
         requestedByUserId: userId,
+        operatorClientOrgId: args.operatorClientOrgId,
       },
     );
     const code = generateEmailChangeCode();
@@ -1205,6 +1316,16 @@ export const requestMemberEmailChange = action({
       throw new Error(`Failed to send verification email: ${result.error}`);
     }
 
+    if (args.operatorClientOrgId) {
+      await ctx.runMutation(internal.orgs.writeTeamSupportAuditInternal, {
+        operatorUserId: userId,
+        clientOrgId: args.operatorClientOrgId,
+        targetUserId: target.targetUserId,
+        summary: `Requested a verified account email change to ${request.newEmail}`,
+        metadata: { requestId: request.requestId },
+      });
+    }
+
     return request;
   },
 });
@@ -1214,6 +1335,7 @@ export const createMemberInvitationInternal = internalMutation({
     email: v.string(),
     role: v.union(v.literal("admin"), v.literal("member")),
     invitedByUserId: v.id("users"),
+    operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
     return await createMemberInvitation(ctx, args);
@@ -1224,12 +1346,16 @@ export const getMemberEmailChangeTargetInternal = internalQuery({
   args: {
     membershipId: v.id("orgMemberships"),
     requestedByUserId: v.id("users"),
+    operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdminForUser(
-      ctx,
-      args.requestedByUserId,
-    );
+    const { orgId } = args.operatorClientOrgId
+      ? await requireOperatorClientForUser(
+          ctx,
+          args.requestedByUserId,
+          args.operatorClientOrgId,
+        )
+      : await requireOrgAdminForUser(ctx, args.requestedByUserId);
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) {
       throw new Error("Membership not found");
@@ -1272,6 +1398,35 @@ export const deleteInvitationInternal = internalMutation({
     if (invitation?.status === "pending") {
       await ctx.db.delete(args.invitationId);
     }
+  },
+});
+
+export const writeTeamSupportAuditInternal = internalMutation({
+  args: {
+    operatorUserId: v.id("users"),
+    clientOrgId: v.id("organizations"),
+    targetUserId: v.optional(v.id("users")),
+    summary: v.string(),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const access = await requireOperatorClientForUser(
+      ctx,
+      args.operatorUserId,
+      args.clientOrgId,
+    );
+    await writeTeamSupportAudit(
+      ctx,
+      {
+        orgId: access.orgId,
+        operatorUserId: access.userId,
+      },
+      {
+        summary: args.summary,
+        targetUserId: args.targetUserId,
+        metadata: args.metadata,
+      },
+    );
   },
 });
 
@@ -1320,9 +1475,16 @@ export const acceptInvitation = mutation({
 });
 
 export const removeMember = mutation({
-  args: { membershipId: v.id("orgMemberships") },
+  args: {
+    membershipId: v.id("orgMemberships"),
+    operatorClientOrgId: v.optional(v.id("organizations")),
+  },
   handler: async (ctx, args) => {
-    const { orgId, org } = await requireOrgAdminWrite(ctx);
+    const access = await getTeamAdminWriteAccess(
+      ctx,
+      args.operatorClientOrgId,
+    );
+    const { orgId, org } = access;
 
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
@@ -1355,6 +1517,10 @@ export const removeMember = mutation({
         primaryInsuranceContactId,
       });
     }
+    await writeTeamSupportAudit(ctx, access, {
+      summary: `Removed a team member from ${org.name}`,
+      targetUserId: membership.userId,
+    });
     return { primaryInsuranceContactId: primaryInsuranceContactId ?? null };
   },
 });
@@ -1363,9 +1529,14 @@ export const updateMemberRole = mutation({
   args: {
     membershipId: v.id("orgMemberships"),
     role: v.union(v.literal("admin"), v.literal("member")),
+    operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdminWrite(ctx);
+    const access = await getTeamAdminWriteAccess(
+      ctx,
+      args.operatorClientOrgId,
+    );
+    const { orgId } = access;
 
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
@@ -1381,6 +1552,11 @@ export const updateMemberRole = mutation({
     }
 
     await ctx.db.patch(args.membershipId, { role: args.role });
+    await writeTeamSupportAudit(ctx, access, {
+      summary: `Changed a client team member role to ${args.role}`,
+      targetUserId: membership.userId,
+      metadata: { previousRole: membership.role, nextRole: args.role },
+    });
   },
 });
 
@@ -1390,9 +1566,14 @@ export const updateMemberProfile = mutation({
     name: v.optional(v.string()),
     title: v.optional(v.string()),
     phone: v.optional(v.string()),
+    operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdminWrite(ctx);
+    const access = await getTeamAdminWriteAccess(
+      ctx,
+      args.operatorClientOrgId,
+    );
+    const { orgId } = access;
 
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
@@ -1409,6 +1590,15 @@ export const updateMemberProfile = mutation({
       );
     }
     await ctx.db.patch(membership.userId, patch);
+    await writeTeamSupportAudit(ctx, access, {
+      summary: "Updated a client team member profile",
+      targetUserId: membership.userId,
+      metadata: {
+        name: patch.name,
+        title: patch.title,
+        phoneChanged: args.phone !== undefined,
+      },
+    });
   },
 });
 
@@ -1416,9 +1606,14 @@ export const cancelMemberEmailChange = mutation({
   args: {
     membershipId: v.id("orgMemberships"),
     requestId: v.id("userEmailChangeRequests"),
+    operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAdminWrite(ctx);
+    const access = await getTeamAdminWriteAccess(
+      ctx,
+      args.operatorClientOrgId,
+    );
+    const { orgId, userId } = access;
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) {
       throw new Error("Membership not found");
@@ -1438,14 +1633,26 @@ export const cancelMemberEmailChange = mutation({
       cancelledAt: dayjs().valueOf(),
       cancelledByUserId: userId,
     });
+    await writeTeamSupportAudit(ctx, access, {
+      summary: "Cancelled a client team member email change",
+      targetUserId: membership.userId,
+      metadata: { requestId: request._id },
+    });
     return { requestId: request._id };
   },
 });
 
 export const setPrimaryInsuranceContact = mutation({
-  args: { userId: v.id("users") },
+  args: {
+    userId: v.id("users"),
+    operatorClientOrgId: v.optional(v.id("organizations")),
+  },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdminWrite(ctx);
+    const access = await getTeamAdminWriteAccess(
+      ctx,
+      args.operatorClientOrgId,
+    );
+    const { orgId } = access;
 
     const membership = await ctx.db
       .query("orgMemberships")
@@ -1454,13 +1661,20 @@ export const setPrimaryInsuranceContact = mutation({
     if (!membership) throw new Error("User is not a member of this organization");
 
     await ctx.db.patch(orgId, { primaryInsuranceContactId: args.userId });
+    await writeTeamSupportAudit(ctx, access, {
+      summary: "Updated the client primary contact",
+      targetUserId: args.userId,
+    });
   },
 });
 
 export const ensurePrimaryInsuranceContact = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const { orgId } = await requireOrgAccess(ctx);
+  args: { operatorClientOrgId: v.optional(v.id("organizations")) },
+  handler: async (ctx, args) => {
+    const operatorAccess = args.operatorClientOrgId
+      ? await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId)
+      : null;
+    const { orgId } = operatorAccess ?? await requireOrgAccess(ctx);
     const org = await ctx.db.get(orgId);
     if (!org) throw new Error("Organization not found");
 
@@ -1484,17 +1698,34 @@ export const ensurePrimaryInsuranceContact = mutation({
 
     const userId = memberships[0].userId;
     await ctx.db.patch(orgId, { primaryInsuranceContactId: userId });
+    if (operatorAccess) {
+      await writeTeamSupportAudit(ctx, operatorAccess, {
+        summary: "Set the client primary contact",
+        targetUserId: userId,
+      });
+    }
     return { userId, updated: true };
   },
 });
 
 export const cancelInvitation = mutation({
-  args: { invitationId: v.id("orgInvitations") },
+  args: {
+    invitationId: v.id("orgInvitations"),
+    operatorClientOrgId: v.optional(v.id("organizations")),
+  },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAdminWrite(ctx);
+    const access = await getTeamAdminWriteAccess(
+      ctx,
+      args.operatorClientOrgId,
+    );
+    const { orgId } = access;
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation || invitation.orgId !== orgId) throw new Error("Invitation not found");
     await ctx.db.delete(args.invitationId);
+    await writeTeamSupportAudit(ctx, access, {
+      summary: `Cancelled the invitation for ${invitation.email}`,
+      metadata: { invitationId: invitation._id },
+    });
   },
 });
 

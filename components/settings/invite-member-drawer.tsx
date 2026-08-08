@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { PillButton } from "@/components/ui/pill-button";
@@ -17,9 +18,11 @@ const LABEL_CLASSES =
 export function InviteMemberDrawer({
   open,
   onOpenChange,
+  operatorClientOrgId,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  operatorClientOrgId?: Id<"organizations">;
 }) {
   const sendMemberInvitation = useAction(api.orgs.sendMemberInvitation);
 
@@ -38,7 +41,7 @@ export function InviteMemberDrawer({
     if (!email) return;
     setSending(true);
     try {
-      await sendMemberInvitation({ email, role });
+      await sendMemberInvitation({ email, role, operatorClientOrgId });
       toast.success(`Invitation sent to ${email}`);
       resetAndClose();
     } catch (err) {

@@ -48,11 +48,15 @@ describe("operator client management surfaces", () => {
     const client = read("app/operator/clients/[clientOrgId]/page.tsx");
 
     expect(client).toContain('{ id: "overview", label: "Overview" }');
+    expect(client).toContain('{ id: "team", label: "Team" }');
     expect(client).toContain('{ id: "features", label: "Beta features" }');
     expect(client).toContain('{ id: "channels", label: "Agent channels" }');
     expect(client).toContain("useLocalFirstAutoSave");
     expect(client).toContain("FeatureFlagToggleRow");
     expect(client).toContain("AgentChannelsSection");
+    expect(client).toContain("OrganizationInsuranceProfile");
+    expect(client).toContain("TeamSection");
+    expect(client).toContain("getClientSupportDetails");
     expect(client).toContain('aria-labelledby="client-identity-title"');
     expect(client).toContain('breadcrumbDetail={client?.name ?? "Client"}');
     expect(client).toContain(

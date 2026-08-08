@@ -338,6 +338,7 @@ export function useOperatorClientCacheActions() {
       patch: Partial<
         Pick<
           OperatorClientRow,
+          | "name"
           | "brokerOrgId"
           | "brokerName"
           | "website"
