@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { openOAuthTab } from "@/lib/oauth-tab";
 import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { cn } from "@/lib/utils";
@@ -228,15 +229,25 @@ function OperatorChannelsContent({
   );
 
   async function installHost() {
+    const oauthTab = openOAuthTab();
+    if (!oauthTab) {
+      toast.error("Allow pop-ups for Glass to connect Slack in a new tab");
+      return;
+    }
+
     setBusy("host");
     try {
       const { url } = await beginHostOAuth({});
       if (!url) throw new Error("Slack OAuth did not return a setup URL");
-      window.location.assign(url);
+      if (!oauthTab.navigate(url)) {
+        throw new Error("The Slack setup tab was closed. Try again.");
+      }
     } catch (error) {
+      oauthTab.close();
       toast.error(
         getUserFacingErrorMessage(error, "Clarity Slack setup could not start"),
       );
+    } finally {
       setBusy(null);
     }
   }

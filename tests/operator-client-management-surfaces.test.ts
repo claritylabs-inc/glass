@@ -57,6 +57,7 @@ describe("operator client management surfaces", () => {
     expect(operatorChannels).toContain("getSlackHostStatus");
     expect(operatorChannels).toContain("listOperatorSlackIdentities");
     expect(operatorChannels).toContain("beginHost");
+    expect(operatorChannels).toContain("openOAuthTab");
     expect(operatorChannels).toContain("setOperatorSlackIdentity");
     expect(operatorChannels).toContain("Connect workspace");
     expect(operatorChannels).toContain("Slack not enabled");
@@ -87,6 +88,9 @@ describe("operator client management surfaces", () => {
     expect(operatorChannels).not.toContain("max-w-4xl");
     expect(sidebar).toContain('href="/operator/channels"');
     expect(clientChannels).toContain("<SettingsDrawer");
+    expect(clientChannels).toContain("openOAuthTab");
+    expect(clientChannels).not.toContain("window.location.assign(url)");
+    expect(operatorChannels).not.toContain("window.location.assign(url)");
     expect(clientChannels).not.toContain("getSlackHostStatus");
     expect(clientChannels).not.toContain("beginHost");
     expect(clientChannels).not.toContain("setOperatorSlackIdentity");
