@@ -9,6 +9,11 @@ describe("agentEmailTemplate", () => {
   it("includes Glass in the default title", () => {
     const { html } = buildAgentReplyEmail("Hello world", branding);
     expect(html).toContain("<title>Glass Response</title>");
+    expect(html).toContain(
+      '<meta name="color-scheme" content="light dark">',
+    );
+    expect(html).toContain("@media (prefers-color-scheme: dark)");
+    expect(html).toContain('class="glass-email-text-secondary"');
   });
 
   it("footer uses branding.brandName", () => {

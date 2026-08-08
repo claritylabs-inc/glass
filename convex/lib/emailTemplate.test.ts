@@ -1,6 +1,42 @@
 import { describe, expect, test } from "vitest";
 
-import { buildSlackInstallInviteEmail } from "./emailTemplate";
+import {
+  buildEmailShell,
+  buildOtpEmail,
+  buildSlackInstallInviteEmail,
+} from "./emailTemplate";
+
+describe("shared email shell", () => {
+  test("supports dark mode in standards-based and Outlook clients", () => {
+    const html = buildEmailShell({
+      title: "Dark mode test",
+      bodyHtml:
+        '<tr><td><p class="glass-email-text-primary">Visible</p></td></tr>',
+    });
+
+    expect(html).toContain(
+      '<meta name="color-scheme" content="light dark">',
+    );
+    expect(html).toContain(
+      '<meta name="supported-color-schemes" content="light dark">',
+    );
+    expect(html).toContain("@media (prefers-color-scheme: dark)");
+    expect(html).toContain("[data-ogsc] .glass-email-text-primary");
+    expect(html).toContain("[data-ogsb] .glass-email-page");
+    expect(html).toContain('class="glass-email-container glass-email-body"');
+    expect(html).not.toContain('content="light">');
+  });
+
+  test("marks OTP content with semantic dark-mode classes", () => {
+    const email = buildOtpEmail("123456");
+
+    expect(email.html).toContain(
+      'class="glass-email-text-primary glass-email-surface"',
+    );
+    expect(email.html).toContain('class="glass-email-divider"');
+    expect(email.html).toContain('class="glass-email-text-muted"');
+  });
+});
 
 describe("Slack install invitation email", () => {
   test("uses the shared Glass shell and Slack's official install button", () => {
@@ -21,6 +57,9 @@ describe("Slack install invitation email", () => {
     expect(email.html).toContain(
       "https://platform.slack-edge.com/img/add_to_slack.png",
     );
+    expect(email.html).toContain('class="glass-email-text-primary"');
+    expect(email.html).toContain('class="glass-email-surface"');
+    expect(email.html).toContain('class="glass-email-link"');
     expect(email.html).toContain('alt="Add to Slack"');
     expect(email.html).toContain(
       "https://slack.com/oauth/v2/authorize?client_id=client&amp;state=secret",
