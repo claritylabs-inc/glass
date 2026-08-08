@@ -212,7 +212,7 @@ Common variables used across major workflows:
 - `CLIENT_PORTAL_URL` / `APP_SITE_URL` — client portal URL. Defaults to `https://app.glass.insure`.
 - `glass.claritylabs.inc` is the legacy browser host and redirects to `app.glass.insure`.
 - `AUTH_LINK_SITE_URL` — optional override for auth, login, signup, and invite links. Defaults to `https://app.glass.insure`; `auth.glass.insure` is only the default email sender domain.
-- `AUTH_EMAIL_FROM` — optional `From:` override for OTP sign-in emails. Defaults to `Glass from Clarity Labs <noreply@auth.glass.insure>`.
+- `AUTH_EMAIL_FROM` — optional mailbox-address override for OTP sign-in emails. The sender name is `Glass from Clarity Labs` unless a branded sender name is supplied by the email flow; the default address is `noreply@auth.glass.insure`.
 - `SITE_URL` — legacy fallback for client-facing links when the newer portal URL variables are not set.
 
 Not every flow requires every variable; requirements depend on which features you are running.

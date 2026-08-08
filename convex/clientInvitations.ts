@@ -523,26 +523,26 @@ export const sendDraftInvite = action({
 
     const subject = `${brokerName} invited you to Glass`;
     const messageBlock = draft.customMessage
-      ? `<tr><td style="padding:12px 40px 0 40px;"><p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#4b5563;line-height:1.6;font-style:italic;">"${draft.customMessage.replace(/</g, "&lt;")}"</p></td></tr>`
+      ? `<tr><td style="padding:12px 40px 0 40px;"><p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#4b5563;line-height:1.6;font-style:italic;">"${draft.customMessage.replace(/</g, "&lt;")}"</p></td></tr>`
       : "";
     const text = `${brokerName} has invited you${draft.name ? ` (${draft.name})` : ""} to Glass.\n${draft.customMessage ? `\n"${draft.customMessage}"\n` : ""}\nAccept your invitation:\n${inviteUrl}\n\nThis link expires in 14 days.\n\n—\nGlass from Clarity Labs`;
     const bodyHtml = `
 <tr><td style="padding:28px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
+  <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
     <strong>${brokerName}</strong> has invited you${draft.name ? ` (<strong>${draft.name}</strong>)` : ""} to Glass — a shared workspace for your policies and documents.
   </p>
 </td></tr>
 ${messageBlock}
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${inviteUrl}" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
+  <a href="${inviteUrl}" class="glass-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
 </td></tr>
 <tr><td style="padding:20px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
-    Or copy this link:<br><a href="${inviteUrl}" style="color:#6b7280;word-break:break-all;">${inviteUrl}</a>
+  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
+    Or copy this link:<br><a href="${inviteUrl}" class="glass-email-link" style="color:#6b7280;word-break:break-all;">${inviteUrl}</a>
   </p>
 </td></tr>
 <tr><td style="padding:16px 40px 32px 40px;">
-  <p style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 14 days.</p>
+  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 14 days.</p>
 </td></tr>`;
     const html = buildEmailShell({ title: subject, bodyHtml, branding, siteUrl });
 

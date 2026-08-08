@@ -46,6 +46,9 @@ describe("operator client management surfaces", () => {
 
   it("owns client settings on a tabbed detail page", () => {
     const client = read("app/operator/clients/[clientOrgId]/page.tsx");
+    const companyDetails = read(
+      "app/operator/clients/[clientOrgId]/client-company-details.tsx",
+    );
 
     expect(client).toContain('{ id: "overview", label: "Overview" }');
     expect(client).toContain('{ id: "team", label: "Team" }');
@@ -57,15 +60,33 @@ describe("operator client management surfaces", () => {
     expect(client).toContain("OrganizationInsuranceProfile");
     expect(client).toContain("TeamSection");
     expect(client).toContain("getClientSupportDetails");
+    expect(client).toContain(
+      'aria-label="Company details and insurance profile"',
+    );
+    expect(client).toContain('<OperationalPanelBody className="space-y-4">');
+    expect(companyDetails).not.toContain("OperationalPanel");
+    expect(client).not.toContain("Login and activation email");
     expect(client).toContain('aria-labelledby="client-identity-title"');
     expect(client).toContain('breadcrumbDetail={client?.name ?? "Client"}');
     expect(client).toContain(
       '<FormSection title="Agent address" divided={false}>',
     );
-    expect(client).toContain(
-      '<FormSection title="Primary contact" divided={false}>',
-    );
+    expect(client).not.toContain('title="Primary contact"');
+    expect(client).not.toContain("checkUserPhoneAvailability");
+    expect(client).not.toContain("primaryContactName:");
+    expect(client).not.toContain("primaryContactEmail:");
+    expect(client).not.toContain("primaryContactPhone:");
     expect(client).not.toContain("showPanelDescriptions");
+  });
+
+  it("sends client activation emails from admin rows on the Team tab", () => {
+    const team = read("components/settings/team-section.tsx");
+
+    expect(team).toContain("api.operator.launchSoloClient");
+    expect(team).toContain('member.role === "admin"');
+    expect(team).toContain('"Send activation"');
+    expect(team).toContain('"Resend activation"');
+    expect(team).toContain("adminUserId: member.userId");
   });
 
   it("separates global Slack infrastructure from client setup", () => {

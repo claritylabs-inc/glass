@@ -23,6 +23,8 @@ describe("buildNotificationEmail", () => {
     expect(result.html).toContain("Smith Insurance");
     expect(result.html).toContain("Your policy was delivered");
     expect(result.html).toContain("https://app.glass.insure/policies/abc");
+    expect(result.html).toContain('class="glass-email-button"');
+    expect(result.html).toContain('class="glass-email-text-secondary"');
     expect(result.text).toContain("View Policy");
   });
 
