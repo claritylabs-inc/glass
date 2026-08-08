@@ -51,25 +51,46 @@ export async function assertCustomerEmail(
   }
 }
 
-export async function getActiveOperatorProfile(ctx: Ctx): Promise<{
+type ActiveOperator = {
   userId: Id<"users">;
   user: Doc<"users">;
   profile: Doc<"operatorProfiles">;
-} | null> {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) return null;
-  const user = await ctx.db.get(userId);
+};
+
+async function activeOperatorForUser(
+  ctx: Ctx,
+  userId: Id<"users">,
+): Promise<ActiveOperator | null> {
+  const [user, profile] = await Promise.all([
+    ctx.db.get(userId),
+    ctx.db
+      .query("operatorProfiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first(),
+  ]);
   if (!user || user.accountKind !== "operator") return null;
-  const profile = await ctx.db
-    .query("operatorProfiles")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
-    .first();
   if (!profile || profile.status !== "active") return null;
   return { userId, user, profile };
 }
 
+export async function getActiveOperatorProfile(
+  ctx: Ctx,
+): Promise<ActiveOperator | null> {
+  const userId = await getAuthUserId(ctx);
+  return userId ? activeOperatorForUser(ctx, userId) : null;
+}
+
 export async function requireOperator(ctx: Ctx) {
   const operator = await getActiveOperatorProfile(ctx);
+  if (!operator) throwUserFacingError(userFacingErrorCodes.operatorRequired);
+  return operator;
+}
+
+export async function requireOperatorForUser(
+  ctx: Ctx,
+  userId: Id<"users">,
+) {
+  const operator = await activeOperatorForUser(ctx, userId);
   if (!operator) throwUserFacingError(userFacingErrorCodes.operatorRequired);
   return operator;
 }

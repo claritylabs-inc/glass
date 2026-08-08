@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { isValidPhoneNumber } from "react-phone-number-input";
 import { Loader2 } from "lucide-react";
@@ -18,7 +19,15 @@ import { AppShell } from "@/components/app-shell";
 import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
 import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
 import { HandleAvailability } from "@/components/settings/handle-availability";
-import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import {
+  OrganizationInsuranceProfile,
+  type OrganizationProfile,
+} from "@/components/settings/organization-insurance-profile";
+import { TeamSection } from "@/components/settings/team-section";
+import {
+  AutoSaveStatus,
+  combineAutoSaveStatuses,
+} from "@/components/ui/auto-save-status";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
   Dialog,
@@ -56,6 +65,10 @@ import {
 } from "@/lib/sync/operator-cached-queries";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import {
+  ClientCompanyDetails,
+  type OperatorClientRelatedLegalEntity,
+} from "./client-company-details";
 import { OperatorSidebar } from "../../operator-sidebar";
 import {
   operatorClientStatusLabel,
@@ -65,11 +78,15 @@ import {
 
 const CLIENT_TABS = [
   { id: "overview", label: "Overview" },
+  { id: "team", label: "Team" },
   { id: "features", label: "Beta features" },
   { id: "channels", label: "Agent channels" },
 ] as const;
 
 type ClientTab = (typeof CLIENT_TABS)[number]["id"];
+type ClientSupportDetails = NonNullable<
+  FunctionReturnType<typeof api.operator.getClientSupportDetails>
+>;
 
 const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
@@ -134,11 +151,13 @@ function Field({
 
 function ClientWorkspace({
   client,
+  supportDetails,
   brokers,
   setShellActions,
   setRightPanel,
 }: {
   client: OperatorClientRow;
+  supportDetails: ClientSupportDetails;
   brokers: OperatorBrokerRow[];
   setShellActions: (actions: React.ReactNode) => void;
   setRightPanel: (panel: React.ReactNode) => void;
@@ -149,20 +168,31 @@ function ClientWorkspace({
   const { patchClientSettings, patchClientStatus } =
     useOperatorClientCacheActions();
   const activeTab = parseTab(searchParams.get("tab"));
-
-  const [brokerOrgId, setBrokerOrgId] = useState(
-    client.brokerOrgId ?? STANDALONE_VALUE,
+  const [organizationName, setOrganizationName] = useState(
+    supportDetails.name,
   );
-  const [website, setWebsite] = useState(client.website ?? "");
-  const [agentHandle, setAgentHandle] = useState(client.agentHandle ?? "");
+  const [brokerOrgId, setBrokerOrgId] = useState(
+    supportDetails.brokerOrgId ?? STANDALONE_VALUE,
+  );
+  const [website, setWebsite] = useState(supportDetails.website ?? "");
+  const [industry, setIndustry] = useState(supportDetails.industry ?? "");
+  const [industryVertical, setIndustryVertical] = useState(
+    supportDetails.industryVertical ?? "",
+  );
+  const [relatedLegalEntities, setRelatedLegalEntities] = useState<
+    OperatorClientRelatedLegalEntity[]
+  >(supportDetails.relatedLegalEntities ?? []);
+  const [agentHandle, setAgentHandle] = useState(
+    supportDetails.agentHandle ?? "",
+  );
   const [contactName, setContactName] = useState(
-    client.primaryContactName ?? client.adminName ?? "",
+    supportDetails.primaryContactName ?? client.adminName ?? "",
   );
   const [contactEmail, setContactEmail] = useState(
-    client.primaryContactEmail ?? client.adminEmail ?? "",
+    supportDetails.primaryContactEmail ?? client.adminEmail ?? "",
   );
   const [contactPhone, setContactPhone] = useState(
-    client.primaryContactPhone ?? client.adminPhone ?? "",
+    supportDetails.primaryContactPhone ?? client.adminPhone ?? "",
   );
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
   const [debouncedContactPhone, setDebouncedContactPhone] = useState("");
@@ -171,8 +201,14 @@ function ClientWorkspace({
   const [disableDialogOpen, setDisableDialogOpen] = useState(false);
   const [savingFeatureFlagId, setSavingFeatureFlagId] =
     useState<FeatureFlagId | null>(null);
+  const [profileAutoSaveStatus, setProfileAutoSaveStatus] = useState<
+    "saved" | "saving" | "unsaved" | "error"
+  >("saved");
 
   const updateClientSettings = useMutation(api.operator.updateClientSettings);
+  const updateOrganizationProfile = useMutation(
+    api.orgs.updateOrganizationProfile,
+  );
   const setClientFeatureFlag = useMutation(api.operator.setClientFeatureFlag);
   const setClientStatus = useMutation(api.operator.setSoloClientStatus);
   const launchClient = useAction(api.operator.launchSoloClient);
@@ -194,7 +230,7 @@ function ClientWorkspace({
     return () => window.clearTimeout(timer);
   }, [contactPhone]);
 
-  const currentAgentHandle = client.agentHandle ?? "";
+  const currentAgentHandle = supportDetails.agentHandle ?? "";
   const agentHandleChanged = agentHandle !== currentAgentHandle;
   const handleAvailability = useQuery(
     api.orgs.checkHandleAvailability,
@@ -212,7 +248,7 @@ function ClientWorkspace({
   const phoneValid = isValidOptionalPhone(contactPhone);
   const phoneChanged =
     contactPhone.trim() !==
-    (client.primaryContactPhone ?? client.adminPhone ?? "");
+    (supportDetails.primaryContactPhone ?? client.adminPhone ?? "");
   const shouldCheckPhone = !!contactPhone.trim() && phoneValid && phoneChanged;
   const phoneAvailability = useQuery(
     api.operator.checkUserPhoneAvailability,
@@ -233,21 +269,23 @@ function ClientWorkspace({
   const selectedBroker =
     brokers.find((broker) => broker._id === brokerOrgId) ?? null;
 
-  const validationError = !emailValid
-    ? "Enter a valid email"
-    : !phoneValid
-      ? "Enter a valid phone number"
-      : handleChecking
-        ? "Checking agent handle"
-        : agentHandleChanged &&
-            agentHandle &&
-            handleAvailability?.available === false
-          ? (handleAvailability.reason ?? "Agent handle is not available")
-          : phoneChecking
-            ? "Checking phone number"
-            : phoneUnavailable
-              ? "This phone number is already used by another user"
-              : null;
+  const validationError = !organizationName.trim()
+    ? "Organization name is required"
+    : !emailValid
+      ? "Enter a valid email"
+      : !phoneValid
+        ? "Enter a valid phone number"
+        : handleChecking
+          ? "Checking agent handle"
+          : agentHandleChanged &&
+              agentHandle &&
+              handleAvailability?.available === false
+            ? (handleAvailability.reason ?? "Agent handle is not available")
+            : phoneChecking
+              ? "Checking phone number"
+              : phoneUnavailable
+                ? "This phone number is already used by another user"
+                : null;
 
   const nextBrokerOrgId =
     brokerOrgId === STANDALONE_VALUE
@@ -255,9 +293,18 @@ function ClientWorkspace({
       : (brokerOrgId as Id<"organizations">);
   const clientSettingsArgs = {
     clientOrgId,
+    name: organizationName.trim(),
     brokerOrgId: nextBrokerOrgId,
     website: website.trim() || undefined,
     agentHandle: agentHandle || undefined,
+    industry: industry || undefined,
+    industryVertical: industryVertical || undefined,
+    relatedLegalEntities: relatedLegalEntities
+      .map((entity) => ({
+        ...entity,
+        legalName: entity.legalName.trim(),
+      }))
+      .filter((entity) => entity.legalName),
     primaryContactName: contactName.trim() || undefined,
     primaryContactEmail: contactEmail.trim() || undefined,
     primaryContactPhone: contactPhone.trim() || undefined,
@@ -285,6 +332,10 @@ function ClientWorkspace({
     errorMessage: (error) =>
       getUserFacingErrorMessage(error, "Client settings could not be saved."),
   });
+  const combinedSaveStatus = combineAutoSaveStatuses(
+    clientSettingsAutoSave.status,
+    profileAutoSaveStatus,
+  );
 
   function navigate(tab: ClientTab) {
     const next = new URLSearchParams(searchParams.toString());
@@ -296,6 +347,28 @@ function ClientWorkspace({
     setTextFieldFocused(false);
     void clientSettingsAutoSave.saveNow();
   }
+
+  function requestClientSettingsSave() {
+    requestAnimationFrame(() => {
+      void clientSettingsAutoSave.saveNow();
+    });
+  }
+
+  const saveOrganizationProfile = useCallback(
+    (profile: OrganizationProfile | null) =>
+      updateOrganizationProfile({
+        operatorClientOrgId: clientOrgId,
+        profile,
+      }),
+    [clientOrgId, updateOrganizationProfile],
+  );
+
+  const handleProfileAutoSaveChange = useCallback(
+    (status: "saved" | "saving" | "unsaved" | "error") => {
+      setProfileAutoSaveStatus(status);
+    },
+    [],
+  );
 
   const saveClientSettingsNow = clientSettingsAutoSave.saveNow;
 
@@ -367,7 +440,7 @@ function ClientWorkspace({
   useEffect(() => {
     setShellActions(
       <>
-        <AutoSaveStatus status={clientSettingsAutoSave.status} />
+        <AutoSaveStatus status={combinedSaveStatus} />
         <PillButton
           size="compact"
           variant="secondary"
@@ -378,7 +451,7 @@ function ClientWorkspace({
         </PillButton>
       </>,
     );
-  }, [busy, clientSettingsAutoSave.status, impersonate, setShellActions]);
+  }, [busy, combinedSaveStatus, impersonate, setShellActions]);
 
   useEffect(
     () => () => {
@@ -438,7 +511,27 @@ function ClientWorkspace({
               <OperationalPanelBody>
                 <FormSection title="Account" divided={false}>
                   <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Broker">
+                    <Field label="Organization name">
+                      <Input
+                        value={organizationName}
+                        onChange={(event) =>
+                          setOrganizationName(event.target.value)
+                        }
+                        onFocus={() => setTextFieldFocused(true)}
+                        onBlur={finishTextEdit}
+                        placeholder="Client organization"
+                      />
+                    </Field>
+                    <Field label="Website">
+                      <Input
+                        value={website}
+                        onChange={(event) => setWebsite(event.target.value)}
+                        onFocus={() => setTextFieldFocused(true)}
+                        onBlur={finishTextEdit}
+                        placeholder="https://client.com"
+                      />
+                    </Field>
+                    <Field label="Broker" className="md:col-span-2">
                       <Select
                         value={brokerOrgId}
                         onValueChange={(value) =>
@@ -484,17 +577,31 @@ function ClientWorkspace({
                         </SelectContent>
                       </Select>
                     </Field>
-                    <Field label="Website">
-                      <Input
-                        value={website}
-                        onChange={(event) => setWebsite(event.target.value)}
-                        onFocus={() => setTextFieldFocused(true)}
-                        onBlur={finishTextEdit}
-                        placeholder="https://client.com"
-                      />
-                    </Field>
                   </div>
                 </FormSection>
+              </OperationalPanelBody>
+            </OperationalPanel>
+
+            <ClientCompanyDetails
+              industry={industry}
+              industryVertical={industryVertical}
+              relatedLegalEntities={relatedLegalEntities}
+              setIndustry={setIndustry}
+              setIndustryVertical={setIndustryVertical}
+              setRelatedLegalEntities={setRelatedLegalEntities}
+              onSaveRequested={requestClientSettingsSave}
+              onTextFocus={() => setTextFieldFocused(true)}
+              onTextBlur={finishTextEdit}
+            />
+
+            <OperationalPanel>
+              <OperationalPanelBody>
+                <OrganizationInsuranceProfile
+                  key={String(supportDetails._id)}
+                  org={supportDetails}
+                  onSaveProfile={saveOrganizationProfile}
+                  onAutoSaveChange={handleProfileAutoSaveChange}
+                />
               </OperationalPanelBody>
             </OperationalPanel>
 
@@ -639,6 +746,13 @@ function ClientWorkspace({
           </section>
         ) : null}
 
+        {activeTab === "team" ? (
+          <TeamSection
+            operatorClient={supportDetails}
+            setOperatorRightPanel={setRightPanel}
+          />
+        ) : null}
+
         {activeTab === "channels" ? (
           <AgentChannelsSection
             clientOrgId={client._id}
@@ -692,6 +806,9 @@ export default function OperatorClientPage() {
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients();
   const brokers = useCachedOperatorBrokers();
+  const supportDetails = useQuery(api.operator.getClientSupportDetails, {
+    clientOrgId: clientOrgId as Id<"organizations">,
+  });
   const stopOperatorImpersonation = useStopOperatorImpersonation();
   const [workspaceActions, setWorkspaceActions] =
     useState<React.ReactNode>(null);
@@ -735,13 +852,13 @@ export default function OperatorClientPage() {
       disableCommandPalette
       showBrokerShare={false}
     >
-      {clients === undefined ? (
+      {clients === undefined || supportDetails === undefined ? (
         <OperationalPanel>
           <div className="flex h-40 items-center justify-center text-muted-foreground">
             <Loader2 className="size-5 animate-spin" />
           </div>
         </OperationalPanel>
-      ) : !client ? (
+      ) : !client || !supportDetails ? (
         <OperationalPanel>
           <OperationalPanelHeader title="Client not found" />
           <OperationalPanelBody>
@@ -754,6 +871,7 @@ export default function OperatorClientPage() {
         <ClientWorkspace
           key={client._id}
           client={client}
+          supportDetails={supportDetails}
           brokers={brokers ?? []}
           setShellActions={setWorkspaceActions}
           setRightPanel={setRightPanel}

@@ -28,7 +28,7 @@ type Address = {
   formatted?: string;
 };
 
-type OrganizationProfile = {
+export type OrganizationProfile = {
   mailingAddress: Address;
   entityType: IrsEntityType | "";
   fein: string;
@@ -134,11 +134,15 @@ function Field({
 export function OrganizationInsuranceProfile({
   org,
   disabled = false,
+  onSaveProfile,
   onAutoSaveChange,
   onResetActionChange,
 }: {
   org: OrganizationInsuranceProfileRecord;
   disabled?: boolean;
+  onSaveProfile?: (
+    profile: OrganizationProfile | null,
+  ) => Promise<OrganizationProfile | null>;
   onAutoSaveChange?: (
     status: "saved" | "saving" | "unsaved" | "error",
     saveNow: (() => Promise<boolean>) | null,
@@ -166,6 +170,13 @@ export function OrganizationInsuranceProfile({
   const store = useSyncStore();
   const feinError = feinValidationError(profile.fein);
   const businessNumberError = businessNumberValidationError(profile.businessNumber);
+  const saveProfile = useCallback(
+    (nextProfile: OrganizationProfile | null) =>
+      onSaveProfile
+        ? onSaveProfile(nextProfile)
+        : updateOrganizationProfile({ profile: nextProfile }),
+    [onSaveProfile, updateOrganizationProfile],
+  );
 
   const autoSave = useLocalFirstAutoSave({
     mutationName: `settings.organization.insuranceProfile.${org._id}`,
@@ -175,13 +186,15 @@ export function OrganizationInsuranceProfile({
     enabled: !disabled,
     canSave: !disabled && !feinError && !businessNumberError,
     autoSave: false,
-    flush: (args) => updateOrganizationProfile(args),
-    applyLocal: (syncStore, args) => {
-      patchCachedViewerOrg(syncStore, {
-        profileOverrides: args.profile,
-        profileOverridesUpdatedAt: dayjs().valueOf(),
-      });
-    },
+    flush: (args) => saveProfile(args.profile),
+    applyLocal: onSaveProfile
+      ? undefined
+      : (syncStore, args) => {
+          patchCachedViewerOrg(syncStore, {
+            profileOverrides: args.profile,
+            profileOverridesUpdatedAt: dayjs().valueOf(),
+          });
+        },
     onFlushed: (saved) => {
       if (saved) {
         setProfile(saved as OrganizationProfile);
@@ -205,17 +218,19 @@ export function OrganizationInsuranceProfile({
 
   const resetToExtracted = useCallback(async () => {
     await saveProfileNow();
-    const restored = await updateOrganizationProfile({ profile: null });
+    const restored = await saveProfile(null);
     const next = (restored ?? extracted) as OrganizationProfile;
     setProfile(next);
-    patchCachedViewerOrg(store, {
-      profileOverrides: undefined,
-      profileOverridesUpdatedAt: undefined,
-      profileOverridesUpdatedByUserId: undefined,
-    });
+    if (!onSaveProfile) {
+      patchCachedViewerOrg(store, {
+        profileOverrides: undefined,
+        profileOverridesUpdatedAt: undefined,
+        profileOverridesUpdatedByUserId: undefined,
+      });
+    }
     setHasOverride(false);
     setResetKey((current) => current + 1);
-  }, [extracted, saveProfileNow, store, updateOrganizationProfile]);
+  }, [extracted, onSaveProfile, saveProfile, saveProfileNow, store]);
 
   useEffect(() => {
     onResetActionChange?.(hasOverride ? resetToExtracted : null);

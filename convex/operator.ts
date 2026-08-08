@@ -24,6 +24,7 @@ import {
   isBootstrapOperatorEmail,
   normalizeOperatorEmail,
   requireOperator,
+  requireOperatorForUser,
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
 import { orgBrandFields } from "./lib/orgBranding";
@@ -34,6 +35,24 @@ import {
 
 const brokerStatusValidator = v.union(v.literal("onboarding"), v.literal("live"));
 const orgRoleValidator = v.union(v.literal("admin"), v.literal("member"));
+const relatedLegalEntityValidator = v.object({
+  legalName: v.string(),
+  relationship: v.optional(
+    v.union(
+      v.literal("current"),
+      v.literal("fka"),
+      v.literal("dba"),
+      v.literal("subsidiary"),
+      v.literal("parent"),
+      v.literal("affiliate"),
+      v.literal("other"),
+    ),
+  ),
+  incorporationNumber: v.optional(v.string()),
+  taxId: v.optional(v.string()),
+  jurisdiction: v.optional(v.string()),
+  notes: v.optional(v.string()),
+});
 const extractionTraceStatusValidator = v.union(
   v.literal("running"),
   v.literal("complete"),
@@ -641,6 +660,19 @@ export const listClients = query({
   },
 });
 
+export const getClientSupportDetails = query({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client || client.type !== "client") return null;
+    return {
+      ...client,
+      ...(await orgBrandFields(ctx, client)),
+    };
+  },
+});
+
 export const listSoloClients = query({
   args: {},
   handler: async (ctx) => {
@@ -1215,9 +1247,13 @@ export const setClientFeatureFlag = mutation({
 export const updateClientSettings = mutation({
   args: {
     clientOrgId: v.id("organizations"),
+    name: v.string(),
     brokerOrgId: v.optional(v.id("organizations")),
     website: v.optional(v.string()),
     agentHandle: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    industryVertical: v.optional(v.string()),
+    relatedLegalEntities: v.optional(v.array(relatedLegalEntityValidator)),
     primaryContactName: v.optional(v.string()),
     primaryContactEmail: v.optional(v.string()),
     primaryContactPhone: v.optional(v.string()),
@@ -1226,6 +1262,8 @@ export const updateClientSettings = mutation({
     const operator = await requireOperator(ctx);
     const client = await ctx.db.get(args.clientOrgId);
     if (!client || client.type !== "client") throw new Error("Client not found");
+    const name = args.name.trim();
+    if (!name) throw new Error("Organization name is required");
 
     const broker = args.brokerOrgId ? await ctx.db.get(args.brokerOrgId) : null;
     if (args.brokerOrgId && (!broker || broker.type !== "broker")) {
@@ -1252,9 +1290,18 @@ export const updateClientSettings = mutation({
       admin?._id,
     );
     const patch = {
+      name,
       brokerOrgId: args.brokerOrgId,
       website: args.website?.trim() || undefined,
       agentHandle,
+      industry: args.industry?.trim() || undefined,
+      industryVertical: args.industryVertical?.trim() || undefined,
+      relatedLegalEntities: args.relatedLegalEntities
+        ?.map((entity) => ({
+          ...entity,
+          legalName: entity.legalName.trim(),
+        }))
+        .filter((entity) => entity.legalName),
       primaryContactName: args.primaryContactName?.trim() || undefined,
       primaryContactEmail,
       primaryContactPhone,
@@ -1271,8 +1318,10 @@ export const updateClientSettings = mutation({
       operatorUserId: operator.userId,
       type: "setup_write",
       targetOrgId: args.clientOrgId,
-      summary: `Updated client settings for ${client.name}`,
+      summary: `Updated client settings for ${name}`,
       metadata: {
+        previousName: client.name,
+        nextName: name,
         previousBrokerOrgId: client.brokerOrgId,
         nextBrokerOrgId: args.brokerOrgId,
         website: patch.website,
@@ -1664,18 +1713,8 @@ export const cleanupRemovedPolicyChangeDataInternal = internalMutation({
 export const requireOperatorForUserInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user || user.accountKind !== "operator") {
-      throwUserFacingError(userFacingErrorCodes.operatorRequired);
-    }
-    const profile = await ctx.db
-      .query("operatorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
-      .first();
-    if (!profile || profile.status !== "active") {
-      throwUserFacingError(userFacingErrorCodes.operatorRequired);
-    }
-    return { userId: args.userId, profile };
+    const operator = await requireOperatorForUser(ctx, args.userId);
+    return { userId: operator.userId, profile: operator.profile };
   },
 });
 
