@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { isValidPhoneNumber } from "react-phone-number-input";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -45,7 +44,6 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
-import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Select,
@@ -101,16 +99,6 @@ function normalizeIdentifierInput(value: string) {
   return (value.trim().toLowerCase().split("@")[0] ?? "")
     .replace(/[^a-z0-9-]/g, "")
     .replace(/^-+|-+$/g, "");
-}
-
-function isValidOptionalEmail(value: string) {
-  const trimmed = value.trim();
-  return !trimmed || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
-}
-
-function isValidOptionalPhone(value: string) {
-  const trimmed = value.trim();
-  return !trimmed || isValidPhoneNumber(trimmed);
 }
 
 function slackChannelSlug(client: OperatorClientRow) {
@@ -185,17 +173,7 @@ function ClientWorkspace({
   const [agentHandle, setAgentHandle] = useState(
     supportDetails.agentHandle ?? "",
   );
-  const [contactName, setContactName] = useState(
-    supportDetails.primaryContactName ?? client.adminName ?? "",
-  );
-  const [contactEmail, setContactEmail] = useState(
-    supportDetails.primaryContactEmail ?? client.adminEmail ?? "",
-  );
-  const [contactPhone, setContactPhone] = useState(
-    supportDetails.primaryContactPhone ?? client.adminPhone ?? "",
-  );
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
-  const [debouncedContactPhone, setDebouncedContactPhone] = useState("");
   const [textFieldFocused, setTextFieldFocused] = useState(false);
   const [busy, setBusy] = useState(false);
   const [disableDialogOpen, setDisableDialogOpen] = useState(false);
@@ -211,7 +189,6 @@ function ClientWorkspace({
   );
   const setClientFeatureFlag = useMutation(api.operator.setClientFeatureFlag);
   const setClientStatus = useMutation(api.operator.setSoloClientStatus);
-  const launchClient = useAction(api.operator.launchSoloClient);
   const startImpersonation = useMutation(api.operator.startImpersonation);
 
   useEffect(() => {
@@ -221,14 +198,6 @@ function ClientWorkspace({
     );
     return () => window.clearTimeout(timer);
   }, [agentHandle]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setDebouncedContactPhone(contactPhone.trim()),
-      300,
-    );
-    return () => window.clearTimeout(timer);
-  }, [contactPhone]);
 
   const currentAgentHandle = supportDetails.agentHandle ?? "";
   const agentHandleChanged = agentHandle !== currentAgentHandle;
@@ -245,47 +214,18 @@ function ClientWorkspace({
     agentHandleChanged &&
     !!agentHandle &&
     (debouncedAgentHandle !== agentHandle || handleAvailability === undefined);
-  const phoneValid = isValidOptionalPhone(contactPhone);
-  const phoneChanged =
-    contactPhone.trim() !==
-    (supportDetails.primaryContactPhone ?? client.adminPhone ?? "");
-  const shouldCheckPhone = !!contactPhone.trim() && phoneValid && phoneChanged;
-  const phoneAvailability = useQuery(
-    api.operator.checkUserPhoneAvailability,
-    shouldCheckPhone
-      ? {
-          phone: debouncedContactPhone,
-          ownerUserId: client.adminUserId,
-        }
-      : "skip",
-  );
-  const phoneChecking =
-    shouldCheckPhone &&
-    (debouncedContactPhone !== contactPhone.trim() ||
-      phoneAvailability === undefined);
-  const phoneUnavailable =
-    shouldCheckPhone && phoneAvailability?.available === false;
-  const emailValid = isValidOptionalEmail(contactEmail);
   const selectedBroker =
     brokers.find((broker) => broker._id === brokerOrgId) ?? null;
 
   const validationError = !organizationName.trim()
     ? "Organization name is required"
-    : !emailValid
-      ? "Enter a valid email"
-      : !phoneValid
-        ? "Enter a valid phone number"
-        : handleChecking
-          ? "Checking agent handle"
-          : agentHandleChanged &&
-              agentHandle &&
-              handleAvailability?.available === false
-            ? (handleAvailability.reason ?? "Agent handle is not available")
-            : phoneChecking
-              ? "Checking phone number"
-              : phoneUnavailable
-                ? "This phone number is already used by another user"
-                : null;
+    : handleChecking
+      ? "Checking agent handle"
+      : agentHandleChanged &&
+          agentHandle &&
+          handleAvailability?.available === false
+        ? (handleAvailability.reason ?? "Agent handle is not available")
+        : null;
 
   const nextBrokerOrgId =
     brokerOrgId === STANDALONE_VALUE
@@ -305,9 +245,6 @@ function ClientWorkspace({
         legalName: entity.legalName.trim(),
       }))
       .filter((entity) => entity.legalName),
-    primaryContactName: contactName.trim() || undefined,
-    primaryContactEmail: contactEmail.trim() || undefined,
-    primaryContactPhone: contactPhone.trim() || undefined,
   };
   const clientSettingsAutoSave = useLocalFirstAutoSave({
     mutationName: "operator.updateClientSettings",
@@ -325,8 +262,6 @@ function ClientWorkspace({
         ...patch,
         brokerName: brokers.find((broker) => broker._id === patch.brokerOrgId)
           ?.name,
-        adminName: patch.primaryContactName,
-        adminPhone: patch.primaryContactPhone,
       });
     },
     errorMessage: (error) =>
@@ -389,20 +324,6 @@ function ClientWorkspace({
       setBusy(false);
     }
   }, [client._id, router, saveClientSettingsNow, startImpersonation]);
-
-  async function launch() {
-    setBusy(true);
-    try {
-      if (!(await clientSettingsAutoSave.saveNow())) return;
-      await launchClient({ clientOrgId: client._id });
-      await patchClientStatus(client._id, "live");
-      toast.success("Client launched and login email sent");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Failed to launch client"));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const disableAccount = useCallback(async () => {
     setBusy(true);
@@ -582,20 +503,19 @@ function ClientWorkspace({
               </OperationalPanelBody>
             </OperationalPanel>
 
-            <ClientCompanyDetails
-              industry={industry}
-              industryVertical={industryVertical}
-              relatedLegalEntities={relatedLegalEntities}
-              setIndustry={setIndustry}
-              setIndustryVertical={setIndustryVertical}
-              setRelatedLegalEntities={setRelatedLegalEntities}
-              onSaveRequested={requestClientSettingsSave}
-              onTextFocus={() => setTextFieldFocused(true)}
-              onTextBlur={finishTextEdit}
-            />
-
-            <OperationalPanel>
-              <OperationalPanelBody>
+            <OperationalPanel aria-label="Company details and insurance profile">
+              <OperationalPanelBody className="space-y-4">
+                <ClientCompanyDetails
+                  industry={industry}
+                  industryVertical={industryVertical}
+                  relatedLegalEntities={relatedLegalEntities}
+                  setIndustry={setIndustry}
+                  setIndustryVertical={setIndustryVertical}
+                  setRelatedLegalEntities={setRelatedLegalEntities}
+                  onSaveRequested={requestClientSettingsSave}
+                  onTextFocus={() => setTextFieldFocused(true)}
+                  onTextBlur={finishTextEdit}
+                />
                 <OrganizationInsuranceProfile
                   key={String(supportDetails._id)}
                   org={supportDetails}
@@ -647,74 +567,21 @@ function ClientWorkspace({
             </OperationalPanel>
 
             <OperationalPanel>
-              <OperationalPanelBody>
-                <FormSection title="Primary contact" divided={false}>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Name">
-                      <Input
-                        value={contactName}
-                        onChange={(event) => setContactName(event.target.value)}
-                        onFocus={() => setTextFieldFocused(true)}
-                        onBlur={finishTextEdit}
-                        placeholder="Client contact"
-                      />
-                    </Field>
-                    <Field
-                      label="Email"
-                      error={!emailValid ? "Enter a valid email" : null}
-                    >
-                      <Input
-                        type="email"
-                        value={contactEmail}
-                        onChange={(event) =>
-                          setContactEmail(event.target.value)
-                        }
-                        onFocus={() => setTextFieldFocused(true)}
-                        onBlur={finishTextEdit}
-                        placeholder="client@example.com"
-                      />
-                    </Field>
-                    <Field
-                      label="Phone"
-                      className="md:col-span-2"
-                      error={
-                        !phoneValid
-                          ? "Enter a valid phone number"
-                          : phoneUnavailable
-                            ? "This phone number is already used by another user"
-                            : null
-                      }
-                    >
-                      <PhoneInput
-                        value={contactPhone}
-                        onChange={(value) => setContactPhone(value ?? "")}
-                        onFocus={() => setTextFieldFocused(true)}
-                        onBlur={finishTextEdit}
-                        defaultCountry="US"
-                        placeholder="(555) 123-4567"
-                      />
-                    </Field>
-                  </div>
-                </FormSection>
-              </OperationalPanelBody>
-            </OperationalPanel>
-
-            <OperationalPanel>
               <OperationalPanelHeader
                 className="items-center border-b-0"
                 title="Account access"
                 description={
                   client.operatorStatus === "onboarding"
-                    ? "Send an activation email to let this client access Glass."
-                    : "Disable access and return this client to onboarding."
+                    ? "Send an activation email to an admin from Team to enable access."
+                    : "Activation emails can be resent to any admin from Team."
                 }
                 action={
                   client.operatorStatus === "onboarding" ? (
-                    <PillButton disabled={busy} onClick={() => void launch()}>
-                      {busy ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : null}
-                      Send activation email
+                    <PillButton
+                      variant="secondary"
+                      onClick={() => navigate("team")}
+                    >
+                      Open team
                     </PillButton>
                   ) : (
                     <PillButton
@@ -750,6 +617,9 @@ function ClientWorkspace({
           <TeamSection
             operatorClient={supportDetails}
             setOperatorRightPanel={setRightPanel}
+            onOperatorActivationSent={() =>
+              patchClientStatus(client._id, "live")
+            }
           />
         ) : null}
 

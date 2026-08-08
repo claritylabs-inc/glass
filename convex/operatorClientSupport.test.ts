@@ -107,8 +107,6 @@ describe("operator client support", () => {
       industry: "professional_services",
       industryVertical: "consulting",
       relatedLegalEntities: [{ legalName: "Supported Client Holdings LLC" }],
-      primaryContactName: "Client Admin",
-      primaryContactEmail: "admin@example.com",
     });
     await operator.mutation(updateOrganizationProfileFn, {
       operatorClientOrgId: fixture.clientOrgId,

@@ -203,18 +203,11 @@ describe("auto-save surfaces", () => {
 
     const clientImpersonation = client.slice(
       client.indexOf("const impersonate = useCallback"),
-      client.indexOf("async function launch"),
+      client.indexOf("const disableAccount = useCallback"),
     );
     expect(
       clientImpersonation.indexOf("await saveClientSettingsNow()"),
     ).toBeLessThan(clientImpersonation.indexOf("await startImpersonation"));
-    const clientLaunch = client.slice(
-      client.indexOf("async function launch"),
-      client.indexOf("async function disableAccount"),
-    );
-    expect(
-      clientLaunch.indexOf("await clientSettingsAutoSave.saveNow()"),
-    ).toBeLessThan(clientLaunch.indexOf("await launchClient"));
 
     expect(
       broker.indexOf("await saveBrokerSettingsBeforeTransition()"),

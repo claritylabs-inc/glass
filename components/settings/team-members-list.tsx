@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ type TeamMembersListProps = {
   viewerUserId?: Id<"users">;
   canEditMembers: boolean;
   primaryContactId?: Id<"users">;
+  renderMemberAction?: (member: TeamMember) => ReactNode;
   onEditMember: (member: TeamMember) => void;
   onCancelInvitation: (invitation: TeamInvitation) => void;
 };
@@ -34,6 +36,7 @@ export function TeamMembersList({
   viewerUserId,
   canEditMembers,
   primaryContactId,
+  renderMemberAction,
   onEditMember,
   onCancelInvitation,
 }: TeamMembersListProps) {
@@ -66,11 +69,24 @@ export function TeamMembersList({
                   : undefined
               }
               onClick={
-                canEditMembers ? () => onEditMember(member) : undefined
+                canEditMembers
+                  ? (event) => {
+                      if (
+                        event.target instanceof Element &&
+                        event.target.closest(
+                          "button, a, input, select, textarea, [role='button']",
+                        )
+                      ) {
+                        return;
+                      }
+                      onEditMember(member);
+                    }
+                  : undefined
               }
               onKeyDown={
                 canEditMembers
                   ? (event) => {
+                      if (event.target !== event.currentTarget) return;
                       if (event.key !== "Enter" && event.key !== " ") return;
                       event.preventDefault();
                       onEditMember(member);
@@ -108,12 +124,19 @@ export function TeamMembersList({
                 {formatTeamMemberPhone(member.phone)}
               </TableCell>
               <TableCell className="px-5 py-3">
-                <div className="flex flex-wrap items-center gap-1">
-                  <Badge variant="outline">
-                    {member.role === "admin" ? "Admin" : "Member"}
-                  </Badge>
-                  {member.userId === primaryContactId ? (
-                    <Badge variant="secondary">Primary Contact</Badge>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Badge variant="outline">
+                      {member.role === "admin" ? "Admin" : "Member"}
+                    </Badge>
+                    {member.userId === primaryContactId ? (
+                      <Badge variant="secondary">Primary Contact</Badge>
+                    ) : null}
+                  </div>
+                  {renderMemberAction ? (
+                    <div className="shrink-0">
+                      {renderMemberAction(member)}
+                    </div>
                   ) : null}
                 </div>
               </TableCell>

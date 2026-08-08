@@ -120,15 +120,6 @@ function validateAgentHandle(handle: string | undefined) {
   }
 }
 
-function normalizeOptionalContactEmail(value: string | undefined) {
-  const email = normalizeOperatorEmail(value);
-  if (!email) return undefined;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error("Enter a valid contact email");
-  }
-  return email;
-}
-
 function normalizeOptionalContactPhone(value: string | undefined) {
   const phone = value?.trim();
   if (!phone) return undefined;
@@ -1254,9 +1245,6 @@ export const updateClientSettings = mutation({
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
     relatedLegalEntities: v.optional(v.array(relatedLegalEntityValidator)),
-    primaryContactName: v.optional(v.string()),
-    primaryContactEmail: v.optional(v.string()),
-    primaryContactPhone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
@@ -1282,13 +1270,6 @@ export const updateClientSettings = mutation({
       }
     }
 
-    const primaryContactEmail = normalizeOptionalContactEmail(args.primaryContactEmail);
-    const admin = await getOrgAdmin(ctx, args.clientOrgId);
-    const primaryContactPhone = await normalizeAvailableUserPhone(
-      ctx,
-      args.primaryContactPhone,
-      admin?._id,
-    );
     const patch = {
       name,
       brokerOrgId: args.brokerOrgId,
@@ -1302,18 +1283,9 @@ export const updateClientSettings = mutation({
           legalName: entity.legalName.trim(),
         }))
         .filter((entity) => entity.legalName),
-      primaryContactName: args.primaryContactName?.trim() || undefined,
-      primaryContactEmail,
-      primaryContactPhone,
     };
 
     await ctx.db.patch(args.clientOrgId, patch);
-    if (admin && normalizeOperatorEmail(admin.email) === primaryContactEmail) {
-      await ctx.db.patch(admin._id, {
-        name: patch.primaryContactName,
-        phone: primaryContactPhone,
-      });
-    }
     await writeOperatorAudit(ctx, {
       operatorUserId: operator.userId,
       type: "setup_write",
@@ -1326,7 +1298,6 @@ export const updateClientSettings = mutation({
         nextBrokerOrgId: args.brokerOrgId,
         website: patch.website,
         agentHandle,
-        primaryContactEmail,
       },
     });
   },
@@ -1468,8 +1439,15 @@ export const launchBroker = action({
 });
 
 export const launchSoloClient = action({
-  args: { clientOrgId: v.id("organizations") },
-  handler: async (ctx, args): Promise<{ loginUrl: string }> => {
+  args: {
+    clientOrgId: v.id("organizations"),
+    adminUserId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args): Promise<{
+    loginUrl: string;
+    recipientEmail: string;
+    adminUserId: Id<"users">;
+  }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
@@ -1479,9 +1457,15 @@ export const launchSoloClient = action({
       adminUserId?: Id<"users">;
       adminEmail?: string;
       adminName?: string;
-    } | null = await ctx.runQuery(internalApi.operator.getSoloClientLaunchContextInternal, args);
-    if (!launch) throw new Error("Client launch context not found");
-    if (!launch.adminEmail) throw new Error("Client has no admin email");
+    } | null = await ctx.runQuery(
+      internalApi.operator.getSoloClientLaunchContextInternal,
+      {
+        clientOrgId: args.clientOrgId,
+        adminUserId: args.adminUserId,
+      },
+    );
+    if (!launch?.adminUserId) throw new Error("Client admin not found");
+    if (!launch.adminEmail) throw new Error("Client admin has no email");
 
     const siteUrl = getAuthSiteUrl();
     const loginUrl = `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
@@ -1520,8 +1504,14 @@ export const launchSoloClient = action({
       clientOrgId: args.clientOrgId,
       operatorUserId: userId,
       adminUserId: launch.adminUserId,
+      recipientEmail: launch.adminEmail,
+      resendEmailId: result.id,
     });
-    return { loginUrl };
+    return {
+      loginUrl,
+      recipientEmail: launch.adminEmail,
+      adminUserId: launch.adminUserId,
+    };
   },
 });
 
@@ -1937,17 +1927,34 @@ export const getBrokerLaunchContextInternal = internalQuery({
 });
 
 export const getSoloClientLaunchContextInternal = internalQuery({
-  args: { clientOrgId: v.id("organizations") },
+  args: {
+    clientOrgId: v.id("organizations"),
+    adminUserId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args) => {
     const client = await ctx.db.get(args.clientOrgId);
     if (!client || client.type !== "client") return null;
-    const admin = await getOrgAdmin(ctx, args.clientOrgId);
+    const memberships = await ctx.db
+      .query("orgMemberships")
+      .withIndex("by_orgId", (q) => q.eq("orgId", args.clientOrgId))
+      .take(200);
+    const adminMembership = args.adminUserId
+      ? memberships.find(
+          (membership) =>
+            membership.userId === args.adminUserId &&
+            membership.role === "admin",
+        )
+      : memberships.find((membership) => membership.role === "admin");
+    const admin = adminMembership
+      ? await ctx.db.get(adminMembership.userId)
+      : null;
+    if (!admin || admin.serviceAccountKind) return null;
     return {
       clientOrgId: client._id,
       name: client.name,
-      adminUserId: admin?._id,
-      adminEmail: admin?.email ?? client.primaryContactEmail,
-      adminName: admin?.name ?? client.primaryContactName,
+      adminUserId: admin._id,
+      adminEmail: admin.email,
+      adminName: admin.name,
     };
   },
 });
@@ -1976,18 +1983,25 @@ export const markSoloClientLaunchedInternal = internalMutation({
   args: {
     clientOrgId: v.id("organizations"),
     operatorUserId: v.id("users"),
-    adminUserId: v.optional(v.id("users")),
+    adminUserId: v.id("users"),
+    recipientEmail: v.string(),
+    resendEmailId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const client = await ctx.db.get(args.clientOrgId);
     if (!client || client.type !== "client") throw new Error("Client not found");
+    const wasLive = (client.operatorStatus ?? "live") === "live";
     await ctx.db.patch(args.clientOrgId, { operatorStatus: "live", onboardingComplete: true });
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "client_launch_email_sent",
       targetOrgId: args.clientOrgId,
       targetUserId: args.adminUserId,
-      summary: `Launched ${client.name} and sent client login email`,
+      summary: `${wasLive ? "Resent activation email for" : "Launched"} ${client.name}; email provider accepted client login email`,
+      metadata: {
+        recipientEmail: args.recipientEmail,
+        resendEmailId: args.resendEmailId,
+      },
     });
   },
 });
