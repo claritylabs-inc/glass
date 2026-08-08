@@ -25,6 +25,7 @@ import { modelCapabilitiesForTask } from "../lib/modelCatalog";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { isFeatureEnabled } from "../lib/featureFlags";
+import { isSpecimenPolicyDocument } from "../lib/policyDocumentGate";
 
 type ExtractionState = Record<string, unknown>;
 import {
@@ -763,6 +764,7 @@ const extractionGateSchema = z.object({
   shouldExtract: z.boolean(),
   classification: z.enum([
     "bound_policy_document",
+    "specimen_policy_document",
     "insurance_related_but_not_bound_policy",
     "non_insurance",
     "unknown",
@@ -1064,6 +1066,16 @@ async function classifyInsuranceExtractability(params: {
   pdfBytes: Uint8Array;
   sourceSpans: Array<{ pageStart?: number; text: string; metadata?: Record<string, unknown> }>;
 }): Promise<ExtractionGateDecision> {
+  if (isSpecimenPolicyDocument(params.sourceSpans)) {
+    return {
+      shouldExtract: true,
+      classification: "specimen_policy_document",
+      confidence: 1,
+      reason: "The PDF is explicitly labeled as a specimen policy and is allowed as a testing fixture.",
+      detectedTitle: "Specimen policy",
+    };
+  }
+
   const generateGateObject = makeGenerateObject("classification", {
     ctx: params.ctx,
     orgId: params.orgId,
@@ -1076,12 +1088,14 @@ async function classifyInsuranceExtractability(params: {
     maxTokens: 600,
     system: `You are a strict intake gate for Glass post-binding insurance extraction.
 
-Decide whether an uploaded PDF should be processed by a bound-policy extractor. Only allow extraction when the document is clearly an already-bound insurance policy, binder, declarations page, renewal policy, insurance schedule, policy wording, endorsement, or post-binding supplement that contains bound policy terms.
+Decide whether an uploaded PDF should be processed by a bound-policy extractor. Allow extraction when the document is clearly an already-bound insurance policy, binder, declarations page, renewal policy, insurance schedule, policy wording, endorsement, or post-binding supplement that contains bound policy terms.
+
+Also allow a document explicitly labeled as a specimen policy, sample policy, or testing-only policy when it represents a policy artifact suitable for extraction testing. Return classification "specimen_policy_document" for those testing fixtures. A disclaimer such as "not an actual policy" or "not evidence of insurance" does not disqualify an otherwise valid specimen policy.
 
 Reject unbound quotes, proposals, submissions, applications, marketing material, invoices, novels, books, textbooks, resumes, generic contracts, unrelated legal documents, and any document that is merely about insurance but is not itself a bound policy artifact. If uncertain, return classification "unknown" and shouldExtract false only when the document is more likely not extractable than extractable.`,
     prompt: `Classify this PDF before extraction.
 
-Return shouldExtract=true only for bound or post-binding insurance policy artifacts.
+Return shouldExtract=true for bound or post-binding insurance policy artifacts and for specimen policy testing fixtures.
 
 Machine-readable excerpts:
 ${excerpt}`,
@@ -1094,7 +1108,11 @@ ${excerpt}`,
 }
 
 function shouldRejectDocument(decision: ExtractionGateDecision): boolean {
-  if (decision.classification === "bound_policy_document" && decision.shouldExtract) {
+  if (
+    (decision.classification === "bound_policy_document" ||
+      decision.classification === "specimen_policy_document") &&
+    decision.shouldExtract
+  ) {
     return false;
   }
   if (decision.classification === "non_insurance" && decision.confidence >= 0.5) {
