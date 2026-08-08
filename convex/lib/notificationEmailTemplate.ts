@@ -64,27 +64,27 @@ export function buildNotificationEmail(
 
   const threadHtml = escapedThreadLabel
     ? `<tr><td align="center" style="padding:24px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#6b7280;line-height:1.5;">${escapedThreadLabel}</p>
+  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#6b7280;line-height:1.5;">${escapedThreadLabel}</p>
 </td></tr>`
     : "";
 
   const bodyHtml = `
 ${threadHtml}
 <tr><td align="center" style="padding:${escapedThreadLabel ? "10px" : "28px"} 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#000000;line-height:1.5;">${escapedTitle}</p>
+  <p class="glass-email-text-primary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#000000;line-height:1.5;">${escapedTitle}</p>
 </td></tr>
 <tr><td align="center" style="padding:18px 40px 0 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.5;">${escapedBody}</p>
+  <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.5;">${escapedBody}</p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapedCtaUrl}" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">${escapedCtaLabel}</a>
+  <a href="${escapedCtaUrl}" class="glass-email-button" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">${escapedCtaLabel}</a>
 </td></tr>
 <tr><td style="padding:32px 40px 0 40px;">
-  <div style="height:1px;background-color:rgba(17,24,39,0.06);"></div>
+  <div class="glass-email-divider" style="height:1px;background-color:rgba(17,24,39,0.06);"></div>
 </td></tr>
 <tr><td align="center" style="padding:20px 40px 32px 40px;">
-  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">
-    Open in Glass: <a href="${escapedCtaUrl}" style="color:#6b7280;text-decoration:underline;word-break:break-all;">${escapedCtaUrl}</a>
+  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.5;">
+    Open in Glass: <a href="${escapedCtaUrl}" class="glass-email-link" style="color:#6b7280;text-decoration:underline;word-break:break-all;">${escapedCtaUrl}</a>
   </p>
 </td></tr>`;
 
