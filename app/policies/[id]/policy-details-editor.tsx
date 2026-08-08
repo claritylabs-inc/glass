@@ -838,8 +838,8 @@ export function PolicyDetailsEditor({
       open={open}
       onOpenChange={handleOpenChange}
       title={SECTION_TITLES[section]}
-      footer={<AutoSaveStatus status={autoSave.status} />}
     >
+      <AutoSaveStatus status={autoSave.status} />
       {section === "overview" ? renderOverview() : null}
       {section === "insured" ? renderInsured() : null}
       {section === "producer" ? renderProducer() : null}

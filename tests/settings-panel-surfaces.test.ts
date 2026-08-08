@@ -149,7 +149,7 @@ describe("settings panel surfaces", () => {
     );
     const editActionIndex = summary.indexOf("{onEdit ?");
     const renewalStatusIndex = summary.indexOf("{isRenewal ?");
-    const lifecycleStatusIndex = summary.indexOf("<StatusBadge");
+    const lifecycleStatusIndex = summary.indexOf("<PolicyStatusTag");
     expect(editActionIndex).toBeGreaterThan(-1);
     expect(renewalStatusIndex).toBeGreaterThan(-1);
     expect(lifecycleStatusIndex).toBeGreaterThan(-1);

@@ -5,7 +5,7 @@ import {
   OperationalPanel,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import type { Id } from "@/convex/_generated/dataModel";
 import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
@@ -56,12 +56,9 @@ export function PolicyDetailsTab({
             title="Extraction complete"
             description="Enrichment is running. Certificates, policy changes, and source-backed edits unlock when it finishes."
             action={
-              <Badge
-                variant="outline"
-                className="text-label text-muted-foreground"
-              >
+              <StatusTag tone="info">
                 Enriching
-              </Badge>
+              </StatusTag>
             }
             className="border-b-0"
           />

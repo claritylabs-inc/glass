@@ -11,6 +11,7 @@
     "conductor:setup": "node scripts/setup-conductor-workspace.mjs",
     "conductor:archive": "node scripts/archive-conductor-workspace.mjs",
     "conductor:dev": "node scripts/run-conductor-dev.mjs",
+    "conductor:emails": "node scripts/watch-conductor-email-captures.mjs",
     "conductor:slack-fixture": "node scripts/send-conductor-slack-fixture.mjs",
     "slack:provision-apps": "node scripts/provision-slack-apps.mjs",
     "check:cl-router-contract": "node scripts/check-cl-router-contract.mjs",

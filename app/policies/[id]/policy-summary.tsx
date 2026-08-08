@@ -4,6 +4,7 @@ import { lobLabel, toLobCodes } from "@/convex/lib/linesOfBusiness";
 import dayjs from "dayjs";
 import dynamic from "next/dynamic";
 import { BrandIcon } from "@/components/ui/brand-icon";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   OperationalLabelValueRow,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/operational-panel";
 import { Loader2, Pencil } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
 import {
   formatDisplayDate,
@@ -38,17 +40,15 @@ const PolicyPdfThumbnail = dynamic(
   },
 );
 
-function StatusBadge({
+function PolicyStatusTag({
   expirationDate,
   continuous,
 }: {
   expirationDate?: string;
   continuous: boolean;
 }) {
-  const className =
-    "inline-flex items-center rounded-full border border-current/20 bg-transparent px-2.5 py-0.5 text-tag font-medium text-current";
   if (continuous) {
-    return <span className={className}>Active</span>;
+    return <StatusTag tone="success">Active</StatusTag>;
   }
   const now = dayjs();
   const expiry = dayjs(
@@ -63,12 +63,12 @@ function StatusBadge({
   const isExpired = expiry.isBefore(now, "day");
   const isExpiringSoon = !isExpired && expiry.diff(now, "day") <= 30;
   if (isExpired) {
-    return <span className={className}>Expired</span>;
+    return <StatusTag tone="danger">Expired</StatusTag>;
   }
   if (isExpiringSoon) {
-    return <span className={className}>Expiring Soon</span>;
+    return <StatusTag tone="warning">Expiring Soon</StatusTag>;
   }
-  return <span className={className}>Active</span>;
+  return <StatusTag tone="success">Active</StatusTag>;
 }
 
 function isPendingValue(value: unknown) {
@@ -287,11 +287,14 @@ export function PolicySummary({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             {isRenewal ? (
-              <span className="inline-flex items-center rounded-full border border-current/20 bg-transparent px-2 py-0.5 text-tag font-medium text-current">
+              <Badge
+                variant="outline"
+                className="border-current/20 bg-transparent text-current"
+              >
                 Renewal
-              </span>
+              </Badge>
             ) : null}
-            <StatusBadge
+            <PolicyStatusTag
               expirationDate={realExpirationDate}
               continuous={continuous}
             />

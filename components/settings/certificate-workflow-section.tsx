@@ -116,11 +116,11 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
 
   return (
     <div className="space-y-4">
+      {editable ? <AutoSaveStatus status={autoSave.status} /> : null}
       <OperationalPanel>
         <OperationalPanelHeader
           title="Certificates"
           description="Choose whether active certificates should be updated when a renewed policy is uploaded."
-          action={editable ? <AutoSaveStatus status={autoSave.status} /> : undefined}
         />
         <OperationalPanelBody className="space-y-0 divide-y divide-foreground/6 py-0">
           <ToggleRow

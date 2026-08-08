@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { BrandIcon } from "@/components/ui/brand-icon";
 import {
   type CarrierIdentity,
@@ -190,20 +191,14 @@ export function PolicyListItem({
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
           {isProcessing ? (
-            <Badge
-              variant="outline"
-              className="border-current/20 bg-transparent text-current"
-            >
+            <StatusTag tone="info">
               Extracting
-            </Badge>
+            </StatusTag>
           ) : null}
           {isProvisional ? (
-            <Badge
-              variant="outline"
-              className="border-current/20 bg-transparent text-current"
-            >
+            <StatusTag tone="info">
               Enriching
-            </Badge>
+            </StatusTag>
           ) : null}
           <ProvenanceBadge side={uploadedBySide} />
         </div>

@@ -172,6 +172,51 @@ describe("Slack OAuth actions", () => {
     expect(stored?.stateHash).not.toBe(state);
   });
 
+  test("connects, disconnects, and refreshes mock Slack without OAuth", async () => {
+    vi.stubEnv("SLACK_MODE", "mock");
+    const t = convexTest(schema, modules);
+    const { clientOrgId, userId } = await seedAdmin(t);
+    const admin = t.withIdentity({ subject: `${userId}|session` });
+
+    await expect(
+      admin.action(beginFn, {
+        clientOrgId,
+        thirdPartyVisibilityAcknowledged: true,
+      }),
+    ).resolves.toEqual({ url: null, mockRefreshed: true });
+
+    const first = await t.run(async (ctx) => ({
+      connection: await ctx.db.query("slackWorkspaceConnections").first(),
+      oauthState: await ctx.db.query("slackOAuthStates").first(),
+    }));
+    expect(first.connection).toMatchObject({
+      clientOrgId,
+      teamName: "Client local workspace",
+      botUserId: "U-GLASS",
+      grantedScopes: [...SLACK_CUSTOMER_SCOPES],
+      status: "active",
+    });
+    expect(first.oauthState).toBeNull();
+
+    await expect(
+      admin.action(disconnectFn, { clientOrgId }),
+    ).resolves.toEqual({ disconnected: true });
+    await expect(
+      t.run((ctx) => ctx.db.get(first.connection!._id)),
+    ).resolves.toMatchObject({ status: "disconnected" });
+
+    await admin.action(beginFn, {
+      clientOrgId,
+      thirdPartyVisibilityAcknowledged: true,
+    });
+    const connections = await t.run((ctx) =>
+      ctx.db.query("slackWorkspaceConnections").collect(),
+    );
+    expect(connections).toHaveLength(1);
+    expect(connections[0]._id).toBe(first.connection?._id);
+    expect(connections[0].status).toBe("active");
+  });
+
   test("exchanges OAuth server-side and stores encrypted installation credentials", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, userId } = await seedAdmin(t);

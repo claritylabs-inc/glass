@@ -68,7 +68,11 @@ export default function ClientSettingsPage() {
 
       {activeTab === "broker" ? <BrokerIdentitySection orgId={orgId} /> : null}
       {activeTab === "agent-channels" ? (
-        <AgentChannelsSection clientOrgId={orgId} showEmailRouting />
+        <AgentChannelsSection
+          clientOrgId={orgId}
+          showEmailRouting
+          setRightPanel={setRightPanel}
+        />
       ) : null}
       {activeTab === "policy-delivery" ? (
         <PolicyDeliverySection

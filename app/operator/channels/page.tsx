@@ -1,55 +1,237 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import {
-  CheckCircle2,
-  Loader2,
-  MessageSquare,
-  TriangleAlert,
-} from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
-import { Badge } from "@/components/ui/badge";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Input } from "@/components/ui/input";
-import {
-  OperationalPanel,
-  OperationalPanelBody,
-  OperationalPanelHeader,
-} from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { cn } from "@/lib/utils";
 import { OperatorSidebar } from "../operator-sidebar";
 
 type OperatorSlackProfile = {
+  role: "operator" | "owner";
+  status: "active" | "disabled";
   slackTeamId?: string;
   slackUserId?: string;
 };
 
+type OperatorSlackIdentity = {
+  userId: string;
+  name: string | null;
+  email: string;
+  role: "operator" | "owner";
+  status: "active" | "disabled";
+  slackTeamId: string | null;
+  slackUserId: string | null;
+  isCurrent: boolean;
+};
+
+function ChannelCard({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-foreground/6 bg-popover px-4 py-3",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ChannelDetail({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="grid gap-1 border-t border-foreground/6 py-3 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+      <dt className="text-label text-muted-foreground sm:text-base">{label}</dt>
+      <dd className="min-w-0 break-words text-base text-foreground">
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+function OperatorChannelTabs({ children }: { children: ReactNode }) {
+  return (
+    <Tabs value="slack" className="gap-4">
+      <div className="-mx-1 overflow-x-auto px-1 scrollbar-hide">
+        <TabsList variant="pill" aria-label="Channel">
+          <TabsTrigger value="slack">Slack</TabsTrigger>
+        </TabsList>
+      </div>
+      <TabsContent value="slack">{children}</TabsContent>
+    </Tabs>
+  );
+}
+
+function IdentityStatus({
+  teamId,
+  userId,
+  workspaceTeamId,
+}: {
+  teamId: string | null;
+  userId: string | null;
+  workspaceTeamId?: string;
+}) {
+  if (!teamId || !userId) {
+    return <StatusTag>Not linked</StatusTag>;
+  }
+  if (!workspaceTeamId || teamId !== workspaceTeamId) {
+    return <StatusTag tone="danger">Workspace mismatch</StatusTag>;
+  }
+  return <StatusTag tone="success">Linked</StatusTag>;
+}
+
+function OperatorIdentityRow({
+  identity,
+  workspaceTeamId,
+  onEdit,
+}: {
+  identity: OperatorSlackIdentity;
+  workspaceTeamId?: string;
+  onEdit?: () => void;
+}) {
+  const displayName = identity.name?.trim() || identity.email;
+  const accountDetail = identity.name?.trim()
+    ? `${identity.email} · ${identity.role === "owner" ? "Owner" : "Operator"}`
+    : identity.role === "owner"
+      ? "Owner"
+      : "Operator";
+  const linkedToWorkspace =
+    !!workspaceTeamId &&
+    identity.slackTeamId === workspaceTeamId &&
+    !!identity.slackUserId;
+
+  return (
+    <div className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1.25fr)_minmax(9rem,0.8fr)_auto] sm:items-center">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className="truncate text-base font-medium text-foreground">
+            {displayName}
+          </p>
+          {identity.isCurrent ? (
+            <IdentityStatus
+              teamId={identity.slackTeamId}
+              userId={identity.slackUserId}
+              workspaceTeamId={workspaceTeamId}
+            />
+          ) : null}
+          {identity.status === "disabled" ? (
+            <StatusTag>Disabled</StatusTag>
+          ) : null}
+        </div>
+        <p className="mt-0.5 truncate text-label text-muted-foreground">
+          {accountDetail}
+        </p>
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-label text-muted-foreground">Slack member ID</p>
+        <p className="mt-0.5 truncate text-base text-foreground">
+          {identity.slackUserId ? (
+            <code className="font-mono text-label">{identity.slackUserId}</code>
+          ) : (
+            "Not set"
+          )}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        {!identity.isCurrent ? (
+          <IdentityStatus
+            teamId={identity.slackTeamId}
+            userId={identity.slackUserId}
+            workspaceTeamId={workspaceTeamId}
+          />
+        ) : null}
+        {onEdit ? (
+          <PillButton variant="secondary" size="compact" onClick={onEdit}>
+            <Pencil className="size-3.5" />
+            {linkedToWorkspace ? "Change" : "Set identity"}
+          </PillButton>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function OperatorChannelsContent({
+  operatorName,
+  operatorEmail,
   profile,
 }: {
+  operatorName?: string;
+  operatorEmail: string;
   profile: OperatorSlackProfile;
 }) {
   const hostStatus = useQuery(api.agentChannels.getSlackHostStatus, {});
+  const operatorIdentities = useQuery(
+    api.agentChannels.listOperatorSlackIdentities,
+    {},
+  );
   const beginHostOAuth = useAction(api.actions.slackOAuth.beginHost);
   const setOperatorSlackIdentity = useMutation(
     api.agentChannels.setOperatorSlackIdentity,
   );
+  const [savedIdentity, setSavedIdentity] = useState(profile);
   const [slackUserId, setSlackUserId] = useState(profile.slackUserId ?? "");
+  const [identityDrawerOpen, setIdentityDrawerOpen] = useState(false);
   const [busy, setBusy] = useState<"host" | "identity" | null>(null);
   const hostInstallation = hostStatus?.installation;
-  const identityLinked =
-    !!hostInstallation &&
-    profile.slackTeamId === hostInstallation.teamId &&
-    !!profile.slackUserId;
+  const workspaceTeamId = hostStatus?.hostTeamId;
+  const mockMode = hostStatus?.mode === "mock";
+  const workspaceName = mockMode
+    ? "Clarity local fixture"
+    : hostInstallation?.teamName;
+  const currentIdentityLinked =
+    !!workspaceTeamId &&
+    savedIdentity.slackTeamId === workspaceTeamId &&
+    !!savedIdentity.slackUserId;
+  const currentIdentityWorkspaceMismatch =
+    !!savedIdentity.slackTeamId &&
+    !!workspaceTeamId &&
+    savedIdentity.slackTeamId !== workspaceTeamId;
+  const currentOperator = operatorIdentities?.find(
+    (operator) => operator.isCurrent,
+  );
+  const currentIdentity: OperatorSlackIdentity = {
+    userId: currentOperator?.userId ?? "current-operator",
+    name: currentOperator?.name ?? operatorName ?? null,
+    email: currentOperator?.email ?? operatorEmail,
+    role: currentOperator?.role ?? profile.role,
+    status: currentOperator?.status ?? profile.status,
+    slackTeamId: savedIdentity.slackTeamId ?? null,
+    slackUserId: savedIdentity.slackUserId ?? null,
+    isCurrent: true,
+  };
+  const otherOperators = operatorIdentities?.filter(
+    (operator) => !operator.isCurrent,
+  );
 
   async function installHost() {
     setBusy("host");
     try {
       const { url } = await beginHostOAuth({});
+      if (!url) throw new Error("Slack OAuth did not return a setup URL");
       window.location.assign(url);
     } catch (error) {
       toast.error(
@@ -60,14 +242,24 @@ function OperatorChannelsContent({
   }
 
   async function saveIdentity() {
-    if (!hostInstallation) return;
+    if (!workspaceTeamId) return;
     setBusy("identity");
     try {
       await setOperatorSlackIdentity({
-        teamId: hostInstallation.teamId,
-        userId: slackUserId,
+        teamId: workspaceTeamId,
+        userId: slackUserId.trim(),
       });
-      toast.success("Operator Slack identity connected");
+      const savedUserId = slackUserId.trim();
+      setSavedIdentity((current) => ({
+        ...current,
+        slackTeamId: workspaceTeamId,
+        slackUserId: savedUserId,
+      }));
+      setSlackUserId(savedUserId);
+      setIdentityDrawerOpen(false);
+      toast.success(
+        `Slack identity updated for ${workspaceName ?? workspaceTeamId}`,
+      );
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
@@ -80,134 +272,110 @@ function OperatorChannelsContent({
     }
   }
 
-  return (
-    <main className="grid w-full gap-5">
-      <header>
-        <h1 className="text-xl font-medium text-foreground">
-          Agent channel infrastructure
-        </h1>
-        <p className="mt-1 max-w-2xl text-base text-muted-foreground">
-          Global connections managed by Clarity Labs. Client-specific workspace
-          setup stays on each client’s Agent channels tab.
-        </p>
-      </header>
+  function startEditingIdentity() {
+    setSlackUserId(savedIdentity.slackUserId ?? "");
+    setIdentityDrawerOpen(true);
+  }
 
-      <OperationalPanel>
-        <OperationalPanelHeader
-          title="Clarity Slack host"
-          description="One installation creates and manages private service channels for every client."
-          action={
-            hostStatus === undefined ? (
-              <Loader2 className="size-4 animate-spin text-muted-foreground" />
-            ) : hostInstallation ? (
-              <Badge variant="outline">Connected</Badge>
-            ) : (
-              <Badge variant="secondary">Not connected</Badge>
-            )
-          }
-        />
-        <OperationalPanelBody className="space-y-4">
-          {hostStatus === undefined ? (
-            <div className="h-16 animate-pulse rounded-lg bg-foreground/[0.03]" />
-          ) : hostInstallation ? (
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <p className="text-label text-muted-foreground">Workspace</p>
-                <p className="mt-1 text-base text-foreground">
-                  {hostInstallation.teamName}
-                </p>
-              </div>
-              <div>
-                <p className="text-label text-muted-foreground">Credentials</p>
-                <p className="mt-1 inline-flex items-center gap-1.5 text-base text-foreground">
-                  <CheckCircle2 className="size-3.5 text-emerald-600" /> Active
-                </p>
-              </div>
-              <div>
-                <p className="text-label text-muted-foreground">Permissions</p>
-                <p className="mt-1 text-base text-foreground">
-                  {hostInstallation.grantedScopes.length} scopes granted
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex gap-2 rounded-lg bg-muted/35 px-3 py-2.5 text-base text-muted-foreground">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-              <p>
-                {hostStatus.configured
-                  ? "Install the Clarity host app before creating client Slack Connect channels."
-                  : "Set SLACK_CLARITY_TEAM_ID before installing the host app."}
-              </p>
-            </div>
-          )}
+  function cancelEditingIdentity() {
+    setSlackUserId(savedIdentity.slackUserId ?? "");
+    setIdentityDrawerOpen(false);
+  }
+
+  const rightPanel = (
+    <SettingsDrawer
+      open={identityDrawerOpen}
+      onOpenChange={(open) => {
+        if (!open && busy !== "identity") cancelEditingIdentity();
+      }}
+      title={
+        currentIdentityLinked
+          ? "Change your Slack identity"
+          : "Set your Slack identity"
+      }
+      footer={
+        <>
           <PillButton
-            onClick={() => void installHost()}
-            disabled={
-              busy !== null ||
-              hostStatus === undefined ||
-              !hostStatus.configured
-            }
+            type="button"
+            variant="secondary"
+            onClick={cancelEditingIdentity}
+            disabled={busy !== null}
           >
-            {busy === "host" ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <MessageSquare className="size-3.5" />
-            )}
-            {hostInstallation ? "Reinstall host app" : "Install host app"}
+            Cancel
           </PillButton>
-        </OperationalPanelBody>
-      </OperationalPanel>
+          <PillButton
+            type="submit"
+            form="operator-slack-identity-form"
+            variant="primary"
+            disabled={busy !== null || !slackUserId.trim()}
+          >
+            {busy === "identity" ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : null}
+            Save identity
+          </PillButton>
+        </>
+      }
+    >
+      <form
+        id="operator-slack-identity-form"
+        className="space-y-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveIdentity();
+        }}
+      >
+        <p className="text-base text-muted-foreground">
+          This changes the Slack identity for the signed-in Glass account{" "}
+          <span className="font-medium text-foreground">{operatorEmail}</span>
+          {workspaceName ? (
+            <>
+              {" "}
+              in{" "}
+              <span className="font-medium text-foreground">
+                {workspaceName}
+              </span>
+              .
+            </>
+          ) : (
+            "."
+          )}
+        </p>
 
-      <OperationalPanel>
-        <OperationalPanelHeader
-          title="Your Slack identity"
-          description="Link your Clarity Slack user so service-channel messages are attributed and audited correctly."
-          action={
-            identityLinked ? (
-              <Badge variant="outline">Linked</Badge>
-            ) : (
-              <Badge variant="secondary">Not linked</Badge>
-            )
-          }
-        />
-        <OperationalPanelBody className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-            <div className="rounded-lg bg-muted/35 px-3 py-2">
-              <p className="text-label text-muted-foreground">Workspace</p>
-              <p className="mt-0.5 truncate text-base text-foreground">
-                {hostInstallation?.teamName ?? "Install the host app first"}
-              </p>
-            </div>
-            <Input
-              value={slackUserId}
-              onChange={(event) => setSlackUserId(event.target.value)}
-              placeholder="Slack member ID (U…)"
-              aria-label="Slack member ID"
-            />
-            <PillButton
-              variant="secondary"
-              onClick={() => void saveIdentity()}
-              disabled={
-                busy !== null || !hostInstallation || !slackUserId.trim()
-              }
-            >
-              {busy === "identity" ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : null}
-              Save identity
-            </PillButton>
-          </div>
-          <p className="text-label text-muted-foreground">
-            In Slack, open your profile, choose More, then copy your member ID.
+        <div>
+          <label
+            htmlFor="operator-slack-member-id"
+            className="text-label font-medium text-foreground"
+          >
+            Slack member ID
+          </label>
+          <Input
+            id="operator-slack-member-id"
+            className="mt-2"
+            value={slackUserId}
+            onChange={(event) => setSlackUserId(event.target.value)}
+            placeholder="U…"
+            autoComplete="off"
+            autoFocus
+          />
+          <p className="mt-2 text-label text-muted-foreground">
+            Slack member IDs usually begin with U.
           </p>
-        </OperationalPanelBody>
-      </OperationalPanel>
-    </main>
-  );
-}
+        </div>
 
-export default function OperatorChannelsPage() {
-  const current = useCachedOperatorCurrent();
+        <div className="rounded-lg border border-foreground/6 bg-foreground/[0.025] p-3">
+          <h3 className="text-label font-medium text-foreground">
+            How to find your member ID
+          </h3>
+          <ol className="mt-2 list-decimal space-y-1 pl-4 text-label text-muted-foreground">
+            <li>Open Slack and select your profile picture.</li>
+            <li>Open your profile, then select More (•••).</li>
+            <li>Select Copy member ID and paste it above.</li>
+          </ol>
+        </div>
+      </form>
+    </SettingsDrawer>
+  );
 
   return (
     <AppShell
@@ -216,7 +384,165 @@ export default function OperatorChannelsPage() {
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={current?.user?.email}
+          email={operatorEmail}
+          active="channels"
+        />
+      )}
+      customSidebarStorageKey="operator-sidebar-collapsed"
+      disablePersistentChat
+      disableCommandPalette
+      showBrokerShare={false}
+      rightPanel={rightPanel}
+    >
+      <main className="w-full">
+        <OperatorChannelTabs>
+          <section className="space-y-3" aria-label="Slack channels">
+            {hostStatus === undefined ? (
+              <ChannelCard className="flex min-h-20 items-center justify-center">
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              </ChannelCard>
+            ) : !hostStatus.enabled ? (
+              <ChannelCard>
+                <h2 className="text-base font-medium text-foreground">
+                  Slack not enabled
+                </h2>
+              </ChannelCard>
+            ) : !hostStatus.configured ? (
+              <ChannelCard>
+                <h2 className="text-base font-medium text-foreground">
+                  Slack unavailable
+                </h2>
+                <p className="mt-1 text-base text-muted-foreground">
+                  {hostStatus.mode === "mock"
+                    ? "The local Slack simulator is missing its fixture workspace. Run the Conductor workspace setup again."
+                    : "This deployment is missing the credentials or callback configuration required to connect Slack."}
+                </p>
+              </ChannelCard>
+            ) : (
+              <>
+                <ChannelCard>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <h2 className="text-base font-medium text-foreground">
+                        Clarity workspace
+                      </h2>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {mockMode ? (
+                        <StatusTag tone="info">Test mode</StatusTag>
+                      ) : hostInstallation ? (
+                        <StatusTag tone="success">Connected</StatusTag>
+                      ) : (
+                        <StatusTag>Not connected</StatusTag>
+                      )}
+                      {!mockMode ? (
+                        <PillButton
+                          variant={hostInstallation ? "secondary" : "primary"}
+                          onClick={() => void installHost()}
+                          disabled={busy !== null}
+                        >
+                          {busy === "host" ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : null}
+                          {hostInstallation ? "Reconnect" : "Connect workspace"}
+                        </PillButton>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <dl className="mt-3 border-t border-foreground/6">
+                    <ChannelDetail label="Slack workspace name">
+                      {workspaceName ?? "No workspace connected"}
+                    </ChannelDetail>
+                    <ChannelDetail label="Slack team ID">
+                      <code className="font-mono text-label">
+                        {workspaceTeamId ?? "Not configured"}
+                      </code>
+                    </ChannelDetail>
+                  </dl>
+                </ChannelCard>
+
+                {mockMode || hostInstallation ? (
+                  <ChannelCard>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-medium text-foreground">
+                        Operator Slack identities
+                      </h2>
+                      <p className="mt-1 max-w-2xl text-base text-muted-foreground">
+                        Glass uses these links to recognize which operator
+                        replied in Slack.
+                      </p>
+                    </div>
+
+                    <div className="mt-3 border-t border-foreground/6">
+                      <OperatorIdentityRow
+                        identity={currentIdentity}
+                        workspaceTeamId={workspaceTeamId}
+                        onEdit={startEditingIdentity}
+                      />
+
+                      {currentIdentityWorkspaceMismatch ? (
+                        <p className="pb-3 text-label text-destructive">
+                          Your identity points to {savedIdentity.slackTeamId},
+                          not the current workspace {workspaceTeamId}. Change it
+                          before handling Slack messages.
+                        </p>
+                      ) : null}
+
+                      <div className="border-t border-foreground/6">
+                        <p className="pt-3 text-label font-medium text-muted-foreground">
+                          Other Glass operators
+                        </p>
+                        {otherOperators === undefined ? (
+                          <div className="flex min-h-16 items-center justify-center">
+                            <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : otherOperators.length ? (
+                          <div className="divide-y divide-foreground/6">
+                            {otherOperators.map((operator) => (
+                              <OperatorIdentityRow
+                                key={operator.userId}
+                                identity={operator}
+                                workspaceTeamId={workspaceTeamId}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="py-3 text-base text-muted-foreground">
+                            No other Glass operators.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </ChannelCard>
+                ) : null}
+              </>
+            )}
+          </section>
+        </OperatorChannelTabs>
+      </main>
+    </AppShell>
+  );
+}
+
+export default function OperatorChannelsPage() {
+  const current = useCachedOperatorCurrent();
+
+  return current ? (
+    <OperatorChannelsContent
+      key={`${current.user._id}:${current.profile.slackTeamId ?? ""}:${current.profile.slackUserId ?? ""}`}
+      operatorName={current.user.name}
+      operatorEmail={current.user.email ?? current.profile.email}
+      profile={current.profile}
+    />
+  ) : (
+    <AppShell
+      breadcrumbDetail="Channels"
+      customSidebar={({ collapsed, onToggleCollapse }) => (
+        <OperatorSidebar
+          collapsed={collapsed}
+          onToggleCollapse={onToggleCollapse}
+          email={undefined}
           active="channels"
         />
       )}
@@ -225,18 +551,13 @@ export default function OperatorChannelsPage() {
       disableCommandPalette
       showBrokerShare={false}
     >
-      {current ? (
-        <OperatorChannelsContent
-          key={current.user._id}
-          profile={current.profile}
-        />
-      ) : (
-        <OperationalPanel>
-          <div className="flex h-40 items-center justify-center text-muted-foreground">
+      <main className="w-full">
+        <OperatorChannelTabs>
+          <ChannelCard className="flex h-40 items-center justify-center text-muted-foreground">
             <Loader2 className="size-5 animate-spin" />
-          </div>
-        </OperationalPanel>
-      )}
+          </ChannelCard>
+        </OperatorChannelTabs>
+      </main>
     </AppShell>
   );
 }

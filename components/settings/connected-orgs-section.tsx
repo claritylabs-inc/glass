@@ -19,7 +19,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { Input } from "@/components/ui/input";
@@ -114,7 +114,7 @@ type VendorComplianceCheck = {
   };
 };
 
-function VendorStatusBadge({
+function VendorStatusTag({
   row,
   complianceSummary,
 }: {
@@ -122,54 +122,43 @@ function VendorStatusBadge({
   complianceSummary?: VendorComplianceSummary;
 }) {
   if (row.status !== "active") {
-    return <Badge variant="secondary">invited</Badge>;
+    return <StatusTag tone="warning">Invited</StatusTag>;
   }
   if (!complianceSummary || complianceSummary.policyCount === 0) {
-    return <Badge variant="secondary">waiting on policies</Badge>;
+    return <StatusTag>Waiting on policies</StatusTag>;
   }
   if (complianceSummary.status === "compliant") {
     return (
-      <Badge
-        variant="outline"
-        className="border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
-      >
-        active / compliant
-      </Badge>
+      <StatusTag tone="success">Active / compliant</StatusTag>
     );
   }
-  if (status === "unverified") {
+  if (complianceSummary.status === "attention") {
     return (
-      <Badge
-        variant="outline"
-        className="gap-1 border-amber-500/25 bg-amber-500/10 text-amber-500"
-      >
+      <StatusTag tone="warning">
         <AlertCircle className="h-3 w-3" />
-        Unverified
-      </Badge>
+        Needs attention
+      </StatusTag>
     );
   }
   return (
-    <Badge
-      variant="outline"
-      className="border-red-500/25 bg-red-500/10 text-red-500"
-    >
-      active / noncompliant
-    </Badge>
+    <StatusTag tone="danger">Active / noncompliant</StatusTag>
   );
 }
 
-function RelationshipStatusBadge({
+function RelationshipStatusTag({
   status,
 }: {
   status: ConnectedOrgRow["status"];
 }) {
-  const variant =
+  const tone =
     status === "active"
-      ? "default"
+      ? "success"
       : status === "pending"
-        ? "secondary"
-        : "outline";
-  return <Badge variant={variant}>{status}</Badge>;
+        ? "warning"
+        : status === "expired"
+          ? "danger"
+          : "neutral";
+  return <StatusTag tone={tone} className="capitalize">{status}</StatusTag>;
 }
 
 function formatDate(value: string | undefined) {
@@ -186,41 +175,32 @@ function formatMoney(value: number | undefined) {
   }).format(value);
 }
 
-function ComplianceCheckBadge({
+function ComplianceCheckStatusTag({
   status,
 }: {
   status: VendorComplianceCheck["status"];
 }) {
   if (status === "met") {
     return (
-      <Badge
-        variant="outline"
-        className="gap-1 border-emerald-500/25 bg-emerald-500/10 text-emerald-500"
-      >
+      <StatusTag tone="success">
         <CheckCircle2 className="h-3 w-3" />
         Met
-      </Badge>
+      </StatusTag>
     );
   }
   if (status === "expiring_soon") {
     return (
-      <Badge
-        variant="outline"
-        className="gap-1 border-amber-500/25 bg-amber-500/10 text-amber-500"
-      >
+      <StatusTag tone="warning">
         <AlertCircle className="h-3 w-3" />
         Needs attention
-      </Badge>
+      </StatusTag>
     );
   }
   return (
-    <Badge
-      variant="outline"
-      className="gap-1 border-red-500/25 bg-red-500/10 text-red-500"
-    >
+    <StatusTag tone="danger">
       <AlertCircle className="h-3 w-3" />
       Not met
-    </Badge>
+    </StatusTag>
   );
 }
 
@@ -252,7 +232,7 @@ function VendorComplianceChecklist({
                 <p className="truncate text-base font-medium text-foreground">
                   {check.requirement.title}
                 </p>
-                <ComplianceCheckBadge status={check.status} />
+                <ComplianceCheckStatusTag status={check.status} />
               </div>
               <p className="line-clamp-2 text-label text-muted-foreground">
                 {check.requirement.requirementText}
@@ -369,12 +349,12 @@ function RelationshipCard({
               {displayName}
             </p>
             {side === "vendor" ? (
-              <VendorStatusBadge
+              <VendorStatusTag
                 row={row}
                 complianceSummary={complianceSummary}
               />
             ) : (
-              <RelationshipStatusBadge status={row.status} />
+              <RelationshipStatusTag status={row.status} />
             )}
           </div>
           {showInviteCopy || org?.website ? (

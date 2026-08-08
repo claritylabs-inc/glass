@@ -768,7 +768,7 @@ describe("web retrieval routing", () => {
     expect(modelsPage).not.toContain("webRetrieval");
     expect(modelsPage).not.toContain("SearchProviderRow");
     expect(toolsPage).toContain('breadcrumbDetail="Tools"');
-    expect(toolsPage).toContain("Search and retrieval");
+    expect(toolsPage).toContain("Web search");
     expect(toolsPage).toContain('"model_default"');
     expect(toolsPage).toContain("LogoIcon");
     expect(toolsPage).toContain('fill="#0143D9"');

@@ -260,9 +260,6 @@ function BrokerIdentityForm({
             : "Add the broker this organization should contact."
           : "The broker manages the contact shown to this client."
       }
-      action={
-        identity.canEdit ? <AutoSaveStatus status={autoSave.status} /> : null
-      }
       className="px-5 py-4"
     />
   ) : null;
@@ -411,10 +408,14 @@ function BrokerIdentityForm({
 
   return surface === "card" ? (
     <OperationalPanel>
+      <AutoSaveStatus status={autoSave.status} />
       {header}
       {editor}
     </OperationalPanel>
   ) : (
-    <section className="space-y-4">{editor}</section>
+    <section className="space-y-4">
+      <AutoSaveStatus status={autoSave.status} />
+      {editor}
+    </section>
   );
 }

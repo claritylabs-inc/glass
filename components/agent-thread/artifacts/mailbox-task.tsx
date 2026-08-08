@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
 import { scientistSurnameFor } from "../scientist-surnames";
 import type { ToolArtifactData } from "../types";
 import { formatDisplayDateTime } from "@/lib/date-format";
@@ -421,9 +422,9 @@ function MailboxTaskSummaryCard({
           </span>
         </div>
         <span className="flex shrink-0 items-center gap-2">
-          <Badge variant="outline" className="h-5 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
+          <StatusTag tone={isRunning ? "info" : needsReview ? "warning" : "neutral"}>
             {statusLabel}
-          </Badge>
+          </StatusTag>
         </span>
       </div>
       <div className={flat ? "space-y-4" : "space-y-3 px-3 py-3"}>
@@ -665,9 +666,9 @@ export function MailboxTaskSidebar({
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className="truncate text-base font-semibold text-foreground">{displayName}</h2>
-          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
+          <StatusTag tone={isRunning ? "info" : "neutral"} className="shrink-0">
             {statusLabel}
-          </Badge>
+          </StatusTag>
         </div>
         <PillButton size="compact" variant="icon" onClick={onClose} label="Close mailbox search">
           <X className="h-4 w-4" />

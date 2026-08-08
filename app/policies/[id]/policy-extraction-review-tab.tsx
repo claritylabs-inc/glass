@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -344,9 +345,9 @@ export function PolicyExtractionReview({
                   </p>
                 </div>
                 {brokerRequested ? (
-                  <span className="rounded-full bg-foreground/5 px-2 py-0.5 text-tag font-medium text-muted-foreground">
+                  <StatusTag tone="warning">
                     Broker requested
-                  </span>
+                  </StatusTag>
                 ) : null}
               </div>
 

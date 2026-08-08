@@ -133,15 +133,41 @@ describe("Slack worker HTTP adapter", () => {
         },
       ],
     };
-    const failed = await send(failing).then((response) => response.json()) as {
+    const failed = (await send(failing).then((response) =>
+      response.json(),
+    )) as {
       attachmentFailures: unknown[];
     };
     assert.equal(failed.attachmentFailures.length, 1);
-    const retried = await send(failing).then((response) => response.json()) as {
+    const retried = (await send(failing).then((response) =>
+      response.json(),
+    )) as {
       messageId?: string;
       attachmentFailures: unknown[];
     };
     assert.equal(retried.messageId, "mock-file-retry");
     assert.equal(retried.attachmentFailures.length, 0);
+  });
+
+  test("lists deterministic local channels without Slack", async () => {
+    const result = await fetch(`${origin}/channels`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        teamId: "T-LOCAL",
+        currentChannelId: "C-LOCAL",
+        currentChannelName: "glass-local",
+      }),
+    }).then((response) => response.json());
+    assert.deepEqual(result, {
+      channels: [
+        { id: "C-LOCAL", name: "glass-local" },
+        { id: "mock-T-LOCAL-general", name: "general" },
+        { id: "mock-T-LOCAL-policies", name: "policy-updates" },
+      ],
+    });
   });
 });

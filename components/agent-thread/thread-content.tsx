@@ -49,6 +49,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { MessageMetaTag } from "@/components/ui/message-meta-tag";
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
 import {
   splitQuotedReply,
   QuotedContent,
@@ -1286,14 +1287,17 @@ function AgentProcessingActivity({
   return (
     <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
       {showStatus ? (
-        <span className="inline-flex min-w-0 items-center gap-2 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/60">
+        <StatusTag
+          tone={isStale ? "warning" : "info"}
+          className="h-auto min-w-0 gap-2 px-2.5 py-1.5"
+        >
           <LogoIcon
             size={12}
             static
             className="h-3 w-3 shrink-0 animate-spin text-primary-light/70 [animation-duration:1.8s]"
           />
           <span className="truncate">{status}</span>
-        </span>
+        </StatusTag>
       ) : null}
       {backgroundProcessCount > 0 && onOpenBackgroundProcess ? (
         <button
@@ -1304,9 +1308,9 @@ function AgentProcessingActivity({
           {backgroundProcessContent}
         </button>
       ) : backgroundProcessCount > 0 ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/55">
+        <StatusTag tone="info" className="h-auto px-2.5 py-1.5">
           {backgroundProcessContent}
-        </span>
+        </StatusTag>
       ) : null}
     </div>
   );

@@ -555,15 +555,6 @@ export function MailboxSettingsDrawer({
       open
       onOpenChange={handleDrawerOpenChange}
       title={account.emailAddress}
-      actions={canManageMailbox ? (
-        <AutoSaveStatus
-          status={
-            needsConfiguration && !settingsChanged
-              ? "unsaved"
-              : settingsAutoSave.status
-          }
-        />
-      ) : undefined}
       footer={
         confirmDisconnect ? (
           <>
@@ -606,6 +597,15 @@ export function MailboxSettingsDrawer({
         ) : undefined
       }
     >
+      {canManageMailbox ? (
+        <AutoSaveStatus
+          status={
+            needsConfiguration && !settingsChanged
+              ? "unsaved"
+              : settingsAutoSave.status
+          }
+        />
+      ) : null}
       {confirmDisconnect ? (
         <OperationalPanel as="div" className="border-destructive/20 bg-destructive/5 p-4">
           <div className="flex items-start gap-3">

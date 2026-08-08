@@ -22,6 +22,7 @@ import { lobLabel, policyLobCodes } from "@/convex/lib/linesOfBusiness";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import {
   OperationalItem,
   OperationalPanel,
@@ -293,7 +294,7 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
                   </span>
                 ) : null}
                 {index === 0 ? (
-                  <Badge variant="secondary">Current</Badge>
+                  <StatusTag tone="success">Current</StatusTag>
                 ) : null}
                 <span className="text-label text-muted-foreground sm:ml-auto">
                   {formatVersionDate(version.createdAt)}

@@ -4,6 +4,7 @@ import { Instrument_Serif } from "next/font/google";
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { ConvexClientProvider } from "@/components/providers";
 import { AuthGuard } from "@/components/auth-guard";
+import { AutoSaveStatusProvider } from "@/components/ui/auto-save-status";
 import { AppToaster } from "@/components/ui/toaster";
 import { SmoothCornersProvider } from "@/components/ui/smooth-corners-provider";
 import { BrandThemeApplier } from "@/components/brand-theme-applier";
@@ -81,9 +82,11 @@ export default function RootLayout({
         >
           <SmoothCornersProvider />
           <ConvexClientProvider>
-            <BrandThemeApplier />
-            <AuthGuard>{children}</AuthGuard>
-            <AppToaster />
+            <AutoSaveStatusProvider>
+              <BrandThemeApplier />
+              <AuthGuard>{children}</AuthGuard>
+              <AppToaster />
+            </AutoSaveStatusProvider>
           </ConvexClientProvider>
         </body>
       </html>

@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
-import { Badge } from "@/components/ui/badge";
+import { StatusTag } from "@/components/ui/status-tag";
 import { Button } from "@/components/ui/button";
 import {
   OperationalItem,
@@ -213,10 +213,10 @@ function formatCost(costUsd?: number | null, costStatus?: "priced" | "unpriced")
   return [amount, status].filter(Boolean).join(" · ") || "—";
 }
 
-function statusVariant(status: TraceStatus): "default" | "secondary" | "destructive" {
-  if (status === "complete") return "default";
-  if (status === "error" || status === "cancelled") return "destructive";
-  return "secondary";
+function statusTone(status: TraceStatus) {
+  if (status === "complete") return "success" as const;
+  if (status === "error" || status === "cancelled") return "danger" as const;
+  return "info" as const;
 }
 
 function parseTracePanelTab(value: string | null): TracePanelTab {
@@ -323,11 +323,11 @@ function profileCellValue(row: Record<string, unknown>, key: string) {
   return value !== "—" ? value : undefined;
 }
 
-function supportStatusVariant(status: string) {
+function supportStatusTone(status: string) {
   const normalized = status.toLowerCase();
-  if (normalized === "supported") return "secondary";
-  if (normalized === "unsupported" || normalized === "excluded" || normalized === "conflicting") return "destructive";
-  return "outline";
+  if (normalized === "supported") return "success" as const;
+  if (normalized === "unsupported" || normalized === "excluded" || normalized === "conflicting") return "danger" as const;
+  return "neutral" as const;
 }
 
 function normalizeDisplayText(value?: string) {
@@ -525,12 +525,12 @@ function EndorsementSupportList({
                 fileUrl={fileUrl}
               />
               {status !== "—" ? (
-                <Badge
-                  variant={supportStatusVariant(status)}
+                <StatusTag
+                  tone={supportStatusTone(status)}
                   className="font-normal"
                 >
                   {formatProfileLabel(status)}
-                </Badge>
+                </StatusTag>
               ) : null}
             </div>
             <p
@@ -640,9 +640,9 @@ function NamedAdditionalInsuredList({
                 fileUrl={fileUrl}
               />
               {status !== "—" ? (
-                <Badge variant="outline" className="font-normal">
+                <StatusTag className="font-normal">
                   {formatProfileLabel(status)}
-                </Badge>
+                </StatusTag>
               ) : null}
             </div>
             {scope !== "—" ? (
@@ -1637,7 +1637,7 @@ export default function OperatorExtractionsPage() {
                   />
                   <OperationalLabelValueRow label="Org" value={selected.orgName} />
                   <OperationalLabelValueRow label="File" value={traceDisplayFile(selected)} />
-                  <OperationalLabelValueRow label="Status" value={<Badge variant={statusVariant(selected.status)}>{selected.status}</Badge>} />
+                  <OperationalLabelValueRow label="Status" value={<StatusTag tone={statusTone(selected.status)}>{selected.status}</StatusTag>} />
                   <OperationalLabelValueRow
                     label="Started"
                     value={formatDisplayDateTimeWithSeconds(selected.startedAt)}
@@ -1706,7 +1706,7 @@ export default function OperatorExtractionsPage() {
                       <p className="text-label text-muted-foreground">
                         {dayjs(event.timestamp).format("h:mm:ss A")}{event.phase ? ` · ${event.phase}` : ""}
                       </p>
-                      {event.level && event.level !== "info" ? <Badge variant={event.level === "error" ? "destructive" : "secondary"}>{event.level}</Badge> : null}
+                      {event.level && event.level !== "info" ? <StatusTag tone={event.level === "error" ? "danger" : "warning"}>{event.level}</StatusTag> : null}
                     </div>
                     <p className="mt-1 text-base text-foreground">{event.message}</p>
                   </div>
@@ -1793,7 +1793,7 @@ export default function OperatorExtractionsPage() {
                       <p className="truncate text-foreground">{traceDisplayTitle(trace)}</p>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusVariant(trace.status)}>{trace.status}</Badge>
+                      <StatusTag tone={statusTone(trace.status)}>{trace.status}</StatusTag>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDuration(trace.totalDurationMs ?? (trace.lastEventAt ? trace.lastEventAt - trace.startedAt : undefined))}

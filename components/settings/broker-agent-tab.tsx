@@ -5,7 +5,6 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { Loader2 } from "lucide-react";
-import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import {
@@ -94,8 +93,6 @@ export function BrokerAgentTab() {
   const [settingsHydrated, setSettingsHydrated] = useState(false);
 
   const hydratedRef = useRef(false);
-
-  const { setActions } = useSettingsActions();
 
   useEffect(() => {
     if (org && !hydratedRef.current) {
@@ -193,19 +190,6 @@ export function BrokerAgentTab() {
       getUserFacingErrorMessage(error, "The agent handle could not be saved."),
   });
 
-  useEffect(() => {
-    setActions(
-      <AutoSaveStatus
-        status={combineAutoSaveStatuses(
-          settingsAutoSave.status,
-          handleAutoSave.status,
-        )}
-      />,
-    );
-    return () => setActions(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsAutoSave.status, handleAutoSave.status]);
-
   if (viewerOrg === undefined) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -220,6 +204,12 @@ export function BrokerAgentTab() {
 
   return (
     <div className="space-y-4">
+      <AutoSaveStatus
+        status={combineAutoSaveStatuses(
+          settingsAutoSave.status,
+          handleAutoSave.status,
+        )}
+      />
       {isBroker ? (
         <OperationalPanel>
           <OperationalPanelHeader title="Agent email handle" />

@@ -63,8 +63,9 @@ deployment and database that belong only to that worktree. Workspace setup:
    worktree's Convex file storage. The configured
    `IMESSAGE_TERMINAL_FROM_PHONE` is assigned to the Montgomery Risk admin so
    Spectrum starts in an org-scoped broker context. Setup then compiles the
-   workers, starts Apple `container`, and builds worktree-tagged Linux/amd64
-   worker images.
+   workers. Local macOS setup also starts Apple `container` and builds
+   worktree-tagged Linux/amd64 worker images; cloud setup uses the compiled
+   workers directly.
 
 The imported environment includes provider/auth configuration but never cloud
 database rows or files. Local database state and secrets persist under
@@ -79,28 +80,38 @@ and auth state, before the worktree is removed. Closing a Conductor tab or the
 app does not archive the workspace and intentionally preserves its database for
 the next run.
 
-The default **Local dev** run template starts these foreground processes together:
+The default **Dev** run template starts these foreground processes together in
+local and cloud Conductor workspaces:
 
 - Glass on `http://localhost:$CONDUCTOR_PORT`
 - `convex dev` with the worktree's native local database, including local
   email/OTP capture logs, on `$CONDUCTOR_PORT + 3` (client) and `+ 4` (HTTP actions)
-- the Linux/amd64 extraction-worker container on `$CONDUCTOR_PORT + 1`
+- the extraction worker on `$CONDUCTOR_PORT + 1`
 - the Spectrum terminal iMessage worker on `$CONDUCTOR_PORT + 2`
+- the mock Slack worker on `$CONDUCTOR_PORT + 5`
+- a local email capture watcher that surfaces delivery context and OTPs
 
-The Run terminal opens Spectrum's interactive TUI. Web, Convex, and extraction
-output is written to `.context/logs/{web,convex,extraction}.log` so it does not
-corrupt the TUI; local OTP/email capture remains available in `convex.log`.
+On macOS the extraction worker uses the worktree-tagged Apple container image;
+in a cloud workspace it runs the already-built Linux worker directly. The Run
+terminal opens Spectrum's interactive TUI and automatically prints a compact
+notice for every captured local email, including an explicit `OTP:` line when a
+six-digit code is present. Web, Convex, extraction, and Slack output is written
+to `.context/logs/{web,convex,extraction,slack}.log`; full captured email bodies
+remain in `convex.log`. The separate **Email deliveries** Run template opens the
+same capture stream in a dedicated terminal when desired.
 Spectrum starts as the Montgomery Risk admin. Use `/whoami` to inspect the
 current sender, `/as broker` for Montgomery Risk, `/as client` for Cove, and
 `/as public` for the unlinked public-demo path. `/as +<E.164 phone>` can test an
 explicit local identity; the following message uses the newly selected sender.
-Conductor runs are concurrent: each worktree reserves one five-port namespace
+Conductor runs are concurrent: each local worktree reserves one six-port namespace
 from its unique `CONDUCTOR_PORT` (`+0` web, `+1` extraction, `+2` Spectrum,
-`+3/+4` Convex), and the app/workers wait for that exact local instance before
-starting. Explicit Convex ports avoid a Convex CLI collision edge case where
-automatic fallback can select the same port for its client and HTTP services.
-The extraction container uses a worktree-tagged image and a narrow bridge from
-Apple's container network to that loopback-only Convex port.
+`+3/+4` Convex, `+5` Slack), and the app/workers wait for that exact local
+instance before starting. Cloud workspaces use the same offsets from port 8080
+because `CONDUCTOR_PORT` is not set there. Explicit Convex ports avoid a Convex
+CLI collision edge case where automatic fallback can select the same port for
+its client and HTTP services. The local extraction container uses a
+worktree-tagged image and a narrow bridge from Apple's container network to that
+loopback-only Convex port.
 
 The checked-in `.worktreeinclude` copies `.env.local` and worker-local env files
 from the repository root. The copied root `.env.local` must initially select a
@@ -126,6 +137,7 @@ not rewrite committed agent skills and guidance; refresh those explicitly with
 - `npm run build` - production build
 - `npm run conductor:setup` - prepare a fresh Conductor worktree end to end
 - `npm run conductor:dev` - start Glass, Convex, extraction, and Spectrum terminal
+- `npm run conductor:emails` - show captured local email deliveries and OTPs in a dedicated terminal
 - `npm run lint` - ESLint
 - `npm test` - run tests
 - `npx tsc --noEmit` - Next.js TypeScript check
