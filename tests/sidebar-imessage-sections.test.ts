@@ -24,7 +24,7 @@ function thread(
   };
 }
 
-describe("sidebar iMessage sections", () => {
+describe("sidebar source conversations", () => {
   it("detects iMessage threads from explicit channel, phone, or legacy title", () => {
     expect(isImessageThread(thread("channel", { originChannel: "imessage" }))).toBe(true);
     expect(isImessageThread(thread("phone", { threadPhone: "+15551234567" }))).toBe(true);
@@ -40,7 +40,7 @@ describe("sidebar iMessage sections", () => {
     expect(getThreadDisplayLabel(thread("chat", { title: "Renewal follow-up" }))).toBe("Renewal follow-up");
   });
 
-  it("limits normal agent threads and iMessage conversations independently", () => {
+  it("pins Slack and iMessage conversations while limiting each source independently", () => {
     const threads = Array.from({ length: 10 }, (_, index) =>
       thread(`chat-${index}`, { originChannel: "chat" }),
     ).concat(
@@ -50,33 +50,46 @@ describe("sidebar iMessage sections", () => {
           title: `iMessage - Contact ${index}`,
         }),
       ),
+      Array.from({ length: 10 }, (_, index) =>
+        thread(`slack-${index}`, {
+          originChannel: "slack",
+          title: index % 2 === 0 ? `DM · Contact ${index}` : `#glass-cove · Contact ${index}`,
+        }),
+      ),
     );
 
-    const { agentConversations, imessageConversations } =
-      splitThreadConversations(threads, { agentLimit: 8, imessageLimit: 8 });
+    const { agentConversations, pinnedConversations } =
+      splitThreadConversations(threads, {
+        agentLimit: 8,
+        imessageLimit: 8,
+        slackLimit: 8,
+      });
 
     expect(agentConversations).toHaveLength(8);
-    expect(imessageConversations).toHaveLength(8);
-    expect(agentConversations.every((item) => item.kind !== "imessage")).toBe(true);
-    expect(imessageConversations.every((item) => item.kind === "imessage")).toBe(true);
-    expect(imessageConversations[0]?.label).toBe("Contact 0");
+    expect(pinnedConversations).toHaveLength(16);
+    expect(agentConversations.every((item) => item.kind === "chat")).toBe(true);
+    expect(pinnedConversations.filter((item) => item.kind === "imessage")).toHaveLength(8);
+    expect(pinnedConversations.filter((item) => item.kind === "slack")).toHaveLength(8);
+    expect(pinnedConversations[0]?.label).toBe("Contact 0");
   });
 
-  it("renders iMessage threads as pinned rows above agent threads in main and client sidebars", () => {
+  it("renders Slack and iMessage threads as pinned rows above agent threads", () => {
     const mainSidebar = read("components/app-sidebar/main-sidebar-content.tsx");
     const clientSidebar = read("components/app-sidebar/client-detail-sidebar-content.tsx");
     const threadContent = read("components/agent-thread/thread-content.tsx");
 
     expect(mainSidebar).toContain("agentConversations");
-    expect(mainSidebar).toContain("imessageConversations");
+    expect(mainSidebar).toContain("pinnedConversations");
     expect(mainSidebar).toContain('shortcutLabel="pinned thread"');
     expect(mainSidebar).toContain("<Pin");
-    expect(mainSidebar.indexOf("imessageConversations.map")).toBeLessThan(
+    expect(mainSidebar).toContain("<SiSlack");
+    expect(mainSidebar.indexOf("pinnedConversations.map")).toBeLessThan(
       mainSidebar.indexOf("agentConversations.map"),
     );
-    expect(clientSidebar).toContain("imessageConversations");
+    expect(clientSidebar).toContain("pinnedConversations");
     expect(clientSidebar).toContain("<Pin");
-    expect(clientSidebar.indexOf("imessageConversations.map")).toBeLessThan(
+    expect(clientSidebar).toContain("<SiSlack");
+    expect(clientSidebar.indexOf("pinnedConversations.map")).toBeLessThan(
       clientSidebar.indexOf("agentConversations.map"),
     );
     expect(threadContent).toContain("getThreadDisplayLabel(thread)");

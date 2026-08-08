@@ -134,7 +134,10 @@ async function ingest(
     channelId?: string;
     senderTeamId?: string;
     senderUserId?: string;
+    senderDisplayName?: string;
+    senderEmail?: string;
     eventType?: "message" | "edit";
+    isDirectMessage?: boolean;
     receivedAt?: number;
   },
 ) {
@@ -147,8 +150,11 @@ async function ingest(
     messageTs: args.messageTs ?? args.eventKey,
     senderTeamId: args.senderTeamId ?? "T-CUSTOMER",
     senderUserId: args.senderUserId ?? "U-CUSTOMER",
+    senderDisplayName: args.senderDisplayName,
+    senderEmail: args.senderEmail,
     content: args.content,
     eventType: args.eventType ?? "message",
+    isDirectMessage: args.isDirectMessage,
     receivedAt: args.receivedAt ?? BASE_TIME,
   }) as { eventId?: Id<"slackInboundEvents">; duplicate: boolean; status: string };
   if (!result.eventId) return { claim: result, prepared: null };
@@ -360,6 +366,72 @@ describe("Slack channel state and authorization", () => {
     expect(state.threads).toHaveLength(1);
     expect(state.threads[0].slackState).toBe("resolved");
     expect(state.messages.filter((message) => message.role === "user")).toHaveLength(7);
+  });
+
+  test("treats an App Home DM as one private, mention-free conversation", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId } = await seedSlack(t);
+    const glassUserId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        name: "Cove Admin",
+        email: "admin@cove.test",
+        accountKind: "customer",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId: clientOrgId,
+        userId,
+        role: "admin",
+      });
+      return userId;
+    });
+
+    const first = await ingest(t, {
+      eventKey: "dm-1",
+      channelId: "D-COVE-ADMIN",
+      threadTs: "D-COVE-ADMIN",
+      messageTs: "1800000001.100",
+      senderDisplayName: "Cove Admin",
+      senderEmail: "ADMIN@COVE.TEST",
+      content: "Show my policy",
+      isDirectMessage: true,
+    });
+    expect(first.prepared).toMatchObject({ orgId: clientOrgId });
+    expect(first.prepared).not.toHaveProperty("threadTs");
+
+    const second = await ingest(t, {
+      eventKey: "dm-2",
+      channelId: "D-COVE-ADMIN",
+      threadTs: "D-COVE-ADMIN",
+      messageTs: "1800000002.100",
+      senderDisplayName: "Cove Admin",
+      senderEmail: "admin@cove.test",
+      content: "What is the limit?",
+      isDirectMessage: true,
+    });
+    expect(second.prepared).not.toBeNull();
+
+    const state = await t.run(async (ctx) => ({
+      threads: await ctx.db.query("threads").collect(),
+      actors: await ctx.db.query("slackActors").collect(),
+      messages: await ctx.db.query("threadMessages").collect(),
+    }));
+    expect(state.threads).toHaveLength(1);
+    expect(state.threads[0]).toMatchObject({
+      title: "DM · Cove Admin",
+      createdBy: glassUserId,
+      visibility: "user_private",
+      slackChannelId: "D-COVE-ADMIN",
+      slackThreadTs: "D-COVE-ADMIN",
+      slackConversationKind: "direct_message",
+      slackState: "active",
+    });
+    expect(state.actors[0]).toMatchObject({ glassUserId });
+    expect(state.messages.filter((message) => message.role === "user")).toHaveLength(2);
+    expect(
+      state.messages
+        .filter((message) => message.role === "user")
+        .every((message) => message.userId === glassUserId),
+    ).toBe(true);
   });
 
   test("rejects external invocations and creates content-free off-channel handoffs", async () => {

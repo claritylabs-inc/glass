@@ -8,6 +8,11 @@
     "background_color": "#171717"
   },
   "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
     "bot_user": {
       "display_name": "Glass",
       "always_online": true
@@ -29,7 +34,9 @@
         "groups:history",
         "groups:read",
         "groups:write",
-        "users:read"
+        "im:history",
+        "users:read",
+        "users:read.email"
       ]
     }
   },
@@ -41,6 +48,7 @@
         "app_uninstalled",
         "message.channels",
         "message.groups",
+        "message.im",
         "tokens_revoked"
       ]
     },

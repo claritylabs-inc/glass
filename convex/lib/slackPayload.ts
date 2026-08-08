@@ -98,6 +98,7 @@ export function parseSlackEventPayload(
     ...(eventType === "edit" && revisionTs ? [revisionTs] : []),
   ].join(":");
   const channelType = string(outerEvent?.channel_type)?.toLowerCase();
+  const isDirectMessage = channelType === "im" || channelId.startsWith("D");
 
   return {
     eventKey,
@@ -106,7 +107,11 @@ export function parseSlackEventPayload(
       : {}),
     teamId,
     channelId,
-    threadTs: string(message?.thread_ts) ?? messageTs,
+    // Slack App Home is one continuous 1:1 conversation. Use the DM channel
+    // as its stable Glass conversation key and send responses at the top level.
+    threadTs: isDirectMessage
+      ? channelId
+      : string(message?.thread_ts) ?? messageTs,
     messageTs,
     ...(string(message?.user_team ?? outerEvent?.user_team)
       ? { senderTeamId: string(message?.user_team ?? outerEvent?.user_team) }
@@ -115,7 +120,7 @@ export function parseSlackEventPayload(
     content,
     ...(attachments ? { attachments } : {}),
     eventType,
-    isDirectMessage: channelType === "im" || channelId.startsWith("D"),
+    isDirectMessage,
     isBotEcho:
       Boolean(string(message?.bot_id ?? outerEvent?.bot_id)) ||
       messageSubtype === "bot_message" ||

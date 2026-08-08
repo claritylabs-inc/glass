@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   Archive,
   Bell,
-  Hash,
   LogOut,
   Mail,
   MessageCircle,
@@ -14,6 +13,7 @@ import {
   Settings,
   User,
 } from "lucide-react";
+import { SiSlack } from "react-icons/si";
 import type { Id } from "@/convex/_generated/dataModel";
 import { NotificationsPanel } from "@/components/notifications-panel";
 import { PillButton } from "@/components/ui/pill-button";
@@ -66,7 +66,7 @@ export function MainSidebarContent({
   isDesktop,
   orgId,
   agentConversations,
-  imessageConversations,
+  pinnedConversations,
   archivedThreadCount,
   broker,
   fallbackAgentHandle,
@@ -92,7 +92,7 @@ export function MainSidebarContent({
   isDesktop: boolean;
   orgId?: Id<"organizations">;
   agentConversations: ConversationItem[];
-  imessageConversations: ConversationItem[];
+  pinnedConversations: ConversationItem[];
   archivedThreadCount: number;
   broker: BrokerContact;
   fallbackAgentHandle?: string;
@@ -185,7 +185,7 @@ export function MainSidebarContent({
         {!collapsed ? (
           <ExpandedThreadList
             agentConversations={agentConversations}
-            imessageConversations={imessageConversations}
+            pinnedConversations={pinnedConversations}
             archivedThreadCount={archivedThreadCount}
             pathname={pathname}
             onAskGlass={onAskGlass}
@@ -194,7 +194,7 @@ export function MainSidebarContent({
         ) : (
           <CollapsedThreadList
             agentConversations={agentConversations}
-            imessageConversations={imessageConversations}
+            pinnedConversations={pinnedConversations}
             archivedThreadCount={archivedThreadCount}
             pathname={pathname}
             onAskGlass={onAskGlass}
@@ -242,14 +242,14 @@ export function MainSidebarContent({
 
 function ExpandedThreadList({
   agentConversations,
-  imessageConversations,
+  pinnedConversations,
   archivedThreadCount,
   pathname,
   onAskGlass,
   onArchiveThread,
 }: {
   agentConversations: ConversationItem[];
-  imessageConversations: ConversationItem[];
+  pinnedConversations: ConversationItem[];
   archivedThreadCount: number;
   pathname: string;
   onAskGlass?: () => void;
@@ -291,7 +291,7 @@ function ExpandedThreadList({
           </Tooltip>
         ) : null}
       </div>
-      {imessageConversations.map((item, idx) => (
+      {pinnedConversations.map((item, idx) => (
         <SidebarThreadRow
           key={`${item.kind}-${item.id}`}
           item={item}
@@ -307,8 +307,8 @@ function ExpandedThreadList({
           item={item}
           pathname={pathname}
           shortcut={
-            imessageConversations.length + idx < 9
-              ? navShortcut(String(imessageConversations.length + idx + 1))
+            pinnedConversations.length + idx < 9
+              ? navShortcut(String(pinnedConversations.length + idx + 1))
               : undefined
           }
           shortcutLabel="thread"
@@ -355,7 +355,7 @@ function SidebarThreadRow({
       {isImessageConversation(item) ? (
         <MessageCircle className="w-3.5 h-3.5 shrink-0" />
       ) : item.kind === "slack" ? (
-        <Hash className="w-3.5 h-3.5 shrink-0" />
+        <SiSlack className="w-3.5 h-3.5 shrink-0" />
       ) : item.kind === "email" ? (
         <Mail className="w-3.5 h-3.5 shrink-0" />
       ) : (
@@ -403,13 +403,13 @@ function SidebarThreadRow({
 
 function CollapsedThreadList({
   agentConversations,
-  imessageConversations,
+  pinnedConversations,
   archivedThreadCount,
   pathname,
   onAskGlass,
 }: {
   agentConversations: ConversationItem[];
-  imessageConversations: ConversationItem[];
+  pinnedConversations: ConversationItem[];
   archivedThreadCount: number;
   pathname: string;
   onAskGlass?: () => void;
@@ -417,7 +417,7 @@ function CollapsedThreadList({
   return (
     <>
       <div className="pt-4 pb-1" />
-      {imessageConversations.map((item) => {
+      {pinnedConversations.map((item) => {
         const isConvActive = pathname === `/agent/thread/${item.id}`;
         return (
           <Link
@@ -428,11 +428,15 @@ function CollapsedThreadList({
               isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
             }`}
           >
-            <MessageCircle className="w-3.5 h-3.5" />
+            {isImessageConversation(item) ? (
+              <MessageCircle className="w-3.5 h-3.5" />
+            ) : (
+              <SiSlack className="w-3.5 h-3.5" />
+            )}
           </Link>
         );
       })}
-      {agentConversations.length > 0 && imessageConversations.length > 0 ? (
+      {agentConversations.length > 0 && pinnedConversations.length > 0 ? (
         <div className="mx-4 my-1 h-px bg-foreground/6" aria-hidden="true" />
       ) : null}
       {agentConversations.map((item) => {
@@ -449,7 +453,7 @@ function CollapsedThreadList({
             {isImessageConversation(item) ? (
               <MessageCircle className="w-3.5 h-3.5" />
             ) : item.kind === "slack" ? (
-              <Hash className="w-3.5 h-3.5" />
+              <SiSlack className="w-3.5 h-3.5" />
             ) : item.kind === "email" ? (
               <Mail className="w-3.5 h-3.5" />
             ) : (

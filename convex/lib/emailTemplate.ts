@@ -238,7 +238,7 @@ export function buildSlackInstallInviteEmail({
 </td></tr>
 <tr><td style="padding:12px 40px 0 40px;">
   <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#4b5563;line-height:1.6;">
-    Glass is a Slack app that helps your team work with policies, documents, and insurance requests in <strong style="color:#374151;">#${safeChannelName}</strong>.
+    Glass is a Slack app that helps your team work with policies, documents, and insurance requests in <strong style="color:#374151;">#${safeChannelName}</strong> or a private 1:1 message.
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
@@ -265,7 +265,7 @@ export function buildSlackInstallInviteEmail({
 <tr><td style="padding:24px 40px 0 40px;">
   <div style="padding:12px 14px;background-color:#f5f5f5;border-radius:8px;">
     <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#4b5563;line-height:1.6;">
-      Glass can read messages sent to it and post replies in channels where it is added. Everyone in those channels can see its responses.
+      Direct messages stay between that Slack member and Glass. Everyone in a channel can see messages and responses posted in that channel.
     </p>
   </div>
 </td></tr>
@@ -279,7 +279,7 @@ export function buildSlackInstallInviteEmail({
     This one-time invitation expires in ${expiresInDays} days. If you were not expecting it, you can safely ignore this email.
   </p>
 </td></tr>`;
-  const text = `Install Glass for ${normalizedClientName} in Slack\n\nGlass is a Slack app that helps your team work with policies, documents, and insurance requests in #${normalizedChannelName}.\n\n1. Open the install link: ${installUrl}\n2. Choose the ${normalizedClientName} Slack workspace.\n3. Review the requested permissions, then allow the Glass Slack app.\n4. Add @Glass to #${normalizedChannelName} so it can respond there.\n\nGlass can read messages sent to it and post replies in channels where it is added. Everyone in those channels can see its responses.\n\nThis one-time invitation expires in ${expiresInDays} days. If you were not expecting it, you can safely ignore this email.`;
+  const text = `Install Glass for ${normalizedClientName} in Slack\n\nGlass is a Slack app that helps your team work with policies, documents, and insurance requests in #${normalizedChannelName} or a private 1:1 message.\n\n1. Open the install link: ${installUrl}\n2. Choose the ${normalizedClientName} Slack workspace.\n3. Review the requested permissions, then allow the Glass Slack app.\n4. Add @Glass to #${normalizedChannelName} so it can respond there.\n\nDirect messages stay between that Slack member and Glass. Everyone in a channel can see messages and responses posted in that channel.\n\nThis one-time invitation expires in ${expiresInDays} days. If you were not expecting it, you can safely ignore this email.`;
 
   return {
     subject,

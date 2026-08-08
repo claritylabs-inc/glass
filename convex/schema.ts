@@ -1112,6 +1112,7 @@ export default defineSchema({
       v.literal("bot"),
     ),
     operatorUserId: v.optional(v.id("users")),
+    glassUserId: v.optional(v.id("users")),
     displayName: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -3156,6 +3157,9 @@ export default defineSchema({
     slackConnectionId: v.optional(v.id("slackWorkspaceConnections")),
     slackChannelId: v.optional(v.string()),
     slackThreadTs: v.optional(v.string()),
+    slackConversationKind: v.optional(
+      v.union(v.literal("channel"), v.literal("direct_message")),
+    ),
     slackState: v.optional(
       v.union(
         v.literal("active"),
@@ -3301,6 +3305,7 @@ export default defineSchema({
     senderTeamId: v.optional(v.string()),
     senderUserId: v.string(),
     senderDisplayName: v.optional(v.string()),
+    senderEmail: v.optional(v.string()),
     senderIsBot: v.optional(v.boolean()),
     content: v.string(),
     attachment: v.optional(
@@ -3324,6 +3329,7 @@ export default defineSchema({
       ),
     ),
     eventType: v.union(v.literal("message"), v.literal("edit")),
+    isDirectMessage: v.optional(v.boolean()),
     isPrimaryChannel: v.boolean(),
     mentionsGlass: v.boolean(),
     mentionedBotUserId: v.optional(v.string()),

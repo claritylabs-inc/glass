@@ -120,7 +120,7 @@ http.route({
     }
 
     const payload = parseSlackEventPayload(rawPayload);
-    if (!payload || payload.isBotEcho || payload.isDirectMessage) {
+    if (!payload || payload.isBotEcho) {
       return jsonResponse({ ok: true, ignored: true });
     }
     const timestamp =
@@ -139,6 +139,7 @@ http.route({
       content: payload.content,
       attachments: payload.attachments,
       eventType: payload.eventType,
+      isDirectMessage: payload.isDirectMessage,
       receivedAt: Number.isFinite(timestamp) ? timestamp : dayjs().valueOf(),
     });
     return jsonResponse({ ok: true });

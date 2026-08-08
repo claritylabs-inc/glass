@@ -44,7 +44,7 @@ describe("sidebar menu items", () => {
     expect(mainSidebar).not.toContain('label="Ask Glass"');
     expect(mainSidebar).toContain('label="Archived"');
     expect(mainSidebar.indexOf('label="New Chat"')).toBeLessThan(
-      mainSidebar.indexOf("imessageConversations.map"),
+      mainSidebar.indexOf("pinnedConversations.map"),
     );
     expect(mainSidebar.indexOf("agentConversations.map")).toBeLessThan(
       mainSidebar.indexOf('label="Archived"'),

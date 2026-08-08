@@ -89,6 +89,7 @@ before(async () => {
           id: "U-CUSTOMER",
           team_id: "T-CUSTOMER",
           real_name: "Customer Admin",
+          profile: { email: "admin@customer.test" },
         },
       });
     }
@@ -194,6 +195,7 @@ describe("native Slack worker HTTP adapter", () => {
       teamId: "T-CUSTOMER",
       userId: "U-CUSTOMER",
       displayName: "Customer Admin",
+      email: "admin@customer.test",
       isBot: false,
       botUserId: "U-GLASS",
     });

@@ -8,6 +8,7 @@ export type ThreadDisplayLike = {
   lastMessageAt?: number;
   originChannel?: "chat" | "email" | "imessage" | "slack";
   threadPhone?: string;
+  slackConversationKind?: "channel" | "direct_message";
 };
 
 export type ThreadConversationItem = {
@@ -19,6 +20,7 @@ export type ThreadConversationItem = {
 
 export const SIDEBAR_AGENT_THREAD_LIMIT = 8;
 export const SIDEBAR_IMESSAGE_THREAD_LIMIT = 8;
+export const SIDEBAR_SLACK_THREAD_LIMIT = 8;
 
 export function isImessageThread(thread: ThreadDisplayLike) {
   return (
@@ -53,9 +55,9 @@ export function toThreadConversationItem(
     ? "imessage"
     : thread.originChannel === "slack"
       ? "slack"
-    : thread.originChannel === "email"
-      ? "email"
-      : "chat";
+      : thread.originChannel === "email"
+        ? "email"
+        : "chat";
 
   return {
     kind,
@@ -70,19 +72,31 @@ export function splitThreadConversations(
   limits: {
     agentLimit?: number;
     imessageLimit?: number;
+    slackLimit?: number;
   } = {},
 ) {
   const agentLimit = limits.agentLimit ?? SIDEBAR_AGENT_THREAD_LIMIT;
   const imessageLimit =
     limits.imessageLimit ?? SIDEBAR_IMESSAGE_THREAD_LIMIT;
+  const slackLimit = limits.slackLimit ?? SIDEBAR_SLACK_THREAD_LIMIT;
   const agentConversations: ThreadConversationItem[] = [];
-  const imessageConversations: ThreadConversationItem[] = [];
+  const pinnedConversations: ThreadConversationItem[] = [];
+  let imessageCount = 0;
+  let slackCount = 0;
 
   for (const thread of threads ?? []) {
     const item = toThreadConversationItem(thread);
     if (item.kind === "imessage") {
-      if (imessageConversations.length < imessageLimit) {
-        imessageConversations.push(item);
+      if (imessageCount < imessageLimit) {
+        pinnedConversations.push(item);
+        imessageCount += 1;
+      }
+      continue;
+    }
+    if (item.kind === "slack") {
+      if (slackCount < slackLimit) {
+        pinnedConversations.push(item);
+        slackCount += 1;
       }
       continue;
     }
@@ -92,5 +106,5 @@ export function splitThreadConversations(
     }
   }
 
-  return { agentConversations, imessageConversations };
+  return { agentConversations, pinnedConversations };
 }

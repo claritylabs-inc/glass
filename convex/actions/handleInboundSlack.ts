@@ -78,6 +78,7 @@ async function enrichActor(
     teamId?: string;
     userId?: string;
     displayName?: string;
+    email?: string;
     isBot?: boolean;
     botUserId?: string;
     error?: string;
@@ -96,6 +97,7 @@ async function enrichActor(
     eventId: event._id,
     senderTeamId: actor.teamId,
     senderDisplayName: actor.displayName,
+    senderEmail: actor.email,
     senderIsBot: actor.isBot,
     installationBotUserId: actor.botUserId,
   });

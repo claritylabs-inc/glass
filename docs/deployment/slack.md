@@ -54,8 +54,9 @@ scopes:
 - `chat:write`
 - `channels:read`, `channels:history`
 - `groups:read`, `groups:history`, `groups:write`
+- `im:history`
 - `files:read`, `files:write`
-- `users:read`
+- `users:read`, `users:read.email`
 - `conversations.connect:write`
 
 Customer OAuth requests the narrower set in
@@ -164,8 +165,17 @@ Primary-channel messages are canonical from connection onward. A mention starts
 or resumes AI, unmentioned customer replies continue an active thread, an
 operator reply pauses AI, and `@Glass resolve` closes the thread. Outside the
 primary channel, only mentions and active-thread replies are retained. A human
-request posts only a content-free link notice into the primary channel. DMs are
-unsupported.
+request posts only a content-free link notice into the primary channel.
+
+The App Home Messages tab provides one continuous direct conversation between
+Glass and each customer workspace member. DMs do not require an `@Glass`
+mention, are keyed by the Slack DM channel rather than each message timestamp,
+and receive top-level replies. `users.info` returns the profile email under the
+required `users:read.email` scope. When that email matches a current Glass user
+with membership in the connected client org, Convex records the web mirror as
+`visibility: "user_private"` with that user as `createdBy`; otherwise the DM
+continues in Slack but remains absent from the shared web tenant. Multiparty DMs
+remain unsupported.
 
 ## Policy-delivery migration
 
@@ -187,9 +197,11 @@ The verifier must return zero missing owners before a later narrowing release.
 ## Rollout and rollback
 
 Roll out local fixture, staging test app/workspace, then production. For each
-live lane verify OAuth, native signature rejection/acceptance, uninstall and
-reinstall, Connect actor identity, mentions, thread replies, edits, multiple
-inbound files, outbound PDF upload, proactive alerts, and policy delivery.
+live lane apply the complete manifest, reconnect both host and customer
+installations for the added scopes, and verify OAuth, native signature
+rejection/acceptance, uninstall and reinstall, Connect actor identity, App Home
+DMs, mentions, thread replies, edits, multiple inbound files, outbound PDF
+upload, proactive alerts, and policy delivery.
 
 Before progression run Slack-focused tests, worker build/tests, root and Convex
 typechecks, lint, build, worker checks, deployment health, and
