@@ -6,6 +6,7 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { SLACK_INSTALL_INVITE_EXPIRATION_DAYS } from "@/convex/lib/slackOAuthPolicy";
 import { ClientEmailRoutingSection } from "@/components/settings/client-email-routing-section";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
@@ -286,6 +287,9 @@ export function AgentChannelsSection({
     api.agentChannels.bindPrimaryChannelForOperator,
   );
   const beginOAuth = useAction(api.actions.slackOAuth.begin);
+  const sendSlackInstallInvite = useAction(
+    api.actions.slackOAuth.sendInstallInvite,
+  );
   const disconnect = useAction(api.actions.slackOAuth.disconnect);
   const provisionPrimary = useAction(
     api.actions.slackOnboarding.createPrimaryChannel,
@@ -365,6 +369,26 @@ export function AgentChannelsSection({
     }
   }
 
+  async function sendInstallInvite() {
+    setBusy("install-invite");
+    try {
+      const result = await sendSlackInstallInvite({
+        clientOrgId,
+        recipientEmail: inviteEmail,
+      });
+      toast.success(`Slack install invite sent to ${result.recipientEmail}`);
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(
+          error,
+          "The Slack install invite could not be sent",
+        ),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function createPrimary() {
     setBusy("provision");
     try {
@@ -430,6 +454,9 @@ export function AgentChannelsSection({
   const channelLinked = !!primaryChannel?.customerChannelId;
   const slackReady = !!connection && channelLinked && !slackNeedsReinstall;
   const isMockSlack = result?.slackMode === "mock";
+  const canSendSlackInstallInvite = Boolean(
+    primaryChannel && !connection && isOperator && !isMockSlack,
+  );
 
   useEffect(() => {
     if (!result || !settings) {
@@ -446,6 +473,16 @@ export function AgentChannelsSection({
           <Loader2 className="size-3.5 animate-spin" />
         ) : null}
         Create and invite
+      </PillButton>
+    ) : canSendSlackInstallInvite ? (
+      <PillButton
+        onClick={() => void sendInstallInvite()}
+        disabled={busy !== null || !inviteEmail.trim()}
+      >
+        {busy === "install-invite" ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : null}
+        Send install invite
       </PillButton>
     ) : primaryChannel && !connection && (!isOperator || isMockSlack) ? (
       <PillButton onClick={() => void install()} disabled={busy !== null}>
@@ -600,10 +637,39 @@ export function AgentChannelsSection({
             </p>
           )
         ) : !connection ? (
-          <p className="text-base text-muted-foreground">
-            Install Glass in the client workspace for #
-            {primaryChannel.channelName}.
-          </p>
+          canSendSlackInstallInvite ? (
+            <FormSection
+              title="Invite a Slack admin"
+              description={`Send a secure email to install the Glass Slack app for #${primaryChannel.channelName}.`}
+              divided={false}
+            >
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="slack-install-invite-email"
+                  className="text-label text-muted-foreground"
+                >
+                  Client admin email
+                </label>
+                <Input
+                  id="slack-install-invite-email"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  placeholder="admin@client.com"
+                  autoComplete="email"
+                />
+                <p className="text-label text-muted-foreground">
+                  The one-time install link expires in{" "}
+                  {SLACK_INSTALL_INVITE_EXPIRATION_DAYS} days.
+                </p>
+              </div>
+            </FormSection>
+          ) : (
+            <p className="text-base text-muted-foreground">
+              Install Glass in the client workspace for #
+              {primaryChannel.channelName}.
+            </p>
+          )
         ) : slackNeedsReinstall ? (
           <p className="text-base text-muted-foreground">
             {connection.teamName} is missing required Slack permissions.
@@ -702,6 +768,7 @@ export function AgentChannelsSection({
     activeDrawer,
     busy,
     canEdit,
+    canSendSlackInstallInvite,
     clientSlug,
     clientOrgId,
     connection,
