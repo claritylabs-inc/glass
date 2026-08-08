@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { openOAuthTab } from "@/lib/oauth-tab";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
@@ -320,6 +321,12 @@ export function AgentChannelsSection({
   }
 
   async function install() {
+    const oauthTab = isMockSlack ? null : openOAuthTab();
+    if (!isMockSlack && !oauthTab) {
+      toast.error("Allow pop-ups for Glass to connect Slack in a new tab");
+      return;
+    }
+
     setBusy("oauth");
     try {
       const { url } = await beginOAuth({
@@ -328,14 +335,17 @@ export function AgentChannelsSection({
       });
       if (!url) {
         toast.success(connection ? "Glass reinstalled" : "Slack connected");
-        setBusy(null);
         return;
       }
-      window.location.assign(url);
+      if (!oauthTab?.navigate(url)) {
+        throw new Error("The Slack setup tab was closed. Try again.");
+      }
     } catch (error) {
+      oauthTab?.close();
       toast.error(
         getUserFacingErrorMessage(error, "Slack setup could not start"),
       );
+    } finally {
       setBusy(null);
     }
   }
