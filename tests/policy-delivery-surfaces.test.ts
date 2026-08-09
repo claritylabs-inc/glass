@@ -50,6 +50,9 @@ describe("policy delivery automation surfaces", () => {
     const agentChannels = read(
       "components/settings/agent-channels-section.tsx",
     );
+    const slackConnectionFields = read(
+      "components/settings/slack-connection-fields.tsx",
+    );
     const channelDrawerStart = agentChannels.indexOf(
       "useEffect(() =>",
       agentChannels.indexOf("const isMockSlack"),
@@ -85,20 +88,22 @@ describe("policy delivery automation surfaces", () => {
     expect(channelDrawer).toContain("<ClientEmailRoutingSection");
     expect(channelDrawer).toContain('title="Available by iMessage"');
     expect(channelDrawer).toContain('title="Available in Slack"');
-    expect(agentChannels).toContain('id="slack-workspace-name"');
-    expect(agentChannels).toContain('id="slack-channel-name"');
-    expect(agentChannels).toContain("useLocalFirstAutoSave");
-    expect(agentChannels).toContain("listAvailableChannels");
-    expect(agentChannels).toContain("selectPrimaryChannel");
-    expect(agentChannels).toContain("`#${selectedChannel.name}`");
-    expect(agentChannels).toContain("<SelectItem");
+    expect(slackConnectionFields).toContain('id="slack-workspace-name"');
+    expect(slackConnectionFields).toContain('id="slack-channel-name"');
+    expect(slackConnectionFields).toContain("useLocalFirstAutoSave");
+    expect(slackConnectionFields).toContain("listAvailableChannels");
+    expect(slackConnectionFields).toContain("selectAutomaticChannel");
+    expect(slackConnectionFields).toContain("`#${selectedChannel.name}`");
+    expect(slackConnectionFields).toContain("<SelectItem");
     expect(channelDrawer).toContain('title="Vendor alerts"');
     expect(channelDrawer).toContain('title="Policy and endorsement delivery"');
     expect(channelList).not.toContain('title="Vendor alerts"');
     expect(channelList).not.toContain(
       'title="Policy and endorsement delivery"',
     );
-    expect(agentChannels).toContain("Select a channel.");
+    expect(slackConnectionFields).toContain(
+      "Automatic alerts and document deliveries go only to this channel.",
+    );
     expect(delivery).toContain('title="Automatic policy delivery"');
     expect(delivery).toContain("Customize for this client");
     expect(delivery).toContain("Rules are checked in order");

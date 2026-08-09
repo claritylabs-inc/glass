@@ -13,6 +13,7 @@ import {
   slackNotificationCategory,
 } from "./notificationTypes";
 import { resolveChannelPreference } from "../notificationPreferences";
+import { resolveSlackAutomaticChannelId } from "./slackChannelRouting";
 
 export interface NotifyArgs {
   orgId: Id<"organizations">;
@@ -222,7 +223,7 @@ export const notifyInternal = internalMutation({
             )
             .first()
         : null;
-      if (connection && primary) {
+      if (connection && resolveSlackAutomaticChannelId(connection, primary)) {
         await ctx.db.patch(notificationId, { slackStatus: "scheduled" });
         await ctx.scheduler.runAfter(
           0,

@@ -167,7 +167,6 @@ export const sendInstallInvite = action({
     );
     const email = buildSlackInstallInviteEmail({
       clientName: context.clientName,
-      channelName: context.channelName,
       installUrl: customerOAuthUrl(state),
       expiresInDays: SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
       siteUrl: getAuthSiteUrl(),

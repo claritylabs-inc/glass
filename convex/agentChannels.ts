@@ -95,16 +95,26 @@ async function channelOverview(
     readSettings(ctx, clientOrgId),
     activeConnection(ctx, clientOrgId),
   ]);
-  const primaryChannel = await ctx.db
+  const supportChannel = await ctx.db
     .query("slackChannelBindings")
     .withIndex("by_clientOrgId_and_status", (q) =>
       q.eq("clientOrgId", clientOrgId).eq("status", "active"),
     )
     .first();
+  const joinedChannels = connection
+    ? await ctx.db
+        .query("slackChannelMemberships")
+        .withIndex("by_connectionId_and_status", (q) =>
+          q.eq("connectionId", connection._id).eq("status", "active"),
+        )
+        .collect()
+    : [];
   return {
     settings: settingsInput(settings),
     connection,
-    primaryChannel,
+    primaryChannel: supportChannel,
+    supportChannel,
+    joinedChannels,
     slackMode: getSlackHostConfiguration().mode,
   };
 }
@@ -379,25 +389,11 @@ export const authorizeSlackInstallInvite = internalQuery({
     if (!profile || profile.status !== "active") {
       throwUserFacingError(userFacingErrorCodes.operatorRequired);
     }
-    const [connection, primaryChannel] = await Promise.all([
-      activeConnection(ctx, args.clientOrgId),
-      ctx.db
-        .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
-          q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
-        )
-        .first(),
-    ]);
+    const connection = await activeConnection(ctx, args.clientOrgId);
     if (connection) {
       throw new Error("This client already has an active Slack workspace");
     }
-    if (!primaryChannel) {
-      throw new Error("Create the client Slack channel before sending an invite");
-    }
-    return {
-      clientName: org.name,
-      channelName: primaryChannel.channelName,
-    };
+    return { clientName: org.name };
   },
 });
 
@@ -711,6 +707,7 @@ export const upsertSlackConnection = internalMutation({
         installedByUserId: args.installedByUserId,
         installedByOperatorUserId: args.installedByOperatorUserId,
         thirdPartyVisibilityAcknowledged: true,
+        automaticChannelRoutingConfiguredAt: now,
         createdAt: now,
         updatedAt: now,
       });
@@ -840,8 +837,11 @@ export const bindPrimaryChannelForOperator = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const connection = await activeConnection(ctx, args.clientOrgId);
-    if (!connection)
-      throw new Error("Connect the customer Slack workspace first");
+    if (args.customerChannelId && !connection) {
+      throw new Error(
+        "Connect the customer Slack workspace before linking its support-channel mirror",
+      );
+    }
     const existing = await ctx.db
       .query("slackChannelBindings")
       .withIndex("by_clientOrgId_and_status", (q) =>
@@ -852,6 +852,7 @@ export const bindPrimaryChannelForOperator = mutation({
     let bindingId = existing?._id;
     if (existing) {
       await ctx.db.patch(existing._id, {
+        connectionId: connection?._id,
         hostTeamId: args.hostTeamId,
         hostChannelId: args.hostChannelId,
         customerChannelId: args.customerChannelId,
@@ -860,7 +861,7 @@ export const bindPrimaryChannelForOperator = mutation({
       });
     } else {
       bindingId = await ctx.db.insert("slackChannelBindings", {
-        connectionId: connection._id,
+        connectionId: connection?._id,
         clientOrgId: args.clientOrgId,
         kind: "primary",
         hostTeamId: args.hostTeamId,
@@ -940,45 +941,204 @@ export const bindPrimaryChannelInternal = internalMutation({
   },
 });
 
-export const selectPrimarySlackChannelInternal = internalMutation({
+export const syncSlackChannelMembershipsInternal = internalMutation({
   args: {
     clientOrgId: v.id("organizations"),
     connectionId: v.id("slackWorkspaceConnections"),
-    customerChannelId: v.string(),
-    channelName: v.string(),
-    actorUserId: v.id("users"),
-    actorKind: v.union(v.literal("client_admin"), v.literal("operator")),
+    channels: v.array(
+      v.object({
+        id: v.string(),
+        name: v.string(),
+        isPrivate: v.boolean(),
+        isShared: v.boolean(),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
-    const binding = await ctx.db
+    const connection = await ctx.db.get(args.connectionId);
+    if (
+      !connection ||
+      connection.status !== "active" ||
+      connection.clientOrgId !== args.clientOrgId
+    ) {
+      throw new Error("The Slack workspace is not connected");
+    }
+    const now = dayjs().valueOf();
+    const activeIds = new Set(args.channels.map((channel) => channel.id));
+    const existing = await ctx.db
+      .query("slackChannelMemberships")
+      .withIndex("by_connectionId_and_status", (q) =>
+        q.eq("connectionId", args.connectionId).eq("status", "active"),
+      )
+      .collect();
+    for (const channel of args.channels) {
+      const membership = await ctx.db
+        .query("slackChannelMemberships")
+        .withIndex("by_connectionId_and_channelId", (q) =>
+          q.eq("connectionId", args.connectionId).eq("channelId", channel.id),
+        )
+        .first();
+      if (membership) {
+        await ctx.db.patch(membership._id, {
+          channelName: channel.name,
+          isPrivate: channel.isPrivate,
+          isShared: channel.isShared,
+          status: "active",
+          lastSyncedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        await ctx.db.insert("slackChannelMemberships", {
+          connectionId: args.connectionId,
+          clientOrgId: args.clientOrgId,
+          channelId: channel.id,
+          channelName: channel.name,
+          isPrivate: channel.isPrivate,
+          isShared: channel.isShared,
+          status: "active",
+          lastSyncedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+    for (const membership of existing) {
+      if (!activeIds.has(membership.channelId)) {
+        await ctx.db.patch(membership._id, {
+          status: "removed",
+          lastSyncedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+    if (
+      connection.automaticChannelRoutingConfiguredAt !== undefined &&
+      connection.automaticChannelId &&
+      !activeIds.has(connection.automaticChannelId)
+    ) {
+      await ctx.db.patch(connection._id, {
+        automaticChannelId: undefined,
+        automaticChannelName: undefined,
+        updatedAt: now,
+      });
+    }
+
+    const supportChannel = await ctx.db
       .query("slackChannelBindings")
       .withIndex("by_clientOrgId_and_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
       )
       .first();
-    if (!binding) throw new Error("The primary Slack channel was not found");
-    await ctx.db.patch(binding._id, {
-      connectionId: args.connectionId,
-      customerChannelId: args.customerChannelId,
-      channelName: args.channelName,
-      updatedAt: dayjs().valueOf(),
+    let supportChannelId = supportChannel?.customerChannelId;
+    if (supportChannel && supportChannelId) {
+      const mappedChannel = args.channels.find(
+        (channel) => channel.id === supportChannelId,
+      );
+      if (!mappedChannel?.isShared) {
+        supportChannelId = undefined;
+        await ctx.db.patch(supportChannel._id, {
+          customerChannelId: undefined,
+          updatedAt: now,
+        });
+      }
+    }
+    if (supportChannel && !supportChannelId) {
+      const normalizedSupportName = supportChannel.channelName
+        .replace(/^#/, "")
+        .trim()
+        .toLowerCase();
+      const matches = args.channels.filter(
+        (channel) =>
+          channel.isShared &&
+          channel.name.trim().toLowerCase() === normalizedSupportName,
+      );
+      if (matches.length === 1) {
+        supportChannelId = matches[0].id;
+        await ctx.db.patch(supportChannel._id, {
+          connectionId: args.connectionId,
+          customerChannelId: supportChannelId,
+          updatedAt: now,
+        });
+      }
+    }
+    return { supportChannelId };
+  },
+});
+
+export const selectAutomaticSlackChannelInternal = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    channelId: v.string(),
+    channelName: v.string(),
+    actorUserId: v.id("users"),
+    actorKind: v.union(v.literal("client_admin"), v.literal("operator")),
+  },
+  handler: async (ctx, args) => {
+    const connection = await ctx.db.get(args.connectionId);
+    if (
+      !connection ||
+      connection.status !== "active" ||
+      connection.clientOrgId !== args.clientOrgId
+    ) {
+      throw new Error("The Slack workspace is not connected");
+    }
+    const membership = await ctx.db
+      .query("slackChannelMemberships")
+      .withIndex("by_connectionId_and_channelId", (q) =>
+        q.eq("connectionId", args.connectionId).eq("channelId", args.channelId),
+      )
+      .first();
+    if (!membership || membership.status !== "active") {
+      throw new Error("Select a Slack channel that Glass has joined");
+    }
+    const now = dayjs().valueOf();
+    await ctx.db.patch(connection._id, {
+      automaticChannelId: args.channelId,
+      automaticChannelName: args.channelName,
+      automaticChannelRoutingConfiguredAt: now,
+      updatedAt: now,
     });
     if (args.actorKind === "operator") {
       await writeOperatorAudit(ctx, {
         operatorUserId: args.actorUserId,
         type: "setup_write",
         targetOrgId: args.clientOrgId,
-        summary: `Selected #${args.channelName} as the primary Slack channel`,
+        summary: `Selected #${args.channelName} for automatic Slack messages`,
         metadata: {
           connectionId: args.connectionId,
-          previousCustomerChannelId: binding.customerChannelId,
-          customerChannelId: args.customerChannelId,
-          previousChannelName: binding.channelName,
+          previousChannelId: connection.automaticChannelId,
+          channelId: args.channelId,
+          previousChannelName: connection.automaticChannelName,
           channelName: args.channelName,
         },
       });
     }
-    return binding._id;
+    return connection._id;
+  },
+});
+
+export const recordSlackChannelJoinedInternal = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    channelId: v.string(),
+    channelName: v.string(),
+    actorUserId: v.id("users"),
+    actorKind: v.union(v.literal("client_admin"), v.literal("operator")),
+  },
+  handler: async (ctx, args) => {
+    if (args.actorKind !== "operator") return;
+    await writeOperatorAudit(ctx, {
+      operatorUserId: args.actorUserId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: `Added Glass to #${args.channelName}`,
+      metadata: {
+        connectionId: args.connectionId,
+        channelId: args.channelId,
+      },
+    });
   },
 });
 

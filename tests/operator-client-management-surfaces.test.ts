@@ -94,6 +94,9 @@ describe("operator client management surfaces", () => {
     const clientChannels = read(
       "components/settings/agent-channels-section.tsx",
     );
+    const slackConnectionFields = read(
+      "components/settings/slack-connection-fields.tsx",
+    );
     const sidebar = read("app/operator/operator-sidebar.tsx");
 
     expect(operatorChannels).toContain("getSlackHostStatus");
@@ -136,6 +139,14 @@ describe("operator client management surfaces", () => {
     expect(clientChannels).not.toContain("getSlackHostStatus");
     expect(clientChannels).not.toContain("beginHost");
     expect(clientChannels).not.toContain("setOperatorSlackIdentity");
+    expect(slackConnectionFields).toContain("Automatic messages channel");
+    expect(slackConnectionFields).toContain(
+      "Glass responds to mentions and active threads in every channel shown",
+    );
+    expect(clientChannels).toContain(
+      "Clarity Labs creates and invites this Slack Connect channel for human support",
+    );
+    expect(slackConnectionFields).toContain("Add Glass to a public channel");
   });
 
   it("shows a pending service channel before the client connects", () => {
@@ -146,6 +157,9 @@ describe("operator client management surfaces", () => {
     );
 
     expect(overview).toContain('withIndex("by_clientOrgId_and_status"');
-    expect(overview).not.toContain('withIndex("by_connectionId_and_status"');
+    expect(overview.indexOf("const supportChannel")).toBeLessThan(
+      overview.indexOf("const joinedChannels = connection"),
+    );
+    expect(overview).toContain("primaryChannel: supportChannel");
   });
 });

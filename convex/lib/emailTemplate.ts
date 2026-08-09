@@ -284,24 +284,17 @@ export function buildEmailChangeOtpEmail(token: string, siteUrl: string = SITE_U
 
 export function buildSlackInstallInviteEmail({
   clientName,
-  channelName,
   installUrl,
   expiresInDays = SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
   siteUrl = SITE_URL,
 }: {
   clientName: string;
-  channelName: string;
   installUrl: string;
   expiresInDays?: number;
   siteUrl?: string;
 }): { html: string; text: string; subject: string } {
   const normalizedClientName = clientName.replace(/[\r\n]+/g, " ").trim();
-  const normalizedChannelName = channelName
-    .replace(/^#/, "")
-    .replace(/[\r\n]+/g, " ")
-    .trim();
   const safeClientName = escapeHtml(normalizedClientName);
-  const safeChannelName = escapeHtml(normalizedChannelName);
   const safeInstallUrl = escapeHtml(installUrl);
   const subject = `Install the Glass Slack app for ${normalizedClientName}`;
   const bodyHtml = `
@@ -312,7 +305,7 @@ export function buildSlackInstallInviteEmail({
 </td></tr>
 <tr><td style="padding:12px 40px 0 40px;">
   <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#4b5563;line-height:1.6;">
-    Glass is a Slack app that helps your team work with policies, documents, and insurance requests in <strong class="glass-email-text-secondary" style="color:#374151;">#${safeChannelName}</strong> or a private 1:1 message.
+    Install the Glass app once in your workspace to work with policies, documents, and insurance requests in private 1:1 messages or any channels where you add it.
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
@@ -332,14 +325,14 @@ export function buildSlackInstallInviteEmail({
     </tr>
     <tr>
       <td valign="top" class="glass-email-text-primary" style="width:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;color:#000000;line-height:1.6;">3.</td>
-      <td valign="top" class="glass-email-text-secondary" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.6;">Add <strong class="glass-email-text-secondary" style="color:#374151;">@Glass</strong> to <strong class="glass-email-text-secondary" style="color:#374151;">#${safeChannelName}</strong> so it can respond there.</td>
+      <td valign="top" class="glass-email-text-secondary" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.6;">Add <strong class="glass-email-text-secondary" style="color:#374151;">@Glass</strong> to any channels where you want it to respond.</td>
     </tr>
   </table>
 </td></tr>
 <tr><td style="padding:24px 40px 0 40px;">
   <div class="glass-email-surface" style="padding:12px 14px;background-color:#f5f5f5;border-radius:8px;">
     <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#4b5563;line-height:1.6;">
-      Direct messages stay between that Slack member and Glass. Everyone in a channel can see messages and responses posted in that channel.
+      Clarity Labs sets up your shared support channel separately. You can also add Glass to as many other channels as your team needs. Direct messages stay between that Slack member and Glass; everyone in a channel can see messages and responses posted there.
     </p>
   </div>
 </td></tr>
@@ -353,7 +346,7 @@ export function buildSlackInstallInviteEmail({
     This one-time invitation expires in ${expiresInDays} days. If you were not expecting it, you can safely ignore this email.
   </p>
 </td></tr>`;
-  const text = `Install Glass for ${normalizedClientName} in Slack\n\nGlass is a Slack app that helps your team work with policies, documents, and insurance requests in #${normalizedChannelName} or a private 1:1 message.\n\n1. Open the install link: ${installUrl}\n2. Choose the ${normalizedClientName} Slack workspace.\n3. Review the requested permissions, then allow the Glass Slack app.\n4. Add @Glass to #${normalizedChannelName} so it can respond there.\n\nDirect messages stay between that Slack member and Glass. Everyone in a channel can see messages and responses posted in that channel.\n\nThis one-time invitation expires in ${expiresInDays} days. If you were not expecting it, you can safely ignore this email.`;
+  const text = `Install Glass for ${normalizedClientName} in Slack\n\nInstall the Glass app once in your workspace to work with policies, documents, and insurance requests in private 1:1 messages or any channels where you add it.\n\n1. Open the install link: ${installUrl}\n2. Choose the ${normalizedClientName} Slack workspace.\n3. Review the requested permissions, then allow the Glass Slack app.\n4. Add @Glass to any channels where you want it to respond.\n\nClarity Labs sets up your shared support channel separately. You can also add Glass to as many other channels as your team needs. Direct messages stay between that Slack member and Glass; everyone in a channel can see messages and responses posted there.\n\nThis one-time invitation expires in ${expiresInDays} days. If you were not expecting it, you can safely ignore this email.`;
 
   return {
     subject,

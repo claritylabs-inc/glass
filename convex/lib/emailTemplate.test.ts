@@ -42,7 +42,6 @@ describe("Slack install invitation email", () => {
   test("uses the shared Glass shell and Slack's official install button", () => {
     const email = buildSlackInstallInviteEmail({
       clientName: "Cove & Co.",
-      channelName: "#glass-cove",
       installUrl:
         "https://slack.com/oauth/v2/authorize?client_id=client&state=secret",
       siteUrl: "https://app.example.test",
@@ -51,9 +50,14 @@ describe("Slack install invitation email", () => {
     expect(email.subject).toBe("Install the Glass Slack app for Cove & Co.");
     expect(email.html).toContain("<!DOCTYPE html>");
     expect(email.html).toContain("Glass</span>");
-    expect(email.html).toContain("Glass is a Slack app");
+    expect(email.html).toContain("Install the Glass app once in your workspace");
     expect(email.html).toContain("Cove &amp; Co.");
-    expect(email.html).toContain("#glass-cove");
+    expect(email.html).toContain(
+      "Clarity Labs sets up your shared support channel separately",
+    );
+    expect(email.html).toContain(
+      "add Glass to as many other channels as your team needs",
+    );
     expect(email.html).toContain(
       "https://platform.slack-edge.com/img/add_to_slack.png",
     );
@@ -66,8 +70,13 @@ describe("Slack install invitation email", () => {
     );
     expect(email.html).toContain("This one-time invitation expires in 7 days");
     expect(email.text).toContain("Choose the Cove & Co. Slack workspace");
-    expect(email.text).toContain("Add @Glass to #glass-cove");
+    expect(email.text).toContain(
+      "Add @Glass to any channels where you want it to respond",
+    );
+    expect(email.text).not.toContain("#glass-cove");
     expect(email.text).toContain("private 1:1 message");
-    expect(email.text).toContain("Direct messages stay between that Slack member and Glass");
+    expect(email.text).toContain(
+      "Direct messages stay between that Slack member and Glass",
+    );
   });
 });

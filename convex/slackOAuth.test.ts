@@ -93,7 +93,7 @@ function slackTokenResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Slack OAuth actions", () => {
-  test("lets an operator email a seven-day Slack app install invitation", async () => {
+  test("lets an operator invite installation before the support channel exists", async () => {
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
     vi.stubEnv("GLASS_ENV", "local");
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -112,16 +112,6 @@ describe("Slack OAuth actions", () => {
         userId,
         email: "operator@glass.insure",
         role: "operator",
-        status: "active",
-        createdAt: 1,
-        updatedAt: 1,
-      });
-      await ctx.db.insert("slackChannelBindings", {
-        clientOrgId: orgId,
-        kind: "primary",
-        hostTeamId: "T-CLARITY",
-        hostChannelId: "C-HOST",
-        channelName: "glass-cove",
         status: "active",
         createdAt: 1,
         updatedAt: 1,
@@ -146,11 +136,13 @@ describe("Slack OAuth actions", () => {
     expect(capture).toContain(
       "subject: Install the Glass Slack app for Cove & Co.",
     );
-    expect(capture).toContain("Glass is a Slack app");
+    expect(capture).toContain("Install the Glass app once in your workspace");
     expect(capture).toContain(
       "https://platform.slack-edge.com/img/add_to_slack.png",
     );
-    expect(capture).toContain("#glass-cove");
+    expect(capture).toContain(
+      "Clarity Labs sets up your shared support channel separately",
+    );
 
     const records = await t.run(async (ctx) => ({
       state: await ctx.db.query("slackOAuthStates").first(),

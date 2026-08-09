@@ -91,6 +91,8 @@ function slackWorkerHealth() {
     outboundEnabled: true,
     actorResolutionEnabled: true,
     connectProvisioningEnabled: true,
+    channelInventoryEnabled: true,
+    publicChannelJoinEnabled: true,
   };
 }
 

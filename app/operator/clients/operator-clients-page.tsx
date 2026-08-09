@@ -526,9 +526,9 @@ export default function OperatorClientsScreen() {
                 channelOverview ? (
                   channelOverview.connection ? (
                     `${channelOverview.connection.teamName}${
-                      channelOverview.primaryChannel
-                        ? ` · #${channelOverview.primaryChannel.channelName}`
-                        : " · No service channel"
+                      channelOverview.joinedChannels.length > 0
+                        ? ` · ${channelOverview.joinedChannels.length} joined ${channelOverview.joinedChannels.length === 1 ? "channel" : "channels"}`
+                        : " · No joined channels"
                     }`
                   ) : (
                     "Not connected"

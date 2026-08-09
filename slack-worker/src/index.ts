@@ -21,7 +21,24 @@ type ListChannelsRequest = {
   currentChannelId?: string;
   currentChannelName?: string;
 };
-type SlackChannel = { id: string; name: string };
+type JoinChannelRequest = { teamId: string; channelId: string };
+type SlackChannel = {
+  id: string;
+  name: string;
+  isMember: boolean;
+  isPrivate: boolean;
+  isShared: boolean;
+};
+type SlackChannelPayload = {
+  id?: string;
+  name?: string;
+  is_archived?: boolean;
+  is_member?: boolean;
+  is_private?: boolean;
+  is_shared?: boolean;
+  is_ext_shared?: boolean;
+  is_org_shared?: boolean;
+};
 type SlackInstallation = {
   teamId: string;
   botToken: string;
@@ -64,6 +81,8 @@ const actorCache = new Map<
   { actor: ActorResolution; expiresAt: number }
 >();
 const mockFailedAttachments = new Set<string>();
+const mockJoinedChannelIds = new Set<string>();
+const mockCurrentChannelsByTeam = new Map<string, SlackChannel>();
 
 if (!workerSecret) {
   console.error("SLACK_WORKER_SECRET is required");
@@ -442,28 +461,61 @@ async function createConnectChannel(input: ConnectChannelRequest) {
   };
 }
 
+function slackChannel(
+  channel: SlackChannelPayload,
+  isMember = channel.is_member === true,
+): SlackChannel | undefined {
+  if (!channel.id || !channel.name) return undefined;
+  return {
+    id: channel.id,
+    name: channel.name,
+    isMember,
+    isPrivate: channel.is_private === true,
+    isShared:
+      channel.is_shared === true ||
+      channel.is_ext_shared === true ||
+      channel.is_org_shared === true,
+  };
+}
+
+function mockSlackChannels(input: ListChannelsRequest) {
+  if (input.currentChannelId && input.currentChannelName) {
+    mockCurrentChannelsByTeam.set(input.teamId, {
+      id: input.currentChannelId,
+      name: input.currentChannelName,
+      isMember: true,
+      isPrivate: true,
+      isShared: true,
+    });
+  }
+  const currentChannel = mockCurrentChannelsByTeam.get(input.teamId);
+  const channels: SlackChannel[] = [
+    ...(currentChannel ? [currentChannel] : []),
+    {
+      id: `mock-${input.teamId}-general`,
+      name: "general",
+      isMember: mockJoinedChannelIds.has(`mock-${input.teamId}-general`),
+      isPrivate: false,
+      isShared: false,
+    },
+    {
+      id: `mock-${input.teamId}-policies`,
+      name: "policy-updates",
+      isMember: true,
+      isPrivate: false,
+      isShared: false,
+    },
+  ];
+  return channels.filter(
+    (channel, index) =>
+      channels.findIndex((candidate) => candidate.id === channel.id) === index,
+  );
+}
+
 async function listSlackChannels(input: ListChannelsRequest) {
   if (!input.teamId?.trim()) throw new Error("teamId is required");
   if (mode === "mock") {
-    const channels: SlackChannel[] = [
-      ...(input.currentChannelId && input.currentChannelName
-        ? [
-            {
-              id: input.currentChannelId,
-              name: input.currentChannelName,
-            },
-          ]
-        : []),
-      { id: `mock-${input.teamId}-general`, name: "general" },
-      { id: `mock-${input.teamId}-policies`, name: "policy-updates" },
-    ];
-    return {
-      channels: channels.filter(
-        (channel, index) =>
-          channels.findIndex((candidate) => candidate.id === channel.id) ===
-          index,
-      ),
-    };
+    return { channels: mockSlackChannels(input) };
   }
 
   const installation = await slackInstallation(input.teamId);
@@ -472,12 +524,7 @@ async function listSlackChannels(input: ListChannelsRequest) {
   do {
     const result = await slackApi<
       SlackResponse & {
-        channels?: Array<{
-          id?: string;
-          name?: string;
-          is_archived?: boolean;
-          is_member?: boolean;
-        }>;
+        channels?: SlackChannelPayload[];
         response_metadata?: { next_cursor?: string };
       }
     >("conversations.list", installation.botToken, {
@@ -487,14 +534,11 @@ async function listSlackChannels(input: ListChannelsRequest) {
       ...(cursor ? { cursor } : {}),
     });
     for (const channel of result.channels ?? []) {
-      if (
-        channel.id &&
-        channel.name &&
-        !channel.is_archived &&
-        channel.is_member
-      ) {
-        channels.push({ id: channel.id, name: channel.name });
-      }
+      const normalized = slackChannel(channel);
+      if (!normalized || channel.is_archived) continue;
+      if ((normalized.isPrivate || normalized.isShared) && !normalized.isMember)
+        continue;
+      channels.push(normalized);
     }
     cursor = result.response_metadata?.next_cursor?.trim() || undefined;
   } while (cursor);
@@ -502,6 +546,36 @@ async function listSlackChannels(input: ListChannelsRequest) {
   return {
     channels: channels.sort((a, b) => a.name.localeCompare(b.name)),
   };
+}
+
+async function joinSlackChannel(input: JoinChannelRequest) {
+  if (!input.teamId?.trim() || !input.channelId?.trim()) {
+    throw new Error("teamId and channelId are required");
+  }
+  const available = await listSlackChannels({ teamId: input.teamId });
+  const channel = available.channels.find(
+    (candidate) => candidate.id === input.channelId,
+  );
+  if (!channel) throw new Error("Slack channel is not visible to Glass");
+  if (channel.isPrivate || channel.isShared) {
+    throw new Error("Only public workspace channels can be joined from Glass");
+  }
+  if (channel.isMember) return { channel };
+
+  if (mode === "mock") {
+    mockJoinedChannelIds.add(channel.id);
+    return { channel: { ...channel, isMember: true } };
+  }
+
+  const installation = await slackInstallation(input.teamId);
+  const result = await slackApi<
+    SlackResponse & { channel?: SlackChannelPayload }
+  >("conversations.join", installation.botToken, {
+    channel: input.channelId,
+  });
+  const joined = slackChannel(result.channel ?? {}, true);
+  if (!joined) throw new Error("Slack did not return the joined channel");
+  return { channel: joined };
 }
 
 const server = http.createServer(async (request, response) => {
@@ -521,6 +595,8 @@ const server = http.createServer(async (request, response) => {
       actorResolutionEnabled: mode === "mock" || tokenBrokerConfigured,
       connectProvisioningEnabled:
         mode === "mock" || Boolean(clarityTeamId && tokenBrokerConfigured),
+      channelInventoryEnabled: mode === "mock" || tokenBrokerConfigured,
+      publicChannelJoinEnabled: mode === "mock" || tokenBrokerConfigured,
     });
   }
   if (!authorized(request))
@@ -572,6 +648,13 @@ const server = http.createServer(async (request, response) => {
         await readJson<ListChannelsRequest>(request),
       );
       return json(response, 200, result);
+    }
+    if (request.method === "POST" && request.url === "/channels/join") {
+      return json(
+        response,
+        200,
+        await joinSlackChannel(await readJson<JoinChannelRequest>(request)),
+      );
     }
     return json(response, 404, { error: "Not found" });
   } catch (error) {

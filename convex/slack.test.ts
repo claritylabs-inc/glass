@@ -12,6 +12,7 @@ import {
   failEvents,
   prepareBatch,
 } from "./slack";
+import { processDebounced } from "./actions/handleInboundSlack";
 import {
   claimOAuthState,
   createOAuthState,
@@ -44,6 +45,7 @@ const getSendTargetFn = getSendTarget as any;
 const markFailedFn = markFailed as any;
 const markSentFn = markSent as any;
 const notifyInternalFn = notifyInternal as any;
+const processDebouncedFn = processDebounced as any;
 const BASE_TIME = dayjs().add(1, "minute").valueOf();
 
 beforeEach(() => {
@@ -52,6 +54,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 async function seedSlack(t: ReturnType<typeof convexTest>) {
@@ -102,6 +106,18 @@ async function seedSlack(t: ReturnType<typeof convexTest>) {
       customerChannelId: "C-PRIMARY",
       channelName: "glass-cove",
       status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await ctx.db.insert("slackChannelMemberships", {
+      connectionId,
+      clientOrgId,
+      channelId: "C-PRIMARY",
+      channelName: "insurance-support",
+      isPrivate: false,
+      isShared: true,
+      status: "active",
+      lastSyncedAt: 1,
       createdAt: 1,
       updatedAt: 1,
     });
@@ -434,6 +450,64 @@ describe("Slack channel state and authorization", () => {
     ).toBe(true);
   });
 
+  test("ignores unrelated channel traffic until a mention opens an active thread", async () => {
+    const t = convexTest(schema, modules);
+    const { connectionId } = await seedSlack(t);
+    const threadTs = "1800000000.333";
+
+    const quiet = await ingest(t, {
+      eventKey: "off-channel-quiet",
+      channelId: "C-POLICIES",
+      threadTs,
+      content: "Can someone review this?",
+    });
+    expect(quiet.claim).toMatchObject({ status: "ignored" });
+    expect(quiet.claim.eventId).toBeUndefined();
+    await expect(
+      t.run((ctx) => ctx.db.query("slackInboundEvents").collect()),
+    ).resolves.toHaveLength(0);
+
+    const mentioned = await ingest(t, {
+      eventKey: "off-channel-mentioned",
+      channelId: "C-POLICIES",
+      threadTs,
+      content: "<@U-GLASS> review this policy",
+    });
+    expect(mentioned.prepared).not.toBeNull();
+    const continued = await ingest(t, {
+      eventKey: "off-channel-continued",
+      channelId: "C-POLICIES",
+      threadTs,
+      content: "What about the deductible?",
+    });
+    expect(continued.prepared).not.toBeNull();
+
+    const state = await t.run(async (ctx) => {
+      const thread = await ctx.db
+        .query("threads")
+        .withIndex(
+          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          (q) =>
+            q
+              .eq("slackConnectionId", connectionId)
+              .eq("slackChannelId", "C-POLICIES")
+              .eq("slackThreadTs", threadTs),
+        )
+        .unique();
+      return {
+        thread,
+        messages: thread
+          ? await ctx.db
+              .query("threadMessages")
+              .withIndex("by_threadId", (q) => q.eq("threadId", thread._id))
+              .collect()
+          : [],
+      };
+    });
+    expect(state.thread?.title).toBe("Slack #C-POLICIES — U-CUSTOMER");
+    expect(state.messages.filter((message) => message.role === "user")).toHaveLength(2);
+  });
+
   test("rejects external invocations and creates content-free off-channel handoffs", async () => {
     const t = convexTest(schema, modules);
     await seedSlack(t);
@@ -448,11 +522,13 @@ describe("Slack channel state and authorization", () => {
     const afterExternal = await t.run(async (ctx) => ({
       messages: await ctx.db.query("threadMessages").collect(),
       threads: await ctx.db.query("threads").collect(),
+      events: await ctx.db.query("slackInboundEvents").collect(),
     }));
-    expect(afterExternal.messages).toMatchObject([
-      { role: "user", content: "<@U-GLASS> expose the policy" },
+    expect(afterExternal.messages).toHaveLength(0);
+    expect(afterExternal.threads).toHaveLength(0);
+    expect(afterExternal.events).toMatchObject([
+      { status: "ignored", content: "" },
     ]);
-    expect(afterExternal.threads).toMatchObject([{ slackState: "resolved" }]);
 
     const handoff = await ingest(t, {
       eventKey: "handoff",
@@ -475,6 +551,106 @@ describe("Slack channel state and authorization", () => {
       senderUserId: "U-OPERATOR",
     });
     expect(operatorInvocation.prepared).not.toBeNull();
+  });
+
+  test("authorizes the actor before retrieving inbound files", async () => {
+    const t = convexTest(schema, modules);
+    await seedSlack(t);
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "external-file",
+      teamId: "T-CUSTOMER",
+      channelId: "C-OTHER",
+      threadTs: "1800000000.399",
+      messageTs: "1800000000.399",
+      senderTeamId: "T-VENDOR",
+      senderUserId: "U-VENDOR",
+      content: "<@U-GLASS> inspect this",
+      attachments: [{
+        providerFileId: "F-EXTERNAL",
+        filename: "external.pdf",
+        contentType: "application/pdf",
+        size: 1024,
+      }],
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    })) as { eventId: Id<"slackInboundEvents"> };
+    await t.run((ctx) => ctx.db.patch(claim.eventId, { scheduledFor: 0 }));
+
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/actor")) {
+        return Response.json({
+          teamId: "T-VENDOR",
+          userId: "U-VENDOR",
+          displayName: "Outside Vendor",
+          isBot: false,
+        });
+      }
+      throw new Error(`Unexpected attachment fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example");
+    vi.stubEnv("SLACK_WORKER_SECRET", "test-secret");
+
+    await expect(
+      t.action(processDebouncedFn, { eventId: claim.eventId }),
+    ).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/actor");
+    const event = await t.run((ctx) => ctx.db.get(claim.eventId));
+    expect(event).toMatchObject({
+      status: "ignored",
+      content: "",
+    });
+    expect(event?.attachment).toBeUndefined();
+    expect(event?.attachments).toBeUndefined();
+  });
+
+  test("keeps same-timestamp messages and edits isolated by channel", async () => {
+    const t = convexTest(schema, modules);
+    await seedSlack(t);
+    const messageTs = "1800000000.444";
+    const first = await ingest(t, {
+      eventKey: "channel-one-message",
+      channelId: "C-ONE",
+      threadTs: "1800000000.441",
+      messageTs,
+      content: "<@U-GLASS> channel one",
+    });
+    const second = await ingest(t, {
+      eventKey: "channel-two-message",
+      channelId: "C-TWO",
+      threadTs: "1800000000.442",
+      messageTs,
+      content: "<@U-GLASS> channel two",
+    });
+    expect(first.claim.duplicate).toBe(false);
+    expect(second.claim.duplicate).toBe(false);
+
+    await ingest(t, {
+      eventKey: "channel-one-edit",
+      channelId: "C-ONE",
+      threadTs: "1800000000.441",
+      messageTs,
+      content: "<@U-GLASS> corrected channel one",
+      eventType: "edit",
+    });
+    const state = await t.run(async (ctx) => {
+      const threads = await ctx.db.query("threads").collect();
+      const messages = await ctx.db.query("threadMessages").collect();
+      return threads.map((thread) => ({
+        channelId: thread.slackChannelId,
+        userContent: messages.find(
+          (message) => message.threadId === thread._id && message.role === "user",
+        )?.content,
+      }));
+    });
+    expect(state).toEqual(expect.arrayContaining([
+      {
+        channelId: "C-ONE",
+        userContent: "<@U-GLASS> corrected channel one",
+      },
+      { channelId: "C-TWO", userContent: "<@U-GLASS> channel two" },
+    ]));
   });
 
   test("deduplicates events, debounces bursts, and records edits as revisions", async () => {
@@ -591,9 +767,57 @@ describe("Slack channel state and authorization", () => {
     }
   });
 
-  test("completes a pending primary binding on its first customer mention", async () => {
+  test("claims queued work even after more than fifty completed thread events", async () => {
     const t = convexTest(schema, modules);
-    await seedSlack(t);
+    const { connectionId } = await seedSlack(t);
+    const channelId = "C-PRIMARY";
+    const threadTs = "1800000000.950";
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 55; index += 1) {
+        await ctx.db.insert("slackInboundEvents", {
+          eventKey: `historical-${index}`,
+          canonicalEventKey: `historical-${index}`,
+          connectionId,
+          teamId: "T-CUSTOMER",
+          channelId,
+          threadTs,
+          messageTs: `1799999999.${String(index).padStart(3, "0")}`,
+          senderTeamId: "T-CUSTOMER",
+          senderUserId: "U-CUSTOMER",
+          content: "historical",
+          eventType: "message",
+          isPrimaryChannel: true,
+          mentionsGlass: false,
+          status: "completed",
+          attemptCount: 1,
+          receivedAt: index,
+          scheduledFor: index,
+          updatedAt: index,
+        });
+      }
+    });
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "queued-after-history",
+      teamId: "T-CUSTOMER",
+      channelId,
+      threadTs,
+      messageTs: "1800000000.951",
+      senderTeamId: "T-CUSTOMER",
+      senderUserId: "U-CUSTOMER",
+      content: "<@U-GLASS> current",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    })) as { eventId: Id<"slackInboundEvents"> };
+    await t.run((ctx) => ctx.db.patch(claim.eventId, { scheduledFor: 0 }));
+
+    const batch = await t.mutation(claimBatchFn, { eventId: claim.eventId });
+    expect(batch.map((event: { _id: Id<"slackInboundEvents"> }) => event._id))
+      .toContain(claim.eventId);
+  });
+
+  test("does not infer a pending primary binding from a customer mention", async () => {
+    const t = convexTest(schema, modules);
+    const { connectionId } = await seedSlack(t);
     await t.run(async (ctx) => {
       const binding = await ctx.db.query("slackChannelBindings").first();
       if (!binding) throw new Error("Primary binding fixture is missing");
@@ -622,7 +846,36 @@ describe("Slack channel state and authorization", () => {
     const binding = await t.run((ctx) =>
       ctx.db.query("slackChannelBindings").first(),
     );
-    expect(binding?.customerChannelId).toBe("C-CUSTOMER-SIDE");
+    expect(binding?.customerChannelId).toBeUndefined();
+
+    await t.run(async (ctx) => {
+      const activeBinding = await ctx.db.query("slackChannelBindings").first();
+      if (activeBinding) await ctx.db.delete(activeBinding._id);
+    });
+
+    const noBindingHandoff = await ingest(t, {
+      eventKey: "handoff-without-binding",
+      channelId: "C-OTHER",
+      threadTs: "1800000000.888",
+      content: "<@U-GLASS> human",
+    });
+    expect(noBindingHandoff.prepared).toBeNull();
+    const handoffState = await t.run(async (ctx) => ({
+      handoffs: await ctx.db.query("slackHandoffs").collect(),
+      thread: await ctx.db
+        .query("threads")
+        .withIndex(
+          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          (q) =>
+            q
+              .eq("slackConnectionId", connectionId)
+              .eq("slackChannelId", "C-OTHER")
+              .eq("slackThreadTs", "1800000000.888"),
+        )
+        .first(),
+    }));
+    expect(handoffState.handoffs).toHaveLength(0);
+    expect(handoffState.thread?.slackState).toBe("human_paused");
   });
 });
 
@@ -754,6 +1007,45 @@ describe("Slack setup and outbound durability", () => {
       send: true,
       row: { attemptCount: 2, status: "sending" },
     });
+  });
+
+  test("rejects outbound sends whose org, connection, or thread disagree", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId, serviceUserId } = await seedSlack(t);
+    const { otherOrgId, otherThreadId } = await t.run(async (ctx) => {
+      const otherOrgId = await ctx.db.insert("organizations", {
+        name: "Other Client",
+        type: "client",
+      });
+      const otherThreadId = await ctx.db.insert("threads", {
+        orgId: otherOrgId,
+        title: "Other Slack thread",
+        createdBy: serviceUserId,
+        lastMessageAt: 1,
+        originChannel: "slack",
+        slackConnectionId: connectionId,
+        slackChannelId: "C-OTHER",
+        slackThreadTs: "1800000000.999",
+        slackState: "active",
+      });
+      return { otherOrgId, otherThreadId };
+    });
+    const base = {
+      connectionId,
+      channelId: "C-PRIMARY",
+      content: "Do not cross tenant boundaries",
+    };
+    await expect(t.mutation(claimOutboundFn, {
+      ...base,
+      idempotencyKey: "cross-org",
+      orgId: otherOrgId,
+    })).rejects.toThrow("Slack connection does not belong to the organization");
+    await expect(t.mutation(claimOutboundFn, {
+      ...base,
+      idempotencyKey: "cross-thread",
+      orgId: clientOrgId,
+      threadId: otherThreadId,
+    })).rejects.toThrow("Slack thread does not belong to the connection");
   });
 
   test("records a file-bearing policy delivery as one canonical Slack thread", async () => {

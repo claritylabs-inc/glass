@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
+import { resolveSlackAutomaticChannelId } from "./lib/slackChannelRouting";
 
 export const getContext = internalQuery({
   args: { notificationId: v.id("notifications") },
@@ -19,7 +20,8 @@ export const getContext = internalQuery({
         q.eq("connectionId", connection._id).eq("status", "active"),
       )
       .first();
-    return primary ? { notification, connection, primary } : null;
+    const channelId = resolveSlackAutomaticChannelId(connection, primary);
+    return channelId ? { notification, connection, channelId } : null;
   },
 });
 

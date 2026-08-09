@@ -10,7 +10,12 @@ describe("Slack OAuth scope policy", () => {
   test("accepts the complete customer installation scope set", () => {
     expect(missingSlackCustomerScopes(SLACK_CUSTOMER_SCOPES)).toEqual([]);
     expect(SLACK_CUSTOMER_SCOPES).toEqual(
-      expect.arrayContaining(["im:history", "users:read", "users:read.email"]),
+      expect.arrayContaining([
+        "channels:join",
+        "im:history",
+        "users:read",
+        "users:read.email",
+      ]),
     );
   });
 
