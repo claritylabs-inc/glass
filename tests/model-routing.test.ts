@@ -595,7 +595,7 @@ describe("model fallback policy", () => {
       "utf-8",
     );
     const operatorModelsPage = readFileSync(
-      join(__dirname, "../app/operator/models/page.tsx"),
+      join(__dirname, "../app/operator/routing/models-tab.tsx"),
       "utf-8",
     );
 
@@ -748,16 +748,20 @@ describe("web retrieval routing", () => {
   });
 
   test("keeps web retrieval in the operator Tools surface instead of Models", () => {
-    const modelsPage = readFileSync(
-      join(__dirname, "../app/operator/models/page.tsx"),
+    const modelsTab = readFileSync(
+      join(__dirname, "../app/operator/routing/models-tab.tsx"),
       "utf-8",
     );
-    const toolsPage = readFileSync(
+    const toolsTab = readFileSync(
+      join(__dirname, "../app/operator/routing/tools-tab.tsx"),
+      "utf-8",
+    );
+    const routingPage = readFileSync(
+      join(__dirname, "../app/operator/routing/page.tsx"),
+      "utf-8",
+    );
+    const toolsRoute = readFileSync(
       join(__dirname, "../app/operator/tools/page.tsx"),
-      "utf-8",
-    );
-    const sidebar = readFileSync(
-      join(__dirname, "../app/operator/operator-sidebar.tsx"),
       "utf-8",
     );
     const authGuard = readFileSync(
@@ -765,23 +769,22 @@ describe("web retrieval routing", () => {
       "utf-8",
     );
 
-    expect(modelsPage).not.toContain("webRetrieval");
-    expect(modelsPage).not.toContain("SearchProviderRow");
-    expect(toolsPage).toContain('breadcrumbDetail="Tools"');
-    expect(toolsPage).toContain("Web search");
-    expect(toolsPage).toContain('"model_default"');
-    expect(toolsPage).toContain("LogoIcon");
-    expect(toolsPage).toContain('fill="#0143D9"');
-    expect(toolsPage).not.toContain('"openai"');
-    expect(toolsPage).not.toContain('"anthropic"');
-    expect(toolsPage).not.toContain("ModelRouteLogo");
-    expect(toolsPage).not.toContain("getModelDisplayName");
-    expect(toolsPage).toContain("updateGlobalWebRetrieval");
-    expect(toolsPage).toContain("useCachedOperatorGlobalToolSettings");
-    expect(toolsPage).not.toContain("useCachedOperatorGlobalModelSettings");
-    expect(toolsPage).toContain("useOperatorGlobalToolSettingsCacheActions");
-    expect(sidebar).toContain('href="/operator/tools"');
-    expect(sidebar).toContain('label="Tools"');
+    expect(modelsTab).not.toContain("webRetrieval");
+    expect(modelsTab).not.toContain("SearchProviderRow");
+    expect(toolsTab).toContain("Web search");
+    expect(toolsTab).toContain('"model_default"');
+    expect(toolsTab).toContain("LogoIcon");
+    expect(toolsTab).toContain('fill="#0143D9"');
+    expect(toolsTab).not.toContain('"openai"');
+    expect(toolsTab).not.toContain('"anthropic"');
+    expect(toolsTab).not.toContain("ModelRouteLogo");
+    expect(toolsTab).not.toContain("getModelDisplayName");
+    expect(toolsTab).toContain("updateGlobalWebRetrieval");
+    expect(toolsTab).toContain("useCachedOperatorGlobalToolSettings");
+    expect(toolsTab).not.toContain("useCachedOperatorGlobalModelSettings");
+    expect(toolsTab).toContain("useOperatorGlobalToolSettingsCacheActions");
+    expect(routingPage).toContain('<TabsTrigger value="tools">Tools</TabsTrigger>');
+    expect(toolsRoute).toContain('redirect("/operator/routing?tab=tools")');
     expect(authGuard).toContain('pathname.startsWith("/operator/tools")');
   });
 

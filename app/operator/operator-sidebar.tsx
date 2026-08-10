@@ -8,9 +8,7 @@ import {
   MessageSquareText,
   Route,
   Radio,
-  SlidersHorizontal,
   Users,
-  Wrench,
 } from "lucide-react";
 import {
   SectionHeader,
@@ -33,10 +31,8 @@ export function OperatorSidebar({
     | "brokers"
     | "clients"
     | "demo-leads"
-    | "models"
     | "channels"
     | "routing"
-    | "tools"
     | "extractions";
 }) {
   const { signOut } = useAuthActions();
@@ -88,24 +84,10 @@ export function OperatorSidebar({
             collapsed={collapsed}
           />
           <SidebarMenuItem
-            href="/operator/models"
-            label="Models"
-            icon={SlidersHorizontal}
-            active={active === "models"}
-            collapsed={collapsed}
-          />
-          <SidebarMenuItem
             href="/operator/routing"
             label="Routing"
             icon={Route}
             active={active === "routing"}
-            collapsed={collapsed}
-          />
-          <SidebarMenuItem
-            href="/operator/tools"
-            label="Tools"
-            icon={Wrench}
-            active={active === "tools"}
             collapsed={collapsed}
           />
           <SidebarMenuItem
