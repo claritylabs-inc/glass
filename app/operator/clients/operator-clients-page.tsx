@@ -455,7 +455,7 @@ export default function OperatorClientsScreen() {
             <OperationalLabelValueRow
               label="Email"
               value={
-                channelOverview ? (
+                channelOverview?.agentEmailAddress ? (
                   channelOverview.agentEmailAddress.handle ? (
                     `${channelOverview.agentEmailAddress.handle}@${AGENT_DOMAIN}`
                   ) : (
