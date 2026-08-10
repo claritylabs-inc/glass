@@ -8,6 +8,7 @@ import {
   logLocalEmailCapture,
   sendResendEmail,
 } from "./resend";
+import { buildOtpEmail } from "./emailTemplate";
 
 describe("agent email domains", () => {
   afterEach(() => {
@@ -93,6 +94,25 @@ describe("email delivery modes", () => {
     expect(block).not.toContain("raw-base64-secret");
     expect(block).toContain("text:\nYour Glass code is 654321.");
     expect(block).toContain("html:\n<p>Your Glass code is <strong>654321</strong>.</p>");
+  });
+
+  test("does not treat email template colors as OTP candidates", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
+    vi.stubEnv("GLASS_ENV", "local");
+    const { html } = buildOtpEmail("110588");
+
+    await sendResendEmail({
+      from: "Glass <noreply@example.com>",
+      to: "person@example.com",
+      subject: "Your Glass sign-in code",
+      html,
+    });
+
+    const block = String(logSpy.mock.calls[0]?.[0] ?? "");
+    expect(block.match(/^codeCandidates:.*$/m)?.[0]).toBe(
+      "codeCandidates: 110588",
+    );
   });
 
   test("capture mode outside local logs metadata only", async () => {

@@ -119,6 +119,14 @@ function extractSixDigitCodeCandidates(...values: Array<string | undefined>): st
   return uniqueStrings(candidates);
 }
 
+function extractVisibleHtmlText(html: string | undefined): string | undefined {
+  return html
+    ?.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<[^>]+>/g, "");
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
@@ -189,7 +197,11 @@ export function logLocalEmailCapture(details: LocalEmailCaptureLog): boolean {
   const attachments = summarizeAttachments(details.attachments);
   const codeCandidates = uniqueStrings([
     ...(details.codeCandidates ?? []),
-    ...extractSixDigitCodeCandidates(details.subject, details.text, details.html),
+    ...extractSixDigitCodeCandidates(
+      details.subject,
+      details.text,
+      extractVisibleHtmlText(details.html),
+    ),
   ]);
 
   console.log(
