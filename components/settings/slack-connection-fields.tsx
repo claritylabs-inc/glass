@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
-import { Input } from "@/components/ui/input";
+import { FormSection } from "@/components/ui/form-section";
 import { PillButton } from "@/components/ui/pill-button";
 import {
   Select,
@@ -22,13 +22,11 @@ import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 export function SlackConnectionFields({
   clientOrgId,
-  workspaceName,
   currentChannelId,
   knownChannels,
   canEdit,
 }: {
   clientOrgId: Id<"organizations">;
-  workspaceName: string;
   currentChannelId?: string;
   knownChannels: Array<{
     channelId: string;
@@ -65,8 +63,7 @@ export function SlackConnectionFields({
   const [joining, setJoining] = useState(false);
   const joinedChannels = channels.filter((channel) => channel.isMember);
   const publicChannelsToAdd = channels.filter(
-    (channel) =>
-      !channel.isMember && !channel.isPrivate && !channel.isShared,
+    (channel) => !channel.isMember && !channel.isPrivate && !channel.isShared,
   );
   const selectedChannelToAdd = publicChannelsToAdd.find(
     (channel) => channel.id === channelToAdd,
@@ -139,160 +136,152 @@ export function SlackConnectionFields({
   }
 
   return (
-    <div className="space-y-3">
-      {canEdit && selectedChannelId ? (
-        <AutoSaveStatus status={autoSave.status} />
-      ) : null}
-      <div className="space-y-1.5">
-        <label
-          htmlFor="slack-workspace-name"
-          className="text-label text-muted-foreground"
-        >
-          Workspace
-        </label>
-        <Input
-          id="slack-workspace-name"
-          value={workspaceName}
-          disabled
-          readOnly
-        />
-      </div>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-label text-muted-foreground">Channels with Glass</p>
-          {canEdit ? (
-            <PillButton
-              variant="secondary"
-              size="compact"
-              onClick={() => void loadChannels()}
-              disabled={loading || joining}
-            >
-              <RefreshCw
-                className={loading ? "size-3.5 animate-spin" : "size-3.5"}
-              />
-              Refresh
-            </PillButton>
-          ) : null}
-        </div>
-        {joinedChannels.length > 0 ? (
-          <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6 bg-popover px-3">
-            {joinedChannels.map((channel) => (
-              <div
-                key={channel.id}
-                className="flex items-center justify-between gap-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-base text-foreground">
-                    #{channel.name}
-                  </p>
-                  {channel.isShared || channel.isPrivate ? (
-                    <p className="text-label text-muted-foreground">
-                      {channel.isShared ? "Slack Connect" : "Private channel"}
+    <FormSection
+      title="Channels"
+      description="Glass responds to mentions and active threads in each connected channel."
+      divided={false}
+      action={
+        canEdit ? (
+          <PillButton
+            variant="secondary"
+            size="compact"
+            onClick={() => void loadChannels()}
+            disabled={loading || joining}
+          >
+            <RefreshCw
+              className={loading ? "size-3.5 animate-spin" : "size-3.5"}
+            />
+            Refresh
+          </PillButton>
+        ) : null
+      }
+    >
+      <div className="space-y-4">
+        {canEdit && selectedChannelId ? (
+          <AutoSaveStatus status={autoSave.status} />
+        ) : null}
+        <div className="space-y-2">
+          {joinedChannels.length > 0 ? (
+            <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6 bg-popover px-3">
+              {joinedChannels.map((channel) => (
+                <div
+                  key={channel.id}
+                  className="flex items-center justify-between gap-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-base text-foreground">
+                      #{channel.name}
                     </p>
+                    {channel.isShared || channel.isPrivate ? (
+                      <p className="text-label text-muted-foreground">
+                        {channel.isShared ? "Slack Connect" : "Private channel"}
+                      </p>
+                    ) : null}
+                  </div>
+                  {channel.id === selectedChannelId ? (
+                    <StatusTag tone="success">Automatic</StatusTag>
                   ) : null}
                 </div>
-                {channel.id === selectedChannelId ? (
-                  <StatusTag tone="success">Automatic</StatusTag>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-base text-muted-foreground">
-            Glass has not been added to a channel yet.
-          </p>
-        )}
-        <p className="text-label text-muted-foreground">
-          Glass responds to mentions and active threads in every channel shown
-          here.
-        </p>
-      </div>
-      <div className="space-y-1.5">
-        <label
-          htmlFor="slack-channel-name"
-          className="text-label text-muted-foreground"
-        >
-          Automatic messages channel
-        </label>
-        <Select
-          value={selectedChannelId || null}
-          onValueChange={(nextChannelId) => {
-            if (typeof nextChannelId === "string") {
-              setSelectedChannelId(nextChannelId);
-            }
-          }}
-          disabled={!canEdit || loading || joinedChannels.length === 0}
-        >
-          <SelectTrigger id="slack-channel-name" className="w-full">
-            <SelectValue>
-              {selectedChannel ? `#${selectedChannel.name}` : "Select channel"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {joinedChannels.map((channel) => (
-              <SelectItem key={channel.id} value={channel.id}>
-                #{channel.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {loadError ? (
-          <p className="text-label text-destructive">
-            Slack channels could not be loaded.
-          </p>
-        ) : (
-          <p className="text-label text-muted-foreground">
-            Automatic alerts and document deliveries go only to this channel.
-          </p>
-        )}
-      </div>
-      {canEdit && publicChannelsToAdd.length > 0 ? (
+              ))}
+            </div>
+          ) : (
+            <p className="text-base text-muted-foreground">
+              No channels connected yet.
+            </p>
+          )}
+        </div>
         <div className="space-y-1.5">
           <label
-            htmlFor="slack-channel-add"
+            htmlFor="slack-channel-name"
             className="text-label text-muted-foreground"
           >
-            Add Glass to a public channel
+            Default for automatic messages
           </label>
-          <div className="flex items-center gap-2">
-            <Select
-              value={channelToAdd || null}
-              onValueChange={(value) => {
-                if (typeof value === "string") setChannelToAdd(value);
-              }}
-              disabled={loading || joining}
-            >
-              <SelectTrigger id="slack-channel-add" className="min-w-0 flex-1">
-                <SelectValue>
-                  {selectedChannelToAdd
-                    ? `#${selectedChannelToAdd.name}`
-                    : "Select channel"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {publicChannelsToAdd.map((channel) => (
-                  <SelectItem key={channel.id} value={channel.id}>
-                    #{channel.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <PillButton
-              onClick={() => void addChannel()}
-              disabled={!channelToAdd || joining}
-            >
-              {joining ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              Add
-            </PillButton>
-          </div>
+          <Select
+            value={selectedChannelId || null}
+            onValueChange={(nextChannelId) => {
+              if (typeof nextChannelId === "string") {
+                setSelectedChannelId(nextChannelId);
+              }
+            }}
+            disabled={!canEdit || loading || joinedChannels.length === 0}
+          >
+            <SelectTrigger id="slack-channel-name" className="w-full">
+              <SelectValue>
+                {selectedChannel
+                  ? `#${selectedChannel.name}`
+                  : "Select channel"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {joinedChannels.map((channel) => (
+                <SelectItem key={channel.id} value={channel.id}>
+                  #{channel.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {loadError ? (
+            <p className="text-label text-destructive">
+              Slack channels could not be loaded.
+            </p>
+          ) : (
+            <p className="text-label text-muted-foreground">
+              Alerts and document deliveries go to this channel.
+            </p>
+          )}
         </div>
-      ) : null}
-      {canEdit ? (
-        <p className="text-label text-muted-foreground">
-          To use Glass in a private or Slack Connect channel, add @Glass from
-          Slack, then refresh this list.
-        </p>
-      ) : null}
-    </div>
+        {canEdit && publicChannelsToAdd.length > 0 ? (
+          <div className="space-y-1.5">
+            <label
+              htmlFor="slack-channel-add"
+              className="text-label text-muted-foreground"
+            >
+              Add Glass to a public channel
+            </label>
+            <div className="flex items-center gap-2">
+              <Select
+                value={channelToAdd || null}
+                onValueChange={(value) => {
+                  if (typeof value === "string") setChannelToAdd(value);
+                }}
+                disabled={loading || joining}
+              >
+                <SelectTrigger
+                  id="slack-channel-add"
+                  className="min-w-0 flex-1"
+                >
+                  <SelectValue>
+                    {selectedChannelToAdd
+                      ? `#${selectedChannelToAdd.name}`
+                      : "Select channel"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {publicChannelsToAdd.map((channel) => (
+                    <SelectItem key={channel.id} value={channel.id}>
+                      #{channel.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <PillButton
+                onClick={() => void addChannel()}
+                disabled={!channelToAdd || joining}
+              >
+                {joining ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                Add
+              </PillButton>
+            </div>
+          </div>
+        ) : null}
+        {canEdit ? (
+          <p className="text-label text-muted-foreground">
+            For private or Slack Connect channels, add @Glass in Slack, then
+            refresh this list.
+          </p>
+        ) : null}
+      </div>
+    </FormSection>
   );
 }

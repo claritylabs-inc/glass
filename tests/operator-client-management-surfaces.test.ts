@@ -53,7 +53,9 @@ describe("operator client management surfaces", () => {
     expect(client).toContain('{ id: "overview", label: "Overview" }');
     expect(client).toContain('{ id: "team", label: "Team" }');
     expect(client).toContain('{ id: "features", label: "Beta features" }');
-    expect(client).toContain('{ id: "channels", label: "Agent channels" }');
+    expect(client).toContain('{ id: "email", label: "Email" }');
+    expect(client).toContain('{ id: "imessage", label: "iMessage" }');
+    expect(client).toContain('{ id: "slack", label: "Slack" }');
     expect(client).toContain("useLocalFirstAutoSave");
     expect(client).toContain("FeatureFlagToggleRow");
     expect(client).toContain("AgentChannelsSection");
@@ -132,16 +134,16 @@ describe("operator client management surfaces", () => {
     expect(operatorChannels).not.toContain("host workspace fixture");
     expect(operatorChannels).not.toContain("max-w-4xl");
     expect(sidebar).toContain('href="/operator/channels"');
-    expect(clientChannels).toContain("<SettingsDrawer");
+    expect(clientChannels).not.toContain("<SettingsDrawer");
     expect(clientChannels).toContain("openOAuthTab");
     expect(clientChannels).not.toContain("window.location.assign(url)");
     expect(operatorChannels).not.toContain("window.location.assign(url)");
     expect(clientChannels).not.toContain("getSlackHostStatus");
     expect(clientChannels).not.toContain("beginHost");
     expect(clientChannels).not.toContain("setOperatorSlackIdentity");
-    expect(slackConnectionFields).toContain("Automatic messages channel");
+    expect(slackConnectionFields).toContain("Default for automatic messages");
     expect(slackConnectionFields).toContain(
-      "Glass responds to mentions and active threads in every channel shown",
+      "Glass responds to mentions and active threads in each connected channel",
     );
     expect(clientChannels).toContain(
       "Clarity Labs creates and invites this Slack Connect channel for human support",

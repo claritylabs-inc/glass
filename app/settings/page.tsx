@@ -103,21 +103,22 @@ export default function SettingsPage() {
         </div>
 
         {destination.page.tabs.length > 1 ? (
-          <Tabs
-            value={destination.tab}
-            onValueChange={(value) =>
-              navigate(destination.section, value as SettingsTabId)
-            }
-            className="mb-6"
-          >
-            <TabsList variant="pill">
-              {destination.page.tabs.map((tab) => (
-                <TabsTrigger key={tab.id} value={tab.id}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <div className="-mx-6 mb-6 overflow-x-auto px-6 scrollbar-hide lg:mx-0 lg:px-0">
+            <Tabs
+              value={destination.tab}
+              onValueChange={(value) =>
+                navigate(destination.section, value as SettingsTabId)
+              }
+            >
+              <TabsList variant="pill" className="min-w-max">
+                {destination.page.tabs.map((tab) => (
+                  <TabsTrigger key={tab.id} value={tab.id}>
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </div>
         ) : null}
 
         <SectionContent
@@ -151,8 +152,16 @@ function SectionContent({
     return isBroker ? <BrokerTeamTab /> : <TeamSection />;
   }
   if (section === "agent") {
-    if (tab === "channels" && currentOrg?.orgId) {
-      return <AgentChannelsSection clientOrgId={currentOrg.orgId} />;
+    if (
+      (tab === "email" || tab === "imessage" || tab === "slack") &&
+      currentOrg?.orgId
+    ) {
+      return (
+        <AgentChannelsSection
+          clientOrgId={currentOrg.orgId}
+          activeChannel={tab}
+        />
+      );
     }
     if (tab === "memory") return <MemorySection />;
     if (tab === "models") return <ModelsSection />;

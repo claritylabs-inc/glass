@@ -24,7 +24,9 @@ export type SettingsTabId =
   | "broker"
   | "team"
   | "behavior"
-  | "channels"
+  | "email"
+  | "imessage"
+  | "slack"
   | "memory"
   | "models"
   | "delivery"
@@ -85,7 +87,13 @@ export function getSettingsNavigation({
       label: "Agent",
       icon: GlassStarIcon,
       tabs: [
-        ...(!isBroker ? [{ id: "channels" as const, label: "Channels" }] : []),
+        ...(!isBroker
+          ? [
+              { id: "email" as const, label: "Email" },
+              { id: "imessage" as const, label: "iMessage" },
+              { id: "slack" as const, label: "Slack" },
+            ]
+          : []),
         ...(isBroker || isStandaloneClient
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),
@@ -143,7 +151,10 @@ export function settingsPages(groups: SettingsNavGroup[]) {
   return groups.flatMap((group) => group.pages);
 }
 
-const LEGACY_DESTINATIONS: Record<string, { section: SettingsPageId; tab: SettingsTabId }> = {
+const LEGACY_DESTINATIONS: Record<
+  string,
+  { section: SettingsPageId; tab: SettingsTabId }
+> = {
   organization: { section: "organization", tab: "overview" },
   broker: { section: "organization", tab: "broker" },
   team: { section: "team", tab: "team" },
@@ -169,9 +180,18 @@ export function resolveSettingsDestination({
 }) {
   const pages = settingsPages(groups);
   const requestedPage = pages.find((page) => page.id === requestedSection);
-  const legacy = requestedSection ? LEGACY_DESTINATIONS[requestedSection] : undefined;
-  const page = requestedPage ?? pages.find((item) => item.id === legacy?.section) ?? pages[0];
-  const desiredTab = requestedPage ? requestedTab : legacy?.tab;
+  const legacy = requestedSection
+    ? LEGACY_DESTINATIONS[requestedSection]
+    : undefined;
+  const page =
+    requestedPage ??
+    pages.find((item) => item.id === legacy?.section) ??
+    pages[0];
+  const desiredTab = requestedPage
+    ? requestedTab === "channels"
+      ? "email"
+      : requestedTab
+    : legacy?.tab;
   const tab = page.tabs.find((item) => item.id === desiredTab) ?? page.tabs[0];
   return { section: page.id, tab: tab.id, page };
 }

@@ -54,7 +54,7 @@ http.route({
     const error = url.searchParams.get("error");
     if (!code || !state || error) {
       const redirect = new URL(
-        "/settings?section=agent&tab=channels",
+        "/settings?section=agent&tab=slack",
         process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://app.glass.insure",
       );
       redirect.searchParams.set("slack", "error");
