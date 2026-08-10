@@ -240,7 +240,7 @@ export function ToolsTab() {
   }
 
   return (
-    <div className="flex w-full max-w-4xl flex-col">
+    <div className="flex w-full flex-col">
       {settings === undefined ? (
         <OperationalPanel>
           <div className="flex h-40 items-center justify-center text-muted-foreground">
