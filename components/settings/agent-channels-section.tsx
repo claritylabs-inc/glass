@@ -1584,7 +1584,7 @@ export function AgentChannelsSection({
     supportChannel,
   ]);
 
-  if (!result) {
+  if (!result || !agentEmailAddress) {
     return (
       <div className="h-40 animate-pulse rounded-lg bg-foreground/[0.03] motion-reduce:animate-none" />
     );
@@ -1592,10 +1592,10 @@ export function AgentChannelsSection({
 
   const resolvedSettings = result.settings;
   const agentDomain = getPublicAgentDomain();
-  const emailDescription = result.agentEmailAddress.handle
-    ? `${result.agentEmailAddress.handle}@${agentDomain}`
-    : `${result.agentEmailAddress.ownerName} has not configured an agent email address.`;
-  const emailStatus = result.agentEmailAddress.handle
+  const emailDescription = agentEmailAddress.handle
+    ? `${agentEmailAddress.handle}@${agentDomain}`
+    : `${agentEmailAddress.ownerName} has not configured an agent email address.`;
+  const emailStatus = agentEmailAddress.handle
     ? resolvedSettings.emailEnabled
       ? { label: "On", tone: "success" as const }
       : { label: "Off", tone: "neutral" as const }

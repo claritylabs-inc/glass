@@ -4,6 +4,44 @@
 production, `staging` is the shared integration lane, and each Conductor
 worktree uses native local Convex plus local workers.
 
+## Coordinated release readiness
+
+`.github/workflows/deploy-convex.yml` owns readiness for every commit pushed to
+`main` or `staging`; it is not path-filtered. After validation, the workflow:
+
+1. deploys the commit's Convex functions to the matching lane;
+2. waits for the exact commit's four Railway contexts (`glass-extraction-worker`,
+   `imessage-worker`, `slack-worker`, and `glass-mailbox-scan-worker`) to report
+   success, including explicit `No deployment needed` watch-path results;
+3. runs the deployed Convex, extraction, iMessage, Slack, and cl-router
+   compatibility audit; and
+4. verifies the commit is still the branch head before emitting
+   `release-ready-production` or `release-ready-staging`.
+
+Vercel may build the production candidate in parallel, but the Glass Vercel
+project must keep automatic production domain assignment enabled and configure
+the GitHub `release-ready-production` check as a required Deployment Check.
+Vercel then assigns `app.glass.insure` only after the release job succeeds.
+Changing the job name requires updating the Vercel project setting in the same
+rollout. A failed or timed-out Convex deploy, Railway status, compatibility
+audit, or stale-head check leaves the candidate unpromoted; use Vercel's
+explicit force-promotion control only for an incident-approved bypass.
+
+Railway Git autodeploy and all four service-local watch paths must remain
+enabled. Unchanged workers satisfy the barrier with Railway's no-op status, and
+the mailbox cron's Railway deployment status is its release signal because it
+has no persistent HTTP process. Do not enable Railway **Wait for CI** for these
+services: the release job itself waits for Railway and that setting would create
+a cycle. Push-time health checks do not prove release readiness because they can
+observe the previous healthy processes; release health therefore runs only
+after Convex and Railway are ready, while `agent-safeguards.yml` retains its
+scheduled production monitoring and manual environment audits.
+
+Promotion-last removes the new-frontend/old-backend window, but distributed
+runtimes are not atomic. Keep expand/contract compatibility for destructive
+query-shape changes and version worker protocol changes so the old frontend and
+workers remain compatible while the new backend rolls out.
+
 Slack environment/app setup, the client-owned policy-delivery migration, and
 the staged release gates are documented in [Slack privileged service
 channel](./slack.md). Staging and production own separate native Slack apps and
