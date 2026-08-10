@@ -129,9 +129,9 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_STAGING }}
 
-  release-ready:
-    if: always() && (github.ref_name == 'main' || github.ref_name == 'staging')
-    name: release-ready-${{ github.ref_name == 'main' && 'production' || 'staging' }}
+  release-ready-production:
+    if: always() && github.ref_name == 'main'
+    name: release-ready-production
     runs-on: ubuntu-latest
     needs: deploy
     steps:
@@ -159,12 +159,57 @@ jobs:
             Glass - glass-mailbox-scan-worker
 
       - name: Check deployed service compatibility
-        run: node scripts/check-agent-deployment-health.mjs --env "${{ github.ref_name == 'main' && 'production' || 'staging' }}"
+        run: node scripts/check-agent-deployment-health.mjs --env production
         env:
           AGENT_HEALTH_ATTEMPTS: 30
           AGENT_HEALTH_RETRY_DELAY_MS: 10000
           GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL }}
           GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}
+
+      - name: Verify release is still the branch head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${GITHUB_REF_NAME}" --jq '.object.sha')"
+          if [[ "$branch_sha" != "$GITHUB_SHA" ]]; then
+            echo "Refusing to release stale commit $GITHUB_SHA; ${GITHUB_REF_NAME} is now $branch_sha"
+            exit 1
+          fi
+
+  release-ready-staging:
+    if: always() && github.ref_name == 'staging'
+    name: release-ready-staging
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Require Convex deployment success
+        if: needs.deploy.result != 'success'
+        run: |
+          echo "Convex deployment result was ${{ needs.deploy.result }}"
+          exit 1
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Wait for Railway services
+        run: node scripts/wait-for-railway-statuses.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RAILWAY_STATUS_CONTEXTS: |
+            Glass - glass-extraction-worker
+            Glass - imessage-worker
+            Glass - slack-worker
+            Glass - glass-mailbox-scan-worker
+
+      - name: Check deployed service compatibility
+        run: node scripts/check-agent-deployment-health.mjs --env staging
+        env:
+          AGENT_HEALTH_ATTEMPTS: 30
+          AGENT_HEALTH_RETRY_DELAY_MS: 10000
           GLASS_STAGING_CONVEX_AGENT_HEALTH_URL: ${{ vars.GLASS_STAGING_CONVEX_AGENT_HEALTH_URL }}
           GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL }}
           GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL }}
