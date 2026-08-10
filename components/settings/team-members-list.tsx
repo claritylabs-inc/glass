@@ -48,10 +48,10 @@ export function TeamMembersList({
       <Table className="min-w-[760px]">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[30%] px-5">Member</TableHead>
-            <TableHead className="w-[28%]">Email</TableHead>
-            <TableHead className="w-[20%]">Phone</TableHead>
-            <TableHead className="w-[22%] px-5">Access</TableHead>
+            <TableHead className="w-[24%] px-5">Member</TableHead>
+            <TableHead className="w-[22%]">Email</TableHead>
+            <TableHead className="w-[14%]">Phone</TableHead>
+            <TableHead className="w-[40%] px-5">Access</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -124,8 +124,8 @@ export function TeamMembersList({
                 {formatTeamMemberPhone(member.phone)}
               </TableCell>
               <TableCell className="px-5 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-1">
+                <div className="flex flex-row items-center justify-between gap-6">
+                  <div className="flex flex-row flex-nowrap items-center gap-2">
                     <Badge variant="outline">
                       {member.role === "admin" ? "Admin" : "Member"}
                     </Badge>

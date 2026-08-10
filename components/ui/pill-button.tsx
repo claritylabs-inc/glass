@@ -18,11 +18,21 @@ type PillButtonVariant =
   | "iconLabel";
 type PillButtonSize = "default" | "compact";
 
-type CommonPillButtonProps = {
+type PillButtonContentProps =
+  | {
+      iconOnly: true;
+      label: string;
+      children?: ReactNode;
+    }
+  | {
+      iconOnly?: false;
+      label?: string;
+      children?: ReactNode;
+    };
+
+type CommonPillButtonProps = PillButtonContentProps & {
   variant?: PillButtonVariant;
   size?: PillButtonSize;
-  label?: string;
-  children?: ReactNode;
 };
 
 type PillButtonButtonProps = CommonPillButtonProps &
@@ -63,7 +73,7 @@ const variantConfig: Record<PillButtonVariant, VariantConfig> = {
   },
   destructive: {
     classes:
-      "bg-red-500/10 text-destructive hover:bg-red-500/15 hover:text-red-600",
+      "bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive focus-visible:ring-destructive/20",
     tap: { opacity: 0.78 },
   },
   ghost: {
@@ -98,6 +108,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
     {
       variant = "primary",
       size = "default",
+      iconOnly = false,
       label,
       className,
       children,
@@ -107,8 +118,8 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
     },
     ref,
   ) => {
-    const isIcon = variant === "icon";
-    const showsLabel = variant === "iconLabel" && label;
+    const isIcon = iconOnly || variant === "icon";
+    const showsLabel = !iconOnly && variant === "iconLabel" && label;
     const config = variantConfig[variant];
     const disabled = "disabled" in props && Boolean(props.disabled);
     const content = (
@@ -131,6 +142,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
           ref={ref as Ref<HTMLAnchorElement>}
           aria-disabled={disabled || undefined}
           aria-label={ariaLabel ?? label}
+          data-icon-only={isIcon || undefined}
           className={classes}
           onClick={(event: MouseEvent<HTMLAnchorElement>) => {
             if (disabled) {
@@ -158,6 +170,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
         ref={ref as Ref<HTMLButtonElement>}
         type={type}
         aria-label={ariaLabel ?? label}
+        data-icon-only={isIcon || undefined}
         title={title ?? (isIcon ? label : undefined)}
         whileHover={disabled ? undefined : config.hover}
         whileTap={disabled ? undefined : config.tap}

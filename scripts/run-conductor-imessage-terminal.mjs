@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   conductorPorts,
@@ -10,6 +11,18 @@ import {
 
 ensureNode24();
 process.chdir(repoRoot);
+
+for (const relativePath of [
+  ".context/imessage-worker.env",
+  ".convex/local/default/config.json",
+  "imessage-worker/dist/index.js",
+]) {
+  if (!existsSync(path.join(repoRoot, relativePath))) {
+    throw new Error(
+      `${relativePath} is missing. Run npm run conductor:setup before starting Spectrum.`,
+    );
+  }
+}
 
 const { imessage } = conductorPorts();
 const { site } = await waitForLocalConvex();

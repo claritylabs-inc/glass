@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -17,7 +17,6 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
 import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
-import { HandleAvailability } from "@/components/settings/handle-availability";
 import {
   OrganizationInsuranceProfile,
   type OrganizationProfile,
@@ -54,7 +53,6 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
-import { getPublicAgentDomain } from "@/lib/domains";
 import {
   useCachedOperatorBrokers,
   useCachedOperatorClients,
@@ -87,7 +85,6 @@ type ClientSupportDetails = NonNullable<
 >;
 
 const STANDALONE_VALUE = "__standalone__";
-const AGENT_DOMAIN = getPublicAgentDomain();
 
 function parseTab(value: string | null): ClientTab {
   if (value === "email" || value === "imessage" || value === "slack") {
@@ -96,12 +93,6 @@ function parseTab(value: string | null): ClientTab {
   return CLIENT_TABS.some((tab) => tab.id === value)
     ? (value as ClientTab)
     : "overview";
-}
-
-function normalizeIdentifierInput(value: string) {
-  return (value.trim().toLowerCase().split("@")[0] ?? "")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/^-+|-+$/g, "");
 }
 
 function slackChannelSlug(client: OperatorClientRow) {
@@ -159,9 +150,7 @@ function ClientWorkspace({
   const { patchClientSettings, patchClientStatus } =
     useOperatorClientCacheActions();
   const activeTab = parseTab(searchParams.get("tab"));
-  const [organizationName, setOrganizationName] = useState(
-    supportDetails.name,
-  );
+  const [organizationName, setOrganizationName] = useState(supportDetails.name);
   const [brokerOrgId, setBrokerOrgId] = useState(
     supportDetails.brokerOrgId ?? STANDALONE_VALUE,
   );
@@ -173,13 +162,10 @@ function ClientWorkspace({
   const [relatedLegalEntities, setRelatedLegalEntities] = useState<
     OperatorClientRelatedLegalEntity[]
   >(supportDetails.relatedLegalEntities ?? []);
-  const [agentHandle, setAgentHandle] = useState(
-    supportDetails.agentHandle ?? "",
-  );
-  const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
   const [textFieldFocused, setTextFieldFocused] = useState(false);
   const [busy, setBusy] = useState(false);
   const [disableDialogOpen, setDisableDialogOpen] = useState(false);
+  const [teamInviteOpen, setTeamInviteOpen] = useState(false);
   const [savingFeatureFlagId, setSavingFeatureFlagId] =
     useState<FeatureFlagId | null>(null);
   const [profileAutoSaveStatus, setProfileAutoSaveStatus] = useState<
@@ -194,41 +180,12 @@ function ClientWorkspace({
   const setClientStatus = useMutation(api.operator.setSoloClientStatus);
   const startImpersonation = useMutation(api.operator.startImpersonation);
 
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setDebouncedAgentHandle(agentHandle),
-      250,
-    );
-    return () => window.clearTimeout(timer);
-  }, [agentHandle]);
-
-  const currentAgentHandle = supportDetails.agentHandle ?? "";
-  const agentHandleChanged = agentHandle !== currentAgentHandle;
-  const handleAvailability = useQuery(
-    api.orgs.checkHandleAvailability,
-    agentHandleChanged && agentHandle
-      ? {
-          handle: debouncedAgentHandle,
-          excludeOrgId: client._id,
-        }
-      : "skip",
-  );
-  const handleChecking =
-    agentHandleChanged &&
-    !!agentHandle &&
-    (debouncedAgentHandle !== agentHandle || handleAvailability === undefined);
   const selectedBroker =
     brokers.find((broker) => broker._id === brokerOrgId) ?? null;
 
   const validationError = !organizationName.trim()
     ? "Organization name is required"
-    : handleChecking
-      ? "Checking agent handle"
-      : agentHandleChanged &&
-          agentHandle &&
-          handleAvailability?.available === false
-        ? (handleAvailability.reason ?? "Agent handle is not available")
-        : null;
+    : null;
 
   const nextBrokerOrgId =
     brokerOrgId === STANDALONE_VALUE
@@ -239,7 +196,6 @@ function ClientWorkspace({
     name: organizationName.trim(),
     brokerOrgId: nextBrokerOrgId,
     website: website.trim() || undefined,
-    agentHandle: agentHandle || undefined,
     industry: industry || undefined,
     industryVertical: industryVertical || undefined,
     relatedLegalEntities: relatedLegalEntities
@@ -276,6 +232,7 @@ function ClientWorkspace({
   );
 
   function navigate(tab: ClientTab) {
+    if (tab !== "team") setTeamInviteOpen(false);
     const next = new URLSearchParams(searchParams.toString());
     next.set("tab", tab);
     router.push(`/operator/clients/${clientOrgId}?${next.toString()}`);
@@ -362,27 +319,39 @@ function ClientWorkspace({
   }
 
   useEffect(() => {
-    setShellActions(
-      <>
-        <AutoSaveStatus status={combinedSaveStatus} />
+    if (activeTab === "overview") {
+      setShellActions(
+        <>
+          <AutoSaveStatus status={combinedSaveStatus} />
+          <PillButton
+            size="compact"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => void impersonate()}
+          >
+            Impersonate
+          </PillButton>
+        </>,
+      );
+    } else if (activeTab === "team") {
+      setShellActions(
         <PillButton
           size="compact"
           variant="secondary"
-          disabled={busy}
-          onClick={() => void impersonate()}
+          onClick={() => setTeamInviteOpen(true)}
         >
-          Impersonate
-        </PillButton>
-      </>,
-    );
-  }, [busy, combinedSaveStatus, impersonate, setShellActions]);
-
-  useEffect(
-    () => () => {
+          <UserPlus className="size-3.5" />
+          Invite member
+        </PillButton>,
+      );
+    } else {
       setShellActions(null);
-    },
-    [setShellActions],
-  );
+    }
+
+    return () => {
+      setShellActions(null);
+    };
+  }, [activeTab, busy, combinedSaveStatus, impersonate, setShellActions]);
 
   return (
     <>
@@ -529,47 +498,6 @@ function ClientWorkspace({
             </OperationalPanel>
 
             <OperationalPanel>
-              <OperationalPanelBody>
-                <FormSection title="Agent address" divided={false}>
-                  <Field label="Email handle">
-                    <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-                      <input
-                        className="min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground/40"
-                        value={agentHandle}
-                        onChange={(event) =>
-                          setAgentHandle(
-                            normalizeIdentifierInput(event.target.value),
-                          )
-                        }
-                        onFocus={() => setTextFieldFocused(true)}
-                        onBlur={finishTextEdit}
-                        placeholder="client"
-                      />
-                      <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
-                        @{AGENT_DOMAIN}
-                      </span>
-                    </div>
-                    <HandleAvailability
-                      saving={clientSettingsAutoSave.saving}
-                      checking={handleChecking}
-                      input={agentHandle}
-                      current={currentAgentHandle}
-                      currentLabel="Current agent handle"
-                      availability={
-                        agentHandle === debouncedAgentHandle
-                          ? handleAvailability
-                          : undefined
-                      }
-                      renderAvailablePreview={(value) =>
-                        `${value}@${AGENT_DOMAIN} is available`
-                      }
-                    />
-                  </Field>
-                </FormSection>
-              </OperationalPanelBody>
-            </OperationalPanel>
-
-            <OperationalPanel>
               <OperationalPanelHeader
                 className="items-center border-b-0"
                 title="Account access"
@@ -619,6 +547,9 @@ function ClientWorkspace({
         {activeTab === "team" ? (
           <TeamSection
             operatorClient={supportDetails}
+            inviteOpen={teamInviteOpen}
+            onInviteOpenChange={setTeamInviteOpen}
+            showInviteAction={false}
             setOperatorRightPanel={setRightPanel}
             onOperatorActivationSent={() =>
               patchClientStatus(client._id, "live")
@@ -631,6 +562,7 @@ function ClientWorkspace({
             clientOrgId={client._id}
             defaultClientSlug={slackChannelSlug(client)}
             defaultInviteEmail={client.primaryContactEmail ?? client.adminEmail}
+            defaultInviteUserId={supportDetails.primaryInsuranceContactId}
             setRightPanel={setRightPanel}
           />
         ) : null}

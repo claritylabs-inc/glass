@@ -1035,6 +1035,54 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_clientOrgId", ["clientOrgId"]),
 
+  slackSetupStates: defineTable({
+    clientOrgId: v.id("organizations"),
+    version: v.literal(1),
+    mode: v.union(v.literal("initial"), v.literal("reinstall")),
+    status: v.union(
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+    ),
+    currentStep: v.union(
+      v.literal("install"),
+      v.literal("support"),
+      v.literal("channels"),
+      v.literal("automations"),
+    ),
+    deferredSteps: v.array(
+      v.union(
+        v.literal("install"),
+        v.literal("support"),
+        v.literal("channels"),
+      ),
+    ),
+    inviteRecipientEmail: v.optional(v.string()),
+    inviteSentAt: v.optional(v.number()),
+    inviteExpiresAt: v.optional(v.number()),
+    installationCompletedAt: v.optional(v.number()),
+    supportOmittedOperators: v.optional(
+      v.array(
+        v.object({
+          displayName: v.string(),
+          email: v.string(),
+          reason: v.string(),
+        }),
+      ),
+    ),
+    supportOperatorInvitesSucceeded: v.optional(v.boolean()),
+    supportOperatorInviteError: v.optional(v.string()),
+    supportInviteSentAt: v.optional(v.number()),
+    supportInviteError: v.optional(v.string()),
+    startedByOperatorUserId: v.id("users"),
+    completedByOperatorUserId: v.optional(v.id("users")),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_clientOrgId", ["clientOrgId"]),
+
   slackInstallations: defineTable({
     teamId: v.string(),
     teamName: v.string(),
@@ -1144,15 +1192,25 @@ export default defineSchema({
 
   slackOAuthStates: defineTable({
     stateHash: v.string(),
-    purpose: v.optional(v.union(v.literal("customer"), v.literal("host"))),
+    purpose: v.optional(
+      v.union(
+        v.literal("customer"),
+        v.literal("customer_install_invite"),
+        v.literal("host"),
+      ),
+    ),
     clientOrgId: v.optional(v.id("organizations")),
+    setupStateId: v.optional(v.id("slackSetupStates")),
+    recipientEmail: v.optional(v.string()),
     initiatedByUserId: v.optional(v.id("users")),
     initiatedByOperatorUserId: v.optional(v.id("users")),
     expiresAt: v.number(),
     usedAt: v.optional(v.number()),
+    invalidatedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index("by_stateHash", ["stateHash"])
+    .index("by_clientOrgId_and_purpose", ["clientOrgId", "purpose"])
     .index("by_expiresAt", ["expiresAt"]),
 
   policyDeliverySettings: defineTable({

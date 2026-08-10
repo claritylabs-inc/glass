@@ -52,7 +52,6 @@ import type * as actions_sendNotificationSlack from "../actions/sendNotification
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_sendSlack from "../actions/sendSlack.js";
 import type * as actions_slackOAuth from "../actions/slackOAuth.js";
-import type * as actions_slackOnboarding from "../actions/slackOnboarding.js";
 import type * as actions_threadTitle from "../actions/threadTitle.js";
 import type * as actions_updateDocumentChunk from "../actions/updateDocumentChunk.js";
 import type * as actions_vendorComplianceMonitor from "../actions/vendorComplianceMonitor.js";
@@ -270,6 +269,7 @@ import type * as seed from "../seed.js";
 import type * as sourceNodes from "../sourceNodes.js";
 import type * as sourceSpans from "../sourceSpans.js";
 import type * as slack from "../slack.js";
+import type * as slackOnboarding from "../slackOnboarding.js";
 import type * as slackOutbound from "../slackOutbound.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
@@ -325,7 +325,6 @@ declare const fullApi: ApiFromModules<{
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/sendSlack": typeof actions_sendSlack;
   "actions/slackOAuth": typeof actions_slackOAuth;
-  "actions/slackOnboarding": typeof actions_slackOnboarding;
   "actions/threadTitle": typeof actions_threadTitle;
   "actions/updateDocumentChunk": typeof actions_updateDocumentChunk;
   "actions/vendorComplianceMonitor": typeof actions_vendorComplianceMonitor;
@@ -543,6 +542,7 @@ declare const fullApi: ApiFromModules<{
   sourceNodes: typeof sourceNodes;
   sourceSpans: typeof sourceSpans;
   slack: typeof slack;
+  slackOnboarding: typeof slackOnboarding;
   slackOutbound: typeof slackOutbound;
   threads: typeof threads;
   users: typeof users;

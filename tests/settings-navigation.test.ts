@@ -43,7 +43,11 @@ describe("settings navigation", () => {
       isStandaloneClient: false,
     });
     const agent = settingsPages(brokerGroups).find((page) => page.id === "agent");
-    expect(agent?.tabs.map((tab) => tab.id)).toEqual(["behavior", "models"]);
+    expect(agent?.tabs.map((tab) => tab.id)).toEqual([
+      "channels",
+      "behavior",
+      "models",
+    ]);
     expect(resolveSettingsDestination({
       requestedSection: "connections",
       requestedTab: null,

@@ -165,8 +165,12 @@ describe("directed email sending", () => {
       join(__dirname, "..", "lib/settings-sections.ts"),
       "utf-8",
     );
-    const agentTabSource = readFileSync(
-      join(__dirname, "..", "components/settings/broker-agent-tab.tsx"),
+    const agentChannelsSource = readFileSync(
+      join(
+        __dirname,
+        "..",
+        "components/settings/agent-channels-section.tsx",
+      ),
       "utf-8",
     );
 
@@ -180,10 +184,13 @@ describe("directed email sending", () => {
     expect(settingsSectionsSource).toContain('id: "memory"');
     expect(sidebarSource).toContain("isStandaloneClient");
     expect(sidebarSource).toContain("isStandaloneClient={isStandaloneClient}");
-    expect(agentTabSource).toContain('org?.type === "broker"');
-    expect(agentTabSource).toContain("Agent email address");
-    expect(agentTabSource).toContain('aria-disabled="true"');
-    expect(agentTabSource).toContain("cursor-not-allowed");
+    expect(agentChannelsSource).toContain('org?.type === "broker"');
+    expect(agentChannelsSource).toContain("Agent email address");
+    expect(agentChannelsSource).toContain(
+      '<StatusTag tone="neutral">Read only</StatusTag>',
+    );
+    expect(agentChannelsSource).toContain("cursor-not-allowed");
+    expect(agentChannelsSource).toContain("disabled");
   });
 
   it("surfaces all email expert outcomes in web chat and sms", () => {

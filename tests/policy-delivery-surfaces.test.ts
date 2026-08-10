@@ -54,7 +54,15 @@ describe("policy delivery automation surfaces", () => {
       "components/settings/slack-connection-fields.tsx",
     );
     const channelContent = agentChannels.slice(
-      agentChannels.indexOf("const channelContent"),
+      agentChannels.indexOf("const emailContent"),
+    );
+    const compactSlackContent = agentChannels.slice(
+      agentChannels.indexOf("const compactSlackContent"),
+      agentChannels.indexOf("const clientPendingStatus"),
+    );
+    const emailContent = agentChannels.slice(
+      agentChannels.indexOf("const emailContent"),
+      agentChannels.indexOf("const imessageContent"),
     );
     const delivery = read("components/settings/policy-delivery-section.tsx");
 
@@ -72,6 +80,7 @@ describe("policy delivery automation surfaces", () => {
     );
     expect(agentChannels).not.toContain("<OperationalPanel");
     expect(agentChannels).toContain("<SettingsDrawer");
+    expect(agentChannels).toContain('title="Agent email address"');
     expect(agentChannels).not.toContain("I understand");
     expect(agentChannels).not.toContain("Continue setup");
     expect(agentChannels).toContain(
@@ -80,18 +89,29 @@ describe("policy delivery automation surfaces", () => {
     expect(agentChannels).toContain('aria-label="Agent channels"');
     expect(channelContent).toContain("<ClientEmailRoutingSection");
     expect(channelContent).toContain('title="Available by iMessage"');
-    expect(channelContent).toContain('title="Available in Slack"');
+    expect(agentChannels).toContain('title="Available in Slack"');
+    expect(compactSlackContent).toContain("<SlackAvailabilityCard");
+    expect(compactSlackContent).toContain("<Tabs");
+    expect(compactSlackContent.indexOf("<SlackAvailabilityCard")).toBeLessThan(
+      compactSlackContent.indexOf("<Tabs"),
+    );
+    expect(emailContent.indexOf('title="Available by email"')).toBeLessThan(
+      emailContent.indexOf("<AgentEmailAddressField"),
+    );
     expect(slackConnectionFields).not.toContain('id="slack-workspace-name"');
     expect(slackConnectionFields).toContain('id="slack-channel-name"');
     expect(slackConnectionFields).toContain("useLocalFirstAutoSave");
     expect(slackConnectionFields).toContain("listAvailableChannels");
     expect(slackConnectionFields).toContain("selectAutomaticChannel");
+    expect(slackConnectionFields).toContain("leavePublicChannel");
+    expect(slackConnectionFields).toContain("DropdownMenuCheckboxItem");
     expect(slackConnectionFields).toContain("`#${selectedChannel.name}`");
     expect(slackConnectionFields).toContain("<SelectItem");
-    expect(channelContent).toContain('title="Vendor alerts"');
-    expect(channelContent).toContain('title="Policy and endorsement delivery"');
+    expect(agentChannels).toContain('title="Vendor alerts"');
+    expect(agentChannels).toContain('title="Policy and endorsement delivery"');
+    expect(slackConnectionFields).toContain("Active channels");
     expect(slackConnectionFields).toContain(
-      "Alerts and document deliveries go to this channel.",
+      "Add or remove private and Slack Connect channels in Slack.",
     );
     expect(delivery).toContain('title="Automatic policy delivery"');
     expect(delivery).toContain("Customize for this client");

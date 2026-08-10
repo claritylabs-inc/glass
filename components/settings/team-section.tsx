@@ -31,10 +31,16 @@ type OperatorClientTeamTarget = {
 
 export function TeamSection({
   operatorClient,
+  inviteOpen: controlledInviteOpen,
+  onInviteOpenChange,
+  showInviteAction = true,
   setOperatorRightPanel,
   onOperatorActivationSent,
 }: {
   operatorClient?: OperatorClientTeamTarget;
+  inviteOpen?: boolean;
+  onInviteOpenChange?: (open: boolean) => void;
+  showInviteAction?: boolean;
   setOperatorRightPanel?: (node: React.ReactNode) => void;
   onOperatorActivationSent?: () => void | Promise<void>;
 } = {}) {
@@ -98,7 +104,7 @@ export function TeamSection({
   const org = orgData?.org;
   const viewerUserId = viewer?._id;
 
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [uncontrolledInviteOpen, setUncontrolledInviteOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [editName, setEditName] = useState("");
   const [editTitle, setEditTitle] = useState("");
@@ -125,6 +131,17 @@ export function TeamSection({
   const primaryContactId =
     org?.primaryInsuranceContactId ??
     (members?.length === 1 ? members[0]?.userId : undefined);
+  const inviteOpen = controlledInviteOpen ?? uncontrolledInviteOpen;
+  const setInviteOpen = useCallback(
+    (open: boolean) => {
+      if (onInviteOpenChange) {
+        onInviteOpenChange(open);
+      } else {
+        setUncontrolledInviteOpen(open);
+      }
+    },
+    [onInviteOpenChange],
+  );
 
   const patchCachedPrimaryContact = useCallback(
     async (userId: Id<"users"> | undefined) => {
@@ -422,7 +439,7 @@ export function TeamSection({
       </PillButton>,
     );
     return () => setSettingsActions(null);
-  }, [operatorClientOrgId, setSettingsActions]);
+  }, [operatorClientOrgId, setInviteOpen, setSettingsActions]);
 
   useEffect(() => {
     if (orgData === undefined || members === undefined) return;
@@ -521,6 +538,7 @@ export function TeamSection({
     cancelPendingEmailChange,
     requestPendingEmailChange,
     saveTeamMember,
+    setInviteOpen,
     setRightPanel,
     updatePrimaryContact,
     removeTeamMember,
@@ -537,7 +555,7 @@ export function TeamSection({
 
   return (
     <div className="space-y-4">
-      {operatorClientOrgId ? (
+      {operatorClientOrgId && showInviteAction ? (
         <div className="flex justify-end">
           <PillButton
             size="compact"

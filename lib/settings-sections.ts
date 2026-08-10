@@ -85,7 +85,7 @@ export function getSettingsNavigation({
       label: "Agent",
       icon: GlassStarIcon,
       tabs: [
-        ...(!isBroker ? [{ id: "channels" as const, label: "Channels" }] : []),
+        { id: "channels", label: "Channels" },
         ...(isBroker || isStandaloneClient
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),

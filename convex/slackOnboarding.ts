@@ -1,20 +1,18 @@
-"use node";
-
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
-import { action, type ActionCtx } from "../_generated/server";
-import { isSlackMockMode } from "../lib/slackConfig";
+import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import { action, type ActionCtx } from "./_generated/server";
+import { isSlackMockMode } from "./lib/slackConfig";
 import {
   resolveSlackAutomaticChannel,
   type SlackAutomaticChannelConnection,
   type SlackSupportChannelBinding,
-} from "../lib/slackChannelRouting";
+} from "./lib/slackChannelRouting";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
-} from "../lib/userFacingErrors";
+} from "./lib/userFacingErrors";
 
 const internalApi = internal as any;
 const WORKER_TIMEOUT_MS = 30_000;
@@ -42,6 +40,10 @@ function requiredEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is not configured`);
   return value;
+}
+
+function slackErrorCode(message: string | undefined) {
+  return message?.split(";")[0]?.trim();
 }
 
 type AvailableSlackChannel = {
@@ -138,12 +140,17 @@ export const createPrimaryChannel = action({
         "A Glass operator must create the hosted Slack Connect channel.",
       );
     }
-    const connection = await ctx.runQuery(
-      internalApi.slack.getActiveConnection,
-      {
+    const [connection, supportContext, existingBinding] = await Promise.all([
+      ctx.runQuery(internalApi.slack.getActiveConnection, {
         clientOrgId: args.clientOrgId,
-      },
-    );
+      }),
+      ctx.runQuery(internalApi.agentChannels.getSlackSupportSetupContext, {
+        clientOrgId: args.clientOrgId,
+      }),
+      ctx.runQuery(internalApi.agentChannels.getPrimarySlackBindingForSetup, {
+        clientOrgId: args.clientOrgId,
+      }),
+    ]);
 
     const response = await fetch(
       `${requiredEnv("SLACK_WORKER_URL")}/connect-channel`,
@@ -156,6 +163,9 @@ export const createPrimaryChannel = action({
         body: JSON.stringify({
           clientSlug: args.clientSlug,
           inviteEmail: args.inviteEmail,
+          operatorUserIds: supportContext.linkedOperatorUserIds,
+          existingChannelId: existingBinding?.hostChannelId,
+          existingChannelName: existingBinding?.channelName,
         }),
         signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
       },
@@ -164,6 +174,17 @@ export const createPrimaryChannel = action({
       channelId?: string;
       channelName?: string;
       inviteId?: string;
+      reusedChannel?: boolean;
+      operatorInvites?: {
+        requested: number;
+        succeeded: boolean;
+        error?: string;
+      };
+      supportInvite?: {
+        succeeded: boolean;
+        pending: boolean;
+        error?: string;
+      };
       error?: string;
     };
     if (!response.ok || !result.channelId || !result.channelName) {
@@ -180,12 +201,35 @@ export const createPrimaryChannel = action({
         clientOrgId: args.clientOrgId,
         connectionId: connection?._id,
         operatorUserId: userId,
-        hostTeamId: requiredEnv("SLACK_CLARITY_TEAM_ID"),
+        hostTeamId: supportContext.hostTeamId,
         hostChannelId: result.channelId,
         channelName: result.channelName,
       },
     );
-    return { created: true as const, ...result };
+    await ctx.runMutation(
+      internalApi.agentChannels.recordSlackSupportSetupOutcome,
+      {
+        clientOrgId: args.clientOrgId,
+        operatorUserId: userId,
+        omittedOperators: supportContext.omittedOperators,
+        operatorInvitesSucceeded:
+          result.operatorInvites?.succeeded ?? true,
+        operatorInviteError: result.operatorInvites?.error,
+        supportInviteSucceeded: result.supportInvite?.succeeded ?? true,
+        supportInviteError: result.supportInvite?.error,
+      },
+    );
+    const supportInviteError = result.supportInvite?.error;
+    const supportInviteCode = slackErrorCode(supportInviteError);
+    return {
+      created: true as const,
+      ...result,
+      omittedOperators: supportContext.omittedOperators,
+      manualSetupRequired: Boolean(
+        supportInviteCode && MANUAL_SETUP_ERRORS.has(supportInviteCode),
+      ),
+      reason: supportInviteError,
+    };
   },
 });
 
@@ -333,6 +377,70 @@ export const joinPublicChannel = action({
     });
     await ctx.runMutation(
       internalApi.agentChannels.recordSlackChannelJoinedInternal,
+      {
+        clientOrgId: args.clientOrgId,
+        connectionId: connection._id,
+        channelId: result.channel.id,
+        channelName: result.channel.name,
+        actorUserId: userId,
+        actorKind: permission.kind,
+      },
+    );
+    return { channel: result.channel, channels };
+  },
+});
+
+export const leavePublicChannel = action({
+  args: {
+    clientOrgId: v.id("organizations"),
+    channelId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (process.env.SLACK_ENABLED !== "true") {
+      throw new Error("Slack is not enabled for this environment");
+    }
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    const permission = await ctx.runQuery(
+      internalApi.agentChannels.authorizeSetup,
+      { clientOrgId: args.clientOrgId, userId },
+    );
+    const connection = await ctx.runQuery(
+      internalApi.slack.getActiveConnection,
+      { clientOrgId: args.clientOrgId },
+    );
+    if (!connection) throw new Error("The Slack workspace is not connected");
+
+    const response = await fetch(
+      `${requiredEnv("SLACK_WORKER_URL")}/channels/leave`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${requiredEnv("SLACK_WORKER_SECRET")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamId: connection.teamId,
+          channelId: args.channelId,
+        }),
+        signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+      },
+    );
+    const result = (await response.json()) as {
+      channel?: AvailableSlackChannel;
+      error?: string;
+    };
+    if (!response.ok || result.channel?.isMember !== false) {
+      throw new Error(result.error ?? "Glass could not leave that channel");
+    }
+    const channels = await fetchAvailableChannels({ teamId: connection.teamId });
+    await syncJoinedChannels(ctx, {
+      clientOrgId: args.clientOrgId,
+      connectionId: connection._id,
+      channels,
+    });
+    await ctx.runMutation(
+      internalApi.agentChannels.recordSlackChannelLeftInternal,
       {
         clientOrgId: args.clientOrgId,
         connectionId: connection._id,

@@ -87,22 +87,25 @@ local and cloud Conductor workspaces:
 - `convex dev` with the worktree's native local database, including local
   email/OTP capture logs, on `$CONDUCTOR_PORT + 3` (client) and `+ 4` (HTTP actions)
 - the extraction worker on `$CONDUCTOR_PORT + 1`
-- the Spectrum terminal iMessage worker on `$CONDUCTOR_PORT + 2`
 - the mock Slack worker on `$CONDUCTOR_PORT + 5`
 - a local email capture watcher that surfaces delivery context and OTPs
 
 On macOS the extraction worker uses the worktree-tagged Apple container image;
 in a cloud workspace it runs the already-built Linux worker directly. The Run
-terminal opens Spectrum's interactive TUI and automatically prints a compact
-notice for every captured local email, including an explicit `OTP:` line when a
-six-digit code is present. Web, Convex, extraction, and Slack output is written
-to `.context/logs/{web,convex,extraction,slack}.log`; full captured email bodies
+terminal automatically prints a compact notice for every captured local email,
+including an explicit `OTP:` line when a six-digit code is present. Web, Convex,
+extraction, and Slack output is written to
+`.context/logs/{web,convex,extraction,slack}.log`; full captured email bodies
 remain in `convex.log`. The separate **Email deliveries** Run template opens the
 same capture stream in a dedicated terminal when desired.
-Spectrum starts as the Montgomery Risk admin. Use `/whoami` to inspect the
-current sender, `/as broker` for Montgomery Risk, `/as client` for Cove, and
-`/as public` for the unlinked public-demo path. `/as +<E.164 phone>` can test an
-explicit local identity; the following message uses the newly selected sender.
+
+Spectrum is optional and reserves `$CONDUCTOR_PORT + 2`. Start its interactive
+TUI in a separate terminal with `npm run conductor:spectrum`, or use the
+**Spectrum terminal** Run template. It starts as the Montgomery Risk admin. Use
+`/whoami` to inspect the current sender, `/as broker` for Montgomery Risk,
+`/as client` for Cove, and `/as public` for the unlinked public-demo path.
+`/as +<E.164 phone>` can test an explicit local identity; the following message
+uses the newly selected sender.
 Conductor runs are concurrent: each local worktree reserves one six-port namespace
 from its unique `CONDUCTOR_PORT` (`+0` web, `+1` extraction, `+2` Spectrum,
 `+3/+4` Convex, `+5` Slack), and the app/workers wait for that exact local
@@ -136,7 +139,8 @@ not rewrite committed agent skills and guidance; refresh those explicitly with
 
 - `npm run build` - production build
 - `npm run conductor:setup` - prepare a fresh Conductor worktree end to end
-- `npm run conductor:dev` - start Glass, Convex, extraction, and Spectrum terminal
+- `npm run conductor:dev` - start Glass, Convex, extraction, Slack, and email capture
+- `npm run conductor:spectrum` - open the optional Spectrum iMessage TUI in a separate terminal
 - `npm run conductor:emails` - show captured local email deliveries and OTPs in a dedicated terminal
 - `npm run lint` - ESLint
 - `npm test` - run tests

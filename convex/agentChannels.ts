@@ -16,6 +16,7 @@ import {
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
 import { getSlackHostConfiguration } from "./lib/slackConfig";
+import { missingSlackCustomerScopes } from "./lib/slackOAuthPolicy";
 
 export const DEFAULT_AGENT_CHANNEL_SETTINGS = {
   emailEnabled: true,
@@ -28,6 +29,21 @@ export const DEFAULT_AGENT_CHANNEL_SETTINGS = {
 
 const OPERATOR_SLACK_ROSTER_LIMIT = 250;
 
+const slackSetupStepValidator = v.union(
+  v.literal("install"),
+  v.literal("support"),
+  v.literal("channels"),
+  v.literal("automations"),
+);
+const deferrableSlackSetupStepValidator = v.union(
+  v.literal("install"),
+  v.literal("support"),
+  v.literal("channels"),
+);
+
+type SlackSetupStep = "install" | "support" | "channels" | "automations";
+type DeferrableSlackSetupStep = Exclude<SlackSetupStep, "automations">;
+
 type AgentChannelSettingsInput = {
   emailEnabled: boolean;
   imessageEnabled: boolean;
@@ -36,6 +52,27 @@ type AgentChannelSettingsInput = {
   slackVendorAlertsEnabled: boolean;
   slackPolicyDeliveryEnabled: boolean;
 };
+
+function normalizeAgentHandle(value: string | undefined) {
+  const raw = value?.trim().toLowerCase() ?? "";
+  const withoutDomain = raw.includes("@") ? raw.split("@")[0] : raw;
+  const normalized = withoutDomain
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/^-+|-+$/g, "");
+  return normalized || undefined;
+}
+
+function validateAgentHandle(handle: string | undefined) {
+  if (!handle) return;
+  if (handle.length < 3 || handle.length > 30) {
+    throw new Error("Agent email address must be 3-30 characters");
+  }
+  if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(handle)) {
+    throw new Error(
+      "Agent email address must start with a letter and end with a letter or number",
+    );
+  }
+}
 
 const settingsArgs = {
   emailEnabled: v.boolean(),
@@ -87,20 +124,75 @@ async function activeConnection(
     .first();
 }
 
+async function slackSetupState(
+  ctx: QueryCtx | MutationCtx,
+  clientOrgId: Id<"organizations">,
+) {
+  return await ctx.db
+    .query("slackSetupStates")
+    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrgId))
+    .first();
+}
+
+async function invalidateSlackSetupOAuthStates(
+  ctx: MutationCtx,
+  clientOrgId: Id<"organizations">,
+  now: number,
+) {
+  for (const purpose of ["customer", "customer_install_invite"] as const) {
+    const states = await ctx.db
+      .query("slackOAuthStates")
+      .withIndex("by_clientOrgId_and_purpose", (q) =>
+        q.eq("clientOrgId", clientOrgId).eq("purpose", purpose),
+      )
+      .collect();
+    for (const state of states) {
+      if (!state.usedAt && !state.invalidatedAt) {
+        await ctx.db.patch(state._id, { invalidatedAt: now });
+      }
+    }
+  }
+}
+
 async function channelOverview(
   ctx: QueryCtx | MutationCtx,
   clientOrgId: Id<"organizations">,
 ) {
-  const [settings, connection] = await Promise.all([
+  const [client, settings, connection] = await Promise.all([
+    ctx.db.get(clientOrgId),
     readSettings(ctx, clientOrgId),
     activeConnection(ctx, clientOrgId),
   ]);
-  const supportChannel = await ctx.db
-    .query("slackChannelBindings")
-    .withIndex("by_clientOrgId_and_status", (q) =>
-      q.eq("clientOrgId", clientOrgId).eq("status", "active"),
-    )
-    .first();
+  if (!client || (client.type ?? "client") !== "client") {
+    throw new Error("Client organization not found");
+  }
+  const broker = client.brokerOrgId
+    ? await ctx.db.get(client.brokerOrgId)
+    : null;
+  const agentEmailAddress = client.brokerOrgId
+    ? {
+        handle: broker?.agentHandle ?? null,
+        configuredHandle: broker?.agentHandle ?? null,
+        source: "broker" as const,
+        ownerOrgId: client.brokerOrgId,
+        ownerName: broker?.name ?? "Managing broker",
+      }
+    : {
+        handle: client.agentHandle ?? "agent",
+        configuredHandle: client.agentHandle ?? null,
+        source: client.agentHandle ? ("client" as const) : ("shared" as const),
+        ownerOrgId: client._id,
+        ownerName: client.name,
+      };
+  const [supportChannel, setup] = await Promise.all([
+    ctx.db
+      .query("slackChannelBindings")
+      .withIndex("by_clientOrgId_and_status", (q) =>
+        q.eq("clientOrgId", clientOrgId).eq("status", "active"),
+      )
+      .first(),
+    slackSetupState(ctx, clientOrgId),
+  ]);
   const joinedChannels = connection
     ? await ctx.db
         .query("slackChannelMemberships")
@@ -111,11 +203,13 @@ async function channelOverview(
     : [];
   return {
     settings: settingsInput(settings),
+    agentEmailAddress,
     connection,
     primaryChannel: supportChannel,
     supportChannel,
     joinedChannels,
     slackMode: getSlackHostConfiguration().mode,
+    setup,
   };
 }
 
@@ -202,7 +296,11 @@ export const get = query({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
     await getOrgAccess(ctx, args.clientOrgId);
-    return await channelOverview(ctx, args.clientOrgId);
+    const { setup, ...overview } = await channelOverview(ctx, args.clientOrgId);
+    return {
+      ...overview,
+      setup: setup ? { status: setup.status } : null,
+    };
   },
 });
 
@@ -250,6 +348,247 @@ export const updateForOperator = mutation({
       metadata: settings,
     });
     return id;
+  },
+});
+
+export const updateStandaloneAgentEmailHandleForOperator = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    handle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client || (client.type ?? "client") !== "client") {
+      throw new Error("Client organization not found");
+    }
+    if (client.brokerOrgId) {
+      throw new Error(
+        "This client inherits its agent email address from its broker",
+      );
+    }
+
+    const handle = normalizeAgentHandle(args.handle);
+    validateAgentHandle(handle);
+    if (handle) {
+      const existing = await ctx.db
+        .query("organizations")
+        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", handle))
+        .unique();
+      if (existing && existing._id !== client._id) {
+        throw new Error("Agent email address is already taken");
+      }
+    }
+
+    await ctx.db.patch(client._id, { agentHandle: handle });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: client._id,
+      summary: `Updated agent email address for ${client.name}`,
+      metadata: {
+        previousHandle: client.agentHandle,
+        nextHandle: handle,
+      },
+    });
+    return handle ?? null;
+  },
+});
+
+export const startSlackSetup = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    mode: v.union(v.literal("initial"), v.literal("reinstall")),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const org = await ctx.db.get(args.clientOrgId);
+    if (!org || (org.type ?? "client") !== "client") {
+      throw new Error("Client organization not found");
+    }
+    const connection = await activeConnection(ctx, args.clientOrgId);
+    if (args.mode === "reinstall" && !connection) {
+      throw new Error("Connect Slack before starting a reinstall");
+    }
+    if (args.mode === "initial" && connection) {
+      throw new Error("Slack is already connected for this client");
+    }
+
+    const existing = await slackSetupState(ctx, args.clientOrgId);
+    if (existing?.status === "in_progress" && existing.mode === args.mode) {
+      return existing._id;
+    }
+
+    const now = dayjs().valueOf();
+    if (existing) {
+      await invalidateSlackSetupOAuthStates(ctx, args.clientOrgId, now);
+    }
+    const setup = {
+      version: 1 as const,
+      mode: args.mode,
+      status: "in_progress" as const,
+      currentStep: "install" as const,
+      deferredSteps: [] as DeferrableSlackSetupStep[],
+      inviteRecipientEmail: undefined,
+      inviteSentAt: undefined,
+      inviteExpiresAt: undefined,
+      installationCompletedAt: undefined,
+      supportOmittedOperators: undefined,
+      supportOperatorInvitesSucceeded: undefined,
+      supportOperatorInviteError: undefined,
+      supportInviteSentAt: undefined,
+      supportInviteError: undefined,
+      startedByOperatorUserId: operator.userId,
+      completedByOperatorUserId: undefined,
+      startedAt: now,
+      completedAt: undefined,
+      cancelledAt: undefined,
+      updatedAt: now,
+    };
+    let setupId: Id<"slackSetupStates">;
+    if (existing) {
+      await ctx.db.patch(existing._id, setup);
+      setupId = existing._id;
+    } else {
+      setupId = await ctx.db.insert("slackSetupStates", {
+        clientOrgId: args.clientOrgId,
+        ...setup,
+        createdAt: now,
+      });
+    }
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary:
+        args.mode === "reinstall"
+          ? "Started client Slack reinstall"
+          : "Started client Slack setup",
+      metadata: { setupId, mode: args.mode },
+    });
+    return setupId;
+  },
+});
+
+export const setSlackSetupStep = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    step: slackSetupStepValidator,
+    deferredStep: v.optional(deferrableSlackSetupStepValidator),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const setup = await slackSetupState(ctx, args.clientOrgId);
+    if (!setup || setup.status !== "in_progress") {
+      throw new Error("Slack setup is not in progress");
+    }
+    const deferredSteps = args.deferredStep
+      ? Array.from(new Set([...setup.deferredSteps, args.deferredStep]))
+      : setup.deferredSteps;
+    await ctx.db.patch(setup._id, {
+      currentStep: args.step,
+      deferredSteps,
+      updatedAt: dayjs().valueOf(),
+    });
+    if (args.deferredStep) {
+      await writeOperatorAudit(ctx, {
+        operatorUserId: operator.userId,
+        type: "setup_write",
+        targetOrgId: args.clientOrgId,
+        summary: `Deferred ${args.deferredStep} during client Slack setup`,
+        metadata: { setupId: setup._id, nextStep: args.step },
+      });
+    }
+    return setup._id;
+  },
+});
+
+export const finishSlackSetup = mutation({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const [setup, connection, supportChannel] = await Promise.all([
+      slackSetupState(ctx, args.clientOrgId),
+      activeConnection(ctx, args.clientOrgId),
+      ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
+        )
+        .first(),
+    ]);
+    if (!setup || setup.status !== "in_progress") {
+      throw new Error("Slack setup is not in progress");
+    }
+    if (
+      !connection ||
+      missingSlackCustomerScopes(connection.grantedScopes).length > 0
+    ) {
+      throw new Error(
+        "Install or update Glass in Slack before finishing setup",
+      );
+    }
+    if (
+      setup.mode === "reinstall" &&
+      (!setup.installationCompletedAt ||
+        setup.installationCompletedAt < setup.startedAt)
+    ) {
+      throw new Error("Finish the Slack reinstall before completing setup");
+    }
+    const now = dayjs().valueOf();
+    const deferredSteps = setup.deferredSteps.filter((step) => {
+      if (step === "install") return false;
+      if (step === "support") return !supportChannel;
+      return !connection.automaticChannelId;
+    });
+    await invalidateSlackSetupOAuthStates(ctx, args.clientOrgId, now);
+    await ctx.db.patch(setup._id, {
+      status: "completed",
+      currentStep: "automations",
+      deferredSteps,
+      completedByOperatorUserId: operator.userId,
+      completedAt: now,
+      cancelledAt: undefined,
+      updatedAt: now,
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary:
+        setup.mode === "reinstall"
+          ? "Completed client Slack reinstall"
+          : "Completed client Slack setup",
+      metadata: { setupId: setup._id, deferredSteps },
+    });
+    return setup._id;
+  },
+});
+
+export const cancelSlackSetup = mutation({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const setup = await slackSetupState(ctx, args.clientOrgId);
+    if (!setup || setup.status !== "in_progress") return null;
+    if (setup.mode !== "reinstall") {
+      throw new Error("Initial Slack setup can be closed and resumed later");
+    }
+    const now = dayjs().valueOf();
+    await invalidateSlackSetupOAuthStates(ctx, args.clientOrgId, now);
+    await ctx.db.patch(setup._id, {
+      status: "cancelled",
+      cancelledAt: now,
+      updatedAt: now,
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: "Cancelled client Slack reinstall",
+      metadata: { setupId: setup._id },
+    });
+    return setup._id;
   },
 });
 
@@ -389,11 +728,162 @@ export const authorizeSlackInstallInvite = internalQuery({
     if (!profile || profile.status !== "active") {
       throwUserFacingError(userFacingErrorCodes.operatorRequired);
     }
-    const connection = await activeConnection(ctx, args.clientOrgId);
-    if (connection) {
-      throw new Error("This client already has an active Slack workspace");
+    const [connection, setup] = await Promise.all([
+      activeConnection(ctx, args.clientOrgId),
+      slackSetupState(ctx, args.clientOrgId),
+    ]);
+    if (!setup || setup.status !== "in_progress") {
+      throw new Error(
+        "Start Slack setup before sending an installation invite",
+      );
     }
-    return { clientName: org.name };
+    if (setup.mode === "reinstall" && !connection) {
+      throw new Error("The existing Slack connection is no longer active");
+    }
+    return {
+      clientName: org.name,
+      connection,
+      setupStateId: setup._id,
+      setupMode: setup.mode,
+    };
+  },
+});
+
+export const getSlackSetupForAction = internalQuery({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => await slackSetupState(ctx, args.clientOrgId),
+});
+
+export const getActiveSlackConnectionByTeamId = internalQuery({
+  args: { teamId: v.string() },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("slackWorkspaceConnections")
+      .withIndex("by_teamId_and_status", (q) =>
+        q.eq("teamId", args.teamId).eq("status", "active"),
+      )
+      .first(),
+});
+
+export const getSlackSupportSetupContext = internalQuery({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const org = await ctx.db.get(args.clientOrgId);
+    if (!org || (org.type ?? "client") !== "client") {
+      throw new Error("Client organization not found");
+    }
+    const hostTeamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
+    if (!hostTeamId) {
+      throw new Error("The Clarity Slack workspace is not configured");
+    }
+    const profiles = await ctx.db
+      .query("operatorProfiles")
+      .take(OPERATOR_SLACK_ROSTER_LIMIT);
+    const operators = await Promise.all(
+      profiles.map(async (profile) => {
+        const user = await ctx.db.get(profile.userId);
+        const displayName = user?.name?.trim() || profile.email;
+        if (profile.status !== "active") {
+          return {
+            displayName,
+            email: profile.email,
+            slackUserId: null,
+            omissionReason: "Operator is disabled" as const,
+          };
+        }
+        if (!profile.slackUserId) {
+          return {
+            displayName,
+            email: profile.email,
+            slackUserId: null,
+            omissionReason: "Not linked to Slack" as const,
+          };
+        }
+        if (profile.slackTeamId !== hostTeamId) {
+          return {
+            displayName,
+            email: profile.email,
+            slackUserId: null,
+            omissionReason: "Linked to a different workspace" as const,
+          };
+        }
+        return {
+          displayName,
+          email: profile.email,
+          slackUserId: profile.slackUserId,
+          omissionReason: null,
+        };
+      }),
+    );
+    return {
+      hostTeamId,
+      linkedOperatorUserIds: Array.from(
+        new Set(
+          operators.flatMap((operator) =>
+            operator.slackUserId ? [operator.slackUserId] : [],
+          ),
+        ),
+      ),
+      omittedOperators: operators
+        .filter((operator) => operator.omissionReason)
+        .map(({ displayName, email, omissionReason }) => ({
+          displayName,
+          email,
+          reason: omissionReason!,
+        })),
+    };
+  },
+});
+
+export const recordSlackSupportSetupOutcome = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    operatorUserId: v.id("users"),
+    omittedOperators: v.array(
+      v.object({
+        displayName: v.string(),
+        email: v.string(),
+        reason: v.string(),
+      }),
+    ),
+    operatorInvitesSucceeded: v.boolean(),
+    operatorInviteError: v.optional(v.string()),
+    supportInviteSucceeded: v.boolean(),
+    supportInviteError: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = dayjs().valueOf();
+    const setup = await slackSetupState(ctx, args.clientOrgId);
+    if (!setup) {
+      return await ctx.db.insert("slackSetupStates", {
+        clientOrgId: args.clientOrgId,
+        version: 1,
+        mode: "initial",
+        status: "completed",
+        currentStep: "automations",
+        deferredSteps: [],
+        supportOmittedOperators: args.omittedOperators,
+        supportOperatorInvitesSucceeded: args.operatorInvitesSucceeded,
+        supportOperatorInviteError: args.operatorInviteError,
+        supportInviteSentAt: args.supportInviteSucceeded ? now : undefined,
+        supportInviteError: args.supportInviteError,
+        startedByOperatorUserId: args.operatorUserId,
+        completedByOperatorUserId: args.operatorUserId,
+        startedAt: now,
+        completedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    await ctx.db.patch(setup._id, {
+      supportOmittedOperators: args.omittedOperators,
+      supportOperatorInvitesSucceeded: args.operatorInvitesSucceeded,
+      supportOperatorInviteError: args.operatorInviteError,
+      supportInviteSentAt: args.supportInviteSucceeded ? now : undefined,
+      supportInviteError: args.supportInviteError,
+      updatedAt: now,
+    });
+    return setup._id;
   },
 });
 
@@ -431,6 +921,7 @@ export const createOAuthState = internalMutation({
     clientOrgId: v.id("organizations"),
     userId: v.id("users"),
     actorKind: v.union(v.literal("client_admin"), v.literal("operator")),
+    setupStateId: v.optional(v.id("slackSetupStates")),
   },
   handler: async (ctx, args) => {
     const state = randomState();
@@ -439,6 +930,7 @@ export const createOAuthState = internalMutation({
       stateHash: await sha256(state),
       purpose: "customer",
       clientOrgId: args.clientOrgId,
+      setupStateId: args.setupStateId,
       ...(args.actorKind === "operator"
         ? { initiatedByOperatorUserId: args.userId }
         : { initiatedByUserId: args.userId }),
@@ -452,7 +944,9 @@ export const createOAuthState = internalMutation({
 export const createSlackInstallInviteOAuthState = internalMutation({
   args: {
     clientOrgId: v.id("organizations"),
+    setupStateId: v.id("slackSetupStates"),
     operatorUserId: v.id("users"),
+    recipientEmail: v.string(),
     expiresInDays: v.number(),
   },
   handler: async (ctx, args) => {
@@ -463,25 +957,51 @@ export const createSlackInstallInviteOAuthState = internalMutation({
     ) {
       throw new Error("Slack install invitation expiration must be 1-14 days");
     }
+    const setup = await ctx.db.get(args.setupStateId);
+    if (
+      !setup ||
+      setup.clientOrgId !== args.clientOrgId ||
+      setup.status !== "in_progress"
+    ) {
+      throw new Error("Slack setup is not in progress");
+    }
     const state = randomState();
     const now = dayjs().valueOf();
-    await ctx.db.insert("slackOAuthStates", {
+    const existingStates = await ctx.db
+      .query("slackOAuthStates")
+      .withIndex("by_clientOrgId_and_purpose", (q) =>
+        q
+          .eq("clientOrgId", args.clientOrgId)
+          .eq("purpose", "customer_install_invite"),
+      )
+      .collect();
+    for (const existing of existingStates) {
+      if (!existing.usedAt && !existing.invalidatedAt) {
+        await ctx.db.patch(existing._id, { invalidatedAt: now });
+      }
+    }
+    const expiresAt = dayjs(now).add(args.expiresInDays, "day").valueOf();
+    const stateId = await ctx.db.insert("slackOAuthStates", {
       stateHash: await sha256(state),
-      purpose: "customer",
+      purpose: "customer_install_invite",
       clientOrgId: args.clientOrgId,
+      setupStateId: args.setupStateId,
+      recipientEmail: args.recipientEmail,
       initiatedByOperatorUserId: args.operatorUserId,
-      expiresAt: dayjs(now).add(args.expiresInDays, "day").valueOf(),
+      expiresAt,
       createdAt: now,
     });
-    return state;
+    return { state, stateId, expiresAt };
   },
 });
 
 export const recordSlackInstallInviteSent = internalMutation({
   args: {
     clientOrgId: v.id("organizations"),
+    setupStateId: v.id("slackSetupStates"),
     operatorUserId: v.id("users"),
     recipientEmail: v.string(),
+    expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
     const profile = await ctx.db
@@ -495,13 +1015,44 @@ export const recordSlackInstallInviteSent = internalMutation({
     if (!org || (org.type ?? "client") !== "client") {
       throw new Error("Client organization not found");
     }
+    const setup = await ctx.db.get(args.setupStateId);
+    if (
+      !setup ||
+      setup.clientOrgId !== args.clientOrgId ||
+      setup.status !== "in_progress"
+    ) {
+      throw new Error("Slack setup is not in progress");
+    }
+    const now = dayjs().valueOf();
+    await ctx.db.patch(setup._id, {
+      inviteRecipientEmail: args.recipientEmail,
+      inviteSentAt: now,
+      inviteExpiresAt: args.expiresAt,
+      updatedAt: now,
+    });
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "setup_write",
       targetOrgId: args.clientOrgId,
-      summary: "Sent client Slack app install invitation",
-      metadata: { recipientEmail: args.recipientEmail },
+      summary:
+        setup.mode === "reinstall"
+          ? "Sent client Slack app update invitation"
+          : "Sent client Slack app install invitation",
+      metadata: {
+        recipientEmail: args.recipientEmail,
+        expiresAt: args.expiresAt,
+        setupId: setup._id,
+      },
     });
+  },
+});
+
+export const invalidateSlackOAuthState = internalMutation({
+  args: { stateId: v.id("slackOAuthStates") },
+  handler: async (ctx, args) => {
+    const state = await ctx.db.get(args.stateId);
+    if (!state || state.usedAt || state.invalidatedAt) return;
+    await ctx.db.patch(state._id, { invalidatedAt: dayjs().valueOf() });
   },
 });
 
@@ -530,9 +1081,39 @@ export const claimOAuthState = internalMutation({
       .withIndex("by_stateHash", (q) => q.eq("stateHash", stateHash))
       .first();
     const now = dayjs().valueOf();
-    if (!row || row.usedAt || row.expiresAt < now) return null;
+    if (!row || row.usedAt || row.invalidatedAt || row.expiresAt < now) {
+      return null;
+    }
     await ctx.db.patch(row._id, { usedAt: now });
     return row;
+  },
+});
+
+export const markSlackSetupInstallationComplete = internalMutation({
+  args: { setupStateId: v.id("slackSetupStates") },
+  handler: async (ctx, args) => {
+    const setup = await ctx.db.get(args.setupStateId);
+    if (!setup || setup.status !== "in_progress") return null;
+    const now = dayjs().valueOf();
+    await ctx.db.patch(setup._id, {
+      installationCompletedAt: now,
+      updatedAt: now,
+    });
+    return setup._id;
+  },
+});
+
+export const markSlackSetupInstallationCompleteByClient = internalMutation({
+  args: { clientOrgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const setup = await slackSetupState(ctx, args.clientOrgId);
+    if (!setup || setup.status !== "in_progress") return null;
+    const now = dayjs().valueOf();
+    await ctx.db.patch(setup._id, {
+      installationCompletedAt: now,
+      updatedAt: now,
+    });
+    return setup._id;
   },
 });
 
@@ -1134,6 +1715,30 @@ export const recordSlackChannelJoinedInternal = internalMutation({
       type: "setup_write",
       targetOrgId: args.clientOrgId,
       summary: `Added Glass to #${args.channelName}`,
+      metadata: {
+        connectionId: args.connectionId,
+        channelId: args.channelId,
+      },
+    });
+  },
+});
+
+export const recordSlackChannelLeftInternal = internalMutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    channelId: v.string(),
+    channelName: v.string(),
+    actorUserId: v.id("users"),
+    actorKind: v.union(v.literal("client_admin"), v.literal("operator")),
+  },
+  handler: async (ctx, args) => {
+    if (args.actorKind !== "operator") return;
+    await writeOperatorAudit(ctx, {
+      operatorUserId: args.actorUserId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: `Removed Glass from #${args.channelName}`,
       metadata: {
         connectionId: args.connectionId,
         channelId: args.channelId,

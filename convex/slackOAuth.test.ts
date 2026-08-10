@@ -2,7 +2,11 @@
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
-import { createOAuthState } from "./agentChannels";
+import {
+  cancelSlackSetup,
+  createOAuthState,
+  startSlackSetup,
+} from "./agentChannels";
 import {
   begin,
   beginHost,
@@ -17,7 +21,9 @@ import {
 import { encryptSlackCredential } from "./lib/slackCredentials";
 
 const modules = import.meta.glob("./**/*.ts");
+const cancelSlackSetupFn = cancelSlackSetup as any;
 const createOAuthStateFn = createOAuthState as any;
+const startSlackSetupFn = startSlackSetup as any;
 const beginFn = begin as any;
 const beginHostFn = beginHost as any;
 const completeFn = complete as any;
@@ -59,6 +65,118 @@ async function seedAdmin(t: ReturnType<typeof convexTest>, name = "Client") {
   });
 }
 
+async function seedOperator(
+  t: ReturnType<typeof convexTest>,
+  name = "Client",
+) {
+  return await t.run(async (ctx) => {
+    const clientOrgId = await ctx.db.insert("organizations", {
+      name,
+      type: "client",
+    });
+    const operatorUserId = await ctx.db.insert("users", {
+      name: "Glass Operator",
+      email: "operator@glass.insure",
+      accountKind: "operator",
+    });
+    await ctx.db.insert("operatorProfiles", {
+      userId: operatorUserId,
+      email: "operator@glass.insure",
+      role: "operator",
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return { clientOrgId, operatorUserId };
+  });
+}
+
+async function startInitialSetup(
+  t: ReturnType<typeof convexTest>,
+  clientOrgId: string,
+  operatorUserId: string,
+) {
+  await t
+    .withIdentity({ subject: `${operatorUserId}|session` })
+    .mutation(startSlackSetupFn, { clientOrgId, mode: "initial" });
+}
+
+async function seedRepairConnection(t: ReturnType<typeof convexTest>) {
+  const { clientOrgId, operatorUserId } = await seedOperator(t, "Repair Client");
+  const records = await t.run(async (ctx) => {
+    const serviceUserId = await ctx.db.insert("users", {
+      name: "Slack service",
+      accountKind: "customer",
+      serviceAccountKind: "slack",
+    });
+    const installationId = await ctx.db.insert("slackInstallations", {
+      teamId: "T-CUSTOMER",
+      teamName: "Customer workspace",
+      kind: "customer",
+      botUserId: "U-GLASS",
+      encryptedBotToken: encryptSlackCredential(
+        "xoxb-working-token",
+        "T-CUSTOMER",
+      ),
+      grantedScopes: [...SLACK_CUSTOMER_SCOPES],
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const connectionId = await ctx.db.insert("slackWorkspaceConnections", {
+      clientOrgId,
+      teamId: "T-CUSTOMER",
+      teamName: "Customer workspace",
+      nativeInstallationId: installationId,
+      botUserId: "U-GLASS",
+      grantedScopes: [...SLACK_CUSTOMER_SCOPES],
+      status: "active",
+      serviceUserId,
+      thirdPartyVisibilityAcknowledged: true,
+      automaticChannelId: "C-DEFAULT",
+      automaticChannelName: "policy-updates",
+      automaticChannelRoutingConfiguredAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const bindingId = await ctx.db.insert("slackChannelBindings", {
+      connectionId,
+      clientOrgId,
+      kind: "primary",
+      hostTeamId: "T-CLARITY",
+      hostChannelId: "C-HOST",
+      customerChannelId: "C-SUPPORT",
+      channelName: "glass-repair-client",
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await ctx.db.insert("agentChannelSettings", {
+      clientOrgId,
+      emailEnabled: true,
+      imessageEnabled: true,
+      slackEnabled: true,
+      slackSafeAlertsEnabled: true,
+      slackVendorAlertsEnabled: true,
+      slackPolicyDeliveryEnabled: true,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return { installationId, connectionId, bindingId };
+  });
+  const operator = t.withIdentity({ subject: `${operatorUserId}|session` });
+  const setupStateId = await operator.mutation(startSlackSetupFn, {
+    clientOrgId,
+    mode: "reinstall",
+  });
+  return {
+    clientOrgId,
+    operatorUserId,
+    setupStateId,
+    ...records,
+  };
+}
+
 async function oauthState(
   t: ReturnType<typeof convexTest>,
   clientOrgId: string,
@@ -98,38 +216,21 @@ describe("Slack OAuth actions", () => {
     vi.stubEnv("GLASS_ENV", "local");
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const t = convexTest(schema, modules);
-    const { clientOrgId, operatorUserId } = await t.run(async (ctx) => {
-      const orgId = await ctx.db.insert("organizations", {
-        name: "Cove & Co.",
-        type: "client",
-      });
-      const userId = await ctx.db.insert("users", {
-        name: "Glass Operator",
-        email: "operator@glass.insure",
-        accountKind: "operator",
-      });
-      await ctx.db.insert("operatorProfiles", {
-        userId,
-        email: "operator@glass.insure",
-        role: "operator",
-        status: "active",
-        createdAt: 1,
-        updatedAt: 1,
-      });
-      return { clientOrgId: orgId, operatorUserId: userId };
-    });
+    const { clientOrgId, operatorUserId } = await seedOperator(t, "Cove & Co.");
+    await startInitialSetup(t, clientOrgId, operatorUserId);
 
-    await expect(
-      t
-        .withIdentity({ subject: `${operatorUserId}|session` })
-        .action(sendInstallInviteFn, {
-          clientOrgId,
-          recipientEmail: " Admin@Cove.Test ",
-        }),
-    ).resolves.toEqual({
+    const result = await t
+      .withIdentity({ subject: `${operatorUserId}|session` })
+      .action(sendInstallInviteFn, {
+        clientOrgId,
+        recipientEmail: " Admin@Cove.Test ",
+      });
+    expect(result).toMatchObject({
       recipientEmail: "admin@cove.test",
       expiresInDays: 7,
+      mode: "initial",
     });
+    expect(result.expiresAt).toBeTypeOf("number");
 
     const capture = String(logSpy.mock.calls[0]?.[0] ?? "");
     expect(capture).toContain("to: admin@cove.test");
@@ -146,25 +247,30 @@ describe("Slack OAuth actions", () => {
 
     const records = await t.run(async (ctx) => ({
       state: await ctx.db.query("slackOAuthStates").first(),
+      setup: await ctx.db.query("slackSetupStates").first(),
       audits: await ctx.db.query("operatorAuditEvents").collect(),
     }));
     expect(records.state).toMatchObject({
       clientOrgId,
-      purpose: "customer",
+      purpose: "customer_install_invite",
+      recipientEmail: "admin@cove.test",
       initiatedByOperatorUserId: operatorUserId,
+    });
+    expect(records.setup).toMatchObject({
+      status: "in_progress",
+      inviteRecipientEmail: "admin@cove.test",
+      inviteExpiresAt: result.expiresAt,
     });
     expect(records.state!.expiresAt - records.state!.createdAt).toBe(
       7 * 24 * 60 * 60 * 1000,
     );
-    expect(records.audits).toMatchObject([
-      {
-        operatorUserId,
-        targetOrgId: clientOrgId,
-        type: "setup_write",
-        summary: "Sent client Slack app install invitation",
-        metadata: { recipientEmail: "admin@cove.test" },
-      },
-    ]);
+    expect(records.audits.at(-1)).toMatchObject({
+      operatorUserId,
+      targetOrgId: clientOrgId,
+      type: "setup_write",
+      summary: "Sent client Slack app install invitation",
+      metadata: { recipientEmail: "admin@cove.test" },
+    });
   });
 
   test("does not let a client admin send the operator install invitation", async () => {
@@ -198,6 +304,62 @@ describe("Slack OAuth actions", () => {
     await expect(
       t.run((ctx) => ctx.db.query("slackOAuthStates").collect()),
     ).resolves.toHaveLength(0);
+  });
+
+  test("resending invalidates the previous unused install link", async () => {
+    vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
+    vi.stubEnv("GLASS_ENV", "local");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const t = convexTest(schema, modules);
+    const { clientOrgId, operatorUserId } = await seedOperator(t);
+    await startInitialSetup(t, clientOrgId, operatorUserId);
+    const operator = t.withIdentity({
+      subject: `${operatorUserId}|session`,
+    });
+
+    await operator.action(sendInstallInviteFn, {
+      clientOrgId,
+      recipientEmail: "first@client.test",
+    });
+    const second = await operator.action(sendInstallInviteFn, {
+      clientOrgId,
+      recipientEmail: "second@client.test",
+    });
+
+    const records = await t.run(async (ctx) => ({
+      states: await ctx.db.query("slackOAuthStates").collect(),
+      setup: await ctx.db.query("slackSetupStates").first(),
+    }));
+    expect(records.states).toHaveLength(2);
+    expect(records.states[0].invalidatedAt).toBeTypeOf("number");
+    expect(records.states[1].invalidatedAt).toBeUndefined();
+    expect(records.setup).toMatchObject({
+      inviteRecipientEmail: "second@client.test",
+      inviteExpiresAt: second.expiresAt,
+    });
+  });
+
+  test("invalidates a newly created install link when email delivery fails", async () => {
+    vi.stubEnv("EMAIL_DELIVERY_MODE", "live");
+    vi.stubEnv("AUTH_RESEND_KEY", "");
+    const t = convexTest(schema, modules);
+    const { clientOrgId, operatorUserId } = await seedOperator(t);
+    await startInitialSetup(t, clientOrgId, operatorUserId);
+
+    await expect(
+      t
+        .withIdentity({ subject: `${operatorUserId}|session` })
+        .action(sendInstallInviteFn, {
+          clientOrgId,
+          recipientEmail: "admin@client.test",
+        }),
+    ).rejects.toThrow("Failed to send Slack install invitation");
+    const records = await t.run(async (ctx) => ({
+      state: await ctx.db.query("slackOAuthStates").first(),
+      setup: await ctx.db.query("slackSetupStates").first(),
+    }));
+    expect(records.state?.invalidatedAt).toBeTypeOf("number");
+    expect(records.setup?.inviteSentAt).toBeUndefined();
   });
 
   test("installs the host app only for an authenticated Glass operator", async () => {
@@ -254,18 +416,19 @@ describe("Slack OAuth actions", () => {
     expect(records.connection).toBeNull();
   });
 
-  test("starts an acknowledged, org-bound installation without exposing state at rest", async () => {
+  test("starts an acknowledged, operator-led installation without exposing state at rest", async () => {
     const t = convexTest(schema, modules);
-    const { clientOrgId, userId } = await seedAdmin(t);
-    const admin = t.withIdentity({ subject: `${userId}|session` });
+    const { clientOrgId, operatorUserId } = await seedOperator(t);
+    const operator = t.withIdentity({ subject: `${operatorUserId}|session` });
+    await startInitialSetup(t, clientOrgId, operatorUserId);
 
     await expect(
-      admin.action(beginFn, {
+      operator.action(beginFn, {
         clientOrgId,
         thirdPartyVisibilityAcknowledged: false,
       }),
     ).rejects.toThrow("Acknowledge");
-    const { url } = await admin.action(beginFn, {
+    const { url } = await operator.action(beginFn, {
       clientOrgId,
       thirdPartyVisibilityAcknowledged: true,
     });
@@ -278,18 +441,22 @@ describe("Slack OAuth actions", () => {
     expect(state).toBeTruthy();
 
     const stored = await t.run((ctx) => ctx.db.query("slackOAuthStates").first());
-    expect(stored).toMatchObject({ clientOrgId });
+    expect(stored).toMatchObject({
+      clientOrgId,
+      initiatedByOperatorUserId: operatorUserId,
+    });
     expect(stored?.stateHash).not.toBe(state);
   });
 
   test("connects, disconnects, and refreshes mock Slack without OAuth", async () => {
     vi.stubEnv("SLACK_MODE", "mock");
     const t = convexTest(schema, modules);
-    const { clientOrgId, userId } = await seedAdmin(t);
-    const admin = t.withIdentity({ subject: `${userId}|session` });
+    const { clientOrgId, operatorUserId } = await seedOperator(t);
+    const operator = t.withIdentity({ subject: `${operatorUserId}|session` });
+    await startInitialSetup(t, clientOrgId, operatorUserId);
 
     await expect(
-      admin.action(beginFn, {
+      operator.action(beginFn, {
         clientOrgId,
         thirdPartyVisibilityAcknowledged: true,
       }),
@@ -309,13 +476,13 @@ describe("Slack OAuth actions", () => {
     expect(first.oauthState).toBeNull();
 
     await expect(
-      admin.action(disconnectFn, { clientOrgId }),
+      operator.action(disconnectFn, { clientOrgId }),
     ).resolves.toEqual({ disconnected: true });
     await expect(
       t.run((ctx) => ctx.db.get(first.connection!._id)),
     ).resolves.toMatchObject({ status: "disconnected" });
 
-    await admin.action(beginFn, {
+    await operator.action(beginFn, {
       clientOrgId,
       thirdPartyVisibilityAcknowledged: true,
     });
@@ -406,7 +573,164 @@ describe("Slack OAuth actions", () => {
     ).resolves.toHaveLength(0);
   });
 
-  test("uninstalls Slack when a workspace mapping collides", async () => {
+  test("preserves a working repair when OAuth returns the wrong workspace", async () => {
+    const t = convexTest(schema, modules);
+    const repair = await seedRepairConnection(t);
+    const state = await t.mutation(createOAuthStateFn, {
+      clientOrgId: repair.clientOrgId,
+      userId: repair.operatorUserId,
+      actorKind: "operator",
+      setupStateId: repair.setupStateId,
+    });
+    const before = await t.run(async (ctx) => ({
+      connection: await ctx.db.get(repair.connectionId),
+      installation: await ctx.db.get(repair.installationId),
+    }));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "https://slack.com/api/oauth.v2.access") {
+        return jsonResponse(
+          slackTokenResponse({
+            team: { id: "T-WRONG", name: "Wrong workspace" },
+          }),
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const redirect = await t.action(completeFn, {
+      code: "repair-code",
+      state,
+    });
+    expect(redirect).toContain("reason=wrong_workspace");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const after = await t.run(async (ctx) => ({
+      connection: await ctx.db.get(repair.connectionId),
+      installation: await ctx.db.get(repair.installationId),
+      setup: await ctx.db.query("slackSetupStates").first(),
+    }));
+    expect(after.connection).toEqual(before.connection);
+    expect(after.installation).toEqual(before.installation);
+    expect(after.setup?.installationCompletedAt).toBeUndefined();
+  });
+
+  test("invalidates an unused repair link when the operator cancels", async () => {
+    const t = convexTest(schema, modules);
+    const repair = await seedRepairConnection(t);
+    const state = await t.mutation(createOAuthStateFn, {
+      clientOrgId: repair.clientOrgId,
+      userId: repair.operatorUserId,
+      actorKind: "operator",
+      setupStateId: repair.setupStateId,
+    });
+    await t
+      .withIdentity({ subject: `${repair.operatorUserId}|session` })
+      .mutation(cancelSlackSetupFn, { clientOrgId: repair.clientOrgId });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const redirect = await t.action(completeFn, {
+      code: "cancelled-repair-code",
+      state,
+    });
+    expect(redirect).toContain("reason=invalid_state");
+    expect(fetchMock).not.toHaveBeenCalled();
+    const records = await t.run(async (ctx) => ({
+      connection: await ctx.db.get(repair.connectionId),
+      setup: await ctx.db.query("slackSetupStates").first(),
+    }));
+    expect(records.connection?.status).toBe("active");
+    expect(records.setup?.status).toBe("cancelled");
+  });
+
+  test("preserves a working repair when updated scopes are incomplete", async () => {
+    const t = convexTest(schema, modules);
+    const repair = await seedRepairConnection(t);
+    const state = await t.mutation(createOAuthStateFn, {
+      clientOrgId: repair.clientOrgId,
+      userId: repair.operatorUserId,
+      actorKind: "operator",
+      setupStateId: repair.setupStateId,
+    });
+    const before = await t.run(async (ctx) => ({
+      connection: await ctx.db.get(repair.connectionId),
+      installation: await ctx.db.get(repair.installationId),
+    }));
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "https://slack.com/api/oauth.v2.access") {
+        return jsonResponse(
+          slackTokenResponse({ scope: "app_mentions:read,chat:write" }),
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const redirect = await t.action(completeFn, {
+      code: "repair-code",
+      state,
+    });
+    expect(redirect).toContain("reason=missing_scopes");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const after = await t.run(async (ctx) => ({
+      connection: await ctx.db.get(repair.connectionId),
+      installation: await ctx.db.get(repair.installationId),
+      setup: await ctx.db.query("slackSetupStates").first(),
+    }));
+    expect(after.connection).toEqual(before.connection);
+    expect(after.installation).toEqual(before.installation);
+    expect(after.setup?.installationCompletedAt).toBeUndefined();
+  });
+
+  test("refreshes same-workspace repair credentials without resetting client choices", async () => {
+    const t = convexTest(schema, modules);
+    const repair = await seedRepairConnection(t);
+    const state = await t.mutation(createOAuthStateFn, {
+      clientOrgId: repair.clientOrgId,
+      userId: repair.operatorUserId,
+      actorKind: "operator",
+      setupStateId: repair.setupStateId,
+    });
+    const oldInstallation = await t.run((ctx) =>
+      ctx.db.get(repair.installationId),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(slackTokenResponse())),
+    );
+
+    const redirect = await t.action(completeFn, {
+      code: "repair-code",
+      state,
+    });
+    expect(redirect).toContain("slack=connected");
+    const records = await t.run(async (ctx) => ({
+      connection: await ctx.db.get(repair.connectionId),
+      installation: await ctx.db.get(repair.installationId),
+      binding: await ctx.db.get(repair.bindingId),
+      settings: await ctx.db.query("agentChannelSettings").first(),
+      setup: await ctx.db.query("slackSetupStates").first(),
+    }));
+    expect(records.connection).toMatchObject({
+      status: "active",
+      automaticChannelId: "C-DEFAULT",
+      automaticChannelName: "policy-updates",
+    });
+    expect(records.binding?.status).toBe("active");
+    expect(records.settings).toMatchObject({
+      slackEnabled: true,
+      slackVendorAlertsEnabled: true,
+    });
+    expect(records.installation?.encryptedBotToken).not.toBe(
+      oldInstallation?.encryptedBotToken,
+    );
+    expect(records.setup?.installationCompletedAt).toBeTypeOf("number");
+    expect(records.setup?.status).toBe("in_progress");
+  });
+
+  test("rejects a workspace mapping collision without revoking the existing client", async () => {
     const t = convexTest(schema, modules);
     const existing = await seedAdmin(t, "Existing Client");
     const target = await seedAdmin(t, "Target Client");
@@ -442,7 +766,7 @@ describe("Slack OAuth actions", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const redirect = await t.action(completeFn, { code: "oauth-code", state });
-    expect(redirect).toContain("already+connected+to+another+client");
+    expect(redirect).toContain("reason=workspace_already_connected");
     expect(
       fetchMock.mock.calls.map(([input, init]) => ({
         url: String(input),
@@ -450,15 +774,15 @@ describe("Slack OAuth actions", () => {
       })),
     ).toEqual([
       { url: "https://slack.com/api/oauth.v2.access", method: "POST" },
-      { url: "https://slack.com/api/apps.uninstall", method: "POST" },
     ]);
-    const targetConnection = await t.run((ctx) =>
-      ctx.db
-        .query("slackWorkspaceConnections")
-        .filter((q) => q.eq(q.field("clientOrgId"), target.clientOrgId))
-        .first(),
+    const connections = await t.run((ctx) =>
+      ctx.db.query("slackWorkspaceConnections").collect(),
     );
-    expect(targetConnection).toBeNull();
+    expect(connections).toHaveLength(1);
+    expect(connections[0]).toMatchObject({
+      clientOrgId: existing.clientOrgId,
+      status: "active",
+    });
   });
 
   test("uninstalls the native Slack app before disconnecting Glass", async () => {

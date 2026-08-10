@@ -399,5 +399,5 @@ if (process.env.CONDUCTOR_IS_LOCAL !== "0") {
 }
 
 console.log(
-  "\nConductor workspace ready with its own local Convex database. Run the default Dev template to start Glass, Convex, extraction, Spectrum terminal, the Slack mock worker, and automatic email/OTP capture.",
+  "\nConductor workspace ready with its own local Convex database. Run the default Dev template to start Glass, Convex, extraction, the Slack mock worker, and automatic email/OTP capture. Start Spectrum separately with npm run conductor:spectrum.",
 );

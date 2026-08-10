@@ -26,7 +26,10 @@ import { CertificateWorkflowSection } from "@/components/settings/certificate-wo
 import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 import { BetaFeaturesSection } from "@/components/settings/beta-features-section";
 import { NotificationPreferencesSection } from "@/components/settings/notification-preferences-section";
-import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
+import {
+  AgentChannelsSection,
+  BrokerAgentChannelsSection,
+} from "@/components/settings/agent-channels-section";
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
@@ -151,8 +154,11 @@ function SectionContent({
     return isBroker ? <BrokerTeamTab /> : <TeamSection />;
   }
   if (section === "agent") {
-    if (tab === "channels" && currentOrg?.orgId) {
-      return <AgentChannelsSection clientOrgId={currentOrg.orgId} />;
+    if (tab === "channels") {
+      if (isBroker) return <BrokerAgentChannelsSection />;
+      if (currentOrg?.orgId) {
+        return <AgentChannelsSection clientOrgId={currentOrg.orgId} />;
+      }
     }
     if (tab === "memory") return <MemorySection />;
     if (tab === "models") return <ModelsSection />;

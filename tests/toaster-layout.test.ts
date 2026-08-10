@@ -13,10 +13,12 @@ describe("toaster layout", () => {
 
     expect(toaster).not.toContain("\n      expand");
     expect(toaster).toContain('visibleToasts={4}');
-    expect(toaster).toContain('bottom: "calc(var(--glass-app-bottom-inset, 0px) + 1.5rem)"');
+    expect(toaster).toContain(
+      'var(--glass-settings-drawer-footer-inset, 0px) + 1rem)',
+    );
     expect(toaster).toContain("mobileOffset={{");
     expect(toaster).toContain(
-      '"calc(var(--glass-app-bottom-inset, 0px) + env(safe-area-inset-bottom) + 5.5rem)"',
+      "var(--glass-settings-drawer-footer-inset, 0px) + env(safe-area-inset-bottom)",
     );
     expect(toaster).toContain('"--width": "min(356px, calc(100vw - 2rem))"');
     expect(toaster).toContain('width: "var(--width)"');

@@ -61,11 +61,15 @@ describe("auto-save surfaces", () => {
 
   it("tracks raw validated inputs and the complete policy draft as intent", () => {
     const organization = read("components/settings/organization-section.tsx");
-    const agent = read("components/settings/broker-agent-tab.tsx");
+    const agentBehavior = read("components/settings/broker-agent-tab.tsx");
+    const agentChannels = read(
+      "components/settings/agent-channels-section.tsx",
+    );
     const policy = read("app/policies/[id]/policy-breakdown-editor.tsx");
 
     expect(organization).toContain("valueKey: slug");
-    expect(agent).toContain("valueKey: agentHandle");
+    expect(agentBehavior).toContain("valueKey: settingsValueKey");
+    expect(agentChannels).toContain("valueKey: normalizedHandle");
     expect(policy).toContain(
       "valueKey: JSON.stringify({ id: policy._id, draft })",
     );
@@ -118,12 +122,16 @@ describe("auto-save surfaces", () => {
   it("checks operator identifiers before edit auto-save", () => {
     const operatorPage = read("app/operator/brokers/page.tsx");
     const clientPage = read("app/operator/clients/[clientOrgId]/page.tsx");
+    const agentChannels = read(
+      "components/settings/agent-channels-section.tsx",
+    );
     const backend = read("convex/operator.ts");
 
     expect(operatorPage).toContain("editIdentifierCheck");
     expect(operatorPage).toContain("ownerOrgId: selected._id");
-    expect(clientPage).toContain("handleAvailability");
-    expect(clientPage).toContain("excludeOrgId: client._id");
+    expect(agentChannels).toContain("checkHandleAvailability");
+    expect(agentChannels).toContain("excludeOrgId: address.ownerOrgId");
+    expect(clientPage).not.toContain("checkHandleAvailability");
     expect(backend).toContain('ownerOrgId: v.optional(v.id("organizations"))');
   });
 

@@ -8,7 +8,6 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { HandleAvailability } from "@/components/settings/handle-availability";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
   OperationalLabelValueList,
@@ -52,15 +51,8 @@ import {
   type OperatorClientRow,
 } from "./client-model";
 
-const AFFIXED_INPUT_CLASSES =
-  "h-full min-w-0 flex-1 bg-transparent px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none";
 const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
-
-function normalizeIdentifierInput(value: string) {
-  const withoutDomain = value.trim().toLowerCase().split("@")[0] ?? "";
-  return withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
-}
 
 function isValidOptionalPhone(value: string) {
   const trimmed = value.trim();
@@ -98,22 +90,16 @@ export default function OperatorClientsScreen() {
   const [name, setName] = useState("");
   const [brokerOrgId, setBrokerOrgId] = useState<string>(STANDALONE_VALUE);
   const [website, setWebsite] = useState("");
-  const [agentHandle, setAgentHandle] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
   const [adminPhone, setAdminPhone] = useState("");
   const [busy, setBusy] = useState(false);
-  const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
   const [debouncedAdminPhone, setDebouncedAdminPhone] = useState("");
 
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients();
   const brokers = useCachedOperatorBrokers();
   const { seedClient } = useOperatorClientCacheActions();
-  const handleAvailability = useQuery(
-    api.orgs.checkHandleAvailability,
-    debouncedAgentHandle ? { handle: debouncedAgentHandle } : "skip",
-  );
   const createPhoneValid = isValidOptionalPhone(adminPhone);
   const createShouldCheckPhone = !!adminPhone.trim() && createPhoneValid;
   const createPhoneAvailability = useQuery(
@@ -143,24 +129,12 @@ export default function OperatorClientsScreen() {
 
   useEffect(() => {
     const timer = window.setTimeout(
-      () => setDebouncedAgentHandle(agentHandle),
-      250,
-    );
-    return () => window.clearTimeout(timer);
-  }, [agentHandle]);
-  useEffect(() => {
-    const timer = window.setTimeout(
       () => setDebouncedAdminPhone(adminPhone.trim()),
       300,
     );
     return () => window.clearTimeout(timer);
   }, [adminPhone]);
 
-  const handleChecking =
-    agentHandle.length >= 3 &&
-    (agentHandle !== debouncedAgentHandle || handleAvailability === undefined);
-  const handleUnavailable =
-    !!agentHandle && handleAvailability?.available === false;
   const createPhoneChecking =
     createShouldCheckPhone &&
     (debouncedAdminPhone !== adminPhone.trim() ||
@@ -187,7 +161,6 @@ export default function OperatorClientsScreen() {
             ? undefined
             : (brokerOrgId as Id<"organizations">),
         website: website || undefined,
-        agentHandle: agentHandle || undefined,
         adminEmail,
         adminName: adminName || undefined,
         adminPhone: adminPhone || undefined,
@@ -203,7 +176,6 @@ export default function OperatorClientsScreen() {
               : (brokerOrgId as Id<"organizations">),
           brokerName: selectedBroker?.name,
           website: website || undefined,
-          agentHandle: agentHandle || undefined,
           adminEmail,
           adminName: adminName || undefined,
           adminPhone: adminPhone || undefined,
@@ -213,7 +185,6 @@ export default function OperatorClientsScreen() {
       setName("");
       setBrokerOrgId(STANDALONE_VALUE);
       setWebsite("");
-      setAgentHandle("");
       setAdminEmail("");
       setAdminName("");
       setAdminPhone("");
@@ -326,7 +297,6 @@ export default function OperatorClientsScreen() {
               busy ||
               !name ||
               !adminEmail ||
-              handleUnavailable ||
               !!createPhoneError
             }
           >
@@ -412,36 +382,6 @@ export default function OperatorClientsScreen() {
               placeholder="https://releaserent.com"
             />
           </Field>
-          <Field label="Agent handle">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <input
-                className={AFFIXED_INPUT_CLASSES}
-                value={agentHandle}
-                onChange={(event) =>
-                  setAgentHandle(normalizeIdentifierInput(event.target.value))
-                }
-                placeholder="release"
-              />
-              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
-                @{AGENT_DOMAIN}
-              </span>
-            </div>
-            <HandleAvailability
-              saving={busy}
-              checking={handleChecking}
-              input={agentHandle}
-              current=""
-              currentLabel="Existing agent handle"
-              availability={
-                agentHandle === debouncedAgentHandle
-                  ? handleAvailability
-                  : undefined
-              }
-              renderAvailablePreview={(value) =>
-                `${value}@${AGENT_DOMAIN} is available`
-              }
-            />
-          </Field>
           <Field label="Client admin email">
             <Input
               value={adminEmail}
@@ -515,9 +455,15 @@ export default function OperatorClientsScreen() {
             <OperationalLabelValueRow
               label="Email"
               value={
-                selected.agentHandle
-                  ? `${selected.agentHandle}@${AGENT_DOMAIN}`
-                  : "Not set"
+                channelOverview ? (
+                  channelOverview.agentEmailAddress.handle ? (
+                    `${channelOverview.agentEmailAddress.handle}@${AGENT_DOMAIN}`
+                  ) : (
+                    "Not configured"
+                  )
+                ) : (
+                  <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                )
               }
             />
             <OperationalLabelValueRow

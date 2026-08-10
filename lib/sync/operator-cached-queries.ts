@@ -81,7 +81,6 @@ type OptimisticClientInput = {
   brokerOrgId?: Id<"organizations">;
   brokerName?: string;
   website?: string;
-  agentHandle?: string;
   adminEmail?: string;
   adminName?: string;
   adminPhone?: string;
@@ -258,7 +257,6 @@ export function useOperatorBrokerCacheActions() {
           OperatorBrokerRow,
           | "slug"
           | "website"
-          | "agentHandle"
           | "adminName"
           | "adminPhone"
         >
@@ -293,7 +291,7 @@ export function useOperatorClientCacheActions() {
         website: input.website,
         iconStorageId: undefined,
         iconUrl: null,
-        agentHandle: input.agentHandle,
+        agentHandle: undefined,
         operatorStatus: "onboarding",
         onboardingComplete: true,
         inviteStatus: "draft",

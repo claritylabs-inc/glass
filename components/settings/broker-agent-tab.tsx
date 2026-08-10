@@ -1,29 +1,21 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
 import { Loader2 } from "lucide-react";
-import { HandleAvailability } from "@/components/settings/handle-availability";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import {
   OperationalPanel,
   OperationalPanelBody,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
-import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
-import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
-import { useSyncStore } from "@claritylabs/cl-sync";
-import {
-  AutoSaveStatus,
-  combineAutoSaveStatuses,
-} from "@/components/ui/auto-save-status";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 
 type AgentSettingsArgs = {
   chatEmailNotifications: boolean;
@@ -65,15 +57,10 @@ function AgentSwitchRow({
 
 export function BrokerAgentTab() {
   const viewerOrg = useCachedViewerOrg();
-  const store = useSyncStore();
   const updateOrg = useMutation(api.orgs.updateOrg);
-  const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
 
   const org = viewerOrg?.org as
     | {
-        _id?: string;
-        type?: "broker" | "client";
-        agentHandle?: string;
         chatEmailNotifications?: boolean;
         autoSendEmails?: boolean;
         bccRequesterOnAgentEmails?: boolean;
@@ -81,10 +68,6 @@ export function BrokerAgentTab() {
       }
     | undefined;
 
-  const agentDomain = getPublicAgentDomain();
-
-  const [agentHandle, setAgentHandle] = useState("");
-  const [debouncedHandle, setDebouncedHandle] = useState("");
   const [chatEmailNotifications, setChatEmailNotifications] = useState(false);
   const [autoSendEmails, setAutoSendEmails] = useState(false);
   const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] =
@@ -96,8 +79,6 @@ export function BrokerAgentTab() {
 
   useEffect(() => {
     if (org && !hydratedRef.current) {
-      setAgentHandle(org.agentHandle ?? "");
-      setDebouncedHandle(org.agentHandle ?? "");
       setChatEmailNotifications(org.chatEmailNotifications ?? false);
       setAutoSendEmails(org.autoSendEmails ?? false);
       setBccRequesterOnAgentEmails(org.bccRequesterOnAgentEmails ?? true);
@@ -145,51 +126,6 @@ export function BrokerAgentTab() {
     errorMessage: "Agent settings could not be saved.",
   });
 
-  const currentHandle = (org?.agentHandle ?? "").trim();
-  const normalizedInput = agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedHandle(normalizedInput), 300);
-    return () => clearTimeout(t);
-  }, [normalizedInput]);
-
-  const shouldCheck = !!debouncedHandle && debouncedHandle !== currentHandle;
-  const availability = useQuery(
-    api.orgs.checkHandleAvailability,
-    shouldCheck && org?._id
-      ? {
-          handle: debouncedHandle,
-          excludeOrgId: org._id as Id<"organizations">,
-        }
-      : "skip",
-  );
-  const handleChecking =
-    !!normalizedInput &&
-    normalizedInput !== currentHandle &&
-    normalizedInput.length >= 3 &&
-    (normalizedInput !== debouncedHandle || availability === undefined);
-
-  const handleAutoSave = useLocalFirstAutoSave({
-    mutationName: "settings.agent.claimHandle",
-    args: { handle: availability?.normalized ?? debouncedHandle },
-    valueKey: agentHandle,
-    enabled: settingsHydrated && !!org?._id,
-    canSave:
-      normalizedInput === debouncedHandle &&
-      ((debouncedHandle === currentHandle && !!debouncedHandle) ||
-        (shouldCheck && availability?.available === true)),
-    delayMs: 0,
-    flush: (args) => claimAgentHandle(args),
-    onFlushed: (normalized, args) => {
-      const savedHandle = normalized ?? args.handle;
-      setAgentHandle(savedHandle);
-      setDebouncedHandle(savedHandle);
-      patchCachedViewerOrg(store, { agentHandle: savedHandle });
-    },
-    errorMessage: (error) =>
-      getUserFacingErrorMessage(error, "The agent handle could not be saved."),
-  });
-
   if (viewerOrg === undefined) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -199,75 +135,9 @@ export function BrokerAgentTab() {
   }
 
   const delayOptions = [0, 3, 5, 10, 15];
-  const isBroker = org?.type === "broker";
-  const displayedAgentHandle = isBroker ? agentHandle : "agent";
-
   return (
     <div className="space-y-4">
-      <AutoSaveStatus
-        status={combineAutoSaveStatuses(
-          settingsAutoSave.status,
-          handleAutoSave.status,
-        )}
-      />
-      {isBroker ? (
-        <OperationalPanel>
-          <OperationalPanelHeader title="Agent email handle" />
-          <OperationalPanelBody className="space-y-1 px-5 py-5">
-            <p className="text-base text-muted-foreground/70 mb-3">
-              Clients and carriers email your agent at this address. Forwarding
-              a policy or asking a question routes to the Glass agent for this
-              org.
-            </p>
-            <div className="flex items-stretch gap-0">
-              <input
-                type="text"
-                value={agentHandle}
-                onChange={(e) =>
-                  setAgentHandle(
-                    e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
-                  )
-                }
-                placeholder="your-broker-name"
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-                className="h-9 flex-1 min-w-0 rounded-l-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
-              />
-              <span className="inline-flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/3 px-3 text-base text-muted-foreground select-none whitespace-nowrap">
-                @{agentDomain}
-              </span>
-            </div>
-            <HandleAvailability
-              saving={handleAutoSave.saving}
-              checking={handleChecking}
-              input={normalizedInput}
-              current={currentHandle}
-              availability={
-                normalizedInput === debouncedHandle ? availability : undefined
-              }
-              currentLabel="Current agent handle"
-              renderAvailablePreview={(s) => `${s}@${agentDomain} is available`}
-            />
-          </OperationalPanelBody>
-        </OperationalPanel>
-      ) : (
-        <OperationalPanel>
-          <OperationalPanelHeader title="Agent email address" />
-          <OperationalPanelBody className="space-y-1 px-5 py-5">
-            <p className="text-base text-muted-foreground/70 mb-3">
-              Email sent to this address routes to your Glass agent for this
-              org.
-            </p>
-            <div
-              aria-disabled="true"
-              className="rounded-lg border border-foreground/8 bg-muted/40 px-3 py-2 text-base text-muted-foreground cursor-not-allowed select-none"
-            >
-              {displayedAgentHandle}@{agentDomain}
-            </div>
-          </OperationalPanelBody>
-        </OperationalPanel>
-      )}
+      <AutoSaveStatus status={settingsAutoSave.status} />
 
       <OperationalPanel>
         <OperationalPanelHeader title="Email behavior" />
