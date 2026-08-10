@@ -11,16 +11,16 @@ import { useClientDetailActions } from "../layout";
 
 const CLIENT_SETTINGS_TABS = [
   { id: "broker", label: "Broker contact" },
-  { id: "email", label: "Email" },
-  { id: "imessage", label: "iMessage" },
-  { id: "slack", label: "Slack" },
+  { id: "agent-channels", label: "Agent channels" },
   { id: "policy-delivery", label: "Policy delivery" },
 ] as const;
 
 type ClientSettingsTab = (typeof CLIENT_SETTINGS_TABS)[number]["id"];
 
 function parseClientSettingsTab(value: string | null): ClientSettingsTab {
-  if (value === "agent-channels") return "email";
+  if (value === "email" || value === "imessage" || value === "slack") {
+    return "agent-channels";
+  }
   return CLIENT_SETTINGS_TABS.some((tab) => tab.id === value)
     ? (value as ClientSettingsTab)
     : "broker";
@@ -70,14 +70,11 @@ export default function ClientSettingsPage() {
       </div>
 
       {activeTab === "broker" ? <BrokerIdentitySection orgId={orgId} /> : null}
-      {activeTab === "email" ||
-      activeTab === "imessage" ||
-      activeTab === "slack" ? (
+      {activeTab === "agent-channels" ? (
         <AgentChannelsSection
           clientOrgId={orgId}
           showEmailRouting
           setRightPanel={setRightPanel}
-          activeChannel={activeTab}
         />
       ) : null}
       {activeTab === "policy-delivery" ? (

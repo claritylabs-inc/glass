@@ -59,24 +59,25 @@ describe("policy delivery automation surfaces", () => {
     const delivery = read("components/settings/policy-delivery-section.tsx");
 
     expect(clientSettings).toContain('id: "broker", label: "Broker contact"');
-    expect(clientSettings).toContain('id: "email", label: "Email"');
-    expect(clientSettings).toContain('id: "imessage", label: "iMessage"');
-    expect(clientSettings).toContain('id: "slack", label: "Slack"');
+    expect(clientSettings).toContain(
+      'id: "agent-channels", label: "Agent channels"',
+    );
     expect(clientSettings).toContain(
       'id: "policy-delivery", label: "Policy delivery"',
     );
     expect(clientSettings).toContain('searchParams.get("tab")');
-    expect(clientSettings).toContain("activeChannel={activeTab}");
+    expect(clientSettings).not.toContain("activeChannel={activeTab}");
     expect(agentChannels).toContain(
       "rounded-lg border border-foreground/6 bg-popover px-4 py-3",
     );
     expect(agentChannels).not.toContain("<OperationalPanel");
-    expect(agentChannels).not.toContain("<SettingsDrawer");
+    expect(agentChannels).toContain("<SettingsDrawer");
     expect(agentChannels).not.toContain("I understand");
     expect(agentChannels).not.toContain("Continue setup");
     expect(agentChannels).toContain(
-      'type AgentChannel = "email" | "imessage" | "slack"',
+      'type ChannelDrawer = "email" | "imessage" | "slack"',
     );
+    expect(agentChannels).toContain('aria-label="Agent channels"');
     expect(channelContent).toContain("<ClientEmailRoutingSection");
     expect(channelContent).toContain('title="Available by iMessage"');
     expect(channelContent).toContain('title="Available in Slack"');

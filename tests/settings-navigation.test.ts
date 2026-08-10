@@ -34,7 +34,7 @@ describe("settings navigation", () => {
       settingsPages(groups)
         .find((page) => page.id === "agent")
         ?.tabs.map((tab) => tab.id),
-    ).toEqual(["email", "imessage", "slack", "behavior", "memory"]);
+    ).toEqual(["channels", "behavior", "memory"]);
   });
 
   it("uses role-aware tabs and resolves legacy deep links", () => {
@@ -67,9 +67,9 @@ describe("settings navigation", () => {
     expect(
       resolveSettingsDestination({
         requestedSection: "agent",
-        requestedTab: "channels",
+        requestedTab: "slack",
         groups: clientGroups,
       }),
-    ).toMatchObject({ section: "agent", tab: "email" });
+    ).toMatchObject({ section: "agent", tab: "channels" });
   });
 });

@@ -78,9 +78,7 @@ const CLIENT_TABS = [
   { id: "overview", label: "Overview" },
   { id: "team", label: "Team" },
   { id: "features", label: "Beta features" },
-  { id: "email", label: "Email" },
-  { id: "imessage", label: "iMessage" },
-  { id: "slack", label: "Slack" },
+  { id: "channels", label: "Agent channels" },
 ] as const;
 
 type ClientTab = (typeof CLIENT_TABS)[number]["id"];
@@ -92,7 +90,9 @@ const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
 
 function parseTab(value: string | null): ClientTab {
-  if (value === "channels") return "email";
+  if (value === "email" || value === "imessage" || value === "slack") {
+    return "channels";
+  }
   return CLIENT_TABS.some((tab) => tab.id === value)
     ? (value as ClientTab)
     : "overview";
@@ -626,15 +626,12 @@ function ClientWorkspace({
           />
         ) : null}
 
-        {activeTab === "email" ||
-        activeTab === "imessage" ||
-        activeTab === "slack" ? (
+        {activeTab === "channels" ? (
           <AgentChannelsSection
             clientOrgId={client._id}
             defaultClientSlug={slackChannelSlug(client)}
             defaultInviteEmail={client.primaryContactEmail ?? client.adminEmail}
             setRightPanel={setRightPanel}
-            activeChannel={activeTab}
           />
         ) : null}
       </main>

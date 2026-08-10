@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -14,11 +14,15 @@ import { resolveSlackAutomaticChannel } from "@/convex/lib/slackChannelRouting";
 import { ClientEmailRoutingSection } from "@/components/settings/client-email-routing-section";
 import { SlackConnectionFields } from "@/components/settings/slack-connection-fields";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
-import { StatusTag } from "@/components/ui/status-tag";
+import {
+  StatusTag,
+  type StatusTagTone,
+} from "@/components/ui/status-tag";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { openOAuthTab } from "@/lib/oauth-tab";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
@@ -32,7 +36,7 @@ type ChannelSettings = {
   slackPolicyDeliveryEnabled: boolean;
 };
 
-type AgentChannel = "email" | "imessage" | "slack";
+type ChannelDrawer = "email" | "imessage" | "slack";
 
 function ChannelCard({
   title,
@@ -67,20 +71,53 @@ function ChannelCard({
   );
 }
 
+function ChannelRow({
+  title,
+  description,
+  status,
+  statusTone,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  status: string;
+  statusTone: StatusTagTone;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3 text-left transition-colors hover:bg-foreground/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10"
+    >
+      <span className="min-w-0">
+        <span className="block text-base font-medium text-foreground">
+          {title}
+        </span>
+        <span className="mt-0.5 block text-label text-muted-foreground/60">
+          {description}
+        </span>
+      </span>
+      <span className="ml-4 flex shrink-0 items-center gap-2">
+        <StatusTag tone={statusTone}>{status}</StatusTag>
+        <ChevronRight className="size-4 text-muted-foreground/50" />
+      </span>
+    </button>
+  );
+}
+
 export function AgentChannelsSection({
   clientOrgId,
   showEmailRouting = false,
   defaultClientSlug = "",
   defaultInviteEmail = "",
   setRightPanel: setRightPanelOverride,
-  activeChannel,
 }: {
   clientOrgId: Id<"organizations">;
   showEmailRouting?: boolean;
   defaultClientSlug?: string;
   defaultInviteEmail?: string;
   setRightPanel?: (node: ReactNode) => void;
-  activeChannel: AgentChannel;
 }) {
   const { setRightPanel: setSettingsRightPanel } = useSettingsActions();
   const setRightPanel = setRightPanelOverride ?? setSettingsRightPanel;
@@ -114,6 +151,7 @@ export function AgentChannelsSection({
   const provisionPrimary = useAction(
     api.actions.slackOnboarding.createPrimaryChannel,
   );
+  const [activeDrawer, setActiveDrawer] = useState<ChannelDrawer | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState(defaultInviteEmail);
   const [clientSlug, setClientSlug] = useState(defaultClientSlug);
@@ -177,6 +215,7 @@ export function AgentChannelsSection({
     setBusy("disconnect");
     try {
       await disconnect({ clientOrgId });
+      setActiveDrawer(null);
       toast.success("Slack disconnected");
     } catch (error) {
       toast.error(
@@ -271,6 +310,7 @@ export function AgentChannelsSection({
   const slackNeedsReinstall =
     !!connection &&
     missingSlackCustomerScopes(connection.grantedScopes).length > 0;
+  const slackReady = !!connection && !slackNeedsReinstall;
   const isMockSlack = result?.slackMode === "mock";
   const canSendSlackInstallInvite = Boolean(
     !connection && isOperator && !isMockSlack,
@@ -307,7 +347,7 @@ export function AgentChannelsSection({
 
   const channelContent =
     result && settings ? (
-      activeChannel === "email" ? (
+      activeDrawer === "email" ? (
         <div className="space-y-4">
           <ChannelCard
             title="Available by email"
@@ -325,7 +365,7 @@ export function AgentChannelsSection({
             <ClientEmailRoutingSection clientOrgId={clientOrgId} />
           ) : null}
         </div>
-      ) : activeChannel === "imessage" ? (
+      ) : activeDrawer === "imessage" ? (
         <ChannelCard
           title="Available by iMessage"
           description="Let linked members message the Glass phone number."
@@ -609,9 +649,57 @@ export function AgentChannelsSection({
     ) : null;
 
   useEffect(() => {
-    setRightPanel(null);
+    if (!result || !settings) {
+      setRightPanel(null);
+      return;
+    }
+
+    setRightPanel(
+      <SettingsDrawer
+        open={activeDrawer !== null}
+        onOpenChange={(open) => {
+          if (!open) setActiveDrawer(null);
+        }}
+        title={
+          activeDrawer === "email"
+            ? "Email"
+            : activeDrawer === "imessage"
+              ? "iMessage"
+              : "Slack"
+        }
+        footer={activeDrawer === "slack" ? slackFooter : null}
+      >
+        {channelContent}
+      </SettingsDrawer>,
+    );
+
     return () => setRightPanel(null);
-  }, [activeChannel, setRightPanel]);
+    // Keep the drawer synchronized with async setup and form state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeDrawer,
+    automaticChannelId,
+    busy,
+    canEdit,
+    canSendSlackInstallInvite,
+    clientOrgId,
+    clientSlug,
+    connection,
+    customerChannelId,
+    hostChannelId,
+    hostTeamId,
+    inviteEmail,
+    isOperator,
+    joinedChannels,
+    manualChannelName,
+    manualSetupReason,
+    result,
+    setRightPanel,
+    settings,
+    showEmailRouting,
+    slackNeedsReinstall,
+    supportChannel,
+  ]);
 
   if (!result) {
     return (
@@ -619,14 +707,58 @@ export function AgentChannelsSection({
     );
   }
 
+  const resolvedSettings = result.settings;
+  const slackDescription = slackReady
+    ? `${connection.teamName} · ${joinedChannels.length} joined ${joinedChannels.length === 1 ? "channel" : "channels"}`
+    : slackNeedsReinstall
+      ? `${connection.teamName} needs updated Slack permissions.`
+      : supportChannel
+        ? "Support channel ready · Glass app not installed"
+        : isOperator
+          ? "Set up the app and support channel independently."
+          : "Waiting for Slack setup.";
+  const slackStatus = slackReady
+    ? resolvedSettings.slackEnabled
+      ? "On"
+      : "Off"
+    : slackNeedsReinstall
+      ? "Needs attention"
+      : "Pending";
+  const slackStatusTone: StatusTagTone = slackReady
+    ? resolvedSettings.slackEnabled
+      ? "success"
+      : "neutral"
+    : slackNeedsReinstall
+      ? "danger"
+      : "warning";
+
   return (
-    <div className="flex w-full max-w-3xl flex-col gap-6">
-      {channelContent}
-      {activeChannel === "slack" && slackFooter ? (
-        <div className="flex flex-col-reverse items-stretch gap-2 border-t border-foreground/6 pt-4 sm:flex-row sm:items-center sm:justify-end [&>button]:w-full sm:[&>button]:w-auto">
-          {slackFooter}
-        </div>
-      ) : null}
+    <div className="w-full space-y-4">
+      <section className="space-y-3" aria-label="Agent channels">
+        <ChannelRow
+          title="Email"
+          description="Let members email the client’s Glass agent."
+          status={resolvedSettings.emailEnabled ? "On" : "Off"}
+          statusTone={resolvedSettings.emailEnabled ? "success" : "neutral"}
+          onClick={() => setActiveDrawer("email")}
+        />
+        <ChannelRow
+          title="iMessage"
+          description="Let linked members message the Glass phone number."
+          status={resolvedSettings.imessageEnabled ? "On" : "Off"}
+          statusTone={
+            resolvedSettings.imessageEnabled ? "success" : "neutral"
+          }
+          onClick={() => setActiveDrawer("imessage")}
+        />
+        <ChannelRow
+          title="Slack"
+          description={slackDescription}
+          status={slackStatus}
+          statusTone={slackStatusTone}
+          onClick={() => setActiveDrawer("slack")}
+        />
+      </section>
     </div>
   );
 }

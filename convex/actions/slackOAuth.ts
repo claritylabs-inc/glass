@@ -78,7 +78,7 @@ function settingsRedirect(
     "https://app.glass.insure";
   const url = new URL(
     clientOrgId
-      ? "/settings?section=agent&tab=slack"
+      ? "/settings?section=agent&tab=channels"
       : "/settings?section=agent",
     base,
   );
