@@ -21,7 +21,7 @@ describe("operator client management surfaces", () => {
     expect(sidebar).toContain('href="/operator/brokers"');
     expect(sidebar).toContain('href="/operator"');
     expect(brokers).toContain('searchParams.get("broker")');
-    expect(brokers).toContain("setPanelMode(\"details\")");
+    expect(brokers).toContain('setPanelMode("details")');
   });
 
   it("keeps the client list drawer as a compact preview", () => {
@@ -42,6 +42,29 @@ describe("operator client management surfaces", () => {
     expect(clients).not.toContain("FeatureFlagToggleRow");
     expect(clients).not.toContain("AgentChannelsSection");
     expect(clients).not.toContain("updateClientSettings");
+  });
+
+  it("keeps agent email address changes in the shared Channels owner", () => {
+    const brokers = read("app/operator/brokers/page.tsx");
+    const clients = read("app/operator/clients/operator-clients-page.tsx");
+    const channels = read("components/settings/agent-channels-section.tsx");
+    const operator = read("convex/operator.ts");
+    const createClient = operator.slice(
+      operator.indexOf("export const createSoloClient = action"),
+      operator.indexOf("export const updateClientSettings = mutation"),
+    );
+    const updateBroker = operator.slice(
+      operator.indexOf("export const updateBrokerSettings = mutation"),
+      operator.indexOf("export const launchBroker = action"),
+    );
+
+    expect(brokers.match(/<Field label="Agent handle">/g)).toHaveLength(1);
+    expect(clients).not.toContain("HandleAvailability");
+    expect(clients).not.toContain("checkHandleAvailability");
+    expect(createClient).not.toContain("agentHandle");
+    expect(updateBroker).not.toContain("agentHandle");
+    expect(channels).toContain("BrokerAgentChannelsSection");
+    expect(channels).toContain("<AgentEmailAddressField");
   });
 
   it("owns client settings on a tabbed detail page", () => {
@@ -68,9 +91,9 @@ describe("operator client management surfaces", () => {
     expect(client).not.toContain("Login and activation email");
     expect(client).toContain('aria-labelledby="client-identity-title"');
     expect(client).toContain('breadcrumbDetail={client?.name ?? "Client"}');
-    expect(client).toContain(
-      '<FormSection title="Agent address" divided={false}>',
-    );
+    expect(client).not.toContain('title="Agent address"');
+    expect(client).not.toContain("checkHandleAvailability");
+    expect(client).not.toContain("agentHandle:");
     expect(client).not.toContain('title="Primary contact"');
     expect(client).not.toContain("checkUserPhoneAvailability");
     expect(client).not.toContain("primaryContactName:");
@@ -80,8 +103,16 @@ describe("operator client management surfaces", () => {
   });
 
   it("sends client activation emails from admin rows on the Team tab", () => {
+    const client = read("app/operator/clients/[clientOrgId]/page.tsx");
     const team = read("components/settings/team-section.tsx");
 
+    expect(client).toContain('activeTab === "overview"');
+    expect(client).toContain('activeTab === "team"');
+    expect(client).toContain("inviteOpen={teamInviteOpen}");
+    expect(client).toContain("onInviteOpenChange={setTeamInviteOpen}");
+    expect(client).toContain("showInviteAction={false}");
+    expect(team).toContain("controlledInviteOpen ?? uncontrolledInviteOpen");
+    expect(team).toContain("operatorClientOrgId && showInviteAction");
     expect(team).toContain("api.operator.launchSoloClient");
     expect(team).toContain('member.role === "admin"');
     expect(team).toContain('"Send activation"');
@@ -133,20 +164,41 @@ describe("operator client management surfaces", () => {
     expect(operatorChannels).not.toContain("max-w-4xl");
     expect(sidebar).toContain('href="/operator/channels"');
     expect(clientChannels).toContain("<SettingsDrawer");
-    expect(clientChannels).toContain("openOAuthTab");
+    expect(clientChannels).toContain('title="Agent email address"');
+    expect(clientChannels).toContain(
+      '<StatusTag tone="neutral">Read only</StatusTag>',
+    );
+    expect(clientChannels).not.toContain(
+      "Changes apply to every client served by that broker.",
+    );
+    expect(clientChannels).toContain(
+      "updateStandaloneAgentEmailHandleForOperator",
+    );
+    expect(clientChannels).toContain("BrokerAgentChannelsSection");
+    expect(clientChannels).toContain("startSlackSetup");
+    expect(clientChannels).toContain("Step {stepIndex + 1} of");
+    expect(clientChannels).toContain("Skip for now");
+    expect(clientChannels).toContain("Finish setup");
+    expect(clientChannels).toContain("Reinstall");
+    expect(clientChannels).toContain('<TabsList variant="pill">');
+    expect(clientChannels).toContain('label="Disconnect Slack"');
+    expect(clientChannels).toContain("iconOnly");
+    expect(clientChannels).toContain(
+      "<DialogTitle>Disconnect Slack</DialogTitle>",
+    );
+    expect(clientChannels).toContain("Retry invite");
+    expect(clientChannels).toContain("Automatic posts begin after");
     expect(clientChannels).not.toContain("window.location.assign(url)");
     expect(operatorChannels).not.toContain("window.location.assign(url)");
     expect(clientChannels).not.toContain("getSlackHostStatus");
     expect(clientChannels).not.toContain("beginHost");
     expect(clientChannels).not.toContain("setOperatorSlackIdentity");
-    expect(slackConnectionFields).toContain("Automatic messages channel");
-    expect(slackConnectionFields).toContain(
-      "Glass responds to mentions and active threads in every channel shown",
-    );
-    expect(clientChannels).toContain(
-      "Clarity Labs creates and invites this Slack Connect channel for human support",
-    );
-    expect(slackConnectionFields).toContain("Add Glass to a public channel");
+    expect(slackConnectionFields).toContain("Default channel");
+    expect(slackConnectionFields).toContain("Active channels");
+    expect(clientChannels).toContain("Client support channel");
+    expect(clientChannels).toContain("Operators not added");
+    expect(slackConnectionFields).toContain("leavePublicChannel");
+    expect(slackConnectionFields).toContain("Remove Glass from #");
   });
 
   it("shows a pending service channel before the client connects", () => {

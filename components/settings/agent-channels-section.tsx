@@ -1,9 +1,11 @@
 "use client";
 
+import dayjs from "dayjs";
 import { useEffect, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, RefreshCw, Unplug } from "lucide-react";
 import { toast } from "sonner";
+import { useSyncStore } from "@claritylabs/cl-sync";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -12,19 +14,42 @@ import {
 } from "@/convex/lib/slackOAuthPolicy";
 import { resolveSlackAutomaticChannel } from "@/convex/lib/slackChannelRouting";
 import { ClientEmailRoutingSection } from "@/components/settings/client-email-routing-section";
+import { HandleAvailability } from "@/components/settings/handle-availability";
 import { SlackConnectionFields } from "@/components/settings/slack-connection-fields";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
+import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
 import {
-  StatusTag,
-  type StatusTagTone,
-} from "@/components/ui/status-tag";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StatusTag, type StatusTagTone } from "@/components/ui/status-tag";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { openOAuthTab } from "@/lib/oauth-tab";
+import { formatDisplayDate } from "@/lib/date-format";
+import { getPublicAgentDomain } from "@/lib/domains";
+import {
+  patchCachedViewerOrg,
+  useCachedViewerOrg,
+} from "@/lib/sync/glass-cached-queries";
+import { useOperatorClientCacheActions } from "@/lib/sync/operator-cached-queries";
+import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { resolveSlackRowStatus } from "@/lib/slack-setup-status";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 type ChannelSettings = {
@@ -37,6 +62,65 @@ type ChannelSettings = {
 };
 
 type ChannelDrawer = "email" | "imessage" | "slack";
+type SlackSetupStep = "install" | "support" | "channels" | "automations";
+
+type AgentEmailAddress = {
+  handle: string | null;
+  configuredHandle: string | null;
+  source: "broker" | "client" | "shared";
+  ownerOrgId: Id<"organizations">;
+  ownerName: string;
+};
+
+type SlackSetupState = {
+  _id: Id<"slackSetupStates">;
+  mode: "initial" | "reinstall";
+  status: "in_progress" | "completed" | "cancelled";
+  currentStep: SlackSetupStep;
+  deferredSteps: Array<Exclude<SlackSetupStep, "automations">>;
+  inviteRecipientEmail?: string;
+  inviteSentAt?: number;
+  inviteExpiresAt?: number;
+  installationCompletedAt?: number;
+  supportOmittedOperators?: Array<{
+    displayName: string;
+    email: string;
+    reason: string;
+  }>;
+  supportOperatorInvitesSucceeded?: boolean;
+  supportOperatorInviteError?: string;
+  supportInviteSentAt?: number;
+  supportInviteError?: string;
+  startedAt: number;
+};
+
+const SLACK_SETUP_STEPS: Array<{
+  id: SlackSetupStep;
+  title: string;
+  description: string;
+}> = [
+  {
+    id: "install",
+    title: "Install Glass",
+    description: "Send the client Slack admin a secure installation link.",
+  },
+  {
+    id: "support",
+    title: "Set up client support",
+    description:
+      "Create the dedicated Slack Connect channel with Clarity Labs.",
+  },
+  {
+    id: "channels",
+    title: "Add more channels",
+    description: "Choose additional client workspace channels for Glass.",
+  },
+  {
+    id: "automations",
+    title: "Review automations",
+    description: "Choose what Glass may post automatically in Slack.",
+  },
+];
 
 function ChannelCard({
   title,
@@ -106,21 +190,319 @@ function ChannelRow({
   );
 }
 
+function normalizeAgentHandleInput(value: string) {
+  return (value.trim().toLowerCase().split("@")[0] ?? "").replace(
+    /[^a-z0-9-]/g,
+    "",
+  );
+}
+
+function agentEmailAddressDescription(
+  address: AgentEmailAddress,
+  canEdit: boolean,
+) {
+  if (address.source === "broker") {
+    return canEdit
+      ? `This broker-owned address serves every client managed by ${address.ownerName}.`
+      : `Managed by ${address.ownerName}.`;
+  }
+  if (address.source === "shared") {
+    return "Glass identifies this standalone client from the sender’s email address.";
+  }
+  return `Dedicated to ${address.ownerName}.`;
+}
+
+function AgentEmailAddressField({
+  address,
+  canEdit,
+  allowSharedDefault,
+  onSave,
+  onSaved,
+}: {
+  address: AgentEmailAddress;
+  canEdit: boolean;
+  allowSharedDefault: boolean;
+  onSave?: (handle: string | undefined) => Promise<string | null>;
+  onSaved?: (handle: string | undefined) => void;
+}) {
+  const agentDomain = getPublicAgentDomain();
+  const currentHandle = address.configuredHandle ?? "";
+  const [handle, setHandle] = useState(currentHandle);
+  const [debouncedHandle, setDebouncedHandle] = useState(currentHandle);
+  const [focused, setFocused] = useState(false);
+  const normalizedHandle = normalizeAgentHandleInput(handle);
+  const resetKey = `${address.ownerOrgId}:${currentHandle}`;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(
+      () => setDebouncedHandle(normalizedHandle),
+      300,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [normalizedHandle]);
+
+  const shouldCheck =
+    canEdit && debouncedHandle.length >= 3 && debouncedHandle !== currentHandle;
+  const availability = useQuery(
+    api.orgs.checkHandleAvailability,
+    shouldCheck
+      ? {
+          handle: debouncedHandle,
+          excludeOrgId: address.ownerOrgId,
+        }
+      : "skip",
+  );
+  const checking =
+    canEdit &&
+    normalizedHandle.length >= 3 &&
+    normalizedHandle !== currentHandle &&
+    (debouncedHandle !== normalizedHandle || availability === undefined);
+  const canSaveHandle =
+    normalizedHandle === debouncedHandle &&
+    (normalizedHandle.length === 0
+      ? allowSharedDefault
+      : normalizedHandle === currentHandle || availability?.available === true);
+  const autoSave = useLocalFirstAutoSave({
+    mutationName: `agentChannels.emailAddress.${address.ownerOrgId}`,
+    args: { handle: normalizedHandle || undefined },
+    valueKey: normalizedHandle,
+    resetKey,
+    enabled: canEdit && Boolean(onSave),
+    canSave: canSaveHandle,
+    autoSave: !focused,
+    delayMs: 0,
+    flush: async (args) => {
+      if (!onSave) return null;
+      return await onSave(args.handle);
+    },
+    onFlushed: (savedHandle) => {
+      const nextHandle = savedHandle ?? undefined;
+      const input = nextHandle ?? "";
+      setHandle(input);
+      setDebouncedHandle(input);
+      onSaved?.(nextHandle);
+    },
+    errorMessage: (error) =>
+      getUserFacingErrorMessage(
+        error,
+        "The agent email address could not be saved.",
+      ),
+  });
+
+  return (
+    <FormSection
+      title="Agent email address"
+      description={agentEmailAddressDescription(address, canEdit)}
+      action={
+        !canEdit ? <StatusTag tone="neutral">Read only</StatusTag> : undefined
+      }
+      divided={false}
+    >
+      {canEdit ? (
+        <>
+          <AutoSaveStatus status={autoSave.status} />
+          <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+            <input
+              aria-label="Agent email address"
+              className="min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground/40"
+              value={handle}
+              onChange={(event) =>
+                setHandle(normalizeAgentHandleInput(event.target.value))
+              }
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              placeholder={allowSharedDefault ? "agent" : "broker-name"}
+              maxLength={30}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+            />
+            <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
+              @{agentDomain}
+            </span>
+          </div>
+          {normalizedHandle ? (
+            <HandleAvailability
+              saving={autoSave.saving}
+              checking={checking}
+              input={normalizedHandle}
+              current={currentHandle}
+              currentLabel="Current agent email address"
+              availability={
+                normalizedHandle === debouncedHandle ? availability : undefined
+              }
+              renderAvailablePreview={(value) =>
+                `${value}@${agentDomain} is available`
+              }
+            />
+          ) : (
+            <p
+              className={`min-h-5 pt-1 text-label ${
+                allowSharedDefault
+                  ? "text-muted-foreground"
+                  : "text-destructive"
+              }`}
+            >
+              {allowSharedDefault
+                ? `Leave blank to use agent@${agentDomain}.`
+                : "Enter an agent email address."}
+            </p>
+          )}
+        </>
+      ) : (
+        <div className="cursor-not-allowed rounded-lg">
+          <Input
+            aria-label="Agent email address"
+            disabled
+            value={
+              address.handle
+                ? `${address.handle}@${agentDomain}`
+                : "Not configured"
+            }
+            className="bg-muted/60 text-muted-foreground disabled:opacity-100"
+          />
+        </div>
+      )}
+    </FormSection>
+  );
+}
+
+function SetupHeader({ step }: { step: SlackSetupStep }) {
+  const stepIndex = SLACK_SETUP_STEPS.findIndex((item) => item.id === step);
+  const current = SLACK_SETUP_STEPS[stepIndex];
+  return (
+    <div className="space-y-1 pb-1">
+      <p className="text-label text-muted-foreground">
+        Step {stepIndex + 1} of {SLACK_SETUP_STEPS.length}
+      </p>
+      <h2 className="text-base font-medium text-foreground">{current.title}</h2>
+      <p className="text-label text-muted-foreground">{current.description}</p>
+    </div>
+  );
+}
+
+function SlackAvailabilityCard({
+  settings,
+  canEdit,
+  busy,
+  onSave,
+}: {
+  settings: ChannelSettings;
+  canEdit: boolean;
+  busy: boolean;
+  onSave: (settings: ChannelSettings) => void;
+}) {
+  return (
+    <ChannelCard
+      title="Available in Slack"
+      description="Let members use Glass privately and in connected channels."
+      checked={settings.slackEnabled}
+      disabled={!canEdit || busy}
+      onChange={() =>
+        onSave({ ...settings, slackEnabled: !settings.slackEnabled })
+      }
+    />
+  );
+}
+
+function AutomationSettings({
+  settings,
+  automaticChannelId,
+  canEdit,
+  busy,
+  onSave,
+  showHeader = true,
+}: {
+  settings: ChannelSettings;
+  automaticChannelId?: string;
+  canEdit: boolean;
+  busy: boolean;
+  onSave: (settings: ChannelSettings) => void;
+  showHeader?: boolean;
+}) {
+  const content = (
+    <div className="space-y-3">
+      <ChannelCard
+        title="Compliance and policy-change alerts"
+        description="Post client compliance and policy-change updates."
+        checked={settings.slackSafeAlertsEnabled}
+        disabled={!canEdit || busy || !settings.slackEnabled}
+        onChange={() =>
+          onSave({
+            ...settings,
+            slackSafeAlertsEnabled: !settings.slackSafeAlertsEnabled,
+          })
+        }
+      />
+      <ChannelCard
+        title="Vendor alerts"
+        description="Post vendor compliance updates."
+        checked={settings.slackVendorAlertsEnabled}
+        disabled={!canEdit || busy || !settings.slackEnabled}
+        onChange={() =>
+          onSave({
+            ...settings,
+            slackVendorAlertsEnabled: !settings.slackVendorAlertsEnabled,
+          })
+        }
+      />
+      <ChannelCard
+        title="Policy and endorsement delivery"
+        description="Deliver client-owned documents in their Slack threads."
+        checked={settings.slackPolicyDeliveryEnabled}
+        disabled={!canEdit || busy || !settings.slackEnabled}
+        onChange={() =>
+          onSave({
+            ...settings,
+            slackPolicyDeliveryEnabled: !settings.slackPolicyDeliveryEnabled,
+          })
+        }
+      />
+    </div>
+  );
+  return showHeader ? (
+    <FormSection
+      title="Automations"
+      description={
+        automaticChannelId
+          ? undefined
+          : "Automatic posts begin after a default channel is selected."
+      }
+      divided={false}
+    >
+      {content}
+    </FormSection>
+  ) : (
+    <div className="space-y-2">
+      {content}
+      {!automaticChannelId ? (
+        <p className="text-label text-muted-foreground">
+          Automatic posts begin after a default channel is selected.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function AgentChannelsSection({
   clientOrgId,
   showEmailRouting = false,
   defaultClientSlug = "",
   defaultInviteEmail = "",
+  defaultInviteUserId,
   setRightPanel: setRightPanelOverride,
 }: {
   clientOrgId: Id<"organizations">;
   showEmailRouting?: boolean;
   defaultClientSlug?: string;
   defaultInviteEmail?: string;
+  defaultInviteUserId?: Id<"users">;
   setRightPanel?: (node: ReactNode) => void;
 }) {
   const { setRightPanel: setSettingsRightPanel } = useSettingsActions();
   const setRightPanel = setRightPanelOverride ?? setSettingsRightPanel;
+  const store = useSyncStore();
+  const { patchClientSettings } = useOperatorClientCacheActions();
   const currentOrg = useCurrentOrg();
   const viewer = useQuery(api.users.viewer);
   const isOperator = viewer?.accountKind === "operator";
@@ -132,14 +514,27 @@ export function AgentChannelsSection({
     api.agentChannels.getForOperator,
     isOperator ? { clientOrgId } : "skip",
   );
+  const clientTeamMembers = useQuery(
+    api.orgs.listMembers,
+    isOperator ? { operatorClientOrgId: clientOrgId } : "skip",
+  );
   const result = isOperator ? operatorResult : customerResult;
   const canEdit =
     isOperator ||
     (currentOrg?.orgId === clientOrgId &&
       currentOrg.orgType === "client" &&
       currentOrg.role === "admin");
+
   const update = useMutation(api.agentChannels.update);
   const updateForOperator = useMutation(api.agentChannels.updateForOperator);
+  const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
+  const updateStandaloneAgentEmailHandleForOperator = useMutation(
+    api.agentChannels.updateStandaloneAgentEmailHandleForOperator,
+  );
+  const startSetup = useMutation(api.agentChannels.startSlackSetup);
+  const setSetupStep = useMutation(api.agentChannels.setSlackSetupStep);
+  const finishSetup = useMutation(api.agentChannels.finishSlackSetup);
+  const cancelSetup = useMutation(api.agentChannels.cancelSlackSetup);
   const bindPrimaryChannel = useMutation(
     api.agentChannels.bindPrimaryChannelForOperator,
   );
@@ -148,13 +543,17 @@ export function AgentChannelsSection({
     api.actions.slackOAuth.sendInstallInvite,
   );
   const disconnect = useAction(api.actions.slackOAuth.disconnect);
-  const provisionPrimary = useAction(
-    api.actions.slackOnboarding.createPrimaryChannel,
-  );
+  const provisionPrimary = useAction(api.slackOnboarding.createPrimaryChannel);
+
   const [activeDrawer, setActiveDrawer] = useState<ChannelDrawer | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [inviteEmail, setInviteEmail] = useState(defaultInviteEmail);
-  const [clientSlug, setClientSlug] = useState(defaultClientSlug);
+  const [inviteMemberId, setInviteMemberId] = useState<Id<"users"> | null>(
+    defaultInviteUserId ?? null,
+  );
+  const clientSlug = defaultClientSlug;
+  const [channelRefreshToken, setChannelRefreshToken] = useState(0);
+  const [compactSlackTab, setCompactSlackTab] = useState("overview");
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
   const [manualSetupReason, setManualSetupReason] = useState<string | null>(
     null,
   );
@@ -163,14 +562,93 @@ export function AgentChannelsSection({
   const [customerChannelId, setCustomerChannelId] = useState("");
   const [manualChannelName, setManualChannelName] = useState("");
 
-  async function save(settings: ChannelSettings) {
+  const connection = result?.connection;
+  const agentEmailAddress = result?.agentEmailAddress;
+  const supportChannel = result?.supportChannel ?? result?.primaryChannel;
+  const joinedChannels = result?.joinedChannels ?? [];
+  const settings = result?.settings;
+  const setupStatus = result?.setup?.status ?? null;
+  const operatorSetup =
+    isOperator && result?.setup && "currentStep" in result.setup
+      ? (result.setup as SlackSetupState)
+      : null;
+  const setupInProgress = operatorSetup?.status === "in_progress";
+  const slackNeedsReinstall =
+    !!connection &&
+    missingSlackCustomerScopes(connection.grantedScopes).length > 0;
+  const slackReady = !!connection && !slackNeedsReinstall;
+  const isMockSlack = result?.slackMode === "mock";
+  const automaticChannel = connection
+    ? resolveSlackAutomaticChannel(connection, supportChannel)
+    : undefined;
+  const automaticChannelId = automaticChannel?.channelId;
+  const setupStep = operatorSetup?.currentStep ?? "install";
+  const installComplete = Boolean(
+    slackReady &&
+    operatorSetup &&
+    (operatorSetup.mode === "initial" ||
+      (operatorSetup.installationCompletedAt &&
+        operatorSetup.installationCompletedAt >= operatorSetup.startedAt)),
+  );
+  const clientSetupPending =
+    !isOperator &&
+    (!slackReady || setupStatus === "in_progress" || slackNeedsReinstall);
+  const persistedManualSetupReason = operatorSetup?.supportInviteError;
+  const resolvedManualSetupReason =
+    manualSetupReason ?? persistedManualSetupReason ?? null;
+  const inviteMembers = (clientTeamMembers ?? []).filter((member) =>
+    Boolean(member.email),
+  );
+  const selectedInviteMember =
+    inviteMembers.find((member) => member.userId === inviteMemberId) ??
+    inviteMembers.find((member) => member.userId === defaultInviteUserId) ??
+    inviteMembers.find(
+      (member) =>
+        member.email?.toLowerCase() === defaultInviteEmail.toLowerCase(),
+    ) ??
+    inviteMembers.find((member) => member.role === "admin") ??
+    inviteMembers[0];
+  const inviteEmail = selectedInviteMember?.email ?? "";
+  const canEditAgentEmailAddress = Boolean(
+    agentEmailAddress &&
+    (agentEmailAddress.source === "broker"
+      ? currentOrg?.isBroker &&
+        currentOrg.role === "admin" &&
+        currentOrg.orgId === agentEmailAddress.ownerOrgId
+      : isOperator && agentEmailAddress.ownerOrgId === clientOrgId),
+  );
+
+  async function saveAgentEmailHandle(handle: string | undefined) {
+    if (!agentEmailAddress || !canEditAgentEmailAddress) {
+      throw new Error("The agent email address is read-only");
+    }
+    if (agentEmailAddress.source === "broker") {
+      if (!handle) throw new Error("Enter an agent email address");
+      return await claimAgentHandle({ handle });
+    }
+    return await updateStandaloneAgentEmailHandleForOperator({
+      clientOrgId,
+      handle,
+    });
+  }
+
+  function handleAgentEmailSaved(handle: string | undefined) {
+    if (!agentEmailAddress) return;
+    if (agentEmailAddress.source === "broker") {
+      patchCachedViewerOrg(store, { agentHandle: handle });
+      return;
+    }
+    void patchClientSettings(clientOrgId, { agentHandle: handle });
+  }
+
+  async function save(nextSettings: ChannelSettings) {
     if (!canEdit) return;
     setBusy("settings");
     try {
       if (isOperator) {
-        await updateForOperator({ clientOrgId, ...settings });
+        await updateForOperator({ clientOrgId, ...nextSettings });
       } else {
-        await update(settings);
+        await update(nextSettings);
       }
     } catch (error) {
       toast.error(
@@ -181,28 +659,11 @@ export function AgentChannelsSection({
     }
   }
 
-  async function install() {
-    const oauthTab = isMockSlack ? null : openOAuthTab();
-    if (!isMockSlack && !oauthTab) {
-      toast.error("Allow pop-ups for Glass to connect Slack in a new tab");
-      return;
-    }
-
-    setBusy("oauth");
+  async function beginSetup(mode: "initial" | "reinstall") {
+    setBusy("start-setup");
     try {
-      const { url } = await beginOAuth({
-        clientOrgId,
-        thirdPartyVisibilityAcknowledged: true,
-      });
-      if (!url) {
-        toast.success(connection ? "Glass reinstalled" : "Slack connected");
-        return;
-      }
-      if (!oauthTab?.navigate(url)) {
-        throw new Error("The Slack setup tab was closed. Try again.");
-      }
+      await startSetup({ clientOrgId, mode });
     } catch (error) {
-      oauthTab?.close();
       toast.error(
         getUserFacingErrorMessage(error, "Slack setup could not start"),
       );
@@ -211,15 +672,25 @@ export function AgentChannelsSection({
     }
   }
 
-  async function removeConnection() {
-    setBusy("disconnect");
+  async function openSlackDrawer() {
+    setActiveDrawer("slack");
+    if (!isOperator || setupInProgress) return;
+    if (!connection || slackNeedsReinstall) {
+      await beginSetup(connection ? "reinstall" : "initial");
+    }
+  }
+
+  async function connectMockSlack() {
+    setBusy("oauth");
     try {
-      await disconnect({ clientOrgId });
-      setActiveDrawer(null);
-      toast.success("Slack disconnected");
+      await beginOAuth({
+        clientOrgId,
+        thirdPartyVisibilityAcknowledged: true,
+      });
+      toast.success(connection ? "Glass updated" : "Slack connected");
     } catch (error) {
       toast.error(
-        getUserFacingErrorMessage(error, "Slack could not be disconnected"),
+        getUserFacingErrorMessage(error, "Slack setup could not start"),
       );
     } finally {
       setBusy(null);
@@ -229,16 +700,18 @@ export function AgentChannelsSection({
   async function sendInstallInvite() {
     setBusy("install-invite");
     try {
-      const result = await sendSlackInstallInvite({
+      const response = await sendSlackInstallInvite({
         clientOrgId,
         recipientEmail: inviteEmail,
       });
-      toast.success(`Slack install invite sent to ${result.recipientEmail}`);
+      toast.success(
+        `${response.mode === "reinstall" ? "Slack update" : "Slack install"} invite sent to ${response.recipientEmail}`,
+      );
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
           error,
-          "The Slack install invite could not be sent",
+          "The Slack installation invite could not be sent",
         ),
       );
     } finally {
@@ -265,8 +738,18 @@ export function AgentChannelsSection({
         );
         return;
       }
-      setManualSetupReason(null);
-      toast.success(`#${response.channelName} created and invitation sent`);
+      setManualSetupReason(
+        response.manualSetupRequired ? (response.reason ?? null) : null,
+      );
+      if (
+        response.reason ||
+        response.operatorInvites?.succeeded === false ||
+        response.omittedOperators.length > 0
+      ) {
+        toast.warning(`#${response.channelName} created with setup warnings`);
+      } else {
+        toast.success(`#${response.channelName} created and invitation sent`);
+      }
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
@@ -290,12 +773,12 @@ export function AgentChannelsSection({
         channelName: manualChannelName.replace(/^#/, ""),
       });
       setManualSetupReason(null);
-      toast.success("Shared support channel connected");
+      toast.success("Client support channel connected");
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
           error,
-          "The shared support channel could not be connected",
+          "The client support channel could not be connected",
         ),
       );
     } finally {
@@ -303,450 +786,993 @@ export function AgentChannelsSection({
     }
   }
 
-  const connection = result?.connection;
-  const supportChannel = result?.supportChannel ?? result?.primaryChannel;
-  const joinedChannels = result?.joinedChannels ?? [];
-  const settings = result?.settings;
-  const slackNeedsReinstall =
-    !!connection && missingSlackCustomerScopes(connection.grantedScopes).length > 0;
-  const slackReady = !!connection && !slackNeedsReinstall;
-  const isMockSlack = result?.slackMode === "mock";
-  const canSendSlackInstallInvite = Boolean(
-    !connection && isOperator && !isMockSlack,
+  async function changeSetupStep(
+    step: SlackSetupStep,
+    deferredStep?: Exclude<SlackSetupStep, "automations">,
+  ) {
+    setBusy("setup-step");
+    try {
+      await setSetupStep({ clientOrgId, step, deferredStep });
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Slack setup could not continue"),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function completeSetup() {
+    setBusy("finish-setup");
+    try {
+      await finishSetup({ clientOrgId });
+      toast.success("Slack setup complete");
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Slack setup could not be completed"),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function cancelReinstall() {
+    setBusy("cancel-setup");
+    try {
+      await cancelSetup({ clientOrgId });
+      toast.success("Slack reinstall cancelled");
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(
+          error,
+          "Slack reinstall could not be cancelled",
+        ),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeConnection() {
+    setBusy("disconnect");
+    try {
+      await disconnect({ clientOrgId });
+      setDisconnectDialogOpen(false);
+      setActiveDrawer(null);
+      toast.success("Slack disconnected");
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Slack could not be disconnected"),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const supportStatus = supportChannel?.customerChannelId
+    ? { label: "Connected", tone: "success" as const }
+    : operatorSetup?.supportInviteError ||
+        operatorSetup?.supportOperatorInviteError
+      ? { label: "Needs attention", tone: "danger" as const }
+      : setupInProgress && supportChannel && !operatorSetup?.supportInviteSentAt
+        ? { label: "Ready", tone: "neutral" as const }
+        : supportChannel
+          ? { label: "Invitation pending", tone: "warning" as const }
+          : { label: "Not set up", tone: "neutral" as const };
+
+  const supportRow = supportChannel ? (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+      <p className="min-w-0 truncate text-base text-foreground">
+        #{supportChannel.channelName}
+      </p>
+      <StatusTag tone={supportStatus.tone}>{supportStatus.label}</StatusTag>
+    </div>
+  ) : null;
+
+  const inviteContactField = (
+    <div className="space-y-1.5">
+      <label
+        htmlFor="slack-invite-contact"
+        className="text-label text-muted-foreground"
+      >
+        Client contact
+      </label>
+      <Select
+        value={selectedInviteMember?.userId ?? null}
+        onValueChange={(value) => {
+          if (typeof value !== "string") return;
+          const member = inviteMembers.find(
+            (candidate) => candidate.userId === value,
+          );
+          if (!member?.email) return;
+          setInviteMemberId(member.userId);
+        }}
+        disabled={inviteMembers.length === 0}
+      >
+        <SelectTrigger id="slack-invite-contact" className="w-full">
+          <SelectValue>
+            {selectedInviteMember
+              ? selectedInviteMember.name || selectedInviteMember.email
+              : clientTeamMembers
+                ? "No team member with an email"
+                : "Loading client team…"}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {inviteMembers.map((member) => (
+            <SelectItem key={member.userId} value={member.userId}>
+              <span>{member.name || member.email}</span>
+              {member.name ? (
+                <span className="text-muted-foreground">{member.email}</span>
+              ) : null}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   );
-  const automaticChannel = connection
-    ? resolveSlackAutomaticChannel(connection, supportChannel)
-    : undefined;
-  const automaticChannelId = automaticChannel?.channelId;
+
+  const supportChannelField = (
+    <div className="space-y-1.5">
+      <p className="text-label text-muted-foreground">Client support channel</p>
+      <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2">
+        <p className="min-w-0 truncate text-base text-foreground">
+          #{supportChannel?.channelName ?? `glass-${clientSlug}`}
+        </p>
+        <StatusTag tone={supportStatus.tone}>{supportStatus.label}</StatusTag>
+      </div>
+    </div>
+  );
+
+  const manualSupportFields =
+    isOperator && resolvedManualSetupReason ? (
+      <details className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
+        <summary className="cursor-pointer text-base font-medium text-foreground">
+          Link a channel manually
+        </summary>
+        <p className="mt-2 text-label text-muted-foreground">
+          {resolvedManualSetupReason}
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label
+              htmlFor="slack-host-team-id"
+              className="text-label text-muted-foreground"
+            >
+              Clarity team ID
+            </label>
+            <Input
+              id="slack-host-team-id"
+              value={hostTeamId}
+              onChange={(event) => setHostTeamId(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="slack-host-channel-id"
+              className="text-label text-muted-foreground"
+            >
+              Clarity channel ID
+            </label>
+            <Input
+              id="slack-host-channel-id"
+              value={hostChannelId}
+              onChange={(event) => setHostChannelId(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="slack-customer-channel-id"
+              className="text-label text-muted-foreground"
+            >
+              Customer channel ID
+            </label>
+            <Input
+              id="slack-customer-channel-id"
+              value={customerChannelId}
+              onChange={(event) => setCustomerChannelId(event.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="slack-manual-channel-name"
+              className="text-label text-muted-foreground"
+            >
+              Channel name
+            </label>
+            <Input
+              id="slack-manual-channel-name"
+              value={manualChannelName}
+              onChange={(event) => setManualChannelName(event.target.value)}
+            />
+          </div>
+        </div>
+        <PillButton
+          className="mt-3"
+          variant="secondary"
+          onClick={() => void saveManualPrimaryChannel()}
+          disabled={
+            busy !== null ||
+            !hostTeamId.trim() ||
+            !hostChannelId.trim() ||
+            !manualChannelName.trim()
+          }
+        >
+          {busy === "manual-channel" ? (
+            <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : null}
+          Link support channel
+        </PillButton>
+      </details>
+    ) : null;
+
+  const setupContent =
+    operatorSetup && settings ? (
+      <div className="space-y-5">
+        <SetupHeader step={setupStep} />
+        {setupStep === "install" ? (
+          <div className="space-y-4">
+            {installComplete && connection ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-base text-foreground">
+                    {connection.teamName}
+                  </p>
+                  <p className="text-label text-muted-foreground">
+                    Slack workspace
+                  </p>
+                </div>
+                <StatusTag tone="success">
+                  {operatorSetup.mode === "reinstall" ? "Updated" : "Installed"}
+                </StatusTag>
+              </div>
+            ) : isMockSlack ? (
+              <div className="rounded-lg border border-dashed border-foreground/10 px-3 py-4">
+                <p className="text-base text-foreground">
+                  Local Slack workspace
+                </p>
+                <p className="mt-0.5 text-label text-muted-foreground">
+                  Ready to connect the local fixture.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {inviteContactField}
+                {operatorSetup.inviteSentAt &&
+                operatorSetup.inviteRecipientEmail ? (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-base text-foreground">
+                        {operatorSetup.inviteRecipientEmail}
+                      </p>
+                      <p className="text-label text-muted-foreground">
+                        {operatorSetup.inviteExpiresAt &&
+                        dayjs().isAfter(operatorSetup.inviteExpiresAt)
+                          ? `Expired ${formatDisplayDate(operatorSetup.inviteExpiresAt)}`
+                          : `Expires ${formatDisplayDate(operatorSetup.inviteExpiresAt)}`}
+                      </p>
+                    </div>
+                    <StatusTag
+                      tone={
+                        operatorSetup.inviteExpiresAt &&
+                        dayjs().isAfter(operatorSetup.inviteExpiresAt)
+                          ? "danger"
+                          : "warning"
+                      }
+                    >
+                      {operatorSetup.inviteExpiresAt &&
+                      dayjs().isAfter(operatorSetup.inviteExpiresAt)
+                        ? "Expired"
+                        : "Invite sent"}
+                    </StatusTag>
+                  </div>
+                ) : (
+                  <p className="text-label text-muted-foreground">
+                    The one-time link expires in{" "}
+                    {SLACK_INSTALL_INVITE_EXPIRATION_DAYS} days.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {setupStep === "support" ? (
+          <div className="space-y-4">
+            {supportChannelField}
+            {inviteContactField}
+            {operatorSetup.supportOmittedOperators?.length ? (
+              <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
+                <p className="text-base font-medium text-foreground">
+                  Operators not added
+                </p>
+                <div className="mt-2 space-y-1">
+                  {operatorSetup.supportOmittedOperators.map((operator) => (
+                    <p
+                      key={operator.email}
+                      className="text-label text-muted-foreground"
+                    >
+                      {operator.displayName} · {operator.reason}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {operatorSetup.supportOperatorInviteError ? (
+              <p className="text-label text-destructive">
+                Operators could not be added:{" "}
+                {operatorSetup.supportOperatorInviteError}
+              </p>
+            ) : null}
+            {operatorSetup.supportInviteError ? (
+              <p className="text-label text-destructive">
+                The client invitation needs attention:{" "}
+                {operatorSetup.supportInviteError}
+              </p>
+            ) : null}
+            {manualSupportFields}
+          </div>
+        ) : null}
+
+        {setupStep === "channels" ? (
+          slackReady ? (
+            <SlackConnectionFields
+              key={`${connection._id}:${automaticChannelId ?? "unselected"}:setup`}
+              clientOrgId={clientOrgId}
+              currentChannelId={automaticChannelId}
+              knownChannels={joinedChannels}
+              supportChannelId={supportChannel?.customerChannelId}
+              canEdit
+              refreshToken={channelRefreshToken}
+            />
+          ) : (
+            <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-3">
+              <p className="text-base font-medium text-foreground">
+                Waiting for the Slack installation
+              </p>
+              <p className="mt-1 text-base text-muted-foreground">
+                Close this drawer for now. Setup resumes here after the client
+                accepts the invitation.
+              </p>
+            </div>
+          )
+        ) : null}
+
+        {setupStep === "automations" ? (
+          <div className="space-y-3">
+            <SlackAvailabilityCard
+              settings={settings}
+              canEdit={canEdit}
+              busy={busy === "settings"}
+              onSave={(nextSettings) => void save(nextSettings)}
+            />
+            <AutomationSettings
+              settings={settings}
+              automaticChannelId={automaticChannelId}
+              canEdit
+              busy={busy === "settings"}
+              onSave={(nextSettings) => void save(nextSettings)}
+              showHeader={false}
+            />
+          </div>
+        ) : null}
+      </div>
+    ) : (
+      <div className="flex min-h-32 items-center justify-center">
+        <Loader2 className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" />
+      </div>
+    );
+
+  const compactSlackContent = settings ? (
+    <div className="space-y-5">
+      <SlackAvailabilityCard
+        settings={settings}
+        canEdit={canEdit && slackReady}
+        busy={busy === "settings"}
+        onSave={(nextSettings) => void save(nextSettings)}
+      />
+      <Tabs
+        value={compactSlackTab}
+        onValueChange={(value) => setCompactSlackTab(String(value))}
+        className="gap-5"
+      >
+        <TabsList variant="pill">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="channels" disabled={!slackReady}>
+            Channels
+          </TabsTrigger>
+          <TabsTrigger value="automations" disabled={!slackReady}>
+            Automations
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-5">
+          <FormSection title="Workspace" divided={false}>
+            {connection ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+                <p className="min-w-0 truncate text-base text-foreground">
+                  {connection.teamName}
+                </p>
+                <StatusTag tone={slackNeedsReinstall ? "danger" : "success"}>
+                  {slackNeedsReinstall ? "Update required" : "Installed"}
+                </StatusTag>
+              </div>
+            ) : (
+              <p className="text-base text-muted-foreground">Not connected.</p>
+            )}
+          </FormSection>
+
+          <FormSection
+            title="Client support channel"
+            description="Dedicated Slack Connect channel with Clarity Labs."
+            divided={false}
+          >
+            {supportRow ?? (
+              <p className="text-base text-muted-foreground">Not set up.</p>
+            )}
+            {isOperator && !supportChannel?.customerChannelId
+              ? inviteContactField
+              : null}
+            {manualSupportFields}
+          </FormSection>
+        </TabsContent>
+
+        <TabsContent value="channels">
+          {slackReady ? (
+            <SlackConnectionFields
+              key={`${connection._id}:${automaticChannelId ?? "unselected"}:compact`}
+              clientOrgId={clientOrgId}
+              currentChannelId={automaticChannelId}
+              knownChannels={joinedChannels}
+              supportChannelId={supportChannel?.customerChannelId}
+              canEdit={canEdit}
+              refreshToken={channelRefreshToken}
+            />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="automations">
+          {slackReady ? (
+            <AutomationSettings
+              settings={settings}
+              automaticChannelId={automaticChannelId}
+              canEdit={canEdit}
+              busy={busy === "settings"}
+              onSave={(nextSettings) => void save(nextSettings)}
+              showHeader={false}
+            />
+          ) : null}
+        </TabsContent>
+      </Tabs>
+    </div>
+  ) : null;
+
+  const clientPendingStatus = slackNeedsReinstall
+    ? { label: "Update required", tone: "danger" as const }
+    : setupStatus === "in_progress"
+      ? { label: "Setup in progress", tone: "warning" as const }
+      : { label: "Not connected", tone: "neutral" as const };
+  const clientPendingContent = (
+    <FormSection
+      title="Slack setup"
+      description="Glass support is finishing Slack setup for your organization."
+      divided={false}
+    >
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+        <p className="text-base text-foreground">
+          {slackNeedsReinstall
+            ? "An installation update is required."
+            : setupStatus === "in_progress"
+              ? "Glass support is finishing Slack setup."
+              : "Slack is not connected yet."}
+        </p>
+        <StatusTag tone={clientPendingStatus.tone}>
+          {clientPendingStatus.label}
+        </StatusTag>
+      </div>
+    </FormSection>
+  );
+
+  const emailContent =
+    settings && agentEmailAddress ? (
+      <div className="space-y-4">
+        <ChannelCard
+          title="Available by email"
+          description="Let members email the client’s Glass agent."
+          checked={settings.emailEnabled}
+          disabled={!canEdit || busy === "settings"}
+          onChange={() =>
+            void save({ ...settings, emailEnabled: !settings.emailEnabled })
+          }
+        />
+        <AgentEmailAddressField
+          key={`${agentEmailAddress.ownerOrgId}:${agentEmailAddress.configuredHandle ?? "shared"}`}
+          address={agentEmailAddress}
+          canEdit={canEditAgentEmailAddress}
+          allowSharedDefault={agentEmailAddress.source !== "broker"}
+          onSave={canEditAgentEmailAddress ? saveAgentEmailHandle : undefined}
+          onSaved={handleAgentEmailSaved}
+        />
+        {showEmailRouting ? (
+          <ClientEmailRoutingSection clientOrgId={clientOrgId} />
+        ) : null}
+      </div>
+    ) : null;
+
+  const imessageContent = settings ? (
+    <ChannelCard
+      title="Available by iMessage"
+      description="Let linked members message the Glass phone number."
+      checked={settings.imessageEnabled}
+      disabled={!canEdit || busy === "settings"}
+      onChange={() =>
+        void save({
+          ...settings,
+          imessageEnabled: !settings.imessageEnabled,
+        })
+      }
+    />
+  ) : null;
+
+  const supportInvitationSent = Boolean(
+    supportChannel?.customerChannelId || operatorSetup?.supportInviteSentAt,
+  );
+
+  const wizardFooter = operatorSetup ? (
+    <>
+      {setupStep !== "install" ? (
+        <PillButton
+          variant="secondary"
+          onClick={() => {
+            const index = SLACK_SETUP_STEPS.findIndex(
+              (step) => step.id === setupStep,
+            );
+            void changeSetupStep(SLACK_SETUP_STEPS[index - 1].id);
+          }}
+          disabled={busy !== null}
+        >
+          Back
+        </PillButton>
+      ) : operatorSetup.mode === "reinstall" ? (
+        <PillButton
+          variant="secondary"
+          onClick={() => void cancelReinstall()}
+          disabled={busy !== null}
+        >
+          Cancel reinstall
+        </PillButton>
+      ) : null}
+
+      {setupStep === "install" ? (
+        <>
+          {!installComplete ? (
+            <PillButton
+              variant="secondary"
+              onClick={() => void changeSetupStep("support", "install")}
+              disabled={busy !== null}
+            >
+              Skip for now
+            </PillButton>
+          ) : null}
+          <PillButton
+            onClick={() => {
+              if (installComplete) {
+                void changeSetupStep("support");
+              } else if (isMockSlack) {
+                void connectMockSlack();
+              } else {
+                void sendInstallInvite();
+              }
+            }}
+            disabled={
+              busy !== null ||
+              (!installComplete && !isMockSlack && !inviteEmail.trim())
+            }
+          >
+            {busy === "oauth" || busy === "install-invite" ? (
+              <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            {installComplete
+              ? "Continue"
+              : isMockSlack
+                ? connection
+                  ? "Update Glass"
+                  : "Connect Slack"
+                : operatorSetup.inviteSentAt
+                  ? "Resend invitation"
+                  : operatorSetup.mode === "reinstall"
+                    ? "Send update invitation"
+                    : "Send invitation"}
+          </PillButton>
+        </>
+      ) : setupStep === "support" ? (
+        <>
+          {!supportInvitationSent ? (
+            <PillButton
+              variant="secondary"
+              onClick={() => void changeSetupStep("channels", "support")}
+              disabled={busy !== null}
+            >
+              Skip for now
+            </PillButton>
+          ) : null}
+          <PillButton
+            onClick={() => {
+              if (supportInvitationSent) {
+                void changeSetupStep("channels");
+              } else {
+                void createPrimary();
+              }
+            }}
+            disabled={
+              busy !== null ||
+              (!supportInvitationSent &&
+                (!clientSlug.trim() || !inviteEmail.trim()))
+            }
+          >
+            {busy === "provision" ? (
+              <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            {supportInvitationSent
+              ? "Continue"
+              : operatorSetup.supportInviteError
+                ? "Retry invite"
+                : "Send invite"}
+          </PillButton>
+        </>
+      ) : setupStep === "channels" ? (
+        <>
+          <PillButton
+            variant="secondary"
+            onClick={() => setChannelRefreshToken((value) => value + 1)}
+            disabled={busy !== null || !slackReady}
+          >
+            <RefreshCw className="size-3.5" />
+            Refresh
+          </PillButton>
+          <PillButton
+            onClick={() =>
+              void changeSetupStep(
+                "automations",
+                automaticChannelId ? undefined : "channels",
+              )
+            }
+            disabled={busy !== null}
+          >
+            {automaticChannelId ? "Continue" : "Skip for now"}
+          </PillButton>
+        </>
+      ) : (
+        <PillButton
+          onClick={() => void completeSetup()}
+          disabled={busy !== null || !installComplete}
+        >
+          {busy === "finish-setup" ? (
+            <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : null}
+          {installComplete ? "Finish setup" : "Waiting for installation"}
+        </PillButton>
+      )}
+    </>
+  ) : null;
+
+  const compactFooter =
+    compactSlackTab === "channels" && canEdit ? (
+      <PillButton
+        variant="secondary"
+        onClick={() => setChannelRefreshToken((value) => value + 1)}
+      >
+        <RefreshCw className="size-3.5" />
+        Refresh channels
+      </PillButton>
+    ) : compactSlackTab === "overview" && isOperator && connection ? (
+      <>
+        <PillButton
+          variant="destructive"
+          size="compact"
+          iconOnly
+          label="Disconnect Slack"
+          className="sm:mr-auto"
+          onClick={() => setDisconnectDialogOpen(true)}
+          disabled={busy !== null}
+        >
+          <Unplug className="size-3.5" />
+        </PillButton>
+        <PillButton
+          variant="secondary"
+          onClick={() => void beginSetup("reinstall")}
+          disabled={busy !== null}
+        >
+          {busy === "start-setup" ? (
+            <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : null}
+          Reinstall
+        </PillButton>
+        {!supportChannel?.customerChannelId ? (
+          <PillButton
+            onClick={() => void createPrimary()}
+            disabled={
+              busy !== null || !clientSlug.trim() || !inviteEmail.trim()
+            }
+          >
+            {busy === "provision" ? (
+              <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            {supportChannel ? "Retry invite" : "Send invite"}
+          </PillButton>
+        ) : null}
+      </>
+    ) : null;
+
+  const showWizard = isOperator && setupInProgress;
+  const slackContent = showWizard
+    ? setupContent
+    : clientSetupPending
+      ? clientPendingContent
+      : compactSlackContent;
+  const drawerTitle =
+    activeDrawer === "email"
+      ? "Email"
+      : activeDrawer === "imessage"
+        ? "iMessage"
+        : showWizard
+          ? operatorSetup?.mode === "reinstall"
+            ? "Reinstall"
+            : "Set up Slack"
+          : "Slack";
+  const drawerFooter =
+    activeDrawer === "slack"
+      ? showWizard
+        ? wizardFooter
+        : clientSetupPending
+          ? null
+          : compactFooter
+      : null;
+  const drawerContent =
+    activeDrawer === "email"
+      ? emailContent
+      : activeDrawer === "imessage"
+        ? imessageContent
+        : slackContent;
 
   useEffect(() => {
     if (!result || !settings) {
       setRightPanel(null);
       return;
     }
-
-    const slackFooter = !canEdit ? null : connection ? (
-      <>
-        <PillButton
-          variant="secondary"
-          onClick={() => void install()}
-          disabled={busy !== null}
-        >
-          {busy === "oauth" ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : null}
-          Reinstall Glass
-        </PillButton>
-        <PillButton
-          variant="destructive"
-          onClick={() => void removeConnection()}
-          disabled={busy !== null}
-        >
-          {busy === "disconnect" ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : null}
-          Disconnect
-        </PillButton>
-      </>
-    ) : null;
-
     setRightPanel(
       <SettingsDrawer
         open={activeDrawer !== null}
         onOpenChange={(open) => {
           if (!open) setActiveDrawer(null);
         }}
-        title={
-          activeDrawer === "email"
-            ? "Email"
-            : activeDrawer === "imessage"
-              ? "iMessage"
-              : "Slack"
-        }
-        footer={activeDrawer === "slack" ? slackFooter : null}
+        title={drawerTitle}
+        footer={drawerFooter}
       >
-        {activeDrawer === "email" ? (
-          <div className="space-y-4">
-            <ChannelCard
-              title="Available by email"
-              description="Let members email the client’s Glass agent."
-              checked={settings.emailEnabled}
-              disabled={!canEdit || busy === "settings"}
-              onChange={() =>
-                void save({
-                  ...settings,
-                  emailEnabled: !settings.emailEnabled,
-                })
-              }
-            />
-            {showEmailRouting ? (
-              <ClientEmailRoutingSection clientOrgId={clientOrgId} />
-            ) : null}
-          </div>
-        ) : activeDrawer === "imessage" ? (
-          <ChannelCard
-            title="Available by iMessage"
-            description="Let linked members message the Glass phone number."
-            checked={settings.imessageEnabled}
-            disabled={!canEdit || busy === "settings"}
-            onChange={() =>
-              void save({
-                ...settings,
-                imessageEnabled: !settings.imessageEnabled,
-              })
-            }
-          />
-        ) : (
-          <div className="space-y-6">
-            <FormSection
-              title="Glass app installation"
-              description="Install Glass once in the client workspace. Members can message it privately or add it to any channels where the team wants to use it."
-              divided={false}
-            >
-              {connection ? (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-base text-foreground">
-                      {connection.teamName}
-                    </p>
-                    <p className="text-label text-muted-foreground">
-                      Slack workspace
-                    </p>
-                  </div>
-                  <StatusTag tone={slackNeedsReinstall ? "danger" : "success"}>
-                    {slackNeedsReinstall ? "Update required" : "Installed"}
-                  </StatusTag>
-                </div>
-              ) : canSendSlackInstallInvite ? (
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <label
-                      htmlFor="slack-install-invite-email"
-                      className="text-label text-muted-foreground"
-                    >
-                      Client Slack admin email
-                    </label>
-                    <Input
-                      id="slack-install-invite-email"
-                      type="email"
-                      value={inviteEmail}
-                      onChange={(event) => setInviteEmail(event.target.value)}
-                      placeholder="admin@client.com"
-                      autoComplete="email"
-                    />
-                    <p className="text-label text-muted-foreground">
-                      The one-time install link expires in{" "}
-                      {SLACK_INSTALL_INVITE_EXPIRATION_DAYS} days.
-                    </p>
-                  </div>
-                  <PillButton
-                    onClick={() => void sendInstallInvite()}
-                    disabled={busy !== null || !inviteEmail.trim()}
-                  >
-                    {busy === "install-invite" ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : null}
-                    Send install invite
-                  </PillButton>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-base text-muted-foreground">
-                    Install Glass in this Slack workspace. The shared support
-                    channel is set up separately by Clarity Labs.
-                  </p>
-                  {canEdit ? (
-                    <PillButton
-                      onClick={() => void install()}
-                      disabled={busy !== null}
-                    >
-                      {busy === "oauth" ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : null}
-                      Connect Slack
-                    </PillButton>
-                  ) : null}
-                </div>
-              )}
-            </FormSection>
-
-            <FormSection
-              title="Shared support channel"
-              description="Clarity Labs creates and invites this Slack Connect channel for human support."
-              divided={false}
-            >
-              {supportChannel ? (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
-                  <p className="min-w-0 truncate text-base text-foreground">
-                    #{supportChannel.channelName}
-                  </p>
-                  <StatusTag
-                    tone={supportChannel.customerChannelId ? "success" : "warning"}
-                  >
-                    {supportChannel.customerChannelId
-                      ? "Connected"
-                      : "Invitation pending"}
-                  </StatusTag>
-                </div>
-              ) : isOperator ? (
-                <div className="space-y-3">
-                  <Input
-                    value={clientSlug}
-                    onChange={(event) => setClientSlug(event.target.value)}
-                    placeholder="Support channel name"
-                    aria-label="Slack support channel name"
-                  />
-                  <Input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(event) => setInviteEmail(event.target.value)}
-                    placeholder="Client admin email"
-                    aria-label="Client admin email"
-                  />
-                  <PillButton
-                    onClick={() => void createPrimary()}
-                    disabled={
-                      busy !== null ||
-                      !clientSlug.trim() ||
-                      !inviteEmail.trim()
-                    }
-                  >
-                    {busy === "provision" ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : null}
-                    Create support channel
-                  </PillButton>
-                </div>
-              ) : (
-                <p className="text-base text-muted-foreground">
-                  Waiting for Clarity Labs to send the shared-channel invitation.
-                </p>
-              )}
-              {manualSetupReason && isOperator ? (
-                <FormSection
-                  title="Link a channel manually"
-                  description={manualSetupReason}
-                >
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Input
-                      value={hostTeamId}
-                      onChange={(event) => setHostTeamId(event.target.value)}
-                      placeholder="Clarity team ID"
-                    />
-                    <Input
-                      value={hostChannelId}
-                      onChange={(event) => setHostChannelId(event.target.value)}
-                      placeholder="Clarity channel ID"
-                    />
-                    <Input
-                      value={customerChannelId}
-                      onChange={(event) =>
-                        setCustomerChannelId(event.target.value)
-                      }
-                      placeholder="Customer mirror ID (optional)"
-                    />
-                    <Input
-                      value={manualChannelName}
-                      onChange={(event) => setManualChannelName(event.target.value)}
-                      placeholder="Support channel name"
-                    />
-                  </div>
-                  <PillButton
-                    variant="secondary"
-                    onClick={() => void saveManualPrimaryChannel()}
-                    disabled={
-                      busy !== null ||
-                      !hostTeamId.trim() ||
-                      !hostChannelId.trim() ||
-                      !manualChannelName.trim()
-                    }
-                  >
-                    {busy === "manual-channel" ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : null}
-                    Link support channel
-                  </PillButton>
-                </FormSection>
-              ) : null}
-            </FormSection>
-
-            {connection && !slackNeedsReinstall ? (
-              <SlackConnectionFields
-                key={`${connection._id}:${automaticChannelId ?? "unselected"}`}
-                clientOrgId={clientOrgId}
-                workspaceName={connection.teamName}
-                currentChannelId={automaticChannelId}
-                knownChannels={joinedChannels}
-                canEdit={canEdit}
-              />
-            ) : slackNeedsReinstall ? (
-              <p className="text-base text-muted-foreground">
-                Reinstall Glass to grant the permissions needed for App Home
-                messages and public-channel management.
-              </p>
-            ) : null}
-
-            {connection && !slackNeedsReinstall ? (
-              <div className="space-y-3">
-                <ChannelCard
-                  title="Available in Slack"
-                  description="Let members use Glass privately and in every channel where it has been added."
-                  checked={settings.slackEnabled}
-                  disabled={!canEdit || busy === "settings"}
-                  onChange={() =>
-                    void save({
-                      ...settings,
-                      slackEnabled: !settings.slackEnabled,
-                    })
-                  }
-                />
-                <ChannelCard
-                  title="Compliance and policy-change alerts"
-                  description="Post client compliance and policy-change updates."
-                  checked={settings.slackSafeAlertsEnabled}
-                  disabled={
-                    !canEdit ||
-                    busy === "settings" ||
-                    !settings.slackEnabled ||
-                    !automaticChannelId
-                  }
-                  onChange={() =>
-                    void save({
-                      ...settings,
-                      slackSafeAlertsEnabled: !settings.slackSafeAlertsEnabled,
-                    })
-                  }
-                />
-                <ChannelCard
-                  title="Vendor alerts"
-                  description="Post vendor compliance updates."
-                  checked={settings.slackVendorAlertsEnabled}
-                  disabled={
-                    !canEdit ||
-                    busy === "settings" ||
-                    !settings.slackEnabled ||
-                    !automaticChannelId
-                  }
-                  onChange={() =>
-                    void save({
-                      ...settings,
-                      slackVendorAlertsEnabled:
-                        !settings.slackVendorAlertsEnabled,
-                    })
-                  }
-                />
-                <ChannelCard
-                  title="Policy and endorsement delivery"
-                  description="Deliver client-owned documents in their Slack threads."
-                  checked={settings.slackPolicyDeliveryEnabled}
-                  disabled={
-                    !canEdit ||
-                    busy === "settings" ||
-                    !settings.slackEnabled ||
-                    !automaticChannelId
-                  }
-                  onChange={() =>
-                    void save({
-                      ...settings,
-                      slackPolicyDeliveryEnabled:
-                        !settings.slackPolicyDeliveryEnabled,
-                    })
-                  }
-                />
-              </div>
-            ) : null}
-          </div>
-        )}
+        {drawerContent}
       </SettingsDrawer>,
     );
-
     return () => setRightPanel(null);
-    // The drawer must be rebuilt when its setup state changes.
+    // Keep the drawer synchronized with async setup and form state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeDrawer,
+    automaticChannelId,
     busy,
-    canEdit,
-    canSendSlackInstallInvite,
+    channelRefreshToken,
     clientSlug,
-    clientOrgId,
+    clientTeamMembers,
+    compactSlackTab,
     connection,
     customerChannelId,
     hostChannelId,
     hostTeamId,
+    installComplete,
     inviteEmail,
-    isOperator,
+    inviteMemberId,
+    joinedChannels,
     manualChannelName,
     manualSetupReason,
-    supportChannel,
-    joinedChannels,
-    automaticChannelId,
+    operatorSetup,
     result,
     setRightPanel,
     settings,
-    showEmailRouting,
+    setupStep,
+    showWizard,
     slackNeedsReinstall,
-    slackReady,
+    supportChannel,
   ]);
 
   if (!result) {
     return (
-      <div className="h-40 animate-pulse rounded-lg bg-foreground/[0.03]" />
+      <div className="h-40 animate-pulse rounded-lg bg-foreground/[0.03] motion-reduce:animate-none" />
     );
   }
 
   const resolvedSettings = result.settings;
-  const slackDescription = slackReady
-    ? `${connection.teamName} · ${joinedChannels.length} joined ${joinedChannels.length === 1 ? "channel" : "channels"}`
-    : slackNeedsReinstall
-      ? `${connection.teamName} needs updated Slack permissions.`
-      : supportChannel
-        ? "Support channel ready · Glass app not installed"
+  const agentDomain = getPublicAgentDomain();
+  const emailDescription = result.agentEmailAddress.handle
+    ? `${result.agentEmailAddress.handle}@${agentDomain}`
+    : `${result.agentEmailAddress.ownerName} has not configured an agent email address.`;
+  const emailStatus = result.agentEmailAddress.handle
+    ? resolvedSettings.emailEnabled
+      ? { label: "On", tone: "success" as const }
+      : { label: "Off", tone: "neutral" as const }
+    : { label: "Needs setup", tone: "warning" as const };
+  const slackDescription = slackNeedsReinstall
+    ? `${connection.teamName} needs updated Slack permissions.`
+    : setupStatus === "in_progress"
+      ? isOperator && operatorSetup?.inviteRecipientEmail
+        ? `Installation invitation sent to ${operatorSetup.inviteRecipientEmail}.`
+        : "Glass support is finishing Slack setup."
+      : slackReady
+        ? `${connection.teamName} · ${joinedChannels.length} joined ${joinedChannels.length === 1 ? "channel" : "channels"}`
         : isOperator
-          ? "Set up the app and support channel independently."
-          : "Waiting for Slack setup.";
-  const slackStatus = slackReady
-    ? resolvedSettings.slackEnabled
-      ? "On"
-      : "Off"
-    : slackNeedsReinstall
-      ? "Needs attention"
-      : "Pending";
-  const slackStatusTone: StatusTagTone = slackReady
-    ? resolvedSettings.slackEnabled
-      ? "success"
-      : "neutral"
-    : slackNeedsReinstall
-      ? "danger"
-      : "warning";
+          ? "Set up the client Slack workspace."
+          : "Slack has not been connected by Glass support.";
+  const slackRowStatus = resolveSlackRowStatus({
+    connected: slackReady,
+    needsUpdate: slackNeedsReinstall,
+    setupStatus,
+    enabled: resolvedSettings.slackEnabled,
+  });
 
   return (
-    <div className="w-full space-y-4">
-      <section className="space-y-3" aria-label="Agent channels">
-        <ChannelRow
-          title="Email"
-          description="Let members email the client’s Glass agent."
-          status={resolvedSettings.emailEnabled ? "On" : "Off"}
-          statusTone={resolvedSettings.emailEnabled ? "success" : "neutral"}
-          onClick={() => setActiveDrawer("email")}
+    <>
+      <div className="w-full space-y-4">
+        <section className="space-y-3" aria-label="Agent channels">
+          <ChannelRow
+            title="Email"
+            description={emailDescription}
+            status={emailStatus.label}
+            statusTone={emailStatus.tone}
+            onClick={() => setActiveDrawer("email")}
+          />
+          <ChannelRow
+            title="iMessage"
+            description="Let linked members message the Glass phone number."
+            status={resolvedSettings.imessageEnabled ? "On" : "Off"}
+            statusTone={
+              resolvedSettings.imessageEnabled ? "success" : "neutral"
+            }
+            onClick={() => setActiveDrawer("imessage")}
+          />
+          <ChannelRow
+            title="Slack"
+            description={slackDescription}
+            status={slackRowStatus.label}
+            statusTone={slackRowStatus.tone}
+            onClick={() => void openSlackDrawer()}
+          />
+        </section>
+      </div>
+
+      <Dialog
+        open={disconnectDialogOpen}
+        onOpenChange={(open) => {
+          if (busy !== "disconnect") setDisconnectDialogOpen(open);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Disconnect Slack</DialogTitle>
+            <DialogDescription>
+              Disconnect Glass from{" "}
+              <strong>{connection?.teamName ?? "this workspace"}</strong>? Glass
+              will stop responding and posting there. Reconnecting will require
+              a new installation.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <PillButton
+              variant="secondary"
+              onClick={() => setDisconnectDialogOpen(false)}
+              disabled={busy === "disconnect"}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              onClick={() => void removeConnection()}
+              disabled={busy === "disconnect"}
+            >
+              {busy === "disconnect" ? (
+                <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+              ) : (
+                <Unplug className="size-3.5" />
+              )}
+              {busy === "disconnect" ? "Disconnecting…" : "Disconnect"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+export function BrokerAgentChannelsSection() {
+  const { setRightPanel } = useSettingsActions();
+  const store = useSyncStore();
+  const viewerOrg = useCachedViewerOrg();
+  const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const org = viewerOrg?.org;
+  const isBroker = org?.type === "broker";
+  const canEdit = isBroker && viewerOrg?.membership.role === "admin";
+  const address: AgentEmailAddress | null =
+    org && isBroker
+      ? {
+          handle: org.agentHandle ?? null,
+          configuredHandle: org.agentHandle ?? null,
+          source: "broker",
+          ownerOrgId: org._id,
+          ownerName: org.name,
+        }
+      : null;
+
+  async function saveAgentEmailHandle(handle: string | undefined) {
+    if (!handle) throw new Error("Enter an agent email address");
+    return await claimAgentHandle({ handle });
+  }
+
+  function handleAgentEmailSaved(handle: string | undefined) {
+    patchCachedViewerOrg(store, { agentHandle: handle });
+  }
+
+  useEffect(() => {
+    if (!address) {
+      setRightPanel(null);
+      return;
+    }
+    setRightPanel(
+      <SettingsDrawer
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+        title="Email"
+      >
+        <AgentEmailAddressField
+          key={`${address.ownerOrgId}:${address.configuredHandle ?? "unconfigured"}`}
+          address={address}
+          canEdit={canEdit}
+          allowSharedDefault={false}
+          onSave={canEdit ? saveAgentEmailHandle : undefined}
+          onSaved={handleAgentEmailSaved}
         />
-        <ChannelRow
-          title="iMessage"
-          description="Let linked members message the Glass phone number."
-          status={resolvedSettings.imessageEnabled ? "On" : "Off"}
-          statusTone={
-            resolvedSettings.imessageEnabled ? "success" : "neutral"
-          }
-          onClick={() => setActiveDrawer("imessage")}
-        />
-        <ChannelRow
-          title="Slack"
-          description={slackDescription}
-          status={slackStatus}
-          statusTone={slackStatusTone}
-          onClick={() => setActiveDrawer("slack")}
-        />
-      </section>
-    </div>
+      </SettingsDrawer>,
+    );
+    return () => setRightPanel(null);
+    // Keep the shared drawer synchronized with the broker address.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    address?.configuredHandle,
+    address?.ownerOrgId,
+    canEdit,
+    emailOpen,
+    setRightPanel,
+  ]);
+
+  if (viewerOrg === undefined) {
+    return (
+      <div className="h-24 animate-pulse rounded-lg bg-foreground/[0.03] motion-reduce:animate-none" />
+    );
+  }
+  if (!address) return null;
+
+  const agentDomain = getPublicAgentDomain();
+  return (
+    <section className="space-y-3" aria-label="Agent channels">
+      <ChannelRow
+        title="Email"
+        description={
+          address.handle
+            ? `${address.handle}@${agentDomain}`
+            : "Set the address clients and carriers use to reach Glass."
+        }
+        status={address.handle ? "Configured" : "Needs setup"}
+        statusTone={address.handle ? "success" : "warning"}
+        onClick={() => setEmailOpen(true)}
+      />
+    </section>
   );
 }

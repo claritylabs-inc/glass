@@ -2,20 +2,20 @@
 
 import { useSyncExternalStore } from "react";
 
-let stopping = false;
+let returnHref: string | null = null;
 const listeners = new Set<() => void>();
 
 function emit() {
   for (const listener of listeners) listener();
 }
 
-export function beginOperatorImpersonationStop() {
-  stopping = true;
+export function beginOperatorImpersonationStop(nextReturnHref: string) {
+  returnHref = nextReturnHref;
   emit();
 }
 
 export function endOperatorImpersonationStop() {
-  stopping = false;
+  returnHref = null;
   emit();
 }
 
@@ -24,14 +24,34 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-function getSnapshot() {
-  return stopping;
+function getStoppingSnapshot() {
+  return returnHref !== null;
 }
 
-function getServerSnapshot() {
+function getServerStoppingSnapshot() {
   return false;
 }
 
 export function useIsStoppingOperatorImpersonation() {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(
+    subscribe,
+    getStoppingSnapshot,
+    getServerStoppingSnapshot,
+  );
+}
+
+function getReturnHrefSnapshot() {
+  return returnHref;
+}
+
+function getServerReturnHrefSnapshot() {
+  return null;
+}
+
+export function useOperatorImpersonationStopReturnHref() {
+  return useSyncExternalStore(
+    subscribe,
+    getReturnHrefSnapshot,
+    getServerReturnHrefSnapshot,
+  );
 }

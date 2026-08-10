@@ -85,7 +85,7 @@ export function getSettingsNavigation({
       label: "Agent",
       icon: GlassStarIcon,
       tabs: [
-        ...(!isBroker ? [{ id: "channels" as const, label: "Channels" }] : []),
+        { id: "channels", label: "Channels" },
         ...(isBroker || isStandaloneClient
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),
@@ -171,7 +171,13 @@ export function resolveSettingsDestination({
   const requestedPage = pages.find((page) => page.id === requestedSection);
   const legacy = requestedSection ? LEGACY_DESTINATIONS[requestedSection] : undefined;
   const page = requestedPage ?? pages.find((item) => item.id === legacy?.section) ?? pages[0];
-  const desiredTab = requestedPage ? requestedTab : legacy?.tab;
+  const desiredTab = requestedPage
+    ? requestedTab === "email" ||
+      requestedTab === "imessage" ||
+      requestedTab === "slack"
+      ? "channels"
+      : requestedTab
+    : legacy?.tab;
   const tab = page.tabs.find((item) => item.id === desiredTab) ?? page.tabs[0];
   return { section: page.id, tab: tab.id, page };
 }

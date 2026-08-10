@@ -30,6 +30,11 @@ describe("settings navigation", () => {
         .find((page) => page.id === "integrations")
         ?.tabs.map((tab) => tab.id),
     ).toEqual(["mcp", "cli", "advanced"]);
+    expect(
+      settingsPages(groups)
+        .find((page) => page.id === "agent")
+        ?.tabs.map((tab) => tab.id),
+    ).toEqual(["channels", "behavior", "memory"]);
   });
 
   it("uses role-aware tabs and resolves legacy deep links", () => {
@@ -38,7 +43,11 @@ describe("settings navigation", () => {
       isStandaloneClient: false,
     });
     const agent = settingsPages(brokerGroups).find((page) => page.id === "agent");
-    expect(agent?.tabs.map((tab) => tab.id)).toEqual(["behavior", "models"]);
+    expect(agent?.tabs.map((tab) => tab.id)).toEqual([
+      "channels",
+      "behavior",
+      "models",
+    ]);
     expect(resolveSettingsDestination({
       requestedSection: "connections",
       requestedTab: null,
@@ -54,5 +63,17 @@ describe("settings navigation", () => {
       requestedTab: null,
       groups: brokerGroups,
     })).toMatchObject({ section: "workflows", tab: "notifications" });
+
+    const clientGroups = getSettingsNavigation({
+      isBroker: false,
+      isStandaloneClient: true,
+    });
+    expect(
+      resolveSettingsDestination({
+        requestedSection: "agent",
+        requestedTab: "slack",
+        groups: clientGroups,
+      }),
+    ).toMatchObject({ section: "agent", tab: "channels" });
   });
 });

@@ -234,4 +234,27 @@ describe("Slack worker HTTP adapter", () => {
       true,
     );
   });
+
+  test("leaves a deterministic local public channel", async () => {
+    const response = await fetch(`${origin}/channels/leave`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        teamId: "T-LOCAL",
+        channelId: "mock-T-LOCAL-policies",
+      }),
+    });
+    assert.deepEqual(await response.json(), {
+      channel: {
+        id: "mock-T-LOCAL-policies",
+        name: "policy-updates",
+        isMember: false,
+        isPrivate: false,
+        isShared: false,
+      },
+    });
+  });
 });

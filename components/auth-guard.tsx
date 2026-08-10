@@ -15,6 +15,10 @@ import {
 } from "@/lib/sync/glass-sync";
 import { OperatorSidebar } from "@/app/operator/operator-sidebar";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import {
+  endOperatorImpersonationStop,
+  useOperatorImpersonationStopReturnHref,
+} from "@/lib/operator-impersonation-stop-state";
 
 const BOOT_STATE_KEY = "glass:boot-state";
 
@@ -197,6 +201,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const acceptInvitation = useMutation(api.orgs.acceptInvitation);
   const handledInvitationIdRef = useRef<string | null>(null);
   const [inviteAcceptError, setInviteAcceptError] = useState(false);
+  const impersonationStopReturnHref =
+    useOperatorImpersonationStopReturnHref();
   const initialBootState = useSyncExternalStore(
     subscribeToBootStateSnapshot,
     getBootStateSnapshot,
@@ -345,6 +351,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       if (
         viewer?.accountKind === "operator" &&
         operatorContext !== undefined &&
+        !hasOperatorImpersonation &&
+        impersonationStopReturnHref
+      ) {
+        const returnPathname = impersonationStopReturnHref.split("?", 1)[0];
+        if (pathname !== returnPathname) {
+          router.replace(impersonationStopReturnHref);
+        } else {
+          endOperatorImpersonationStop();
+        }
+        return;
+      }
+      if (
+        viewer?.accountKind === "operator" &&
+        operatorContext !== undefined &&
         !isOperatorPath &&
         !hasOperatorImpersonation
       ) {
@@ -401,6 +421,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     viewer,
     viewerOrg,
     operatorContext,
+    impersonationStopReturnHref,
     router,
     pathname,
   ]);
@@ -471,7 +492,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     isAuthenticated &&
     viewer?.accountKind === "operator" &&
     !isOperatorPath &&
-    !operatorContext?.activeImpersonation
+    !operatorContext?.activeImpersonation &&
+    !impersonationStopReturnHref
   ) {
     return null;
   }

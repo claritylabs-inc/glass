@@ -99,6 +99,16 @@ before(async () => {
         channel: { id: "C-HOST", name: "glass-client" },
       });
     }
+    if (request.url === "/api/conversations.members") {
+      return respond(response, {
+        ok: true,
+        members: ["U-ALREADY"],
+        response_metadata: { next_cursor: "" },
+      });
+    }
+    if (request.url === "/api/conversations.invite") {
+      return respond(response, { ok: true });
+    }
     if (request.url === "/api/conversations.inviteShared") {
       return respond(response, { ok: true, invite_id: "I-1" });
     }
@@ -161,6 +171,9 @@ before(async () => {
           is_shared: false,
         },
       });
+    }
+    if (request.url === "/api/conversations.leave") {
+      return respond(response, { ok: true });
     }
     response.writeHead(404).end();
   });
@@ -245,17 +258,53 @@ describe("native Slack worker HTTP adapter", () => {
     const response = await workerRequest("/connect-channel", {
       clientSlug: "client",
       inviteEmail: "admin@client.test",
+      operatorUserIds: ["U-ALREADY", "U-NEW", "U-NEW"],
     });
     assert.deepEqual(await response.json(), {
       channelId: "C-HOST",
       channelName: "glass-client",
       inviteId: "I-1",
+      reusedChannel: false,
+      operatorInvites: { requested: 2, succeeded: true },
+      supportInvite: { succeeded: true, pending: true },
     });
     const calls = apiCalls.filter((call) =>
       call.path.startsWith("/api/conversations."),
     );
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 4);
     assert(calls.every((call) => call.authorization === "Bearer xoxb-clarity"));
+    assert.deepEqual(
+      calls.find((call) => call.path === "/api/conversations.invite")?.body,
+      { channel: "C-HOST", users: "U-NEW", force: true },
+    );
+
+    const retry = await workerRequest("/connect-channel", {
+      clientSlug: "client",
+      inviteEmail: "admin@client.test",
+      operatorUserIds: ["U-ALREADY"],
+      existingChannelId: "C-HOST",
+      existingChannelName: "glass-client",
+    });
+    assert.deepEqual(await retry.json(), {
+      channelId: "C-HOST",
+      channelName: "glass-client",
+      inviteId: "I-1",
+      reusedChannel: true,
+      operatorInvites: { requested: 1, succeeded: true },
+      supportInvite: { succeeded: true, pending: true },
+    });
+    assert.equal(
+      apiCalls.filter(
+        (call) => call.path === "/api/conversations.create",
+      ).length,
+      1,
+    );
+    assert.equal(
+      apiCalls.filter(
+        (call) => call.path === "/api/conversations.invite",
+      ).length,
+      1,
+    );
   });
 
   test("lists visible public channels and joined private/shared channels", async () => {
@@ -351,5 +400,42 @@ describe("native Slack worker HTTP adapter", () => {
         .length,
       joinCallsBefore,
     );
+  });
+
+  test("leaves a joined public customer channel", async () => {
+    const response = await workerRequest("/channels/leave", {
+      teamId: "T-CUSTOMER",
+      channelId: "C-CUSTOMER",
+    });
+    assert.deepEqual(await response.json(), {
+      channel: {
+        id: "C-CUSTOMER",
+        name: "client-service",
+        isMember: false,
+        isPrivate: false,
+        isShared: false,
+      },
+    });
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/conversations.leave"),
+      {
+        path: "/api/conversations.leave",
+        authorization: "Bearer xoxb-customer",
+        body: { channel: "C-CUSTOMER" },
+      },
+    );
+  });
+
+  test("does not leave private or shared channels from Glass", async () => {
+    for (const channelId of ["G-PRIVATE", "C-SHARED"]) {
+      const response = await workerRequest("/channels/leave", {
+        teamId: "T-CUSTOMER",
+        channelId,
+      });
+      assert.equal(response.status, 500);
+      assert.deepEqual(await response.json(), {
+        error: "Private and Slack Connect channels are managed in Slack",
+      });
+    }
   });
 });

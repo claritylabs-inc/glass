@@ -246,6 +246,15 @@ describe("settings panel surfaces", () => {
     expect(team).toContain(">Phone</TableHead>");
     expect(team).toContain("formatTeamMemberPhone(member.phone)");
     expect(team).toContain("parsePhoneNumberFromString");
+    expect(team).toContain(
+      '<TableHead className="w-[40%] px-5">Access</TableHead>',
+    );
+    expect(team).toContain(
+      'className="flex flex-row items-center justify-between gap-6"',
+    );
+    expect(team).toContain(
+      'className="flex flex-row flex-nowrap items-center gap-2"',
+    );
     expect(team).toContain("onEditMember(member)");
     expect(team).toContain('tabIndex={canEditMembers ? 0 : undefined}');
     expect(team).not.toContain("OperationalPanelHeader");

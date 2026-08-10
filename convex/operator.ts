@@ -1109,7 +1109,6 @@ export const createSoloClient = action({
     name: v.string(),
     brokerOrgId: v.optional(v.id("organizations")),
     website: v.optional(v.string()),
-    agentHandle: v.optional(v.string()),
     adminEmail: v.string(),
     adminName: v.optional(v.string()),
     adminPhone: v.optional(v.string()),
@@ -1149,7 +1148,6 @@ export const createSoloClient = action({
         name: args.name,
         brokerOrgId: args.brokerOrgId,
         website,
-        agentHandle: args.agentHandle,
       },
     });
     if (website) {
@@ -1241,7 +1239,6 @@ export const updateClientSettings = mutation({
     name: v.string(),
     brokerOrgId: v.optional(v.id("organizations")),
     website: v.optional(v.string()),
-    agentHandle: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
     relatedLegalEntities: v.optional(v.array(relatedLegalEntityValidator)),
@@ -1258,23 +1255,10 @@ export const updateClientSettings = mutation({
       throw new Error("Broker not found");
     }
 
-    const agentHandle = normalizeHandle(args.agentHandle);
-    validateAgentHandle(agentHandle);
-    if (agentHandle) {
-      const existingByHandle = await ctx.db
-        .query("organizations")
-        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
-        .first();
-      if (existingByHandle && existingByHandle._id !== args.clientOrgId) {
-        throw new Error("Agent handle is already taken");
-      }
-    }
-
     const patch = {
       name,
       brokerOrgId: args.brokerOrgId,
       website: args.website?.trim() || undefined,
-      agentHandle,
       industry: args.industry?.trim() || undefined,
       industryVertical: args.industryVertical?.trim() || undefined,
       relatedLegalEntities: args.relatedLegalEntities
@@ -1297,7 +1281,6 @@ export const updateClientSettings = mutation({
         previousBrokerOrgId: client.brokerOrgId,
         nextBrokerOrgId: args.brokerOrgId,
         website: patch.website,
-        agentHandle,
       },
     });
   },
@@ -1308,7 +1291,6 @@ export const updateBrokerSettings = mutation({
     brokerOrgId: v.id("organizations"),
     slug: v.optional(v.string()),
     website: v.optional(v.string()),
-    agentHandle: v.optional(v.string()),
     adminName: v.optional(v.string()),
     adminPhone: v.optional(v.string()),
   },
@@ -1334,18 +1316,6 @@ export const updateBrokerSettings = mutation({
       }
     }
 
-    const agentHandle = normalizeHandle(args.agentHandle);
-    validateAgentHandle(agentHandle);
-    if (agentHandle) {
-      const existingByHandle = await ctx.db
-        .query("organizations")
-        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
-        .first();
-      if (existingByHandle && existingByHandle._id !== args.brokerOrgId) {
-        throw new Error("Agent handle is already taken");
-      }
-    }
-
     const adminPhone = normalizeOptionalContactPhone(args.adminPhone);
     const admin = await getOrgAdmin(ctx, args.brokerOrgId);
     if (admin) {
@@ -1358,7 +1328,6 @@ export const updateBrokerSettings = mutation({
     const patch = {
       slug,
       website: args.website?.trim() || undefined,
-      agentHandle,
     };
 
     await ctx.db.patch(args.brokerOrgId, patch);
@@ -1370,7 +1339,6 @@ export const updateBrokerSettings = mutation({
       metadata: {
         slug,
         website: patch.website,
-        agentHandle,
         adminName: args.adminName?.trim() || undefined,
       },
     });
@@ -1823,7 +1791,6 @@ export const createSoloClientInternal = internalMutation({
       name: v.string(),
       brokerOrgId: v.optional(v.id("organizations")),
       website: v.optional(v.string()),
-      agentHandle: v.optional(v.string()),
     }),
   },
   handler: async (ctx, args) => {
@@ -1833,15 +1800,6 @@ export const createSoloClientInternal = internalMutation({
     const broker = args.client.brokerOrgId ? await ctx.db.get(args.client.brokerOrgId) : null;
     if (args.client.brokerOrgId && (!broker || broker.type !== "broker")) {
       throw new Error("Broker not found");
-    }
-    const agentHandle = normalizeHandle(args.client.agentHandle);
-    validateAgentHandle(agentHandle);
-    if (agentHandle) {
-      const existingByHandle = await ctx.db
-        .query("organizations")
-        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
-        .first();
-      if (existingByHandle) throw new Error("Agent handle is already taken");
     }
     const otherMembership = await ctx.db
       .query("orgMemberships")
@@ -1859,7 +1817,6 @@ export const createSoloClientInternal = internalMutation({
       type: "client",
       brokerOrgId: args.client.brokerOrgId,
       website: args.client.website?.trim() || undefined,
-      agentHandle,
       allowedEmails: [args.adminEmail],
       emailVerification: "strict",
       primaryInsuranceContactId: args.adminUserId,

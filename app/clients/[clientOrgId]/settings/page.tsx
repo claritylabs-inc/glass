@@ -18,6 +18,9 @@ const CLIENT_SETTINGS_TABS = [
 type ClientSettingsTab = (typeof CLIENT_SETTINGS_TABS)[number]["id"];
 
 function parseClientSettingsTab(value: string | null): ClientSettingsTab {
+  if (value === "email" || value === "imessage" || value === "slack") {
+    return "agent-channels";
+  }
   return CLIENT_SETTINGS_TABS.some((tab) => tab.id === value)
     ? (value as ClientSettingsTab)
     : "broker";

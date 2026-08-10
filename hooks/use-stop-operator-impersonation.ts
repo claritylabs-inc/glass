@@ -23,13 +23,14 @@ export function useStopOperatorImpersonation(
 
   return useCallback(async () => {
     const returnHref = getOperatorImpersonationReturnHref(activeImpersonation);
-    beginOperatorImpersonationStop();
+    beginOperatorImpersonationStop(returnHref);
     try {
       await clearScope();
       router.replace(returnHref);
       await stopImpersonation({});
-    } finally {
-      window.setTimeout(endOperatorImpersonationStop, 1000);
+    } catch (error) {
+      endOperatorImpersonationStop();
+      throw error;
     }
   }, [activeImpersonation, clearScope, router, stopImpersonation]);
 }

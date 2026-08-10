@@ -66,8 +66,8 @@ Customer OAuth requests the narrower set in
 creation and invitations. Enable app distribution before sending customer
 install links. Adding `channels:join` requires applying the updated manifest and
 having existing installations, including the Clarity host installation,
-authorize the expanded scope before the web app can add Glass to public channels
-for customers.
+authorize the expanded scope before the web app can add Glass to or remove Glass
+from public channels for customers.
 
 ## Request and credential boundaries
 
@@ -168,11 +168,13 @@ cannot prove that OAuth installation exists.
 2. A Glass operator records their Clarity `{teamId,userId}` identity.
 3. The operator creates `#glass-<client-slug>` and sends the Slack Connect
    invitation. Plan/policy failures fall back to audited manual binding.
-4. Independently, a client admin installs the same lane's app once in the client
-   workspace with OAuth. Accepting the Connect invitation is not app install.
+4. The operator sends the selected client contact the same lane's app-install
+   invitation. The client accepts OAuth in their workspace; accepting the
+   Connect invitation is not app install.
 5. In Glass, an operator or client admin may add the app to any visible public
-   workspace channel. For private and Slack Connect channels, a Slack member
-   adds the app from Slack and Glass discovers the joined channel on sync.
+   workspace channel or remove it from one. For private and Slack Connect
+   channels, a Slack member manages the app in Slack and Glass discovers the
+   joined channel on sync.
 6. A channel sync links the customer-side support mirror only when exactly one
    joined Slack Connect channel matches the configured support-channel name.
    Ambiguous or renamed mirrors require audited manual binding; mentions never

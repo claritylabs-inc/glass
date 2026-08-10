@@ -15,13 +15,20 @@ type SendRequest = {
 
 type AttachmentRequest = { teamId: string; fileId: string };
 type ActorRequest = { teamId: string; userId: string };
-type ConnectChannelRequest = { clientSlug: string; inviteEmail: string };
+type ConnectChannelRequest = {
+  clientSlug: string;
+  inviteEmail: string;
+  operatorUserIds?: string[];
+  existingChannelId?: string;
+  existingChannelName?: string;
+};
 type ListChannelsRequest = {
   teamId: string;
   currentChannelId?: string;
   currentChannelName?: string;
 };
 type JoinChannelRequest = { teamId: string; channelId: string };
+type LeaveChannelRequest = { teamId: string; channelId: string };
 type SlackChannel = {
   id: string;
   name: string;
@@ -82,6 +89,7 @@ const actorCache = new Map<
 >();
 const mockFailedAttachments = new Set<string>();
 const mockJoinedChannelIds = new Set<string>();
+const mockLeftChannelIds = new Set<string>();
 const mockCurrentChannelsByTeam = new Map<string, SlackChannel>();
 
 if (!workerSecret) {
@@ -425,39 +433,145 @@ function channelName(clientSlug: string) {
   return `glass-${slug}`;
 }
 
+async function listConversationMembers(token: string, channelId: string) {
+  const memberIds = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const result = await slackApi<
+      SlackResponse & {
+        members?: string[];
+        response_metadata?: { next_cursor?: string };
+      }
+    >("conversations.members", token, {
+      channel: channelId,
+      limit: 200,
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const memberId of result.members ?? []) memberIds.add(memberId);
+    cursor = result.response_metadata?.next_cursor?.trim() || undefined;
+  } while (cursor);
+  return memberIds;
+}
+
 async function createConnectChannel(input: ConnectChannelRequest) {
+  const operatorUserIds = Array.from(
+    new Set(
+      (input.operatorUserIds ?? [])
+        .map((userId) => userId.trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, 250);
   if (mode === "mock") {
-    const name = channelName(input.clientSlug);
+    const name = input.existingChannelName ?? channelName(input.clientSlug);
     return {
-      channelId: `mock-${name}`,
+      channelId: input.existingChannelId ?? `mock-${name}`,
       channelName: name,
       inviteId: "mock-invite",
+      reusedChannel: Boolean(input.existingChannelId),
+      operatorInvites: {
+        requested: operatorUserIds.length,
+        succeeded: true,
+      },
+      supportInvite: { succeeded: true, pending: true },
     };
   }
   if (!clarityTeamId) {
     throw new Error("Clarity Slack installation is not configured");
   }
   const installation = await slackInstallation(clarityTeamId);
-  const name = channelName(input.clientSlug);
-  const created = await slackApi<
-    SlackResponse & { channel?: { id?: string; name?: string } }
-  >("conversations.create", installation.botToken, { name, is_private: true });
-  const channelId = created.channel?.id;
-  if (!channelId)
-    throw new Error("Slack did not return the created channel ID");
-  const invited = await slackApi<SlackResponse & { invite_id?: string }>(
-    "conversations.inviteShared",
-    installation.botToken,
-    {
-      channel: channelId,
-      emails: [input.inviteEmail],
-      external_limited: false,
-    },
-  );
+  const desiredName = channelName(input.clientSlug);
+  let channelId = input.existingChannelId?.trim();
+  let resolvedName = input.existingChannelName?.trim() || desiredName;
+  let reusedChannel = Boolean(channelId);
+  if (!channelId) {
+    try {
+      const created = await slackApi<
+        SlackResponse & { channel?: { id?: string; name?: string } }
+      >("conversations.create", installation.botToken, {
+        name: desiredName,
+        is_private: true,
+      });
+      channelId = created.channel?.id;
+      resolvedName = created.channel?.name ?? desiredName;
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("name_taken")) {
+        throw error;
+      }
+      const existing = (await listSlackChannels({ teamId: clarityTeamId }))
+        .channels.find((channel) => channel.name === desiredName);
+      if (!existing) throw error;
+      channelId = existing.id;
+      resolvedName = existing.name;
+      reusedChannel = true;
+    }
+  }
+  if (!channelId) throw new Error("Slack did not return the created channel ID");
+
+  let operatorInviteError: string | undefined;
+  if (operatorUserIds.length > 0) {
+    try {
+      const existingMembers = await listConversationMembers(
+        installation.botToken,
+        channelId,
+      );
+      const missingOperatorIds = operatorUserIds.filter(
+        (userId) => !existingMembers.has(userId),
+      );
+      if (missingOperatorIds.length > 0) {
+        await slackApi<SlackResponse>(
+          "conversations.invite",
+          installation.botToken,
+          {
+            channel: channelId,
+            users: missingOperatorIds.join(","),
+            force: true,
+          },
+        );
+      }
+    } catch (error) {
+      operatorInviteError =
+        error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  let inviteId: string | undefined;
+  let supportInviteError: string | undefined;
+  let supportInvitePending = false;
+  try {
+    const invited = await slackApi<SlackResponse & { invite_id?: string }>(
+      "conversations.inviteShared",
+      installation.botToken,
+      {
+        channel: channelId,
+        emails: [input.inviteEmail],
+        external_limited: false,
+      },
+    );
+    inviteId = invited.invite_id;
+    supportInvitePending = true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.startsWith("connection_limit_exceeded_pending")) {
+      supportInvitePending = true;
+    } else {
+      supportInviteError = message;
+    }
+  }
   return {
     channelId,
-    channelName: created.channel?.name ?? name,
-    inviteId: invited.invite_id,
+    channelName: resolvedName,
+    inviteId,
+    reusedChannel,
+    operatorInvites: {
+      requested: operatorUserIds.length,
+      succeeded: !operatorInviteError,
+      error: operatorInviteError,
+    },
+    supportInvite: {
+      succeeded: !supportInviteError,
+      pending: supportInvitePending,
+      error: supportInviteError,
+    },
   };
 }
 
@@ -494,14 +608,16 @@ function mockSlackChannels(input: ListChannelsRequest) {
     {
       id: `mock-${input.teamId}-general`,
       name: "general",
-      isMember: mockJoinedChannelIds.has(`mock-${input.teamId}-general`),
+      isMember:
+        mockJoinedChannelIds.has(`mock-${input.teamId}-general`) &&
+        !mockLeftChannelIds.has(`mock-${input.teamId}-general`),
       isPrivate: false,
       isShared: false,
     },
     {
       id: `mock-${input.teamId}-policies`,
       name: "policy-updates",
-      isMember: true,
+      isMember: !mockLeftChannelIds.has(`mock-${input.teamId}-policies`),
       isPrivate: false,
       isShared: false,
     },
@@ -564,6 +680,7 @@ async function joinSlackChannel(input: JoinChannelRequest) {
 
   if (mode === "mock") {
     mockJoinedChannelIds.add(channel.id);
+    mockLeftChannelIds.delete(channel.id);
     return { channel: { ...channel, isMember: true } };
   }
 
@@ -576,6 +693,33 @@ async function joinSlackChannel(input: JoinChannelRequest) {
   const joined = slackChannel(result.channel ?? {}, true);
   if (!joined) throw new Error("Slack did not return the joined channel");
   return { channel: joined };
+}
+
+async function leaveSlackChannel(input: LeaveChannelRequest) {
+  if (!input.teamId?.trim() || !input.channelId?.trim()) {
+    throw new Error("teamId and channelId are required");
+  }
+  const available = await listSlackChannels({ teamId: input.teamId });
+  const channel = available.channels.find(
+    (candidate) => candidate.id === input.channelId,
+  );
+  if (!channel) throw new Error("Slack channel is not visible to Glass");
+  if (channel.isPrivate || channel.isShared) {
+    throw new Error("Private and Slack Connect channels are managed in Slack");
+  }
+  if (!channel.isMember) return { channel };
+
+  if (mode === "mock") {
+    mockJoinedChannelIds.delete(channel.id);
+    mockLeftChannelIds.add(channel.id);
+    return { channel: { ...channel, isMember: false } };
+  }
+
+  const installation = await slackInstallation(input.teamId);
+  await slackApi<SlackResponse>("conversations.leave", installation.botToken, {
+    channel: input.channelId,
+  });
+  return { channel: { ...channel, isMember: false } };
 }
 
 const server = http.createServer(async (request, response) => {
@@ -654,6 +798,13 @@ const server = http.createServer(async (request, response) => {
         response,
         200,
         await joinSlackChannel(await readJson<JoinChannelRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/channels/leave") {
+      return json(
+        response,
+        200,
+        await leaveSlackChannel(await readJson<LeaveChannelRequest>(request)),
       );
     }
     return json(response, 404, { error: "Not found" });

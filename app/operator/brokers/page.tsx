@@ -107,16 +107,12 @@ export default function OperatorBrokersPage() {
   const [adminPhone, setAdminPhone] = useState("");
   const [editSlugDraft, setEditSlug] = useState<string | null>(null);
   const [editWebsiteDraft, setEditWebsite] = useState<string | null>(null);
-  const [editAgentHandleDraft, setEditAgentHandle] = useState<string | null>(
-    null,
-  );
   const [editAdminNameDraft, setEditAdminName] = useState<string | null>(null);
   const [editAdminPhoneDraft, setEditAdminPhone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [debouncedSlug, setDebouncedSlug] = useState("");
   const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
   const [debouncedEditSlug, setDebouncedEditSlug] = useState("");
-  const [debouncedEditAgentHandle, setDebouncedEditAgentHandle] = useState("");
 
   const current = useCachedOperatorCurrent();
   const brokers = useCachedOperatorBrokers() as BrokerRow[] | undefined;
@@ -145,21 +141,15 @@ export default function OperatorBrokersPage() {
   );
   const editSlug = editSlugDraft ?? selected?.slug ?? "";
   const editWebsite = editWebsiteDraft ?? selected?.website ?? "";
-  const editAgentHandle = editAgentHandleDraft ?? selected?.agentHandle ?? "";
   const editAdminName = editAdminNameDraft ?? selected?.adminName ?? "";
   const editAdminPhone = editAdminPhoneDraft ?? selected?.adminPhone ?? "";
   const currentEditSlug = selected?.slug ?? "";
-  const currentEditAgentHandle = selected?.agentHandle ?? "";
   const editSlugChanged = editSlug !== currentEditSlug;
-  const editAgentHandleChanged = editAgentHandle !== currentEditAgentHandle;
   const editIdentifierCheck = useQuery(
     api.operator.checkBrokerSetupIdentifiers,
-    selected &&
-      ((editSlugChanged && !!editSlug) ||
-        (editAgentHandleChanged && !!editAgentHandle))
+    selected && editSlugChanged && !!editSlug
       ? {
           slug: debouncedEditSlug || undefined,
-          agentHandle: debouncedEditAgentHandle || undefined,
           ownerOrgId: selected._id,
         }
       : "skip",
@@ -178,13 +168,6 @@ export default function OperatorBrokersPage() {
     const timer = window.setTimeout(() => setDebouncedEditSlug(editSlug), 250);
     return () => window.clearTimeout(timer);
   }, [editSlug]);
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setDebouncedEditAgentHandle(editAgentHandle),
-      250,
-    );
-    return () => window.clearTimeout(timer);
-  }, [editAgentHandle]);
 
   const slugChecking =
     slug.length >= 3 && (slug !== debouncedSlug || identifierCheck === undefined);
@@ -197,11 +180,6 @@ export default function OperatorBrokersPage() {
     editSlugChanged &&
     !!editSlug &&
     (editSlug !== debouncedEditSlug || editIdentifierCheck === undefined);
-  const editHandleChecking =
-    editAgentHandleChanged &&
-    !!editAgentHandle &&
-    (editAgentHandle !== debouncedEditAgentHandle ||
-      editIdentifierCheck === undefined);
   function brokerSettingsError() {
     if (!isValidOptionalPhone(editAdminPhone)) return "Enter a valid phone number";
     if (editSlugChecking) return "Checking signup slug";
@@ -212,14 +190,6 @@ export default function OperatorBrokersPage() {
     ) {
       return editIdentifierCheck.slug.reason ?? "Signup slug is not available";
     }
-    if (editHandleChecking) return "Checking agent handle";
-    if (
-      editAgentHandleChanged &&
-      editAgentHandle &&
-      editIdentifierCheck?.agentHandle?.available === false
-    ) {
-      return editIdentifierCheck.agentHandle.reason ?? "Agent handle is not available";
-    }
     return null;
   }
 
@@ -228,7 +198,6 @@ export default function OperatorBrokersPage() {
   function primeEditState(broker: BrokerRow) {
     setEditSlug(broker.slug ?? "");
     setEditWebsite(broker.website ?? "");
-    setEditAgentHandle(broker.agentHandle ?? "");
     setEditAdminName(broker.adminName ?? "");
     setEditAdminPhone(broker.adminPhone ?? "");
   }
@@ -237,7 +206,6 @@ export default function OperatorBrokersPage() {
     brokerOrgId: selected?._id ?? ("" as Id<"organizations">),
     slug: editSlug || undefined,
     website: editWebsite || undefined,
-    agentHandle: editAgentHandle || undefined,
     adminName: editAdminName || undefined,
     adminPhone: editAdminPhone || undefined,
   };
@@ -600,36 +568,6 @@ export default function OperatorBrokersPage() {
               value={editWebsite}
               onChange={(event) => setEditWebsite(event.target.value)}
               placeholder="https://releaserent.com"
-            />
-          </Field>
-          <Field label="Agent handle">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <input
-                className={AFFIXED_INPUT_CLASSES}
-                value={editAgentHandle}
-                onChange={(event) =>
-                  setEditAgentHandle(normalizeIdentifierInput(event.target.value))
-                }
-                placeholder="release"
-              />
-              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
-                @{AGENT_DOMAIN}
-              </span>
-            </div>
-            <HandleAvailability
-              saving={brokerSettingsAutoSave.saving}
-              checking={editHandleChecking}
-              input={editAgentHandle}
-              current={currentEditAgentHandle}
-              currentLabel="Current agent handle"
-              availability={
-                editAgentHandle === debouncedEditAgentHandle
-                  ? editIdentifierCheck?.agentHandle
-                  : undefined
-              }
-              renderAvailablePreview={(value) =>
-                `${value}@${AGENT_DOMAIN} is available`
-              }
             />
           </Field>
           <Field label="Admin name">
