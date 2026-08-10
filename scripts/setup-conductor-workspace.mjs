@@ -266,13 +266,11 @@ if (cloudEnvironment) {
 }
 
 // A native-local worktree does not start the separate cl-router repository.
-// Never inherit shared-dev routing flags or credentials into local Convex.
-for (const name of [
-  "CL_ROUTER_TASKS",
-  "CL_ROUTER_URL",
-  "CL_ROUTER_SECRET",
-  "CL_ROUTER_TIMEOUT_MS",
-]) {
+// Keep the imported read-only values (CL_ROUTER_URL, CL_ROUTER_ADMIN_SECRET,
+// CL_ROUTER_TIMEOUT_MS) so /operator/routing can observe shared-dev routing,
+// but never inherit the task flags or caller secret — an isolated worktree
+// must not route model calls or submit feedback through the shared router.
+for (const name of ["CL_ROUTER_TASKS", "CL_ROUTER_SECRET"]) {
   if (optionalConvexEnv(convex, name)) {
     run(convex, ["env", "remove", name]);
   }

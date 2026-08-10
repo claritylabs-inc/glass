@@ -92,9 +92,11 @@ active or bootstrap-ready policy store. Before increasing traffic, exercise
 
 Local health checks skip cl-router unless `GLASS_CL_ROUTER_HEALTH_URL` is set,
 because the default Conductor template does not start the separate repository.
-Conductor setup also removes any imported shared-dev router flags, URL, secret,
-and timeout from native-local Convex. Configure those values explicitly only
-when deliberately running a local router.
+Conductor setup keeps any imported router URL, admin secret, and timeout so
+the operator routing dashboard can observe shared-dev routing, but removes the
+imported task flags and caller secret so an isolated worktree cannot send
+traffic through the shared router. Configure those values explicitly only when
+deliberately running a local router.
 
 ## Promotion checklist
 
