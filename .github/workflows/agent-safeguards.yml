@@ -65,7 +65,7 @@ jobs:
         run: node --check mailbox-scan-worker/src/index.js
 
   production-agent-health:
-    if: github.event_name != 'pull_request' && ((github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'production' || github.event.inputs.environment == 'all')) || (github.event_name != 'workflow_dispatch' && (github.ref_name == 'main' || github.event_name == 'schedule')))
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'production' || github.event.inputs.environment == 'all'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -84,7 +84,7 @@ jobs:
           GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}
 
   staging-agent-health:
-    if: github.event_name != 'pull_request' && ((github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'staging' || github.event.inputs.environment == 'all')) || (github.event_name != 'workflow_dispatch' && github.ref_name == 'staging'))
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'staging' || github.event.inputs.environment == 'all')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
