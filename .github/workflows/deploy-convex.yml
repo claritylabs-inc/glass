@@ -131,7 +131,7 @@ jobs:
 
   release-ready:
     if: always() && (github.ref_name == 'main' || github.ref_name == 'staging')
-    name: ${{ github.ref_name == 'main' && 'release-ready-production' || 'release-ready-staging' }}
+    name: release-ready-${{ github.ref_name == 'main' && 'production' || 'staging' }}
     runs-on: ubuntu-latest
     needs: deploy
     steps:
