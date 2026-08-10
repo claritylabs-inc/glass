@@ -302,6 +302,8 @@ const checks = [
         outboundEnabled: true,
         actorResolutionEnabled: true,
         connectProvisioningEnabled: true,
+        channelInventoryEnabled: true,
+        publicChannelJoinEnabled: true,
       };
       const failures = Object.entries(expected)
         .filter(([key, value]) => payload[key] !== value)

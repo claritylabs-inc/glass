@@ -1073,6 +1073,9 @@ export default defineSchema({
     installedByUserId: v.optional(v.id("users")),
     installedByOperatorUserId: v.optional(v.id("users")),
     thirdPartyVisibilityAcknowledged: v.boolean(),
+    automaticChannelId: v.optional(v.string()),
+    automaticChannelName: v.optional(v.string()),
+    automaticChannelRoutingConfiguredAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     disconnectedAt: v.optional(v.number()),
@@ -1099,6 +1102,21 @@ export default defineSchema({
       "connectionId",
       "customerChannelId",
     ]),
+
+  slackChannelMemberships: defineTable({
+    connectionId: v.id("slackWorkspaceConnections"),
+    clientOrgId: v.id("organizations"),
+    channelId: v.string(),
+    channelName: v.string(),
+    isPrivate: v.boolean(),
+    isShared: v.boolean(),
+    status: v.union(v.literal("active"), v.literal("removed")),
+    lastSyncedAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_connectionId_and_status", ["connectionId", "status"])
+    .index("by_connectionId_and_channelId", ["connectionId", "channelId"]),
 
   slackActors: defineTable({
     connectionId: v.id("slackWorkspaceConnections"),
@@ -3287,6 +3305,10 @@ export default defineSchema({
     .index("by_responseMessageId", ["responseMessageId"])
     .index("by_resendEmailId", ["resendEmailId"])
     .index("by_replyToMessageId", ["replyToMessageId"])
+    .index("by_threadId_and_slackMessageTs", [
+      "threadId",
+      "slackMessageTs",
+    ])
     .index("by_slackTeamId_and_slackMessageTs", [
       "slackTeamId",
       "slackMessageTs",
@@ -3352,6 +3374,13 @@ export default defineSchema({
       "connectionId",
       "channelId",
       "threadTs",
+    ])
+    .index("by_connection_channel_thread_status_schedule", [
+      "connectionId",
+      "channelId",
+      "threadTs",
+      "status",
+      "scheduledFor",
     ])
     .index("by_status_and_receivedAt", ["status", "receivedAt"]),
 

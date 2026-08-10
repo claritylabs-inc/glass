@@ -80,6 +80,8 @@ describe("Slack worker HTTP adapter", () => {
       attachmentRetrievalEnabled: false,
       actorResolutionEnabled: true,
       connectProvisioningEnabled: true,
+      channelInventoryEnabled: true,
+      publicChannelJoinEnabled: true,
     });
     assert.equal((await send({}, "wrong-secret")).status, 401);
 
@@ -164,10 +166,72 @@ describe("Slack worker HTTP adapter", () => {
     }).then((response) => response.json());
     assert.deepEqual(result, {
       channels: [
-        { id: "C-LOCAL", name: "glass-local" },
-        { id: "mock-T-LOCAL-general", name: "general" },
-        { id: "mock-T-LOCAL-policies", name: "policy-updates" },
+        {
+          id: "C-LOCAL",
+          name: "glass-local",
+          isMember: true,
+          isPrivate: true,
+          isShared: true,
+        },
+        {
+          id: "mock-T-LOCAL-general",
+          name: "general",
+          isMember: false,
+          isPrivate: false,
+          isShared: false,
+        },
+        {
+          id: "mock-T-LOCAL-policies",
+          name: "policy-updates",
+          isMember: true,
+          isPrivate: false,
+          isShared: false,
+        },
       ],
     });
+  });
+
+  test("joins a deterministic local public channel", async () => {
+    const joined = await fetch(`${origin}/channels/join`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        teamId: "T-LOCAL",
+        channelId: "mock-T-LOCAL-general",
+      }),
+    }).then((response) => response.json());
+    assert.deepEqual(joined, {
+      channel: {
+        id: "mock-T-LOCAL-general",
+        name: "general",
+        isMember: true,
+        isPrivate: false,
+        isShared: false,
+      },
+    });
+
+    const listed = await fetch(`${origin}/channels`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ teamId: "T-LOCAL" }),
+    }).then((response) => response.json());
+    assert.equal(
+      listed.channels.find(
+        (channel: { id: string }) => channel.id === "mock-T-LOCAL-general",
+      ).isMember,
+      true,
+    );
+    assert.equal(
+      listed.channels.some(
+        (channel: { id: string }) => channel.id === "C-LOCAL",
+      ),
+      true,
+    );
   });
 });

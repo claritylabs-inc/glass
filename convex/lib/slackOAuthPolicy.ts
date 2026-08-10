@@ -2,6 +2,7 @@ export const SLACK_CUSTOMER_SCOPES = [
   "app_mentions:read",
   "chat:write",
   "channels:read",
+  "channels:join",
   "channels:history",
   "groups:read",
   "groups:history",

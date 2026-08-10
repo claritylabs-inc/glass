@@ -111,15 +111,55 @@ before(async () => {
             name: "client-service",
             is_member: true,
             is_archived: false,
+            is_private: false,
+            is_shared: false,
           },
           {
             id: "C-NOT-JOINED",
             name: "general",
             is_member: false,
             is_archived: false,
+            is_private: false,
+            is_shared: false,
+          },
+          {
+            id: "G-PRIVATE",
+            name: "private-claims",
+            is_member: true,
+            is_archived: false,
+            is_private: true,
+            is_shared: false,
+          },
+          {
+            id: "C-SHARED",
+            name: "shared-support",
+            is_member: true,
+            is_archived: false,
+            is_private: false,
+            is_shared: true,
+          },
+          {
+            id: "G-PRIVATE-NOT-JOINED",
+            name: "private-not-joined",
+            is_member: false,
+            is_archived: false,
+            is_private: true,
+            is_shared: false,
           },
         ],
         response_metadata: { next_cursor: "" },
+      });
+    }
+    if (request.url === "/api/conversations.join") {
+      return respond(response, {
+        ok: true,
+        channel: {
+          id: "C-NOT-JOINED",
+          name: "general",
+          is_member: true,
+          is_private: false,
+          is_shared: false,
+        },
       });
     }
     response.writeHead(404).end();
@@ -218,12 +258,41 @@ describe("native Slack worker HTTP adapter", () => {
     assert(calls.every((call) => call.authorization === "Bearer xoxb-clarity"));
   });
 
-  test("lists channels the app has joined in the customer workspace", async () => {
+  test("lists visible public channels and joined private/shared channels", async () => {
     const response = await workerRequest("/channels", {
       teamId: "T-CUSTOMER",
     });
     assert.deepEqual(await response.json(), {
-      channels: [{ id: "C-CUSTOMER", name: "client-service" }],
+      channels: [
+        {
+          id: "C-CUSTOMER",
+          name: "client-service",
+          isMember: true,
+          isPrivate: false,
+          isShared: false,
+        },
+        {
+          id: "C-NOT-JOINED",
+          name: "general",
+          isMember: false,
+          isPrivate: false,
+          isShared: false,
+        },
+        {
+          id: "G-PRIVATE",
+          name: "private-claims",
+          isMember: true,
+          isPrivate: true,
+          isShared: false,
+        },
+        {
+          id: "C-SHARED",
+          name: "shared-support",
+          isMember: true,
+          isPrivate: false,
+          isShared: true,
+        },
+      ],
     });
     assert.deepEqual(
       apiCalls.find((call) => call.path === "/api/conversations.list"),
@@ -236,6 +305,51 @@ describe("native Slack worker HTTP adapter", () => {
           limit: 200,
         },
       },
+    );
+  });
+
+  test("joins a visible public customer channel", async () => {
+    const response = await workerRequest("/channels/join", {
+      teamId: "T-CUSTOMER",
+      channelId: "C-NOT-JOINED",
+    });
+    assert.deepEqual(await response.json(), {
+      channel: {
+        id: "C-NOT-JOINED",
+        name: "general",
+        isMember: true,
+        isPrivate: false,
+        isShared: false,
+      },
+    });
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/conversations.join"),
+      {
+        path: "/api/conversations.join",
+        authorization: "Bearer xoxb-customer",
+        body: { channel: "C-NOT-JOINED" },
+      },
+    );
+  });
+
+  test("does not join private or shared channels from Glass", async () => {
+    const joinCallsBefore = apiCalls.filter(
+      (call) => call.path === "/api/conversations.join",
+    ).length;
+    for (const channelId of ["G-PRIVATE", "C-SHARED"]) {
+      const response = await workerRequest("/channels/join", {
+        teamId: "T-CUSTOMER",
+        channelId,
+      });
+      assert.equal(response.status, 500);
+      assert.deepEqual(await response.json(), {
+        error: "Only public workspace channels can be joined from Glass",
+      });
+    }
+    assert.equal(
+      apiCalls.filter((call) => call.path === "/api/conversations.join")
+        .length,
+      joinCallsBefore,
     );
   });
 });

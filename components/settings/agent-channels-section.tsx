@@ -6,12 +6,16 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { SLACK_INSTALL_INVITE_EXPIRATION_DAYS } from "@/convex/lib/slackOAuthPolicy";
+import {
+  missingSlackCustomerScopes,
+  SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
+} from "@/convex/lib/slackOAuthPolicy";
+import { resolveSlackAutomaticChannel } from "@/convex/lib/slackChannelRouting";
 import { ClientEmailRoutingSection } from "@/components/settings/client-email-routing-section";
+import { SlackConnectionFields } from "@/components/settings/slack-connection-fields";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
-import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
@@ -19,16 +23,8 @@ import {
   StatusTag,
   type StatusTagTone,
 } from "@/components/ui/status-tag";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { openOAuthTab } from "@/lib/oauth-tab";
-import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 type ChannelSettings = {
@@ -107,145 +103,6 @@ function ChannelRow({
         <ChevronRight className="size-4 text-muted-foreground/50" />
       </span>
     </button>
-  );
-}
-
-function SlackConnectionFields({
-  clientOrgId,
-  workspaceName,
-  currentChannelId,
-  channelName,
-  canEdit,
-}: {
-  clientOrgId: Id<"organizations">;
-  workspaceName: string;
-  currentChannelId?: string;
-  channelName: string;
-  canEdit: boolean;
-}) {
-  const listChannels = useAction(
-    api.actions.slackOnboarding.listAvailableChannels,
-  );
-  const selectChannel = useAction(
-    api.actions.slackOnboarding.selectPrimaryChannel,
-  );
-  const [channels, setChannels] = useState(
-    currentChannelId ? [{ id: currentChannelId, name: channelName }] : [],
-  );
-  const [selectedChannelId, setSelectedChannelId] = useState(
-    currentChannelId ?? "",
-  );
-  const [loading, setLoading] = useState(canEdit);
-  const [loadError, setLoadError] = useState(false);
-  const selectedChannel = channels.find(
-    (channel) => channel.id === selectedChannelId,
-  );
-  const autoSave = useLocalFirstAutoSave({
-    mutationName: `client.slackChannel.select.${clientOrgId}`,
-    args: { clientOrgId, channelId: selectedChannelId },
-    valueKey: selectedChannelId,
-    resetKey: `${clientOrgId}:${currentChannelId ?? "unselected"}`,
-    enabled: canEdit,
-    canSave: Boolean(selectedChannelId && selectedChannel),
-    delayMs: 0,
-    flush: selectChannel,
-    onFlushed: (result) => {
-      if (!result) return;
-      setChannels((current) =>
-        current.some((channel) => channel.id === result.id)
-          ? current
-          : [...current, result],
-      );
-    },
-    errorMessage: (error) =>
-      getUserFacingErrorMessage(error, "Slack channel could not be changed"),
-  });
-
-  useEffect(() => {
-    if (!canEdit) return;
-    let cancelled = false;
-    void listChannels({ clientOrgId })
-      .then((result) => {
-        if (cancelled) return;
-        setChannels(
-          !currentChannelId ||
-            result.channels.some((channel) => channel.id === currentChannelId)
-            ? result.channels
-            : [{ id: currentChannelId, name: channelName }, ...result.channels],
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canEdit, channelName, clientOrgId, currentChannelId, listChannels]);
-
-  return (
-    <div className="space-y-3">
-      {canEdit && selectedChannelId ? (
-        <AutoSaveStatus status={autoSave.status} />
-      ) : null}
-      <div className="space-y-1.5">
-        <label
-          htmlFor="slack-workspace-name"
-          className="text-label text-muted-foreground"
-        >
-          Workspace
-        </label>
-        <Input
-          id="slack-workspace-name"
-          value={workspaceName}
-          disabled
-          readOnly
-        />
-      </div>
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-3">
-          <label
-            htmlFor="slack-channel-name"
-            className="text-label text-muted-foreground"
-          >
-            Channel
-          </label>
-        </div>
-        <Select
-          value={selectedChannelId || null}
-          onValueChange={(nextChannelId) => {
-            if (typeof nextChannelId === "string") {
-              setSelectedChannelId(nextChannelId);
-            }
-          }}
-          disabled={!canEdit || loading || channels.length === 0}
-        >
-          <SelectTrigger id="slack-channel-name" className="w-full">
-            <SelectValue>
-              {selectedChannel ? `#${selectedChannel.name}` : "Select channel"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {channels.map((channel) => (
-              <SelectItem key={channel.id} value={channel.id}>
-                #{channel.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {loadError ? (
-          <p className="text-label text-destructive">
-            Slack channels could not be loaded.
-          </p>
-        ) : !loading && canEdit && channels.length === 0 ? (
-          <p className="text-label text-muted-foreground">
-            Add Glass to a Slack channel, then reopen this panel.
-          </p>
-        ) : null}
-      </div>
-    </div>
   );
 }
 
@@ -433,12 +290,12 @@ export function AgentChannelsSection({
         channelName: manualChannelName.replace(/^#/, ""),
       });
       setManualSetupReason(null);
-      toast.success("Primary Slack channel connected");
+      toast.success("Shared support channel connected");
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
           error,
-          "The primary channel could not be connected",
+          "The shared support channel could not be connected",
         ),
       );
     } finally {
@@ -447,16 +304,20 @@ export function AgentChannelsSection({
   }
 
   const connection = result?.connection;
-  const primaryChannel = result?.primaryChannel;
+  const supportChannel = result?.supportChannel ?? result?.primaryChannel;
+  const joinedChannels = result?.joinedChannels ?? [];
   const settings = result?.settings;
   const slackNeedsReinstall =
-    !!connection && connection.grantedScopes.length === 0;
-  const channelLinked = !!primaryChannel?.customerChannelId;
-  const slackReady = !!connection && channelLinked && !slackNeedsReinstall;
+    !!connection && missingSlackCustomerScopes(connection.grantedScopes).length > 0;
+  const slackReady = !!connection && !slackNeedsReinstall;
   const isMockSlack = result?.slackMode === "mock";
   const canSendSlackInstallInvite = Boolean(
-    primaryChannel && !connection && isOperator && !isMockSlack,
+    !connection && isOperator && !isMockSlack,
   );
+  const automaticChannel = connection
+    ? resolveSlackAutomaticChannel(connection, supportChannel)
+    : undefined;
+  const automaticChannelId = automaticChannel?.channelId;
 
   useEffect(() => {
     if (!result || !settings) {
@@ -464,34 +325,7 @@ export function AgentChannelsSection({
       return;
     }
 
-    const slackFooter = !canEdit ? null : !primaryChannel && isOperator ? (
-      <PillButton
-        onClick={() => void createPrimary()}
-        disabled={busy !== null || !clientSlug.trim() || !inviteEmail.trim()}
-      >
-        {busy === "provision" ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : null}
-        Create and invite
-      </PillButton>
-    ) : canSendSlackInstallInvite ? (
-      <PillButton
-        onClick={() => void sendInstallInvite()}
-        disabled={busy !== null || !inviteEmail.trim()}
-      >
-        {busy === "install-invite" ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : null}
-        Send install invite
-      </PillButton>
-    ) : primaryChannel && !connection && (!isOperator || isMockSlack) ? (
-      <PillButton onClick={() => void install()} disabled={busy !== null}>
-        {busy === "oauth" ? (
-          <Loader2 className="size-3.5 animate-spin" />
-        ) : null}
-        Connect Slack
-      </PillButton>
-    ) : connection ? (
+    const slackFooter = !canEdit ? null : connection ? (
       <>
         <PillButton
           variant="secondary"
@@ -562,26 +396,133 @@ export function AgentChannelsSection({
               })
             }
           />
-        ) : !primaryChannel ? (
-          isOperator ? (
-            <div className="space-y-3">
-              <p className="text-base text-muted-foreground">
-                Enter the channel name and the client admin to invite.
-              </p>
-              <Input
-                value={clientSlug}
-                onChange={(event) => setClientSlug(event.target.value)}
-                placeholder="Channel name"
-                aria-label="Slack channel name"
-              />
-              <Input
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                placeholder="Client admin email"
-                aria-label="Client admin email"
-              />
-              {manualSetupReason ? (
+        ) : (
+          <div className="space-y-6">
+            <FormSection
+              title="Glass app installation"
+              description="Install Glass once in the client workspace. Members can message it privately or add it to any channels where the team wants to use it."
+              divided={false}
+            >
+              {connection ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-base text-foreground">
+                      {connection.teamName}
+                    </p>
+                    <p className="text-label text-muted-foreground">
+                      Slack workspace
+                    </p>
+                  </div>
+                  <StatusTag tone={slackNeedsReinstall ? "danger" : "success"}>
+                    {slackNeedsReinstall ? "Update required" : "Installed"}
+                  </StatusTag>
+                </div>
+              ) : canSendSlackInstallInvite ? (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="slack-install-invite-email"
+                      className="text-label text-muted-foreground"
+                    >
+                      Client Slack admin email
+                    </label>
+                    <Input
+                      id="slack-install-invite-email"
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(event) => setInviteEmail(event.target.value)}
+                      placeholder="admin@client.com"
+                      autoComplete="email"
+                    />
+                    <p className="text-label text-muted-foreground">
+                      The one-time install link expires in{" "}
+                      {SLACK_INSTALL_INVITE_EXPIRATION_DAYS} days.
+                    </p>
+                  </div>
+                  <PillButton
+                    onClick={() => void sendInstallInvite()}
+                    disabled={busy !== null || !inviteEmail.trim()}
+                  >
+                    {busy === "install-invite" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : null}
+                    Send install invite
+                  </PillButton>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-base text-muted-foreground">
+                    Install Glass in this Slack workspace. The shared support
+                    channel is set up separately by Clarity Labs.
+                  </p>
+                  {canEdit ? (
+                    <PillButton
+                      onClick={() => void install()}
+                      disabled={busy !== null}
+                    >
+                      {busy === "oauth" ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : null}
+                      Connect Slack
+                    </PillButton>
+                  ) : null}
+                </div>
+              )}
+            </FormSection>
+
+            <FormSection
+              title="Shared support channel"
+              description="Clarity Labs creates and invites this Slack Connect channel for human support."
+              divided={false}
+            >
+              {supportChannel ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+                  <p className="min-w-0 truncate text-base text-foreground">
+                    #{supportChannel.channelName}
+                  </p>
+                  <StatusTag
+                    tone={supportChannel.customerChannelId ? "success" : "warning"}
+                  >
+                    {supportChannel.customerChannelId
+                      ? "Connected"
+                      : "Invitation pending"}
+                  </StatusTag>
+                </div>
+              ) : isOperator ? (
+                <div className="space-y-3">
+                  <Input
+                    value={clientSlug}
+                    onChange={(event) => setClientSlug(event.target.value)}
+                    placeholder="Support channel name"
+                    aria-label="Slack support channel name"
+                  />
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(event) => setInviteEmail(event.target.value)}
+                    placeholder="Client admin email"
+                    aria-label="Client admin email"
+                  />
+                  <PillButton
+                    onClick={() => void createPrimary()}
+                    disabled={
+                      busy !== null ||
+                      !clientSlug.trim() ||
+                      !inviteEmail.trim()
+                    }
+                  >
+                    {busy === "provision" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : null}
+                    Create support channel
+                  </PillButton>
+                </div>
+              ) : (
+                <p className="text-base text-muted-foreground">
+                  Waiting for Clarity Labs to send the shared-channel invitation.
+                </p>
+              )}
+              {manualSetupReason && isOperator ? (
                 <FormSection
                   title="Link a channel manually"
                   description={manualSetupReason}
@@ -602,14 +543,12 @@ export function AgentChannelsSection({
                       onChange={(event) =>
                         setCustomerChannelId(event.target.value)
                       }
-                      placeholder="Customer channel ID (optional)"
+                      placeholder="Customer mirror ID (optional)"
                     />
                     <Input
                       value={manualChannelName}
-                      onChange={(event) =>
-                        setManualChannelName(event.target.value)
-                      }
-                      placeholder="Channel name"
+                      onChange={(event) => setManualChannelName(event.target.value)}
+                      placeholder="Support channel name"
                     />
                   </div>
                   <PillButton
@@ -617,7 +556,6 @@ export function AgentChannelsSection({
                     onClick={() => void saveManualPrimaryChannel()}
                     disabled={
                       busy !== null ||
-                      !connection ||
                       !hostTeamId.trim() ||
                       !hostChannelId.trim() ||
                       !manualChannelName.trim()
@@ -626,136 +564,97 @@ export function AgentChannelsSection({
                     {busy === "manual-channel" ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : null}
-                    Link channel
+                    Link support channel
                   </PillButton>
                 </FormSection>
               ) : null}
-            </div>
-          ) : (
-            <p className="text-base text-muted-foreground">
-              Waiting for Clarity Labs to invite this workspace.
-            </p>
-          )
-        ) : !connection ? (
-          canSendSlackInstallInvite ? (
-            <FormSection
-              title="Invite a Slack admin"
-              description={`Send a secure email to install the Glass Slack app for #${primaryChannel.channelName}.`}
-              divided={false}
-            >
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="slack-install-invite-email"
-                  className="text-label text-muted-foreground"
-                >
-                  Client admin email
-                </label>
-                <Input
-                  id="slack-install-invite-email"
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                  placeholder="admin@client.com"
-                  autoComplete="email"
-                />
-                <p className="text-label text-muted-foreground">
-                  The one-time install link expires in{" "}
-                  {SLACK_INSTALL_INVITE_EXPIRATION_DAYS} days.
-                </p>
-              </div>
             </FormSection>
-          ) : (
-            <p className="text-base text-muted-foreground">
-              Install Glass in the client workspace for #
-              {primaryChannel.channelName}.
-            </p>
-          )
-        ) : slackNeedsReinstall ? (
-          <p className="text-base text-muted-foreground">
-            {connection.teamName} is missing required Slack permissions.
-          </p>
-        ) : !channelLinked ? (
-          canEdit ? (
-            <SlackConnectionFields
-              key={`${primaryChannel._id}:unselected`}
-              clientOrgId={clientOrgId}
-              workspaceName={connection.teamName}
-              channelName={primaryChannel.channelName}
-              canEdit
-            />
-          ) : (
-            <p className="text-base text-muted-foreground">
-              Waiting for an admin to select a Slack channel.
-            </p>
-          )
-        ) : (
-          <div className="space-y-4">
-            <SlackConnectionFields
-              key={`${primaryChannel._id}:${primaryChannel.customerChannelId ?? primaryChannel.hostChannelId}`}
-              clientOrgId={clientOrgId}
-              workspaceName={connection.teamName}
-              currentChannelId={primaryChannel.customerChannelId}
-              channelName={primaryChannel.channelName}
-              canEdit={canEdit}
-            />
-            <div className="space-y-3">
-              <ChannelCard
-                title="Available in Slack"
-                description="Let members use Glass in this channel."
-                checked={settings.slackEnabled}
-                disabled={!canEdit || busy === "settings"}
-                onChange={() =>
-                  void save({
-                    ...settings,
-                    slackEnabled: !settings.slackEnabled,
-                  })
-                }
+
+            {connection && !slackNeedsReinstall ? (
+              <SlackConnectionFields
+                key={`${connection._id}:${automaticChannelId ?? "unselected"}`}
+                clientOrgId={clientOrgId}
+                workspaceName={connection.teamName}
+                currentChannelId={automaticChannelId}
+                knownChannels={joinedChannels}
+                canEdit={canEdit}
               />
-              <ChannelCard
-                title="Compliance and policy-change alerts"
-                description="Post client compliance and policy-change updates."
-                checked={settings.slackSafeAlertsEnabled}
-                disabled={
-                  !canEdit || busy === "settings" || !settings.slackEnabled
-                }
-                onChange={() =>
-                  void save({
-                    ...settings,
-                    slackSafeAlertsEnabled: !settings.slackSafeAlertsEnabled,
-                  })
-                }
-              />
-              <ChannelCard
-                title="Vendor alerts"
-                description="Post vendor compliance updates."
-                checked={settings.slackVendorAlertsEnabled}
-                disabled={
-                  !canEdit || busy === "settings" || !settings.slackEnabled
-                }
-                onChange={() =>
-                  void save({
-                    ...settings,
-                    slackVendorAlertsEnabled:
-                      !settings.slackVendorAlertsEnabled,
-                  })
-                }
-              />
-              <ChannelCard
-                title="Policy and endorsement delivery"
-                description="Deliver client-owned documents in their Slack threads."
-                checked={settings.slackPolicyDeliveryEnabled}
-                disabled={
-                  !canEdit || busy === "settings" || !settings.slackEnabled
-                }
-                onChange={() =>
-                  void save({
-                    ...settings,
-                    slackPolicyDeliveryEnabled:
-                      !settings.slackPolicyDeliveryEnabled,
-                  })
-                }
-              />
-            </div>
+            ) : slackNeedsReinstall ? (
+              <p className="text-base text-muted-foreground">
+                Reinstall Glass to grant the permissions needed for App Home
+                messages and public-channel management.
+              </p>
+            ) : null}
+
+            {connection && !slackNeedsReinstall ? (
+              <div className="space-y-3">
+                <ChannelCard
+                  title="Available in Slack"
+                  description="Let members use Glass privately and in every channel where it has been added."
+                  checked={settings.slackEnabled}
+                  disabled={!canEdit || busy === "settings"}
+                  onChange={() =>
+                    void save({
+                      ...settings,
+                      slackEnabled: !settings.slackEnabled,
+                    })
+                  }
+                />
+                <ChannelCard
+                  title="Compliance and policy-change alerts"
+                  description="Post client compliance and policy-change updates."
+                  checked={settings.slackSafeAlertsEnabled}
+                  disabled={
+                    !canEdit ||
+                    busy === "settings" ||
+                    !settings.slackEnabled ||
+                    !automaticChannelId
+                  }
+                  onChange={() =>
+                    void save({
+                      ...settings,
+                      slackSafeAlertsEnabled: !settings.slackSafeAlertsEnabled,
+                    })
+                  }
+                />
+                <ChannelCard
+                  title="Vendor alerts"
+                  description="Post vendor compliance updates."
+                  checked={settings.slackVendorAlertsEnabled}
+                  disabled={
+                    !canEdit ||
+                    busy === "settings" ||
+                    !settings.slackEnabled ||
+                    !automaticChannelId
+                  }
+                  onChange={() =>
+                    void save({
+                      ...settings,
+                      slackVendorAlertsEnabled:
+                        !settings.slackVendorAlertsEnabled,
+                    })
+                  }
+                />
+                <ChannelCard
+                  title="Policy and endorsement delivery"
+                  description="Deliver client-owned documents in their Slack threads."
+                  checked={settings.slackPolicyDeliveryEnabled}
+                  disabled={
+                    !canEdit ||
+                    busy === "settings" ||
+                    !settings.slackEnabled ||
+                    !automaticChannelId
+                  }
+                  onChange={() =>
+                    void save({
+                      ...settings,
+                      slackPolicyDeliveryEnabled:
+                        !settings.slackPolicyDeliveryEnabled,
+                    })
+                  }
+                />
+              </div>
+            ) : null}
           </div>
         )}
       </SettingsDrawer>,
@@ -779,7 +678,9 @@ export function AgentChannelsSection({
     isOperator,
     manualChannelName,
     manualSetupReason,
-    primaryChannel,
+    supportChannel,
+    joinedChannels,
+    automaticChannelId,
     result,
     setRightPanel,
     settings,
@@ -796,29 +697,21 @@ export function AgentChannelsSection({
 
   const resolvedSettings = result.settings;
   const slackDescription = slackReady
-    ? `${connection.teamName} · #${primaryChannel.channelName}`
+    ? `${connection.teamName} · ${joinedChannels.length} joined ${joinedChannels.length === 1 ? "channel" : "channels"}`
     : slackNeedsReinstall
       ? `${connection.teamName} needs updated Slack permissions.`
-      : connection && primaryChannel
-        ? canEdit
-          ? `${connection.teamName} · Select a channel.`
-          : `${connection.teamName} · Waiting for channel selection.`
-        : primaryChannel
-          ? isOperator && !isMockSlack
-            ? `Waiting for the client admin to connect #${primaryChannel.channelName}.`
-            : `Ready to connect #${primaryChannel.channelName}.`
-          : isOperator
-            ? "Create the client’s private Slack channel."
-            : "Waiting for Glass to create your private Slack channel.";
+      : supportChannel
+        ? "Support channel ready · Glass app not installed"
+        : isOperator
+          ? "Set up the app and support channel independently."
+          : "Waiting for Slack setup.";
   const slackStatus = slackReady
     ? resolvedSettings.slackEnabled
       ? "On"
       : "Off"
     : slackNeedsReinstall
       ? "Needs attention"
-      : !primaryChannel
-        ? "Not set up"
-        : "Pending";
+      : "Pending";
   const slackStatusTone: StatusTagTone = slackReady
     ? resolvedSettings.slackEnabled
       ? "success"

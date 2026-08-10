@@ -1,11 +1,12 @@
-# Slack privileged service channel
+# Slack workspace app and shared support channel
 
-Slack is Glass's privileged client service channel. Email and iMessage remain
-AI-only. A Slack-enabled client has one customer-owned workspace connection and
-one private `#glass-<client-slug>` Slack Connect channel hosted by
-`claritylabsinc.slack.com`. Glass operators answer with their normal Slack
-identities. Convex stores the canonical conversation, agent actions, delivery
-evidence, retries, and failures.
+Slack is Glass's privileged client support and collaboration surface. Email and
+iMessage remain AI-only. A Slack-enabled client installs Glass once in its
+workspace, then may add the app to any number of channels. Separately, Clarity
+Labs creates and invites the client to one private `#glass-<client-slug>` Slack
+Connect support channel hosted by `claritylabsinc.slack.com`. Glass operators
+answer there with their normal Slack identities. Convex stores the canonical
+conversation, agent actions, delivery evidence, retries, and failures.
 
 Glass owns two native Slack apps:
 
@@ -52,7 +53,7 @@ scopes:
 
 - `app_mentions:read`
 - `chat:write`
-- `channels:read`, `channels:history`
+- `channels:read`, `channels:join`, `channels:history`
 - `groups:read`, `groups:history`, `groups:write`
 - `im:history`
 - `files:read`, `files:write`
@@ -63,7 +64,10 @@ Customer OAuth requests the narrower set in
 `convex/lib/slackOAuthPolicy.ts`; the Clarity-host installation also needs
 `groups:write` and `conversations.connect:write` for private Connect channel
 creation and invitations. Enable app distribution before sending customer
-install links.
+install links. Adding `channels:join` requires applying the updated manifest and
+having existing installations, including the Clarity host installation,
+authorize the expanded scope before the web app can add Glass to public channels
+for customers.
 
 ## Request and credential boundaries
 
@@ -107,8 +111,17 @@ matching installation.
 - `files.info` and authenticated private downloads for inbound files;
 - `users.info` to resolve a Slack Connect sender's native workspace before
   Convex authorizes that actor;
+- `conversations.list` to return every visible public channel plus private or
+  shared channels where Glass is already a member;
+- `conversations.join` to add Glass to a selected public workspace channel;
 - `conversations.create` and `conversations.inviteShared` using the separate
   Clarity-host installation.
+
+Private and Slack Connect channels cannot be joined from Glass. A Slack member
+must add the app from Slack, after which the next channel inventory sync reports
+the membership. The worker exposes `channelInventoryEnabled` and
+`publicChannelJoinEnabled` in health output so deploy checks can distinguish
+these capabilities from basic outbound messaging.
 
 Never infer that a sender belongs to the installation workspace when native
 event data omits `user_team`. Actor resolution must succeed before
@@ -142,30 +155,38 @@ use the same mode and worker secret.
 Use `GLASS_STAGING_SLACK_WORKER_HEALTH_URL` and
 `GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
 health must report `tokenBrokerConfigured`, `outboundEnabled`,
-`actorResolutionEnabled`, and `clarityTeamConfigured` before enabling a lane.
+`actorResolutionEnabled`, `clarityTeamConfigured`, `channelInventoryEnabled`,
+and `publicChannelJoinEnabled` before enabling a lane.
 The Convex agent health endpoint separately verifies that the Clarity host
 workspace has an active encrypted installation; worker configuration alone
 cannot prove that OAuth installation exists.
 
 ## Onboarding and operating model
 
-1. An operator uses Agent channels to OAuth-install the matching native app in
+1. An operator uses `/operator/channels` to OAuth-install the matching native app in
    the Clarity workspace, persisting its rotating credentials in Convex.
 2. A Glass operator records their Clarity `{teamId,userId}` identity.
 3. The operator creates `#glass-<client-slug>` and sends the Slack Connect
    invitation. Plan/policy failures fall back to audited manual binding.
-4. A client admin accepts the invite, acknowledges channel-wide visibility, and
-   installs the same lane's app with OAuth.
-5. If Slack assigns a different customer-side channel ID, the first `@Glass`
-   mention in the new primary Connect channel completes the binding.
-6. Confirm connection and primary-channel health. Safe customer alerts and
-   policy delivery default on; vendor alerts default off.
+4. Independently, a client admin installs the same lane's app once in the client
+   workspace with OAuth. Accepting the Connect invitation is not app install.
+5. In Glass, an operator or client admin may add the app to any visible public
+   workspace channel. For private and Slack Connect channels, a Slack member
+   adds the app from Slack and Glass discovers the joined channel on sync.
+6. A channel sync links the customer-side support mirror only when exactly one
+   joined Slack Connect channel matches the configured support-channel name.
+   Ambiguous or renamed mirrors require audited manual binding; mentions never
+   infer or replace the support binding.
+7. Designate the automatic alerts-and-delivery channel and confirm its health.
+   Glass still responds in every joined channel; this selection affects only
+   automatic alerts and document delivery. Safe customer alerts and policy
+   delivery default on; vendor alerts default off.
 
-Primary-channel messages are canonical from connection onward. A mention starts
+Support-channel messages are canonical from connection onward. A mention starts
 or resumes AI, unmentioned customer replies continue an active thread, an
 operator reply pauses AI, and `@Glass resolve` closes the thread. Outside the
-primary channel, only mentions and active-thread replies are retained. A human
-request posts only a content-free link notice into the primary channel.
+support channel, only mentions and active-thread replies are retained. A human
+request posts only a content-free link notice into the support channel.
 
 The App Home Messages tab provides one continuous direct conversation between
 Glass and each customer workspace member. DMs do not require an `@Glass`

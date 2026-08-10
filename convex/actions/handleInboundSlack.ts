@@ -7,6 +7,8 @@ import type { Doc } from "../_generated/dataModel";
 import { runChannelAgent } from "../lib/channelAgentRunner";
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACHMENT_COUNT = 10;
+const MAX_ATTACHMENT_AGGREGATE_BYTES = 50 * 1024 * 1024;
 const WORKER_TIMEOUT_MS = 30_000;
 const internalApi = internal as any;
 
@@ -23,10 +25,30 @@ async function fetchAttachment(
 ) {
   const attachments = event.attachments ??
     (event.attachment ? [event.attachment] : []);
+  if (attachments.length > MAX_ATTACHMENT_COUNT) {
+    throw new Error(
+      `Slack messages may include at most ${MAX_ATTACHMENT_COUNT} attachments`,
+    );
+  }
+  const declaredBytes = attachments.reduce((total, attachment) => {
+    if (attachment.size === undefined) return total;
+    if (attachment.size < 0 || attachment.size > MAX_ATTACHMENT_BYTES) {
+      throw new Error("Slack attachment exceeds the 25 MB ingestion limit");
+    }
+    return total + attachment.size;
+  }, 0);
+  if (declaredBytes > MAX_ATTACHMENT_AGGREGATE_BYTES) {
+    throw new Error("Slack attachments exceed the 50 MB aggregate ingestion limit");
+  }
   const pending = attachments.filter((attachment) => !attachment.fileId);
   if (pending.length === 0) return;
   const worker = workerConfig();
-  await Promise.all(pending.map(async (attachment) => {
+  const downloaded: Array<{
+    attachment: (typeof pending)[number];
+    bytes: ArrayBuffer;
+  }> = [];
+  let downloadedBytes = 0;
+  for (const attachment of pending) {
     const response = await fetch(`${worker.url}/attachment`, {
       method: "POST",
       headers: {
@@ -46,6 +68,13 @@ async function fetchAttachment(
     if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
       throw new Error("Slack attachment exceeds the 25 MB ingestion limit");
     }
+    downloadedBytes += bytes.byteLength;
+    if (downloadedBytes > MAX_ATTACHMENT_AGGREGATE_BYTES) {
+      throw new Error("Slack attachments exceed the 50 MB aggregate ingestion limit");
+    }
+    downloaded.push({ attachment, bytes });
+  }
+  for (const { attachment, bytes } of downloaded) {
     const fileId = await ctx.storage.store(
       new Blob([bytes], { type: attachment.contentType }),
     );
@@ -54,7 +83,7 @@ async function fetchAttachment(
       providerFileId: attachment.providerFileId,
       fileId,
     });
-  }));
+  }
 }
 
 async function enrichActor(
@@ -114,15 +143,18 @@ export const processDebounced = internalAction({
     const eventIds = batch.map((event: Doc<"slackInboundEvents">) => event._id);
     try {
       await Promise.all(
-        batch.map((event: Doc<"slackInboundEvents">) =>
-          Promise.all([
-            fetchAttachment(ctx, event),
-            enrichActor(ctx, event),
-          ]),
-        ),
+        batch.map((event: Doc<"slackInboundEvents">) => enrichActor(ctx, event)),
+      );
+      const authorized = (await ctx.runMutation(
+        internalApi.slack.authorizeBatch,
+        { eventIds },
+      )) as Array<Doc<"slackInboundEvents">>;
+      if (authorized.length === 0) return;
+      await Promise.all(
+        authorized.map((event) => fetchAttachment(ctx, event)),
       );
       const prepared = await ctx.runMutation(internalApi.slack.prepareBatch, {
-        eventIds,
+        eventIds: authorized.map((event) => event._id),
       });
       if (!prepared) return;
 

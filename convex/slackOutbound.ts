@@ -22,6 +22,45 @@ export const claim = internalMutation({
     attachments: v.optional(v.array(outboundAttachmentValidator)),
   },
   handler: async (ctx, args) => {
+    const connection = await ctx.db.get(args.connectionId);
+    if (
+      !connection ||
+      connection.status !== "active" ||
+      connection.clientOrgId !== args.orgId
+    ) {
+      throw new Error("Slack connection does not belong to the organization");
+    }
+    const thread = args.threadId ? await ctx.db.get(args.threadId) : null;
+    if (
+      thread &&
+      (thread.orgId !== args.orgId ||
+        thread.slackConnectionId !== args.connectionId)
+    ) {
+      throw new Error("Slack thread does not belong to the connection");
+    }
+    if (args.threadId && !thread) {
+      throw new Error("Slack thread does not exist");
+    }
+    if (args.threadMessageId) {
+      const message = await ctx.db.get(args.threadMessageId);
+      if (
+        !message ||
+        message.orgId !== args.orgId ||
+        (thread && message.threadId !== thread._id)
+      ) {
+        throw new Error("Slack message does not belong to the thread");
+      }
+      if (!thread) {
+        const messageThread = await ctx.db.get(message.threadId);
+        if (
+          !messageThread ||
+          messageThread.orgId !== args.orgId ||
+          messageThread.slackConnectionId !== args.connectionId
+        ) {
+          throw new Error("Slack message does not belong to the connection");
+        }
+      }
+    }
     const existing = await ctx.db
       .query("slackOutboundSends")
       .withIndex("by_idempotencyKey", (q) =>

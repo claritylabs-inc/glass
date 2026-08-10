@@ -3,8 +3,14 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import { action } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { action, type ActionCtx } from "../_generated/server";
 import { isSlackMockMode } from "../lib/slackConfig";
+import {
+  resolveSlackAutomaticChannel,
+  type SlackAutomaticChannelConnection,
+  type SlackSupportChannelBinding,
+} from "../lib/slackChannelRouting";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
@@ -38,7 +44,13 @@ function requiredEnv(name: string) {
   return value;
 }
 
-type AvailableSlackChannel = { id: string; name: string };
+type AvailableSlackChannel = {
+  id: string;
+  name: string;
+  isMember: boolean;
+  isPrivate: boolean;
+  isShared: boolean;
+};
 
 async function fetchAvailableChannels(args: {
   teamId: string;
@@ -62,6 +74,43 @@ async function fetchAvailableChannels(args: {
     throw new Error(result.error ?? "Slack channels could not be loaded");
   }
   return result.channels;
+}
+
+async function syncJoinedChannels(
+  ctx: ActionCtx,
+  args: {
+    clientOrgId: Id<"organizations">;
+    connectionId: Id<"slackWorkspaceConnections">;
+    channels: AvailableSlackChannel[];
+  },
+) {
+  return await ctx.runMutation(
+    internalApi.agentChannels.syncSlackChannelMembershipsInternal,
+    {
+      clientOrgId: args.clientOrgId,
+      connectionId: args.connectionId,
+      channels: args.channels
+        .filter((channel) => channel.isMember)
+        .map((channel) => ({
+          id: channel.id,
+          name: channel.name,
+          isPrivate: channel.isPrivate,
+          isShared: channel.isShared,
+        })),
+    },
+  );
+}
+
+function resolveInventoryChannel(
+  connection: SlackAutomaticChannelConnection,
+  supportChannel: SlackSupportChannelBinding | null,
+) {
+  return resolveSlackAutomaticChannel(
+    connection,
+    supportChannel && isSlackMockMode() && !supportChannel.customerChannelId
+      ? { ...supportChannel, customerChannelId: supportChannel.hostChannelId }
+      : supportChannel,
+  );
 }
 
 export const createPrimaryChannel = action({
@@ -152,7 +201,7 @@ export const listAvailableChannels = action({
       clientOrgId: args.clientOrgId,
       userId,
     });
-    const [connection, binding] = await Promise.all([
+    const [connection, supportChannel] = await Promise.all([
       ctx.runQuery(internalApi.slack.getActiveConnection, {
         clientOrgId: args.clientOrgId,
       }),
@@ -161,21 +210,24 @@ export const listAvailableChannels = action({
       }),
     ]);
     if (!connection) throw new Error("The Slack workspace is not connected");
-    if (!binding) throw new Error("The primary Slack channel was not found");
-    const currentChannelId =
-      binding.customerChannelId ??
-      (isSlackMockMode() ? binding.hostChannelId : undefined);
+    const automaticChannel = resolveInventoryChannel(connection, supportChannel);
+    const channels = await fetchAvailableChannels({
+      teamId: connection.teamId,
+      currentChannelId: automaticChannel?.channelId,
+      currentChannelName: automaticChannel?.channelName,
+    });
+    await syncJoinedChannels(ctx, {
+      clientOrgId: args.clientOrgId,
+      connectionId: connection._id,
+      channels,
+    });
     return {
-      channels: await fetchAvailableChannels({
-        teamId: connection.teamId,
-        currentChannelId,
-        currentChannelName: currentChannelId ? binding.channelName : undefined,
-      }),
+      channels,
     };
   },
 });
 
-export const selectPrimaryChannel = action({
+export const selectAutomaticChannel = action({
   args: {
     clientOrgId: v.id("organizations"),
     channelId: v.string(),
@@ -190,7 +242,7 @@ export const selectPrimaryChannel = action({
       internalApi.agentChannels.authorizeSetup,
       { clientOrgId: args.clientOrgId, userId },
     );
-    const [connection, binding] = await Promise.all([
+    const [connection, supportChannel] = await Promise.all([
       ctx.runQuery(internalApi.slack.getActiveConnection, {
         clientOrgId: args.clientOrgId,
       }),
@@ -199,31 +251,97 @@ export const selectPrimaryChannel = action({
       }),
     ]);
     if (!connection) throw new Error("The Slack workspace is not connected");
-    if (!binding) throw new Error("The primary Slack channel was not found");
+    const automaticChannel = resolveInventoryChannel(connection, supportChannel);
     const channels = await fetchAvailableChannels({
       teamId: connection.teamId,
-      currentChannelId:
-        binding.customerChannelId ??
-        (isSlackMockMode() ? binding.hostChannelId : undefined),
-      currentChannelName: binding.channelName,
+      currentChannelId: automaticChannel?.channelId,
+      currentChannelName: automaticChannel?.channelName,
+    });
+    await syncJoinedChannels(ctx, {
+      clientOrgId: args.clientOrgId,
+      connectionId: connection._id,
+      channels,
     });
     const channel = channels.find(
-      (candidate) => candidate.id === args.channelId,
+      (candidate) => candidate.id === args.channelId && candidate.isMember,
     );
     if (!channel) {
       throw new Error("Select a Slack channel that Glass has joined");
     }
     await ctx.runMutation(
-      internalApi.agentChannels.selectPrimarySlackChannelInternal,
+      internalApi.agentChannels.selectAutomaticSlackChannelInternal,
       {
         clientOrgId: args.clientOrgId,
         connectionId: connection._id,
-        customerChannelId: channel.id,
+        channelId: channel.id,
         channelName: channel.name,
         actorUserId: userId,
         actorKind: permission.kind,
       },
     );
     return channel;
+  },
+});
+
+export const joinPublicChannel = action({
+  args: {
+    clientOrgId: v.id("organizations"),
+    channelId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (process.env.SLACK_ENABLED !== "true") {
+      throw new Error("Slack is not enabled for this environment");
+    }
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    const permission = await ctx.runQuery(
+      internalApi.agentChannels.authorizeSetup,
+      { clientOrgId: args.clientOrgId, userId },
+    );
+    const connection = await ctx.runQuery(internalApi.slack.getActiveConnection, {
+      clientOrgId: args.clientOrgId,
+    });
+    if (!connection) throw new Error("The Slack workspace is not connected");
+
+    const response = await fetch(
+      `${requiredEnv("SLACK_WORKER_URL")}/channels/join`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${requiredEnv("SLACK_WORKER_SECRET")}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamId: connection.teamId,
+          channelId: args.channelId,
+        }),
+        signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+      },
+    );
+    const result = (await response.json()) as {
+      channel?: AvailableSlackChannel;
+      error?: string;
+    };
+    if (!response.ok || !result.channel?.isMember) {
+      throw new Error(result.error ?? "Glass could not be added to that channel");
+    }
+    const channels = await fetchAvailableChannels({ teamId: connection.teamId });
+    await syncJoinedChannels(ctx, {
+      clientOrgId: args.clientOrgId,
+      connectionId: connection._id,
+      channels,
+    });
+    await ctx.runMutation(
+      internalApi.agentChannels.recordSlackChannelJoinedInternal,
+      {
+        clientOrgId: args.clientOrgId,
+        connectionId: connection._id,
+        channelId: result.channel.id,
+        channelName: result.channel.name,
+        actorUserId: userId,
+        actorKind: permission.kind,
+      },
+    );
+    return { channel: result.channel, channels };
   },
 });

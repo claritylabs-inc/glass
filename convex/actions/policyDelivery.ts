@@ -24,6 +24,10 @@ import {
   policyLobCodes,
 } from "../lib/linesOfBusiness";
 import { deterministicRuleMatch } from "../lib/policyDeliveryMatching";
+import {
+  resolveSlackAutomaticChannelId,
+  resolveSlackSupportChannelId,
+} from "../lib/slackChannelRouting";
 
 type Channel = "email" | "imessage" | "slack";
 type DeliveryAction =
@@ -325,6 +329,15 @@ export const processJob = internalAction({
       recipientEmail: recipient.email,
       recipientPhone: recipient.phone,
     };
+    const supportSlackChannelId = resolveSlackSupportChannelId(
+      data.primarySlackChannel,
+    );
+    const automaticSlackChannelId = data.connection
+      ? resolveSlackAutomaticChannelId(
+          data.connection,
+          data.primarySlackChannel,
+        )
+      : undefined;
 
     if (!settings?.deliverBeforeClientAcceptance && (data.client.inviteStatus || !data.client.onboardingComplete)) {
       await ctx.runMutation((internal as any).policyDelivery.patchJobInternal, {
@@ -350,16 +363,14 @@ export const processJob = internalAction({
       if (
         decision.action === "service_review" &&
         data.connection &&
-        data.primarySlackChannel &&
+        supportSlackChannelId &&
         data.agentChannels?.slackEnabled === true
       ) {
         await ctx.runAction((internal as any).actions.sendSlack.send, {
           idempotencyKey: `${data.job.idempotencyKey}:service-review`,
           orgId: data.client._id,
           connectionId: data.connection._id,
-          channelId:
-            data.primarySlackChannel.customerChannelId ??
-            data.primarySlackChannel.hostChannelId,
+          channelId: supportSlackChannelId,
           content: `Policy delivery needs Glass service review for ${data.policy.policyNumber || "a client policy"}. ${decision.summary}`,
         });
       }
@@ -382,7 +393,7 @@ export const processJob = internalAction({
 
     const slackAvailable = Boolean(
       data.connection &&
-        data.primarySlackChannel &&
+        automaticSlackChannelId &&
         data.agentChannels?.slackEnabled === true &&
         data.agentChannels?.slackPolicyDeliveryEnabled === true,
     );
@@ -528,11 +539,9 @@ export const processJob = internalAction({
       }
     }
 
-    if (channels.includes("slack") && data.connection && data.primarySlackChannel) {
+    if (channels.includes("slack") && data.connection && automaticSlackChannelId) {
       try {
-        const channelId =
-          data.primarySlackChannel.customerChannelId ??
-          data.primarySlackChannel.hostChannelId;
+        const channelId = automaticSlackChannelId;
         const result = await ctx.runAction(
           (internal as any).actions.sendSlack.send,
           {

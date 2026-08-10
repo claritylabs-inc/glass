@@ -17,7 +17,7 @@ export const send = internalAction({
       idempotencyKey: `notification:${String(args.notificationId)}:slack`,
       orgId: context.notification.orgId,
       connectionId: context.connection._id,
-      channelId: context.primary.customerChannelId ?? context.primary.hostChannelId,
+      channelId: context.channelId,
       content: `*${context.notification.title}*\n${context.notification.body}`,
     });
 

@@ -4,14 +4,16 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
 import {
   createPrimaryChannel,
+  joinPublicChannel,
   listAvailableChannels,
-  selectPrimaryChannel,
+  selectAutomaticChannel,
 } from "./actions/slackOnboarding";
 
 const modules = import.meta.glob("./**/*.ts");
 const createPrimaryChannelFn = createPrimaryChannel as any;
+const joinPublicChannelFn = joinPublicChannel as any;
 const listAvailableChannelsFn = listAvailableChannels as any;
-const selectPrimaryChannelFn = selectPrimaryChannel as any;
+const selectAutomaticChannelFn = selectAutomaticChannel as any;
 
 beforeEach(() => {
   vi.stubEnv("SLACK_ENABLED", "true");
@@ -119,7 +121,7 @@ describe("Slack Connect onboarding action", () => {
     ]);
   });
 
-  test("lists joined channels and persists the selected primary channel", async () => {
+  test("syncs joined channels and keeps automatic delivery separate from support", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, operatorUserId } = await seedOperator(t);
     const bindingId = await t.run(async (ctx) => {
@@ -155,8 +157,27 @@ describe("Slack Connect onboarding action", () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
         channels: [
-          { id: "C-OLD", name: "glass-client" },
-          { id: "C-NEW", name: "client-service" },
+          {
+            id: "C-OLD",
+            name: "glass-client",
+            isMember: true,
+            isPrivate: true,
+            isShared: true,
+          },
+          {
+            id: "C-NEW",
+            name: "client-service",
+            isMember: true,
+            isPrivate: false,
+            isShared: false,
+          },
+          {
+            id: "C-AVAILABLE",
+            name: "insurance",
+            isMember: false,
+            isPrivate: false,
+            isShared: false,
+          },
         ],
       }),
     );
@@ -168,18 +189,43 @@ describe("Slack Connect onboarding action", () => {
         .action(listAvailableChannelsFn, { clientOrgId }),
     ).resolves.toEqual({
       channels: [
-        { id: "C-OLD", name: "glass-client" },
-        { id: "C-NEW", name: "client-service" },
+        {
+          id: "C-OLD",
+          name: "glass-client",
+          isMember: true,
+          isPrivate: true,
+          isShared: true,
+        },
+        {
+          id: "C-NEW",
+          name: "client-service",
+          isMember: true,
+          isPrivate: false,
+          isShared: false,
+        },
+        {
+          id: "C-AVAILABLE",
+          name: "insurance",
+          isMember: false,
+          isPrivate: false,
+          isShared: false,
+        },
       ],
     });
     await expect(
       t
         .withIdentity({ subject: `${operatorUserId}|session` })
-        .action(selectPrimaryChannelFn, {
+        .action(selectAutomaticChannelFn, {
           clientOrgId,
           channelId: "C-NEW",
         }),
-    ).resolves.toEqual({ id: "C-NEW", name: "client-service" });
+    ).resolves.toEqual({
+      id: "C-NEW",
+      name: "client-service",
+      isMember: true,
+      isPrivate: false,
+      isShared: false,
+    });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://slack-worker.example.test/channels",
       expect.objectContaining({
@@ -193,15 +239,109 @@ describe("Slack Connect onboarding action", () => {
     );
     const records = await t.run(async (ctx) => ({
       binding: await ctx.db.get(bindingId),
+      connection: await ctx.db
+        .query("slackWorkspaceConnections")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", clientOrgId).eq("status", "active"),
+        )
+        .first(),
+      memberships: await ctx.db.query("slackChannelMemberships").collect(),
       audits: await ctx.db.query("operatorAuditEvents").collect(),
     }));
     expect(records.binding).toMatchObject({
-      customerChannelId: "C-NEW",
-      channelName: "client-service",
+      customerChannelId: "C-OLD",
+      channelName: "glass-client",
     });
+    expect(records.connection).toMatchObject({
+      automaticChannelId: "C-NEW",
+      automaticChannelName: "client-service",
+    });
+    expect(records.memberships).toHaveLength(2);
     expect(records.audits.at(-1)?.summary).toBe(
-      "Selected #client-service as the primary Slack channel",
+      "Selected #client-service for automatic Slack messages",
     );
+
+    await t.run((ctx) =>
+      ctx.db.patch(bindingId, { customerChannelId: "C-NEW" }),
+    );
+    await t
+      .withIdentity({ subject: `${operatorUserId}|session` })
+      .action(listAvailableChannelsFn, { clientOrgId });
+    await expect(t.run((ctx) => ctx.db.get(bindingId))).resolves.toMatchObject({
+      customerChannelId: "C-OLD",
+      channelName: "glass-client",
+    });
+  });
+
+  test("adds Glass to a public channel and syncs the joined inventory", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, operatorUserId } = await seedOperator(t);
+    await t.run(async (ctx) => {
+      const serviceUserId = await ctx.db.insert("users", {
+        name: "Slack service",
+        accountKind: "customer",
+        serviceAccountKind: "slack",
+      });
+      await ctx.db.insert("slackWorkspaceConnections", {
+        clientOrgId,
+        teamId: "T-CUSTOMER",
+        teamName: "Customer workspace",
+        grantedScopes: ["channels:join"],
+        status: "active",
+        serviceUserId,
+        thirdPartyVisibilityAcknowledged: true,
+        automaticChannelRoutingConfiguredAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/channels/join")) {
+          return jsonResponse({
+            channel: {
+              id: "C-INSURANCE",
+              name: "insurance",
+              isMember: true,
+              isPrivate: false,
+              isShared: false,
+            },
+          });
+        }
+        return jsonResponse({
+          channels: [
+            {
+              id: "C-INSURANCE",
+              name: "insurance",
+              isMember: true,
+              isPrivate: false,
+              isShared: false,
+            },
+          ],
+        });
+      }),
+    );
+
+    await expect(
+      t
+        .withIdentity({ subject: `${operatorUserId}|session` })
+        .action(joinPublicChannelFn, {
+          clientOrgId,
+          channelId: "C-INSURANCE",
+        }),
+    ).resolves.toMatchObject({
+      channel: { id: "C-INSURANCE", name: "insurance", isMember: true },
+    });
+    const records = await t.run(async (ctx) => ({
+      memberships: await ctx.db.query("slackChannelMemberships").collect(),
+      audits: await ctx.db.query("operatorAuditEvents").collect(),
+    }));
+    expect(records.memberships).toMatchObject([
+      { channelId: "C-INSURANCE", channelName: "insurance", status: "active" },
+    ]);
+    expect(records.audits.at(-1)?.summary).toBe("Added Glass to #insurance");
   });
 
   test("classifies Slack plan and permission failures for manual setup", async () => {
