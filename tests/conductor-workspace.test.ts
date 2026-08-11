@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   conductorContainerName,
+  conductorContainerNamesOnPort,
   conductorImageTag,
   conductorImageTags,
   repoRoot,
@@ -48,6 +49,28 @@ describe("Conductor workspace identity", () => {
       "glass-imessage-worker:conductor-glass-feature-qa",
       "glass-slack-worker:conductor-glass-feature-qa",
       "glass-mailbox-scan-worker:conductor-glass-feature-qa",
+    ]);
+  });
+
+  it("finds Glass worker containers occupying an allocated workspace port", () => {
+    const containers = [
+      { id: "buildkit" },
+      { id: "glass-extraction-old-workspace-55061" },
+      {
+        id: "opaque-runtime-id",
+        configuration: {
+          id: "glass-extraction-current-workspace-55061",
+        },
+      },
+      { id: "glass-extraction-other-workspace-55071" },
+      { id: "unrelated-service-55061" },
+    ];
+
+    expect(
+      conductorContainerNamesOnPort(containers, "extraction", 55061),
+    ).toEqual([
+      "glass-extraction-old-workspace-55061",
+      "glass-extraction-current-workspace-55061",
     ]);
   });
 });

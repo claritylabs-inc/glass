@@ -5,6 +5,18 @@ import { describe, expect, it } from "vitest";
 import { PolicySummary } from "@/app/policies/[id]/policy-summary";
 
 describe("PolicySummary date display", () => {
+  it("divides the overview header from its detail rows", () => {
+    const markup = renderToStaticMarkup(
+      <PolicySummary
+        carrier="Unbranded Carrier"
+        policyNumber="UB-100"
+        linesOfBusiness={["CGL"]}
+      />,
+    );
+
+    expect(markup).toContain("border-b border-foreground/6");
+  });
+
   it("stacks the description of operations below its label", () => {
     const markup = renderToStaticMarkup(
       <PolicySummary
@@ -97,7 +109,7 @@ describe("PolicySummary date display", () => {
     );
   });
 
-  it("uses an accessible light carrier tint without decorative patterning", () => {
+  it("uses an accessible light carrier tint with carrier patterning", () => {
     const markup = renderToStaticMarkup(
       <PolicySummary
         carrier="Zurich Canada"
@@ -123,8 +135,8 @@ describe("PolicySummary date display", () => {
     );
 
     expect(markup).toContain("background-color:#90B3D7;color:#0F172A");
-    expect(markup).not.toContain("repeating-linear-gradient");
-    expect(markup).not.toContain("repeating-radial-gradient");
+    expect(markup).toContain("radial-gradient(ellipse at 100% 100%");
+    expect(markup).toMatch(/repeating-|background-size:14px 14px/);
   });
 
   it("gives broker-authored insurer overrides precedence over extracted branding", () => {

@@ -134,6 +134,26 @@ export function conductorContainerName(
   return `glass-${workerName}-${workspaceSlug(workspacePath)}-${port}`;
 }
 
+export function conductorContainerNamesOnPort(containers, workerName, port) {
+  const prefix = `glass-${workerName}-`;
+  const suffix = `-${port}`;
+  const names = new Set();
+
+  for (const container of containers) {
+    for (const name of [container?.id, container?.configuration?.id]) {
+      if (
+        typeof name === "string" &&
+        name.startsWith(prefix) &&
+        name.endsWith(suffix)
+      ) {
+        names.add(name);
+      }
+    }
+  }
+
+  return [...names];
+}
+
 export function localConvexUrls() {
   const config = JSON.parse(
     readFileSync(

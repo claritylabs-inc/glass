@@ -20,6 +20,7 @@ import {
   type Policy,
 } from "./view";
 import { typeStyle } from "@/lib/typography";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -74,14 +75,17 @@ function BrandedPolicyIdentity({ policy }: { policy: Policy }) {
   const issuerName =
     carrierIdentity?.displayName ?? policy.carrier ?? "Insurance carrier";
   const linesOfBusiness = policyLineBusinessLabels(policy);
-  const { patternStyle, surfaceStyle } = policyCardBranding(
+  const { patternStyle, surfaceClassName, surfaceStyle } = policyCardBranding(
     issuerName,
     branding?.accentColor,
   );
 
   return (
     <div
-      className="relative overflow-hidden rounded-xl border border-black/10 p-5 shadow-[0_4px_18px_rgba(0,0,0,0.1)]"
+      className={cn(
+        "relative overflow-hidden rounded-xl border border-current/6 p-5",
+        surfaceClassName,
+      )}
       style={surfaceStyle}
     >
       <span

@@ -26,6 +26,7 @@ import {
   type CarrierIdentity,
 } from "@/convex/lib/carrierIdentity";
 import { policyProductName } from "@/convex/lib/policyProductIdentity";
+import { cn } from "@/lib/utils";
 import { typeStyle } from "@/lib/typography";
 
 const PolicyPdfThumbnail = dynamic(
@@ -258,11 +259,23 @@ export function PolicySummary({
     !!realPremium ||
     !!realTaxesAndFees ||
     !!realTotalCost;
-  const { surfaceStyle } = policyOverviewBranding(branding?.accentColor);
+  const { patternStyle, surfaceClassName, surfaceStyle } =
+    policyOverviewBranding(issuerName, branding?.accentColor);
 
   return (
     <OperationalPanel className="mb-6 @container">
-      <div className="relative overflow-hidden px-5 py-4" style={surfaceStyle}>
+      <div
+        className={cn(
+          "relative overflow-hidden border-b border-foreground/6 px-5 py-4",
+          surfaceClassName,
+        )}
+        style={surfaceStyle}
+      >
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-70"
+          style={patternStyle}
+        />
         <div className="relative z-10 flex items-start gap-3">
           <BrandIcon
             src={branding?.iconUrl}

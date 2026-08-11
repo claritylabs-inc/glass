@@ -16,6 +16,10 @@ import {
 import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
 import { policyCardBranding } from "@/lib/policy-card-branding";
 import { typeStyle } from "@/lib/typography";
+import { cn } from "@/lib/utils";
+
+const policyReferenceInteractionClass =
+  "before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:bg-transparent before:content-[''] before:transition-colors before:duration-100 [@media(hover:hover)_and_(pointer:fine)]:hover:before:bg-current/[0.03] active:before:bg-current/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-current/20 focus-visible:before:bg-current/[0.03]";
 
 function policyCarrierIdentity(policy: {
   carrier?: string;
@@ -99,7 +103,13 @@ export function PolicyReferenceCard({
     );
   }
 
-  const { branding, issuerName, patternStyle, surfaceStyle } =
+  const {
+    branding,
+    issuerName,
+    patternStyle,
+    surfaceClassName,
+    surfaceStyle,
+  } =
     policyCarrierIdentity(policy);
   const policyNum = policy.policyNumber;
   const linesOfBusiness = policyLobCodes(policy);
@@ -124,7 +134,11 @@ export function PolicyReferenceCard({
           citedSourceSpanIds,
         })
       }
-      className="relative inline-flex max-w-[18rem] items-center gap-1.5 overflow-hidden rounded-md border-black/10 px-2 py-1.5 text-current shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.97] hover:shadow-[0_3px_10px_rgba(0,0,0,0.12)]"
+      className={cn(
+        "relative inline-flex max-w-[18rem] items-center gap-1.5 overflow-hidden rounded-md border-current/6 px-2 py-1.5 text-current hover:bg-background",
+        policyReferenceInteractionClass,
+        surfaceClassName,
+      )}
       style={surfaceStyle}
     >
       <span
@@ -189,7 +203,11 @@ export function PolicyCitation({
           citedSourceSpanIds,
         })
       }
-      className={`relative mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 overflow-hidden rounded-full border border-black/10 px-1.5 align-middle text-current no-underline transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm ${typeStyle("label.tag")}`}
+      className={cn(
+        `relative mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 overflow-hidden rounded-full border border-current/6 px-1.5 align-middle text-current no-underline ${typeStyle("label.tag")}`,
+        policyReferenceInteractionClass,
+        brand?.surfaceClassName,
+      )}
       style={brand?.surfaceStyle}
       title={label}
     >
@@ -254,7 +272,11 @@ export function PolicySourcePill({
           citedSourceSpanIds,
         })
       }
-      className={`relative inline-flex h-6 max-w-48 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-black/10 px-2 text-current transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm ${typeStyle("label.tag")}`}
+      className={cn(
+        `relative inline-flex h-6 max-w-48 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-current/6 px-2 text-current ${typeStyle("label.tag")}`,
+        policyReferenceInteractionClass,
+        brand?.surfaceClassName,
+      )}
       style={brand?.surfaceStyle}
       title={label}
     >
