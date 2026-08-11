@@ -45,11 +45,12 @@ import {
   cachedQueryCollectionFor,
   useCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 const inputClass =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 const labelClass =
-  "text-label font-medium text-muted-foreground block mb-1.5";
+  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 type ProfileValues = {
   name: string;
@@ -364,12 +365,12 @@ export default function ProfilePage() {
                   </SelectContent>
                 </Select>
               </div>
-              <p className="text-base text-muted-foreground">
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 Glass uses this for proactive mailbox findings and compliance
                 conversations. In-app notifications still appear in Glass.
               </p>
               {!viewer?.phone ? (
-                <p className="text-base text-muted-foreground">
+                <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                   Add a mobile number to use iMessage.
                 </p>
               ) : null}
@@ -400,7 +401,7 @@ export default function ProfilePage() {
                     type="email"
                     value={viewer?.email ?? ""}
                     disabled
-                    className="h-9 w-full rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 text-base text-muted-foreground/60 cursor-not-allowed"
+                    className={`h-9 w-full rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 text-muted-foreground/60 cursor-not-allowed ${typeStyle("control.input")}`}
                   />
                 </div>
               </div>
@@ -422,7 +423,7 @@ export default function ProfilePage() {
                   defaultCountry="US"
                   placeholder="Enter phone number"
                 />
-                <p className="text-label text-muted-foreground/60 mt-1.5 flex items-center gap-1.5">
+                <p className={`text-muted-foreground/60 mt-1.5 flex items-center gap-1.5 ${typeStyle("caption.default")}`}>
                   {phoneInvalid ? (
                     <span className="text-red-500/80">
                       Enter a valid phone number with country code.
@@ -446,7 +447,7 @@ export default function ProfilePage() {
             </OperationalPanelBody>
           </OperationalPanel>
 
-          <p className="text-label text-muted-foreground/50 mt-2">
+          <p className={`text-muted-foreground/50 mt-2 ${typeStyle("caption.default")}`}>
             Company settings, broker info, and team management are in{" "}
             <a
               href="/settings"
@@ -480,14 +481,14 @@ export default function ProfilePage() {
                 <MessageSquareText className="size-4" />
               </span>
               <div className="min-w-0">
-                <p className="text-base font-medium text-foreground">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
                   {proactivePreferences === undefined
                     ? "Loading contact method"
                     : effectiveProactiveChoice
                       ? PROACTIVE_CHANNEL_LABELS[effectiveProactiveChoice]
                       : "In-app only"}
                 </p>
-                <p className="mt-0.5 text-base text-muted-foreground">
+                <p className={`mt-0.5 text-muted-foreground ${typeStyle("body.default")}`}>
                   Where Glass contacts you when it finds something that needs
                   attention.
                 </p>
@@ -511,7 +512,7 @@ export default function ProfilePage() {
                   key={value}
                   type="button"
                   onClick={() => setTheme(value)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-base font-medium transition-colors ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${typeStyle("control.button")} ${
                     theme === value
                       ? "bg-foreground/[0.07] text-foreground"
                       : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"

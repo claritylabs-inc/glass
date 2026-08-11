@@ -33,6 +33,7 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { formatDisplayDate } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type ConnectedOrgsApi = {
   connectedOrgs: {
@@ -158,7 +159,7 @@ function RelationshipStatusTag({
         : status === "expired"
           ? "danger"
           : "neutral";
-  return <StatusTag tone={tone} className="capitalize">{status}</StatusTag>;
+  return <StatusTag tone={tone} className={`${typeStyle("label.tag")}`}>{status}</StatusTag>;
 }
 
 function formatDate(value: string | undefined) {
@@ -211,7 +212,7 @@ function VendorComplianceChecklist({
 }) {
   if (summary.requirementCount === 0) {
     return (
-      <div className="border-t border-foreground/6 px-4 py-4 text-base text-muted-foreground">
+      <div className={`border-t border-foreground/6 px-4 py-4 text-muted-foreground ${typeStyle("body.default")}`}>
         No vendor requirements are configured yet.
       </div>
     );
@@ -229,16 +230,16 @@ function VendorComplianceChecklist({
           >
             <div className="min-w-0 space-y-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <p className="truncate text-base font-medium text-foreground">
+                <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                   {check.requirement.title}
                 </p>
                 <ComplianceCheckStatusTag status={check.status} />
               </div>
-              <p className="line-clamp-2 text-label text-muted-foreground">
+              <p className={`line-clamp-2 text-muted-foreground ${typeStyle("caption.default")}`}>
                 {check.requirement.requirementText}
               </p>
               {check.requirement.limits?.length ? (
-                <p className="text-label text-muted-foreground/75">
+                <p className={`text-muted-foreground/75 ${typeStyle("caption.default")}`}>
                   Required limit:{" "}
                   <span className="text-foreground">
                     {check.requirement.limits
@@ -250,7 +251,7 @@ function VendorComplianceChecklist({
             </div>
             <div className="min-w-0 rounded-md border border-foreground/6 bg-background/40 px-3 py-2">
               {check.matchedPolicy ? (
-                <div className="space-y-1 text-label text-muted-foreground">
+                <div className={`space-y-1 text-muted-foreground ${typeStyle("caption.default")}`}>
                   <p className="truncate text-foreground">
                     {check.matchedPolicy.carrier ?? "Policy"}{" "}
                     {check.matchedPolicy.policyNumber ?? ""}
@@ -296,7 +297,7 @@ function VendorComplianceChecklist({
                   ) : null}
                 </div>
               ) : (
-                <div className="space-y-1 text-label text-muted-foreground">
+                <div className={`space-y-1 text-muted-foreground ${typeStyle("caption.default")}`}>
                   <p className="text-foreground">No matching policy found</p>
                   <p>{check.notes ?? "Upload a matching active policy."}</p>
                 </div>
@@ -345,7 +346,7 @@ function RelationshipCard({
       <div className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0 sm:flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate text-base font-medium text-foreground">
+            <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
               {displayName}
             </p>
             {side === "vendor" ? (
@@ -358,7 +359,7 @@ function RelationshipCard({
             )}
           </div>
           {showInviteCopy || org?.website ? (
-            <p className="mt-1 text-label text-muted-foreground">
+            <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
               {showInviteCopy
                 ? row.relationshipLabel ||
                   (side === "vendor" ? "Vendor access" : "Client access")
@@ -368,12 +369,12 @@ function RelationshipCard({
             </p>
           ) : null}
           {showInviteCopy && row.note ? (
-            <p className="mt-1 line-clamp-2 text-label text-muted-foreground/80">
+            <p className={`mt-1 line-clamp-2 text-muted-foreground/80 ${typeStyle("caption.default")}`}>
               {row.note}
             </p>
           ) : null}
           {side === "vendor" && row.status === "active" && complianceSummary ? (
-            <p className="mt-2 text-label text-muted-foreground">
+            <p className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}>
               {complianceSummary.requirementCount === 0
                 ? "No vendor requirements configured"
                 : `${complianceSummary.metCount}/${complianceSummary.requirementCount} requirements met`}
@@ -573,12 +574,12 @@ export function ConnectedOrgsSection({
         }
       >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             Enter a vendor contact email. If they already have an account, we’ll
             send the request to their org; otherwise we’ll send an invite link
             so they can create an account and approve access.
           </p>
-          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+          <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
             Vendor email
             <Input
               value={vendorEmail}
@@ -586,7 +587,7 @@ export function ConnectedOrgsSection({
               placeholder="risk@vendor.com"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+          <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
             Relationship label
             <Input
               value={relationshipLabel}
@@ -594,7 +595,7 @@ export function ConnectedOrgsSection({
               placeholder="e.g. Required subcontractor coverage"
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+          <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
             Note
             <Textarea
               value={note}

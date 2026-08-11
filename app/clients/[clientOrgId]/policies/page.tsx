@@ -32,6 +32,7 @@ import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type BrokerPolicyRow = {
   _id: Id<"policies">;
@@ -375,7 +376,7 @@ export default function ClientPoliciesPage() {
       {isLoading ? (
         <div className="min-h-32" aria-hidden="true" />
       ) : rows.length === 0 && showArchived ? (
-        <div className="py-16 text-center text-base text-muted-foreground/50">
+        <div className={`py-16 text-center text-muted-foreground/50 ${typeStyle("body.default")}`}>
           No archived policies
         </div>
       ) : rows.length === 0 ? (
@@ -389,29 +390,29 @@ export default function ClientPoliciesPage() {
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[22%] px-4 text-label text-muted-foreground">
+                <TableHead className={`w-[22%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
                   Carrier
                 </TableHead>
-                <TableHead className="w-[16%] text-label text-muted-foreground">
+                <TableHead className={`w-[16%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Policy no.
                 </TableHead>
-                <TableHead className="w-[20%] text-label text-muted-foreground">
+                <TableHead className={`w-[20%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Term
                 </TableHead>
-                <TableHead className="w-[12%] text-label text-muted-foreground">
+                <TableHead className={`w-[12%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Premium
                 </TableHead>
-                <TableHead className="w-[12%] text-label text-muted-foreground">
+                <TableHead className={`w-[12%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Uploaded by
                 </TableHead>
-                <TableHead className="w-[10%] text-label text-muted-foreground">
+                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Status
                 </TableHead>
-                <TableHead className="w-[18%] px-4 text-label text-muted-foreground">
+                <TableHead className={`w-[18%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
                   File
                 </TableHead>
                 {showArchived ? (
-                  <TableHead className="w-28 px-4 text-right text-label text-muted-foreground">
+                  <TableHead className={`w-28 px-4 text-right text-muted-foreground ${typeStyle("label.table")}`}>
                     Action
                   </TableHead>
                 ) : null}
@@ -441,7 +442,7 @@ export default function ClientPoliciesPage() {
                     className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     <TableCell className="px-4">
-                      <p className="truncate font-medium text-foreground">
+                      <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                         {carrier}
                       </p>
                     </TableCell>
@@ -464,7 +465,7 @@ export default function ClientPoliciesPage() {
                           policy.pipelineStatus,
                           policy.extractionDataStage,
                         )}
-                        className="font-normal"
+                        className={`${typeStyle("label.tag")}`}
                       >
                         {displayStatus(
                           policy.pipelineStatus,

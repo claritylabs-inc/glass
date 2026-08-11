@@ -17,6 +17,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { typeStyle } from "@/lib/typography";
 
 type InviteData = {
   invitationId: string;
@@ -34,10 +35,10 @@ type InviteData = {
 };
 
 const INPUT_CLASSES =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 
 const LABEL_CLASSES =
-  "text-label font-medium text-muted-foreground block mb-1.5";
+  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -193,7 +194,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
           subtitle={fetchError}
           logo={<BrandWordmark />}
         >
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             If you believe this is an error, ask your broker to resend the invitation.
           </p>
         </AuthCard>
@@ -233,14 +234,14 @@ export default function InviteAcceptance({ token }: { token: string }) {
       >
         {isAutoFlow ? (
           <div className="space-y-4">
-            <div className="flex items-center gap-3 text-base text-muted-foreground">
+            <div className={`flex items-center gap-3 text-muted-foreground ${typeStyle("body.default")}`}>
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>
                 {autoVerifying ? "Signing you in…" : "Opening your workspace…"}
               </span>
             </div>
             {error && (
-              <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>
+              <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             )}
           </div>
         ) : step === "details" ? (
@@ -262,13 +263,13 @@ export default function InviteAcceptance({ token }: { token: string }) {
             </div>
 
             {error && (
-              <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>
+              <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             )}
 
             <PillButton
               type="submit"
               disabled={loading || !email.trim()}
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Sending code..." : "Continue"}
@@ -278,25 +279,25 @@ export default function InviteAcceptance({ token }: { token: string }) {
         ) : (
           <form onSubmit={handleCodeSubmit} className="space-y-4">
             <div>
-              <label className="text-label font-medium text-muted-foreground block mb-2">
+              <label className={`text-muted-foreground block mb-2 ${typeStyle("label.field")}`}>
                 Verification Code
               </label>
               <OtpField value={code} onValueChange={setCode} autoFocus required />
-              <p className="mt-2 text-base text-muted-foreground">
+              <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
                 We sent a 6-digit code to{" "}
-                <span className="font-medium text-foreground">{email}</span>
+                <span className={`text-foreground ${typeStyle("body.medium")}`}>{email}</span>
               </p>
             </div>
 
             {error && (
-              <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>
+              <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             )}
 
             <div className="flex flex-col items-start gap-5 pt-6">
               <PillButton
                 type="submit"
                 disabled={loading || code.length < 6}
-                className="w-full justify-center text-base shadow-none sm:w-auto"
+                className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
               >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -313,7 +314,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
                   setCode("");
                   setError("");
                 }}
-                className="self-center text-base text-muted-foreground transition-colors hover:text-foreground sm:self-start"
+                className={`self-center text-muted-foreground transition-colors hover:text-foreground sm:self-start ${typeStyle("control.button")}`}
               >
                 Use a different email
               </button>

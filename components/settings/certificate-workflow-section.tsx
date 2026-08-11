@@ -15,6 +15,7 @@ import {
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { typeStyle } from "@/lib/typography";
 
 type SettingsDraft = {
   renewalReissueEnabled: boolean;
@@ -55,8 +56,8 @@ function ToggleRow({
   return (
     <div className="flex items-center justify-between gap-4 py-4">
       <div className="min-w-0">
-        <p className="text-base font-medium text-foreground">{title}</p>
-        <p className="text-base text-muted-foreground">{description}</p>
+        <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{description}</p>
       </div>
       <SettingsSwitch
         checked={checked}

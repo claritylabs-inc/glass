@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ComponentProps } from "react";
+import { typeStyle } from "@/lib/typography";
 
 export type PromptInputSelectProps = ComponentProps<typeof Select>;
 
@@ -26,7 +27,7 @@ export const PromptInputSelectTrigger = ({
 }: PromptInputSelectTriggerProps) => (
   <SelectTrigger
     className={cn(
-      "border-none bg-transparent font-medium text-muted-foreground shadow-none transition-colors",
+      `border-none bg-transparent text-muted-foreground shadow-none transition-colors ${typeStyle("control.menu")}`,
       "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
       className
     )}

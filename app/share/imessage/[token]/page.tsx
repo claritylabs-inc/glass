@@ -19,6 +19,7 @@ import {
   policyLineBusinessLabels,
   type Policy,
 } from "./view";
+import { typeStyle } from "@/lib/typography";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export async function generateMetadata({
 
 function GlassWordmark() {
   return (
-    <div className="flex items-center gap-2.5 text-base font-medium tracking-tight text-foreground">
+    <div className={`flex items-center gap-2.5 text-foreground ${typeStyle("body.medium")}`}>
       <Image src="/glass-icon.svg" alt="" width={16} height={16} />
       <span>Glass</span>
     </div>
@@ -95,24 +96,24 @@ function BrandedPolicyIdentity({ policy }: { policy: Policy }) {
           size="lg"
           className="size-10 rounded-lg bg-background"
         />
-        <p className="truncate text-base font-medium text-current opacity-85">
+        <p className={`truncate text-current opacity-85 ${typeStyle("body.medium")}`}>
           {issuerName}
         </p>
       </div>
       <div className="relative z-10 mt-7">
-        <p className="mb-1 text-label font-medium text-current opacity-55">
+        <p className={`mb-1 text-current opacity-55 ${typeStyle("caption.medium")}`}>
           Product lines
         </p>
         {linesOfBusiness.length > 0 ? (
           <ul className="space-y-0.5">
             {linesOfBusiness.map((line) => (
-              <li key={line} className="text-base font-medium text-current">
+              <li key={line} className={`text-current ${typeStyle("body.medium")}`}>
                 {line}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-base font-medium text-current">Policy</p>
+          <p className={`text-current ${typeStyle("body.medium")}`}>Policy</p>
         )}
       </div>
       <dl className="relative z-10 mt-7 grid gap-5 border-t border-current/15 pt-4 sm:grid-cols-3">
@@ -122,8 +123,8 @@ function BrandedPolicyIdentity({ policy }: { policy: Policy }) {
           ["Policy period", policyPeriod(policy)],
         ].map(([label, value]) => (
           <div key={label} className="min-w-0">
-            <dt className="text-label text-current opacity-55">{label}</dt>
-            <dd className="mt-1 break-words text-base text-current opacity-85">
+            <dt className={`text-current opacity-55 ${typeStyle("caption.default")}`}>{label}</dt>
+            <dd className={`mt-1 break-words text-current opacity-85 ${typeStyle("body.default")}`}>
               {value}
             </dd>
           </div>
@@ -168,8 +169,8 @@ function PolicyPanel({
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
-      <div className="text-base font-normal text-muted-foreground">{label}</div>
-      <div className="mt-1 break-words text-base text-foreground">{value}</div>
+      <div className={`text-muted-foreground ${typeStyle("body.default")}`}>{label}</div>
+      <div className={`mt-1 break-words text-foreground ${typeStyle("body.default")}`}>{value}</div>
     </div>
   );
 }
@@ -187,10 +188,10 @@ export default async function ImessageSharePage({
       <main className="min-h-screen bg-background px-5 py-7 text-foreground sm:px-8 sm:py-10">
         <div className="mx-auto max-w-3xl">
           <GlassWordmark />
-          <h1 className="mt-5 text-base font-medium tracking-normal">
+          <h1 className={`mt-5 ${typeStyle("heading.micro")}`}>
             Link unavailable
           </h1>
-          <p className="mt-3 max-w-xl text-base text-muted-foreground">
+          <p className={`mt-3 max-w-xl text-muted-foreground ${typeStyle("body.default")}`}>
             This shared record could not be found.
           </p>
         </div>
@@ -208,20 +209,20 @@ export default async function ImessageSharePage({
         <header className="border-b border-border pb-7">
           <div className="flex items-center justify-between gap-4">
             <GlassWordmark />
-            <p className="truncate text-base text-muted-foreground">{view.orgName}</p>
+            <p className={`truncate text-muted-foreground ${typeStyle("body.default")}`}>{view.orgName}</p>
           </div>
           <div className="mt-8 flex max-w-3xl flex-col items-start gap-3">
             <div className="min-w-0">
-              <h1 className="text-base font-medium leading-5 tracking-normal text-foreground">
+              <h1 className={`text-foreground ${typeStyle("heading.micro")}`}>
                 {view.title}
               </h1>
               {view.subtitle ? (
-                <p className="mt-2 text-base leading-6 text-muted-foreground">
+                <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
                   {view.subtitle}
                 </p>
               ) : null}
               {label ? (
-                <p className="mt-3 text-base text-muted-foreground">{label}</p>
+                <p className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}>{label}</p>
               ) : null}
             </div>
             {view.policy ? (
@@ -241,10 +242,10 @@ export default async function ImessageSharePage({
           <section className="border-b border-border py-7">
             <div className="grid gap-5 md:grid-cols-[240px_1fr]">
               <div>
-                <h2 className="text-base font-medium tracking-normal text-foreground">
+                <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
                   Certificate
                 </h2>
-                <p className="mt-1 text-base text-muted-foreground">
+                <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                   {view.certificate.holderName}
                 </p>
               </div>

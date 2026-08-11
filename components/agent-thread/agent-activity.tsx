@@ -15,6 +15,7 @@ import {
 } from "@/components/agent-thread/tool-call-card";
 import { getReasoningDisclosureLines } from "@/lib/reasoning-format";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 export type AgentActivityItem =
   | { kind: "thought"; paragraphs: string[] }
@@ -98,13 +99,13 @@ export const AgentActivity = memo(function AgentActivity({
     : itemLabel(items[0], "first");
 
   return (
-    <div className={cn("mt-1.5 text-label text-muted-foreground/55", className)}>
+    <div className={cn(`mt-1.5 text-muted-foreground/55 ${typeStyle("caption.default")}`, className)}>
       <button
         type="button"
         onClick={() => setIsOpen((value) => !value)}
         aria-expanded={isOpen}
         className={cn(
-          "group flex max-w-full items-center gap-1.5 text-left leading-5 transition-colors",
+          `group flex max-w-full items-center gap-1.5 text-left transition-colors ${typeStyle("control.button")}`,
           "text-muted-foreground/50 hover:text-muted-foreground/75",
           isOpen && "text-muted-foreground/75",
         )}
@@ -138,7 +139,7 @@ export const AgentActivity = memo(function AgentActivity({
               item.kind === "thought" ? (
                 <div key={index} className="flex gap-2">
                   <Clock3 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/35" />
-                  <div className="space-y-1.5 text-base leading-5 text-muted-foreground/70">
+                  <div className={`space-y-1.5 text-muted-foreground/70 ${typeStyle("body.default")}`}>
                     {item.paragraphs.map((paragraph, paragraphIndex) => (
                       <p
                         key={`${paragraphIndex}-${paragraph.slice(0, 16)}`}
@@ -164,7 +165,7 @@ export const AgentActivity = memo(function AgentActivity({
               ),
             )}
             {!isStreaming ? (
-              <div className="flex items-center gap-2 text-label leading-5 text-muted-foreground/55">
+              <div className={`flex items-center gap-2 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground/45" />
                 <span>Done</span>
               </div>

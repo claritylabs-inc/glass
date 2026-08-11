@@ -31,6 +31,7 @@ import { AddressAutofillInput } from "@/components/ui/address-autofill-input";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 import { usePdf } from "@/components/pdf-context";
+import { typeStyle } from "@/lib/typography";
 
 export function ViewPdfButton({
   url,
@@ -132,12 +133,12 @@ function CertificateHoldState({
     <div className="space-y-4">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-base font-medium text-foreground">
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>
             Certificate not issued
           </p>
           <StatusTag tone="warning">Broker action</StatusTag>
         </div>
-        <p className="mt-2 text-base leading-5 text-muted-foreground">
+        <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
           {hold.reasonMessage ??
             hold.message ??
             "This certificate needs a policy endorsement before it can be issued."}
@@ -149,7 +150,7 @@ function CertificateHoldState({
           {(hold.requiredChanges ?? []).map((change) => (
             <span
               key={change}
-              className="rounded-full border border-foreground/10 px-2 py-0.5 text-tag text-muted-foreground"
+              className={`rounded-full border border-foreground/10 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
             >
               {labelForChange(change)}
             </span>
@@ -159,13 +160,13 @@ function CertificateHoldState({
 
       {evidence.length > 0 ? (
         <div className="space-y-2 rounded-md border border-foreground/8 p-3">
-          <p className="text-label font-medium text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
             Evidence checked
           </p>
           {evidence.map((item, index) => (
             <p
               key={`${item.label ?? "evidence"}-${index}`}
-              className="text-base leading-5 text-muted-foreground"
+              className={`text-muted-foreground ${typeStyle("body.default")}`}
             >
               {item.label ? `${item.label}: ` : ""}
               {item.excerpt}
@@ -178,10 +179,10 @@ function CertificateHoldState({
         <div className="rounded-md border border-foreground/8 p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-label font-medium text-muted-foreground">
+              <p className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
                 Broker email draft
               </p>
-              <p className="mt-1 break-words text-base font-medium leading-5 text-foreground">
+              <p className={`mt-1 break-words text-foreground ${typeStyle("body.medium")}`}>
                 {draft.subject}
               </p>
             </div>
@@ -201,7 +202,7 @@ function CertificateHoldState({
               </PillButton>
             </div>
           </div>
-          <p className="mt-3 whitespace-pre-wrap text-base leading-5 text-muted-foreground">
+          <p className={`mt-3 whitespace-pre-wrap text-muted-foreground ${typeStyle("body.default")}`}>
             {draft.body}
           </p>
         </div>
@@ -380,7 +381,7 @@ export function CertificateCreatePanel({
           <CertificateHoldState hold={holdResult} />
         ) : (
           <>
-        <p className="text-base text-muted-foreground">
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
           Create a certificate from this policy and list the certificate holder
           on the PDF.
         </p>
@@ -441,7 +442,7 @@ export function CertificateCreatePanel({
               aria-invalid={holderPhoneInvalid}
             />
             {holderPhoneInvalid ? (
-              <p className="text-label text-destructive">
+              <p className={`text-destructive ${typeStyle("caption.default")}`}>
                 Enter a valid phone number with country code.
               </p>
             ) : null}
@@ -556,14 +557,14 @@ function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
       <div className="flex min-w-0 flex-col gap-2 @xl/certificates-panel:flex-row @xl/certificates-panel:items-start @xl/certificates-panel:justify-between">
         <div className="min-w-0 max-w-3xl">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
+            <p className={`min-w-0 max-w-full truncate text-foreground ${typeStyle("body.medium")}`}>
               {holderName}
             </p>
             <StatusTag tone="warning">
               Held
             </StatusTag>
           </div>
-          <p className="mt-1 text-base leading-5 text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
             {reason}
           </p>
           {draft ? (
@@ -584,7 +585,7 @@ function CertificateHoldActivityRow({ row }: { row: CertificateHoldRow }) {
             </div>
           ) : null}
         </div>
-        <p className="shrink-0 text-label text-muted-foreground/70 @xl/certificates-panel:pt-0.5">
+        <p className={`shrink-0 text-muted-foreground/70 @xl/certificates-panel:pt-0.5 ${typeStyle("caption.default")}`}>
           {formatCertificateTime(row.createdAt)}
         </p>
       </div>
@@ -644,10 +645,10 @@ export function CertificatesTab({
       <OperationalPanel as="div">
         <OperationalPanelBody className="px-4 py-8 text-center">
           <BadgeCheck className="mx-auto mb-3 h-5 w-5 text-muted-foreground/50" />
-          <p className="text-base font-medium text-foreground">
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>
             No certificates yet
           </p>
-          <p className="mt-1 text-label text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
             Generate a COI from the page header to store it here.
           </p>
         </OperationalPanelBody>

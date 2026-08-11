@@ -25,7 +25,7 @@ describe("sidebar menu items", () => {
     expect(navItem).toContain("<ShortcutTooltipContent");
     expect(navItem).toContain('shortcut.type === "command"');
     expect(navItem).toContain("platformModifierForUserAgent");
-    expect(navItem).toContain('<span className="text-label">{label}</span>');
+    expect(navItem).toContain('typeStyle("caption.default")');
     expect(navConfig).toContain("SIDEBAR_TOOLTIP_DELAY_MS = 500");
     expect(navConfig).toContain("data-instant:animate-none");
     expect(navConfig).toContain('"cursor-pointer rounded-md');

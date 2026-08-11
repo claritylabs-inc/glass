@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusTag } from "@/components/ui/status-tag";
+import { typeStyle } from "@/lib/typography";
 
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   lookup_policy: "Searched policies",
@@ -58,23 +59,23 @@ export function ToolCallCard({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="min-w-0">
-            <span className="block truncate text-label font-medium text-muted-foreground/65">
+            <span className={`block truncate text-muted-foreground/65 ${typeStyle("caption.medium")}`}>
               {displayName}
             </span>
           </span>
         </span>
         <span className="ml-3 flex shrink-0 items-center gap-2">
           {isRunning ? (
-            <StatusTag tone="info" className="h-4 px-1.5 text-label">
+            <StatusTag tone="info" className={`h-4 px-1.5 ${typeStyle("label.tag")}`}>
               <Loader2 className="h-2.5 w-2.5 animate-spin" />
               Running
             </StatusTag>
           ) : (
-            <StatusTag tone="success" className="h-4 px-1.5 text-label">
+            <StatusTag tone="success" className={`h-4 px-1.5 ${typeStyle("label.tag")}`}>
               Completed
             </StatusTag>
           )}
-          <span className="text-label font-medium text-muted-foreground/35">
+          <span className={`text-muted-foreground/35 ${typeStyle("caption.medium")}`}>
             {isOpen ? "Hide" : "Show"}
           </span>
         </span>
@@ -83,10 +84,10 @@ export function ToolCallCard({
         <div className="space-y-2 border-t border-foreground/6 px-2.5 pb-2.5 pt-2">
           {showOutput && toolCall.output ? (
             <div>
-              <p className="mb-1 text-label font-medium text-muted-foreground/40">
+              <p className={`mb-1 text-muted-foreground/40 ${typeStyle("caption.medium")}`}>
                 Output
               </p>
-              <pre className="max-h-64 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-label leading-4 text-foreground/70">
+              <pre className={`max-h-64 overflow-auto rounded border border-foreground/6 bg-background p-2 text-foreground/70 ${typeStyle("technical.codeCompact")}`}>
                 <code className="whitespace-pre-wrap break-words">
                   {formatToolInput(toolCall.output)}
                 </code>
@@ -95,10 +96,10 @@ export function ToolCallCard({
           ) : null}
           {!showOutput || !toolCall.output ? (
             <div>
-              <p className="mb-1 text-label font-medium text-muted-foreground/40">
+              <p className={`mb-1 text-muted-foreground/40 ${typeStyle("caption.medium")}`}>
                 Parameters
               </p>
-              <pre className="max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 font-mono text-label leading-4 text-foreground/70">
+              <pre className={`max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 text-foreground/70 ${typeStyle("technical.codeCompact")}`}>
                 <code className="whitespace-pre-wrap break-words">
                   {formatToolInput(toolCall.input)}
                 </code>

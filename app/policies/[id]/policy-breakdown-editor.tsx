@@ -25,6 +25,7 @@ import {
   sourceSpanIdsFrom,
   usePolicySourceSpans,
 } from "./source-provenance";
+import { typeStyle } from "@/lib/typography";
 
 function stringValue(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -387,7 +388,7 @@ export function PolicyBreakdownEditor({
         <div className="grid grid-cols-1 gap-3">
           {fields.map(({ key, label, kind }) => (
             <div key={key} className="space-y-1.5">
-              <Label className="text-label text-muted-foreground">{label}</Label>
+              <Label className={`text-muted-foreground ${typeStyle("label.field")}`}>{label}</Label>
               <Input
                 type={kind === "date" ? "date" : "text"}
                 inputMode={kind === "money" ? "decimal" : undefined}

@@ -57,6 +57,7 @@ import {
   formatDisplayDateTime,
   formatDisplayDateTimeWithSeconds,
 } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type TraceStatus = "running" | "complete" | "error" | "cancelled";
 type TraceRow = {
@@ -452,7 +453,7 @@ function CoverageList({
 
         return (
           <OperationalItem key={`${name}-${rowIndex}`} className="px-4">
-            <div className="flex min-w-0 items-center gap-1.5 text-base font-normal leading-5 text-foreground">
+            <div className={`flex min-w-0 items-center gap-1.5 text-foreground ${typeStyle("body.default")}`}>
               <span className="min-w-0 break-words">{name}</span>
               <SourceEvidenceButton
                 sourceSpanIds={coverageSourceSpanIds}
@@ -468,10 +469,10 @@ function CoverageList({
                     key={`${term.label}-${termIndex}`}
                     className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0"
                   >
-                    <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                    <dt className={`min-w-0 text-muted-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
                       {term.label}
                     </dt>
-                    <dd className="min-w-0 text-right text-base leading-5 text-foreground [overflow-wrap:anywhere]">
+                    <dd className={`min-w-0 text-right text-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
                       <span className="inline-flex min-w-0 items-center justify-end gap-1.5">
                         <span className="min-w-0 break-words">{term.value}</span>
                         <SourceEvidenceButton
@@ -516,7 +517,7 @@ function EndorsementSupportList({
             className="px-4"
           >
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
+              <p className={`min-w-0 flex-1 truncate text-foreground ${typeStyle("body.medium")}`}>
                 {formatProfileLabel(kind)}
               </p>
               <SourceEvidenceButton
@@ -527,14 +528,14 @@ function EndorsementSupportList({
               {status !== "—" ? (
                 <StatusTag
                   tone={supportStatusTone(status)}
-                  className="font-normal"
+                  className={`${typeStyle("label.tag")}`}
                 >
                   {formatProfileLabel(status)}
                 </StatusTag>
               ) : null}
             </div>
             <p
-              className="mt-2 min-w-0 text-base leading-5 text-foreground [overflow-wrap:anywhere]"
+              className={`mt-2 min-w-0 text-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}
               title={summary !== "—" ? summary : undefined}
             >
               {summary}
@@ -631,7 +632,7 @@ function NamedAdditionalInsuredList({
             className="px-4"
           >
             <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
-              <p className="min-w-0 flex-1 text-base font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className={`min-w-0 flex-1 text-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
                 {name}
               </p>
               <SourceEvidenceButton
@@ -640,18 +641,18 @@ function NamedAdditionalInsuredList({
                 fileUrl={fileUrl}
               />
               {status !== "—" ? (
-                <StatusTag className="font-normal">
+                <StatusTag className={`${typeStyle("label.tag")}`}>
                   {formatProfileLabel(status)}
                 </StatusTag>
               ) : null}
             </div>
             {scope !== "—" ? (
-              <p className="mt-1.5 text-base leading-5 text-foreground [overflow-wrap:anywhere]">
+              <p className={`mt-1.5 text-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
                 {scope}
               </p>
             ) : null}
             {endorsementTitle !== "—" ? (
-              <p className="mt-1 text-label leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+              <p className={`mt-1 text-muted-foreground [overflow-wrap:anywhere] ${typeStyle("caption.default")}`}>
                 {endorsementTitle}
               </p>
             ) : null}
@@ -991,7 +992,7 @@ function DebugPreview({
   return (
     <OperationalPanel as="section">
       <OperationalPanelHeader title={label} />
-      <pre className="bg-muted/20 p-3 whitespace-pre-wrap break-words font-mono text-label leading-relaxed text-foreground">
+      <pre className={`bg-muted/20 p-3 whitespace-pre-wrap break-words text-foreground ${typeStyle("technical.codeCompact")}`}>
         {value}
       </pre>
     </OperationalPanel>
@@ -1003,7 +1004,7 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   const details = modelCallDebugDetails(event);
   if (!details) {
     return (
-      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
+      <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
         No prompt or output details were recorded for this call. Rerun the extraction to capture model-call debug payloads.
       </div>
     );
@@ -1029,32 +1030,32 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   return (
     <div className="space-y-4">
       <OperationalPanel as="section" className="px-3 py-3">
-        <dl className="grid gap-x-8 gap-y-2 text-base text-muted-foreground sm:grid-cols-2">
+        <dl className={`grid gap-x-8 gap-y-2 text-muted-foreground sm:grid-cols-2 ${typeStyle("body.default")}`}>
           <div className="min-w-0">
-            <dt className="inline font-medium text-foreground">Purpose</dt>
+            <dt className={`inline text-foreground ${typeStyle("body.medium")}`}>Purpose</dt>
             <dd className="ml-2 inline">{details.purpose ?? eventTitle(event)}</dd>
           </div>
           <div className="min-w-0">
-            <dt className="inline font-medium text-foreground">Task</dt>
+            <dt className={`inline text-foreground ${typeStyle("body.medium")}`}>Task</dt>
             <dd className="ml-2 inline">{[details.task, details.taskKind].filter(Boolean).join(" / ") || "—"}</dd>
           </div>
           <div className="min-w-0">
-            <dt className="inline font-medium text-foreground">Output</dt>
+            <dt className={`inline text-foreground ${typeStyle("body.medium")}`}>Output</dt>
             <dd className="ml-2 inline">{details.outputKind ?? "—"}</dd>
           </div>
           <div className="min-w-0">
-            <dt className="inline font-medium text-foreground">Max tokens</dt>
+            <dt className={`inline text-foreground ${typeStyle("body.medium")}`}>Max tokens</dt>
             <dd className="ml-2 inline">{details.maxOutputTokens?.toLocaleString() ?? "—"}</dd>
           </div>
         </dl>
       </OperationalPanel>
       {inputRows.length ? (
         <OperationalPanel as="section" className="px-3 py-3">
-          <h4 className="mb-1.5 text-base font-medium text-muted-foreground">Input attachments</h4>
-          <dl className="grid gap-x-8 gap-y-1.5 text-base text-muted-foreground sm:grid-cols-2">
+          <h4 className={`mb-1.5 text-muted-foreground ${typeStyle("heading.micro")}`}>Input attachments</h4>
+          <dl className={`grid gap-x-8 gap-y-1.5 text-muted-foreground sm:grid-cols-2 ${typeStyle("body.default")}`}>
             {inputRows.map(([label, value]) => (
               <div key={label} className="min-w-0">
-                <dt className="inline font-medium text-foreground">{label}</dt>
+                <dt className={`inline text-foreground ${typeStyle("body.medium")}`}>{label}</dt>
                 <dd className="ml-2 inline break-words">{value}</dd>
               </div>
             ))}
@@ -1063,11 +1064,11 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
       ) : null}
       {traceRows.length ? (
         <OperationalPanel as="section" className="px-3 py-3">
-          <h4 className="mb-1.5 text-base font-medium text-muted-foreground">Trace metadata</h4>
-          <dl className="grid gap-x-8 gap-y-1.5 text-base text-muted-foreground sm:grid-cols-2">
+          <h4 className={`mb-1.5 text-muted-foreground ${typeStyle("heading.micro")}`}>Trace metadata</h4>
+          <dl className={`grid gap-x-8 gap-y-1.5 text-muted-foreground sm:grid-cols-2 ${typeStyle("body.default")}`}>
             {traceRows.map(([label, value]) => (
               <div key={label} className="min-w-0">
-                <dt className="inline font-medium text-foreground">{label}</dt>
+                <dt className={`inline text-foreground ${typeStyle("body.medium")}`}>{label}</dt>
                 <dd className="ml-2 inline break-words">{value}</dd>
               </div>
             ))}
@@ -1157,12 +1158,12 @@ function TimelineWaterfall({
             </div>
           </div>
           <div className="relative z-10 grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
-            <div className="px-2.5 py-2 text-label font-medium text-muted-foreground">Event</div>
+            <div className={`px-2.5 py-2 text-muted-foreground ${typeStyle("caption.medium")}`}>Event</div>
             <div className="relative h-8 min-w-0 overflow-hidden">
               {ticks.map((tick) => (
                 <span
                   key={tick}
-                  className="absolute top-0 ml-1 text-label leading-8 text-muted-foreground"
+                  className={`absolute top-0 ml-1 text-muted-foreground ${typeStyle("caption.default")}`}
                   style={{ left: `${tick * 100}%` }}
                 >
                   {formatDuration(durationMs * tick)}
@@ -1205,10 +1206,10 @@ function TimelineWaterfall({
                         ) : (
                           <span className="h-4 w-4 shrink-0" />
                         )}
-                        <p className="min-w-0 truncate text-label font-medium text-foreground">{row.label}</p>
+                        <p className={`min-w-0 truncate text-foreground ${typeStyle("caption.medium")}`}>{row.label}</p>
                       </div>
                       {row.caption ? (
-                        <p className="ml-5 mt-0.5 min-w-0 truncate text-label text-muted-foreground">{row.caption}</p>
+                        <p className={`ml-5 mt-0.5 min-w-0 truncate text-muted-foreground ${typeStyle("caption.default")}`}>{row.caption}</p>
                       ) : null}
                     </div>
                     <div className="relative min-w-0 overflow-hidden px-0 py-1.5">
@@ -1221,14 +1222,14 @@ function TimelineWaterfall({
                         title={`${row.label} · ${durationLabel} · ${row.caption}`}
                       >
                         {showDurationInside ? (
-                          <span className={`truncate text-label font-medium ${timelineInsideTextColor(row.event)}`}>
+                          <span className={`truncate ${typeStyle("caption.medium")} ${timelineInsideTextColor(row.event)}`}>
                             {durationLabel}
                           </span>
                         ) : null}
                       </div>
                       {!showDurationInside ? (
                         <span
-                          className="pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-label font-medium text-foreground"
+                          className={`pointer-events-none absolute top-1/2 max-w-14 -translate-y-1/2 truncate px-1 text-foreground ${typeStyle("caption.medium")}`}
                           style={showOutsideAfter
                             ? { left: `${constrainedLeft + constrainedWidth}%` }
                             : { right: `${100 - constrainedLeft}%` }}
@@ -1240,12 +1241,12 @@ function TimelineWaterfall({
                   </div>
                 );
               }) : (
-                <p className="px-3 py-3 text-base text-muted-foreground">No timed events recorded yet.</p>
+                <p className={`px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>No timed events recorded yet.</p>
               )}
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-label text-muted-foreground">
+        <div className={`flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-muted-foreground ${typeStyle("caption.default")}`}>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-amber-500" />model fallback</span>
@@ -1269,7 +1270,7 @@ function ModelCallSelector({
 }) {
   if (!events.length) {
     return (
-      <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
+      <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
         No model calls recorded.
       </div>
     );
@@ -1333,7 +1334,7 @@ function ModelCallSelector({
         <OperationalLabelValueRow
           label="Router request"
           value={selectedEvent.routerRequestId ? (
-            <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-label">
+            <code className={`break-all rounded bg-muted px-1.5 py-0.5 ${typeStyle("technical.codeCompact")}`}>
               {selectedEvent.routerRequestId}
             </code>
           ) : "—"}
@@ -1611,7 +1612,7 @@ export default function OperatorExtractionsPage() {
             <TabsContent value="summary" className="pt-1">
               <div className="space-y-3">
                 {detail?.eventsTruncated ? (
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-base text-amber-700 dark:text-amber-300">
+                  <div className={`rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-amber-700 dark:text-amber-300 ${typeStyle("body.default")}`}>
                     This trace is large, so operator detail is showing a capped event snapshot.
                   </div>
                 ) : null}
@@ -1620,7 +1621,7 @@ export default function OperatorExtractionsPage() {
                     label="Extraction ID"
                     value={(
                       <div className="flex min-w-0 items-center gap-2">
-                        <code className="min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-label">
+                        <code className={`min-w-0 truncate rounded bg-muted px-1.5 py-0.5 ${typeStyle("technical.codeCompact")}`}>
                           {selected.traceId}
                         </code>
                         <Button
@@ -1661,7 +1662,7 @@ export default function OperatorExtractionsPage() {
 
             <TabsContent value="extracted" className="pt-1">
               {selectedIsRunning ? (
-                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
+                <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
                   Extraction is running. Extracted policy data will appear after this run completes.
                 </div>
               ) : detail?.policy ? (
@@ -1672,7 +1673,7 @@ export default function OperatorExtractionsPage() {
                   allowOperatorSourceAccess
                 />
               ) : (
-                <div className="rounded-lg border border-foreground/6 px-3 py-3 text-base text-muted-foreground">
+                <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
                   Extracted policy data is unavailable for this trace.
                 </div>
               )}
@@ -1703,22 +1704,22 @@ export default function OperatorExtractionsPage() {
                 {logEvents.length ? logEvents.map((event) => (
                   <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-label text-muted-foreground">
+                      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                         {dayjs(event.timestamp).format("h:mm:ss A")}{event.phase ? ` · ${event.phase}` : ""}
                       </p>
                       {event.level && event.level !== "info" ? <StatusTag tone={event.level === "error" ? "danger" : "warning"}>{event.level}</StatusTag> : null}
                     </div>
-                    <p className="mt-1 text-base text-foreground">{event.message}</p>
+                    <p className={`mt-1 text-foreground ${typeStyle("body.default")}`}>{event.message}</p>
                   </div>
                 )) : (
-                  <p className="px-3 py-3 text-base text-muted-foreground">No log messages recorded.</p>
+                  <p className={`px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>No log messages recorded.</p>
                 )}
               </div>
             </TabsContent>
           </Tabs>
         </div>
       ) : (
-        <p className="text-base text-muted-foreground">Trace not found.</p>
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Trace not found.</p>
       )}
     </SettingsDrawer>
   );
@@ -1746,14 +1747,14 @@ export default function OperatorExtractionsPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[13%] px-4 text-label text-muted-foreground">Started</TableHead>
-                <TableHead className="w-[16%] text-label text-muted-foreground">Org</TableHead>
-                <TableHead className="w-[22%] text-label text-muted-foreground">Policy / file</TableHead>
-                <TableHead className="w-[9%] text-label text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[9%] text-label text-muted-foreground">Duration</TableHead>
-                <TableHead className="w-[15%] text-label text-muted-foreground">Slowest area</TableHead>
-                <TableHead className="w-[8%] text-label text-muted-foreground">Calls</TableHead>
-                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">Model time</TableHead>
+                <TableHead className={`w-[13%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Started</TableHead>
+                <TableHead className={`w-[16%] text-muted-foreground ${typeStyle("label.table")}`}>Org</TableHead>
+                <TableHead className={`w-[22%] text-muted-foreground ${typeStyle("label.table")}`}>Policy / file</TableHead>
+                <TableHead className={`w-[9%] text-muted-foreground ${typeStyle("label.table")}`}>Status</TableHead>
+                <TableHead className={`w-[9%] text-muted-foreground ${typeStyle("label.table")}`}>Duration</TableHead>
+                <TableHead className={`w-[15%] text-muted-foreground ${typeStyle("label.table")}`}>Slowest area</TableHead>
+                <TableHead className={`w-[8%] text-muted-foreground ${typeStyle("label.table")}`}>Calls</TableHead>
+                <TableHead className={`w-[8%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Model time</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1761,12 +1762,12 @@ export default function OperatorExtractionsPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="h-32 px-4 text-center text-muted-foreground">
                     <Loader2 className="mx-auto mb-3 h-5 w-5 animate-spin" />
-                    <p className="text-base">Loading extraction traces...</p>
+                    <p className={`${typeStyle("body.default")}`}>Loading extraction traces...</p>
                   </TableCell>
                 </TableRow>
               ) : traces.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={8} className="h-32 px-4 text-base text-muted-foreground">
+                  <TableCell colSpan={8} className={`h-32 px-4 text-muted-foreground ${typeStyle("body.default")}`}>
                     No extraction traces yet. Run a policy extraction and traces will appear here.
                   </TableCell>
                 </TableRow>

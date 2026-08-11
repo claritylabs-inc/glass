@@ -9,6 +9,7 @@ import { Mail, MessageCircle } from "lucide-react";
 import { SiSlack } from "react-icons/si";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 export default function ClientThreadsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -38,7 +39,7 @@ export default function ClientThreadsPage() {
     <FadeIn when={true} duration={0.12}>
       {visibleThreads.length === 0 && (
         <div className="text-center py-16">
-          <p className="text-base text-muted-foreground/40">
+          <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>
             No threads yet
           </p>
         </div>
@@ -65,10 +66,10 @@ export default function ClientThreadsPage() {
                 ) : null}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-base font-medium text-foreground truncate">
+                <p className={`text-foreground truncate ${typeStyle("body.medium")}`}>
                   {thread.title}
                 </p>
-                <p className="text-label text-muted-foreground/40">
+                <p className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}>
                   {formatDisplayDateTime(
                     thread.lastMessageAt ?? thread._creationTime,
                   )}

@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
+import { typeStyle } from "@/lib/typography";
 
 const BRAND_BLUE = "#A0D2FA";
 
@@ -9,8 +10,8 @@ export function BrandWordmark() {
     <div className="flex items-center gap-2.5 text-foreground">
       <LogoIcon size={16} color={BRAND_BLUE} static />
       <div className="flex items-baseline gap-1.5">
-        <span className="text-base font-medium tracking-tight">Glass</span>
-        <span className="text-base text-muted-foreground">from Clarity Labs</span>
+        <span className={`${typeStyle("body.medium")}`}>Glass</span>
+        <span className={`text-muted-foreground ${typeStyle("body.default")}`}>from Clarity Labs</span>
       </div>
     </div>
   );
@@ -35,18 +36,18 @@ export function PartnerWordmark({
           size="sm"
         />
       </div>
-      <span className="text-base font-medium tracking-tight">{name?.trim() || "Glass from Clarity Labs"}</span>
+      <span className={`${typeStyle("body.medium")}`}>{name?.trim() || "Glass from Clarity Labs"}</span>
     </div>
   );
 }
 
 export function PoweredByGlassWordmark() {
   return (
-    <div className="flex items-center justify-center gap-2 text-label leading-none text-muted-foreground">
+    <div className={`flex items-center justify-center gap-2 text-muted-foreground ${typeStyle("caption.default")}`}>
       <span>Powered by</span>
-      <div className="flex items-center gap-1.5 leading-none">
+      <div className={`flex items-center gap-1.5 ${typeStyle("body.default")}`}>
         <LogoIcon size={12} color={BRAND_BLUE} static />
-        <span className="font-medium tracking-tight text-foreground">Glass</span>
+        <span className={`text-foreground ${typeStyle("body.medium")}`}>Glass</span>
         <span>from Clarity Labs</span>
       </div>
     </div>
@@ -57,7 +58,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 sm:px-8 sm:py-10">
-        <header className="flex items-center justify-between text-base text-muted-foreground">
+        <header className={`flex items-center justify-between text-muted-foreground ${typeStyle("body.default")}`}>
           <BrandWordmark />
         </header>
         <main className="flex flex-1 items-center justify-center py-12 sm:py-20">{children}</main>
@@ -98,8 +99,8 @@ export function AuthCard({
     <div className="w-full max-w-md space-y-8">
       <div className="space-y-3 text-left">
         {logo ? <div className="mb-14">{logo}</div> : null}
-        <h1 className="text-base font-medium tracking-tight">{title}</h1>
-        {subtitle ? <p className="text-base text-muted-foreground">{subtitle}</p> : null}
+        <h1 className={`${typeStyle("heading.micro")}`}>{title}</h1>
+        {subtitle ? <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{subtitle}</p> : null}
       </div>
       <div>
         {children}

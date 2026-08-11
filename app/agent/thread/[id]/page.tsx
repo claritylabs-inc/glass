@@ -7,6 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { usePresence } from "@/hooks/use-presence";
 import { UnifiedThreadContent } from "@/components/agent-thread/thread-content";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 export {
   ThreadContextLink,
@@ -90,7 +91,7 @@ export default function ThreadPage({
     <AppShell breadcrumbDetail="Conversation" presenceUsers={presenceUsers}>
       <div className="absolute inset-0 overflow-hidden">
         <div className="h-full flex items-center justify-center">
-          <p className="text-base text-muted-foreground/40">
+          <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>
             Thread not found
           </p>
         </div>

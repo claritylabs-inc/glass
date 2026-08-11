@@ -28,12 +28,13 @@ import {
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
+import { typeStyle } from "@/lib/typography";
 
 const INPUT_CLASSES =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 
 const LABEL_CLASSES =
-  "text-label font-medium text-muted-foreground block mb-1";
+  `text-muted-foreground block mb-1 ${typeStyle("caption.medium")}`;
 
 function cleanError(error: unknown, fallback: string) {
   const message = getUserFacingErrorMessage(error, fallback);
@@ -533,7 +534,7 @@ export function InviteClientDrawer({
             placeholder="acme.com"
             className={INPUT_CLASSES}
           />
-          <p className="mt-1.5 text-label text-muted-foreground/60">
+          <p className={`mt-1.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
             Glass will enrich the company profile in the background.
           </p>
         </div>
@@ -571,7 +572,7 @@ export function InviteClientDrawer({
             defaultCountry="US"
             placeholder="Enter phone number"
           />
-          <p className="mt-1.5 min-h-4 text-label text-muted-foreground/60">
+          <p className={`mt-1.5 min-h-4 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
             {phoneInvalid ? (
               <span className="text-red-500/80">
                 Enter a valid phone number with country code.
@@ -594,7 +595,7 @@ export function InviteClientDrawer({
           {activeDraftId && existingPolicies === undefined ? (
             <OperationalPanel
               as="div"
-              className="mb-2 px-3 py-2 text-base text-muted-foreground"
+              className={`mb-2 px-3 py-2 text-muted-foreground ${typeStyle("body.default")}`}
             >
               Loading policy uploads…
             </OperationalPanel>
@@ -645,10 +646,10 @@ export function InviteClientDrawer({
                 <FileUp className="h-4 w-4" />
               </span>
               <span className="min-w-0">
-                <span className="block text-base font-medium text-foreground">
+                <span className={`block text-foreground ${typeStyle("body.medium")}`}>
                   Upload policy PDFs
                 </span>
-                <span className="block text-label text-muted-foreground/60">
+                <span className={`block text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                   Extraction starts after you create or send the invite.
                 </span>
               </span>
@@ -681,7 +682,7 @@ export function InviteClientDrawer({
                   className="flex items-center gap-2 border-t border-foreground/4 px-3 py-2 first:border-t-0"
                 >
                   <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate text-base">
+                  <span className={`min-w-0 flex-1 truncate ${typeStyle("body.default")}`}>
                     {file.name}
                   </span>
                   <button

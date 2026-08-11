@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 function FormSection({
   title,
@@ -27,11 +28,11 @@ function FormSection({
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-base font-medium leading-5 text-foreground">
+          <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             {title}
           </h3>
           {description ? (
-            <p className="mt-1 text-base leading-5 text-muted-foreground">
+            <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
               {description}
             </p>
           ) : null}

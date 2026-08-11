@@ -25,6 +25,9 @@
 *.pem
 /tmp
 /docs/*
+!/docs/design/
+/docs/design/*
+!/docs/design/typography.md
 !/docs/deployment/
 /docs/deployment/*
 !/docs/deployment/environments.md

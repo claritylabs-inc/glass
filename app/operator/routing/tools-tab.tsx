@@ -19,6 +19,7 @@ import {
   useOperatorGlobalToolSettingsCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 type WebRetrievalProviderId = "parallel" | "exa" | "model_default";
 type WebRetrieval = { primary: WebRetrievalProviderId };
@@ -155,11 +156,11 @@ function SearchProviderRow({
     <div className="grid gap-3 py-3.5 xl:grid-cols-[1fr_auto] xl:items-center">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-base font-medium text-foreground">
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>
             Web search
           </p>
           {webRetrieval.primary !== "parallel" ? (
-            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
+            <span className={`rounded-full bg-muted/55 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}>
               Override
             </span>
           ) : null}
@@ -181,7 +182,7 @@ function SearchProviderRow({
             <SelectValue>
               <span className="flex min-w-0 items-center gap-2">
                 <WebRetrievalLogo provider={webRetrieval.primary} size={15} />
-                <span className="truncate text-sm">
+                <span className={`truncate ${typeStyle("body.large")}`}>
                   {selectedProvider?.label ?? webRetrieval.primary}
                 </span>
               </span>
@@ -197,8 +198,8 @@ function SearchProviderRow({
                 >
                   <span className="flex min-w-0 flex-1 items-center gap-2">
                     <WebRetrievalLogo provider={provider.id} size={15} />
-                    <span className="truncate text-sm">{provider.label}</span>
-                    <span className="ml-auto shrink-0 text-label text-muted-foreground/60">
+                    <span className={`truncate ${typeStyle("body.large")}`}>{provider.label}</span>
+                    <span className={`ml-auto shrink-0 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                       {!provider.configured
                         ? "Unavailable"
                         : usesDedicatedSearchApi(provider.id)

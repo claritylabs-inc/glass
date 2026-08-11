@@ -34,6 +34,7 @@ import {
   useCachedQuery,
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 type ProviderId =
   | "openai"
@@ -230,7 +231,7 @@ export function ModelsSection() {
     <div className="space-y-4">
       <OperationalPanel>
         <div className="px-4 py-3 border-b border-foreground/6 flex items-center justify-between gap-3">
-          <h3 className="mb-0! text-base font-medium text-foreground">
+          <h3 className={`mb-0! text-foreground ${typeStyle("heading.micro")}`}>
             Provider keys
           </h3>
           {(() => {
@@ -285,10 +286,10 @@ export function ModelsSection() {
           if (rows.length === 0) {
             return (
               <div className="px-4 py-10 text-center">
-                <p className="text-base font-medium text-foreground">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
                   No provider keys
                 </p>
-                <p className="text-base text-muted-foreground/70 mt-1.5 max-w-sm mx-auto">
+                <p className={`text-muted-foreground/70 mt-1.5 max-w-sm mx-auto ${typeStyle("body.default")}`}>
                   Add an OpenAI or Anthropic key to use your own models.
                 </p>
               </div>
@@ -313,11 +314,11 @@ export function ModelsSection() {
                         className="shrink-0"
                       />
                       <div className="min-w-0 flex items-baseline gap-2">
-                        <p className="text-base font-medium text-foreground">
+                        <p className={`text-foreground ${typeStyle("body.medium")}`}>
                           {provider.label}
                         </p>
                         {keyState.configured ? (
-                          <p className="text-label text-muted-foreground/60">
+                          <p className={`text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                             ···{keyState.suffix}
                           </p>
                         ) : null}
@@ -347,7 +348,7 @@ export function ModelsSection() {
                         autoCorrect="off"
                         spellCheck={false}
                         disabled={saving}
-                        className="h-9 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50"
+                        className={`h-9 rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50 ${typeStyle("control.input")}`}
                       />
                     ) : (
                       <span />
@@ -382,14 +383,14 @@ export function ModelsSection() {
       {!visibleProviders.some(
         (p) => loadedSettings.providerKeys[p.id].configured,
       ) ? (
-        <OperationalPanel as="div" className="px-4 py-3 text-label text-muted-foreground/65">
+        <OperationalPanel as="div" className={`px-4 py-3 text-muted-foreground/65 ${typeStyle("caption.default")}`}>
           <div className="flex items-center justify-between gap-3">
             <span>
               Glass managed defaults are active for every workflow. Add a
               provider key to customize routing.
             </span>
             <span
-              className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-tag text-muted-foreground"
+              className={`inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
               title="Glass automatically picks the best model for every task. Add a provider key to override."
             >
               <LogoIcon size={12} static className="text-muted-foreground" />
@@ -444,14 +445,14 @@ export function ModelsSection() {
                       >
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-base font-medium text-foreground">
+                            <p className={`text-foreground ${typeStyle("body.medium")}`}>
                               {task.label}
                             </p>
-                            <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
+                            <span className={`rounded-full bg-muted/55 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}>
                               {route ? "Broker override" : "Glass default"}
                             </span>
                           </div>
-                          <p className="mt-0.5 text-label text-muted-foreground/60">
+                          <p className={`mt-0.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                             {task.description}
                           </p>
                         </div>
@@ -460,7 +461,7 @@ export function ModelsSection() {
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
                           ) : null}
                           {locked ? (
-                            <p className="text-label text-muted-foreground/60">
+                            <p className={`text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                               Add a provider key to customize
                             </p>
                           ) : (
@@ -477,7 +478,7 @@ export function ModelsSection() {
                                         provider={route.provider}
                                         size={14}
                                       />
-                                      <span className="text-base">
+                                      <span className={`${typeStyle("body.default")}`}>
                                         {route.model}
                                       </span>
                                     </span>

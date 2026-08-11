@@ -71,6 +71,7 @@ import {
   type OperatorBrokerRow,
   type OperatorClientRow,
 } from "../client-model";
+import { typeStyle } from "@/lib/typography";
 
 const CLIENT_TABS = [
   { id: "overview", label: "Overview" },
@@ -118,12 +119,12 @@ function Field({
 }) {
   return (
     <label className={className}>
-      <span className="mb-1.5 block text-label font-medium text-muted-foreground">
+      <span className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}>
         {label}
       </span>
       {children}
       {error ? (
-        <span className="mt-1.5 block text-label text-destructive">
+        <span className={`mt-1.5 block text-destructive ${typeStyle("caption.default")}`}>
           {error}
         </span>
       ) : null}
@@ -383,7 +384,7 @@ function ClientWorkspace({
                 />
                 <h1
                   id="client-identity-title"
-                  className="min-w-0 flex-1 truncate text-base font-medium text-foreground"
+                  className={`min-w-0 flex-1 truncate text-foreground ${typeStyle("heading.micro")}`}
                 >
                   {client.name}
                 </h1>

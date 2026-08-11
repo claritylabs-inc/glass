@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { typeStyle } from "@/lib/typography";
 
 export function EmptyStateCard({
   title,
@@ -25,9 +26,9 @@ export function EmptyStateCard({
       {icon ? (
         <div className="text-muted-foreground/60 mb-1">{icon}</div>
       ) : null}
-      <h3 className="text-base font-medium">{title}</h3>
+      <h3 className={`${typeStyle("heading.micro")}`}>{title}</h3>
       {description ? (
-        <p className="text-base text-muted-foreground max-w-md">
+        <p className={`text-muted-foreground max-w-md ${typeStyle("body.default")}`}>
           {description}
         </p>
       ) : null}

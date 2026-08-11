@@ -16,6 +16,7 @@ import {
   useCachedArchivedThreads,
 } from "@/lib/sync/glass-cached-queries";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 export default function ArchivePage() {
   const threads = useCachedArchivedThreads();
@@ -37,7 +38,7 @@ export default function ArchivePage() {
       <FadeIn when={true} duration={0.12}>
         {(threads ?? []).length === 0 && (
           <div className="text-center py-16">
-            <p className="text-base text-muted-foreground/40">
+            <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>
               No archived threads
             </p>
           </div>
@@ -63,10 +64,10 @@ export default function ArchivePage() {
                   href={`/agent/thread/${thread._id}`}
                   className="flex-1 min-w-0"
                 >
-                  <p className="text-base font-medium text-foreground truncate">
+                  <p className={`text-foreground truncate ${typeStyle("body.medium")}`}>
                     {thread.title}
                   </p>
-                  <p className="text-label text-muted-foreground/40">
+                  <p className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}>
                     {formatDisplayDateTime(
                       thread.lastMessageAt ?? thread._creationTime,
                     )}

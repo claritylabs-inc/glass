@@ -15,6 +15,7 @@ import { OperatorSidebar } from "../operator-sidebar";
 import { ModelsTab } from "./models-tab";
 import { RoutingTab, useRouterDashboard } from "./routing-tab";
 import { ToolsTab } from "./tools-tab";
+import { typeStyle } from "@/lib/typography";
 
 const ROUTING_PAGE_TABS = ["routing", "models", "tools"] as const;
 type RoutingPageTab = (typeof ROUTING_PAGE_TABS)[number];
@@ -65,7 +66,7 @@ export default function OperatorRoutingPage() {
         Refresh
       </PillButton>
     ) : activeTab === "models" && modelSettings?.updatedAt ? (
-      <span className="text-label text-muted-foreground">
+      <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
         Updated {formatDisplayDate(modelSettings.updatedAt)}
       </span>
     ) : undefined;

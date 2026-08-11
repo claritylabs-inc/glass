@@ -2,6 +2,7 @@
 
 import { memo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 export const ThreadMessageBubble = memo(function ThreadMessageBubble({
   role,
@@ -22,7 +23,7 @@ export const ThreadMessageBubble = memo(function ThreadMessageBubble({
         <div
           className={cn(
             "text-foreground",
-            channel === "imessage" ? "text-sm leading-5" : "text-base",
+            channel === "imessage" ? `${typeStyle("body.large")}` : `${typeStyle("body.default")}`,
           )}
         >
           {children}
@@ -46,7 +47,7 @@ export const ThreadMessageBubble = memo(function ThreadMessageBubble({
     <div
       className={cn(
         "rounded-lg px-3.5 py-2.5 text-foreground",
-        channel === "imessage" ? "text-sm leading-5" : "text-base",
+        channel === "imessage" ? `${typeStyle("body.large")}` : `${typeStyle("body.default")}`,
         channel === "email"
           ? [
               "border border-foreground/6",

@@ -16,6 +16,7 @@ import {
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { typeStyle } from "@/lib/typography";
 
 type AgentSettingsArgs = {
   chatEmailNotifications: boolean;
@@ -40,8 +41,8 @@ function AgentSwitchRow({
   return (
     <div className="flex items-center justify-between gap-4 py-3">
       <div>
-        <p className="text-base font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 max-w-md text-label text-muted-foreground/60">
+        <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
+        <p className={`mt-0.5 max-w-md text-muted-foreground/60 ${typeStyle("caption.default")}`}>
           {description}
         </p>
       </div>
@@ -170,7 +171,7 @@ export function BrokerAgentTab() {
         <OperationalPanelHeader title="Send delay" />
         <OperationalPanelBody className="px-5 py-5">
           <div>
-            <label className="text-label font-medium text-muted-foreground block mb-1.5">
+            <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
               Email send delay (seconds)
             </label>
             <div className="flex flex-wrap gap-2">
@@ -181,7 +182,7 @@ export function BrokerAgentTab() {
                     key={value}
                     type="button"
                     onClick={() => setEmailSendDelay(value)}
-                    className={`rounded-lg border px-3 py-1.5 text-base transition-colors ${
+                    className={`rounded-lg border px-3 py-1.5 transition-colors ${typeStyle("control.button")} ${
                       selected
                         ? "border-foreground/20 bg-foreground/3 text-foreground"
                         : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"
@@ -192,7 +193,7 @@ export function BrokerAgentTab() {
                 );
               })}
             </div>
-            <p className="text-label text-muted-foreground/60 mt-2">
+            <p className={`text-muted-foreground/60 mt-2 ${typeStyle("caption.default")}`}>
               Undo window before outgoing emails are sent.
             </p>
           </div>

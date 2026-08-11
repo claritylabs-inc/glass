@@ -18,6 +18,7 @@ import type {
   TeamInvitation,
   TeamMember,
 } from "@/components/settings/team-types";
+import { typeStyle } from "@/lib/typography";
 
 type TeamMembersListProps = {
   members: TeamMember[];
@@ -97,20 +98,20 @@ export function TeamMembersList({
             >
               <TableCell className="px-5 py-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-label font-medium text-foreground">
+                  <div className={`flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-foreground ${typeStyle("caption.medium")}`}>
                     {getMemberInitials(member)}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">
+                    <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                       {member.name || member.email}
                       {member.userId === viewerUserId ? (
-                        <span className="ml-1 text-label font-normal text-muted-foreground/50">
+                        <span className={`ml-1 text-muted-foreground/50 ${typeStyle("caption.default")}`}>
                           (you)
                         </span>
                       ) : null}
                     </p>
                     {member.title ? (
-                      <p className="truncate text-label text-muted-foreground">
+                      <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                         {member.title}
                       </p>
                     ) : null}
@@ -146,7 +147,7 @@ export function TeamMembersList({
           {pendingInvitations.map((invitation) => (
             <TableRow key={invitation._id} className="opacity-60">
               <TableCell className="px-5 py-3">
-                <p className="font-medium text-foreground">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
                   Pending invitation
                 </p>
               </TableCell>
@@ -156,7 +157,7 @@ export function TeamMembersList({
               <TableCell className="py-3 text-muted-foreground">-</TableCell>
               <TableCell className="px-5 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <Badge variant="outline" className="capitalize">
+                  <Badge variant="outline" className={`${typeStyle("label.tag")}`}>
                     {invitation.role}
                   </Badge>
                   <PillButton

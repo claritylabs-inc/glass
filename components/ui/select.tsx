@@ -5,6 +5,7 @@ import { Select as SelectPrimitive } from "@base-ui/react/select";
 
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react";
+import { typeStyle } from "@/lib/typography";
 
 const Select = SelectPrimitive.Root;
 
@@ -41,7 +42,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-foreground/8 bg-popover py-2 pr-2 pl-3 text-base whitespace-nowrap transition-colors outline-none select-none hover:border-foreground/14 focus-visible:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/8 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-1 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        `flex w-fit items-center justify-between gap-1.5 rounded-lg border border-foreground/8 bg-popover py-2 pr-2 pl-3 whitespace-nowrap transition-colors outline-none select-none hover:border-foreground/14 focus-visible:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/8 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-1 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 ${typeStyle("control.menu")}`,
         className,
       )}
       {...props}
@@ -105,7 +106,7 @@ function SelectLabel({
   return (
     <SelectPrimitive.GroupLabel
       data-slot="select-label"
-      className={cn("px-1.5 py-1 text-label text-muted-foreground", className)}
+      className={cn(`px-1.5 py-1 text-muted-foreground ${typeStyle("caption.default")}`, className)}
       {...props}
     />
   );
@@ -120,7 +121,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative my-0.5 flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-base outline-hidden select-none transition-colors focus:bg-foreground/[0.035] focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        `relative my-0.5 flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 outline-hidden select-none transition-colors focus:bg-foreground/[0.035] focus:text-foreground not-data-[variant=destructive]:focus:**:text-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2 ${typeStyle("control.menu")}`,
         className,
       )}
       {...props}

@@ -23,7 +23,7 @@ function stripEmptyTableRows(md: string): string {
 
 export function FormattedSectionContent({ content }: { content: string }) {
   return (
-    <ProseMarkdown gfm className="text-foreground/80 text-base leading-normal [&_h1]:text-base! [&_h2]:text-base! [&_h3]:text-base!">
+    <ProseMarkdown gfm className="text-foreground/80">
       {stripEmptyTableRows(content)}
     </ProseMarkdown>
   );

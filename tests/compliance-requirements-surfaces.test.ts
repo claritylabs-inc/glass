@@ -20,7 +20,7 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("SourceDrawer");
     expect(page).toContain("RequirementEditForm");
     expect(page).toContain("function latestCheckNote");
-    expect(page).toContain('text-base font-medium text-muted-foreground/60');
+    expect(page).toContain('text-muted-foreground/60 ${typeStyle("body.medium")}');
     expect(page).toContain("TabsTrigger value=\"sources\"");
     expect(page).toContain('TabsTrigger value="own_org">My requirements');
     expect(page).toContain('TabsTrigger value="vendors">Vendor requirements');

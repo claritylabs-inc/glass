@@ -11,6 +11,7 @@ import {
 } from "@/app/agent/thread/[id]/page";
 import { useClientDetailActions } from "../../layout";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 export default function ClientThreadReadOnlyPage() {
   const { clientOrgId, id } = useParams<{ clientOrgId: string; id: string }>();
@@ -70,7 +71,7 @@ export default function ClientThreadReadOnlyPage() {
   if (thread === null) {
     return (
       <div className="text-center py-16">
-        <p className="text-base text-muted-foreground/40">
+        <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>
           Thread not found
         </p>
       </div>
@@ -83,7 +84,7 @@ export default function ClientThreadReadOnlyPage() {
     <div className="max-w-2xl mx-auto space-y-4">
       {messages.length === 0 && (
         <div className="text-center py-16">
-          <p className="text-base text-muted-foreground/40">No messages</p>
+          <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>No messages</p>
         </div>
       )}
 

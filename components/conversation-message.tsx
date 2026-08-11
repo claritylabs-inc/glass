@@ -1,6 +1,7 @@
 "use client";
 
 import { ProseMarkdown, PROSE_MARKDOWN_COMPACT_STYLES } from "@/components/prose-markdown";
+import { typeStyle } from "@/lib/typography";
 
 /**
  * Split email body into the new content and the quoted reply.
@@ -65,7 +66,7 @@ export function QuotedContent({ text }: { text: string }) {
   }
 
   return (
-    <div className="text-base text-muted-foreground/50 mt-3 space-y-1">
+    <div className={`text-muted-foreground/50 mt-3 space-y-1 ${typeStyle("body.default")}`}>
       {blocks.map((block, i) => {
         const blockText = block.lines.join("\n").trim();
         if (!blockText) return null;

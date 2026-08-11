@@ -73,6 +73,7 @@ import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { formatDisplayDate } from "@/lib/date-format";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 type RequirementScope = "vendors" | "own_org";
 type ComplianceStatus = "met" | "not_met" | "expiring_soon" | "expired" | "unverified";
@@ -412,7 +413,7 @@ function PolicyTagList({
         <PolicyCitation key={policyId} id={policyId} />
       ))}
       {policyIds.length > 3 ? (
-        <Badge variant="outline" className="h-5 rounded-full px-1.5 text-tag text-muted-foreground">
+        <Badge variant="outline" className={`h-5 rounded-full px-1.5 text-muted-foreground ${typeStyle("label.tag")}`}>
           +{policyIds.length - 3}
         </Badge>
       ) : null}
@@ -423,8 +424,8 @@ function PolicyTagList({
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <OperationalPanel as="div" className="p-5">
-      <p className="text-base font-medium text-foreground">No coverage requirements yet</p>
-      <p className="mt-1 text-base text-muted-foreground">
+      <p className={`text-foreground ${typeStyle("body.medium")}`}>No coverage requirements yet</p>
+      <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
         Add coverage rules manually or extract them from a lease, client contract, or vendor
         requirement packet.
       </p>
@@ -501,7 +502,7 @@ function OverviewTab({
               className="cursor-pointer px-4 py-3"
             >
               <div className="flex min-w-0 items-start justify-between gap-3">
-                <p className="min-w-0 truncate text-base font-medium text-foreground">
+                <p className={`min-w-0 truncate text-foreground ${typeStyle("body.medium")}`}>
                   {lineDisplayLabel(lob)}
                 </p>
                 {groupAttention > 0 ? (
@@ -518,13 +519,13 @@ function OverviewTab({
                   </StatusTag>
                 )}
               </div>
-              <p className="mt-2 text-label text-muted-foreground">
+              <p className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}>
                 {groupMet} of {rows.length} requirements met
               </p>
               <div className="mt-3">
                 <ComplianceMeter met={groupMet} total={rows.length} />
               </div>
-              <div className="mt-1.5 flex items-center justify-between text-label text-muted-foreground">
+              <div className={`mt-1.5 flex items-center justify-between text-muted-foreground ${typeStyle("caption.default")}`}>
                 <span>{groupMet} met</span>
                 <span>{rows.length} total</span>
               </div>
@@ -572,13 +573,13 @@ function RequirementsTable({
                 className="cursor-pointer"
                 onClick={() => onSelect(requirement._id)}
               >
-                <TableCell className="px-4 font-medium text-foreground">
+                <TableCell className={`px-4 text-foreground ${typeStyle("body.medium")}`}>
                   {lineDisplayLabel(requirement.lineOfBusiness)}
                 </TableCell>
                 <TableCell className="max-w-64">
-                  <p className="truncate font-medium text-foreground">{requirement.title}</p>
+                  <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>{requirement.title}</p>
                   {requirement.clientRequirementSource?.clientOrg ? (
-                    <p className="truncate text-label text-muted-foreground">
+                    <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                       From {requirement.clientRequirementSource.clientOrg.name}
                     </p>
                   ) : null}
@@ -586,20 +587,20 @@ function RequirementsTable({
                 <TableCell className="max-w-80">
                   <p className="truncate text-foreground">{requirementSourcePrimary(requirement)}</p>
                   {sourceSecondary ? (
-                    <p className="truncate text-label text-muted-foreground">{sourceSecondary}</p>
+                    <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>{sourceSecondary}</p>
                   ) : null}
                 </TableCell>
-                <TableCell className="tabular-nums text-foreground">
+                <TableCell className={`text-foreground ${typeStyle("data.numeric")}`}>
                   {limits.length > 0
                     ? limits.map((limit, index) => (
-                        <p key={index} className="leading-5">{formatMoneyCompact(limit.amount)}</p>
+                        <p key={index} className={`${typeStyle("body.default")}`}>{formatMoneyCompact(limit.amount)}</p>
                       ))
                     : "—"}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {limits.length > 0
                     ? limits.map((limit, index) => (
-                        <p key={index} className="leading-5">{limitKindLabel(limit.kind)}</p>
+                        <p key={index} className={`${typeStyle("body.default")}`}>{limitKindLabel(limit.kind)}</p>
                       ))
                     : (requirement.provisions ?? []).length > 0
                       ? "Provisions"
@@ -643,7 +644,7 @@ function RequirementsFilterSelect({
   children: ReactNode;
 }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5 text-label font-medium text-muted-foreground">
+    <label className={`flex min-w-0 flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
       {label}
       <Select value={value} onValueChange={(next) => next && onValueChange(next)}>
         <SelectTrigger className="w-full">
@@ -657,7 +658,7 @@ function RequirementsFilterSelect({
 
 function DrawerDetail({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="grid grid-cols-[10rem_1fr] gap-3 text-base">
+    <div className={`grid grid-cols-[10rem_1fr] gap-3 ${typeStyle("body.default")}`}>
       <span className="text-muted-foreground">{label}</span>
       <div className="min-w-0 break-words text-foreground">{value}</div>
     </div>
@@ -732,7 +733,7 @@ function RequirementDrawer({
               {checking ? "Checking…" : "Run deeper check"}
             </PillButton>
           ) : deepCheckAvailableForRequirement && writeRestriction ? (
-            <p className="max-w-72 text-right text-label text-muted-foreground">
+            <p className={`max-w-72 text-right text-muted-foreground ${typeStyle("caption.default")}`}>
               {writeRestriction}
             </p>
           ) : null}
@@ -740,7 +741,7 @@ function RequirementDrawer({
       }
     >
       <div className="space-y-5">
-        <p className="text-base text-muted-foreground">{requirement.requirementText}</p>
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{requirement.requirementText}</p>
         <section className="space-y-2 border-t border-foreground/6 pt-5">
           {requirement.lineOfBusiness ? (
             <DrawerDetail label="Line" value={lineDisplayLabel(requirement.lineOfBusiness)} />
@@ -777,7 +778,7 @@ function RequirementDrawer({
         </section>
         {check ? (
           <section className="space-y-2 border-t border-foreground/6 pt-5">
-            <p className="text-base font-medium text-muted-foreground/60">
+            <p className={`text-muted-foreground/60 ${typeStyle("body.medium")}`}>
               Latest check
             </p>
             {policy || policyIds.length > 0 ? (
@@ -807,10 +808,10 @@ function RequirementDrawer({
                 ) : null}
               </>
             ) : (
-              <p className="text-base text-muted-foreground">No current policy match.</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>No current policy match.</p>
             )}
             {checkNote ? (
-              <p className="text-base text-muted-foreground">{checkNote}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{checkNote}</p>
             ) : null}
           </section>
         ) : null}
@@ -943,7 +944,7 @@ function RequirementEditForm({
 
   return (
     <div className="space-y-3">
-      <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+      <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
         Title
         <Input
           value={title}
@@ -957,7 +958,7 @@ function RequirementEditForm({
         />
         {!title.trim() ? <span className="text-destructive">Title is required.</span> : null}
       </label>
-      <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+      <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
         Line
         <Select
           value={lineOfBusiness}
@@ -999,10 +1000,10 @@ function RequirementEditForm({
         }
       >
         {editValues === "invalid_amount" ? (
-          <p className="text-label text-destructive">Enter a valid limit amount.</p>
+          <p className={`text-destructive ${typeStyle("caption.default")}`}>Enter a valid limit amount.</p>
         ) : null}
         {limitDrafts.length === 0 ? (
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             No explicit limits. Add one or rely on provisions.
           </p>
         ) : (
@@ -1091,7 +1092,7 @@ function RequirementEditForm({
           </PillButton>
         ))}
       </div>
-      <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+      <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
         Requirement
         <Textarea
           className="min-h-28 resize-y"
@@ -1211,7 +1212,7 @@ function SourceDrawer({
             {archiving ? "Archiving..." : "Archive source"}
           </PillButton>
         ) : writeRestriction ? (
-          <p className="max-w-72 text-right text-label text-muted-foreground">
+          <p className={`max-w-72 text-right text-muted-foreground ${typeStyle("caption.default")}`}>
             {writeRestriction}
           </p>
         ) : null
@@ -1222,7 +1223,7 @@ function SourceDrawer({
       ) : null}
       <div className="space-y-5">
         <section className="space-y-3">
-          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+          <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
             Name
             <Input
               value={titleDraft}
@@ -1238,7 +1239,7 @@ function SourceDrawer({
               <span className="text-destructive">Source name is required.</span>
             ) : null}
           </label>
-          <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+          <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
             Source type
             <Select
               value={sourceTypeDraft}
@@ -1280,7 +1281,7 @@ function SourceDrawer({
             <OperationalSkeletonList rows={3} />
           ) : requirements.length === 0 ? (
             <OperationalPanel as="div" className="p-4">
-              <p className="text-base text-muted-foreground">
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 No active requirements are attached to this source.
               </p>
             </OperationalPanel>
@@ -1307,10 +1308,10 @@ function SourceDrawer({
                         <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                       )}
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-base font-medium text-foreground">
+                        <span className={`block truncate text-foreground ${typeStyle("body.medium")}`}>
                           {requirement.title}
                         </span>
-                        <span className="block truncate text-label text-muted-foreground">
+                        <span className={`block truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                           {requirementDrawerSummary(requirement)}
                         </span>
                       </span>
@@ -1329,7 +1330,7 @@ function SourceDrawer({
                           label="Line"
                           value={lineDisplayLabel(requirement.lineOfBusiness)}
                         />
-                        <p className="text-base text-muted-foreground">
+                        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                           {requirement.requirementText}
                         </p>
                       </div>
@@ -1355,8 +1356,8 @@ function RequirementSourcesTable({
   if (sources.length === 0) {
     return (
       <OperationalPanel as="div" className="p-5">
-        <p className="text-base font-medium text-foreground">No requirement sources yet</p>
-        <p className="mt-1 text-base text-muted-foreground">
+        <p className={`text-foreground ${typeStyle("body.medium")}`}>No requirement sources yet</p>
+        <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
           Imported leases, client contracts, and vendor requirement packets will appear here.
         </p>
       </OperationalPanel>
@@ -1382,9 +1383,9 @@ function RequirementSourcesTable({
               onClick={() => onSelect(source._id)}
             >
               <TableCell className="max-w-72 px-4">
-                <p className="truncate font-medium text-foreground">{source.title}</p>
+                <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>{source.title}</p>
                 {source.fileName ? (
-                  <p className="mt-1 truncate text-label text-muted-foreground">
+                  <p className={`mt-1 truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                     {source.fileName}
                   </p>
                 ) : null}
@@ -1392,7 +1393,7 @@ function RequirementSourcesTable({
               <TableCell className="text-muted-foreground">
                 {REQUIREMENT_SOURCE_TYPE_LABELS[source.sourceType]}
               </TableCell>
-              <TableCell className="tabular-nums text-foreground">
+              <TableCell className={`text-foreground ${typeStyle("data.numeric")}`}>
                 {source.requirementCount}
               </TableCell>
               <TableCell className="px-4 text-muted-foreground">
@@ -1850,7 +1851,7 @@ export function CompliancePage() {
         </Tabs>
         {drawerMode === "bulk" ? (
           <>
-            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
               Source name
               <Input
                 value={sourceName}
@@ -1859,7 +1860,7 @@ export function CompliancePage() {
                 disabled={importing}
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
               Source type
               <Select value={sourceTypeValue} onValueChange={(value) => setSourceTypeValue(value as RequirementSourceDocumentType)}>
                 <SelectTrigger className="w-full">
@@ -1874,7 +1875,7 @@ export function CompliancePage() {
                 </SelectContent>
               </Select>
             </label>
-            <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <label className={`flex min-h-0 flex-1 flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
               Requirement text
               <Textarea className="min-h-0 flex-1 resize-none field-sizing-fixed" rows={12} value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="Paste insurance requirements or contract language." disabled={importing} />
             </label>
@@ -1891,7 +1892,7 @@ export function CompliancePage() {
             />
             {sourceFile ? (
               <OperationalPanel as="div" className="flex items-center justify-between gap-3 px-3 py-2">
-                <p className="min-w-0 truncate text-base font-medium text-foreground">{sourceFile.name}</p>
+                <p className={`min-w-0 truncate text-foreground ${typeStyle("body.medium")}`}>{sourceFile.name}</p>
                 <PillButton type="button" size="compact" variant="secondary" disabled={importing} onClick={() => setSourceFile(null)}>
                   Remove
                 </PillButton>
@@ -1900,11 +1901,11 @@ export function CompliancePage() {
           </>
         ) : (
           <form id="manual-compliance-requirement" onSubmit={submitRequirement} className="flex min-h-0 flex-1 flex-col gap-4">
-            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
               Title
               <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="General liability minimum" required />
             </label>
-            <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
               Line
               <Select value={lineOfBusiness} onValueChange={(value) => value && setLineOfBusiness(value)}>
                 <SelectTrigger className="w-full">
@@ -1918,7 +1919,7 @@ export function CompliancePage() {
               </Select>
             </label>
             <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
-              <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+              <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
                 Limit
                 <Select value={limitKind} onValueChange={(value) => setLimitKind(value as RequirementLimitKind)}>
                   <SelectTrigger className="w-full">
@@ -1931,7 +1932,7 @@ export function CompliancePage() {
                   </SelectContent>
                 </Select>
               </label>
-              <label className="flex flex-col gap-1.5 text-label font-medium text-muted-foreground">
+              <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
                 Amount
                 <Input value={limitAmount} onChange={(event) => setLimitAmount(event.target.value)} placeholder="$1,000,000" />
               </label>
@@ -1943,7 +1944,7 @@ export function CompliancePage() {
                 </PillButton>
               ))}
             </div>
-            <label className="flex min-h-0 flex-1 flex-col gap-1.5 text-label font-medium text-muted-foreground">
+            <label className={`flex min-h-0 flex-1 flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
               Requirement
               <Textarea className="min-h-0 flex-1 resize-none field-sizing-fixed" rows={8} value={requirementText} onChange={(event) => setRequirementText(event.target.value)} placeholder="Describe the coverage requirement in plain language." required />
             </label>
@@ -1997,10 +1998,10 @@ export function CompliancePage() {
           <OperationalPanel as="div" className="flex items-start gap-3 px-4 py-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div>
-              <p className="text-base font-medium text-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 Compliance is read-only
               </p>
-              <p className="text-base text-muted-foreground">
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 {complianceWriteRestriction}
               </p>
             </div>

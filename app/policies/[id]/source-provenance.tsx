@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf, type PdfHighlightBox } from "@/components/pdf-context";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 export type SourceSpanDoc = {
   spanId: string;
@@ -226,7 +227,7 @@ export function SourceEvidenceButton({
           pdf.navigateToPage(page);
         }
       }}
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-tag font-medium transition-colors ${
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition-colors ${typeStyle("label.tag")} ${
         hasExactHighlight
           ? "border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300 hover:bg-sky-100 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-300"
           : "border-foreground/10 bg-background text-muted-foreground hover:border-foreground/20 hover:bg-foreground/4"

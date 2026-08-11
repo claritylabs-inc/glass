@@ -24,6 +24,7 @@ import {
 import { StatusTag } from "@/components/ui/status-tag";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 type SlackChannel = {
   id: string;
@@ -177,7 +178,7 @@ export function SlackConnectionFields({
         <div className="space-y-1.5">
           <label
             htmlFor="slack-channel-picker"
-            className="text-label text-muted-foreground"
+            className={`text-muted-foreground ${typeStyle("label.field")}`}
           >
             Channels
           </label>
@@ -188,7 +189,7 @@ export function SlackConnectionFields({
                 <button
                   id="slack-channel-picker"
                   type="button"
-                  className="flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-foreground/8 bg-popover px-3 text-left text-base text-foreground outline-none transition-colors hover:border-foreground/14 focus-visible:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/8 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-foreground/8 bg-popover px-3 text-left text-foreground outline-none transition-colors hover:border-foreground/14 focus-visible:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/8 disabled:cursor-not-allowed disabled:opacity-50 ${typeStyle("control.button")}`}
                 >
                   <span className="truncate">{selectedLabel}</span>
                   {changingChannelId ? (
@@ -223,7 +224,7 @@ export function SlackConnectionFields({
             </DropdownMenuContent>
           </DropdownMenu>
           {loadError ? (
-            <p className="text-label text-destructive">
+            <p className={`text-destructive ${typeStyle("caption.default")}`}>
               Channels could not be loaded. Refresh and try again.
             </p>
           ) : null}
@@ -231,7 +232,7 @@ export function SlackConnectionFields({
       ) : null}
 
       <div className="space-y-1.5">
-        <p className="text-label text-muted-foreground">Active channels</p>
+        <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Active channels</p>
         {joinedChannels.length > 0 ? (
           <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6 bg-popover px-3">
             {joinedChannels.map((channel) => (
@@ -239,7 +240,7 @@ export function SlackConnectionFields({
                 key={channel.id}
                 className="flex items-center justify-between gap-3 py-2.5"
               >
-                <p className="min-w-0 truncate text-base text-foreground">
+                <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
                   #{channel.name}
                 </p>
                 <div className="flex shrink-0 items-center gap-2">
@@ -269,7 +270,7 @@ export function SlackConnectionFields({
             ))}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-foreground/10 px-3 py-4 text-base text-muted-foreground">
+          <div className={`rounded-lg border border-dashed border-foreground/10 px-3 py-4 text-muted-foreground ${typeStyle("body.default")}`}>
             No active channels.
           </div>
         )}
@@ -280,7 +281,7 @@ export function SlackConnectionFields({
           <div className="flex items-center justify-between gap-3">
             <label
               htmlFor="slack-channel-name"
-              className="text-label text-muted-foreground"
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
             >
               Default channel
             </label>
@@ -314,7 +315,7 @@ export function SlackConnectionFields({
       ) : null}
 
       {canEdit ? (
-        <p className="text-label text-muted-foreground">
+        <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
           Add or remove private and Slack Connect channels in Slack.
         </p>
       ) : null}

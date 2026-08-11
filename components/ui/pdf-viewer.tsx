@@ -16,6 +16,7 @@ import {
   Download,
 } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import { typeStyle } from "@/lib/typography";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
@@ -450,9 +451,9 @@ export function PdfViewer({
             type="text"
             value={pageInput}
             onChange={(e) => setPageInput(e.target.value)}
-            className="w-9 text-center text-label border border-foreground/8 rounded px-1 py-0.5 bg-popover focus:outline-none focus:border-foreground/20"
+            className={`w-9 text-center border border-foreground/8 rounded px-1 py-0.5 bg-popover focus:outline-none focus:border-foreground/20 ${typeStyle("control.input")}`}
           />
-          <span className="text-label text-muted-foreground/40">
+          <span className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}>
             / {numPages || "—"}
           </span>
         </form>
@@ -468,7 +469,7 @@ export function PdfViewer({
         >
           <ZoomOut className="w-3.5 h-3.5" />
         </PillButton>
-        <span className="text-label text-muted-foreground/40 w-10 text-center tabular-nums">
+        <span className={`text-muted-foreground/40 w-10 text-center ${typeStyle("data.numeric")}`}>
           {Math.round(scale * 100)}%
         </span>
         <PillButton
@@ -508,13 +509,13 @@ export function PdfViewer({
         {error ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
             <AlertTriangle className="w-8 h-8 text-red-400" />
-            <p className="text-base">{error}</p>
+            <p className={`${typeStyle("body.default")}`}>{error}</p>
             <button
               type="button"
               onClick={() => {
                 setError(null);
               }}
-              className="text-label text-blue-600 hover:underline"
+              className={`text-blue-600 hover:underline ${typeStyle("control.buttonCompact")}`}
             >
               Retry
             </button>

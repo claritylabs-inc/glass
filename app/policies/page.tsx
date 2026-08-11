@@ -25,6 +25,7 @@ import {
   showPolicyExtractionReadyToast,
 } from "@/components/shared/extraction-banner";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
+import { typeStyle } from "@/lib/typography";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -306,7 +307,7 @@ export default function PoliciesPage() {
         {isLoading ? (
           <div className="min-h-32" aria-hidden="true" />
         ) : list.length === 0 && showArchived ? (
-          <div className="py-16 text-center text-base text-muted-foreground/50">
+          <div className={`py-16 text-center text-muted-foreground/50 ${typeStyle("body.default")}`}>
             No archived policies
           </div>
         ) : list.length === 0 ? (

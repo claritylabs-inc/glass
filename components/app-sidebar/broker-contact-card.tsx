@@ -14,6 +14,7 @@ import {
 } from "@/lib/imessage-config";
 import { AGENT_DOMAIN } from "./nav-config";
 import type { BrokerContact } from "./types";
+import { typeStyle } from "@/lib/typography";
 
 export function SidebarBrokerContact({
   broker,
@@ -76,19 +77,19 @@ export function SidebarBrokerContact({
               className="h-full w-full rounded-[inherit]"
             />
           ) : (
-            <span className="text-base font-semibold text-white">
+            <span className={`text-white ${typeStyle("body.strong")}`}>
               {initial}
             </span>
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-base font-medium text-foreground truncate">
+          <p className={`text-foreground truncate ${typeStyle("body.medium")}`}>
             {name}
           </p>
           {agentEmail ? (
             <a
               href={`mailto:${agentEmail}`}
-              className="block text-label text-muted-foreground hover:text-foreground truncate"
+              className={`block text-muted-foreground hover:text-foreground truncate ${typeStyle("caption.default")}`}
               title={broker ? "Partner assistant" : "Glass assistant"}
             >
               {agentEmail}

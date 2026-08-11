@@ -17,6 +17,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { typeStyle } from "@/lib/typography";
 
 type BrokerProfile = {
   name: string;
@@ -145,7 +146,7 @@ export function BrokerAuthEntryPage({
           {step === "email" ? (
             <form onSubmit={handleEmailSubmit} className="space-y-4">
               <div>
-                <label className="text-label font-medium text-muted-foreground block mb-1.5">
+                <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
                   Email Address
                 </label>
                 <input
@@ -155,14 +156,14 @@ export function BrokerAuthEntryPage({
                   placeholder="you@company.com"
                   required
                   autoFocus
-                  className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
                 />
               </div>
-              {error && <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>}
+              {error && <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>}
               <PillButton
                 type="submit"
                 disabled={loading || !email}
-                className="w-full justify-center text-base shadow-none sm:w-auto"
+                className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
                 style={
                   whiteLabelingEnabled && broker.brandingColor
                     ? { backgroundColor: broker.brandingColor, borderColor: broker.brandingColor }
@@ -177,21 +178,21 @@ export function BrokerAuthEntryPage({
           ) : (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
-                <label className="text-label font-medium text-muted-foreground block mb-2">
+                <label className={`text-muted-foreground block mb-2 ${typeStyle("label.field")}`}>
                   Verification Code
                 </label>
                 <OtpField value={code} onValueChange={setCode} autoFocus required />
-                <p className="mt-2 text-base text-muted-foreground">
+                <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
                   We sent a 6-digit code to{" "}
-                  <span className="font-medium text-foreground">{email}</span>
+                  <span className={`text-foreground ${typeStyle("body.medium")}`}>{email}</span>
                 </p>
               </div>
-              {error && <p className="px-1 py-1 text-base text-muted-foreground">{error}</p>}
+              {error && <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>}
               <div className="flex flex-col items-start gap-5 pt-6">
                 <PillButton
                   type="submit"
                   disabled={loading || code.length < 6}
-                  className="w-full justify-center text-base shadow-none sm:w-auto"
+                  className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
                   style={
                     whiteLabelingEnabled && broker.brandingColor
                       ? { backgroundColor: broker.brandingColor, borderColor: broker.brandingColor }
@@ -209,7 +210,7 @@ export function BrokerAuthEntryPage({
                     setCode("");
                     setError("");
                   }}
-                  className="self-center text-base text-muted-foreground transition-colors hover:text-foreground sm:self-start"
+                  className={`self-center text-muted-foreground transition-colors hover:text-foreground sm:self-start ${typeStyle("control.button")}`}
                 >
                   Use a different email
                 </button>

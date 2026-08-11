@@ -10,9 +10,10 @@ import {
   PolicyUploadModeToggle,
   type PolicyUploadMode,
 } from "@/components/policy-upload-mode-toggle";
+import { typeStyle } from "@/lib/typography";
 
 const LABEL_CLASSES =
-  "text-label font-medium text-muted-foreground block mb-1.5";
+  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 interface PolicyUploadDrawerProps {
   open: boolean;
@@ -127,15 +128,15 @@ export function PolicyUploadDrawer({
           <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/4 text-muted-foreground mb-3">
             <FileUp className="h-4 w-4" />
           </div>
-          <p className="text-base font-semibold text-foreground">
+          <p className={`text-foreground ${typeStyle("body.strong")}`}>
             Drag and drop policy PDFs
           </p>
-          <p className="text-base text-muted-foreground mt-1">
+          <p className={`text-muted-foreground mt-1 ${typeStyle("body.default")}`}>
             {files.length > 0
               ? "or click to add more files"
               : "or click to choose files"}
           </p>
-          <p className="text-label text-muted-foreground/60 mt-3">
+          <p className={`text-muted-foreground/60 mt-3 ${typeStyle("caption.default")}`}>
             {uploadMode === "separate"
               ? "Multiple PDFs will create separate policies."
               : "Multiple PDFs will be combined into a single policy."}
@@ -174,7 +175,7 @@ export function PolicyUploadDrawer({
                   className="flex items-center gap-2 border-foreground/4 px-3 py-2"
                 >
                   <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-base truncate flex-1">
+                  <span className={`truncate flex-1 ${typeStyle("body.default")}`}>
                     {file.name}
                   </span>
                   <button

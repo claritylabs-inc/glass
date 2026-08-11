@@ -7,6 +7,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
 import { StatusTag } from "@/components/ui/status-tag";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 const ClientDetailActionsContext = createContext<{
   setActions: (node: ReactNode) => void;
@@ -67,7 +68,7 @@ export default function ClientDetailLayout({
             </span>
             {breadcrumbExtra ? (
               <>
-                <span className="text-muted-foreground/30 text-base">/</span>
+                <span className={`text-muted-foreground/30 ${typeStyle("body.default")}`}>/</span>
                 <span className="truncate">{breadcrumbExtra}</span>
               </>
             ) : null}

@@ -2,6 +2,7 @@
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 export type PolicyUploadMode = "combined" | "separate";
 
@@ -20,7 +21,7 @@ export function PolicyUploadModeToggle({
 }: PolicyUploadModeToggleProps) {
   return (
     <div className={cn("flex items-center justify-between gap-3", className)}>
-      <div className="text-label font-medium text-muted-foreground">
+      <div className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
         Import as
       </div>
       <Tabs

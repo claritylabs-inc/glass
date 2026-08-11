@@ -38,6 +38,7 @@ import {
   usePolicySourceSpans,
   type SourceSpanDoc,
 } from "./source-provenance";
+import { typeStyle } from "@/lib/typography";
 
 // ─── Internal types for policy document data ──────────────────────────────────
 
@@ -312,7 +313,7 @@ function PageRef({ page }: { page: number }) {
 
   if (!pdf.fileUrl) {
     return (
-      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-label font-medium bg-foreground/5 text-muted-foreground/60">
+      <span className={`ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded bg-foreground/5 text-muted-foreground/60 ${typeStyle("caption.medium")}`}>
         p.{page}
       </span>
     );
@@ -333,7 +334,7 @@ function PageRef({ page }: { page: number }) {
           pdf.navigateToPage(page);
         }
       }}
-      className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-label font-medium bg-foreground/5 text-muted-foreground/60 hover:bg-blue-100 hover:text-blue-600 transition-colors"
+      className={`ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded bg-foreground/5 text-muted-foreground/60 hover:bg-blue-100 hover:text-blue-600 transition-colors ${typeStyle("caption.medium")}`}
     >
       p.{page}
     </span>
@@ -342,7 +343,7 @@ function PageRef({ page }: { page: number }) {
 
 function DocContent({ children }: { children: string }) {
   return (
-    <ProseMarkdown gfm className="text-foreground !text-base !leading-relaxed">
+    <ProseMarkdown gfm className={`text-foreground ${typeStyle("body.default")}`}>
       {children}
     </ProseMarkdown>
   );
@@ -826,7 +827,7 @@ function CoveredReasonDetailSection({
 
   return (
     <div className="border-t border-foreground/4 px-5 pt-3 sm:pl-[2.625rem] sm:pr-5">
-      <p className="mb-2 text-label font-medium text-muted-foreground">{title}</p>
+      <p className={`mb-2 text-muted-foreground ${typeStyle("caption.medium")}`}>{title}</p>
       {shouldUseTable ? (
         <div className="overflow-hidden rounded-md border border-foreground/6">
           <KeyValueTable
@@ -836,7 +837,7 @@ function CoveredReasonDetailSection({
           />
         </div>
       ) : (
-        <div className="space-y-1.5 text-base leading-relaxed text-foreground">
+        <div className={`space-y-1.5 text-foreground ${typeStyle("body.default")}`}>
           {items.map((item, i) => (
             <p key={`${title}-${i}`}>{item}</p>
           ))}
@@ -957,11 +958,11 @@ function StructuredItemsCard<T>({
                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   )
                 ) : null}
-                <span className="text-base font-normal text-foreground flex-1 min-w-0 truncate">
+                <span className={`text-foreground flex-1 min-w-0 truncate ${typeStyle("body.default")}`}>
                   {getTitle(item)}
                 </span>
                 {trailing ? (
-                  <span className="shrink-0 text-base font-normal tabular-nums text-foreground">
+                  <span className={`shrink-0 text-foreground ${typeStyle("data.numeric")}`}>
                     {trailing}
                   </span>
                 ) : null}
@@ -970,7 +971,7 @@ function StructuredItemsCard<T>({
                     {badges.map((badge) => (
                       <span
                         key={badge.label}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium ${badge.className}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full ${typeStyle("label.tag")} ${badge.className}`}
                       >
                         {badge.label}
                       </span>
@@ -995,7 +996,7 @@ function StructuredItemsCard<T>({
                     {badges.map((badge) => (
                       <span
                         key={badge.label}
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium ${badge.className}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full ${typeStyle("label.tag")} ${badge.className}`}
                       >
                         {badge.label}
                       </span>
@@ -1032,21 +1033,21 @@ function ContactCard({
     <div className="border-t border-foreground/4 first:border-t-0 px-4 py-3">
       <div className="flex items-center gap-2">
         {contact.name && (
-          <p className="text-base font-medium text-foreground">{contact.name}</p>
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>{contact.name}</p>
         )}
         {showType && contact.type && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-tag font-medium bg-foreground/5 text-muted-foreground">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full bg-foreground/5 text-muted-foreground ${typeStyle("label.tag")}`}>
             {contact.type}
           </span>
         )}
       </div>
       {contact.title && (
-        <p className="text-base text-muted-foreground mt-0.5">{contact.title}</p>
+        <p className={`text-muted-foreground mt-0.5 ${typeStyle("body.default")}`}>{contact.title}</p>
       )}
       {fields.length > 0 && (
         <div className="flex flex-wrap gap-x-5 gap-y-0.5 mt-1">
           {fields.map((f) => (
-            <p key={f.label} className="text-base text-foreground">
+            <p key={f.label} className={`text-foreground ${typeStyle("body.default")}`}>
               <span className="text-muted-foreground">{f.label}:</span>{" "}
               {f.value}
             </p>
@@ -1054,7 +1055,7 @@ function ContactCard({
         </div>
       )}
       {contact.address && (
-        <p className="text-base text-muted-foreground mt-1">{contact.address}</p>
+        <p className={`text-muted-foreground mt-1 ${typeStyle("body.default")}`}>{contact.address}</p>
       )}
     </div>
   );
@@ -1089,12 +1090,12 @@ function SupplementaryCard({
         <>
           <div className="px-5 py-3">{children}</div>
           <details className="group/raw border-t border-foreground/4">
-            <summary className="flex items-center gap-2 px-5 py-2.5 text-label text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none">
+            <summary className={`flex items-center gap-2 px-5 py-2.5 text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none ${typeStyle("control.tab")}`}>
               <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
               View raw text
             </summary>
             <div className="px-5 pt-1 pb-3">
-              <p className="whitespace-pre-wrap break-words text-base text-muted-foreground leading-relaxed [overflow-wrap:anywhere]">
+              <p className={`whitespace-pre-wrap break-words text-muted-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
                 {content}
               </p>
             </div>
@@ -1102,7 +1103,7 @@ function SupplementaryCard({
         </>
       ) : (
         <div className="px-5 py-3">
-          <p className="whitespace-pre-wrap break-words text-base text-foreground leading-relaxed [overflow-wrap:anywhere]">
+          <p className={`whitespace-pre-wrap break-words text-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
             {content}
           </p>
         </div>
@@ -1124,10 +1125,10 @@ function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
         <div className="flex flex-col sm:flex-row sm:divide-x divide-foreground/6 border-b border-foreground/4">
           {gridItems.map((item) => (
             <div key={item.label} className="flex-1 px-4 py-2.5">
-              <p className="text-label font-semibold text-muted-foreground mb-0.5">
+              <p className={`text-muted-foreground mb-0.5 ${typeStyle("caption.medium")}`}>
                 {item.label}
               </p>
-              <p className="text-base text-foreground font-medium">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 {item.value}
               </p>
             </div>
@@ -1142,10 +1143,10 @@ function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
                 key={i}
                 className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
               >
-                <td className="px-4 py-2.5 text-base text-muted-foreground align-top">
+                <td className={`px-4 py-2.5 text-muted-foreground align-top ${typeStyle("body.default")}`}>
                   {d.label}
                 </td>
-                <td className="px-4 py-2.5 text-base text-foreground font-medium">
+                <td className={`px-4 py-2.5 text-foreground ${typeStyle("body.medium")}`}>
                   {d.value}
                 </td>
               </tr>
@@ -1184,13 +1185,13 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
       )}
       {(data.processSteps?.length ?? 0) > 0 && (
         <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-label font-semibold text-muted-foreground mb-2">
+          <p className={`text-muted-foreground mb-2 ${typeStyle("caption.medium")}`}>
             Claims Process
           </p>
           <ol className="space-y-1.5">
             {(data.processSteps ?? []).map((step: string, i: number) => (
-              <li key={i} className="flex gap-2.5 text-base text-foreground">
-                <span className="text-muted-foreground/60 text-label mt-px shrink-0">
+              <li key={i} className={`flex gap-2.5 text-foreground ${typeStyle("body.default")}`}>
+                <span className={`text-muted-foreground/60 mt-px shrink-0 ${typeStyle("caption.default")}`}>
                   {i + 1}.
                 </span>
                 {step}
@@ -1201,10 +1202,10 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
       )}
       {data.reportingTimeLimit && (
         <div className="border-t border-foreground/4 px-4 py-3">
-          <p className="text-label font-semibold text-muted-foreground mb-1">
+          <p className={`text-muted-foreground mb-1 ${typeStyle("caption.medium")}`}>
             Reporting Time Limit
           </p>
-          <p className="text-base text-foreground font-medium">
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>
             {data.reportingTimeLimit}
           </p>
         </div>
@@ -1238,17 +1239,18 @@ function KeyValueTable({
             className="block border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors sm:table-row"
           >
             <td
-              className={`block px-5 pt-3 pb-1 text-label font-medium text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 sm:text-base sm:font-normal ${labelCellClassName}`}
+              className={`block px-5 pt-3 pb-1 text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 ${labelCellClassName}`}
             >
-              <span>{row.label}</span>
+              <span className={`sm:hidden ${typeStyle("caption.medium")}`}>{row.label}</span>
+              <span className={`hidden sm:inline ${typeStyle("body.default")}`}>{row.label}</span>
               {row.section && (
-                <span className="block text-label text-muted-foreground/60 mt-0.5">
+                <span className={`block text-muted-foreground/60 mt-0.5 ${typeStyle("caption.default")}`}>
                   {row.section}
                 </span>
               )}
             </td>
             <td
-              className={`block px-5 pt-0 pb-3 text-base text-foreground font-normal sm:table-cell sm:py-2.5 ${valueCellClassName}`}
+              className={`block px-5 pt-0 pb-3 text-foreground sm:table-cell sm:py-2.5 ${typeStyle("body.default")} ${valueCellClassName}`}
             >
               <span className="inline-flex items-center gap-1.5 break-words">
                 <span>{row.value}</span>
@@ -1892,7 +1894,7 @@ function SourceTableTextRows({
     <div className="space-y-1 px-5 py-2.5">
       {rows.map((row) => (
         <div key={row.row.id} className="flex min-w-0 items-start gap-3">
-          <p className="min-w-0 flex-1 text-base leading-5 text-foreground">
+          <p className={`min-w-0 flex-1 text-foreground ${typeStyle("body.default")}`}>
             {tableRowText(row)}
           </p>
           <SourceEvidenceButton
@@ -1964,7 +1966,7 @@ function SourceTableGrid({
     : [];
   return (
     <UiTable
-      className={`${fitToCard ? "w-full table-fixed" : "w-max min-w-full"} text-base [&_td]:whitespace-normal [&_th]:whitespace-normal`}
+      className={`${fitToCard ? "w-full table-fixed" : "w-max min-w-full"} [&_td]:whitespace-normal [&_th]:whitespace-normal ${typeStyle("body.default")}`}
       style={fitToCard ? undefined : { minWidth: `${Math.max(34, maxColumnCount * 12 + 7)}rem` }}
     >
       {fitToCard ? (
@@ -1981,12 +1983,12 @@ function SourceTableGrid({
             {Array.from({ length: maxColumnCount }, (_, index) => (
               <TableHead
                 key={`head-${index}`}
-                className="h-8 bg-muted/30 px-3 text-label text-muted-foreground"
+                className={`h-8 bg-muted/30 px-3 text-muted-foreground ${typeStyle("label.table")}`}
               >
                 {headerCells[index] ?? ""}
               </TableHead>
             ))}
-            <TableHead className="h-8 w-px bg-muted/30 px-3 text-label text-muted-foreground">
+            <TableHead className={`h-8 w-px bg-muted/30 px-3 text-muted-foreground ${typeStyle("label.table")}`}>
               Source
             </TableHead>
           </TableRow>
@@ -2062,10 +2064,10 @@ function SourceNodeTable({
     <div className="overflow-hidden rounded-md border border-foreground/6 bg-card">
       {title ? (
         <div className="flex min-w-0 items-center gap-2 px-4 py-2.5">
-          <p className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
+          <p className={`min-w-0 flex-1 truncate text-foreground ${typeStyle("body.medium")}`}>
             {title}
           </p>
-          <span className="text-label text-muted-foreground">Table</span>
+          <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>Table</span>
         </div>
       ) : null}
       <div className={title ? "border-t border-foreground/6" : undefined}>
@@ -2181,7 +2183,7 @@ function SourceTextParagraphs({
           : normalizedNodeText(node);
         return (
           <div key={node.id} className="flex min-w-0 items-start gap-3 py-0.5">
-            <p className="min-w-0 flex-1 text-base leading-5 text-foreground">
+            <p className={`min-w-0 flex-1 text-foreground ${typeStyle("body.default")}`}>
               {text}
             </p>
             <SourceEvidenceButton
@@ -2346,10 +2348,10 @@ function OutlineNodeRow({
             <span className="size-3.5 shrink-0" />
           )}
           <div className="min-w-0 flex-1">
-            <p className="min-w-0 truncate text-base font-medium text-foreground">
+            <p className={`min-w-0 truncate text-foreground ${typeStyle("body.medium")}`}>
               {nodeDisplayTitle(node)}
             </p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-muted-foreground">
+            <div className={`mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground ${typeStyle("caption.default")}`}>
               <span>{nodeKindLabel(node)}</span>
               {node.formNumber ? <span>{node.formNumber}</span> : null}
             </div>
@@ -2469,12 +2471,12 @@ function SourceBackedBreakdown({
         <OperationalPanelHeader title="Source hierarchy" />
         <div>
           {loadingSourceNodes ? (
-            <p className="px-5 py-4 text-label text-muted-foreground">
+            <p className={`px-5 py-4 text-muted-foreground ${typeStyle("caption.default")}`}>
               Loading source hierarchy...
             </p>
           ) : null}
           {!loadingSourceNodes && renderableOutline.length === 0 ? (
-            <p className="px-5 py-4 text-label text-muted-foreground">
+            <p className={`px-5 py-4 text-muted-foreground ${typeStyle("caption.default")}`}>
               Source hierarchy is unavailable for this policy.
             </p>
           ) : null}
@@ -2501,8 +2503,8 @@ function SourceNativeBreakdownUnavailable() {
       <div className="flex gap-2">
         <AlertCircle className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0">
-          <p className="text-base font-medium">Source document outline unavailable</p>
-          <p className="mt-1 text-label leading-5 opacity-80">
+          <p className={`${typeStyle("body.medium")}`}>Source document outline unavailable</p>
+          <p className={`mt-1 opacity-80 ${typeStyle("caption.default")}`}>
             This policy does not have the top-level document outline generated by
             the current extraction pipeline. Re-extract it from the original PDF
             to see the source-order breakdown. The legacy extracted fields below
@@ -2538,7 +2540,7 @@ export function GroupSection({
         ) : (
           <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
         )}
-        <span className="text-base font-medium text-foreground flex-1">
+        <span className={`text-foreground flex-1 ${typeStyle("body.medium")}`}>
           {label}
         </span>
       </button>
@@ -3003,13 +3005,13 @@ export function ExtractionCards({
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-foreground/[0.02]">
-                    <th className="px-4 py-2.5 text-label font-semibold text-muted-foreground">
+                    <th className={`px-4 py-2.5 text-muted-foreground ${typeStyle("label.table")}`}>
                       Name
                     </th>
-                    <th className="px-4 py-2.5 text-label font-semibold text-muted-foreground text-right">
+                    <th className={`px-4 py-2.5 text-muted-foreground text-right ${typeStyle("label.table")}`}>
                       Amount
                     </th>
-                    <th className="hidden sm:table-cell px-4 py-2.5 text-label font-semibold text-muted-foreground">
+                    <th className={`hidden sm:table-cell px-4 py-2.5 text-muted-foreground ${typeStyle("label.table")}`}>
                       Type
                     </th>
                   </tr>
@@ -3020,13 +3022,13 @@ export function ExtractionCards({
                       key={i}
                       className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
                     >
-                      <td className="px-4 py-2.5 text-base text-foreground font-medium">
+                      <td className={`px-4 py-2.5 text-foreground ${typeStyle("body.medium")}`}>
                         {String(f.name ?? "—")}
                       </td>
-                      <td className="px-4 py-2.5 text-base font-medium text-foreground text-right">
+                      <td className={`px-4 py-2.5 text-foreground text-right ${typeStyle("body.medium")}`}>
                         {String(f.amount ?? "—")}
                       </td>
-                      <td className="hidden sm:table-cell px-4 py-2.5 text-base text-muted-foreground">
+                      <td className={`hidden sm:table-cell px-4 py-2.5 text-muted-foreground ${typeStyle("body.default")}`}>
                         {String(f.type ?? "—")}
                       </td>
                     </tr>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { BrandIcon } from "@/components/ui/brand-icon";
+import { typeStyle } from "@/lib/typography";
 
 export function SidebarHeader({
   collapsed,
@@ -36,7 +37,7 @@ export function SidebarHeader({
       {!collapsed && backHref ? (
         <Link
           href={backHref}
-          className="flex items-center gap-1.5 text-base text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0"
+          className={`flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors flex-1 min-w-0 ${typeStyle("control.button")}`}
         >
           <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
           <span>Back</span>
@@ -46,7 +47,7 @@ export function SidebarHeader({
       {!collapsed && !backHref ? (
         <>
           <div
-            className={`ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden text-label font-medium ${iconContainerClass}`}
+            className={`ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden ${typeStyle("caption.medium")} ${iconContainerClass}`}
           >
             {headerOrgIcon ? (
               <BrandIcon
@@ -71,7 +72,7 @@ export function SidebarHeader({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-base font-medium text-foreground truncate">
+            <p className={`text-foreground truncate ${typeStyle("body.medium")}`}>
               {headerOrgName}
             </p>
           </div>

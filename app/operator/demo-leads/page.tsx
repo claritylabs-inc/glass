@@ -20,6 +20,7 @@ import {
   useCachedOperatorDemoSalesTranscripts,
 } from "@/lib/sync/operator-cached-queries";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type TranscriptRow = {
   _id: string;
@@ -75,7 +76,7 @@ function drawerTitle(row?: TranscriptRow) {
       <span className="min-w-0">
         <span className="block truncate">{primary}</span>
         {secondary ? (
-          <span className="block truncate text-label font-normal text-muted-foreground/40">
+          <span className={`block truncate text-muted-foreground/40 ${typeStyle("caption.default")}`}>
             {secondary}
           </span>
         ) : null}
@@ -93,7 +94,7 @@ function Timeline({
 }) {
   const messages = logs?.filter((log) => log.direction !== "system") ?? [];
   if (!messages.length) {
-    return <p className="text-base text-muted-foreground">No turns recorded.</p>;
+    return <p className={`text-muted-foreground ${typeStyle("body.default")}`}>No turns recorded.</p>;
   }
 
   return (
@@ -112,11 +113,11 @@ function Timeline({
             <div
               className={`mb-1 flex items-center gap-2 ${isInbound ? "justify-end" : ""}`}
             >
-              <span className="text-label font-medium text-muted-foreground/50">
+              <span className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
                 {isInbound ? "Prospect" : "Glass"}
               </span>
               <span className="text-muted-foreground/20">·</span>
-              <span className="text-label text-muted-foreground/25">
+              <span className={`text-muted-foreground/25 ${typeStyle("caption.default")}`}>
                 {formatDisplayDateTime(log.createdAt)}
               </span>
             </div>
@@ -126,7 +127,7 @@ function Timeline({
               isOwnMessage={isInbound}
             >
               {log.subject ? (
-                <p className="mb-1 font-medium">{log.subject}</p>
+                <p className={`mb-1 ${typeStyle("body.medium")}`}>{log.subject}</p>
               ) : null}
               <ProseMarkdown gfm breaks compact={isInbound}>
                 {content}
@@ -166,7 +167,7 @@ export default function OperatorDemoLeadsPage() {
           />
         </div>
       ) : (
-        <p className="text-base text-muted-foreground">Loading chat.</p>
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Loading chat.</p>
       )}
     </SettingsDrawer>
   );
@@ -191,7 +192,7 @@ export default function OperatorDemoLeadsPage() {
       <FadeIn when={true} duration={0.12}>
         {(transcripts ?? []).length === 0 ? (
           <div className="py-16 text-center">
-            <p className="text-base text-muted-foreground/40">
+            <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>
               No public demo chats
             </p>
           </div>
@@ -208,10 +209,10 @@ export default function OperatorDemoLeadsPage() {
                     {channelIcon(row.channel)}
                   </div>
                   <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
-                    <p className="truncate text-base font-medium text-foreground">
+                    <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                       {formatContact(row.senderContact)}
                     </p>
-                    <p className="shrink-0 text-label text-muted-foreground/40">
+                    <p className={`shrink-0 text-muted-foreground/40 ${typeStyle("caption.default")}`}>
                       {formatShortTime(row.lastUpdatedAt)}
                     </p>
                   </div>

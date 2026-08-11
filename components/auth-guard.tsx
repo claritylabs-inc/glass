@@ -19,6 +19,7 @@ import {
   endOperatorImpersonationStop,
   useOperatorImpersonationStopReturnHref,
 } from "@/lib/operator-impersonation-stop-state";
+import { typeStyle } from "@/lib/typography";
 
 const BOOT_STATE_KEY = "glass:boot-state";
 
@@ -71,7 +72,7 @@ function OnboardingLoading() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="w-full px-6 py-6 sm:px-8">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-base text-muted-foreground">
+        <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-muted-foreground ${typeStyle("body.default")}`}>
           <div className="justify-self-start min-w-0">
             <div className="h-5 w-24 bg-foreground/10 rounded" />
           </div>
@@ -173,10 +174,10 @@ function PendingLiveScreen() {
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-6">
         <div className="rounded-lg border border-foreground/8 bg-card p-6">
-          <h1 className="text-base font-medium text-foreground">
+          <h1 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Workspace is being prepared
           </h1>
-          <p className="mt-2 text-base text-muted-foreground">
+          <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
             Your Glass workspace is not live yet. You will receive an email when
             it is ready.
           </p>

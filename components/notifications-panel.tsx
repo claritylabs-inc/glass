@@ -12,6 +12,7 @@ import {
   useCachedNotifications,
   useNotificationCacheActions,
 } from "@/lib/sync/glass-cached-queries";
+import { typeStyle } from "@/lib/typography";
 
 dayjs.extend(relativeTime);
 
@@ -160,7 +161,7 @@ export function NotificationsPanel({
     >
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-foreground/6 px-3">
-        <span className="min-w-0 truncate text-base font-medium text-foreground">
+        <span className={`min-w-0 truncate text-foreground ${typeStyle("body.medium")}`}>
           Notifications
         </span>
         <button
@@ -181,7 +182,7 @@ export function NotificationsPanel({
           role="tab"
           aria-selected={activeTab === "unread"}
           onClick={() => setActiveTab("unread")}
-          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-base transition-colors ${
+          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 transition-colors ${typeStyle("control.button")} ${
             activeTab === "unread"
               ? "bg-foreground/6 text-foreground"
               : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground"
@@ -189,7 +190,7 @@ export function NotificationsPanel({
         >
           Unread
           {unreadCount > 0 && (
-            <span className="ml-1.5 text-label text-muted-foreground/60">
+            <span className={`ml-1.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
@@ -199,7 +200,7 @@ export function NotificationsPanel({
           role="tab"
           aria-selected={activeTab === "read"}
           onClick={() => setActiveTab("read")}
-          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-base transition-colors ${
+          className={`min-w-0 flex-1 rounded-md px-2 py-1.5 transition-colors ${typeStyle("control.button")} ${
             activeTab === "read"
               ? "bg-foreground/6 text-foreground"
               : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground"
@@ -207,7 +208,7 @@ export function NotificationsPanel({
         >
           Read
           {readCount > 0 && (
-            <span className="ml-1.5 text-label text-muted-foreground/60">
+            <span className={`ml-1.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
               {readCount > 99 ? "99+" : readCount}
             </span>
           )}
@@ -225,7 +226,7 @@ export function NotificationsPanel({
         {isLoading ? (
           <div className="min-h-24" aria-hidden="true" />
         ) : activeNotifications.length === 0 ? (
-          <div className="px-3 py-6 text-center text-base text-muted-foreground/40">
+          <div className={`px-3 py-6 text-center text-muted-foreground/40 ${typeStyle("body.default")}`}>
             No {activeTab} notifications
           </div>
         ) : (
@@ -248,28 +249,28 @@ export function NotificationsPanel({
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <p className="min-w-0 flex-1 truncate text-base text-foreground">
+                    <p className={`min-w-0 flex-1 truncate text-foreground ${typeStyle("body.default")}`}>
                       {notificationDisplayTitle(notification)}
                     </p>
                     {(notification.coalescedCount ?? 1) > 1 && (
-                      <span className="inline-flex items-center px-1 py-0 rounded text-label font-medium bg-foreground/8 text-muted-foreground">
+                      <span className={`inline-flex items-center px-1 py-0 rounded bg-foreground/8 text-muted-foreground ${typeStyle("caption.medium")}`}>
                         ×{notification.coalescedCount}
                       </span>
                     )}
                   </div>
                   {notification.relatedOrgName && (
-                    <p className="mt-0.5 truncate text-label text-muted-foreground/50">
+                    <p className={`mt-0.5 truncate text-muted-foreground/50 ${typeStyle("caption.default")}`}>
                       {notification.relatedOrgName}
                     </p>
                   )}
                   <p
-                    className={`mt-0.5 wrap-break-word text-label leading-5 text-muted-foreground/60 ${
+                    className={`mt-0.5 wrap-break-word text-muted-foreground/60 ${typeStyle("caption.default")} ${
                       variant === "pane" ? "" : "line-clamp-2"
                     }`}
                   >
                     {notification.body}
                   </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-muted-foreground/40">
+                  <p className={`mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground/40 ${typeStyle("caption.default")}`}>
                     <span>{dayjs(notification.createdAt).fromNow()}</span>
                     {actionLabel && (
                       <span className="text-muted-foreground/60">
@@ -298,7 +299,7 @@ export function NotificationsPanel({
               }
               void markAllRead({ orgId });
             }}
-            className="text-label text-muted-foreground/50 hover:text-foreground transition-colors"
+            className={`text-muted-foreground/50 hover:text-foreground transition-colors ${typeStyle("control.buttonCompact")}`}
           >
             Mark all as read
           </button>

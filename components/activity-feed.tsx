@@ -15,6 +15,7 @@ import Link from "next/link";
 import type { Id } from "@/convex/_generated/dataModel";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { formatDisplayDate } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 dayjs.extend(relativeTime);
 
@@ -113,7 +114,7 @@ export function ActivityFeed({
       ) : (
         grouped.map((group) => (
           <div key={dayjs(group.date).format("YYYY-MM-DD")}>
-            <p className="text-label font-medium text-muted-foreground uppercase tracking-wide mb-2">
+            <p className={`text-muted-foreground mb-2 ${typeStyle("label.eyebrow")}`}>
               {formatDisplayDate(group.date)}
             </p>
             <div className="space-y-2">
@@ -127,17 +128,17 @@ export function ActivityFeed({
                   >
                     <Icon className="w-4 h-4 mt-0.5 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-base">{event.summary}</p>
+                      <p className={`${typeStyle("body.default")}`}>{event.summary}</p>
                       {showClientColumn && event.clientOrgName && (
                         <Link
                           href={`/clients/${event.clientOrgId}`}
-                          className="text-label text-muted-foreground hover:underline"
+                          className={`text-muted-foreground hover:underline ${typeStyle("control.buttonCompact")}`}
                         >
                           {event.clientOrgName}
                         </Link>
                       )}
                     </div>
-                    <span className="text-label text-muted-foreground shrink-0">
+                    <span className={`text-muted-foreground shrink-0 ${typeStyle("caption.default")}`}>
                       {dayjs(event.createdAt).fromNow()}
                     </span>
                   </div>

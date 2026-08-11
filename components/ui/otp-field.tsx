@@ -2,9 +2,10 @@
 
 import { OTPFieldPreview as OTPField } from "@base-ui/react/otp-field";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 const slotClass =
-  "min-w-0 flex-1 aspect-square max-h-14 rounded-lg border border-foreground/8 bg-popover text-center text-xl font-medium font-mono text-foreground transition-colors focus:outline-none focus:border-foreground/30 focus:ring-1 focus:ring-foreground/10 disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60";
+  `min-w-0 flex-1 aspect-square max-h-14 rounded-lg border border-foreground/8 bg-popover text-center text-foreground transition-colors focus:outline-none focus:border-foreground/30 focus:ring-1 focus:ring-foreground/10 disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60 ${typeStyle("technical.otp")}`;
 
 export function OtpField({
   value,

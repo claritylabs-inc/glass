@@ -45,6 +45,7 @@ import type {
   ConversationItem,
   NavItemConfig,
 } from "./types";
+import { typeStyle } from "@/lib/typography";
 
 function isImessageConversation(item: ConversationItem) {
   return item.kind === "imessage";
@@ -131,7 +132,7 @@ export function MainSidebarContent({
           trailing={
             (unreadCount ?? 0) > 0 ? (
               <span
-                className={`flex items-center justify-center rounded-full bg-blue-500 text-white text-label font-medium leading-none shrink-0 ${
+                className={`flex items-center justify-center rounded-full bg-blue-500 text-white shrink-0 ${typeStyle("caption.medium")} ${
                   collapsed ? "w-4 h-4" : "min-w-4.5 h-4 px-1"
                 }`}
               >
@@ -258,7 +259,7 @@ function ExpandedThreadList({
   return (
     <>
       <div className="flex items-center justify-between px-3 pb-1.5 pt-5">
-        <span className="text-label font-medium text-muted-foreground/50">
+        <span className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
           Threads
         </span>
         {onAskGlass ? (
@@ -348,7 +349,7 @@ function SidebarThreadRow({
     <Link
       href={`/agent/thread/${item.id}`}
       id={shortcut ? stableSidebarTooltipId(`${item.kind}-${item.id}`) : undefined}
-      className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
+      className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} ${typeStyle("control.button")} ${
         isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
       }`}
     >

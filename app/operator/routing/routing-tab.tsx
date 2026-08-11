@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/operational-panel";
 import { api } from "@/convex/_generated/api";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type Route = { provider: string; model: string };
 type Routing = {
@@ -248,7 +249,7 @@ export function RoutingTab({
       {unconfigured ? (
         <OperationalPanel>
           <OperationalPanelHeader title="Router not connected" />
-          <OperationalPanelBody className="text-base text-muted-foreground">
+          <OperationalPanelBody className={`text-muted-foreground ${typeStyle("body.default")}`}>
             CL_ROUTER_URL is not set on this Convex deployment, so router
             health, task policies, and rollups are unavailable. Set
             CL_ROUTER_URL and CL_ROUTER_ADMIN_SECRET on the deployment with
@@ -302,7 +303,7 @@ export function RoutingTab({
           <OperationalPanel>
             <OperationalPanelHeader title="Last 24 hours" />
             {dashboard?.rollups.error ? (
-              <OperationalPanelBody className="text-base text-destructive">
+              <OperationalPanelBody className={`text-destructive ${typeStyle("body.default")}`}>
                 {dashboard.rollups.error}
               </OperationalPanelBody>
             ) : (
@@ -343,8 +344,8 @@ export function RoutingTab({
                   ],
                 ].map(([label, value]) => (
                   <div key={label} className="min-w-0 px-4 py-3">
-                    <p className="text-label text-muted-foreground">{label}</p>
-                    <p className="mt-1 truncate text-base font-medium text-foreground">
+                    <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>{label}</p>
+                    <p className={`mt-1 truncate text-foreground ${typeStyle("body.medium")}`}>
                       {value}
                     </p>
                   </div>
@@ -356,23 +357,23 @@ export function RoutingTab({
           <OperationalPanel>
             <OperationalPanelHeader title="Task policies" />
             {dashboard?.policy.error ? (
-              <OperationalPanelBody className="text-base text-destructive">
+              <OperationalPanelBody className={`text-destructive ${typeStyle("body.default")}`}>
                 {dashboard.policy.error}
               </OperationalPanelBody>
             ) : policies.length === 0 ? (
-              <OperationalPanelBody className="text-base text-muted-foreground">
+              <OperationalPanelBody className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 No active router policies.
               </OperationalPanelBody>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[780px] text-left text-base">
-                  <thead className="border-b border-foreground/6 text-label text-muted-foreground">
+                <table className={`w-full min-w-[780px] text-left ${typeStyle("body.default")}`}>
+                  <thead className={`border-b border-foreground/6 text-muted-foreground ${typeStyle("label.table")}`}>
                     <tr>
-                      <th className="px-4 py-2.5 font-normal">Task</th>
-                      <th className="px-4 py-2.5 font-normal">State</th>
-                      <th className="px-4 py-2.5 font-normal">Executing route</th>
-                      <th className="px-4 py-2.5 font-normal">Challengers</th>
-                      <th className="px-4 py-2.5 font-normal">Score / calls</th>
+                      <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Task</th>
+                      <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>State</th>
+                      <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Executing route</th>
+                      <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Challengers</th>
+                      <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Score / calls</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-foreground/6">
@@ -385,7 +386,7 @@ export function RoutingTab({
                       );
                       return (
                         <tr key={policy.id}>
-                          <td className="px-4 py-3 font-medium">
+                          <td className={`px-4 py-3 ${typeStyle("body.medium")}`}>
                             {policy.taskFamily}
                           </td>
                           <td className="px-4 py-3 text-muted-foreground">
@@ -426,20 +427,20 @@ export function RoutingTab({
             <Loader2 className="size-5 animate-spin" />
           </OperationalPanelBody>
         ) : recentEvents.length === 0 ? (
-          <OperationalPanelBody className="text-base text-muted-foreground">
+          <OperationalPanelBody className={`text-muted-foreground ${typeStyle("body.default")}`}>
             No routed model steps recorded yet.
           </OperationalPanelBody>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-left text-base">
-              <thead className="border-b border-foreground/6 text-label text-muted-foreground">
+            <table className={`w-full min-w-[920px] text-left ${typeStyle("body.default")}`}>
+              <thead className={`border-b border-foreground/6 text-muted-foreground ${typeStyle("label.table")}`}>
                 <tr>
-                  <th className="px-4 py-2.5 font-normal">Time</th>
-                  <th className="px-4 py-2.5 font-normal">Task / surface</th>
-                  <th className="px-4 py-2.5 font-normal">Actual</th>
-                  <th className="px-4 py-2.5 font-normal">Would choose</th>
-                  <th className="px-4 py-2.5 font-normal">Request</th>
-                  <th className="px-4 py-2.5 font-normal">Outcome</th>
+                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Time</th>
+                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Task / surface</th>
+                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Actual</th>
+                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Would choose</th>
+                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Request</th>
+                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>Outcome</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-foreground/6">
@@ -449,7 +450,7 @@ export function RoutingTab({
                       {formatDisplayDateTime(event.timestamp)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-medium">{event.task}</span>
+                      <span className={`${typeStyle("body.medium")}`}>{event.task}</span>
                       <span className="text-muted-foreground">
                         {" · "}
                         {event.channel}
@@ -467,7 +468,7 @@ export function RoutingTab({
                       {routeLabel(event.routing?.wouldHaveChosen)}
                     </td>
                     <td
-                      className="max-w-48 truncate px-4 py-3 font-mono text-label text-muted-foreground"
+                      className={`max-w-48 truncate px-4 py-3 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
                       title={event.requestId}
                     >
                       {event.requestId ?? "—"}
