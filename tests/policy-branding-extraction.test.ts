@@ -12,6 +12,9 @@ describe("policy carrier branding ownership", () => {
     const carrierIdentityAction = read(
       "convex/actions/enrichCarrierIdentity.ts",
     );
+    const carrierIdentityHelpers = read(
+      "convex/lib/carrierIdentityEnrichment.ts",
+    );
 
     expect(extraction).toMatch(
       /await convexCtx\.runAction\(\s*internal\.actions\.enrichCarrierIdentity\.ensureInternal/,
@@ -31,5 +34,24 @@ describe("policy carrier branding ownership", () => {
         /existingPolicyFields: fieldsWithPersistedCarrierIdentity\(\s*fields,\s*existingPolicy,\s*\)/g,
       ),
     ).toHaveLength(2);
+    expect(carrierIdentityAction).toContain(
+      '"triage"',
+    );
+    expect(carrierIdentityAction).toContain(
+      'taskKind: "carrier_identity_selection"',
+    );
+    expect(carrierIdentityAction).toContain(
+      "Do not treat token overlap, exact word agreement",
+    );
+    expect(carrierIdentityAction).not.toContain(
+      "fallbackCarrierWebsiteIndex",
+    );
+    expect(carrierIdentityAction).not.toContain(
+      "carrierWebsiteCandidateHasAffinity",
+    );
+    expect(carrierIdentityAction).not.toContain(
+      "firstPartyCarrierPublicIdentity",
+    );
+    expect(carrierIdentityHelpers).not.toContain("matchedWords / words.length");
   });
 });

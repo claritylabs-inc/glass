@@ -3,7 +3,7 @@ import type {
   CarrierPublicNameRelationship,
 } from "./carrierIdentity";
 
-export const CARRIER_IDENTITY_ENRICHMENT_VERSION = 16;
+export const CARRIER_IDENTITY_ENRICHMENT_VERSION = 17;
 
 export function normalizeCarrierIdentityName(value: string) {
   return value
@@ -57,129 +57,28 @@ export function carrierIdentityResearchName(
   return carrierIdentityResearchNames(identity, compatibilityNames)[0];
 }
 
-const GENERIC_CARRIER_WORDS = new Set([
-  "and",
-  "american",
-  "assurance",
-  "company",
-  "corp",
-  "corporation",
-  "general",
-  "global",
-  "group",
-  "inc",
-  "indemnity",
-  "insurance",
-  "led",
-  "liability",
-  "limited",
-  "lloyd",
-  "lloyds",
-  "ltd",
-  "managing",
-  "mutual",
-  "plc",
-  "se",
-  "specialty",
-  "syndicate",
-  "the",
-  "underwriters",
-]);
-
-type CarrierWebsiteCandidate = {
+export type CarrierWebsiteCandidate = {
   website: string;
   title?: string;
   siteName?: string;
   identityEvidence?: string;
 };
 
-function distinctiveCarrierWords(carrierName: string) {
-  return Array.from(
-    new Set(
-      normalizeCarrierIdentityName(carrierName)
-        .split(" ")
-        .filter(
-          (word) =>
-            word.length >= 3 &&
-            ((/[a-z]/.test(word) && !GENERIC_CARRIER_WORDS.has(word)) ||
-              /^\d{3,6}$/.test(word)),
-        ),
-    ),
-  );
-}
+export type CarrierIdentityModelSelection = {
+  candidateIndex: number;
+  officialSite: boolean;
+  publicName: string | null;
+  nameRelationship: CarrierPublicNameRelationship | null;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+};
 
-function carrierWebsiteIdentityName(carrierName: string) {
-  return carrierName
-    .replace(
-      /^lloyd(?:'|’)?s?\s+underwriters\s+led\s+by\s*:?\s*/i,
-      "",
-    )
-    .replace(
-      /\(\s*syndicate\s+(?:no\.?\s*)?[a-z0-9/-]+(?:\s+[a-z0-9/-]+)?\s*\)/gi,
-      "",
-    )
-    .replace(
-      /,?\s*(?:and\s+)?syndicate\s+(?:no\.?\s*)?[a-z0-9/-]+(?:\s+[a-z0-9/-]+)?/gi,
-      "",
-    )
-    .replace(
-      /,?\s*under\s+contract(?:\s+(?:no\.?|number))?\s+.*$/i,
-      "",
-    )
-    .replace(/\s*(?:,|\band\b)\s*$/i, "")
-    .trim();
-}
-
-function carrierWebsiteWords(carrierName: string) {
-  return distinctiveCarrierWords(
-    carrierWebsiteIdentityName(carrierName) || carrierName,
-  );
-}
-
-export function carrierPublicNameHasAffinity(
-  carrierName: string,
-  publicName: string,
-) {
-  const carrierWords = carrierWebsiteWords(carrierName);
-  const publicWords = new Set(
-    normalizeCarrierIdentityName(publicName).split(" "),
-  );
-  return carrierWords.some((word) => publicWords.has(word));
-}
-
-export function carrierWebsiteCandidateHasAffinity(
-  carrierName: string,
-  candidate: CarrierWebsiteCandidate,
-  publicName?: string,
-) {
-  const carrierWords = carrierWebsiteWords(carrierName);
-  if (carrierWords.length === 0) return false;
-  const parsed = new URL(candidate.website);
-  const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
-  const compactHostname = hostname.replace(/[^a-z0-9]/g, "");
-  const visibleWords = new Set(
-    normalizeCarrierIdentityName(
-      [publicName, candidate.siteName, candidate.title]
-        .filter(Boolean)
-        .join(" "),
-    ).split(" "),
-  );
-  const sharedDomainWord = carrierWords.some(
-    (word) =>
-      visibleWords.has(word) &&
-      compactHostname.includes(word.replace(/[^a-z0-9]/g, "")),
-  );
-  const acronym = carrierWords
-    .filter((word) => /[a-z]/.test(word))
-    .map((word) => word[0])
-    .join("");
-  const acronymMatch =
-    acronym.length >= 3 &&
-    hostname
-      .split(".")
-      .some((label) => label.startsWith(acronym));
-  return sharedDomainWord || acronymMatch;
-}
+export type GroundedCarrierIdentitySelection = {
+  candidateIndex: number;
+  publicName?: string;
+  nameRelationship?: CarrierPublicNameRelationship;
+  confidence: "high";
+};
 
 export function isPrimaryCarrierWebsiteCandidate(
   candidate: CarrierWebsiteCandidate,
@@ -220,179 +119,46 @@ export function verifiedCarrierPublicName(
   return isVisibleOnOfficialSite ? publicName : undefined;
 }
 
-export function verifiedCarrierNameRelationship(
-  carrierName: string,
-  publicName: string,
-  requestedRelationship: CarrierPublicNameRelationship,
-  evidenceText: string,
-) {
-  const normalizedCarrier = normalizeCarrierIdentityName(carrierName);
-  const normalizedPublicName = normalizeCarrierIdentityName(publicName);
-  const normalizedEvidence = normalizeCarrierIdentityName(evidenceText);
+export function groundCarrierIdentitySelection(
+  output: CarrierIdentityModelSelection,
+  candidates: CarrierWebsiteCandidate[],
+): GroundedCarrierIdentitySelection {
+  const selected = candidates[output.candidateIndex];
   if (
-    !normalizedEvidence ||
-    !` ${normalizedEvidence} `.includes(` ${normalizedPublicName} `)
+    !output.officialSite ||
+    output.confidence !== "high" ||
+    !selected ||
+    !selected.identityEvidence?.trim() ||
+    !isPrimaryCarrierWebsiteCandidate(selected)
   ) {
-    return undefined;
+    throw new Error(
+      `Carrier website could not be identified confidently: ${output.reason}`,
+    );
   }
 
-  switch (requestedRelationship) {
-    case "trading_name":
-      return /\b(?:trading name|doing business as|d b a|dba|operating as)\b/i.test(
-        evidenceText,
-      )
-        ? requestedRelationship
-        : undefined;
-    case "parent_brand":
-      return /\b(?:parent|parent company|subsidiary of|owned by|operates under|part of)\b/i.test(
-        evidenceText,
-      )
-        ? requestedRelationship
-        : undefined;
-    case "group_brand":
-      return /\b(?:group brand|member of|part of|under the .+ umbrella)\b/i.test(
-        evidenceText,
-      )
-        ? requestedRelationship
-        : undefined;
-    case "same_legal_entity":
-      return normalizedCarrier === normalizedPublicName
-        ? requestedRelationship
-        : undefined;
+  if (
+    (output.publicName === null) !== (output.nameRelationship === null)
+  ) {
+    throw new Error(
+      "Carrier identity model returned an incomplete public-name relationship",
+    );
   }
-}
 
-export function firstPartyCarrierPublicIdentity(
-  carrierName: string,
-  candidates: CarrierWebsiteCandidate[],
-) {
-  const carrierWords = distinctiveCarrierWords(carrierName);
-  const matches = candidates.flatMap((candidate, candidateIndex) => {
-    if (!isPrimaryCarrierWebsiteCandidate(candidate)) return [];
-    const publicName = verifiedCarrierPublicName(
-      candidate,
-      candidate.siteName,
+  const publicName = output.publicName
+    ? verifiedCarrierPublicName(selected, output.publicName)
+    : undefined;
+  if (output.publicName && !publicName) {
+    throw new Error(
+      "Carrier identity model returned a public name that is not visible on the selected site",
     );
-    const evidence = candidate.identityEvidence;
-    if (
-      !publicName ||
-      !evidence ||
-      !carrierPublicNameHasAffinity(carrierName, publicName) ||
-      !carrierWebsiteCandidateHasAffinity(
-        carrierName,
-        candidate,
-        publicName,
-      )
-    ) {
-      return [];
-    }
+  }
 
-    const publicWords = new Set(
-      normalizeCarrierIdentityName(publicName).split(" "),
-    );
-    const evidenceWords = new Set(
-      normalizeCarrierIdentityName(evidence).split(" "),
-    );
-    const matchedCarrierWords = carrierWords.filter(
-      (word) => !publicWords.has(word) && evidenceWords.has(word),
-    );
-    if (matchedCarrierWords.length < 2) return [];
-
-    const relationships: CarrierPublicNameRelationship[] = [
-      "trading_name",
-      "parent_brand",
-      "group_brand",
-      "same_legal_entity",
-    ];
-    const nameRelationship = relationships.find((relationship) =>
-      verifiedCarrierNameRelationship(
-        carrierName,
-        publicName,
-        relationship,
-        evidence,
-      ),
-    );
-    if (!nameRelationship) return [];
-    const hasNumericAnchor = matchedCarrierWords.some((word) =>
-      /^\d+$/.test(word),
-    );
-    return [
-      {
-        candidateIndex,
-        publicName,
-        nameRelationship,
-        score:
-          matchedCarrierWords.length +
-          (hasNumericAnchor ? 4 : 0) +
-          (nameRelationship === "trading_name" ? 4 : 0),
-      },
-    ];
-  });
-
-  matches.sort((left, right) => right.score - left.score);
-  if (!matches[0] || matches[0].score === matches[1]?.score) return undefined;
-  return matches[0];
-}
-
-export function fallbackCarrierWebsiteIndex(
-  carrierName: string,
-  candidates: CarrierWebsiteCandidate[],
-) {
-  const words = carrierWebsiteWords(carrierName);
-  if (words.length === 0) return -1;
-
-  let bestIndex = -1;
-  let bestScore = 0;
-  candidates.forEach((candidate, index) => {
-    if (!isPrimaryCarrierWebsiteCandidate(candidate)) return;
-    const hostname = new URL(candidate.website).hostname.replace(/^www\./, "");
-    const compactHostname = hostname.replace(/[^a-z0-9]/g, "");
-    const domainLabels = hostname.split(".");
-    const titleWords = new Set(
-      normalizeCarrierIdentityName(candidate.title ?? "").split(" "),
-    );
-    let domainMatches = 0;
-    let matchedWords = 0;
-    let score = words.reduce((total, word) => {
-      const compactWord = word.replace(/[^a-z0-9]/g, "");
-      if (compactHostname.includes(compactWord)) {
-        domainMatches += 1;
-        matchedWords += 1;
-        return total + (domainLabels.includes(compactWord) ? 8 : 5);
-      }
-      if (titleWords.has(word)) {
-        matchedWords += 1;
-        return total + 2;
-      }
-      return total;
-    }, 0);
-    const acronym = words
-      .filter((word) => /[a-z]/.test(word))
-      .map((word) => word[0])
-      .join("");
-    if (
-      acronym.length >= 3 &&
-      domainLabels.some((label) => label.startsWith(acronym))
-    ) {
-      domainMatches += 1;
-      matchedWords = words.length;
-      score += 7;
-    }
-    if (domainMatches === 0 || matchedWords / words.length < 0.75) return;
-    if (score > bestScore) {
-      bestIndex = index;
-      bestScore = score;
-    }
-  });
-
-  return bestScore >= 5 ? bestIndex : -1;
-}
-
-export function preferredCarrierWebsiteIndex(
-  firstPartyIndex: number | undefined,
-  modelSelectedIndex: number,
-  domainFallbackIndex: number,
-) {
-  return firstPartyIndex ??
-    (modelSelectedIndex >= 0 ? modelSelectedIndex : domainFallbackIndex);
+  return {
+    candidateIndex: output.candidateIndex,
+    ...(publicName ? { publicName } : {}),
+    ...(output.nameRelationship
+      ? { nameRelationship: output.nameRelationship }
+      : {}),
+    confidence: "high",
+  };
 }

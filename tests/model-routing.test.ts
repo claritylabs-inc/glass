@@ -483,6 +483,12 @@ describe("model fallback policy", () => {
 
   test("allows intentional quality escalation for task kinds that warrant it", () => {
     expect(
+      fallbackRouteForCall({
+        task: "triage",
+        taskKind: "carrier_identity_selection",
+      }),
+    ).toEqual(FALLBACK_MODEL);
+    expect(
       fallbackRouteForCall({ task: "extraction", taskKind: "extraction_source_tree" }),
     ).toEqual(FALLBACK_MODEL);
     expect(
