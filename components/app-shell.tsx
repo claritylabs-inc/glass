@@ -97,6 +97,7 @@ function ShellContent({
   rightPanel,
   customSidebar,
   customSidebarPreferenceStorageKey,
+  storageUserId,
   disableCommandPalette = false,
   showBrokerShare = true,
 }: {
@@ -110,6 +111,7 @@ function ShellContent({
     onToggleCollapse: () => void;
   }) => React.ReactNode;
   customSidebarPreferenceStorageKey: string | null;
+  storageUserId?: string;
   disableCommandPalette?: boolean;
   showBrokerShare?: boolean;
 }) {
@@ -199,6 +201,7 @@ function ShellContent({
       entityPanel={hasEntityPanel ? <EntityPreviewPanel /> : undefined}
       rightPanel={hasRightPanel ? rightPanel : undefined}
       pdfPanel={hasPdfPanel ? <PdfPanel /> : undefined}
+      storageUserId={storageUserId}
     />
   );
 
@@ -307,6 +310,7 @@ export function AppShell({
             customSidebarPreferenceStorageKey={
               customSidebarPreferenceStorageKey
             }
+            storageUserId={scope.userId}
             disableCommandPalette={disableCommandPalette}
             showBrokerShare={showBrokerShare}
           >
