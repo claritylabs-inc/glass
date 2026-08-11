@@ -2,7 +2,9 @@ import type { CSSProperties } from "react";
 import { readableTextFor } from "@/lib/branding";
 
 const DEFAULT_CARD_COLOR = "#1E293B";
+const DEFAULT_OVERVIEW_COLOR = "#F1F5F9";
 const BRAND_COLOR_WEIGHT = 0.52;
+const OVERVIEW_COLOR_WEIGHT = 0.5;
 
 function hashString(value: string) {
   let hash = 0;
@@ -12,9 +14,13 @@ function hashString(value: string) {
   return hash;
 }
 
-function safeBrandColor(value?: string | null) {
+function normalizedBrandColor(value?: string | null) {
   const color = value?.trim().toUpperCase();
-  return color && /^#[0-9A-F]{6}$/.test(color) ? color : DEFAULT_CARD_COLOR;
+  return color && /^#[0-9A-F]{6}$/.test(color) ? color : undefined;
+}
+
+function safeBrandColor(value?: string | null) {
+  return normalizedBrandColor(value) ?? DEFAULT_CARD_COLOR;
 }
 
 function hexChannels(color: string) {
@@ -27,16 +33,40 @@ function channelHex(value: number) {
   return Math.round(value).toString(16).padStart(2, "0").toUpperCase();
 }
 
-export function tonePolicyCardColor(value?: string | null) {
-  const brand = hexChannels(safeBrandColor(value));
-  const base = hexChannels(DEFAULT_CARD_COLOR);
+function mixColors(baseColor: string, brandColor: string, brandWeight: number) {
+  const brand = hexChannels(brandColor);
+  const base = hexChannels(baseColor);
   return `#${base
     .map((channel, index) =>
       channelHex(
-        channel * (1 - BRAND_COLOR_WEIGHT) + brand[index] * BRAND_COLOR_WEIGHT,
+        channel * (1 - brandWeight) + brand[index] * brandWeight,
       ),
     )
     .join("")}`;
+}
+
+export function tonePolicyCardColor(value?: string | null) {
+  return mixColors(
+    DEFAULT_CARD_COLOR,
+    safeBrandColor(value),
+    BRAND_COLOR_WEIGHT,
+  );
+}
+
+export function tonePolicyOverviewColor(value?: string | null) {
+  const brandColor = normalizedBrandColor(value);
+  return brandColor
+    ? mixColors("#FFFFFF", brandColor, OVERVIEW_COLOR_WEIGHT)
+    : DEFAULT_OVERVIEW_COLOR;
+}
+
+export function policyOverviewBranding(requestedColor?: string | null) {
+  return {
+    surfaceStyle: {
+      backgroundColor: tonePolicyOverviewColor(requestedColor),
+      color: "#0F172A",
+    } satisfies CSSProperties,
+  };
 }
 
 export function policyCardBranding(

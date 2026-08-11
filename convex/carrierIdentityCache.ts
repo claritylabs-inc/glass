@@ -129,7 +129,15 @@ export const upsertInternal = internalMutation({
     website: v.string(),
     websiteTitle: v.optional(v.string()),
     iconStorageId: v.optional(v.id("_storage")),
-    accentColor: v.string(),
+    accentColor: v.optional(v.string()),
+    accentColorSource: v.optional(
+      v.union(
+        v.literal("favicon"),
+        v.literal("theme_meta"),
+        v.literal("stylesheet"),
+        v.literal("html"),
+      ),
+    ),
     confidence: v.union(
       v.literal("high"),
       v.literal("medium"),
@@ -192,6 +200,7 @@ export const applyToPolicyInternal = internalMutation({
       websiteTitle: cacheEntry.websiteTitle,
       iconStorageId: cacheEntry.iconStorageId,
       accentColor: cacheEntry.accentColor,
+      accentColorSource: cacheEntry.accentColorSource,
       confidence: cacheEntry.confidence,
       sourceUrls: cacheEntry.sourceUrls,
       enrichmentVersion: cacheEntry.enrichmentVersion ?? 0,

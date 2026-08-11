@@ -3,7 +3,7 @@ import type {
   CarrierPublicNameRelationship,
 } from "./carrierIdentity";
 
-export const CARRIER_IDENTITY_ENRICHMENT_VERSION = 17;
+export const CARRIER_IDENTITY_ENRICHMENT_VERSION = 18;
 
 export function normalizeCarrierIdentityName(value: string) {
   return value

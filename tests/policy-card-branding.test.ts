@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { tonePolicyCardColor } from "@/lib/policy-card-branding";
+import {
+  policyOverviewBranding,
+  tonePolicyCardColor,
+  tonePolicyOverviewColor,
+} from "@/lib/policy-card-branding";
 
 describe("policy card branding", () => {
   it("tones saturated website colors into a consistent dark palette", () => {
@@ -10,5 +14,17 @@ describe("policy card branding", () => {
 
   it("keeps the neutral fallback unchanged", () => {
     expect(tonePolicyCardColor()).toBe("#1E293B");
+  });
+
+  it("uses a light carrier tint with dark text for policy overviews", () => {
+    expect(tonePolicyOverviewColor("#2066AE")).toBe("#90B3D7");
+    expect(policyOverviewBranding("#2066AE").surfaceStyle).toEqual({
+      backgroundColor: "#90B3D7",
+      color: "#0F172A",
+    });
+  });
+
+  it("uses a quiet neutral overview when no carrier color was recovered", () => {
+    expect(tonePolicyOverviewColor()).toBe("#F1F5F9");
   });
 });

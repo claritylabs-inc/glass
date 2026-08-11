@@ -53,6 +53,7 @@ export const consolidateCarrierIdentityBranding = migrations.define({
       websiteTitle: cachedIdentity.websiteTitle,
       iconStorageId: cachedIdentity.iconStorageId,
       accentColor: cachedIdentity.accentColor,
+      accentColorSource: cachedIdentity.accentColorSource,
       confidence: cachedIdentity.confidence,
       sourceUrls: cachedIdentity.sourceUrls,
       enrichmentVersion: cachedIdentity.enrichmentVersion ?? 0,

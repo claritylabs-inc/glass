@@ -97,6 +97,36 @@ describe("PolicySummary date display", () => {
     );
   });
 
+  it("uses an accessible light carrier tint without decorative patterning", () => {
+    const markup = renderToStaticMarkup(
+      <PolicySummary
+        carrier="Zurich Canada"
+        carrierIdentity={{
+          displayName: "Zurich Canada",
+          legalEntities: [],
+          legalEntityRelationship: "single",
+          sourceNodeIds: [],
+          sourceSpanIds: [],
+          branding: {
+            website: "https://www.zurichcanada.com",
+            accentColor: "#2066AE",
+            accentColorSource: "favicon",
+            confidence: "high",
+            sourceUrls: [],
+            enrichmentVersion: 18,
+            updatedAt: 1,
+          },
+        }}
+        policyNumber="TEST-ZUR-EO-2026-001"
+        linesOfBusiness={["EO"]}
+      />,
+    );
+
+    expect(markup).toContain("background-color:#90B3D7;color:#0F172A");
+    expect(markup).not.toContain("repeating-linear-gradient");
+    expect(markup).not.toContain("repeating-radial-gradient");
+  });
+
   it("gives broker-authored insurer overrides precedence over extracted branding", () => {
     const markup = renderToStaticMarkup(
       <PolicySummary

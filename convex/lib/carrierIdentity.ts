@@ -19,12 +19,19 @@ export type CarrierPublicNameRelationship =
   | "parent_brand"
   | "group_brand";
 
+export type CarrierIdentityAccentColorSource =
+  | "favicon"
+  | "theme_meta"
+  | "stylesheet"
+  | "html";
+
 export type CarrierIdentityBranding = {
   website: string;
   websiteTitle?: string;
   iconStorageId?: Id<"_storage">;
   iconUrl?: string | null;
-  accentColor: string;
+  accentColor?: string;
+  accentColorSource?: CarrierIdentityAccentColorSource;
   confidence: "high" | "medium" | "low";
   sourceUrls: string[];
   enrichmentVersion: number;
@@ -49,7 +56,8 @@ export type CarrierIdentityEnrichment = {
   website: string;
   websiteTitle?: string;
   iconStorageId?: Id<"_storage">;
-  accentColor: string;
+  accentColor?: string;
+  accentColorSource?: CarrierIdentityAccentColorSource;
   confidence: "high" | "medium" | "low";
   sourceUrls: string[];
   enrichmentVersion: number;
@@ -81,6 +89,17 @@ function publicNameRelationship(
     : undefined;
 }
 
+function accentColorSource(
+  value: unknown,
+): CarrierIdentityAccentColorSource | undefined {
+  return value === "favicon" ||
+    value === "theme_meta" ||
+    value === "stylesheet" ||
+    value === "html"
+    ? value
+    : undefined;
+}
+
 function readCarrierIdentityBranding(
   value: unknown,
 ): CarrierIdentityBranding | undefined {
@@ -95,7 +114,6 @@ function readCarrierIdentityBranding(
   const updatedAt = record.updatedAt;
   if (
     !website ||
-    !accentColor ||
     (confidence !== "high" &&
       confidence !== "medium" &&
       confidence !== "low") ||
@@ -110,12 +128,16 @@ function readCarrierIdentityBranding(
     | undefined;
   const iconUrl =
     record.iconUrl === null ? null : text(record.iconUrl);
+  const colorSource = accentColor
+    ? accentColorSource(record.accentColorSource)
+    : undefined;
   return {
     website,
     ...(websiteTitle ? { websiteTitle } : {}),
     ...(iconStorageId ? { iconStorageId } : {}),
     ...(iconUrl !== undefined ? { iconUrl } : {}),
-    accentColor,
+    ...(accentColor ? { accentColor } : {}),
+    ...(colorSource ? { accentColorSource: colorSource } : {}),
     confidence,
     sourceUrls: stringArray(record.sourceUrls),
     enrichmentVersion,
@@ -224,7 +246,12 @@ export function applyCarrierIdentityEnrichment(
       ...(enrichment.iconStorageId
         ? { iconStorageId: enrichment.iconStorageId }
         : {}),
-      accentColor: enrichment.accentColor,
+      ...(enrichment.accentColor
+        ? { accentColor: enrichment.accentColor }
+        : {}),
+      ...(enrichment.accentColor && enrichment.accentColorSource
+        ? { accentColorSource: enrichment.accentColorSource }
+        : {}),
       confidence: enrichment.confidence,
       sourceUrls: enrichment.sourceUrls,
       enrichmentVersion: enrichment.enrichmentVersion,

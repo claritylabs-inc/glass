@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import schema from "./schema";
 import { listForClient } from "./policies";
 import { CARRIER_IDENTITY_ENRICHMENT_VERSION } from "./lib/carrierIdentityEnrichment";
+import { readCarrierIdentity } from "./lib/carrierIdentity";
 import {
   applyToPolicyInternal,
   markPolicyFailedInternal,
@@ -33,6 +34,7 @@ describe("carrier identity branding", () => {
         nameRelationship: "trading_name",
         website: "https://www.libertyspecialtymarkets.com/",
         accentColor: "#120C43",
+        accentColorSource: "favicon",
         confidence: "high",
         sourceUrls: ["https://www.libertyspecialtymarkets.com/"],
         enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
@@ -94,12 +96,69 @@ describe("carrier identity branding", () => {
         branding: {
           website: "https://www.libertyspecialtymarkets.com/",
           accentColor: "#120C43",
+          accentColorSource: "favicon",
         },
       },
     });
     expect(policy?.carrierBrandId).toBeUndefined();
     expect(policy?.carrierIdentityEnrichmentAttempts).toBeUndefined();
     expect(policy?.carrierIdentityEnrichmentAttemptedAt).toBeUndefined();
+  });
+
+  it("keeps verified site branding when no accent color was recovered", async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const cacheEntryId = await ctx.db.insert("carrierBrands", {
+        normalizedName: "carrier without a recovered color",
+        carrierName: "Carrier Without a Recovered Color",
+        website: "https://carrier.example/",
+        confidence: "high",
+        sourceUrls: ["https://carrier.example/"],
+        enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
+        updatedAt: 1,
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Carrier Without a Recovered Color",
+        carrierIdentity: {
+          displayName: "Carrier Without a Recovered Color",
+          legalEntities: [],
+          legalEntityRelationship: "single",
+          sourceNodeIds: ["carrier"],
+          sourceSpanIds: ["span-carrier"],
+        },
+        policyNumber: "NO-COLOR-100",
+        linesOfBusiness: ["OLIB"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Client",
+      });
+      return { cacheEntryId, policyId };
+    });
+
+    await t.mutation(applyToPolicyInternalFn, {
+      policyId: ids.policyId,
+      cacheEntryId: ids.cacheEntryId,
+      normalizedName: "carrier without a recovered color",
+    });
+    const policy = await t.run((ctx) => ctx.db.get(ids.policyId));
+    const branding = readCarrierIdentity(policy?.carrierIdentity)?.branding;
+
+    expect(branding).toMatchObject({
+      website: "https://carrier.example/",
+      confidence: "high",
+      enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
+    });
+    expect(branding).not.toHaveProperty("accentColor");
+    expect(branding).not.toHaveProperty("accentColorSource");
   });
 
   it("does not replace the source display name without a verified relationship", async () => {
