@@ -156,19 +156,20 @@ export function PolicyListItem({
   const fallbackTitle =
     productNameClean ??
     (isProcessing || isProvisional ? "Pending classification" : "Not classified");
-  const { patternStyle, surfaceStyle } = policyCardBranding(
+  const { patternStyle, surfaceClassName, surfaceStyle } = policyCardBranding(
     issuerName,
     branding?.accentColor,
   );
   const isInteractive = Boolean(href || onClick);
   const cardClassName = cn(
-    "group relative flex min-h-44 min-w-0 flex-col overflow-hidden rounded-xl border border-black/10 text-left shadow-[0_2px_8px_rgba(0,0,0,0.08)]",
+    "group relative flex min-h-44 min-w-0 flex-col overflow-hidden rounded-xl border border-current/6 text-left",
+    surfaceClassName,
     isInteractive && [
-      "cursor-pointer before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-xl before:border before:border-transparent before:bg-transparent before:content-[''] before:transition-[background-color,border-color] before:duration-100",
-      "hover:before:border-white/25 hover:before:bg-white/[0.04]",
-      "active:before:border-white/20 active:before:bg-black/[0.035]",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/40 focus-visible:before:border-white/30 focus-visible:before:bg-white/[0.04]",
-      "focus-within:ring-2 focus-within:ring-inset focus-within:ring-white/30 focus-within:before:border-white/30",
+      "cursor-pointer before:pointer-events-none before:absolute before:inset-0 before:z-0 before:rounded-[inherit] before:bg-transparent before:content-[''] before:transition-colors before:duration-100",
+      "[@media(hover:hover)_and_(pointer:fine)]:hover:before:bg-current/[0.03]",
+      "active:before:bg-current/[0.05]",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-current/20 focus-visible:before:bg-current/[0.03]",
+      "focus-within:ring-2 focus-within:ring-inset focus-within:ring-current/10",
     ],
   );
 

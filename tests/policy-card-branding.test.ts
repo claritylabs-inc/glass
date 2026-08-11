@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  policyCardBranding,
   policyOverviewBranding,
   tonePolicyCardColor,
   tonePolicyOverviewColor,
@@ -12,19 +13,34 @@ describe("policy card branding", () => {
     expect(tonePolicyCardColor("#DA532C")).toBe("#803F33");
   });
 
-  it("keeps the neutral fallback unchanged", () => {
-    expect(tonePolicyCardColor()).toBe("#1E293B");
+  it("uses a black raster fallback and theme-aware browser surface", () => {
+    expect(tonePolicyCardColor()).toBe("#000000");
+    expect(policyCardBranding("Insurance carrier")).toMatchObject({
+      cardColor: "#000000",
+      textColor: "#FFFFFF",
+      surfaceClassName: "bg-background text-foreground",
+      surfaceStyle: undefined,
+    });
   });
 
   it("uses a light carrier tint with dark text for policy overviews", () => {
     expect(tonePolicyOverviewColor("#2066AE")).toBe("#90B3D7");
-    expect(policyOverviewBranding("#2066AE").surfaceStyle).toEqual({
+    expect(policyOverviewBranding("Zurich Canada", "#2066AE").surfaceStyle).toEqual({
       backgroundColor: "#90B3D7",
       color: "#0F172A",
     });
   });
 
-  it("uses a quiet neutral overview when no carrier color was recovered", () => {
-    expect(tonePolicyOverviewColor()).toBe("#F1F5F9");
+  it("uses theme surfaces when no carrier color was recovered", () => {
+    const overviewBranding = policyOverviewBranding("Insurance carrier");
+
+    expect(tonePolicyOverviewColor()).toBe("#FFFFFF");
+    expect(overviewBranding).toMatchObject({
+      surfaceClassName: "bg-background text-foreground",
+      surfaceStyle: undefined,
+    });
+    expect(overviewBranding.patternStyle.backgroundImage).toContain(
+      "currentColor",
+    );
   });
 });

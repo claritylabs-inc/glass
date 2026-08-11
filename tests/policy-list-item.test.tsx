@@ -38,13 +38,29 @@ describe("PolicyListItem", () => {
 
     expect(interactiveMarkup).toContain("cursor-pointer");
     expect(interactiveMarkup).toContain("before:duration-100");
-    expect(interactiveMarkup).toContain("hover:before:border-white/25");
-    expect(interactiveMarkup).toContain("hover:before:bg-white/[0.04]");
-    expect(interactiveMarkup).toContain("active:before:bg-black/[0.035]");
+    expect(interactiveMarkup).toContain("border-current/6");
+    expect(interactiveMarkup).toContain(
+      "[@media(hover:hover)_and_(pointer:fine)]:hover:before:bg-current/[0.03]",
+    );
+    expect(interactiveMarkup).toContain("active:before:bg-current/[0.05]");
     expect(interactiveMarkup).toContain("focus-visible:ring-inset");
-    expect(interactiveMarkup).not.toContain("hover:-translate-y");
-    expect(interactiveMarkup).not.toContain("hover:shadow-");
-    expect(staticMarkup).not.toContain("hover:before:bg-white/[0.04]");
+    expect(interactiveMarkup).not.toContain("hover:before:border");
+    expect(interactiveMarkup).not.toContain("shadow-");
+    expect(staticMarkup).not.toContain("hover:before:bg-current/[0.03]");
+  });
+
+  it("uses a white or black theme surface when carrier branding is unavailable", () => {
+    const markup = renderToStaticMarkup(
+      <PolicyListItem
+        carrier="Unbranded Carrier"
+        policyNumber="UB-100"
+        pipelineStatus="complete"
+      />,
+    );
+
+    expect(markup).toContain("bg-background text-foreground");
+    expect(markup).toContain("color-mix(in srgb, currentColor");
+    expect(markup).not.toContain("background-color:#1E293B");
   });
 
   it("renders canonical display dates for differently formatted stored values", () => {

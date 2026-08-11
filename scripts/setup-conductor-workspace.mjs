@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import {
+  conductorContainerNamesOnPort,
   conductorImageTag,
   conductorPorts,
   ensureNode24,
@@ -156,6 +157,26 @@ function buildWorkerImages() {
       `${directory}/Dockerfile`,
       directory,
     ]);
+  }
+}
+
+function cleanupContainersOnWorkspacePorts() {
+  const output = capture("container", ["list", "--all", "--format", "json"]);
+  const containers = JSON.parse(output || "[]");
+  if (!Array.isArray(containers)) {
+    throw new Error("Apple container list did not return an array");
+  }
+
+  const { extraction } = conductorPorts();
+  for (const containerName of conductorContainerNamesOnPort(
+    containers,
+    "extraction",
+    extraction,
+  )) {
+    run("container", ["delete", "--force", containerName]);
+    console.log(
+      `Deleted Apple container ${containerName} occupying this workspace's extraction port.`,
+    );
   }
 }
 
@@ -393,6 +414,7 @@ run("npm", ["run", "check:agent-workers"]);
 
 if (process.env.CONDUCTOR_IS_LOCAL !== "0") {
   ensureContainerService();
+  cleanupContainersOnWorkspacePorts();
   buildWorkerImages();
 }
 

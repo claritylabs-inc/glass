@@ -27,6 +27,7 @@
 /docs/*
 !/docs/design/
 /docs/design/*
+!/docs/design/interface-style.md
 !/docs/design/typography.md
 !/docs/deployment/
 /docs/deployment/*

@@ -1013,7 +1013,7 @@ export function PolicyDetailBody({
             You&apos;re viewing demo data.{" "}
             <Link
               href="/profile"
-              className={`underline hover:text-amber-900 ${typeStyle("control.button")}`}
+              className={`underline hover:text-amber-900 ${typeStyle("caption.medium")}`}
             >
               Remove demo data
             </Link>{" "}
