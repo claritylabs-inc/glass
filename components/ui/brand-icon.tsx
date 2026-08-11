@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 const DEFAULT_IMAGE_BACKGROUND = "#FFFFFF";
 const SAMPLE_SIZE = 48;
@@ -185,7 +186,7 @@ export function BrandIcon({
           }}
         />
       ) : initial ? (
-        <span className="text-label font-semibold leading-none">{initial}</span>
+        <span className={`${typeStyle("caption.medium")}`}>{initial}</span>
       ) : null}
     </span>
   );

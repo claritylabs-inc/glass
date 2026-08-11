@@ -3,6 +3,7 @@
 import { AlertTriangle, Copy, FileLock2, Mail } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
+import { typeStyle } from "@/lib/typography";
 
 type CertificateHoldArtifact = {
   type?: string;
@@ -99,14 +100,14 @@ export function CertificateHoldArtifacts({
                 <FileLock2 className="mt-0.5 size-4 shrink-0 text-amber-600" />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-base font-medium leading-5 text-foreground/90">
+                    <p className={`text-foreground/90 ${typeStyle("body.medium")}`}>
                       Certificate on hold
                     </p>
-                    <StatusTag tone="warning" className="capitalize">
+                    <StatusTag tone="warning" className={`${typeStyle("label.tag")}`}>
                       broker review
                     </StatusTag>
                   </div>
-                  <p className="mt-1 text-base leading-5 text-muted-foreground">
+                  <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                     {message}
                   </p>
                 </div>
@@ -117,7 +118,7 @@ export function CertificateHoldArtifacts({
                   {requiredChanges.map((change) => (
                     <span
                       key={change}
-                      className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-tag text-muted-foreground"
+                      className={`rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
                     >
                       {labelForChange(change)}
                     </span>
@@ -127,7 +128,7 @@ export function CertificateHoldArtifacts({
 
               {evidence.length > 0 ? (
                 <details className="mt-3 rounded-md border border-foreground/8 bg-background/60 p-2">
-                  <summary className="flex cursor-pointer items-center gap-1.5 text-label font-medium text-muted-foreground">
+                  <summary className={`flex cursor-pointer items-center gap-1.5 text-muted-foreground ${typeStyle("control.tab")}`}>
                     <AlertTriangle className="size-3.5" />
                     Evidence checked
                   </summary>
@@ -135,7 +136,7 @@ export function CertificateHoldArtifacts({
                     {evidence.map((item, evidenceIndex) => (
                       <p
                         key={`${String(item.label ?? "evidence")}-${evidenceIndex}`}
-                        className="text-label leading-5 text-muted-foreground/80"
+                        className={`text-muted-foreground/80 ${typeStyle("caption.default")}`}
                       >
                         {typeof item.label === "string" ? `${item.label}: ` : ""}
                         {String(item.excerpt)}
@@ -149,10 +150,10 @@ export function CertificateHoldArtifacts({
                 <div className="mt-3 rounded-md border border-foreground/8 bg-background/70 p-2.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-label font-medium text-foreground/85">
+                      <p className={`text-foreground/85 ${typeStyle("caption.medium")}`}>
                         Broker email draft
                       </p>
-                      <p className="mt-1 break-words text-base leading-5 text-foreground/80">
+                      <p className={`mt-1 break-words text-foreground/80 ${typeStyle("body.default")}`}>
                         {draft.subject}
                       </p>
                     </div>
@@ -180,7 +181,7 @@ export function CertificateHoldArtifacts({
                       </PillButton>
                     </div>
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap text-base leading-5 text-muted-foreground">
+                  <p className={`mt-2 whitespace-pre-wrap text-muted-foreground ${typeStyle("body.default")}`}>
                     {draft.body}
                   </p>
                 </div>

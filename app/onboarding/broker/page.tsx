@@ -19,6 +19,7 @@ import {
 } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
@@ -205,7 +206,7 @@ function Shell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-20 w-full bg-background px-6 py-6 sm:px-8">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-base text-muted-foreground">
+        <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-muted-foreground ${typeStyle("body.default")}`}>
           <div className="justify-self-start min-w-0">
             <div className="sm:hidden">
               <LogoIcon size={18} color="#A0D2FA" static />
@@ -219,7 +220,7 @@ function Shell({
               <StepDots currentStep={currentStep} />
             ) : null}
           </div>
-          <div className="justify-self-end text-right text-base text-muted-foreground min-w-0">
+          <div className={`justify-self-end text-right text-muted-foreground min-w-0 ${typeStyle("body.default")}`}>
             {email ? (
               <div className="flex items-center gap-3">
                 <span className="hidden sm:inline">{email}</span>
@@ -227,7 +228,7 @@ function Shell({
                   <button
                     type="button"
                     onClick={() => void onLogout()}
-                    className="font-medium text-foreground transition hover:opacity-70"
+                    className={`text-foreground transition hover:opacity-70 ${typeStyle("control.button")}`}
                   >
                     Log out
                   </button>
@@ -245,10 +246,10 @@ function Shell({
 }
 
 const inputClass =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 
 const labelClass =
-  "text-label font-medium text-muted-foreground block mb-1.5";
+  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 export default function BrokerOnboardingPage() {
   const router = useRouter();
@@ -509,11 +510,11 @@ export default function BrokerOnboardingPage() {
     >
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
-          <h1 className="text-base font-medium tracking-tight">
+          <h1 className={`${typeStyle("heading.micro")}`}>
             {STEPS[currentStep].label}
           </h1>
           {STEPS[currentStep].subtitle ? (
-            <p className="text-base text-muted-foreground">
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
               {STEPS[currentStep].subtitle}
             </p>
           ) : null}
@@ -575,13 +576,13 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={!canContinueName || submitting}
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -602,7 +603,7 @@ export default function BrokerOnboardingPage() {
             <div className="space-y-2">
               <label className={labelClass}>Workspace link</label>
               <div className="flex items-stretch gap-0">
-                <div className="flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label text-muted-foreground/60 select-none whitespace-nowrap">
+                <div className={`flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-muted-foreground/60 select-none whitespace-nowrap ${typeStyle("caption.default")}`}>
                   {WORKSPACE_DOMAIN}/
                 </div>
                 <input
@@ -615,7 +616,7 @@ export default function BrokerOnboardingPage() {
                   }
                   placeholder="acme-brokers"
                   autoFocus
-                  className="h-9 flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className={`h-9 flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
                 />
               </div>
 
@@ -623,7 +624,7 @@ export default function BrokerOnboardingPage() {
                 {slugChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-label text-muted-foreground">
+                    <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                       Checking...
                     </span>
                   </>
@@ -633,7 +634,7 @@ export default function BrokerOnboardingPage() {
                 slugCheck?.available ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-base text-emerald-600">
+                    <span className={`text-emerald-600 ${typeStyle("body.default")}`}>
                       {WORKSPACE_DOMAIN}/{debouncedSlug} is available
                     </span>
                   </>
@@ -644,13 +645,13 @@ export default function BrokerOnboardingPage() {
                 !slugCheck.available ? (
                   <>
                     <X className="w-3.5 h-3.5 text-red-500" />
-                    <span className="text-base text-red-500">
+                    <span className={`text-red-500 ${typeStyle("body.default")}`}>
                       {slugCheck.reason ?? "Not available"}
                     </span>
                   </>
                 ) : null}
                 {slugInput.length > 0 && slugInput.length < 3 ? (
-                  <span className="text-base text-muted-foreground/50">
+                  <span className={`text-muted-foreground/50 ${typeStyle("body.default")}`}>
                     Minimum 3 characters
                   </span>
                 ) : null}
@@ -658,13 +659,13 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={(!viewerOrg?.org && !canContinueSlug) || submitting}
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -726,17 +727,17 @@ export default function BrokerOnboardingPage() {
                           ) : null}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-base font-medium truncate text-foreground">
+                          <div className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                             {orgName.trim() || "Your organization"}
                           </div>
-                          <div className="text-label truncate text-muted-foreground">
+                          <div className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                             Preview of your client workspace
                           </div>
                         </div>
                         <button
                           type="button"
                           disabled
-                          className="rounded-full px-3.5 py-1.5 text-label font-medium"
+                          className={`rounded-full px-3.5 py-1.5 ${typeStyle("control.buttonCompact")}`}
                           style={{
                             backgroundColor: brandingColor,
                             color: textColor,
@@ -752,14 +753,14 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <PillButton
               type="button"
               onClick={handleBrandingNext}
               disabled={submitting}
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -798,9 +799,9 @@ export default function BrokerOnboardingPage() {
                   }
                   placeholder="acme"
                   autoFocus
-                  className="h-9 flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                  className={`h-9 flex-1 min-w-0 rounded-l-lg border border-r-0 border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
                 />
-                <div className="flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-label text-muted-foreground/60 select-none whitespace-nowrap">
+                <div className={`flex items-center rounded-r-lg border border-l-0 border-foreground/8 bg-foreground/2 px-3 py-2 text-muted-foreground/60 select-none whitespace-nowrap ${typeStyle("caption.default")}`}>
                   @{WORKSPACE_DOMAIN}
                 </div>
               </div>
@@ -808,7 +809,7 @@ export default function BrokerOnboardingPage() {
                 {handleChecking ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
-                    <span className="text-label text-muted-foreground">
+                    <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                       Checking…
                     </span>
                   </>
@@ -819,7 +820,7 @@ export default function BrokerOnboardingPage() {
                 handleCheck?.available ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-base text-emerald-600">
+                    <span className={`text-emerald-600 ${typeStyle("body.default")}`}>
                       {debouncedHandle}@{WORKSPACE_DOMAIN} is available
                     </span>
                   </>
@@ -831,18 +832,18 @@ export default function BrokerOnboardingPage() {
                 !handleCheck.available ? (
                   <>
                     <X className="w-3.5 h-3.5 text-red-500" />
-                    <span className="text-base text-red-500">
+                    <span className={`text-red-500 ${typeStyle("body.default")}`}>
                       {handleCheck.reason ?? "Not available"}
                     </span>
                   </>
                 ) : null}
                 {agentHandle.length > 0 && agentHandle.length < 3 ? (
-                  <span className="text-base text-muted-foreground/50">
+                  <span className={`text-muted-foreground/50 ${typeStyle("body.default")}`}>
                     Minimum 3 characters
                   </span>
                 ) : null}
                 {agentHandle.length === 0 ? (
-                  <span className="text-label text-muted-foreground">
+                  <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                     Clients will email this address to reach your AI agent.
                   </span>
                 ) : null}
@@ -850,7 +851,7 @@ export default function BrokerOnboardingPage() {
             </div>
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <PillButton
@@ -862,7 +863,7 @@ export default function BrokerOnboardingPage() {
                   agentHandle !== viewerOrg?.org?.agentHandle &&
                   (handleChecking || !handleCheck?.available))
               }
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

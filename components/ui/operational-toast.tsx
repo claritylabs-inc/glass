@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/pill-button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 type OperationalToastTone = "loading" | "success" | "error";
 
@@ -104,11 +105,11 @@ function OperationalStatusToast({
       </div>
 
       <div className={cn("min-w-0", !inlineAction && "col-span-2")}>
-        <p className="truncate text-base font-medium leading-5 text-foreground">
+        <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
           {title}
         </p>
         {description ? (
-          <p className="truncate text-label leading-4 text-muted-foreground">
+          <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
             {description}
           </p>
         ) : null}

@@ -25,6 +25,7 @@ import {
 } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 const GLASS_IMESSAGE_NUMBER =
@@ -87,10 +88,10 @@ const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
 ] as const;
 
 const inputClass =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 
 const labelClass =
-  "text-label font-medium text-muted-foreground block mb-1.5";
+  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 function StepDots({ currentStep }: { currentStep: Step }) {
   return (
@@ -130,7 +131,7 @@ function Shell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-20 w-full bg-background px-6 py-6 sm:px-8">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-base text-muted-foreground">
+        <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-muted-foreground ${typeStyle("body.default")}`}>
           <div className="justify-self-start min-w-0">
             <div className="sm:hidden">
               <LogoIcon size={18} color="#A0D2FA" static />
@@ -152,7 +153,7 @@ function Shell({
               <StepDots currentStep={currentStep} />
             ) : null}
           </div>
-          <div className="justify-self-end text-right text-base text-muted-foreground min-w-0">
+          <div className={`justify-self-end text-right text-muted-foreground min-w-0 ${typeStyle("body.default")}`}>
             {email ? (
               <div className="flex items-center gap-3">
                 <span className="hidden sm:inline">{email}</span>
@@ -160,7 +161,7 @@ function Shell({
                   <button
                     type="button"
                     onClick={() => void onLogout()}
-                    className="font-medium text-foreground transition hover:opacity-70"
+                    className={`text-foreground transition hover:opacity-70 ${typeStyle("control.button")}`}
                   >
                     Log out
                   </button>
@@ -535,7 +536,7 @@ export default function ClientOnboardingSetupPage() {
     >
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
-          <h1 className="text-base font-medium tracking-tight">
+          <h1 className={`${typeStyle("heading.micro")}`}>
             {currentStep === 0 &&
             viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false &&
             viewerOrg?.brokerOrg?.name &&
@@ -544,7 +545,7 @@ export default function ClientOnboardingSetupPage() {
               : stepContent[currentStep].label}
           </h1>
           {stepContent[currentStep].subtitle ? (
-            <p className="text-base text-muted-foreground">
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
               {stepContent[currentStep].subtitle}
             </p>
           ) : null}
@@ -589,7 +590,7 @@ export default function ClientOnboardingSetupPage() {
                   defaultCountry="US"
                   placeholder="Enter phone number"
                 />
-                <p className="text-label text-muted-foreground/70">
+                <p className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}>
                   {phoneInvalid ? (
                     <span className="text-red-500/80">
                       Enter a valid phone number with country code.
@@ -610,13 +611,13 @@ export default function ClientOnboardingSetupPage() {
             </div>
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={!canContinueStep0 || submitting}
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -655,7 +656,7 @@ export default function ClientOnboardingSetupPage() {
                   placeholder="acme.com"
                   className={inputClass}
                 />
-                <p className="text-label text-muted-foreground/70">
+                <p className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}>
                   We&apos;ll use this to enrich your company profile
                   automatically.
                 </p>
@@ -663,13 +664,13 @@ export default function ClientOnboardingSetupPage() {
             </div>
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <PillButton
               type="submit"
               disabled={!canContinueStep1 || submitting}
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Continue
@@ -689,12 +690,12 @@ export default function ClientOnboardingSetupPage() {
                   <Check className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-base font-semibold text-foreground">
+                  <div className={`text-foreground ${typeStyle("body.strong")}`}>
                     {policyCount === 1
                       ? "1 policy uploaded"
                       : `${policyCount} policies uploaded`}
                   </div>
-                  <div className="text-base text-muted-foreground mt-0.5">
+                  <div className={`text-muted-foreground mt-0.5 ${typeStyle("body.default")}`}>
                     We&apos;re extracting the details in the background — you
                     can move on.
                   </div>
@@ -717,7 +718,7 @@ export default function ClientOnboardingSetupPage() {
             )}
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between -mt-4">
@@ -725,7 +726,7 @@ export default function ClientOnboardingSetupPage() {
                 type="button"
                 onClick={() => setCurrentStep(3)}
                 disabled={uploading}
-                className="text-label text-muted-foreground hover:text-foreground transition self-start sm:self-center disabled:opacity-50"
+                className={`text-muted-foreground hover:text-foreground transition self-start sm:self-center disabled:opacity-50 ${typeStyle("control.buttonCompact")}`}
               >
                 Skip for now
               </button>
@@ -736,7 +737,7 @@ export default function ClientOnboardingSetupPage() {
                   uploading ||
                   (policyCount === 0 && stagedPolicies.length === 0)
                 }
-                className="w-full justify-center text-base shadow-none sm:w-auto"
+                className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
               >
                 {uploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -750,7 +751,7 @@ export default function ClientOnboardingSetupPage() {
 
         {currentStep === 3 && (
           <div className="space-y-10">
-            <ol className="list-none space-y-4 text-base text-muted-foreground [&>li]:flex [&>li]:gap-4">
+            <ol className={`list-none space-y-4 text-muted-foreground [&>li]:flex [&>li]:gap-4 ${typeStyle("body.default")}`}>
               {(isVendorInvite
                 ? [
                     `Share policies and certificates with ${invitingClientName}.`,
@@ -764,14 +765,14 @@ export default function ClientOnboardingSetupPage() {
                   ]
               ).map((item, index) => (
                 <li key={item}>
-                  <span className="shrink-0 tabular-nums text-foreground/30">
+                  <span className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}>
                     {index + 1}.
                   </span>
                   <span>{item}</span>
                 </li>
               ))}
               <li>
-                <span className="shrink-0 tabular-nums text-foreground/30">
+                <span className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}>
                   4.
                 </span>
                 <span>
@@ -784,7 +785,7 @@ export default function ClientOnboardingSetupPage() {
                         .then(() => toast.success("Copied to clipboard"))
                         .catch(() => toast.error("Couldn't copy"));
                     }}
-                    className="mx-1 inline-flex items-center gap-1 font-medium text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors"
+                    className={`mx-1 inline-flex items-center gap-1 text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors ${typeStyle("control.button")}`}
                   >
                     {brokerAgentEmail}
                     <Copy className="h-3.5 w-3.5" />
@@ -794,7 +795,7 @@ export default function ClientOnboardingSetupPage() {
               </li>
               {GLASS_IMESSAGE_NUMBER ? (
                 <li>
-                  <span className="shrink-0 tabular-nums text-foreground/30">
+                  <span className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}>
                     5.
                   </span>
                   <span>
@@ -807,7 +808,7 @@ export default function ClientOnboardingSetupPage() {
                           .then(() => toast.success("Copied to clipboard"))
                           .catch(() => toast.error("Couldn't copy"));
                       }}
-                      className="mx-1 inline-flex items-center gap-1 font-medium text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors"
+                      className={`mx-1 inline-flex items-center gap-1 text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors ${typeStyle("control.button")}`}
                     >
                       {GLASS_IMESSAGE_NUMBER}
                       <Copy className="h-3.5 w-3.5" />
@@ -819,14 +820,14 @@ export default function ClientOnboardingSetupPage() {
             </ol>
 
             {error ? (
-              <p className="text-base text-muted-foreground">{error}</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
             ) : null}
 
             <PillButton
               type="button"
               onClick={handleFinish}
               disabled={submitting}
-              className="w-full justify-center text-base shadow-none sm:w-auto"
+              className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

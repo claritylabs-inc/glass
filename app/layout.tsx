@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Instrument_Serif } from "next/font/google";
+import localFont from "next/font/local";
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { ConvexClientProvider } from "@/components/providers";
 import { AuthGuard } from "@/components/auth-guard";
@@ -10,6 +10,7 @@ import { SmoothCornersProvider } from "@/components/ui/smooth-corners-provider";
 import { BrandThemeApplier } from "@/components/brand-theme-applier";
 import { getViewerBranding } from "@/lib/viewer-branding";
 import { getClientPortalUrl } from "@/convex/lib/domains";
+import { typeStyle } from "@/lib/typography";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -22,10 +23,53 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-instrument-serif",
+const redaction = localFont({
+  variable: "--font-redaction",
+  src: [
+    {
+      path: "./fonts/redaction/Redaction-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/redaction/Redaction-Italic.woff2",
+      weight: "400",
+      style: "italic",
+    },
+    {
+      path: "./fonts/redaction/Redaction-Bold.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+});
+
+const redaction35 = localFont({
+  variable: "--font-redaction-35",
+  src: "./fonts/redaction/Redaction35-Regular.woff2",
   weight: "400",
-  subsets: ["latin"],
+  preload: false,
+});
+
+const redaction50 = localFont({
+  variable: "--font-redaction-50",
+  src: "./fonts/redaction/Redaction50-Regular.woff2",
+  weight: "400",
+  preload: false,
+});
+
+const redaction70 = localFont({
+  variable: "--font-redaction-70",
+  src: "./fonts/redaction/Redaction70-Regular.woff2",
+  weight: "400",
+  preload: false,
+});
+
+const redaction100 = localFont({
+  variable: "--font-redaction-100",
+  src: "./fonts/redaction/Redaction100-Regular.woff2",
+  weight: "400",
+  preload: false,
 });
 
 export const viewport: Viewport = {
@@ -78,7 +122,7 @@ export default function RootLayout({
           />
         </head>
         <body
-          className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} antialiased`}
+          className={`${geistSans.variable} ${geistMono.variable} ${redaction.variable} ${redaction35.variable} ${redaction50.variable} ${redaction70.variable} ${redaction100.variable} ${typeStyle("body.root")}`}
         >
           <SmoothCornersProvider />
           <ConvexClientProvider>

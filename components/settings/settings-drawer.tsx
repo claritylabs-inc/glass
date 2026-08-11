@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { X } from "lucide-react";
+import { typeStyle } from "@/lib/typography";
 
 const EASE = [0.2, 0, 0, 1] as const;
 
@@ -72,7 +73,7 @@ export function SettingsDrawer({
             className="flex min-h-0 w-full flex-1 flex-col border-l border-foreground/6 bg-background"
           >
             <div className="min-h-12 flex items-center gap-3 px-4 py-2 border-b border-foreground/6 shrink-0">
-              <div className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
+              <div className={`min-w-0 flex-1 truncate text-foreground ${typeStyle("body.medium")}`}>
                 {title}
               </div>
               {actions ? <div className="shrink-0">{actions}</div> : null}

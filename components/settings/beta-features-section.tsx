@@ -28,6 +28,7 @@ import {
   useCachedViewerOrg,
 } from "@/lib/sync/glass-cached-queries";
 import { useSyncStore } from "@claritylabs/cl-sync";
+import { typeStyle } from "@/lib/typography";
 
 export function BetaFeaturesSection() {
   const viewer = useQuery(api.users.viewer, {});
@@ -112,7 +113,7 @@ export function BetaFeaturesSection() {
       >
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-red-500" />
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             This will permanently delete all policies (including stored files),
             emails, connections, and conversations for your organization. This
             action cannot be undone.
@@ -144,10 +145,10 @@ export function BetaFeaturesSection() {
         <OperationalPanelBody className="px-5 py-5">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-base font-medium text-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 Re-run Setup
               </p>
-              <p className="mt-0.5 text-label text-muted-foreground">
+              <p className={`mt-0.5 text-muted-foreground ${typeStyle("caption.default")}`}>
                 Walk through the onboarding steps again. Your existing data will
                 not be affected.
               </p>
@@ -171,17 +172,17 @@ export function BetaFeaturesSection() {
       {viewer?.isAdmin ? (
         <div className="rounded-lg border border-red-200 bg-red-50/50 dark:border-red-900/50 dark:bg-red-950/30">
           <div className="border-b border-red-200 px-5 py-3.5 dark:border-red-900/50">
-            <h2 className="text-base font-medium text-red-900 dark:text-red-400">
+            <h2 className={`text-red-900 dark:text-red-400 ${typeStyle("heading.micro")}`}>
               Danger Zone
             </h2>
           </div>
           <div className="px-5 py-5">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-base font-medium text-foreground">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
                   Reset Organization
                 </p>
-                <p className="mt-0.5 text-label text-muted-foreground">
+                <p className={`mt-0.5 text-muted-foreground ${typeStyle("caption.default")}`}>
                   Delete all policies, emails, connections, and conversations.
                   This cannot be undone.
                 </p>

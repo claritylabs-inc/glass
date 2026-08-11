@@ -14,6 +14,7 @@ import {
 
 import type { AutoSaveStatus as AutoSaveStatusValue } from "@/lib/sync/use-local-first-auto-save";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 const SLOW_SAVE_DELAY_MS = 3_000;
 
@@ -55,7 +56,7 @@ function AutoSaveStatusSurface({
       aria-atomic="true"
       data-status={status}
       className={cn(
-        "pointer-events-none flex max-w-full animate-in items-center gap-2.5 rounded-full border bg-popover/95 px-3.5 py-2 text-base text-popover-foreground shadow-lg shadow-black/[0.08] backdrop-blur-md duration-150 fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none",
+        `pointer-events-none flex max-w-full animate-in items-center gap-2.5 rounded-full border bg-popover/95 px-3.5 py-2 text-popover-foreground shadow-lg shadow-black/[0.08] backdrop-blur-md duration-150 fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none ${typeStyle("body.default")}`,
         status === "saving" && "border-foreground/10",
         status === "unsaved" && "border-warning/25",
         status === "error" && "border-destructive/25",
@@ -78,7 +79,7 @@ function AutoSaveStatusSurface({
         />
       )}
       <p className="min-w-0 truncate">
-        <span className="font-medium">{content.title}</span>
+        <span className={`${typeStyle("body.medium")}`}>{content.title}</span>
         {content.description ? (
           <span className="ml-1.5 hidden text-muted-foreground sm:inline">
             {content.description}

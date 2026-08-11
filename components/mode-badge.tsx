@@ -1,4 +1,5 @@
 import { MessageCircle } from "lucide-react";
+import { typeStyle } from "@/lib/typography";
 
 export function ModeBadge({ mode }: { mode: "direct" | "cc" | "forward" | "unknown" | "application" | "chat" }) {
   const styles = {
@@ -11,7 +12,7 @@ export function ModeBadge({ mode }: { mode: "direct" | "cc" | "forward" | "unkno
   };
   const labels = { direct: "Direct", cc: "CC", forward: "Forward", unknown: "Unknown", application: "Application", chat: "Chat" };
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-label font-medium ${styles[mode]}`}>
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${typeStyle("caption.medium")} ${styles[mode]}`}>
       {mode === "chat" && <MessageCircle className="w-2.5 h-2.5" />}
       {labels[mode]}
     </span>

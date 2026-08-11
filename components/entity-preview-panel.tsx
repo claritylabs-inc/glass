@@ -12,6 +12,7 @@ import { X } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { PolicyPreview } from "./preview/policy-preview";
 import { PillButton } from "@/components/ui/pill-button";
+import { typeStyle } from "@/lib/typography";
 
 const EASE = [0.2, 0, 0, 1] as const;
 type HighlightBox = PdfHighlightBox;
@@ -41,7 +42,7 @@ export function EntityPreviewPanel() {
         {/* Toolbar */}
         <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0 gap-3">
           <div className="min-w-0 flex-1">
-            <span className="text-base font-medium text-foreground">
+            <span className={`text-foreground ${typeStyle("body.medium")}`}>
               Policy preview
             </span>
           </div>

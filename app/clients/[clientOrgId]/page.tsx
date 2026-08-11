@@ -8,6 +8,7 @@ import {
   OperationalPanel,
 } from "@/components/ui/operational-panel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 export default function ClientDetailsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -32,7 +33,7 @@ export default function ClientDetailsPage() {
   return (
     <OperationalPanel as="div" className="px-5 py-1">
       {filled.length === 0 ? (
-        <p className="py-3 text-base text-muted-foreground">
+        <p className={`py-3 text-muted-foreground ${typeStyle("body.default")}`}>
           No details yet.
         </p>
       ) : (

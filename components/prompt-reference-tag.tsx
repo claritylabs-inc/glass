@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 export type PromptReferenceTagKind =
   | "policy"
@@ -101,7 +102,7 @@ export function PromptReferenceTag({
   return (
     <span
       className={cn(
-        "inline-flex h-5 max-w-[min(16rem,100%)] shrink-0 items-center gap-1 align-middle rounded-4xl bg-foreground/5 px-2 text-tag font-medium text-foreground/70",
+        `inline-flex h-5 max-w-[min(16rem,100%)] shrink-0 items-center gap-1 align-middle rounded-4xl bg-foreground/5 px-2 text-foreground/70 ${typeStyle("label.tag")}`,
         className,
       )}
     >

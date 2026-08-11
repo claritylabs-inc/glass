@@ -6,6 +6,7 @@ import type { AddressAutofillRetrieveResponse } from "@mapbox/search-js-core";
 import type { Theme as MapboxSearchTheme } from "@mapbox/search-js-web";
 
 import { Input } from "@/components/ui/input";
+import { mapboxTypographyAdapter } from "@/lib/typography";
 
 const AddressAutofill = dynamic(
   () =>
@@ -38,20 +39,14 @@ const MAPBOX_ADDRESS_AUTOFILL_THEME = {
     border: "1px solid var(--border)",
     borderRadius: "8px",
     boxShadow: "0 16px 40px rgba(0, 0, 0, 0.35)",
-    fontFamily: "inherit",
-    fontWeight: "400",
-    fontWeightSemibold: "500",
-    fontWeightBold: "500",
-    lineHeight: "1.35",
+    ...mapboxTypographyAdapter.variables,
   },
   cssText: `
     .MapboxSearchListbox {
       overflow: hidden;
     }
 
-    .MapboxSearchListbox * {
-      letter-spacing: 0;
-    }
+    ${mapboxTypographyAdapter.cssText}
   `,
 } satisfies MapboxSearchTheme;
 

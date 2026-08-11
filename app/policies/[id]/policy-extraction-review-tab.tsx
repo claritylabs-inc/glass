@@ -10,6 +10,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { typeStyle } from "@/lib/typography";
 
 type CoverageReviewOption = {
   id?: string;
@@ -337,10 +338,10 @@ export function PolicyExtractionReview({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-base font-medium text-foreground">
+                  <p className={`text-foreground ${typeStyle("body.medium")}`}>
                     {displayReviewQuestion(question)}
                   </p>
-                  <p className="mt-1 max-w-4xl text-label leading-5 text-muted-foreground">
+                  <p className={`mt-1 max-w-4xl text-muted-foreground ${typeStyle("caption.default")}`}>
                     {displayReviewReason(question)}
                   </p>
                 </div>
@@ -374,35 +375,35 @@ export function PolicyExtractionReview({
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="text-label font-medium uppercase tracking-normal text-muted-foreground">
+                        <p className={`text-muted-foreground ${typeStyle("label.eyebrow")}`}>
                           {heading}
                         </p>
-                        <p className="mt-1 text-base font-medium text-foreground">
+                        <p className={`mt-1 text-foreground ${typeStyle("body.medium")}`}>
                           {optionDisplayLabel(option)}
                         </p>
                         {details.source || details.type ? (
-                          <p className="mt-1 text-label leading-4 text-muted-foreground">
+                          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
                             {[details.type, details.source]
                               .filter(Boolean)
                               .join(" from ")}
                           </p>
                         ) : null}
                         {key === recommendedEntry?.key ? (
-                          <p className="mt-1 text-label leading-5 text-muted-foreground">
+                          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
                             {recommendationText(question, option)}
                           </p>
                         ) : details.name ? (
-                          <p className="mt-1 text-label leading-5 text-muted-foreground">
+                          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
                             {details.name}
                           </p>
                         ) : null}
                         {details.text ? (
-                          <p className="mt-1 line-clamp-2 text-label leading-4 text-muted-foreground">
+                          <p className={`mt-1 line-clamp-2 text-muted-foreground ${typeStyle("caption.default")}`}>
                             {details.text}
                           </p>
                         ) : null}
                       </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-tag font-medium text-muted-foreground">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-muted-foreground ${typeStyle("label.tag")}`}>
                         {selected ? (
                           <CheckCircle2 className="size-3.5" />
                         ) : null}

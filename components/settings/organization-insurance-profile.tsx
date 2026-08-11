@@ -17,6 +17,7 @@ import {
 } from "@/convex/lib/entityTypes";
 import { patchCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { typeStyle } from "@/lib/typography";
 
 type Address = {
   street1?: string;
@@ -106,7 +107,7 @@ function Field({
 
   return (
     <label htmlFor={id} className="block min-w-0">
-      <span className="mb-1.5 block text-label font-medium text-muted-foreground">
+      <span className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}>
         {label}
       </span>
       <Input
@@ -121,7 +122,7 @@ function Field({
       {error ? (
         <span
           id={errorId}
-          className="mt-1.5 block text-label text-destructive"
+          className={`mt-1.5 block text-destructive ${typeStyle("caption.default")}`}
           aria-live="polite"
         >
           {error}
@@ -244,7 +245,7 @@ export function OrganizationInsuranceProfile({
     <fieldset disabled={disabled}>
       <FormSection title="Insurance profile" className="space-y-4">
         <label className="block min-w-0">
-          <span className="mb-1.5 block text-label font-medium text-muted-foreground">
+          <span className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}>
             Mailing address
           </span>
           <AddressAutofillInput
@@ -266,7 +267,7 @@ export function OrganizationInsuranceProfile({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block min-w-0">
-            <span className="mb-1.5 block text-label font-medium text-muted-foreground">
+            <span className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}>
               Entity type
             </span>
             <SearchableSelect
@@ -326,7 +327,7 @@ export function OrganizationInsuranceProfile({
         </div>
 
         <label className="block">
-          <span className="mb-1.5 block text-label font-medium text-muted-foreground">
+          <span className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}>
             Description of operations
           </span>
           <textarea
@@ -340,7 +341,7 @@ export function OrganizationInsuranceProfile({
             onBlur={() => void saveProfileNow()}
             rows={4}
             placeholder="Describe the organization’s current business operations"
-            className="w-full resize-y rounded-lg border border-foreground/8 bg-popover px-3 py-2 text-base leading-5 placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
+            className={`w-full resize-y rounded-lg border border-foreground/8 bg-popover px-3 py-2 placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8 ${typeStyle("control.input")}`}
           />
         </label>
       </FormSection>

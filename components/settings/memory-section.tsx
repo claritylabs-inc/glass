@@ -25,6 +25,7 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { formatDisplayDate } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type MemoryItem = {
   _id: Id<"orgMemory">;
@@ -160,10 +161,10 @@ function MemoryEditDrawer({
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
             <div>
-              <p className="text-base font-medium text-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 Delete this company memory?
               </p>
-              <p className="mt-1 text-base text-muted-foreground">
+              <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                 Glass will stop using it in future advice and servicing.
               </p>
             </div>
@@ -265,7 +266,7 @@ export function MemorySection() {
 
   if (memories === undefined) {
     return (
-      <OperationalPanel as="div" className="px-5 py-10 text-center text-base text-muted-foreground">
+      <OperationalPanel as="div" className={`px-5 py-10 text-center text-muted-foreground ${typeStyle("body.default")}`}>
         Loading memory…
       </OperationalPanel>
     );
@@ -274,7 +275,7 @@ export function MemorySection() {
   if (memories.length === 0) {
     return (
       <OperationalPanel as="div" className="px-5 py-10 text-center">
-        <p className="text-base text-muted-foreground">No company memory yet</p>
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>No company memory yet</p>
       </OperationalPanel>
     );
   }
@@ -293,7 +294,7 @@ export function MemorySection() {
           <OperationalPanelHeader
             title={TYPE_LABELS[type] ?? type}
             action={
-              <span className="text-base text-muted-foreground">
+              <span className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 {grouped[type].length}
               </span>
             }
@@ -308,10 +309,10 @@ export function MemorySection() {
                 className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/10"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block text-base leading-snug text-foreground">
+                  <span className={`block text-foreground ${typeStyle("body.default")}`}>
                     {memory.content}
                   </span>
-                  <span className="mt-1 block text-base text-muted-foreground">
+                  <span className={`mt-1 block text-muted-foreground ${typeStyle("body.default")}`}>
                     {SOURCE_LABELS[memory.source] ?? memory.source} ·{" "}
                     {formatDisplayDate(memory.updatedAt)}
                   </span>

@@ -27,6 +27,7 @@ import {
   useOperatorGlobalModelRouteCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 type ProviderId =
   | "openai"
@@ -288,11 +289,11 @@ export function ModelsTab() {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-base font-medium text-foreground">
+                        <p className={`text-foreground ${typeStyle("body.medium")}`}>
                           {task.label}
                         </p>
                         {displayRoute ? (
-                          <span className="rounded-full bg-muted/55 px-2 py-0.5 text-tag text-muted-foreground">
+                          <span className={`rounded-full bg-muted/55 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}>
                             Custom seed
                           </span>
                         ) : null}
@@ -327,7 +328,7 @@ export function ModelsTab() {
                                 provider={selectedRoute.provider}
                                 size={15}
                               />
-                              <span className="truncate text-sm">
+                              <span className={`truncate ${typeStyle("body.large")}`}>
                                 {selectedProvider?.label ??
                                   selectedRoute.provider}
                               </span>
@@ -346,10 +347,10 @@ export function ModelsTab() {
                                   provider={provider.id}
                                   size={15}
                                 />
-                                <span className="truncate text-sm">
+                                <span className={`truncate ${typeStyle("body.large")}`}>
                                   {provider.label}
                                 </span>
-                                <span className="ml-auto shrink-0 text-label text-muted-foreground/60">
+                                <span className={`ml-auto shrink-0 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                                   {providerTransportLabel(provider)}
                                 </span>
                               </span>
@@ -380,7 +381,7 @@ export function ModelsTab() {
                                 size={16}
                               />
                               <span
-                                className="min-w-0 truncate text-base"
+                                className={`min-w-0 truncate ${typeStyle("body.default")}`}
                                 title={selectedRoute.model}
                               >
                                 {getModelDisplayName(selectedRoute)}
@@ -418,13 +419,13 @@ export function ModelsTab() {
                                       size={16}
                                     />
                                     <span
-                                      className="truncate text-base"
+                                      className={`truncate ${typeStyle("body.default")}`}
                                       title={model}
                                     >
                                       {getModelDisplayName(optionRoute)}
                                     </span>
                                   </span>
-                                  <span className="shrink-0 text-label text-muted-foreground/60">
+                                  <span className={`shrink-0 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                                     {capabilitySummary(
                                       capability,
                                       task.id,

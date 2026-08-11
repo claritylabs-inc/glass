@@ -42,6 +42,7 @@ import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { usePageContext } from "@/hooks/use-page-context";
 import { usePdf } from "@/components/pdf-context";
+import { typeStyle } from "@/lib/typography";
 
 type CertificateWorkspaceTab = "active" | "review" | "archived";
 type CertificatePolicyFilter = "all" | `policy:${string}`;
@@ -114,27 +115,27 @@ function ReviewJobRow({ job }: { job: CertificateWorkflowJob }) {
       <div className="flex min-w-0 flex-col gap-3 @xl/certificates-panel:flex-row @xl/certificates-panel:items-start @xl/certificates-panel:justify-between">
         <div className="min-w-0 max-w-3xl">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <p className="min-w-0 max-w-full truncate text-base font-medium text-foreground">
+            <p className={`min-w-0 max-w-full truncate text-foreground ${typeStyle("body.medium")}`}>
               {job.holder?.displayName ?? job.recipientName ?? "Certificate holder"}
             </p>
-            <StatusTag tone={jobTone(job.status)} className="capitalize">
+            <StatusTag tone={jobTone(job.status)} className={`${typeStyle("label.tag")}`}>
               {job.status.replace(/_/g, " ")}
             </StatusTag>
           </div>
-          <p className="mt-1 text-base leading-5 text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
             {job.reason ?? job.lastError ?? "Certificate review queued"}
           </p>
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-label text-muted-foreground/70">
+          <div className={`mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground/70 ${typeStyle("caption.default")}`}>
             <Link
               href={`/policies/${job.policyId}?tab=certificates`}
-              className="min-w-0 max-w-full truncate font-medium text-muted-foreground hover:text-foreground hover:underline"
+              className={`min-w-0 max-w-full truncate text-muted-foreground hover:text-foreground hover:underline ${typeStyle("control.button")}`}
             >
               {certificatePolicyLabel(job.policy)}
             </Link>
             <span className="text-muted-foreground/35" aria-hidden="true">
               ·
             </span>
-            <span className="capitalize">{job.kind.replace(/_/g, " ")}</span>
+            <span className={`${typeStyle("body.default")}`}>{job.kind.replace(/_/g, " ")}</span>
             <span className="text-muted-foreground/35" aria-hidden="true">
               ·
             </span>
@@ -167,7 +168,7 @@ function CertificatesPolicyFilter({
   onValueChange: (value: CertificatePolicyFilter) => void;
 }) {
   return (
-    <label className="flex min-w-0 max-w-xl flex-col gap-1.5 text-label font-medium text-muted-foreground">
+    <label className={`flex min-w-0 max-w-xl flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>
       Policy
       <Select
         value={value}
@@ -200,11 +201,11 @@ function CertificateEmptyPanel({
   return (
     <OperationalPanel as="div">
       <OperationalPanelBody className="px-4 py-10 text-center">
-        <p className="text-base font-medium text-foreground">
+        <p className={`text-foreground ${typeStyle("body.medium")}`}>
           {title}
         </p>
         {description ? (
-          <p className="mt-1 text-base text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
             {description}
           </p>
         ) : null}

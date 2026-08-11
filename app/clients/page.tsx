@@ -8,6 +8,7 @@ import { InviteClientDrawer } from "@/components/invite-client-drawer";
 import { PillButton } from "@/components/ui/pill-button";
 import { UserPlus } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
+import { typeStyle } from "@/lib/typography";
 
 export default function ClientsPage() {
   const currentOrg = useCurrentOrg();
@@ -27,7 +28,7 @@ export default function ClientsPage() {
     return (
       <AppShell>
         <div className="py-16 text-center">
-          <p className="text-base text-muted-foreground/60">
+          <p className={`text-muted-foreground/60 ${typeStyle("body.default")}`}>
             This page is for broker organizations only.
           </p>
         </div>

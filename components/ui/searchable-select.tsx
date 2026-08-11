@@ -3,6 +3,7 @@
 import { Combobox } from "@base-ui/react/combobox";
 import { ChevronDown, Check, Search } from "lucide-react";
 import { useState } from "react";
+import { typeStyle } from "@/lib/typography";
 
 interface SearchableSelectOption {
   value: string;
@@ -62,7 +63,7 @@ function SearchableSelectControl({
       autoHighlight
       disabled={disabled}
     >
-      <Combobox.Trigger className="h-9 w-full flex items-center justify-between rounded-lg border border-foreground/8 bg-popover px-3 text-base text-left transition-colors hover:border-foreground/14 hover:bg-foreground/1.5 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-foreground/8 disabled:hover:bg-popover">
+      <Combobox.Trigger className={`h-9 w-full flex items-center justify-between rounded-lg border border-foreground/8 bg-popover px-3 text-left transition-colors hover:border-foreground/14 hover:bg-foreground/1.5 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-foreground/8 disabled:hover:bg-popover ${typeStyle("control.menu")}`}>
         <span className={selected ? "text-foreground" : "text-muted-foreground/40"}>
           {selected?.label || placeholder}
         </span>
@@ -71,17 +72,17 @@ function SearchableSelectControl({
 
       <Combobox.Portal>
         <Combobox.Positioner align="start" sideOffset={4} className="isolate z-50">
-          <Combobox.Popup className="z-50 w-(--anchor-width) overflow-hidden rounded-lg bg-popover text-base text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-75 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0">
+          <Combobox.Popup className={`z-50 w-(--anchor-width) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-75 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 ${typeStyle("control.menu")}`}>
             <div className="p-1.5 border-b border-foreground/6">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground/40" />
                 <Combobox.Input
                   placeholder="Search..."
-                  className="w-full pl-6.5 pr-2 py-1.5 text-base rounded-md bg-foreground/3 placeholder:text-muted-foreground/40 focus:outline-none"
+                  className={`w-full pl-6.5 pr-2 py-1.5 rounded-md bg-foreground/3 placeholder:text-muted-foreground/40 focus:outline-none ${typeStyle("control.input")}`}
                 />
               </div>
             </div>
-            <Combobox.Empty className="px-3 py-2 text-label text-muted-foreground/50">
+            <Combobox.Empty className={`px-3 py-2 text-muted-foreground/50 ${typeStyle("control.menu")}`}>
               No results
             </Combobox.Empty>
             <Combobox.List className="max-h-48 overflow-y-auto py-1">
@@ -89,7 +90,7 @@ function SearchableSelectControl({
                 <Combobox.Item
                   key={option.value}
                   value={option}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-base text-left transition-colors data-highlighted:bg-foreground/4"
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors data-highlighted:bg-foreground/4 ${typeStyle("control.menu")}`}
                 >
                   <span className="flex-1 truncate">{option.label}</span>
                   <Combobox.ItemIndicator>

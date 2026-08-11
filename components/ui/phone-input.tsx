@@ -23,6 +23,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { typeStyle } from "@/lib/typography";
 
 export type PhoneInputValue = string | undefined
 
@@ -141,14 +142,14 @@ function CountrySelect({
             {...props}
             type="button"
             data-slot="phone-country-select"
-            className="inline-flex h-full shrink-0 items-center gap-2 rounded-l-lg rounded-r-none border-r border-foreground/8 px-3 text-base text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50"
+            className={`inline-flex h-full shrink-0 items-center gap-2 rounded-l-lg rounded-r-none border-r border-foreground/8 px-3 text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50 ${typeStyle("control.button")}`}
             disabled={isDisabled}
             aria-label={`Country: ${selected?.label ?? value} (+${callingCode})`}
           >
             <CountryFlag country={value} label={selected?.label ?? value} />
             <span
               data-slot="phone-country-prefix"
-              className="min-w-8 text-right tabular-nums text-muted-foreground"
+              className={`min-w-8 text-right text-muted-foreground ${typeStyle("data.numeric")}`}
             >
               +{callingCode}
             </span>
@@ -182,7 +183,7 @@ function CountrySelect({
                     <span className="truncate">{option.label}</span>
                     <span
                       data-slot="phone-country-option-prefix"
-                      className="ml-auto w-14 text-right text-label tabular-nums text-muted-foreground"
+                      className={`ml-auto w-14 text-right text-muted-foreground ${typeStyle("data.numeric")}`}
                     >
                       +{optionCallingCode}
                     </span>
@@ -205,7 +206,7 @@ const PhoneInputField = React.forwardRef<
     <input
       ref={ref}
       className={cn(
-        "h-full w-full min-w-0 bg-transparent px-3 text-base placeholder:text-muted-foreground/40 outline-none",
+        `h-full w-full min-w-0 bg-transparent px-3 placeholder:text-muted-foreground/40 outline-none ${typeStyle("control.input")}`,
         className
       )}
       {...props}

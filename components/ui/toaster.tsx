@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { Toaster } from "sonner";
+import { typeStyle } from "@/lib/typography";
 
 export function AppToaster() {
   return (
@@ -33,8 +34,8 @@ export function AppToaster() {
           maxWidth: "calc(100vw - 2rem)",
         },
         className:
-          "!overflow-hidden !bg-card dark:!bg-popover/95 !border !border-foreground/8 !shadow-lg !shadow-black/[0.08] !rounded-xl !text-foreground !text-base !font-[var(--font-geist-sans)]",
-        descriptionClassName: "!text-muted-foreground !text-label",
+          `!overflow-hidden !bg-card dark:!bg-popover/95 !border !border-foreground/8 !shadow-lg !shadow-black/[0.08] !rounded-xl !text-foreground ${typeStyle("body.default")}`,
+        descriptionClassName: `!text-muted-foreground ${typeStyle("caption.default")}`,
       }}
     />
   );

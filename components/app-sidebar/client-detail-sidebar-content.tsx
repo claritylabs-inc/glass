@@ -15,6 +15,7 @@ import { SidebarMenuItem } from "./nav-item";
 import { SidebarHeader } from "./sidebar-header";
 import type { ClientThreadItem } from "./types";
 import { splitThreadConversations } from "@/lib/thread-display";
+import { typeStyle } from "@/lib/typography";
 
 export function ClientDetailSidebarContent({
   collapsed,
@@ -63,7 +64,7 @@ export function ClientDetailSidebarContent({
       />
       <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
         {!collapsed && (
-          <p className="text-label font-medium text-muted-foreground/50 px-3 pt-3 pb-1.5">
+          <p className={`text-muted-foreground/50 px-3 pt-3 pb-1.5 ${typeStyle("caption.medium")}`}>
             Client
           </p>
         )}
@@ -89,7 +90,7 @@ export function ClientDetailSidebarContent({
         {!collapsed && clientDetailId && (
           <>
             <div className="flex items-center justify-between px-3 pt-5 pb-1.5">
-              <span className="text-label font-medium text-muted-foreground/50">
+              <span className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
                 Threads
               </span>
             </div>
@@ -97,7 +98,7 @@ export function ClientDetailSidebarContent({
               <div className="min-h-7" aria-hidden="true" />
             )}
             {clientThreads && clientThreads.length === 0 && (
-              <p className="px-3 py-1 text-label text-muted-foreground/40">
+              <p className={`px-3 py-1 text-muted-foreground/40 ${typeStyle("caption.default")}`}>
                 No threads
               </p>
             )}
@@ -108,7 +109,7 @@ export function ClientDetailSidebarContent({
                 <Link
                   key={`${item.kind}-${item.id}`}
                   href={href}
-                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
+                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} ${typeStyle("control.button")} ${
                     isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
@@ -129,7 +130,7 @@ export function ClientDetailSidebarContent({
                 <Link
                   key={`${item.kind}-${item.id}`}
                   href={href}
-                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} text-base ${
+                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} ${typeStyle("control.button")} ${
                     isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
                   }`}
                 >
@@ -146,7 +147,7 @@ export function ClientDetailSidebarContent({
             })}
             <Link
               href={`/clients/${clientDetailId}/threads`}
-              className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} text-label ${MENU_ITEM_INACTIVE_SUBTLE}`}
+              className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} ${typeStyle("control.buttonCompact")} ${MENU_ITEM_INACTIVE_SUBTLE}`}
             >
               <MessageSquare className="w-3 h-3 shrink-0" />
               <span>All threads</span>

@@ -17,6 +17,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { typeStyle } from "@/lib/typography";
 
 type ConnectedOrgsApi = {
   connectedOrgs: {
@@ -38,8 +39,8 @@ type RequestData = {
 
 const connectedOrgsApi = api as unknown as ConnectedOrgsApi;
 const INPUT_CLASSES =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
-const LABEL_CLASSES = "text-label font-medium text-muted-foreground block mb-1.5";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
+const LABEL_CLASSES = `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 function isEmailLike(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -190,7 +191,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
     return (
       <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
         <AuthCard title="Invite unavailable" subtitle={fetchError ?? "Invite not found"} logo={<BrandWordmark />}>
-          <p className="text-base text-muted-foreground">Ask the client to resend the vendor invite.</p>
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Ask the client to resend the vendor invite.</p>
         </AuthCard>
       </AuthMinimalShell>
     );
@@ -210,16 +211,16 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
     <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
       <AuthCard title={title} subtitle={subtitle} logo={<BrandWordmark />}>
         {autoVerifying ? (
-          <div className="flex items-center gap-3 text-base text-muted-foreground">
+          <div className={`flex items-center gap-3 text-muted-foreground ${typeStyle("body.default")}`}>
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>Opening your vendor invite...</span>
           </div>
         ) : requestData.status !== "pending" ? (
-          <p className="text-base text-muted-foreground">This vendor invite is {requestData.status}.</p>
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>This vendor invite is {requestData.status}.</p>
         ) : step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             {requestData.note ? (
-              <p className="rounded-lg border border-foreground/6 bg-foreground/3 p-3 text-base text-muted-foreground">
+              <p className={`rounded-lg border border-foreground/6 bg-foreground/3 p-3 text-muted-foreground ${typeStyle("body.default")}`}>
                 {requestData.note}
               </p>
             ) : null}
@@ -235,8 +236,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
                 className={INPUT_CLASSES}
               />
             </div>
-            {error ? <p className="px-1 py-1 text-base text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || !email.trim()} className="w-full justify-center text-base shadow-none sm:w-auto">
+            {error ? <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p> : null}
+            <PillButton type="submit" disabled={loading || !email.trim()} className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Sending code..." : "Continue"}
               {!loading ? <ArrowRight className="h-4 w-4" /> : null}
@@ -248,8 +249,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
               <span className={LABEL_CLASSES}>Verification code</span>
               <OtpField value={code} onValueChange={setCode} autoFocus required />
             </div>
-            {error ? <p className="px-1 py-1 text-base text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || code.length < 6} className="w-full justify-center text-base shadow-none sm:w-auto">
+            {error ? <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p> : null}
+            <PillButton type="submit" disabled={loading || code.length < 6} className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Accepting..." : "Accept invite"}
             </PillButton>

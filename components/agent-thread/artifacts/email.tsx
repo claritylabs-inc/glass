@@ -19,6 +19,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import type { ThreadMessage } from "../types";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type EmailPayloadPreview = {
   from?: string;
@@ -118,14 +119,14 @@ function EmailBodyPreview({ html, text }: { html?: string; text: string }) {
   if (safeHtml) {
     return (
       <div
-        className="break-words text-base leading-6 text-foreground/90 [overflow-wrap:anywhere] [&_a]:text-primary-light [&_a]:underline [&_img]:inline-block [&_img]:align-middle"
+        className={`break-words text-foreground/90 [overflow-wrap:anywhere] [&_a]:text-primary-light [&_a]:underline [&_img]:inline-block [&_img]:align-middle ${typeStyle("body.default")}`}
         dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
     );
   }
 
   return (
-    <div className="whitespace-pre-wrap break-words text-base leading-6 text-foreground/90 [overflow-wrap:anywhere]">
+    <div className={`whitespace-pre-wrap break-words text-foreground/90 [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
       {text}
     </div>
   );
@@ -142,10 +143,10 @@ function EmailHeaderRow({
 
   return (
     <>
-      <dt className="pt-0.5 text-label font-medium leading-4 text-muted-foreground/50">
+      <dt className={`pt-0.5 text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
         {label}
       </dt>
-      <dd className="min-w-0 break-words text-sm leading-5 text-foreground/70">
+      <dd className={`min-w-0 break-words text-foreground/70 ${typeStyle("body.large")}`}>
         {value}
       </dd>
     </>
@@ -170,7 +171,7 @@ function EmailHeaderAttachments({
 
   return (
     <>
-      <dt className="col-span-1 pt-0.5 text-label font-medium leading-4 text-muted-foreground/50">
+      <dt className={`col-span-1 pt-0.5 text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
         Attachments
       </dt>
       <dd className="col-span-1 min-w-0">
@@ -188,7 +189,7 @@ function EmailHeaderAttachments({
               type="button"
               aria-expanded={isExpanded}
               onClick={() => setIsExpanded((value) => !value)}
-              className="inline-flex h-5 shrink-0 items-center rounded-full bg-foreground/5 px-1.5 text-[0.6875rem] font-medium leading-4 text-foreground/40 transition-colors hover:bg-foreground/8 hover:text-foreground/80"
+              className={`inline-flex h-5 shrink-0 items-center rounded-full bg-foreground/5 px-1.5 text-foreground/40 transition-colors hover:bg-foreground/8 hover:text-foreground/80 ${typeStyle("control.button")}`}
             >
               {isExpanded ? "Hide" : `+ ${hiddenAttachmentCount} more`}
             </button>
@@ -293,13 +294,13 @@ export function EmailSummaryCard({
         className="block w-full min-w-0 px-3 py-2.5 text-left"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium leading-4 text-muted-foreground/55">
+          <span className={`block truncate text-muted-foreground/55 ${typeStyle("caption.medium")}`}>
             {label}
           </span>
-          <span className="block truncate text-sm font-medium leading-5 text-foreground/90">
+          <span className={`block truncate text-foreground/90 ${typeStyle("body.large")}`}>
             {preview}
           </span>
-          <span className="block truncate text-xs leading-4 text-muted-foreground/55">
+          <span className={`block truncate text-muted-foreground/55 ${typeStyle("caption.default")}`}>
             {recipients}
           </span>
         </span>
@@ -310,7 +311,7 @@ export function EmailSummaryCard({
             type="button"
             size="compact"
             variant="secondary"
-            className="text-xs"
+            className={`${typeStyle("control.button")}`}
             onClick={(event) => {
               event.stopPropagation();
               onOpen?.(message);
@@ -323,7 +324,7 @@ export function EmailSummaryCard({
               type="button"
               size="compact"
               variant="primary"
-              className="text-xs"
+              className={`${typeStyle("control.button")}`}
               onClick={handleQuickSend}
               disabled={isSending}
             >
@@ -340,7 +341,7 @@ export function EmailSummaryCard({
               type="button"
               size="compact"
               variant="primary"
-              className="text-xs"
+              className={`${typeStyle("control.button")}`}
               onClick={handleRestore}
               disabled={isRestoring}
             >
@@ -454,10 +455,10 @@ export function EmailStackCard({
     <div className="w-full max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2">
         <div className="min-w-0">
-          <p className="text-xs font-medium leading-4 text-muted-foreground/55">
+          <p className={`text-muted-foreground/55 ${typeStyle("caption.medium")}`}>
             Email drafts
           </p>
-          <p className="truncate text-sm font-medium leading-5 text-foreground/90">
+          <p className={`truncate text-foreground/90 ${typeStyle("body.large")}`}>
             {orderedMessages.length} email
             {orderedMessages.length === 1 ? "" : "s"}
           </p>
@@ -467,7 +468,7 @@ export function EmailStackCard({
             type="button"
             size="compact"
             variant="primary"
-            className="text-xs"
+            className={`${typeStyle("control.button")}`}
             onClick={handleSendAll}
             disabled={isSendingAll}
           >
@@ -495,16 +496,16 @@ export function EmailStackCard({
             >
               <span className="flex min-w-0 items-start justify-between gap-3">
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium leading-5 text-foreground/90">
+                  <span className={`block truncate text-foreground/90 ${typeStyle("body.large")}`}>
                     {getEmailSummaryPreview(message)}
                   </span>
-                  <span className="block truncate text-xs leading-4 text-muted-foreground/55">
+                  <span className={`block truncate text-muted-foreground/55 ${typeStyle("caption.default")}`}>
                     {getEmailSummaryRecipients(message)}
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
                   {attachmentCount > 0 ? (
-                    <span className="text-xs leading-4 text-muted-foreground/45">
+                    <span className={`text-muted-foreground/45 ${typeStyle("caption.default")}`}>
                       {attachmentCount} file{attachmentCount === 1 ? "" : "s"}
                     </span>
                   ) : null}
@@ -623,7 +624,7 @@ export function EmailThreadSidebar({
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-base font-semibold text-foreground">
+          <h2 className={`truncate text-foreground ${typeStyle("heading.micro")}`}>
             {message.subject ||
               (message.role === "agent" ? "Sent email" : "Received email")}
           </h2>

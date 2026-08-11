@@ -10,12 +10,13 @@ import { api } from "@/convex/_generated/api";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
+import { typeStyle } from "@/lib/typography";
 
 const inputClass =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60";
-const labelClass = "text-label font-medium text-muted-foreground";
-const helpClass = "text-label text-muted-foreground/60";
-const errorClass = "text-label text-red-500/80";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:bg-foreground/[0.02] disabled:text-muted-foreground/60 ${typeStyle("body.default")}`;
+const labelClass = `text-muted-foreground ${typeStyle("caption.medium")}`;
+const helpClass = `text-muted-foreground/60 ${typeStyle("caption.default")}`;
+const errorClass = `text-red-500/80 ${typeStyle("caption.default")}`;
 
 type PendingEmailChange = NonNullable<
   FunctionReturnType<typeof api.users.getMyPendingEmailChange>
@@ -40,8 +41,8 @@ function PendingEmailChangeBlock({
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2">
-        <p className="text-label text-muted-foreground">Pending email</p>
-        <p className="truncate text-base font-medium text-foreground">
+        <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Pending email</p>
+        <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
           {pending.newEmail}
         </p>
       </div>

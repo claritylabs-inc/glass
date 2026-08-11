@@ -44,10 +44,8 @@ describe("settings panel surfaces", () => {
     const compliance = read("components/compliance-page.tsx");
 
     expect(primitive).toContain("border-t border-foreground/6 pt-4");
-    expect(primitive).toContain(
-      "text-base font-medium leading-5 text-foreground",
-    );
-    expect(primitive).toContain("text-base leading-5 text-muted-foreground");
+    expect(primitive).toContain('typeStyle("heading.micro")');
+    expect(primitive).toContain('typeStyle("body.default")');
     expect(primitive).toContain("{action ?");
     expect(policyEditor).toContain("<FormSection title={label}>");
     expect(policyEditor).toContain('title="Additional named insureds"');
@@ -141,9 +139,7 @@ describe("settings panel surfaces", () => {
     expect(operationalPanel).toContain(
       "sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3",
     );
-    expect(operationalPanel).toContain(
-      "text-label font-normal text-muted-foreground sm:text-base",
-    );
+    expect(operationalPanel).toContain('typeStyle("label.metadata")');
     expect(operationalPanel).toContain(
       'align === "right" && "sm:text-right"',
     );

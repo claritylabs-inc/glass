@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import type { HTMLAttributes } from "react";
+import { typeStyle } from "@/lib/typography";
 
 export type PromptInputTabsListProps = HTMLAttributes<HTMLDivElement>;
 
@@ -27,7 +28,7 @@ export const PromptInputTabLabel = ({
   // oxlint-disable-next-line eslint-plugin-jsx-a11y(heading-has-content)
   <h3
     className={cn(
-      "mb-2 px-3 font-medium text-muted-foreground text-label",
+      `mb-2 px-3 text-muted-foreground ${typeStyle("heading.micro")}`,
       className
     )}
     {...props}
@@ -51,7 +52,7 @@ export const PromptInputTabItem = ({
 }: PromptInputTabItemProps) => (
   <div
     className={cn(
-      "flex items-center gap-2 px-3 py-2 text-label hover:bg-accent",
+      `flex items-center gap-2 px-3 py-2 hover:bg-accent ${typeStyle("caption.default")}`,
       className
     )}
     {...props}

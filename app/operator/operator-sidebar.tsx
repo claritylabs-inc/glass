@@ -17,6 +17,7 @@ import {
 } from "@/components/app-sidebar/nav-item";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { typeStyle } from "@/lib/typography";
 
 export function OperatorSidebar({
   collapsed,
@@ -101,7 +102,7 @@ export function OperatorSidebar({
       </div>
       <div className="border-t border-foreground/6 px-2 py-2">
         {!collapsed && email ? (
-          <p className="truncate px-3 pb-2 text-label text-muted-foreground/60">
+          <p className={`truncate px-3 pb-2 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
             {email}
           </p>
         ) : null}

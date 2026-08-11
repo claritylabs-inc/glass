@@ -6,6 +6,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PolicyDetailBody } from "@/app/policies/[id]/policy-detail-body";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 export default function ConnectedVendorPolicyDetailPage({
   params,
@@ -28,7 +29,7 @@ export default function ConnectedVendorPolicyDetailPage({
       breadcrumbDetail={
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-muted-foreground/80">{vendorName}</span>
-          <span className="text-base text-muted-foreground/30">/</span>
+          <span className={`text-muted-foreground/30 ${typeStyle("body.default")}`}>/</span>
           <span className="truncate">{breadcrumb}</span>
         </span>
       }

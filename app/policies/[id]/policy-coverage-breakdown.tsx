@@ -16,6 +16,7 @@ import {
   usePolicySourceNodes,
   usePolicySourceSpans,
 } from "./source-provenance";
+import { typeStyle } from "@/lib/typography";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -74,7 +75,7 @@ function CoveredAssetScheduleList({
     <OperationalPanel>
       <OperationalPanelHeader title={schedule.name} />
       {schedule.description ? (
-        <div className="border-t border-foreground/6 px-4 py-3 text-base text-muted-foreground">
+        <div className={`border-t border-foreground/6 px-4 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
           {schedule.description}
         </div>
       ) : null}
@@ -105,16 +106,16 @@ function CoveredAssetScheduleList({
                 canOpenSource ? "cursor-pointer transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40" : ""
               }`}
             >
-              <div className="text-base font-medium text-foreground">{item.label}</div>
+              <div className={`text-foreground ${typeStyle("body.medium")}`}>{item.label}</div>
               {item.description ? (
-                <div className="mt-1 text-base text-muted-foreground">{item.description}</div>
+                <div className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{item.description}</div>
               ) : null}
               {item.values.length ? (
                 <dl className="mt-3 divide-y divide-foreground/6">
                   {item.values.map((value, valueIndex) => (
                     <div key={`${value.label}:${valueIndex}`} className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0">
-                      <dt className="text-base text-muted-foreground">{value.label}</dt>
-                      <dd className="text-right text-base font-medium text-foreground">{value.value}</dd>
+                      <dt className={`text-muted-foreground ${typeStyle("body.default")}`}>{value.label}</dt>
+                      <dd className={`text-right text-foreground ${typeStyle("body.medium")}`}>{value.value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -228,7 +229,7 @@ function CoverageScheduleList({
               }`}
             >
               <div className="min-w-0">
-                <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+                <div className={`text-foreground [overflow-wrap:anywhere] ${typeStyle("body.medium")}`}>
                   {row.name}
                 </div>
               </div>
@@ -238,10 +239,10 @@ function CoverageScheduleList({
                     key={`${term.label}:${termIndex}`}
                     className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0"
                   >
-                    <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                    <dt className={`min-w-0 text-muted-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
                       {term.label}
                     </dt>
-                    <dd className="min-w-0 text-right text-base font-medium leading-5 tabular-nums text-foreground [overflow-wrap:anywhere]">
+                    <dd className={`min-w-0 text-right text-foreground [overflow-wrap:anywhere] ${typeStyle("data.numeric")}`}>
                       {term.value}
                     </dd>
                   </div>

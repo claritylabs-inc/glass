@@ -20,6 +20,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 type EmailAccessMode = "strict" | "open" | "domain";
 
@@ -188,7 +189,7 @@ export function ClientEmailRoutingSection({
         description="Choose who Glass can identify as this client when they email your agent address."
         action={
           canEdit ? undefined : (
-            <span className="text-label text-muted-foreground">
+            <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
               Broker admins can edit
             </span>
           )
@@ -198,10 +199,10 @@ export function ClientEmailRoutingSection({
 
       <OperationalPanelBody className="space-y-4 px-5 py-5">
         <div>
-          <p className="text-base font-medium text-foreground">
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>
             Recognized senders
           </p>
-          <p className="mt-1 text-base text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
             Messages from recognized senders enter this client&apos;s workspace.
           </p>
         </div>
@@ -223,10 +224,10 @@ export function ClientEmailRoutingSection({
             >
               <RadioGroupItem value={option.id} className="mt-0.5" />
               <span className="min-w-0">
-                <span className="block text-base font-medium text-foreground">
+                <span className={`block text-foreground ${typeStyle("body.medium")}`}>
                   {option.label}
                 </span>
-                <span className="mt-0.5 block text-base text-muted-foreground">
+                <span className={`mt-0.5 block text-muted-foreground ${typeStyle("body.default")}`}>
                   {option.description}
                 </span>
               </span>
@@ -237,10 +238,10 @@ export function ClientEmailRoutingSection({
 
       <OperationalPanelBody className="space-y-4 border-t border-foreground/6 px-5 py-5">
         <div>
-          <h3 className="text-base font-medium text-foreground">
+          <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Approved addresses
           </h3>
-          <p className="mt-1 text-base text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
             Add outside contacts or aliases that should enter this client&apos;s
             workspace.
           </p>
@@ -265,7 +266,7 @@ export function ClientEmailRoutingSection({
             aria-invalid={Boolean(emailError)}
           />
           {emailError ? (
-            <p className="text-label text-destructive">{emailError}</p>
+            <p className={`text-destructive ${typeStyle("caption.default")}`}>{emailError}</p>
           ) : null}
         </div>
         {emails.length > 0 ? (
@@ -273,7 +274,7 @@ export function ClientEmailRoutingSection({
             {emails.map((email) => (
               <span
                 key={email}
-                className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover py-1 pr-1.5 pl-3 text-tag text-foreground"
+                className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover py-1 pr-1.5 pl-3 text-foreground ${typeStyle("label.tag")}`}
               >
                 {email}
                 {canEdit ? (
@@ -294,7 +295,7 @@ export function ClientEmailRoutingSection({
             ))}
           </div>
         ) : (
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             No additional addresses.
           </p>
         )}
@@ -304,14 +305,14 @@ export function ClientEmailRoutingSection({
         <OperationalPanelBody className="border-t border-foreground/6 px-5 py-4">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div>
-              <h3 className="text-base font-medium text-foreground">
+              <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
                 Client team
               </h3>
-              <p className="mt-1 text-base text-muted-foreground">
+              <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                 Current member account emails are included automatically.
               </p>
             </div>
-            <p className="shrink-0 text-base text-foreground">
+            <p className={`shrink-0 text-foreground ${typeStyle("body.default")}`}>
               {members.length} {members.length === 1 ? "member" : "members"}
             </p>
           </div>
@@ -320,10 +321,10 @@ export function ClientEmailRoutingSection({
 
       <OperationalPanelBody className="space-y-4 border-t border-foreground/6 px-5 py-5">
         <div>
-          <h3 className="text-base font-medium text-foreground">
+          <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Approved domains
           </h3>
-          <p className="mt-1 text-base text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
             {mode === "domain"
               ? "Anyone at these domains is recognized as this client."
               : "Used only when Client team and domains is selected."}
@@ -348,7 +349,7 @@ export function ClientEmailRoutingSection({
             aria-invalid={Boolean(domainError)}
           />
           {domainError ? (
-            <p className="text-label text-destructive">{domainError}</p>
+            <p className={`text-destructive ${typeStyle("caption.default")}`}>{domainError}</p>
           ) : null}
         </div>
         {domains.length > 0 ? (
@@ -356,7 +357,7 @@ export function ClientEmailRoutingSection({
             {domains.map((domain) => (
               <span
                 key={domain}
-                className="inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover py-1 pr-1.5 pl-3 text-tag text-foreground"
+                className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover py-1 pr-1.5 pl-3 text-foreground ${typeStyle("label.tag")}`}
               >
                 @{domain}
                 {canEdit && mode === "domain" ? (
@@ -379,7 +380,7 @@ export function ClientEmailRoutingSection({
         ) : null}
         {mode === "domain" && suggestedDomains.length > 0 && canEdit ? (
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-label text-muted-foreground">
+            <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
               From client members
             </span>
             {suggestedDomains.map((domain) => (
@@ -387,7 +388,7 @@ export function ClientEmailRoutingSection({
                 key={domain}
                 type="button"
                 onClick={() => addDomain(domain)}
-                className="rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-tag text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10"
+                className={`rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 ${typeStyle("label.tag")}`}
               >
                 + @{domain}
               </button>

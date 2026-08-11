@@ -9,6 +9,7 @@ import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { typeStyle } from "@/lib/typography";
 
 type ClientSupportDetails = NonNullable<
   FunctionReturnType<typeof api.operator.getClientSupportDetails>
@@ -27,7 +28,7 @@ function Field({
 }) {
   return (
     <label>
-      <span className="mb-1.5 block text-label font-medium text-muted-foreground">
+      <span className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}>
         {label}
       </span>
       {children}
@@ -116,7 +117,7 @@ export function ClientCompanyDetails({
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-label font-medium text-muted-foreground">
+          <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
             Legal names and related entities
           </span>
           <PillButton
@@ -135,7 +136,7 @@ export function ClientCompanyDetails({
           </PillButton>
         </div>
         {relatedLegalEntities.length === 0 ? (
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             No related legal entities listed.
           </p>
         ) : (

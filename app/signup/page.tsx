@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Briefcase, UserRound, ArrowRight, Building2 } from "lucide-react";
 import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
+import { typeStyle } from "@/lib/typography";
 
 export default function SignupPage() {
   return (
@@ -19,10 +20,10 @@ export default function SignupPage() {
           >
             <Briefcase className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
-              <div className="text-base font-medium text-foreground">
+              <div className={`text-foreground ${typeStyle("body.medium")}`}>
                 I&apos;m a broker or insurance agent
               </div>
-              <div className="text-label text-muted-foreground">
+              <div className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                 Set up your brokerage and invite clients.
               </div>
             </div>
@@ -35,10 +36,10 @@ export default function SignupPage() {
           >
             <Building2 className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
-              <div className="text-base font-medium text-foreground">
+              <div className={`text-foreground ${typeStyle("body.medium")}`}>
                 I&apos;m a company signing up directly
               </div>
-              <div className="text-label text-muted-foreground">
+              <div className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                 Manage your own policies, get answers, and generate COIs.
               </div>
             </div>
@@ -48,13 +49,13 @@ export default function SignupPage() {
           <div className="flex items-start gap-3 rounded-lg border border-dashed border-foreground/8 p-4">
             <UserRound className="mt-0.5 h-5 w-5 text-muted-foreground" />
             <div className="flex-1">
-              <div className="text-base font-medium text-foreground">
+              <div className={`text-foreground ${typeStyle("body.medium")}`}>
                 I have an invitation from my partner
               </div>
-              <div className="text-label text-muted-foreground">
+              <div className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                 Use the signup link your partner shared with you (it looks like{" "}
                 app.glass.insure/signup/your-partner), or{" "}
-                <Link href="/login" className="font-medium text-foreground underline-offset-2 hover:underline">
+                <Link href="/login" className={`text-foreground underline-offset-2 hover:underline ${typeStyle("control.button")}`}>
                   log in
                 </Link>{" "}
                 if you already have an account.
@@ -63,11 +64,11 @@ export default function SignupPage() {
           </div>
         </div>
 
-        <div className="pt-5 text-label text-muted-foreground">
+        <div className={`pt-5 text-muted-foreground ${typeStyle("caption.default")}`}>
           <span>Already have an account? </span>
           <Link
             href="/login"
-            className="text-label font-medium text-foreground transition hover:opacity-70"
+            className={`text-foreground transition hover:opacity-70 ${typeStyle("control.buttonCompact")}`}
           >
             Log in
           </Link>

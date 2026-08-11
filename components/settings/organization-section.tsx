@@ -42,6 +42,7 @@ import {
   OrganizationInsuranceProfile,
   type OrganizationInsuranceProfileRecord,
 } from "@/components/settings/organization-insurance-profile";
+import { typeStyle } from "@/lib/typography";
 
 const WORKSPACE_DOMAIN = getPublicAgentDomain();
 
@@ -363,7 +364,7 @@ export function OrganizationSection() {
             <OperationalPanelHeader title="Organization" className="px-5 py-3.5" />
             <OperationalPanelBody className="space-y-4 px-5 py-5">
             <div>
-              <label className="text-label font-medium text-muted-foreground block mb-1.5">
+              <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
                 Organization Name
               </label>
               <input
@@ -372,17 +373,17 @@ export function OrganizationSection() {
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => void saveOrgSettingsNow()}
                 placeholder="Acme Corp"
-                className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
               />
             </div>
 
             {isBroker && (
               <div>
-                <label className="text-label font-medium text-muted-foreground block mb-1.5">
+                <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
                   Workspace link
                 </label>
                 <div className="flex items-stretch gap-0">
-                  <span className="inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/3 px-3 text-base text-muted-foreground select-none whitespace-nowrap">
+                  <span className={`inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/3 px-3 text-muted-foreground select-none whitespace-nowrap ${typeStyle("body.default")}`}>
                     {WORKSPACE_DOMAIN}/
                   </span>
                   <input
@@ -396,7 +397,7 @@ export function OrganizationSection() {
                     onFocus={() => setSlugFocused(true)}
                     onBlur={() => setSlugFocused(false)}
                     placeholder="my-brokerage"
-                    className="h-9 flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className={`h-9 flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
                   />
                 </div>
                 <HandleAvailability
@@ -414,7 +415,7 @@ export function OrganizationSection() {
             )}
 
             <div>
-              <label className="text-label font-medium text-muted-foreground  block mb-1.5">
+              <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
                 Website
               </label>
               <input
@@ -423,14 +424,14 @@ export function OrganizationSection() {
                 onChange={(e) => setWebsite(e.target.value)}
                 onBlur={() => void saveOrgSettingsNow()}
                 placeholder="https://yourcompany.com"
-                className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
               />
             </div>
 
             <div className="space-y-3 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <label className="text-label font-medium text-muted-foreground block">
+                  <label className={`text-muted-foreground block ${typeStyle("label.field")}`}>
                     Legal names and related entities
                   </label>
                 </div>
@@ -445,7 +446,7 @@ export function OrganizationSection() {
                 </PillButton>
               </div>
               {relatedLegalEntities.length === 0 ? (
-                <p className="text-base text-muted-foreground/70">
+                <p className={`text-muted-foreground/70 ${typeStyle("body.default")}`}>
                   No related legal entities listed.
                 </p>
               ) : (
@@ -462,7 +463,7 @@ export function OrganizationSection() {
                         }
                         onBlur={() => void saveOrgSettingsNow()}
                         placeholder="Alternate legal name, DBA, FKA, parent, subsidiary, or affiliate"
-                        className="h-9 min-w-0 flex-1 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                        className={`h-9 min-w-0 flex-1 rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
                       />
                       <button
                         type="button"
@@ -481,7 +482,7 @@ export function OrganizationSection() {
             {!isBroker && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
+                  <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
                     Industry
                   </label>
                   <SearchableSelect
@@ -499,7 +500,7 @@ export function OrganizationSection() {
                   />
                 </div>
                 <div>
-                  <label className="text-label font-medium text-muted-foreground  block mb-1.5">
+                  <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
                     Vertical
                   </label>
                   <SearchableSelect
@@ -552,7 +553,7 @@ export function OrganizationSection() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const brandingLabelClass =
-  "text-label font-medium text-muted-foreground block mb-1.5";
+  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 type BrandingMode = "light" | "dark";
 type TextOnAccent = "light" | "dark" | "auto";
@@ -704,10 +705,10 @@ function BrandingCard({
         {isBroker && (
           <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
             <div>
-              <p className="text-base font-medium text-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 White labeling
               </p>
-              <p className="text-label text-muted-foreground/60 mt-0.5 max-w-md">
+              <p className={`text-muted-foreground/60 mt-0.5 max-w-md ${typeStyle("caption.default")}`}>
                 Apply your broker logo, accent color, agent name, and branded
                 emails to client-facing surfaces.
               </p>
@@ -757,16 +758,16 @@ function BrandingCard({
                   className="h-full w-full object-contain"
                 />
               ) : (
-                <span className="text-label text-muted-foreground/60">
+                <span className={`text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                   —
                 </span>
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-base font-medium text-foreground">
+              <div className={`text-foreground ${typeStyle("body.medium")}`}>
                 {logoUrl ? "Replace logo" : "Upload logo"}
               </div>
-              <div className="text-label text-muted-foreground/70">
+              <div className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}>
                 Drop an image, click to browse, or pull it from the website.
               </div>
             </div>

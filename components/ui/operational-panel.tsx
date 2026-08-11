@@ -2,6 +2,7 @@ import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 function OperationalPanel({
   className,
@@ -46,11 +47,11 @@ function OperationalPanelHeader({
       )}
     >
       <div className="min-w-0">
-        <h2 className="min-w-0 truncate text-base font-medium leading-5 text-foreground">
+        <h2 className={`min-w-0 truncate text-foreground ${typeStyle("heading.micro")}`}>
           {title}
         </h2>
         {description ? (
-          <p className="mt-1 text-base text-muted-foreground">{description}</p>
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{description}</p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
@@ -101,7 +102,7 @@ function OperationalDetailGroup({
   return (
     <section className={className}>
       {title ? (
-        <h3 className="mb-2 text-label font-medium text-muted-foreground">
+        <h3 className={`mb-2 text-muted-foreground ${typeStyle("heading.micro")}`}>
           {title}
         </h3>
       ) : null}
@@ -122,8 +123,8 @@ function OperationalDetailRow({
   if (!value) return null;
   return (
     <div className="flex flex-col gap-1 border-t border-foreground/6 py-3 first:border-t-0">
-      <p className="text-label text-muted-foreground">{label}</p>
-      <p className="min-w-0 break-words text-base leading-5 text-foreground">
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>{label}</p>
+      <p className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}>
         {value}
       </p>
     </div>
@@ -161,12 +162,12 @@ function OperationalLabelValueRow({
   if (value === undefined || value === null || value === "") return null;
   return (
     <div className="grid grid-cols-1 gap-1 border-t border-foreground/6 px-4 py-3 first:border-t-0 sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3">
-      <dt className="min-w-0 text-label font-normal text-muted-foreground sm:text-base">
+      <dt className={`min-w-0 text-muted-foreground ${typeStyle("label.metadata")}`}>
         {label}
       </dt>
       <dd
         className={cn(
-          "min-w-0 break-words text-base leading-5 text-foreground",
+          `min-w-0 break-words text-foreground ${typeStyle("body.default")}`,
           align === "right" && "sm:text-right",
         )}
       >

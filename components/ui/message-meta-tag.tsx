@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 export function MessageMetaTag({
   icon,
@@ -24,7 +25,7 @@ export function MessageMetaTag({
     typeof count === "number" && (count > 1 || (showSingleCount && count > 0));
   const title = isActive ? undefined : label;
   const classNames = cn(
-    "inline-flex h-6 items-center justify-center rounded-full border px-[7px] text-tag font-medium leading-none transition-[border-color,background-color,color,transform] duration-150 ease-out",
+    `inline-flex h-6 items-center justify-center rounded-full border px-[7px] transition-[border-color,background-color,color,transform] duration-150 ease-out ${typeStyle("label.tag")}`,
     onClick ? "cursor-pointer active:scale-[0.97]" : "",
     isActive
       ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
@@ -33,11 +34,11 @@ export function MessageMetaTag({
   );
   const content = (
     <>
-      <span className="flex shrink-0 items-center justify-center leading-none [&>svg]:h-3 [&>svg]:w-3">
+      <span className="flex shrink-0 items-center justify-center [&>svg]:h-3 [&>svg]:w-3">
         {icon}
       </span>
       {showCount ? (
-        <span className="pl-1 tabular-nums text-muted-foreground/35">
+        <span className={`pl-1 text-muted-foreground/35 ${typeStyle("label.tag")}`}>
           {count}
         </span>
       ) : null}
