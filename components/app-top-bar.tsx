@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import { BrokerShareLinkButton } from "@/components/broker-share-link-button";
+import { typeStyle } from "@/lib/typography";
 
 const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/": { label: "Dashboard" },
@@ -49,14 +50,14 @@ function PresenceAvatars({ users }: { users: PresenceUser[] }) {
         <div
           key={u.userId}
           title={u.userName}
-          className="relative w-6 h-6 rounded-full bg-foreground/8 border-2 border-background flex items-center justify-center text-label font-medium text-foreground"
+          className={`relative w-6 h-6 rounded-full bg-foreground/8 border-2 border-background flex items-center justify-center text-foreground ${typeStyle("caption.medium")}`}
         >
           {getInitials(u.userName)}
           <span className="absolute -bottom-px -right-px w-2 h-2 rounded-full bg-emerald-400 border border-background" />
         </div>
       ))}
       {users.length > 4 && (
-        <div className="w-6 h-6 rounded-full bg-foreground/8 border-2 border-background flex items-center justify-center text-label font-medium text-muted-foreground">
+        <div className={`w-6 h-6 rounded-full bg-foreground/8 border-2 border-background flex items-center justify-center text-muted-foreground ${typeStyle("caption.medium")}`}>
           +{users.length - 4}
         </div>
       )}
@@ -119,16 +120,16 @@ export function AppTopBar({
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
         {breadcrumbDetail ? (
           <>
-            <Link href={href} className="hidden sm:inline text-base font-medium text-muted-foreground/60 hover:text-foreground transition-colors truncate shrink-0">
+            <Link href={href} className={`hidden sm:inline text-muted-foreground/60 hover:text-foreground transition-colors truncate shrink-0 ${typeStyle("control.button")}`}>
               {label}
             </Link>
-            <span className="hidden sm:inline text-muted-foreground/30 text-base">/</span>
-            <span className="text-base text-foreground truncate">
+            <span className={`hidden sm:inline text-muted-foreground/30 ${typeStyle("body.default")}`}>/</span>
+            <span className={`text-foreground truncate ${typeStyle("body.default")}`}>
               {breadcrumbDetail}
             </span>
           </>
         ) : (
-          <span className="text-base font-medium text-foreground truncate">
+          <span className={`text-foreground truncate ${typeStyle("body.medium")}`}>
             {label}
           </span>
         )}

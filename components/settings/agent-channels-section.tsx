@@ -51,6 +51,7 @@ import { useOperatorClientCacheActions } from "@/lib/sync/operator-cached-querie
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { resolveSlackRowStatus } from "@/lib/slack-setup-status";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 type ChannelSettings = {
   emailEnabled: boolean;
@@ -138,8 +139,8 @@ function ChannelCard({
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
       <div>
-        <p className="text-base font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 text-label text-muted-foreground/60">
+        <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
+        <p className={`mt-0.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
           {description}
         </p>
       </div>
@@ -175,10 +176,10 @@ function ChannelRow({
       className="flex w-full items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3 text-left transition-colors hover:bg-foreground/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10"
     >
       <span className="min-w-0">
-        <span className="block text-base font-medium text-foreground">
+        <span className={`block text-foreground ${typeStyle("body.medium")}`}>
           {title}
         </span>
-        <span className="mt-0.5 block text-label text-muted-foreground/60">
+        <span className={`mt-0.5 block text-muted-foreground/60 ${typeStyle("caption.default")}`}>
           {description}
         </span>
       </span>
@@ -304,7 +305,7 @@ function AgentEmailAddressField({
           <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
             <input
               aria-label="Agent email address"
-              className="min-w-0 flex-1 bg-transparent px-3 text-base outline-none placeholder:text-muted-foreground/40"
+              className={`min-w-0 flex-1 bg-transparent px-3 outline-none placeholder:text-muted-foreground/40 ${typeStyle("control.input")}`}
               value={handle}
               onChange={(event) =>
                 setHandle(normalizeAgentHandleInput(event.target.value))
@@ -317,7 +318,7 @@ function AgentEmailAddressField({
               autoCapitalize="off"
               autoCorrect="off"
             />
-            <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
+            <span className={`flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
               @{agentDomain}
             </span>
           </div>
@@ -337,7 +338,7 @@ function AgentEmailAddressField({
             />
           ) : (
             <p
-              className={`min-h-5 pt-1 text-label ${
+              className={`min-h-5 pt-1 ${typeStyle("caption.default")} ${
                 allowSharedDefault
                   ? "text-muted-foreground"
                   : "text-destructive"
@@ -372,11 +373,11 @@ function SetupHeader({ step }: { step: SlackSetupStep }) {
   const current = SLACK_SETUP_STEPS[stepIndex];
   return (
     <div className="space-y-1 pb-1">
-      <p className="text-label text-muted-foreground">
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
         Step {stepIndex + 1} of {SLACK_SETUP_STEPS.length}
       </p>
-      <h2 className="text-base font-medium text-foreground">{current.title}</h2>
-      <p className="text-label text-muted-foreground">{current.description}</p>
+      <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>{current.title}</h2>
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>{current.description}</p>
     </div>
   );
 }
@@ -476,7 +477,7 @@ function AutomationSettings({
     <div className="space-y-2">
       {content}
       {!automaticChannelId ? (
-        <p className="text-label text-muted-foreground">
+        <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
           Automatic posts begin after a default channel is selected.
         </p>
       ) : null}
@@ -862,7 +863,7 @@ export function AgentChannelsSection({
 
   const supportRow = supportChannel ? (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
-      <p className="min-w-0 truncate text-base text-foreground">
+      <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
         #{supportChannel.channelName}
       </p>
       <StatusTag tone={supportStatus.tone}>{supportStatus.label}</StatusTag>
@@ -873,7 +874,7 @@ export function AgentChannelsSection({
     <div className="space-y-1.5">
       <label
         htmlFor="slack-invite-contact"
-        className="text-label text-muted-foreground"
+        className={`text-muted-foreground ${typeStyle("label.field")}`}
       >
         Client contact
       </label>
@@ -914,9 +915,9 @@ export function AgentChannelsSection({
 
   const supportChannelField = (
     <div className="space-y-1.5">
-      <p className="text-label text-muted-foreground">Client support channel</p>
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Client support channel</p>
       <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2">
-        <p className="min-w-0 truncate text-base text-foreground">
+        <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
           #{supportChannel?.channelName ?? `glass-${clientSlug}`}
         </p>
         <StatusTag tone={supportStatus.tone}>{supportStatus.label}</StatusTag>
@@ -927,17 +928,17 @@ export function AgentChannelsSection({
   const manualSupportFields =
     isOperator && resolvedManualSetupReason ? (
       <details className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
-        <summary className="cursor-pointer text-base font-medium text-foreground">
+        <summary className={`cursor-pointer text-foreground ${typeStyle("control.tab")}`}>
           Link a channel manually
         </summary>
-        <p className="mt-2 text-label text-muted-foreground">
+        <p className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}>
           {resolvedManualSetupReason}
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <label
               htmlFor="slack-host-team-id"
-              className="text-label text-muted-foreground"
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
             >
               Clarity team ID
             </label>
@@ -950,7 +951,7 @@ export function AgentChannelsSection({
           <div className="space-y-1.5">
             <label
               htmlFor="slack-host-channel-id"
-              className="text-label text-muted-foreground"
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
             >
               Clarity channel ID
             </label>
@@ -963,7 +964,7 @@ export function AgentChannelsSection({
           <div className="space-y-1.5">
             <label
               htmlFor="slack-customer-channel-id"
-              className="text-label text-muted-foreground"
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
             >
               Customer channel ID
             </label>
@@ -977,7 +978,7 @@ export function AgentChannelsSection({
           <div className="space-y-1.5">
             <label
               htmlFor="slack-manual-channel-name"
-              className="text-label text-muted-foreground"
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
             >
               Channel name
             </label>
@@ -1016,10 +1017,10 @@ export function AgentChannelsSection({
             {installComplete && connection ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="truncate text-base text-foreground">
+                  <p className={`truncate text-foreground ${typeStyle("body.default")}`}>
                     {connection.teamName}
                   </p>
-                  <p className="text-label text-muted-foreground">
+                  <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                     Slack workspace
                   </p>
                 </div>
@@ -1029,10 +1030,10 @@ export function AgentChannelsSection({
               </div>
             ) : isMockSlack ? (
               <div className="rounded-lg border border-dashed border-foreground/10 px-3 py-4">
-                <p className="text-base text-foreground">
+                <p className={`text-foreground ${typeStyle("body.default")}`}>
                   Local Slack workspace
                 </p>
-                <p className="mt-0.5 text-label text-muted-foreground">
+                <p className={`mt-0.5 text-muted-foreground ${typeStyle("caption.default")}`}>
                   Ready to connect the local fixture.
                 </p>
               </div>
@@ -1043,10 +1044,10 @@ export function AgentChannelsSection({
                 operatorSetup.inviteRecipientEmail ? (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
                     <div className="min-w-0">
-                      <p className="truncate text-base text-foreground">
+                      <p className={`truncate text-foreground ${typeStyle("body.default")}`}>
                         {operatorSetup.inviteRecipientEmail}
                       </p>
-                      <p className="text-label text-muted-foreground">
+                      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                         {operatorSetup.inviteExpiresAt &&
                         dayjs().isAfter(operatorSetup.inviteExpiresAt)
                           ? `Expired ${formatDisplayDate(operatorSetup.inviteExpiresAt)}`
@@ -1068,7 +1069,7 @@ export function AgentChannelsSection({
                     </StatusTag>
                   </div>
                 ) : (
-                  <p className="text-label text-muted-foreground">
+                  <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                     The one-time link expires in{" "}
                     {SLACK_INSTALL_INVITE_EXPIRATION_DAYS} days.
                   </p>
@@ -1084,14 +1085,14 @@ export function AgentChannelsSection({
             {inviteContactField}
             {operatorSetup.supportOmittedOperators?.length ? (
               <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
-                <p className="text-base font-medium text-foreground">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
                   Operators not added
                 </p>
                 <div className="mt-2 space-y-1">
                   {operatorSetup.supportOmittedOperators.map((operator) => (
                     <p
                       key={operator.email}
-                      className="text-label text-muted-foreground"
+                      className={`text-muted-foreground ${typeStyle("caption.default")}`}
                     >
                       {operator.displayName} · {operator.reason}
                     </p>
@@ -1100,13 +1101,13 @@ export function AgentChannelsSection({
               </div>
             ) : null}
             {operatorSetup.supportOperatorInviteError ? (
-              <p className="text-label text-destructive">
+              <p className={`text-destructive ${typeStyle("caption.default")}`}>
                 Operators could not be added:{" "}
                 {operatorSetup.supportOperatorInviteError}
               </p>
             ) : null}
             {operatorSetup.supportInviteError ? (
-              <p className="text-label text-destructive">
+              <p className={`text-destructive ${typeStyle("caption.default")}`}>
                 The client invitation needs attention:{" "}
                 {operatorSetup.supportInviteError}
               </p>
@@ -1128,10 +1129,10 @@ export function AgentChannelsSection({
             />
           ) : (
             <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-3">
-              <p className="text-base font-medium text-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 Waiting for the Slack installation
               </p>
-              <p className="mt-1 text-base text-muted-foreground">
+              <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                 Close this drawer for now. Setup resumes here after the client
                 accepts the invitation.
               </p>
@@ -1191,7 +1192,7 @@ export function AgentChannelsSection({
           <FormSection title="Workspace" divided={false}>
             {connection ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
-                <p className="min-w-0 truncate text-base text-foreground">
+                <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
                   {connection.teamName}
                 </p>
                 <StatusTag tone={slackNeedsReinstall ? "danger" : "success"}>
@@ -1199,7 +1200,7 @@ export function AgentChannelsSection({
                 </StatusTag>
               </div>
             ) : (
-              <p className="text-base text-muted-foreground">Not connected.</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Not connected.</p>
             )}
           </FormSection>
 
@@ -1209,7 +1210,7 @@ export function AgentChannelsSection({
             divided={false}
           >
             {supportRow ?? (
-              <p className="text-base text-muted-foreground">Not set up.</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Not set up.</p>
             )}
             {isOperator && !supportChannel?.customerChannelId
               ? inviteContactField
@@ -1260,7 +1261,7 @@ export function AgentChannelsSection({
       divided={false}
     >
       <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
-        <p className="text-base text-foreground">
+        <p className={`text-foreground ${typeStyle("body.default")}`}>
           {slackNeedsReinstall
             ? "An installation update is required."
             : setupStatus === "in_progress"

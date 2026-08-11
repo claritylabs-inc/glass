@@ -30,6 +30,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NO_PRODUCER_ID = "__none";
@@ -266,7 +267,7 @@ function BrokerIdentityForm({
 
   if (!identity.canEdit) {
     const readOnlyContent = noContact ? (
-      <OperationalPanelBody className="px-5 py-8 text-base text-muted-foreground">
+      <OperationalPanelBody className={`px-5 py-8 text-muted-foreground ${typeStyle("body.default")}`}>
         No broker contact is assigned.
       </OperationalPanelBody>
     ) : (
@@ -302,11 +303,11 @@ function BrokerIdentityForm({
         }
       >
         <div>
-          <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+          <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>
             Broker company
           </label>
           {identity.connected ? (
-            <div className="flex h-9 items-center rounded-lg border border-foreground/6 bg-foreground/3 px-3 text-base text-foreground">
+            <div className={`flex h-9 items-center rounded-lg border border-foreground/6 bg-foreground/3 px-3 text-foreground ${typeStyle("body.default")}`}>
               {identity.brokerCompanyName || "Broker"}
             </div>
           ) : (
@@ -322,7 +323,7 @@ function BrokerIdentityForm({
 
         {identity.connected ? (
           <div>
-            <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+            <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>
               Assigned producer
             </label>
             <Select
@@ -353,7 +354,7 @@ function BrokerIdentityForm({
         }
       >
         <div>
-          <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+          <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>
             Display name
           </label>
           <Input
@@ -365,7 +366,7 @@ function BrokerIdentityForm({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+          <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>
             Email
           </label>
           <Input
@@ -378,13 +379,13 @@ function BrokerIdentityForm({
             aria-invalid={emailInvalid}
           />
           {emailInvalid ? (
-            <p className="mt-1.5 text-label text-destructive">
+            <p className={`mt-1.5 text-destructive ${typeStyle("caption.default")}`}>
               Enter a valid email address.
             </p>
           ) : null}
         </div>
         <div>
-          <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+          <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>
             Phone
           </label>
           <PhoneInput
@@ -396,7 +397,7 @@ function BrokerIdentityForm({
             placeholder={selectedMember?.phone ?? "(555) 555-5555"}
             aria-invalid={phoneInvalid}
           />
-          <p className="mt-1.5 text-label text-muted-foreground">
+          <p className={`mt-1.5 text-muted-foreground ${typeStyle("caption.default")}`}>
             {phoneInvalid
               ? "Enter a valid phone number with country code."
               : "Used for iMessage conversations with this producer."}

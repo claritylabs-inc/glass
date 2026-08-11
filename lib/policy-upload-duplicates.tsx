@@ -3,6 +3,7 @@
 import { CircleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { PillButton } from "@/components/ui/pill-button";
+import { typeStyle } from "@/lib/typography";
 
 export type PolicyUploadCandidate = {
   file: File;
@@ -65,15 +66,15 @@ function DuplicatePolicyUploadToast({
           <CircleAlert className="size-4 text-muted-foreground" />
         </div>
         <div className="min-w-0">
-          <p className="text-base font-medium leading-5 text-foreground">
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>
             Possible duplicate upload
           </p>
-          <p className="mt-1 text-label leading-4 text-muted-foreground">
-            <span className="break-words font-medium text-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
+            <span className={`break-words text-foreground ${typeStyle("caption.medium")}`}>
               {file.name}
             </span>{" "}
             already matches{" "}
-            <span className="break-words font-medium text-foreground">
+            <span className={`break-words text-foreground ${typeStyle("caption.medium")}`}>
               {policyLabel}
             </span>
             .

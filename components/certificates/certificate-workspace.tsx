@@ -34,6 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 export type CertificateHolderRecord = {
   _id: Id<"certificateHolders">;
@@ -355,7 +356,7 @@ export function CertificatesTable({
                 tabIndex={0}
               >
                 <TableCell className="max-w-64 px-4">
-                  <p className="truncate font-medium text-foreground">
+                  <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                     {row.holder?.displayName ?? "Certificate holder"}
                   </p>
                 </TableCell>
@@ -366,7 +367,7 @@ export function CertificatesTable({
                         {address.street}
                       </p>
                       {address.locality ? (
-                        <p className="truncate text-label text-muted-foreground">
+                        <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                           {address.locality}
                         </p>
                       ) : null}
@@ -386,7 +387,7 @@ export function CertificatesTable({
                     {contact.primary}
                   </p>
                   {contact.secondary ? (
-                    <p className="truncate text-label text-muted-foreground">
+                    <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                       {contact.secondary}
                     </p>
                   ) : null}
@@ -397,7 +398,7 @@ export function CertificatesTable({
                       {row.policy?.policyNumber ?? "Policy"}
                     </p>
                     {carrier ? (
-                      <p className="truncate text-label text-muted-foreground">
+                      <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
                         {carrier}
                       </p>
                     ) : null}
@@ -408,7 +409,7 @@ export function CertificatesTable({
                     {formatCertificateTime(issuedAt)}
                   </p>
                   {currentVersion ? (
-                    <p className="text-label text-muted-foreground">
+                    <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                       Version {currentVersion.versionNumber}
                     </p>
                   ) : null}
@@ -490,10 +491,10 @@ function CertificateVersionRow({
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-base font-medium text-foreground">
+          <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
             Version {version.versionNumber}
           </p>
-          <p className="mt-1 text-base text-muted-foreground">
+          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
             {formatCertificateTime(version.issuedAt ?? version.createdAt)}
           </p>
         </div>
@@ -503,7 +504,7 @@ function CertificateVersionRow({
               Current
             </StatusTag>
           ) : null}
-          <StatusTag tone={tag.tone} className="capitalize">
+          <StatusTag tone={tag.tone} className={`${typeStyle("label.tag")}`}>
             {tag.label}
           </StatusTag>
         </div>
@@ -697,7 +698,7 @@ export function CertificateDetailPanel({
                 aria-invalid={holderNameInvalid}
               />
               {holderNameInvalid ? (
-                <p className="text-label text-destructive">
+                <p className={`text-destructive ${typeStyle("caption.default")}`}>
                   Enter a certificate holder name.
                 </p>
               ) : null}
@@ -728,7 +729,7 @@ export function CertificateDetailPanel({
                 aria-invalid={holderEmailInvalid}
               />
               {holderEmailInvalid ? (
-                <p className="text-label text-destructive">
+                <p className={`text-destructive ${typeStyle("caption.default")}`}>
                   Enter a valid email address.
                 </p>
               ) : null}
@@ -746,7 +747,7 @@ export function CertificateDetailPanel({
                 aria-invalid={holderPhoneInvalid}
               />
               {holderPhoneInvalid ? (
-                <p className="text-label text-destructive">
+                <p className={`text-destructive ${typeStyle("caption.default")}`}>
                   Enter a valid phone number with country code.
                 </p>
               ) : null}
@@ -880,7 +881,7 @@ export function CertificateDetailPanel({
               ))
             ) : (
               <OperationalPanelBody className="px-4 py-6">
-                <p className="text-base text-muted-foreground">
+                <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                   No versions recorded.
                 </p>
               </OperationalPanelBody>

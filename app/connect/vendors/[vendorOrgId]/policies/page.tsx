@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/operational-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 function VendorPoliciesLoadingSkeleton() {
   return (
@@ -52,7 +53,7 @@ export default function ConnectedVendorPoliciesPage({
       breadcrumbDetail={
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-muted-foreground/80">{vendorName}</span>
-          <span className="text-base text-muted-foreground/30">/</span>
+          <span className={`text-muted-foreground/30 ${typeStyle("body.default")}`}>/</span>
           <span className="truncate">Policies</span>
         </span>
       }
@@ -63,10 +64,10 @@ export default function ConnectedVendorPoliciesPage({
         ) : rows.length === 0 ? (
           <OperationalPanel as="div">
             <OperationalPanelBody className="px-5 py-6">
-              <p className="text-base font-medium text-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 No policies yet
               </p>
-              <p className="mt-1 text-base text-muted-foreground">
+              <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                 Uploaded vendor insurance records will appear here when available.
               </p>
             </OperationalPanelBody>

@@ -11,6 +11,7 @@ import {
 import type { Id } from "@/convex/_generated/dataModel";
 import type { VendorComplianceArtifactData, VendorComplianceArtifactRef } from "../types";
 import { formatDisplayDate } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type VendorComplianceCheck = {
   requirementId?: string;
@@ -166,14 +167,14 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="min-w-0 truncate text-base font-medium text-foreground">
+                    <h3 className={`min-w-0 truncate text-foreground ${typeStyle("heading.micro")}`}>
                       {row.name ?? "Vendor"}
                     </h3>
                     <StatusTag tone={vendorStatusTone(row.status)}>
                       {vendorStatusLabel(row.status)}
                     </StatusTag>
                   </div>
-                  <p className="mt-1 text-label text-muted-foreground/45">
+                  <p className={`mt-1 text-muted-foreground/45 ${typeStyle("caption.default")}`}>
                     {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
                     {policyText ? ` · ${policyText}` : ""}
                   </p>
@@ -181,7 +182,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                 {row.vendorOrgId ? (
                   <Link
                     href={`/connect/vendors/${row.vendorOrgId}/policies`}
-                    className="shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-tag font-medium text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground"
+                    className={`shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground ${typeStyle("label.tag")}`}
                   >
                     View vendor
                   </Link>
@@ -199,7 +200,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                   return (
                     <div key={`${check.requirementId ?? check.title ?? "check"}-${checkIndex}`} className="px-3 py-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-label font-medium text-foreground/85">
+                        <span className={`min-w-0 flex-1 truncate text-foreground/85 ${typeStyle("caption.medium")}`}>
                           {check.title ?? "Requirement"}
                         </span>
                         <StatusTag tone={meta.tone}>
@@ -207,7 +208,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                           {meta.label}
                         </StatusTag>
                       </div>
-                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-label text-muted-foreground/55">
+                      <div className={`mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
                         {requiredLimits ? <span>Required: {requiredLimits}</span> : null}
                         {policy?.coverageLimit ? <span>Coverage: {policy.coverageLimit}</span> : null}
                         {detectedLimit ? <span>Detected: {detectedLimit}</span> : null}
@@ -222,12 +223,12 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                         {policy?.insuredName ? <span>Insured: {policy.insuredName}</span> : null}
                       </div>
                       {policy?.carrier || policy?.policyNumber || policy?.coverageName ? (
-                        <p className="mt-1 truncate text-label text-muted-foreground/40">
+                        <p className={`mt-1 truncate text-muted-foreground/40 ${typeStyle("caption.default")}`}>
                           {[policy.carrier, policy.policyNumber, policy.coverageName].filter(Boolean).join(" · ")}
                         </p>
                       ) : null}
                       {check.notes ? (
-                        <p className="mt-1 text-label leading-4 text-muted-foreground/65">
+                        <p className={`mt-1 text-muted-foreground/65 ${typeStyle("caption.default")}`}>
                           {check.notes}
                         </p>
                       ) : null}
@@ -265,10 +266,10 @@ function VendorComplianceSummaryCard({
       }`}
     >
       <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5">
-        <span className="truncate text-base font-medium text-foreground/85">
+        <span className={`truncate text-foreground/85 ${typeStyle("body.medium")}`}>
           Vendor compliance checks
         </span>
-        <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
+        <Badge variant="outline" className={`h-5 shrink-0 border-foreground/10 px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
           {rows.length} vendor{rows.length === 1 ? "" : "s"}
         </Badge>
       </div>
@@ -284,8 +285,8 @@ function VendorComplianceSummaryCard({
               : `${row.policyCount} polic${row.policyCount === 1 ? "y" : "ies"}`
             : null;
           return (
-            <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${index}`} className="flex items-center gap-2 text-label">
-              <span className="min-w-0 flex-1 truncate font-medium text-foreground/75">{row.name ?? "Vendor"}</span>
+            <div key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${index}`} className={`flex items-center gap-2 ${typeStyle("caption.default")}`}>
+              <span className={`min-w-0 flex-1 truncate text-foreground/75 ${typeStyle("body.medium")}`}>{row.name ?? "Vendor"}</span>
               <span className="shrink-0 text-muted-foreground/45">
                 {metChecks}/{requirementCount} met{openChecks > 0 ? ` · ${openChecks} open` : ""}
                 {policyText ? ` · ${policyText}` : ""}
@@ -294,7 +295,7 @@ function VendorComplianceSummaryCard({
           );
         })}
         {rows.length > 3 ? (
-          <p className="text-label text-muted-foreground/40">
+          <p className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}>
             +{rows.length - 3} more vendor{rows.length - 3 === 1 ? "" : "s"}
           </p>
         ) : null}
@@ -315,8 +316,8 @@ export function VendorComplianceSidebar({
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-base font-semibold text-foreground">Vendor compliance checks</h2>
-          <Badge variant="outline" className="h-5 shrink-0 border-foreground/10 px-1.5 font-medium text-muted-foreground/55">
+          <h2 className={`truncate text-foreground ${typeStyle("heading.micro")}`}>Vendor compliance checks</h2>
+          <Badge variant="outline" className={`h-5 shrink-0 border-foreground/10 px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
             {rows.length} vendor{rows.length === 1 ? "" : "s"}
           </Badge>
         </div>

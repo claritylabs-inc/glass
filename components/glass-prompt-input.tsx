@@ -38,6 +38,7 @@ import {
   PromptReferenceTag,
   promptReferenceMarker,
 } from "@/components/prompt-reference-tag";
+import { typeStyle } from "@/lib/typography";
 
 const lightInputOverlayFadeStyle = {
   backgroundImage:
@@ -141,7 +142,7 @@ function AttachmentTags({
         <span
           key={file.id}
           className={cn(
-            "inline-flex max-w-full items-center gap-1.5 bg-foreground/5 text-label font-medium text-foreground/75",
+            `inline-flex max-w-full items-center gap-1.5 bg-foreground/5 text-foreground/75 ${typeStyle("caption.medium")}`,
             detailed ? "rounded-lg px-2.5 py-1.5" : "rounded-full px-2.5 py-1",
           )}
         >
@@ -154,7 +155,7 @@ function AttachmentTags({
               {file.filename}
             </span>
             {detailed ? (
-              <span className="block text-[11px] leading-3 text-muted-foreground/45">
+              <span className={`block text-muted-foreground/45 ${typeStyle("caption.default")}`}>
                 {attachmentKindLabel(file)}
               </span>
             ) : null}
@@ -438,7 +439,7 @@ function PromptTextSegment({
       onFocus={onFocus}
       onKeyDown={onKeyDown}
       className={cn(
-        "max-w-full p-0 text-base leading-6 placeholder:text-muted-foreground/40",
+        `max-w-full p-0 placeholder:text-muted-foreground/40 ${typeStyle("control.input")}`,
         isPlaceholderSegment
           ? isCommandVariant
             ? "min-h-24 min-w-56 flex-[1_1_14rem]"
@@ -532,7 +533,7 @@ function PreparedInputActions({
               event.preventDefault();
               action.onSelect();
             }}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-tag font-medium text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10"
+            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10 ${typeStyle("label.tag")}`}
           >
             {action.icon}
             <span className="hidden sm:inline">{action.label}</span>
@@ -1267,7 +1268,7 @@ export const GlassPromptInput = forwardRef<
                     <span className="flex w-5 shrink-0 items-center justify-center text-muted-foreground">
                       {referenceIcon(target.kind)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-base font-medium">
+                    <span className={`min-w-0 flex-1 truncate ${typeStyle("body.medium")}`}>
                       {target.label}
                     </span>
                   </button>
@@ -1382,7 +1383,7 @@ export const GlassPromptInput = forwardRef<
               )}
             >
               {activeTargetScopeLabel ? (
-                <span className="min-w-0 truncate text-label font-medium text-muted-foreground/45">
+                <span className={`min-w-0 truncate text-muted-foreground/45 ${typeStyle("caption.medium")}`}>
                   {activeTargetScopeLabel}
                 </span>
               ) : null}
@@ -1399,7 +1400,7 @@ export const GlassPromptInput = forwardRef<
                   onClick={handleStopClick}
                   className={
                     roomyOnMobile
-                      ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label"
+                      ? `h-9 px-4 sm:h-7 sm:px-3 ${typeStyle("control.buttonCompact")}`
                       : undefined
                   }
                 >
@@ -1419,7 +1420,7 @@ export const GlassPromptInput = forwardRef<
                   disabled={disabled || isGenerating}
                   className={
                     roomyOnMobile
-                      ? "h-9 px-4 text-label sm:h-7 sm:px-3 sm:text-label"
+                      ? `h-9 px-4 sm:h-7 sm:px-3 ${typeStyle("control.buttonCompact")}`
                       : undefined
                   }
                 >

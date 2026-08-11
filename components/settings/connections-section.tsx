@@ -32,6 +32,7 @@ import {
   useUpdateCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { formatDisplayDate } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 type ConnectedAppRow = {
   tokenId: Id<"oauthTokens">;
@@ -134,7 +135,7 @@ function McpSection() {
       >
         <div className="flex items-start gap-3">
           <Trash2 className="mt-0.5 size-5 shrink-0 text-red-500" />
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             This will disconnect <strong>{revokeTarget?.clientName}</strong> and
             revoke its access to your Glass data.
           </p>
@@ -180,7 +181,7 @@ function McpSection() {
         <OperationalPanelBody className="px-5 py-5">
           <div className="flex items-center gap-2 rounded-lg border border-foreground/6 bg-foreground/3 p-3">
             <Globe className="size-4 shrink-0 text-muted-foreground" />
-            <code className="flex-1 break-all font-mono text-label text-foreground">
+            <code className={`flex-1 break-all text-foreground ${typeStyle("technical.codeCompact")}`}>
               {mcpUrl}
             </code>
             <CopyIconButton copied={copied} label="Copy MCP endpoint" onClick={copyMcpUrl} />
@@ -191,7 +192,7 @@ function McpSection() {
           <div className="flex items-center justify-between gap-3 md:block">
             <div className="flex items-center gap-2">
               <SiClaude aria-hidden="true" className="size-[17px] text-[#D97757]" />
-              <h3 className="text-base font-medium text-foreground">Claude</h3>
+              <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>Claude</h3>
             </div>
             <PillButton
               href="https://claude.ai/new#settings/customize-connectors"
@@ -205,13 +206,13 @@ function McpSection() {
               <ExternalLink className="size-3.5" />
             </PillButton>
           </div>
-          <ol className="list-decimal space-y-1.5 pl-5 text-base text-muted-foreground marker:text-muted-foreground/60">
+          <ol className={`list-decimal space-y-1.5 pl-5 text-muted-foreground marker:text-muted-foreground/60 ${typeStyle("body.default")}`}>
             <li>
-              Open <span className="font-medium text-foreground">Settings → Connectors</span>.
+              Open <span className={`text-foreground ${typeStyle("body.medium")}`}>Settings → Connectors</span>.
               Team and Enterprise owners should first choose Organization connectors.
             </li>
             <li>
-              Select <span className="font-medium text-foreground">Add custom connector</span>,
+              Select <span className={`text-foreground ${typeStyle("body.medium")}`}>Add custom connector</span>,
               name it Glass, and paste the endpoint above.
             </li>
             <li>Add the connector, select Connect, and sign in to Glass.</li>
@@ -222,7 +223,7 @@ function McpSection() {
           <div className="flex items-center justify-between gap-3 md:block">
             <div className="flex items-center gap-2">
               <ModelProviderLogo provider="openai" size={17} className="dark:invert" />
-              <h3 className="text-base font-medium text-foreground">ChatGPT</h3>
+              <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>ChatGPT</h3>
             </div>
             <PillButton
               href="https://chatgpt.com/#settings/Connectors"
@@ -236,13 +237,13 @@ function McpSection() {
               <ExternalLink className="size-3.5" />
             </PillButton>
           </div>
-          <ol className="list-decimal space-y-1.5 pl-5 text-base text-muted-foreground marker:text-muted-foreground/60">
+          <ol className={`list-decimal space-y-1.5 pl-5 text-muted-foreground marker:text-muted-foreground/60 ${typeStyle("body.default")}`}>
             <li>
-              Open <span className="font-medium text-foreground">Settings → Apps → Advanced settings</span>
+              Open <span className={`text-foreground ${typeStyle("body.medium")}`}>Settings → Apps → Advanced settings</span>
               {" "}and enable Developer mode. Your workspace may require admin access.
             </li>
             <li>
-              Return to Apps, select <span className="font-medium text-foreground">Create</span>,
+              Return to Apps, select <span className={`text-foreground ${typeStyle("body.medium")}`}>Create</span>,
               name the app Glass, and paste the endpoint above.
             </li>
             <li>Choose OAuth when prompted, scan the tools, create the app, and sign in to Glass.</li>
@@ -259,8 +260,8 @@ function McpSection() {
         ) : connectedApps.length === 0 ? (
           <div className="px-5 py-8 text-center">
             <Plug className="mx-auto mb-2 size-6 text-muted-foreground/20" />
-            <p className="text-base text-muted-foreground">No connected apps yet</p>
-            <p className="mt-0.5 text-label text-muted-foreground/50">
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>No connected apps yet</p>
+            <p className={`mt-0.5 text-muted-foreground/50 ${typeStyle("caption.default")}`}>
               Apps appear here after they complete the OAuth sign-in.
             </p>
           </div>
@@ -269,8 +270,8 @@ function McpSection() {
             {connectedApps.map((app) => (
               <div key={app.tokenId} className="flex items-center gap-3 px-5 py-3.5">
                 <div className="min-w-0 flex-1">
-                  <p className="text-base font-medium text-foreground">{app.clientName}</p>
-                  <p className="mt-0.5 text-label text-muted-foreground/50">
+                  <p className={`text-foreground ${typeStyle("body.medium")}`}>{app.clientName}</p>
+                  <p className={`mt-0.5 text-muted-foreground/50 ${typeStyle("caption.default")}`}>
                     Connected {formatDisplayDate(app.connectedAt)}
                   </p>
                 </div>
@@ -321,7 +322,7 @@ function CliSection() {
       />
       <OperationalPanelBody className="px-5 py-5">
         <div className="relative">
-          <pre className="overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-label text-muted-foreground">
+          <pre className={`overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
             {cliSnippet}
           </pre>
           <div className="absolute right-2 top-2">
@@ -367,12 +368,12 @@ function AdvancedSection() {
         className="px-5 py-3.5"
       />
       <OperationalPanelBody className="space-y-3 px-5 py-5">
-        <p className="text-base text-muted-foreground">
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
           Add this server to your client&apos;s MCP configuration. A browser window opens for
           Glass sign-in on first use.
         </p>
         <div className="relative">
-          <pre className="overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-label text-muted-foreground">
+          <pre className={`overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
             {localSnippet}
           </pre>
           <div className="absolute right-2 top-2">

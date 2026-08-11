@@ -25,6 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { typeStyle } from "@/lib/typography";
 
 type DeliveryStatus =
   | "queued"
@@ -206,19 +207,19 @@ function DeliveryDrawer({
         <section className="space-y-3 rounded-lg border border-foreground/6 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-base font-medium text-foreground">
+              <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                 {job.policy?.policyNumber ?? "Policy"}
               </p>
-              <p className="truncate text-base text-muted-foreground">
+              <p className={`truncate text-muted-foreground ${typeStyle("body.default")}`}>
                 {job.clientName ?? "Client"} · {job.policy?.carrier ?? job.policy?.security ?? "Carrier"}
               </p>
             </div>
             <StatusTag tone={statusTone(job.status)}>{STATUS_LABELS[job.status]}</StatusTag>
           </div>
-          <p className="text-base text-muted-foreground">{statusDescription(job)}</p>
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{statusDescription(job)}</p>
         </section>
         <section className="border-t border-foreground/6 pt-5">
-          <div className="space-y-2 text-base">
+          <div className={`space-y-2 ${typeStyle("body.default")}`}>
           <Detail label="Decision" value={actionLabel(job.action)} />
           <Detail label="Rule" value={job.ruleName ?? "Default action"} />
           <Detail label="Channels" value={channelLabel(job.channels)} />
@@ -228,13 +229,13 @@ function DeliveryDrawer({
           </div>
         </section>
         <section className="space-y-2 border-t border-foreground/6 pt-5">
-          <p className="text-label text-muted-foreground">Attempts</p>
+          <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Attempts</p>
           {(job.attempts ?? []).length === 0 ? (
-            <p className="text-base text-muted-foreground">No attempts yet.</p>
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>No attempts yet.</p>
           ) : (
             <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6">
               {(job.attempts ?? []).map((attempt) => (
-                <div key={attempt._id} className="flex items-center justify-between gap-3 px-3 py-2 text-base">
+                <div key={attempt._id} className={`flex items-center justify-between gap-3 px-3 py-2 ${typeStyle("body.default")}`}>
                   <span>{channelLabel([attempt.channel])}</span>
                   <StatusTag
                     tone={
@@ -244,7 +245,7 @@ function DeliveryDrawer({
                           ? "danger"
                           : "neutral"
                     }
-                    className="capitalize"
+                    className={`${typeStyle("label.tag")}`}
                   >
                     {attempt.status}
                   </StatusTag>
@@ -283,7 +284,7 @@ function PolicyPreviewCard({ job }: { job: DeliveryJob }) {
 
   return (
     <section className="space-y-2 border-t border-foreground/6 pt-5">
-      <p className="text-label text-muted-foreground">Policy document</p>
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Policy document</p>
       <ActionSurfaceButton
         type="button"
         onClick={() => {
@@ -296,12 +297,12 @@ function PolicyPreviewCard({ job }: { job: DeliveryJob }) {
           <FileText className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-medium text-foreground">{label}</p>
-          <p className="truncate text-label text-muted-foreground">
+          <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>{label}</p>
+          <p className={`truncate text-muted-foreground ${typeStyle("caption.default")}`}>
             {detail || "PDF policy"}
           </p>
         </div>
-        {!canPreview ? <span className="shrink-0 text-label text-muted-foreground">Unavailable</span> : null}
+        {!canPreview ? <span className={`shrink-0 text-muted-foreground ${typeStyle("caption.default")}`}>Unavailable</span> : null}
       </ActionSurfaceButton>
     </section>
   );
@@ -346,13 +347,13 @@ export default function DeliveriesPage() {
           <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[18%] px-4 text-label text-muted-foreground">Client</TableHead>
-                <TableHead className="w-[16%] text-label text-muted-foreground">Policy</TableHead>
-                <TableHead className="w-[16%] text-label text-muted-foreground">Carrier</TableHead>
-                <TableHead className="w-[13%] text-label text-muted-foreground">Channel</TableHead>
-                <TableHead className="w-[14%] text-label text-muted-foreground">Decision</TableHead>
-                <TableHead className="w-[11%] text-label text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[12%] px-4 text-label text-muted-foreground">Updated</TableHead>
+                <TableHead className={`w-[18%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Client</TableHead>
+                <TableHead className={`w-[16%] text-muted-foreground ${typeStyle("label.table")}`}>Policy</TableHead>
+                <TableHead className={`w-[16%] text-muted-foreground ${typeStyle("label.table")}`}>Carrier</TableHead>
+                <TableHead className={`w-[13%] text-muted-foreground ${typeStyle("label.table")}`}>Channel</TableHead>
+                <TableHead className={`w-[14%] text-muted-foreground ${typeStyle("label.table")}`}>Decision</TableHead>
+                <TableHead className={`w-[11%] text-muted-foreground ${typeStyle("label.table")}`}>Status</TableHead>
+                <TableHead className={`w-[12%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Updated</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -364,7 +365,7 @@ export default function DeliveriesPage() {
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="h-32 px-4 text-base text-muted-foreground">
+                  <TableCell colSpan={7} className={`h-32 px-4 text-muted-foreground ${typeStyle("body.default")}`}>
                     No delivery jobs in this view.
                   </TableCell>
                 </TableRow>
@@ -375,7 +376,7 @@ export default function DeliveriesPage() {
                     className="cursor-pointer"
                     onClick={() => setSelectedId(job._id)}
                   >
-                    <TableCell className="max-w-44 truncate px-4 font-medium text-foreground">{job.clientName ?? "Client"}</TableCell>
+                    <TableCell className={`max-w-44 truncate px-4 text-foreground ${typeStyle("body.medium")}`}>{job.clientName ?? "Client"}</TableCell>
                     <TableCell className="max-w-44 truncate text-muted-foreground">{job.policy?.policyNumber ?? job.sourceKind}</TableCell>
                     <TableCell className="max-w-44 truncate text-muted-foreground">{job.policy?.carrier ?? job.policy?.security ?? "Unknown"}</TableCell>
                     <TableCell className="text-muted-foreground">{channelLabel(job.channels)}</TableCell>

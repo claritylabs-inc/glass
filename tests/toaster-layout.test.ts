@@ -39,9 +39,8 @@ describe("toaster layout", () => {
     expect(operationalToast).toContain(
       "grid-cols-[1rem_minmax(0,1fr)_auto]",
     );
-    expect(operationalToast).toContain(
-      'className="truncate text-label leading-4 text-muted-foreground"',
-    );
+    expect(operationalToast).toContain("truncate text-muted-foreground");
+    expect(operationalToast).toContain('typeStyle("caption.default")');
     expect(operationalToast).not.toContain("collapseDelayMs");
     expect(operationalToast).not.toContain("data-collapsed");
     expect(extractionBanner).toContain("showOperationalStatusToast");

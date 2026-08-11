@@ -39,6 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { typeStyle } from "@/lib/typography";
 
 type MailboxAttachment = {
   attachmentIndex?: number;
@@ -142,7 +143,7 @@ function MailboxAddressDisclosure({
             size="compact"
             variant="ghost"
             className={cn(
-              "group/address relative h-auto min-h-6 min-w-0 max-w-[calc(100%-0.875rem)] shrink-0 justify-start gap-0 px-1.5 py-0.5 text-left text-base font-normal leading-5 whitespace-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07]",
+              `group/address relative h-auto min-h-6 min-w-0 max-w-[calc(100%-0.875rem)] shrink-0 justify-start gap-0 px-1.5 py-0.5 text-left whitespace-normal text-foreground hover:bg-foreground/[0.06] data-popup-open:bg-foreground/[0.07] ${typeStyle("control.button")}`,
               alignStart && "-ml-1.5",
             )}
             aria-label={`Show email address for ${name}`}
@@ -157,7 +158,7 @@ function MailboxAddressDisclosure({
         className="w-auto min-w-56 max-w-[min(24rem,calc(100vw-2rem))]"
       >
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="min-w-0 px-2 py-1.5 text-base font-normal text-foreground">
+          <DropdownMenuLabel className={`min-w-0 px-2 py-1.5 text-foreground ${typeStyle("control.menu")}`}>
             <span className="block break-all">{address}</span>
           </DropdownMenuLabel>
         </DropdownMenuGroup>
@@ -430,7 +431,7 @@ export function MailboxEmailReviewSidebar({
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
-        <h2 className="min-w-0 truncate text-base font-semibold text-foreground">
+        <h2 className={`min-w-0 truncate text-foreground ${typeStyle("heading.micro")}`}>
           {liveEmail?.subject ?? email.subject}
         </h2>
         <PillButton size="compact" variant="icon" onClick={onClose} label="Close email review">
@@ -482,7 +483,7 @@ export function MailboxEmailReviewSidebar({
             <OperationalPanelHeader title="Message" />
             {attachments.length > 0 ? (
               <div className="border-b border-foreground/6 px-4 py-3">
-                <p className="mb-2 text-label font-medium text-muted-foreground">
+                <p className={`mb-2 text-muted-foreground ${typeStyle("caption.medium")}`}>
                   Attachments
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -513,7 +514,7 @@ export function MailboxEmailReviewSidebar({
             ) : null}
             <OperationalPanelBody>
               {messageParagraphs.length > 0 ? (
-                <div className="space-y-3 break-words text-base leading-6 text-foreground/80 [overflow-wrap:anywhere]">
+                <div className={`space-y-3 break-words text-foreground/80 [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
                   {messageParagraphs.map((paragraph, index) => (
                     <p key={index} className="whitespace-pre-wrap">
                       {paragraph}
@@ -521,7 +522,7 @@ export function MailboxEmailReviewSidebar({
                   ))}
                 </div>
               ) : (
-                <p className="text-base leading-6 text-foreground/80">
+                <p className={`text-foreground/80 ${typeStyle("body.default")}`}>
                   This email has no plain-text message body.
                 </p>
               )}
@@ -529,8 +530,8 @@ export function MailboxEmailReviewSidebar({
           </OperationalPanel>
         ) : readError ? (
           <OperationalPanel as="div" className="p-4">
-            <p className="text-base font-medium text-foreground">Couldn’t open this email</p>
-            <p className="mt-1 text-base text-muted-foreground">{readError}</p>
+            <p className={`text-foreground ${typeStyle("body.medium")}`}>Couldn’t open this email</p>
+            <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{readError}</p>
             {email.emailRef ? (
               <PillButton
                 className="mt-3"
@@ -547,7 +548,7 @@ export function MailboxEmailReviewSidebar({
             ) : null}
           </OperationalPanel>
         ) : (
-          <div className="flex items-center gap-2 py-8 text-base text-muted-foreground">
+          <div className={`flex items-center gap-2 py-8 text-muted-foreground ${typeStyle("body.default")}`}>
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading email
           </div>

@@ -31,6 +31,7 @@ import {
   useUpdateCachedQuery,
   useUpsertCachedQuery,
 } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 export function EmailConnectionsSection() {
   const currentOrg = useCurrentOrg();
@@ -221,22 +222,22 @@ export function EmailConnectionsSection() {
                   <ProviderIcon className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-base font-medium text-foreground">
+                  <span className={`block truncate text-foreground ${typeStyle("body.medium")}`}>
                     {account.emailAddress}
                   </span>
-                  <span className="block truncate text-base text-muted-foreground">
+                  <span className={`block truncate text-muted-foreground ${typeStyle("body.default")}`}>
                     {EMAIL_SCOPE_LABELS[account.scope]} · {automationSummary(account)}
                   </span>
                 </span>
                 <span className="hidden shrink-0 text-right sm:block">
                   <span
-                    className={`block text-base font-medium ${
+                    className={`block ${typeStyle("body.medium")} ${
                       healthy ? "text-foreground" : "text-destructive"
                     }`}
                   >
                     {healthy ? "Connected" : "Needs attention"}
                   </span>
-                  <span className="block text-base text-muted-foreground">
+                  <span className={`block text-muted-foreground ${typeStyle("body.default")}`}>
                     Checked{" "}
                     {formatMailboxActivity(
                       account.lastScanAt ?? account.lastTestedAt,
@@ -253,10 +254,10 @@ export function EmailConnectionsSection() {
           <span className="flex size-10 items-center justify-center rounded-lg bg-foreground/5 text-muted-foreground">
             <Mail className="size-5" />
           </span>
-          <h3 className="mt-3 text-base font-medium text-foreground">
+          <h3 className={`mt-3 text-foreground ${typeStyle("heading.micro")}`}>
             Connect your first mailbox
           </h3>
-          <p className="mt-1 max-w-sm text-base text-muted-foreground">
+          <p className={`mt-1 max-w-sm text-muted-foreground ${typeStyle("body.default")}`}>
             Glass can monitor a personal or shared mailbox without manual forwarding.
           </p>
           <PillButton

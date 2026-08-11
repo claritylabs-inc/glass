@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import VendorRequestAcceptance from "@/app/connected-orgs/request/[token]/request-acceptance";
+import { typeStyle } from "@/lib/typography";
 
 export default async function ConnectRequestPage({
   params,
@@ -11,7 +12,7 @@ export default async function ConnectRequestPage({
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center">
-          <div className="text-base text-gray-500">Loading request…</div>
+          <div className={`text-gray-500 ${typeStyle("body.default")}`}>Loading request…</div>
         </div>
       }
     >

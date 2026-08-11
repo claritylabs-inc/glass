@@ -17,6 +17,7 @@ import {
   CONFIDENCE_LEVEL_META,
   type ConfidenceLevel,
 } from "@/lib/confidence";
+import { typeStyle } from "@/lib/typography";
 
 /**
  * Shared base styles for markdown-rendered content.
@@ -24,40 +25,33 @@ import {
  * which remark plugins are active.
  */
 const BASE_STYLES =
-  "max-w-none text-base leading-relaxed " +
+  `max-w-none ${typeStyle("prose.default")} ` +
   "[&_p]:my-3 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 " +
-  "[&_strong]:font-semibold " +
   "[&_ul]:my-3 [&_ul]:pl-5 [&_ul]:list-disc " +
   "[&_ol]:my-3 [&_ol]:pl-5 [&_ol]:list-decimal " +
   "[&_li]:my-0.5 " +
-  "[&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 " +
-  "[&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 " +
-  "[&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-2.5 [&_h3]:mb-0.5 " +
-  "[&_h4]:text-base [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-0.5 " +
-  "[&_h5]:text-base [&_h5]:font-semibold " +
-  "[&_h6]:text-base [&_h6]:font-semibold " +
+  "[&_h1]:mt-3 [&_h1]:mb-1 " +
+  "[&_h2]:mt-3 [&_h2]:mb-1 " +
+  "[&_h3]:mt-2.5 [&_h3]:mb-0.5 " +
+  "[&_h4]:mt-2 [&_h4]:mb-0.5 " +
   "[&_hr]:my-3 [&_hr]:border-foreground/8 " +
-  "[&_code]:text-label [&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded " +
-  "[&_table]:w-full [&_table]:text-label [&_table]:border-collapse " +
-  "[&_th]:text-left [&_th]:font-semibold [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-foreground/10 [&_th]:bg-foreground/[0.03] [&_th]:whitespace-nowrap [&_th]:text-label [&_th]:text-muted-foreground/60 " +
+  "[&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded " +
+  "[&_table]:w-full [&_table]:border-collapse " +
+  "[&_th]:text-left [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-foreground/10 [&_th]:bg-foreground/[0.03] [&_th]:whitespace-nowrap [&_th]:text-muted-foreground/60 " +
   "[&_td]:px-2.5 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-foreground/6 [&_td]:whitespace-nowrap [&_tr:last-child_td]:border-b-0 " +
   "[&_thead]:align-bottom";
 
 /** Compact variant for quoted/reply text */
 const COMPACT_STYLES =
-  "max-w-none text-base leading-relaxed " +
+  `max-w-none ${typeStyle("prose.compact")} ` +
   "[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 " +
-  "[&_strong]:font-semibold " +
   "[&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc " +
   "[&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal " +
   "[&_li]:my-0.5 " +
-  "[&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-2 [&_h1]:mb-0.5 " +
-  "[&_h2]:text-base [&_h2]:font-semibold [&_h2]:mt-2 [&_h2]:mb-0.5 " +
-  "[&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-1.5 [&_h3]:mb-0.5 " +
-  "[&_h4]:text-base [&_h4]:font-semibold [&_h4]:mt-1 [&_h4]:mb-0.5 " +
-  "[&_h5]:text-base [&_h5]:font-semibold " +
-  "[&_h6]:text-base [&_h6]:font-semibold " +
-  "[&_em]:text-base " +
+  "[&_h1]:mt-2 [&_h1]:mb-0.5 " +
+  "[&_h2]:mt-2 [&_h2]:mb-0.5 " +
+  "[&_h3]:mt-1.5 [&_h3]:mb-0.5 " +
+  "[&_h4]:mt-1 [&_h4]:mb-0.5 " +
   "[&_hr]:my-2 [&_hr]:border-foreground/8";
 
 export type ProseMarkdownProps = {
@@ -152,7 +146,7 @@ const STREAMING_REMEND_OPTIONS = {
 const defaultGfmComponents: Components = {
   table: ({ children }) => (
     <div className="overflow-x-auto my-3 rounded-md border border-foreground/6">
-      <table className="w-full text-label border-collapse">{children}</table>
+      <table className={`w-full border-collapse ${typeStyle("caption.default")}`}>{children}</table>
     </div>
   ),
 };

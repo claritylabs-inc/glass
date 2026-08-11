@@ -50,6 +50,7 @@ import {
   operatorClientStatusLabel,
   type OperatorClientRow,
 } from "./client-model";
+import { typeStyle } from "@/lib/typography";
 
 const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
@@ -70,12 +71,12 @@ function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-label font-medium text-muted-foreground">
+      <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
         {label}
       </span>
       {children}
       {error ? (
-        <span className="block text-label text-destructive">{error}</span>
+        <span className={`block text-destructive ${typeStyle("caption.default")}`}>{error}</span>
       ) : null}
     </label>
   );
@@ -417,12 +418,12 @@ export default function OperatorClientsScreen() {
               size="lg"
             />
             <div className="min-w-0">
-              <p className="truncate text-base font-medium text-foreground">
+              <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                 {selected.primaryContactName ??
                   selected.adminName ??
                   "No primary contact"}
               </p>
-              <p className="truncate text-base text-muted-foreground">
+              <p className={`truncate text-muted-foreground ${typeStyle("body.default")}`}>
                 {contactEmail(selected) ?? "No contact email"}
               </p>
             </div>
@@ -513,22 +514,22 @@ export default function OperatorClientsScreen() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[25%] px-4 text-label text-muted-foreground">
+                <TableHead className={`w-[25%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
                   Client
                 </TableHead>
-                <TableHead className="w-[20%] text-label text-muted-foreground">
+                <TableHead className={`w-[20%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Broker
                 </TableHead>
-                <TableHead className="w-[22%] text-label text-muted-foreground">
+                <TableHead className={`w-[22%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Admin
                 </TableHead>
-                <TableHead className="w-[18%] text-label text-muted-foreground">
+                <TableHead className={`w-[18%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Website
                 </TableHead>
-                <TableHead className="w-[10%] text-label text-muted-foreground">
+                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>
                   Status
                 </TableHead>
-                <TableHead className="w-[8%] px-4 text-label text-muted-foreground">
+                <TableHead className={`w-[8%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
                   Created
                 </TableHead>
               </TableRow>
@@ -547,7 +548,7 @@ export default function OperatorClientsScreen() {
                 <TableRow className="hover:bg-transparent">
                   <TableCell
                     colSpan={6}
-                    className="h-32 px-4 text-base text-muted-foreground"
+                    className={`h-32 px-4 text-muted-foreground ${typeStyle("body.default")}`}
                   >
                     No client accounts found.
                   </TableCell>
@@ -575,7 +576,7 @@ export default function OperatorClientsScreen() {
                           website={client.website}
                           size="md"
                         />
-                        <p className="truncate font-medium text-foreground">
+                        <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                           {client.name}
                         </p>
                       </div>

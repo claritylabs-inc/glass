@@ -8,6 +8,7 @@ import { Suspense } from "react";
 import { fetchAction } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import InviteAcceptance from "./invite-acceptance";
+import { typeStyle } from "@/lib/typography";
 
 export async function generateMetadata({
   params,
@@ -51,7 +52,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center">
-          <div className="text-base text-gray-500">Loading invitation…</div>
+          <div className={`text-gray-500 ${typeStyle("body.default")}`}>Loading invitation…</div>
         </div>
       }
     >

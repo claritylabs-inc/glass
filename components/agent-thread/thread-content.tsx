@@ -109,6 +109,7 @@ import {
   mailboxTaskDisplayName,
   normalizeMailboxTask,
 } from "@/components/agent-thread/artifacts";
+import { typeStyle } from "@/lib/typography";
 
 /* ═══════════════════════════════════════════════════
    Unified Thread View (new threads table)
@@ -385,7 +386,7 @@ function ThreadAttachmentList({
             size="sm"
             onClick={handleDownloadAll}
             disabled={!urls?.length || isDownloadingAll}
-            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-tag font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
+            className={`h-6 shrink-0 gap-1.5 rounded-full px-2 text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground ${typeStyle("label.tag")}`}
           >
             <Download className="h-3.5 w-3.5" />
             {isDownloadingAll ? "Preparing..." : "Download all"}
@@ -657,7 +658,7 @@ function EmailRecipientMeta({
   const ccCount = ccAddresses?.length ?? 0;
 
   return (
-    <span className="min-w-0 truncate text-label font-normal text-muted-foreground/30">
+    <span className={`min-w-0 truncate text-muted-foreground/30 ${typeStyle("caption.default")}`}>
       <span className="text-muted-foreground/22">to</span>{" "}
       <span className="text-muted-foreground/38">{toAddresses.join(", ")}</span>
       {ccCount > 0 ? (
@@ -826,7 +827,7 @@ function MessageFooterActions({
           if (!messageId) return;
           onOpenMailboxArtifact?.({ messageId, index });
         }}
-        className={`inline-flex h-6 max-w-52 items-center justify-center gap-1.5 rounded-full border bg-transparent px-2 text-tag font-medium leading-none transition-colors ${
+        className={`inline-flex h-6 max-w-52 items-center justify-center gap-1.5 rounded-full border bg-transparent px-2 transition-colors ${typeStyle("label.tag")} ${
           isSelected
             ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
             : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
@@ -1006,7 +1007,7 @@ function MessageFooterActions({
             size="sm"
             onClick={handleDownloadAttachments}
             disabled={!attachmentUrls?.length || isDownloadingAttachments}
-            className="h-6 shrink-0 gap-1.5 rounded-full px-2 text-tag font-medium text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground"
+            className={`h-6 shrink-0 gap-1.5 rounded-full px-2 text-muted-foreground/60 hover:bg-foreground/3 hover:text-foreground ${typeStyle("label.tag")}`}
           >
             <Download className="h-3.5 w-3.5" />
             {isDownloadingAttachments ? "Preparing..." : "Download all"}
@@ -1126,10 +1127,10 @@ function UnifiedThreadActions({
 /* ── Shared markdown container styles ── */
 const MARKDOWN_STYLES = "[&_a]:text-primary-light [&_a]:underline";
 const IMESSAGE_MARKDOWN_STYLES =
-  `${MARKDOWN_STYLES} text-sm leading-5 ` +
+  `${MARKDOWN_STYLES} ${typeStyle("body.large")} ` +
   "[&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2 [&_ul]:pl-4 [&_ol]:pl-4 " +
-  "[&_li]:my-0.5 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-sm " +
-  "[&_h4]:text-sm [&_h5]:text-sm [&_h6]:text-sm";
+  `[&_li]:my-0.5 ${typeStyle("prose.default")} ` +
+  `${typeStyle("prose.default")}`;
 
 function markdownStylesForChannel(channel?: ThreadMessage["channel"]) {
   return channel === "imessage" ? IMESSAGE_MARKDOWN_STYLES : MARKDOWN_STYLES;
@@ -1235,7 +1236,7 @@ function PendingSendCountdown({
 
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <span className="text-label text-muted-foreground/50">
+      <span className={`text-muted-foreground/50 ${typeStyle("caption.default")}`}>
         Sending in {remaining}s...
       </span>
       <button
@@ -1251,7 +1252,7 @@ function PendingSendCountdown({
             toast.error("Failed to cancel");
           }
         }}
-        className="text-label font-medium text-red-500 hover:text-red-600 transition-colors"
+        className={`text-red-500 hover:text-red-600 transition-colors ${typeStyle("control.buttonCompact")}`}
       >
         Cancel
       </button>
@@ -1303,7 +1304,7 @@ function AgentProcessingActivity({
         <button
           type="button"
           onClick={onOpenBackgroundProcess}
-          className="inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-tag font-medium text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04]"
+          className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04] ${typeStyle("label.tag")}`}
         >
           {backgroundProcessContent}
         </button>
@@ -1433,7 +1434,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-label font-medium text-muted-foreground/50">
+            <p className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
               {agentBranding?.name ?? "Glass"}
             </p>
             {channelIcon}
@@ -1491,7 +1492,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   if (msg.status === "error" && msg.role !== "agent") {
     return (
       <div className="rounded-lg bg-red-50/50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 p-3">
-        <p className="text-label text-red-600 dark:text-red-400">
+        <p className={`text-red-600 dark:text-red-400 ${typeStyle("caption.default")}`}>
           {msg.error ?? "An error occurred processing this message."}
         </p>
         <RetryButton messageId={msg._id} />
@@ -1572,7 +1573,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
               className={`flex items-center gap-2 mb-1 ${brokerPerspective ? "justify-end" : ""}`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <p className="shrink-0 text-label font-medium text-muted-foreground/50">
+                <p className={`shrink-0 text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
                   {agentBranding?.name ?? "Glass"}
                 </p>
                 {msg.channel === "email" && !collapseEmailMessages ? (
@@ -1583,7 +1584,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                 ) : null}
                 {channelIcon}
                 <span className="text-muted-foreground/20">·</span>
-                <span className="text-label text-muted-foreground/25">
+                <span className={`text-muted-foreground/25 ${typeStyle("caption.default")}`}>
                   {formatDisplayDateTime(time)}
                 </span>
               </div>
@@ -1719,7 +1720,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             className="h-[15px] w-[15px]"
           />
         ) : (
-          <span className="text-label font-semibold text-foreground/60">
+          <span className={`text-foreground/60 ${typeStyle("caption.medium")}`}>
             {initials}
           </span>
         )}
@@ -1729,7 +1730,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
           className={`flex items-center gap-2 mb-1 ${isOwnMessage ? "justify-end" : ""}`}
         >
           <p
-            className="min-w-0 max-w-[min(24rem,70vw)] truncate text-label font-medium text-muted-foreground/50"
+            className={`min-w-0 max-w-[min(24rem,70vw)] truncate text-muted-foreground/50 ${typeStyle("caption.medium")}`}
             title={
               msg.operatorInitiated?.operatorEmail
                 ? `${displayName} (${msg.operatorInitiated.operatorEmail})`
@@ -1746,7 +1747,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
           ) : null}
           {channelIcon}
           <span className="text-muted-foreground/20">·</span>
-          <span className="text-label text-muted-foreground/25">
+          <span className={`text-muted-foreground/25 ${typeStyle("caption.default")}`}>
             {formatDisplayDateTime(time)}
           </span>
         </div>
@@ -1772,7 +1773,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                 <button
                   type="button"
                   onClick={() => setShowQuoted(!showQuoted)}
-                  className="mt-1.5 text-label text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
+                  className={`mt-1.5 text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors ${typeStyle("control.buttonCompact")}`}
                 >
                   {showQuoted ? "Hide quoted text ▴" : "Show quoted text ▾"}
                 </button>
@@ -1825,7 +1826,7 @@ function CancelButton({
           setCancelling(false);
         }
       }}
-      className="inline-flex h-5 items-center gap-1.5 text-label leading-5 text-muted-foreground/35 transition-colors hover:text-muted-foreground/60 disabled:opacity-50"
+      className={`inline-flex h-5 items-center gap-1.5 text-muted-foreground/35 transition-colors hover:text-muted-foreground/60 disabled:opacity-50 ${typeStyle("control.buttonCompact")}`}
     >
       {cancelling ? "Cancelling..." : "Cancel"}
     </button>
@@ -1907,7 +1908,7 @@ function RetryButton({ messageId }: { messageId: string }) {
           setRetrying(false);
         }
       }}
-      className="inline-flex items-center gap-1.5 mt-2 ml-9.5 text-label text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors disabled:opacity-50"
+      className={`inline-flex items-center gap-1.5 mt-2 ml-9.5 text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors disabled:opacity-50 ${typeStyle("control.buttonCompact")}`}
     >
       <RotateCcw className={`w-3 h-3 ${retrying ? "animate-spin" : ""}`} />
       {retrying ? "Retrying..." : "Retry response"}
@@ -1950,7 +1951,7 @@ function QueuedThreadMessage({
   return (
     <div className="mb-2 flex items-center gap-2 rounded-lg border border-foreground/8 bg-card px-2.5 py-2">
       <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/35" />
-      <p className="min-w-0 flex-1 truncate text-label text-muted-foreground/55">
+      <p className={`min-w-0 flex-1 truncate text-muted-foreground/55 ${typeStyle("caption.default")}`}>
         Queued:{" "}
         <PromptReferenceText
           content={preview}
@@ -2503,7 +2504,7 @@ export function UnifiedThreadContent({
             );
           })}
           {chatError && (
-            <div className="mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-base text-red-700">
+            <div className={`mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700 ${typeStyle("body.default")}`}>
               {chatError}
             </div>
           )}
@@ -2516,7 +2517,7 @@ export function UnifiedThreadContent({
       {/* Input — overlaid at bottom, content scrolls under it */}
       <ChatInputOverlay>
         {thread.originChannel === "slack" ? (
-          <div className="rounded-xl border border-foreground/8 bg-background px-4 py-3 text-base text-muted-foreground shadow-sm">
+          <div className={`rounded-xl border border-foreground/8 bg-background px-4 py-3 text-muted-foreground shadow-sm ${typeStyle("body.default")}`}>
             Continue this conversation in Slack. Replies there stay attached to this client record.
           </div>
         ) : (

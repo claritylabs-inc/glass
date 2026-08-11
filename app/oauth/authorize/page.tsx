@@ -12,6 +12,7 @@ import { Loader2, ArrowLeft, ArrowRight, X } from "lucide-react";
 import { completeOtpSignIn } from "@/lib/otp-auth";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -139,7 +140,7 @@ export default function OAuthAuthorizePage() {
         <AuthCard title="Invalid request" subtitle="This authorization request could not be completed.">
           <div className="text-center">
             <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            <p className="text-base text-muted-foreground">
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
               This authorization request is missing required parameters.
             </p>
           </div>
@@ -166,7 +167,7 @@ export default function OAuthAuthorizePage() {
             {loginStep === "email" ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
                 <div>
-                  <label className="text-label font-medium text-muted-foreground block mb-1.5">
+                  <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
                     Email Address
                   </label>
                   <input
@@ -176,15 +177,15 @@ export default function OAuthAuthorizePage() {
                     placeholder="you@company.com"
                     required
                     autoFocus
-                    className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
                   />
                 </div>
                 {error && (
-                  <p className="px-1 py-1 text-base text-muted-foreground">
+                  <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>
                     {error}
                   </p>
                 )}
-                <PillButton type="submit" disabled={sendingCode || !email} className="h-12 w-full justify-center text-base shadow-none">
+                <PillButton type="submit" disabled={sendingCode || !email} className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}>
                   {sendingCode ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {sendingCode ? "Sending code..." : "Send verification code"}
                   {!sendingCode ? <ArrowRight className="h-4 w-4" /> : null}
@@ -193,22 +194,22 @@ export default function OAuthAuthorizePage() {
             ) : (
               <form onSubmit={handleCodeSubmit} className="space-y-4">
                 <div>
-                  <label className="text-label font-medium text-muted-foreground block mb-2">
+                  <label className={`text-muted-foreground block mb-2 ${typeStyle("label.field")}`}>
                     Verification Code
                   </label>
                   <OtpField value={code} onValueChange={setCode} autoFocus required />
-                  <p className="mt-2 text-base text-muted-foreground">
+                  <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
                     We sent a 6-digit code to{" "}
-                    <span className="font-medium text-foreground">{email}</span>
+                    <span className={`text-foreground ${typeStyle("body.medium")}`}>{email}</span>
                   </p>
                 </div>
                 {error && (
-                  <p className="px-1 py-1 text-base text-muted-foreground">
+                  <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>
                     {error}
                   </p>
                 )}
                 <div className="flex flex-col gap-3 pt-1">
-                  <PillButton type="submit" disabled={verifying || code.length < 6} className="h-12 w-full justify-center text-base shadow-none">
+                  <PillButton type="submit" disabled={verifying || code.length < 6} className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}>
                     {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     {verifying ? "Verifying..." : "Verify and continue"}
                     {!verifying ? <ArrowRight className="h-4 w-4" /> : null}
@@ -217,7 +218,7 @@ export default function OAuthAuthorizePage() {
                     type="button"
                     variant="secondary"
                     onClick={() => { setLoginStep("email"); setCode(""); setError(""); }}
-                    className="h-12 w-full justify-center text-base shadow-none"
+                    className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
                   >
                     <ArrowLeft className="h-4 w-4" />
                     Use a different email
@@ -248,16 +249,16 @@ export default function OAuthAuthorizePage() {
           ) : clientInfo === null ? (
             <div className="text-center py-4">
               <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-              <h2 className="mb-1 text-lg font-medium text-foreground">Unknown application</h2>
-              <p className="text-base text-muted-foreground">
+              <h2 className={`mb-1 text-foreground ${typeStyle("heading.section")}`}>Unknown application</h2>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 This application is not registered or the redirect URI doesn&apos;t match.
               </p>
             </div>
           ) : redirecting ? (
             <div className="space-y-4">
-              <p className="text-base text-muted-foreground">
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 If you&apos;re not redirected automatically,{" "}
-                <a href={redirectUrl} className="font-medium text-foreground hover:underline">
+                <a href={redirectUrl} className={`text-foreground hover:underline ${typeStyle("control.button")}`}>
                   click here
                 </a>
                 . You can also close this window.
@@ -265,11 +266,11 @@ export default function OAuthAuthorizePage() {
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="text-base text-muted-foreground">
-                <p className="mb-2 text-base font-medium text-foreground">
+              <div className={`text-muted-foreground ${typeStyle("body.default")}`}>
+                <p className={`mb-2 text-foreground ${typeStyle("body.medium")}`}>
                   This will allow the app to:
                 </p>
-                <ul className="space-y-1.5 text-base text-muted-foreground">
+                <ul className={`space-y-1.5 text-muted-foreground ${typeStyle("body.default")}`}>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
                     Read your policies
@@ -294,14 +295,14 @@ export default function OAuthAuthorizePage() {
                   )}
                 </ul>
                 {scope && (
-                  <p className="mt-2 text-label text-muted-foreground/60">
+                  <p className={`mt-2 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
                     Requested scopes: {scope}
                   </p>
                 )}
               </div>
 
               {error && (
-                <p className="px-1 py-1 text-base text-muted-foreground">
+                <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>
                   {error}
                 </p>
               )}
@@ -311,7 +312,7 @@ export default function OAuthAuthorizePage() {
                   type="button"
                   onClick={handleAllow}
                   disabled={authorizing}
-                  className="h-12 w-full justify-center text-base shadow-none"
+                  className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
                 >
                   {authorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {authorizing ? "Authorizing..." : "Allow"}
@@ -321,7 +322,7 @@ export default function OAuthAuthorizePage() {
                   variant="secondary"
                   onClick={handleDeny}
                   disabled={authorizing}
-                  className="h-12 w-full justify-center text-base shadow-none"
+                  className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
                 >
                   Deny
                 </PillButton>

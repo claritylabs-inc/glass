@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FormattedSectionContent } from "./formatted-section-content";
+import { typeStyle } from "@/lib/typography";
 
 /** Collapsible document section with formatted content */
 export function DocSection({
@@ -43,11 +44,11 @@ export function DocSection({
         onClick={() => setOpen(!open)}
         className="flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-foreground/[0.03] dark:hover:bg-foreground/[0.06]"
       >
-        <span className="text-base font-medium text-foreground flex-1 truncate">
+        <span className={`text-foreground flex-1 truncate ${typeStyle("body.medium")}`}>
           {title || typeLabel || "Section"}
         </span>
         {pages && (
-          <span className="text-base text-muted-foreground/40 shrink-0">
+          <span className={`text-muted-foreground/40 shrink-0 ${typeStyle("body.default")}`}>
             p.{pages}
           </span>
         )}

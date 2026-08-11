@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import glassPlugin from "./eslint-rules/no-untyped-typography.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -32,6 +33,18 @@ const eslintConfig = defineConfig([
           ignoreRestSiblings: true,
         },
       ],
+    },
+  },
+  {
+    files: [
+      "app/**/*.{ts,tsx,js,jsx}",
+      "components/**/*.{ts,tsx,js,jsx}",
+      "lib/**/*.tsx",
+    ],
+    ignores: ["app/**/opengraph-image.{ts,tsx,js,jsx}"],
+    plugins: { glass: glassPlugin },
+    rules: {
+      "glass/no-untyped-typography": "error",
     },
   },
   // Convex functions deal with dynamic data: cl-sdk discriminated unions,

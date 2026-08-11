@@ -27,6 +27,7 @@ import {
 } from "@/convex/lib/notificationTypes";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 interface NotificationPreferencesSectionProps {
   orgId: Id<"organizations">;
@@ -69,8 +70,8 @@ function DefaultNotificationRow({
             <Icon className="size-4" />
           </div>
           <div className="min-w-0">
-            <p className="text-base font-medium text-foreground">{title}</p>
-            <p className="mt-0.5 text-base text-muted-foreground">
+            <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
+            <p className={`mt-0.5 text-muted-foreground ${typeStyle("body.default")}`}>
               {description}
             </p>
           </div>
@@ -164,8 +165,8 @@ function NotificationPreferenceDrawer({
         <OperationalPanel as="div" className="divide-y divide-foreground/6">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
-              <p className="text-base font-medium text-foreground">Email</p>
-              <p className="text-base text-muted-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>Email</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 Send this event to your account email.
               </p>
             </div>
@@ -177,8 +178,8 @@ function NotificationPreferenceDrawer({
           </div>
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
-              <p className="text-base font-medium text-foreground">Text</p>
-              <p className="text-base text-muted-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>Text</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 Send this event to your profile phone number.
               </p>
             </div>
@@ -397,10 +398,10 @@ export function NotificationPreferencesSection({
                     onClick={() => setSelectedType(row.type)}
                     className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/10"
                   >
-                    <span className="min-w-0 flex-1 text-base font-medium text-foreground">
+                    <span className={`min-w-0 flex-1 text-foreground ${typeStyle("body.medium")}`}>
                       {row.label}
                     </span>
-                    <span className="shrink-0 text-base text-muted-foreground">
+                    <span className={`shrink-0 text-muted-foreground ${typeStyle("body.default")}`}>
                       {usesDefaults ? "Default · " : ""}
                       {channelSummary(email, text)}
                     </span>

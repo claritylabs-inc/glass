@@ -175,7 +175,12 @@
   --font-sans:
     var(--font-geist-sans), "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
-  --font-serif: var(--font-instrument-serif);
+  --font-brand: var(--font-redaction), Georgia, "Times New Roman", serif;
+  --font-serif: var(--font-redaction), Georgia, "Times New Roman", serif;
+  --font-redaction35: var(--font-redaction-35), Georgia, "Times New Roman", serif;
+  --font-redaction50: var(--font-redaction-50), Georgia, "Times New Roman", serif;
+  --font-redaction70: var(--font-redaction-70), Georgia, "Times New Roman", serif;
+  --font-redaction100: var(--font-redaction-100), Georgia, "Times New Roman", serif;
 
   /* Typography scale */
   --text-tag: 0.7rem;
@@ -208,9 +213,7 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    @apply bg-background text-foreground;
     overscroll-behavior: none;
   }
 
@@ -222,15 +225,6 @@
   .dark ::selection {
     background: rgba(255, 255, 255, 0.15);
     color: var(--foreground-highlight);
-  }
-
-  /* Prevent iOS Safari zoom on form field focus (requires >= 16px) */
-  @media screen and (max-width: 767px) {
-    input,
-    select,
-    textarea {
-      font-size: 16px !important;
-    }
   }
 
   /* Remove the default webkit inset shadow on form fields */
@@ -246,56 +240,11 @@
     appearance: auto;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    font-family: var(--font-geist-sans), system-ui, sans-serif;
-    font-weight: 500;
-    color: var(--foreground-highlight);
-    letter-spacing: -0.025em;
-    line-height: 1.35;
-  }
-
-  /* Page-level heading sizes — only apply when NOT overridden by Tailwind */
-  h1:not([class*="text-"]) {
-    font-size: 1.45rem;
-  }
-  h2:not([class*="text-"]) {
-    font-size: 1.25rem;
-  }
-  h3:not([class*="text-"]) {
-    font-size: 1.05rem;
-  }
-  h4:not([class*="text-"]) {
-    font-size: 0.95rem;
-  }
-
-  @media (min-width: 768px) {
-    h1:not([class*="text-"]) {
-      font-size: 1.65rem;
-    }
-    h2:not([class*="text-"]) {
-      font-size: 1.35rem;
-    }
-    h3:not([class*="text-"]) {
-      font-size: 1.1rem;
-    }
-    h4:not([class*="text-"]) {
-      font-size: 1rem;
-    }
-  }
 }
 
 /* =============================================================================
    Utility Classes
    ============================================================================= */
-
-.serif {
-  font-family: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
-}
 
 .sidebar-transition {
   transition: width var(--motion-medium) var(--motion-ease);
@@ -333,11 +282,6 @@
   outline-offset: 2px;
 }
 
-.text-tag {
-  font-size: var(--text-tag);
-  line-height: var(--text-tag--line-height);
-}
-
 @media (max-width: 600px) {
   [data-sonner-toaster][data-x-position="right"] {
     left: auto;
@@ -367,43 +311,6 @@
     transition-delay: 0ms !important;
     transition-duration: 1ms !important;
   }
-}
-
-/* =============================================================================
-   Phone Input — react-phone-number-input overrides for shadcn/Tailwind
-   ============================================================================= */
-
-.PhoneInput {
-  --PhoneInputCountrySelect-padding: 0 1.5rem 0 0.5rem;
-}
-
-.PhoneInputCountrySelect {
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  border: none;
-  color: inherit;
-  font-size: inherit;
-  padding: var(--PhoneInputCountrySelect-padding);
-}
-
-.PhoneInputCountrySelect:focus {
-  outline: none;
-}
-
-.PhoneInputCountrySelectArrow {
-  border-color: currentColor;
-  opacity: 0.5;
-}
-
-.PhoneInputCountryIcon {
-  width: 1.25rem;
-  height: auto;
-}
-
-.PhoneInputCountryIcon--square {
-  width: 1.25rem;
-  height: 1rem;
 }
 
 .scrollbar-hide {

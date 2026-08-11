@@ -32,6 +32,7 @@ import {
 } from "@/app/policies/[id]/policy-coverage-breakdown";
 import { formatDisplayDate } from "@/lib/date-format";
 import { resolvePolicyPartyContext } from "@/convex/lib/policyPartyContext";
+import { typeStyle } from "@/lib/typography";
 
 type CoverageBreakdownRow = CoverageBreakdown["all"][number];
 
@@ -282,7 +283,7 @@ function PolicySupportingDetails({ rows }: { rows: MetadataRow[] }) {
 
   return (
     <section className="min-w-0">
-      <p className="mb-2 text-base font-medium text-muted-foreground/60">
+      <p className={`mb-2 text-muted-foreground/60 ${typeStyle("body.medium")}`}>
         Policy details
       </p>
       <OperationalLabelValueList>
@@ -307,7 +308,7 @@ function ExactSourceLocations({
   return (
     <section className="min-w-0 rounded-md border border-foreground/8 bg-foreground/[0.02]">
       <div className="border-b border-foreground/6 px-3 py-2">
-        <p className="text-label font-medium text-foreground">
+        <p className={`text-foreground ${typeStyle("caption.medium")}`}>
           Exact source locations
         </p>
       </div>
@@ -315,17 +316,17 @@ function ExactSourceLocations({
         {sourceSpans.slice(0, 5).map((span) => (
           <div key={span.spanId} className="px-3 py-2">
             <div className="mb-1 flex min-w-0 items-center gap-2">
-              <span className="text-label font-medium text-muted-foreground">
+              <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
                 p.{span.pageStart ?? span.bbox?.[0]?.page ?? "?"}
               </span>
-              <span className="truncate text-label text-muted-foreground/50">
+              <span className={`truncate text-muted-foreground/50 ${typeStyle("caption.default")}`}>
                 {span.sectionId ??
                   span.formNumber ??
                   (span.metadata?.elementType as string | undefined) ??
                   "Source span"}
               </span>
             </div>
-            <p className="line-clamp-3 text-base leading-relaxed text-foreground/80">
+            <p className={`line-clamp-3 text-foreground/80 ${typeStyle("body.default")}`}>
               {span.text}
             </p>
           </div>
@@ -405,11 +406,11 @@ function CoverageListPreview({
   return (
     <section className="min-w-0">
       <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 text-base font-medium text-muted-foreground/60">
+        <p className={`min-w-0 text-muted-foreground/60 ${typeStyle("body.medium")}`}>
           Coverage schedules
         </p>
         {totalRows > 0 && (
-          <span className="shrink-0 text-label text-muted-foreground/45">
+          <span className={`shrink-0 text-muted-foreground/45 ${typeStyle("caption.default")}`}>
             {totalRows}
           </span>
         )}
@@ -452,7 +453,7 @@ function CoverageListPreview({
           )}
         </>
       ) : (
-        <div className="rounded-md border border-foreground/8 bg-card px-3 py-3 text-base text-muted-foreground">
+        <div className={`rounded-md border border-foreground/8 bg-card px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
           No coverage schedule extracted yet.
         </div>
       )}
@@ -478,7 +479,7 @@ function CoveragePreviewGroupList({
   return (
     <div className="min-w-0 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
       {headerTitle ? (
-        <div className="border-b border-foreground/6 px-3 py-2.5 text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+        <div className={`border-b border-foreground/6 px-3 py-2.5 text-foreground [overflow-wrap:anywhere] ${typeStyle("body.medium")}`}>
           {headerTitle}
         </div>
       ) : null}
@@ -556,7 +557,7 @@ function CoverageScheduleRow({
       }`}
     >
       {showName ? (
-        <div className="text-base font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
+        <div className={`text-foreground [overflow-wrap:anywhere] ${typeStyle("body.medium")}`}>
           {row.name}
         </div>
       ) : null}
@@ -572,10 +573,10 @@ function CoverageScheduleRow({
             key={`${term.label}:${termIndex}`}
             className="grid grid-cols-[minmax(0,1fr)_minmax(6rem,auto)] gap-3 py-1.5 first:pt-0 last:pb-0"
           >
-            <dt className="min-w-0 text-base leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+            <dt className={`min-w-0 text-muted-foreground [overflow-wrap:anywhere] ${typeStyle("body.default")}`}>
               {term.label}
             </dt>
-            <dd className="min-w-0 text-right text-base font-medium leading-5 tabular-nums text-foreground [overflow-wrap:anywhere]">
+            <dd className={`min-w-0 text-right text-foreground [overflow-wrap:anywhere] ${typeStyle("data.numeric")}`}>
               {term.value}
             </dd>
           </div>

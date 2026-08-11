@@ -27,6 +27,7 @@ import {
   cachedQueryCollectionFor,
 } from "@/lib/sync/use-cached-query";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import { typeStyle } from "@/lib/typography";
 
 dayjs.extend(customParseFormat);
 
@@ -336,7 +337,7 @@ function TextField({
   const errorId = `${id}-error`;
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-label text-muted-foreground">
+      <Label htmlFor={id} className={`text-muted-foreground ${typeStyle("label.field")}`}>
         {label}
       </Label>
       <Input
@@ -351,7 +352,7 @@ function TextField({
         aria-describedby={error ? errorId : undefined}
       />
       {error ? (
-        <p id={errorId} className="text-label text-destructive">
+        <p id={errorId} className={`text-destructive ${typeStyle("caption.default")}`}>
           {error}
         </p>
       ) : null}
@@ -381,7 +382,7 @@ function AddressEditor({
       <div className="space-y-1.5">
         <Label
           htmlFor={`${idPrefix}-address-line-1`}
-          className="text-label text-muted-foreground"
+          className={`text-muted-foreground ${typeStyle("label.field")}`}
         >
           Address line 1
         </Label>
@@ -558,7 +559,7 @@ export function PolicyDetailsEditor({
       <div className="space-y-1.5">
         <Label
           htmlFor="policy-overview-premium"
-          className="text-label text-muted-foreground"
+          className={`text-muted-foreground ${typeStyle("label.field")}`}
         >
           Premium
         </Label>
@@ -585,7 +586,7 @@ export function PolicyDetailsEditor({
       <div className="space-y-1.5">
         <Label
           htmlFor="policy-overview-operations"
-          className="text-label text-muted-foreground"
+          className={`text-muted-foreground ${typeStyle("label.field")}`}
         >
           Description of operations
         </Label>
@@ -725,7 +726,7 @@ export function PolicyDetailsEditor({
       <div className="space-y-1.5">
         <Label
           htmlFor="policy-producer-phone"
-          className="text-label text-muted-foreground"
+          className={`text-muted-foreground ${typeStyle("label.field")}`}
         >
           Phone
         </Label>
@@ -744,7 +745,7 @@ export function PolicyDetailsEditor({
           aria-invalid={producerPhoneInvalid}
         />
         {producerPhoneInvalid ? (
-          <p className="text-label text-destructive">
+          <p className={`text-destructive ${typeStyle("caption.default")}`}>
             Enter a valid phone number with country code.
           </p>
         ) : null}

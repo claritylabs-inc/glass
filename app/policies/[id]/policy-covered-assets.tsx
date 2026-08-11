@@ -5,6 +5,7 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import type { CoverageBreakdown } from "@/convex/lib/coverageBreakdown";
+import { typeStyle } from "@/lib/typography";
 
 type CoveredAssetKind = CoverageBreakdown["schedules"][number]["kind"];
 type CoveredAssetSchedule = CoverageBreakdown["schedules"][number];
@@ -220,11 +221,11 @@ function ItemFacts({
   const missingIdentifier = missingIdentifierText(kind, item);
   if (!item.values.length && !missingIdentifier) return null;
   return (
-    <dd className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-base leading-5 text-foreground @xl/covered-assets:justify-end">
+    <dd className={`flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-foreground @xl/covered-assets:justify-end ${typeStyle("body.default")}`}>
       {item.values.map((value, index) => (
         <span key={`${value.label}:${value.value}:${index}`}>
           <span className="text-muted-foreground">{value.label}</span>{" "}
-          <span className="font-medium tabular-nums">{value.value}</span>
+          <span className={`${typeStyle("data.numeric")}`}>{value.value}</span>
         </span>
       ))}
       {missingIdentifier ? (
@@ -249,11 +250,11 @@ export function PolicyCoveredAssets({
         {groups.map((group) => (
           <section key={group.kind} className="px-4 py-3">
             <div className="flex items-baseline justify-between gap-4">
-              <h3 className="text-base font-medium text-foreground">
+              <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
                 {group.title}
               </h3>
               {group.sections.length === 1 ? (
-                <span className="shrink-0 text-base text-muted-foreground">
+                <span className={`shrink-0 text-muted-foreground ${typeStyle("body.default")}`}>
                   {assetCountLabel(group.kind, group.sections[0].items.length)}
                 </span>
               ) : null}
@@ -266,10 +267,10 @@ export function PolicyCoveredAssets({
                 >
                   {section.name ? (
                     <div className="mb-2 flex items-baseline justify-between gap-4">
-                      <p className="min-w-0 text-base text-muted-foreground">
+                      <p className={`min-w-0 text-muted-foreground ${typeStyle("body.default")}`}>
                         {section.name}
                       </p>
-                      <span className="shrink-0 text-base text-muted-foreground">
+                      <span className={`shrink-0 text-muted-foreground ${typeStyle("body.default")}`}>
                         {assetCountLabel(group.kind, section.items.length)}
                       </span>
                     </div>
@@ -280,8 +281,8 @@ export function PolicyCoveredAssets({
                         key={`${item.label}:${itemIndex}`}
                         className="grid min-w-0 gap-1.5 py-2 first:pt-0 last:pb-0 @xl/covered-assets:grid-cols-[minmax(10rem,0.65fr)_minmax(0,1fr)] @xl/covered-assets:gap-6"
                       >
-                        <dt className="min-w-0 text-base leading-5 text-foreground">
-                          <span className="font-medium">{item.label}</span>
+                        <dt className={`min-w-0 text-foreground ${typeStyle("body.default")}`}>
+                          <span className={`${typeStyle("body.medium")}`}>{item.label}</span>
                           {item.description ? (
                             <span className="mt-0.5 block text-muted-foreground">
                               {item.description}

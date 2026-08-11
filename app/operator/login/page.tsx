@@ -12,6 +12,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { completeOtpSignIn } from "@/lib/otp-auth";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { typeStyle } from "@/lib/typography";
 
 function friendlyError(raw: string): string {
   const lower = raw.toLowerCase();
@@ -87,7 +88,7 @@ export default function OperatorLoginPage() {
         {step === "email" ? (
           <form onSubmit={sendCode} className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-label font-medium text-muted-foreground">
+              <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>
                 Operator email
               </label>
               <input
@@ -97,18 +98,18 @@ export default function OperatorLoginPage() {
                 placeholder="you@claritylabs.inc"
                 required
                 autoFocus
-                className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8"
+                className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8 ${typeStyle("control.input")}`}
               />
             </div>
-            {error ? <p className="text-base text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || !email} className="justify-center text-base">
+            {error ? <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p> : null}
+            <PillButton type="submit" disabled={loading || !email} className={`justify-center ${typeStyle("control.button")}`}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Sending code..." : "Continue"}
               {!loading ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-            <p className="text-label text-muted-foreground">
+            <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
               Looking for Glass?{" "}
-              <Link href="/login" className="font-medium text-foreground hover:opacity-70">
+              <Link href="/login" className={`text-foreground hover:opacity-70 ${typeStyle("control.button")}`}>
                 Go to the main login
               </Link>
             </p>
@@ -116,23 +117,23 @@ export default function OperatorLoginPage() {
         ) : (
           <form onSubmit={verifyCode} className="space-y-4">
             <div>
-              <label className="mb-2 block text-label font-medium text-muted-foreground">
+              <label className={`mb-2 block text-muted-foreground ${typeStyle("label.field")}`}>
                 Verification Code
               </label>
               <OtpField value={code} onValueChange={setCode} autoFocus required />
-              <p className="mt-2 text-base text-muted-foreground">
-                We sent a 6-digit code to <span className="font-medium text-foreground">{email}</span>
+              <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
+                We sent a 6-digit code to <span className={`text-foreground ${typeStyle("body.medium")}`}>{email}</span>
               </p>
             </div>
-            {error ? <p className="text-base text-muted-foreground">{error}</p> : null}
-            <PillButton type="submit" disabled={loading || code.length < 6} className="justify-center text-base">
+            {error ? <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p> : null}
+            <PillButton type="submit" disabled={loading || code.length < 6} className={`justify-center ${typeStyle("control.button")}`}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {loading ? "Verifying..." : "Verify and continue"}
               {!loading ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
-            <p className="text-label text-muted-foreground">
+            <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
               Not an operator?{" "}
-              <Link href="/login" className="font-medium text-foreground hover:opacity-70">
+              <Link href="/login" className={`text-foreground hover:opacity-70 ${typeStyle("control.button")}`}>
                 Go to the main login
               </Link>
             </p>

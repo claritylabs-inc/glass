@@ -6,6 +6,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { usePdf } from "@/components/pdf-context";
 import { cn } from "@/lib/utils";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 type AttachmentChipData = {
   filename: string;
@@ -53,10 +54,10 @@ export function ThreadAttachmentChip({
     ? attachment.filename
     : (unavailableTitle ?? `${attachment.filename} is not available yet`);
   const classNames = cn(
-    "inline-flex min-w-0 items-center rounded-full font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
+    `inline-flex min-w-0 items-center rounded-full transition-colors disabled:pointer-events-none disabled:opacity-50 ${typeStyle("body.medium")}`,
     isCompact
-      ? "h-5 gap-1 px-1.5 text-[0.6875rem] leading-4"
-      : "h-6 gap-1.5 px-2 text-label",
+      ? `h-5 gap-1 px-1.5 ${typeStyle("caption.default")}`
+      : `h-6 gap-1.5 px-2 ${typeStyle("caption.default")}`,
     canOpen
       ? "cursor-pointer bg-foreground/5 text-foreground/65 hover:bg-foreground/8 hover:text-foreground/80"
       : "pointer-events-none bg-foreground/3 text-muted-foreground/40",

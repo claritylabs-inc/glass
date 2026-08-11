@@ -14,9 +14,10 @@ import {
   readableTextFor,
   sampleBrandColors,
 } from "@/lib/branding";
+import { typeStyle } from "@/lib/typography";
 
 const inputClass =
-  "h-9 rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 
 export function AccentColorPicker({
   value,
@@ -77,7 +78,7 @@ export function AccentColorPicker({
       ))}
       <Popover>
         <PopoverTrigger
-          className="h-6 w-6 rounded-full border-2 border-dashed border-foreground/20 hover:border-foreground/40 transition-colors flex items-center justify-center text-muted-foreground/60 text-label"
+          className={`h-6 w-6 rounded-full border-2 border-dashed border-foreground/20 hover:border-foreground/40 transition-colors flex items-center justify-center text-muted-foreground/60 ${typeStyle("control.buttonCompact")}`}
           aria-label="Pick custom color"
           title="Custom color"
         >
@@ -89,7 +90,7 @@ export function AccentColorPicker({
             color={value}
             onChange={onChange}
             prefixed
-            className={`${inputClass} w-full mt-3 font-mono uppercase`}
+            className={`${inputClass} w-full mt-3 ${typeStyle("technical.code")}`}
           />
         </PopoverContent>
       </Popover>

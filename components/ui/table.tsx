@@ -3,6 +3,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { typeStyle } from "@/lib/typography";
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
@@ -12,7 +13,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-base", className)}
+        className={cn(`w-full caption-bottom ${typeStyle("body.default")}`, className)}
         {...props}
       />
     </div>
@@ -44,7 +45,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
     <tfoot
       data-slot="table-footer"
       className={cn(
-        "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
+        `border-t bg-muted/50 [&>tr]:last:border-b-0 ${typeStyle("body.medium")}`,
         className
       )}
       {...props}
@@ -70,7 +71,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle text-label font-medium whitespace-nowrap text-muted-foreground [&:has([role=checkbox])]:pr-0",
+        `h-10 px-2 text-left align-middle whitespace-nowrap text-muted-foreground [&:has([role=checkbox])]:pr-0 ${typeStyle("label.table")}`,
         className
       )}
       {...props}
@@ -98,7 +99,7 @@ function TableCaption({
   return (
     <caption
       data-slot="table-caption"
-      className={cn("mt-4 text-base text-muted-foreground", className)}
+      className={cn(`mt-4 text-muted-foreground ${typeStyle("body.default")}`, className)}
       {...props}
     />
   )

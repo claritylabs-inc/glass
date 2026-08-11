@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import type { TeamMember } from "@/components/settings/team-types";
+import { typeStyle } from "@/lib/typography";
 
 type TeamMemberEditDrawerProps = {
   member: TeamMember;
@@ -117,29 +118,29 @@ export function TeamMemberEditDrawer({
     >
       <div className="space-y-4">
         <label className="block space-y-1.5">
-          <span className="text-label font-medium text-muted-foreground">
+          <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
             Name
           </span>
           <input
             value={name}
             onChange={(event) => onNameChange(event.target.value)}
-            className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+            className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
             placeholder="Name"
           />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-label font-medium text-muted-foreground">
+          <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
             Title
           </span>
           <input
             value={title}
             onChange={(event) => onTitleChange(event.target.value)}
-            className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+            className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
             placeholder="Title"
           />
         </label>
         <label className="block space-y-1.5">
-          <span className="text-label font-medium text-muted-foreground">
+          <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
             Phone
           </span>
           <PhoneInput
@@ -150,7 +151,7 @@ export function TeamMemberEditDrawer({
           />
         </label>
         <div className="space-y-1.5">
-          <span className="text-label font-medium text-muted-foreground">
+          <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
             Role
           </span>
           <Select
@@ -177,8 +178,8 @@ export function TeamMemberEditDrawer({
         <div className="rounded-lg border border-foreground/8 bg-popover px-3 py-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-base font-medium">Primary contact</p>
-              <p className="text-base text-muted-foreground">
+              <p className={`${typeStyle("body.medium")}`}>Primary contact</p>
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 Used as the org&apos;s insurance contact for routing and
                 follow-up.
               </p>
@@ -204,8 +205,8 @@ export function TeamMemberEditDrawer({
         </div>
         <FormSection title="Account email">
           <div className="rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2">
-            <p className="text-label text-muted-foreground">Current email</p>
-            <p className="truncate text-base font-medium text-foreground">
+            <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Current email</p>
+            <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
               {member.email ?? "No email"}
             </p>
           </div>
@@ -213,10 +214,10 @@ export function TeamMemberEditDrawer({
             <div className="rounded-lg border border-foreground/8 bg-popover px-3 py-2.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-label text-muted-foreground">
+                  <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                     Pending email
                   </p>
-                  <p className="truncate text-base font-medium text-foreground">
+                  <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
                     {member.pendingEmailChange.newEmail}
                   </p>
                 </div>
@@ -232,14 +233,14 @@ export function TeamMemberEditDrawer({
                   Cancel
                 </PillButton>
               </div>
-              <p className="mt-2 text-base text-muted-foreground">
+              <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
                 Waiting for verification before this replaces the current email.
               </p>
             </div>
           ) : (
             <div className="space-y-1.5">
               <label className="block space-y-1.5">
-                <span className="text-label font-medium text-muted-foreground">
+                <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
                   New email
                 </span>
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -247,7 +248,7 @@ export function TeamMemberEditDrawer({
                     type="email"
                     value={email}
                     onChange={(event) => onEmailChange(event.target.value)}
-                    className="h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors"
+                    className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
                     placeholder="new@example.com"
                   />
                   <PillButton
@@ -265,14 +266,14 @@ export function TeamMemberEditDrawer({
                   </PillButton>
                 </div>
               </label>
-              <p className="text-base text-muted-foreground">
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 The current email stays active until the new address is
                 verified.
               </p>
             </div>
           )}
           {emailChangeError ? (
-            <p className="text-base text-red-500/80">{emailChangeError}</p>
+            <p className={`text-red-500/80 ${typeStyle("body.default")}`}>{emailChangeError}</p>
           ) : null}
         </FormSection>
       </div>

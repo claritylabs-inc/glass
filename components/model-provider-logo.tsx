@@ -10,6 +10,7 @@ import {
   SiX,
 } from "react-icons/si";
 import { MODEL_DISPLAY_NAMES } from "@/convex/lib/modelCatalog";
+import { scaledSvgWordmarkTypography } from "@/lib/typography";
 
 export type ModelProviderId =
   | "openai"
@@ -236,15 +237,15 @@ export function ModelProviderLogo({
   const style: CSSProperties = {
     width: size,
     height: size,
-    fontSize: Math.max(7, Math.round(size * 0.45)),
     color,
+    ...scaledSvgWordmarkTypography(size),
   };
 
   return (
     <span
       aria-hidden="true"
       className={[
-        "inline-flex shrink-0 items-center justify-center rounded-[3px] border border-current/20 font-medium leading-none",
+        "inline-flex shrink-0 items-center justify-center rounded-[3px] border border-current/20",
         className,
       ]
         .filter(Boolean)

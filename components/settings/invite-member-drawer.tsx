@@ -8,12 +8,13 @@ import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { typeStyle } from "@/lib/typography";
 
 const INPUT_CLASSES =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 
 const LABEL_CLASSES =
-  "text-label font-medium text-muted-foreground block mb-1";
+  `text-muted-foreground block mb-1 ${typeStyle("caption.medium")}`;
 
 export function InviteMemberDrawer({
   open,
@@ -76,7 +77,7 @@ export function InviteMemberDrawer({
         onSubmit={handleSubmit}
         className="space-y-4"
       >
-        <p className="text-base text-muted-foreground">
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
           Send an invitation to join your organization. They&apos;ll receive an
           email with instructions.
         </p>
@@ -103,7 +104,7 @@ export function InviteMemberDrawer({
                 key={r}
                 type="button"
                 onClick={() => setRole(r)}
-                className={`flex-1 py-2 rounded-lg border text-base font-medium transition-colors ${
+                className={`flex-1 py-2 rounded-lg border transition-colors ${typeStyle("control.button")} ${
                   role === r
                     ? "border-foreground/15 bg-foreground/3 text-foreground"
                     : "border-foreground/6 text-muted-foreground hover:border-foreground/10"
@@ -113,7 +114,7 @@ export function InviteMemberDrawer({
               </button>
             ))}
           </div>
-          <p className="text-label text-muted-foreground/60 mt-1.5">
+          <p className={`text-muted-foreground/60 mt-1.5 ${typeStyle("caption.default")}`}>
             {role === "admin"
               ? "Admins can manage connections, settings, and team members."
               : "Members can view policies and use the agent, but can't manage connections or settings."}

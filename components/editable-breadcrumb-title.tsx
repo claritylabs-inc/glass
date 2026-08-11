@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
+import {
+  editableMirrorTypographyStyle,
+  typeStyle,
+} from "@/lib/typography";
 
 export function EditableBreadcrumbTitle({
   title,
@@ -64,15 +68,15 @@ export function EditableBreadcrumbTitle({
 
   if (editing) {
     // Sizer in flow gives the wrapper its width; input is positioned over it.
-    // Both share the exact same text-base + px/py so the input matches the
-    // measured width to the pixel — no JS measurement, no flicker.
+    // Both inherit the same typed typography and share exact px/py so the
+    // input matches the measured width to the pixel — no JS measurement.
     return (
       <span className="inline-flex min-w-0 items-center gap-2 align-middle">
         <span className="relative -mx-1.5 inline-block max-w-[60vw] align-middle">
           <span
             aria-hidden
             style={{ visibility: "hidden", color: "transparent" }}
-            className="pointer-events-none block select-none whitespace-pre px-1.5 py-0.5 text-base"
+            className={`pointer-events-none block select-none whitespace-pre px-1.5 py-0.5 ${typeStyle("inherit")}`}
           >
             {(draft || " ") + "\u00A0"}
           </span>
@@ -91,14 +95,7 @@ export function EditableBreadcrumbTitle({
                 setEditing(false);
               }
             }}
-            style={{
-              fontFamily: "inherit",
-              fontSize: "inherit",
-              fontWeight: "inherit",
-              fontStyle: "inherit",
-              lineHeight: "inherit",
-              letterSpacing: "inherit",
-            }}
+            style={editableMirrorTypographyStyle}
             className="absolute inset-0 w-full rounded-md border-0 bg-foreground/4 px-1.5 py-0.5 text-foreground outline-none transition-colors focus:bg-foreground/6"
           />
         </span>
@@ -118,7 +115,7 @@ export function EditableBreadcrumbTitle({
           setEditing(true);
         }}
         title="Rename"
-        className="-mx-1.5 max-w-[60vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-left text-base text-foreground transition-colors hover:bg-foreground/4"
+        className={`-mx-1.5 max-w-[60vw] cursor-text truncate rounded-md px-1.5 py-0.5 text-left text-foreground transition-colors hover:bg-foreground/4 ${typeStyle("inherit")}`}
       >
         {display}
       </button>

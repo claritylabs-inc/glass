@@ -5,6 +5,7 @@ import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
 import { PillButton } from "@/components/ui/pill-button";
 import { api } from "@/convex/_generated/api";
+import { typeStyle } from "@/lib/typography";
 
 type OperatorImpersonationContext = {
   user?: { email?: string };
@@ -69,13 +70,13 @@ export function OperatorImpersonationBanner() {
     >
       <div className="flex min-h-9 w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="truncate text-base font-medium">Operator mode</p>
-          <p className="truncate text-label text-white/62 dark:text-black/62">
+          <p className={`truncate ${typeStyle("body.medium")}`}>Operator mode</p>
+          <p className={`truncate text-white/62 dark:text-black/62 ${typeStyle("caption.default")}`}>
             {isReadOnly ? "Read-only live organization" : "Onboarding setup access"}
           </p>
         </div>
         <div className="flex min-w-0 items-center justify-between gap-3 sm:justify-end">
-          <p className="min-w-0 truncate text-label text-white/72 dark:text-black/72">
+          <p className={`min-w-0 truncate text-white/72 dark:text-black/72 ${typeStyle("caption.default")}`}>
             Viewing {impersonation.targetOrgName ?? "organization"} as{" "}
             {impersonation.targetRole}
             {operatorContext?.user?.email

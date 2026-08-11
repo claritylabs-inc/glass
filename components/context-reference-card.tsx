@@ -15,6 +15,7 @@ import {
 } from "@/convex/lib/policyPartyContext";
 import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
 import { policyCardBranding } from "@/lib/policy-card-branding";
+import { typeStyle } from "@/lib/typography";
 
 function policyCarrierIdentity(policy: {
   carrier?: string;
@@ -90,7 +91,7 @@ export function PolicyReferenceCard({
 
   if (!policy) {
     return (
-      <ActionSurface className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-md px-2 py-1.5 text-label">
+      <ActionSurface className={`inline-flex max-w-[18rem] items-center gap-1.5 rounded-md px-2 py-1.5 ${typeStyle("control.buttonCompact")}`}>
         <FileText className="h-3 w-3 text-muted-foreground/40" />
         <span className="text-muted-foreground/50">Policy</span>
       </ActionSurface>
@@ -139,10 +140,10 @@ export function PolicyReferenceCard({
         className="relative z-10 size-5 rounded bg-background"
       />
       <div className="relative z-10 min-w-0 flex-1">
-        <p className="mb-0.5 text-label font-medium leading-none text-current opacity-55">
+        <p className={`mb-0.5 text-current opacity-55 ${typeStyle("caption.medium")}`}>
           Policy
         </p>
-        <p className="truncate text-label leading-4 text-current opacity-90">
+        <p className={`truncate text-current opacity-90 ${typeStyle("caption.default")}`}>
           {summary}
         </p>
       </div>
@@ -189,7 +190,7 @@ export function PolicyCitation({
           citedSourceSpanIds,
         })
       }
-      className="relative mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 overflow-hidden rounded-full border border-black/10 px-1.5 align-middle text-tag font-medium leading-none text-current no-underline transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm"
+      className={`relative mx-0.5 inline-flex h-5 max-w-40 -translate-y-px items-center gap-1 overflow-hidden rounded-full border border-black/10 px-1.5 align-middle text-current no-underline transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm ${typeStyle("label.tag")}`}
       style={brand?.surfaceStyle}
       title={label}
     >
@@ -254,7 +255,7 @@ export function PolicySourcePill({
           citedSourceSpanIds,
         })
       }
-      className="relative inline-flex h-6 max-w-48 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-black/10 px-2 text-tag font-medium leading-none text-current transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm"
+      className={`relative inline-flex h-6 max-w-48 items-center justify-center gap-1.5 overflow-hidden rounded-full border border-black/10 px-2 text-current transition-[filter,box-shadow] duration-150 ease-out hover:brightness-[0.96] hover:shadow-sm ${typeStyle("label.tag")}`}
       style={brand?.surfaceStyle}
       title={label}
     >

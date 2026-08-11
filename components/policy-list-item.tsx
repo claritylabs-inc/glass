@@ -18,6 +18,7 @@ import {
 } from "@/lib/date-format";
 import { policyCardBranding } from "@/lib/policy-card-branding";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 type UploadedBySide =
   | "broker"
@@ -187,11 +188,11 @@ export function PolicyListItem({
             className="size-8 rounded-md bg-background"
           />
           <div className="min-w-0">
-            <p className="truncate text-label font-medium text-current opacity-85">
+            <p className={`truncate text-current opacity-85 ${typeStyle("caption.medium")}`}>
               {issuerName}
             </p>
             {generalAgentClean && generalAgentClean !== issuerName ? (
-              <p className="truncate text-tag text-current opacity-55">
+              <p className={`truncate text-current opacity-55 ${typeStyle("label.tag")}`}>
                 via {generalAgentClean}
               </p>
             ) : null}
@@ -213,7 +214,7 @@ export function PolicyListItem({
       </div>
 
       <div className="relative z-10 mt-5 mb-3 min-h-12">
-        <dt className="text-tag font-medium text-current opacity-55 mb-1">
+        <dt className={`text-current opacity-55 mb-1 ${typeStyle("label.tag")}`}>
           Product lines
         </dt>
         {visibleProductLines.length > 0 ? (
@@ -224,25 +225,25 @@ export function PolicyListItem({
             {visibleProductLines.map((productLine, index) => (
               <li
                 key={`${productLine}-${index}`}
-                className="truncate text-base font-medium leading-5 text-current"
+                className={`truncate text-current ${typeStyle("body.medium")}`}
               >
                 {productLine}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="truncate text-base font-medium leading-5 text-current">
+          <p className={`truncate text-current ${typeStyle("body.medium")}`}>
             {fallbackTitle}
           </p>
         )}
         {hiddenProductLineCount > 0 ? (
-          <p className="mt-1 text-tag text-current opacity-55">
+          <p className={`mt-1 text-current opacity-55 ${typeStyle("label.tag")}`}>
             +{hiddenProductLineCount} more{" "}
             {hiddenProductLineCount === 1 ? "coverage" : "coverages"}
           </p>
         ) : null}
         {productNameClean && productNameClean !== visibleProductLines[0] ? (
-          <p className="mt-1 truncate text-tag text-current opacity-65">
+          <p className={`mt-1 truncate text-current opacity-65 ${typeStyle("label.tag")}`}>
             {productNameClean}
           </p>
         ) : null}
@@ -250,18 +251,18 @@ export function PolicyListItem({
 
       <dl className="relative z-10 mt-auto grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)] gap-4 border-t border-current/15 pt-3">
         <div className="min-w-0">
-          <dt className="text-tag font-medium text-current opacity-55">
+          <dt className={`text-current opacity-55 ${typeStyle("label.tag")}`}>
             Policy number
           </dt>
-          <dd className="mt-1 truncate text-label text-current opacity-85">
+          <dd className={`mt-1 truncate text-current opacity-85 ${typeStyle("caption.default")}`}>
             {policyNumberClean ?? (isProcessing ? "Pending" : "Not listed")}
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="text-tag font-medium text-current opacity-55">
+          <dt className={`text-current opacity-55 ${typeStyle("label.tag")}`}>
             Coverage period
           </dt>
-          <dd className="mt-1 truncate text-label text-current opacity-85">
+          <dd className={`mt-1 truncate text-current opacity-85 ${typeStyle("caption.default")}`}>
             {coveragePeriod}
           </dd>
         </div>

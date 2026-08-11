@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
 
 export type EmailScope = "user" | "org";
 
@@ -210,8 +211,8 @@ export function AutomationToggleRows({
           className="flex items-center justify-between gap-4 px-4 py-3"
         >
           <div className="min-w-0">
-            <p className="text-base font-medium text-foreground">{row.title}</p>
-            <p className="mt-0.5 text-base text-muted-foreground">
+            <p className={`text-foreground ${typeStyle("body.medium")}`}>{row.title}</p>
+            <p className={`mt-0.5 text-muted-foreground ${typeStyle("body.default")}`}>
               {row.description}
             </p>
           </div>

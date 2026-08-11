@@ -16,6 +16,7 @@ import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { cn } from "@/lib/utils";
 import { OperatorSidebar } from "../operator-sidebar";
+import { typeStyle } from "@/lib/typography";
 
 type OperatorSlackProfile = {
   role: "operator" | "owner";
@@ -63,8 +64,8 @@ function ChannelDetail({
 }) {
   return (
     <div className="grid gap-1 border-t border-foreground/6 py-3 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-label text-muted-foreground sm:text-base">{label}</dt>
-      <dd className="min-w-0 break-words text-base text-foreground">
+      <dt className={`text-muted-foreground ${typeStyle("label.metadata")}`}>{label}</dt>
+      <dd className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}>
         {children}
       </dd>
     </div>
@@ -126,7 +127,7 @@ function OperatorIdentityRow({
     <div className="grid gap-3 py-3 sm:grid-cols-[minmax(0,1.25fr)_minmax(9rem,0.8fr)_auto] sm:items-center">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
-          <p className="truncate text-base font-medium text-foreground">
+          <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
             {displayName}
           </p>
           {identity.isCurrent ? (
@@ -140,16 +141,16 @@ function OperatorIdentityRow({
             <StatusTag>Disabled</StatusTag>
           ) : null}
         </div>
-        <p className="mt-0.5 truncate text-label text-muted-foreground">
+        <p className={`mt-0.5 truncate text-muted-foreground ${typeStyle("caption.default")}`}>
           {accountDetail}
         </p>
       </div>
 
       <div className="min-w-0">
-        <p className="text-label text-muted-foreground">Slack member ID</p>
-        <p className="mt-0.5 truncate text-base text-foreground">
+        <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Slack member ID</p>
+        <p className={`mt-0.5 truncate text-foreground ${typeStyle("body.default")}`}>
           {identity.slackUserId ? (
-            <code className="font-mono text-label">{identity.slackUserId}</code>
+            <code className={`${typeStyle("technical.codeCompact")}`}>{identity.slackUserId}</code>
           ) : (
             "Not set"
           )}
@@ -336,14 +337,14 @@ function OperatorChannelsContent({
           void saveIdentity();
         }}
       >
-        <p className="text-base text-muted-foreground">
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
           This changes the Slack identity for the signed-in Glass account{" "}
-          <span className="font-medium text-foreground">{operatorEmail}</span>
+          <span className={`text-foreground ${typeStyle("body.medium")}`}>{operatorEmail}</span>
           {workspaceName ? (
             <>
               {" "}
               in{" "}
-              <span className="font-medium text-foreground">
+              <span className={`text-foreground ${typeStyle("body.medium")}`}>
                 {workspaceName}
               </span>
               .
@@ -356,7 +357,7 @@ function OperatorChannelsContent({
         <div>
           <label
             htmlFor="operator-slack-member-id"
-            className="text-label font-medium text-foreground"
+            className={`text-foreground ${typeStyle("label.field")}`}
           >
             Slack member ID
           </label>
@@ -369,16 +370,16 @@ function OperatorChannelsContent({
             autoComplete="off"
             autoFocus
           />
-          <p className="mt-2 text-label text-muted-foreground">
+          <p className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}>
             Slack member IDs usually begin with U.
           </p>
         </div>
 
         <div className="rounded-lg border border-foreground/6 bg-foreground/[0.025] p-3">
-          <h3 className="text-label font-medium text-foreground">
+          <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             How to find your member ID
           </h3>
-          <ol className="mt-2 list-decimal space-y-1 pl-4 text-label text-muted-foreground">
+          <ol className={`mt-2 list-decimal space-y-1 pl-4 text-muted-foreground ${typeStyle("caption.default")}`}>
             <li>Open Slack and select your profile picture.</li>
             <li>Open your profile, then select More (•••).</li>
             <li>Select Copy member ID and paste it above.</li>
@@ -414,16 +415,16 @@ function OperatorChannelsContent({
               </ChannelCard>
             ) : !hostStatus.enabled ? (
               <ChannelCard>
-                <h2 className="text-base font-medium text-foreground">
+                <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
                   Slack not enabled
                 </h2>
               </ChannelCard>
             ) : !hostStatus.configured ? (
               <ChannelCard>
-                <h2 className="text-base font-medium text-foreground">
+                <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
                   Slack unavailable
                 </h2>
-                <p className="mt-1 text-base text-muted-foreground">
+                <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                   {hostStatus.mode === "mock"
                     ? "The local Slack simulator is missing its fixture workspace. Run the Conductor workspace setup again."
                     : "This deployment is missing the credentials or callback configuration required to connect Slack."}
@@ -434,7 +435,7 @@ function OperatorChannelsContent({
                 <ChannelCard>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <h2 className="text-base font-medium text-foreground">
+                      <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
                         Clarity workspace
                       </h2>
                     </div>
@@ -466,7 +467,7 @@ function OperatorChannelsContent({
                       {workspaceName ?? "No workspace connected"}
                     </ChannelDetail>
                     <ChannelDetail label="Slack team ID">
-                      <code className="font-mono text-label">
+                      <code className={`${typeStyle("technical.codeCompact")}`}>
                         {workspaceTeamId ?? "Not configured"}
                       </code>
                     </ChannelDetail>
@@ -476,10 +477,10 @@ function OperatorChannelsContent({
                 {mockMode || hostInstallation ? (
                   <ChannelCard>
                     <div className="min-w-0">
-                      <h2 className="text-base font-medium text-foreground">
+                      <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
                         Operator Slack identities
                       </h2>
-                      <p className="mt-1 max-w-2xl text-base text-muted-foreground">
+                      <p className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}>
                         Glass uses these links to recognize which operator
                         replied in Slack.
                       </p>
@@ -493,7 +494,7 @@ function OperatorChannelsContent({
                       />
 
                       {currentIdentityWorkspaceMismatch ? (
-                        <p className="pb-3 text-label text-destructive">
+                        <p className={`pb-3 text-destructive ${typeStyle("caption.default")}`}>
                           Your identity points to {savedIdentity.slackTeamId},
                           not the current workspace {workspaceTeamId}. Change it
                           before handling Slack messages.
@@ -501,7 +502,7 @@ function OperatorChannelsContent({
                       ) : null}
 
                       <div className="border-t border-foreground/6">
-                        <p className="pt-3 text-label font-medium text-muted-foreground">
+                        <p className={`pt-3 text-muted-foreground ${typeStyle("caption.medium")}`}>
                           Other Glass operators
                         </p>
                         {otherOperators === undefined ? (
@@ -519,7 +520,7 @@ function OperatorChannelsContent({
                             ))}
                           </div>
                         ) : (
-                          <p className="py-3 text-base text-muted-foreground">
+                          <p className={`py-3 text-muted-foreground ${typeStyle("body.default")}`}>
                             No other Glass operators.
                           </p>
                         )}

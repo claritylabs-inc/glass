@@ -37,6 +37,7 @@ import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { formatDisplayDate } from "@/lib/date-format";
 import { getOperatorBrokerHref } from "@/lib/operator-navigation";
+import { typeStyle } from "@/lib/typography";
 
 type BrokerRow = {
   _id: Id<"organizations">;
@@ -54,9 +55,9 @@ type BrokerRow = {
 };
 
 const INPUT_CLASSES =
-  "h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors";
+  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
 const AFFIXED_INPUT_CLASSES =
-  "h-full min-w-0 flex-1 bg-transparent px-3 text-base placeholder:text-muted-foreground/40 focus:outline-none";
+  `h-full min-w-0 flex-1 bg-transparent px-3 placeholder:text-muted-foreground/40 focus:outline-none ${typeStyle("body.default")}`;
 const AGENT_DOMAIN = getPublicAgentDomain();
 const BROKER_SIGNUP_PREFIX = `${CLIENT_PORTAL_HOST}/signup/`;
 
@@ -81,9 +82,9 @@ function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-label font-medium text-muted-foreground">{label}</span>
+      <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>{label}</span>
       {children}
-      {error ? <span className="block text-label text-destructive">{error}</span> : null}
+      {error ? <span className={`block text-destructive ${typeStyle("caption.default")}`}>{error}</span> : null}
     </label>
   );
 }
@@ -443,7 +444,7 @@ export default function OperatorBrokersPage() {
           </Field>
           <Field label="Signup link">
             <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
+              <span className={`flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
                 {BROKER_SIGNUP_PREFIX}
               </span>
               <input
@@ -483,7 +484,7 @@ export default function OperatorBrokersPage() {
                 onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
                 placeholder="release"
               />
-              <span className="flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
+              <span className={`flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
                 @{AGENT_DOMAIN}
               </span>
             </div>
@@ -534,7 +535,7 @@ export default function OperatorBrokersPage() {
         <fieldset disabled={busy} className="space-y-3">
           <Field label="Signup slug">
             <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <span className="flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-label text-muted-foreground">
+              <span className={`flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
                 {BROKER_SIGNUP_PREFIX}
               </span>
               <input
@@ -621,13 +622,13 @@ export default function OperatorBrokersPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[25%] px-4 text-label text-muted-foreground">Broker</TableHead>
-                <TableHead className="w-[22%] text-label text-muted-foreground">Admin</TableHead>
-                <TableHead className="w-[14%] text-label text-muted-foreground">Slug</TableHead>
-                <TableHead className="w-[14%] text-label text-muted-foreground">Agent handle</TableHead>
-                <TableHead className="w-[10%] text-label text-muted-foreground">Clients</TableHead>
-                <TableHead className="w-[10%] text-label text-muted-foreground">Status</TableHead>
-                <TableHead className="w-[10%] px-4 text-label text-muted-foreground">Created</TableHead>
+                <TableHead className={`w-[25%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Broker</TableHead>
+                <TableHead className={`w-[22%] text-muted-foreground ${typeStyle("label.table")}`}>Admin</TableHead>
+                <TableHead className={`w-[14%] text-muted-foreground ${typeStyle("label.table")}`}>Slug</TableHead>
+                <TableHead className={`w-[14%] text-muted-foreground ${typeStyle("label.table")}`}>Agent handle</TableHead>
+                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>Clients</TableHead>
+                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>Status</TableHead>
+                <TableHead className={`w-[10%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -639,7 +640,7 @@ export default function OperatorBrokersPage() {
                 </TableRow>
               ) : brokers.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="h-32 px-4 text-base text-muted-foreground">
+                  <TableCell colSpan={7} className={`h-32 px-4 text-muted-foreground ${typeStyle("body.default")}`}>
                     No broker accounts found.
                   </TableCell>
                 </TableRow>
@@ -666,7 +667,7 @@ export default function OperatorBrokersPage() {
                           website={broker.website}
                           size="md"
                         />
-                        <p className="truncate font-medium text-foreground">{broker.name}</p>
+                        <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>{broker.name}</p>
                       </div>
                     </TableCell>
                     <TableCell className="max-w-56 truncate text-muted-foreground">

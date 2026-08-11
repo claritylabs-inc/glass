@@ -13,6 +13,7 @@ import {
   IMESSAGE_CONTACT_ENABLED,
 } from "@/lib/imessage-config";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { typeStyle } from "@/lib/typography";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
 
@@ -98,7 +99,7 @@ export function AgentContactCallout({
       </button>
       <div className="w-full flex flex-col gap-10 sm:gap-6 justify-between">
         <div className="min-w-0 max-w-xl">
-          <div className="text-3xl sm:text-4xl font-medium tracking-tight leading-[1.1]">
+          <div className={`${typeStyle("heading.display")}`}>
             Get answers about your insurance coverage, wherever you are
             <LogoIcon className="inline -mt-0.5 ml-2.5 h-6 w-6" />
           </div>

@@ -56,6 +56,7 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { typeStyle } from "@/lib/typography";
 
 type EmailProviderPreset = {
   id: string;
@@ -263,10 +264,10 @@ export function AddMailboxDrawer({
                   <Icon className="size-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-base font-medium text-foreground">
+                  <span className={`block text-foreground ${typeStyle("body.medium")}`}>
                     {preset.name}
                   </span>
-                  <span className="block text-base text-muted-foreground">
+                  <span className={`block text-muted-foreground ${typeStyle("body.default")}`}>
                     {preset.detail}
                   </span>
                 </span>
@@ -319,8 +320,8 @@ export function AddMailboxDrawer({
               </div>
               <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/8 px-3 py-3">
                 <div>
-                  <p className="text-base font-medium text-foreground">Use TLS</p>
-                  <p className="text-base text-muted-foreground">
+                  <p className={`text-foreground ${typeStyle("body.medium")}`}>Use TLS</p>
+                  <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                     Recommended for IMAP on port 993.
                   </p>
                 </div>
@@ -362,8 +363,8 @@ export function AddMailboxDrawer({
 
         <div className="space-y-2">
           <div>
-            <p className="text-base font-medium text-foreground">Start monitoring</p>
-            <p className="text-base text-muted-foreground">
+            <p className={`text-foreground ${typeStyle("body.medium")}`}>Start monitoring</p>
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
               Glass will monitor all three sources by default.
             </p>
           </div>
@@ -373,14 +374,14 @@ export function AddMailboxDrawer({
               setForm((current) => ({ ...current, automation }))
             }
           />
-          <p className="text-base text-muted-foreground">
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             Imported policies, requirements, and company facts become workspace
             data visible to the organization, even when mailbox access is set to
             Just me.
           </p>
         </div>
 
-        <p className="text-base text-muted-foreground">
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
           {selectedPreset.note}
           {selectedPreset.setupHref ? (
             <>
@@ -389,7 +390,7 @@ export function AddMailboxDrawer({
                 href={selectedPreset.setupHref}
                 target="_blank"
                 rel="noreferrer"
-                className="font-medium text-foreground underline-offset-3 hover:underline"
+                className={`text-foreground underline-offset-3 hover:underline ${typeStyle("control.button")}`}
               >
                 {selectedPreset.setupLinkLabel}
               </a>
@@ -611,10 +612,10 @@ export function MailboxSettingsDrawer({
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
             <div>
-              <p className="text-base font-medium text-foreground">
+              <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 Disconnect this mailbox?
               </p>
-              <p className="mt-1 text-base text-muted-foreground">
+              <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                 Glass will stop searching and monitoring it. Imported documents and
                 saved company context remain in Glass.
               </p>
@@ -652,7 +653,7 @@ export function MailboxSettingsDrawer({
                   disabled={!canManageMailbox}
                 />
               </div>
-              <p className="text-base text-muted-foreground">
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 Imported policies, requirements, and company facts become workspace
                 data visible to the organization, even when mailbox access is set to
                 Just me.
@@ -662,7 +663,7 @@ export function MailboxSettingsDrawer({
 
           <FormSection title="Proactive monitoring">
             {!account.automationConfigured ? (
-              <p className="rounded-lg border border-foreground/6 bg-foreground/3 px-3 py-2 text-base text-muted-foreground">
+              <p className={`rounded-lg border border-foreground/6 bg-foreground/3 px-3 py-2 text-muted-foreground ${typeStyle("body.default")}`}>
                 {account.scope === "org"
                   ? "This legacy mailbox is limited to attention alerts."
                   : "Proactive monitoring is off for this legacy mailbox."}
@@ -721,7 +722,7 @@ export function MailboxSettingsDrawer({
           </div>
 
           {scanDatesOutOfOrder ? (
-            <p className="text-base text-destructive">
+            <p className={`text-destructive ${typeStyle("body.default")}`}>
               The end date must be on or after the start date.
             </p>
           ) : null}

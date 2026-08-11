@@ -12,6 +12,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 dayjs.extend(relativeTime);
 
@@ -116,8 +117,8 @@ export function ClientListRow({ row }: { row: ClientRow }) {
       <OrgBrandIcon name={row.name} iconUrl={row.iconUrl} website={row.website} size="md" />
       <div className="min-w-0">
         <div className="flex flex-col gap-0.5 md:flex-row md:items-center md:gap-2">
-          <p className="truncate text-base font-medium text-foreground">{row.name}</p>
-          <p className="truncate text-base text-muted-foreground">
+          <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>{row.name}</p>
+          <p className={`truncate text-muted-foreground ${typeStyle("body.default")}`}>
             {row.kind === "client"
               ? (row.primaryContactName ?? "No primary contact")
               : (row.primaryContactEmail ?? "No email")}
@@ -134,7 +135,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   );
 
   const timestamp = (label: string) => (
-    <span className="hidden sm:block text-label text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
+    <span className={`hidden sm:block text-muted-foreground shrink-0 whitespace-nowrap ${typeStyle("data.numeric")}`}>
       {label}
     </span>
   );
@@ -225,7 +226,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   return (
     <Link href={`/clients/${row.clientOrgId}`} className={rowClass}>
       {nameBlock}
-      <span className="hidden max-w-40 truncate text-label text-muted-foreground lg:block">
+      <span className={`hidden max-w-40 truncate text-muted-foreground lg:block ${typeStyle("caption.default")}`}>
         {brokerContactLabel}
       </span>
       {statusTag}

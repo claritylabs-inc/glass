@@ -4,6 +4,7 @@ import { api } from "@/convex/_generated/api";
 import Link from "next/link";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
+import { typeStyle } from "@/lib/typography";
 
 const BRAND_BLUE = "#A0D2FA";
 
@@ -37,20 +38,20 @@ export default function WeatherPage() {
             href="https://claritylabs.inc"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 leading-none text-foreground/60 transition-colors hover:text-foreground"
+            className={`inline-flex items-center gap-2 text-foreground/60 transition-colors hover:text-foreground ${typeStyle("control.buttonCompact")}`}
           >
             <LogoIcon size={16} color={BRAND_BLUE} static />
-            <span className="text-base font-medium tracking-tight text-foreground">
+            <span className={`text-foreground ${typeStyle("body.medium")}`}>
               Glass
             </span>
-            <span className="text-base tracking-tight text-foreground/50">
+            <span className={`text-foreground/50 ${typeStyle("body.default")}`}>
               from Clarity Labs
             </span>
           </Link>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">
+          <h1 className={`mt-4 ${typeStyle("heading.page")}`}>
             AI Weather Report
           </h1>
-          <p className="mt-1 text-base text-foreground/50">
+          <p className={`mt-1 text-foreground/50 ${typeStyle("body.default")}`}>
             Current model routing across Glass.
           </p>
         </div>
@@ -64,16 +65,16 @@ export default function WeatherPage() {
         ) : (
           <>
             <div className="rounded-xl border border-foreground/8 overflow-hidden">
-              <table className="w-full text-base">
+              <table className={`w-full ${typeStyle("body.default")}`}>
                 <thead>
                   <tr className="border-b border-foreground/8 bg-foreground/[0.02]">
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-label ">
+                    <th className={`px-4 py-3 text-left text-foreground/40 ${typeStyle("label.table")} `}>
                       Task
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-label ">
+                    <th className={`px-4 py-3 text-left text-foreground/40 ${typeStyle("label.table")} `}>
                       Model
                     </th>
-                    <th className="px-4 py-3 text-left font-medium text-foreground/40 text-label ">
+                    <th className={`px-4 py-3 text-left text-foreground/40 ${typeStyle("label.table")} `}>
                       Provider
                     </th>
                   </tr>
@@ -91,12 +92,12 @@ export default function WeatherPage() {
                       <td className="px-4 py-3 text-foreground/70">
                         {TASK_LABELS[route.task] ?? route.task}
                       </td>
-                      <td className="px-4 py-3 font-mono text-label text-foreground/60">
+                      <td className={`px-4 py-3 text-foreground/60 ${typeStyle("technical.codeCompact")}`}>
                         {route.model}
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block rounded-full px-2.5 py-0.5 text-tag font-medium ${
+                          className={`inline-block rounded-full px-2.5 py-0.5 ${typeStyle("label.tag")} ${
                             PROVIDER_COLORS[route.provider] ??
                             "bg-foreground/10 text-foreground/60"
                           }`}
@@ -110,9 +111,9 @@ export default function WeatherPage() {
               </table>
             </div>
 
-            <p className="mt-4 text-label text-foreground/30">
+            <p className={`mt-4 text-foreground/30 ${typeStyle("caption.default")}`}>
               Fallback:{" "}
-              <span className="font-mono">{config.fallback.model}</span> (
+              <span className={`${typeStyle("technical.code")}`}>{config.fallback.model}</span> (
               {config.fallback.provider})
             </p>
           </>

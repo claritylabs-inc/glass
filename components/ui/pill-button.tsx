@@ -8,6 +8,7 @@ import {
 } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { typeStyle } from "@/lib/typography";
 
 type PillButtonVariant =
   | "primary"
@@ -94,8 +95,8 @@ const variantConfig: Record<PillButtonVariant, VariantConfig> = {
 };
 
 const sizeClasses: Record<PillButtonSize, string> = {
-  default: "h-8 px-5 gap-2 text-label",
-  compact: "h-7 px-3 gap-1.5 text-label",
+  default: `h-8 px-5 gap-2 ${typeStyle("control.buttonCompact")}`,
+  compact: `h-7 px-3 gap-1.5 ${typeStyle("control.buttonCompact")}`,
 };
 
 const iconSizeClasses: Record<PillButtonSize, string> = {
@@ -129,7 +130,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
       </>
     );
     const classes = cn(
-      "inline-flex shrink-0 items-center justify-center rounded-full font-medium leading-none outline-none transition-colors duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:text-current",
+      "inline-flex shrink-0 items-center justify-center rounded-full outline-none transition-colors duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:text-current",
       config.classes,
       isIcon ? iconSizeClasses[size] : sizeClasses[size],
       className,

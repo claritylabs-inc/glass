@@ -10,6 +10,7 @@ import { buildCoverageBreakdown } from "@/convex/lib/coverageBreakdown";
 
 import { CoverageBreakdownCards } from "./policy-coverage-breakdown";
 import { PolicyCoveredAssets } from "./policy-covered-assets";
+import { typeStyle } from "@/lib/typography";
 
 export function PolicyCoveragesTab({
   policy,
@@ -34,7 +35,7 @@ export function PolicyCoveragesTab({
         </>
       ) : (
         <OperationalPanel as="div">
-          <OperationalPanelBody className="px-4 py-8 text-center text-base text-muted-foreground">
+          <OperationalPanelBody className={`px-4 py-8 text-center text-muted-foreground ${typeStyle("body.default")}`}>
             No coverage information was found in the extracted policy.
           </OperationalPanelBody>
         </OperationalPanel>

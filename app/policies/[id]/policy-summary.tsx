@@ -26,6 +26,7 @@ import {
   type CarrierIdentity,
 } from "@/convex/lib/carrierIdentity";
 import { policyProductName } from "@/convex/lib/policyProductIdentity";
+import { typeStyle } from "@/lib/typography";
 
 const PolicyPdfThumbnail = dynamic(
   () =>
@@ -125,7 +126,7 @@ function ExtractionPendingDetails() {
     <div className="min-w-0 space-y-4">
       <div className="flex items-center gap-2">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/45" />
-        <span className="text-base font-medium text-muted-foreground">
+        <span className={`text-muted-foreground ${typeStyle("body.medium")}`}>
           Extracting policy details
         </span>
       </div>
@@ -136,7 +137,7 @@ function ExtractionPendingDetails() {
               key={label}
               className={index === 0 ? "sm:col-span-2" : undefined}
             >
-              <p className="mb-1.5 text-label text-muted-foreground/55">
+              <p className={`mb-1.5 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
                 {label}
               </p>
               <Skeleton className="h-4 w-full max-w-56 bg-foreground/6" />
@@ -278,10 +279,10 @@ export function PolicySummary({
             className="size-9 rounded-md bg-background"
           />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-label font-medium text-current opacity-75">
+            <p className={`truncate text-current opacity-75 ${typeStyle("caption.medium")}`}>
               {issuerName}
             </p>
-            <h2 className="mt-0.5 text-base font-semibold text-current">
+            <h2 className={`mt-0.5 text-current ${typeStyle("heading.micro")}`}>
               Policy overview
             </h2>
           </div>
