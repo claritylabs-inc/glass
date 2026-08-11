@@ -1,6 +1,12 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { slackRetryDelayMs } from "./lib/slackRetry";
 
 const outboundAttachmentValidator = v.object({
   fileId: v.id("_storage"),
@@ -8,6 +14,33 @@ const outboundAttachmentValidator = v.object({
   contentType: v.string(),
 });
 const STALE_SENDING_MS = 5 * 60 * 1_000;
+
+async function syncThreadMessageDelivery(
+  ctx: MutationCtx,
+  threadMessageId: Id<"threadMessages"> | undefined,
+) {
+  if (!threadMessageId) return;
+  const message = await ctx.db.get(threadMessageId);
+  if (!message || message.channel !== "slack") return;
+  const sends = await ctx.db
+    .query("slackOutboundSends")
+    .withIndex("by_threadMessageId", (q) =>
+      q.eq("threadMessageId", threadMessageId),
+    )
+    .collect();
+  const terminalFailure = sends.find(
+    (send) => send.status === "failed" && send.nextAttemptAt === undefined,
+  );
+  const status = terminalFailure
+    ? ("failed" as const)
+    : sends.length > 0 && sends.every((send) => send.status === "sent")
+      ? ("sent" as const)
+      : ("sending" as const);
+  await ctx.db.patch(threadMessageId, {
+    slackDeliveryStatus: status,
+    slackDeliveryError: terminalFailure?.error,
+  });
+}
 
 export const claim = internalMutation({
   args: {
@@ -18,6 +51,7 @@ export const claim = internalMutation({
     connectionId: v.id("slackWorkspaceConnections"),
     channelId: v.string(),
     threadTs: v.optional(v.string()),
+    keepAttachmentsTopLevel: v.optional(v.boolean()),
     content: v.string(),
     attachments: v.optional(v.array(outboundAttachmentValidator)),
   },
@@ -40,6 +74,33 @@ export const claim = internalMutation({
     }
     if (args.threadId && !thread) {
       throw new Error("Slack thread does not exist");
+    }
+    if (thread) {
+      const binding = await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_connectionId_and_status", (q) =>
+          q.eq("connectionId", args.connectionId).eq("status", "active"),
+        )
+        .first();
+      const channelMatches =
+        thread.slackChannelId === args.channelId ||
+        Boolean(
+          binding &&
+            ((thread.slackChannelId === binding.customerChannelId &&
+              args.channelId === binding.hostChannelId) ||
+              (thread.slackChannelId === binding.hostChannelId &&
+                args.channelId === binding.customerChannelId)),
+        );
+      if (!channelMatches) {
+        throw new Error("Slack send target does not match the thread channel");
+      }
+      if (thread.slackConversationKind === "direct_message") {
+        if (args.threadTs !== undefined) {
+          throw new Error("Slack DM replies must be sent at the top level");
+        }
+      } else if (thread.slackThreadTs !== args.threadTs) {
+        throw new Error("Slack send target does not match the thread timestamp");
+      }
     }
     if (args.threadMessageId) {
       const message = await ctx.db.get(args.threadMessageId);
@@ -85,6 +146,7 @@ export const claim = internalMutation({
         nextAttemptAt: undefined,
         updatedAt: now,
       });
+      await syncThreadMessageDelivery(ctx, existing.threadMessageId);
       return {
         send: true,
         row: {
@@ -103,6 +165,7 @@ export const claim = internalMutation({
     });
     const row = await ctx.db.get(id);
     if (!row) throw new Error("Could not create Slack outbound ledger row");
+    await syncThreadMessageDelivery(ctx, row.threadMessageId);
     return { send: true, row };
   },
 });
@@ -113,6 +176,8 @@ export const markSent = internalMutation({
     providerMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row) return;
     await ctx.db.patch(args.id, {
       status: "sent",
       providerMessageId: args.providerMessageId,
@@ -120,6 +185,7 @@ export const markSent = internalMutation({
       nextAttemptAt: undefined,
       updatedAt: dayjs().valueOf(),
     });
+    await syncThreadMessageDelivery(ctx, row.threadMessageId);
   },
 });
 
@@ -134,7 +200,12 @@ export const markFailed = internalMutation({
     if (!row) return null;
     const retry = args.retry && row.attemptCount < 3;
     const nextAttemptAt = retry
-      ? dayjs().add(2 ** row.attemptCount, "second").valueOf()
+      ? dayjs()
+          .add(
+            slackRetryDelayMs(args.error, row.attemptCount),
+            "millisecond",
+          )
+          .valueOf()
       : undefined;
     await ctx.db.patch(row._id, {
       status: "failed",
@@ -142,6 +213,7 @@ export const markFailed = internalMutation({
       nextAttemptAt,
       updatedAt: dayjs().valueOf(),
     });
+    await syncThreadMessageDelivery(ctx, row.threadMessageId);
     return nextAttemptAt;
   },
 });
