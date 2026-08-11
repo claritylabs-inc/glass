@@ -5,6 +5,17 @@ import {
 } from "../convex/lib/policyPartyContext";
 
 describe("policy party context", () => {
+  it("uses the carrier as the primary policy name and the General Agent only as fallback", () => {
+    expect(resolvePolicyPartyContext({
+      carrier: "Zurich Canada",
+      generalAgent: { agencyName: "Burns & Wilcox Canada" },
+    }).primaryDisplayName).toBe("Zurich Canada");
+
+    expect(resolvePolicyPartyContext({
+      generalAgent: { agencyName: "Burns & Wilcox Canada" },
+    }).primaryDisplayName).toBe("Burns & Wilcox Canada");
+  });
+
   it("materializes historical compatibility parties without using client profile data", () => {
     const context = resolvePolicyPartyContext({
       insuredName: "Compatibility Client",

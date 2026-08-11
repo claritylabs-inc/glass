@@ -27,6 +27,7 @@ function policyCarrierIdentity(policy: {
     resolvePolicyCarrierDisplay(policy);
   const branding = carrierIdentity?.branding;
   const issuerName =
+    resolvePolicyPartyContext(policy).primaryDisplayName ??
     carrierDisplayName ??
     "Insurance carrier";
   return {
@@ -100,15 +101,13 @@ export function PolicyReferenceCard({
 
   const { branding, issuerName, patternStyle, surfaceStyle } =
     policyCarrierIdentity(policy);
-  const generalAgent =
-    resolvePolicyPartyContext(policy).generalAgentName ?? issuerName;
   const policyNum = policy.policyNumber;
   const linesOfBusiness = policyLobCodes(policy);
   const primaryLine = linesOfBusiness[0] && linesOfBusiness[0] !== "UN"
     ? lobLabel(linesOfBusiness[0])
     : null;
 
-  const summaryParts = [generalAgent, policyNum].filter(Boolean).join(" ");
+  const summaryParts = [issuerName, policyNum].filter(Boolean).join(" ");
   const summary = primaryLine
     ? `${summaryParts} — ${primaryLine}`
     : summaryParts;

@@ -372,6 +372,8 @@ export function resolvePolicyPartyContext(
           : text(compatibilityRecord(insured).name))
         .filter((value: string | undefined): value is string => Boolean(value))
       : [];
+  const primaryDisplayName =
+    carrierDisplayName ?? insurerName ?? generalAgentName;
 
   const rawParties: unknown[] = Array.isArray(profile.parties) ? profile.parties : [];
   const overriddenRoles = new Set<string>([
@@ -479,6 +481,7 @@ export function resolvePolicyPartyContext(
     producerPhone,
     producerEmail,
     producerLicenseNumber,
+    primaryDisplayName,
     carrierDisplayName,
     carrierOperatingName,
     carrierLegalEntityRelationship:
