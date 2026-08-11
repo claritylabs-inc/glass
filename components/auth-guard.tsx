@@ -119,39 +119,36 @@ function DashboardLoading() {
 type OperatorNavSection =
   | "brokers"
   | "clients"
+  | "demo-leads"
   | "channels"
   | "routing"
-  | "extractions";
+  | "extractions"
+  | "profile";
 
 function getOperatorActiveSection(pathname: string): OperatorNavSection {
   if (pathname.startsWith("/operator/brokers")) return "brokers";
   if (pathname.startsWith("/operator/clients")) return "clients";
+  if (pathname.startsWith("/operator/demo-leads")) return "demo-leads";
   if (pathname.startsWith("/operator/channels")) return "channels";
   if (pathname.startsWith("/operator/models")) return "routing";
   if (pathname.startsWith("/operator/routing")) return "routing";
   if (pathname.startsWith("/operator/tools")) return "routing";
   if (pathname.startsWith("/operator/extractions")) return "extractions";
+  if (pathname.startsWith("/operator/profile")) return "profile";
   return "clients";
 }
 
-function OperatorLoading({
-  pathname,
-  email,
-}: {
-  pathname: string;
-  email?: string;
-}) {
+function OperatorLoading({ pathname }: { pathname: string }) {
   return (
     <AppShell
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={email}
           active={getOperatorActiveSection(pathname)}
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
@@ -455,12 +452,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isPublic) return null;
 
     if (shouldShowOperatorLoading) {
-      return (
-        <OperatorLoading
-          pathname={pathname}
-          email={operatorContext?.user?.email}
-        />
-      );
+      return <OperatorLoading pathname={pathname} />;
     }
 
     // If we know from cache that onboarding is NOT complete, show onboarding loading

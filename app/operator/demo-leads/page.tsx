@@ -15,7 +15,6 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { ActionSurfaceButton } from "@/components/ui/action-surface";
 import { FadeIn } from "@/components/ui/fade-in";
 import {
-  useCachedOperatorCurrent,
   useCachedOperatorDemoSalesTranscriptDetail,
   useCachedOperatorDemoSalesTranscripts,
 } from "@/lib/sync/operator-cached-queries";
@@ -142,7 +141,6 @@ function Timeline({
 }
 
 export default function OperatorDemoLeadsPage() {
-  const current = useCachedOperatorCurrent();
   const transcripts = useCachedOperatorDemoSalesTranscripts();
   const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(null);
   const transcriptDetail =
@@ -178,11 +176,10 @@ export default function OperatorDemoLeadsPage() {
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={current?.user?.email}
           active="demo-leads"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}

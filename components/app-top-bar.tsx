@@ -29,6 +29,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/operator/channels": { label: "Channels" },
   "/operator/routing": { label: "Routing" },
   "/operator/extractions": { label: "Extractions" },
+  "/operator/profile": { label: "Profile" },
 };
 
 export function resolveAppBreadcrumb(pathname: string) {

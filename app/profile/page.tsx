@@ -9,14 +9,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import {
-  Loader2,
-  Mail,
-  MessageSquareText,
-  Monitor,
-  Moon,
-  Sun,
-} from "lucide-react";
+import { Loader2, Mail, MessageSquareText } from "lucide-react";
 import {
   OperationalPanel,
   OperationalPanelBody,
@@ -34,9 +27,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { useTheme } from "@/hooks/use-theme";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
+import { ThemeModeSelector } from "@/components/ui/theme-mode-selector";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { useViewerCacheActions } from "@/lib/sync/glass-cached-queries";
@@ -104,7 +97,6 @@ export default function ProfilePage() {
     api.notificationPreferences.getProactiveChannels,
     currentOrg?.orgId ? { orgId: currentOrg.orgId } : "skip",
   ) as ProactiveChannelPreferences | undefined;
-  const { theme, setTheme } = useTheme();
   const { patchViewer } = useViewerCacheActions();
 
   const [name, setName] = useState("");
@@ -502,27 +494,7 @@ export default function ProfilePage() {
         <OperationalPanel className="mt-4">
           <OperationalPanelHeader title="Appearance" className="px-5 py-3.5" />
           <OperationalPanelBody className="px-5 py-5">
-            <div className="flex gap-2">
-              {[
-                { value: "light" as const, label: "Light", icon: Sun },
-                { value: "dark" as const, label: "Dark", icon: Moon },
-                { value: "system" as const, label: "System", icon: Monitor },
-              ].map(({ value, label, icon: Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setTheme(value)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${typeStyle("control.button")} ${
-                    theme === value
-                      ? "bg-foreground/[0.07] text-foreground"
-                      : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {label}
-                </button>
-              ))}
-            </div>
+            <ThemeModeSelector className="max-w-lg" />
           </OperationalPanelBody>
         </OperationalPanel>
       </FadeIn>

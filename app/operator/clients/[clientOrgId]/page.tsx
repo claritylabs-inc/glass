@@ -651,11 +651,10 @@ export default function OperatorClientPage() {
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={current?.user?.email}
           active="clients"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}

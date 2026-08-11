@@ -395,11 +395,10 @@ function OperatorChannelsContent({
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={operatorEmail}
           active="channels"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
@@ -552,11 +551,10 @@ export default function OperatorChannelsPage() {
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={undefined}
           active="channels"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}

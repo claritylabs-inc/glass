@@ -49,7 +49,6 @@ import {
 } from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
-  useCachedOperatorCurrent,
   useCachedOperatorExtractionTraceDetail,
   useCachedOperatorExtractionTraces,
 } from "@/lib/sync/operator-cached-queries";
@@ -1400,7 +1399,6 @@ export default function OperatorExtractionsPage() {
   const rerunExtraction = useAction(api.operator.rerunExtraction);
   const stopExtraction = useMutation(api.operator.stopExtraction);
 
-  const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
     status: status === ALL ? undefined : status as TraceStatus,
     orgId: orgId === ALL ? undefined : orgId,
@@ -1730,11 +1728,10 @@ export default function OperatorExtractionsPage() {
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={current?.user?.email}
           active="extractions"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}

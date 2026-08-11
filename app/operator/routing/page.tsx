@@ -7,10 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-format";
-import {
-  useCachedOperatorCurrent,
-  useCachedOperatorGlobalModelSettings,
-} from "@/lib/sync/operator-cached-queries";
+import { useCachedOperatorGlobalModelSettings } from "@/lib/sync/operator-cached-queries";
 import { OperatorSidebar } from "../operator-sidebar";
 import { ModelsTab } from "./models-tab";
 import { RoutingTab, useRouterDashboard } from "./routing-tab";
@@ -27,7 +24,6 @@ function parseRoutingPageTab(value: string | null): RoutingPageTab {
 }
 
 export default function OperatorRoutingPage() {
-  const current = useCachedOperatorCurrent();
   const modelSettings = useCachedOperatorGlobalModelSettings() as
     | { updatedAt: number | null }
     | undefined;
@@ -85,11 +81,10 @@ export default function OperatorRoutingPage() {
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={current?.user?.email}
           active="routing"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
