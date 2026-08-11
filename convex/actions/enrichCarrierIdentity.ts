@@ -9,15 +9,9 @@ import type { Doc, Id } from "../_generated/dataModel";
 import {
   CARRIER_IDENTITY_ENRICHMENT_VERSION,
   carrierIdentityResearchNames,
-  carrierPublicNameHasAffinity,
-  carrierWebsiteCandidateHasAffinity,
-  fallbackCarrierWebsiteIndex,
-  firstPartyCarrierPublicIdentity,
-  isPrimaryCarrierWebsiteCandidate,
+  groundCarrierIdentitySelection,
   normalizeCarrierIdentityName,
-  preferredCarrierWebsiteIndex,
-  verifiedCarrierNameRelationship,
-  verifiedCarrierPublicName,
+  type GroundedCarrierIdentitySelection,
 } from "../lib/carrierIdentityEnrichment";
 import { generateObjectForOrg } from "../lib/models";
 import {
@@ -29,25 +23,26 @@ import {
   readWebsiteFaviconSignals,
   readWebsiteBrandSignals,
 } from "../lib/websiteBrand";
-import {
-  readCarrierIdentity,
-  type CarrierPublicNameRelationship,
-} from "../lib/carrierIdentity";
+import { readCarrierIdentity } from "../lib/carrierIdentity";
 
 const DEFAULT_ACCENT = "#1E293B";
 const MAX_CANDIDATE_SITES = 4;
 const RETRY_DELAYS_MS = [30_000, 5 * 60_000];
 
 const CarrierIdentitySelectionSchema = z.object({
-  candidateIndex: z.number().int().nonnegative(),
-  publicName: z.string().min(1).max(120),
-  nameRelationship: z.enum([
-    "same_legal_entity",
-    "trading_name",
-    "parent_brand",
-    "group_brand",
-  ]),
+  candidateIndex: z.number().int().min(-1),
+  officialSite: z.boolean(),
+  publicName: z.string().min(1).max(120).nullable(),
+  nameRelationship: z
+    .enum([
+      "same_legal_entity",
+      "trading_name",
+      "parent_brand",
+      "group_brand",
+    ])
+    .nullable(),
   confidence: z.enum(["high", "medium", "low"]),
+  reason: z.string().min(1).max(500),
 });
 
 type CarrierIdentityPolicy = Pick<
@@ -93,7 +88,6 @@ type CandidateSeed = {
 function candidateUrls(
   sources: WebRetrievalSource[],
   retrievalText: string,
-  carrierName: string,
 ): CandidateSeed[] {
   const candidates = [
     ...sources.map((source) => ({
@@ -119,20 +113,6 @@ function candidateUrls(
         return [];
       }
     })
-    .sort((left, right) =>
-      Number(
-        carrierWebsiteCandidateHasAffinity(
-          carrierName,
-          { website: right.url, title: right.title },
-        ),
-      ) -
-      Number(
-        carrierWebsiteCandidateHasAffinity(
-          carrierName,
-          { website: left.url, title: left.title },
-        ),
-      )
-    )
     .slice(0, MAX_CANDIDATE_SITES);
 }
 
@@ -212,25 +192,64 @@ async function rescheduleChangedCarrierIdentity(
 }
 
 function reusableCacheSources(
-  carrierName: string,
   cachedIdentities: Array<Doc<"carrierBrands"> | null>,
 ): WebRetrievalSource[] {
   return cachedIdentities.flatMap((cachedIdentity) => {
     if (!cachedIdentity || cachedIdentity.confidence === "low") return [];
-    const sources: WebRetrievalSource[] = [
+    return [
       {
         url: cachedIdentity.website,
         title: cachedIdentity.websiteTitle,
       },
       ...cachedIdentity.sourceUrls.map((url) => ({ url })),
     ];
-    return sources.filter((source) =>
-      carrierWebsiteCandidateHasAffinity(
-        carrierName,
-        { website: source.url, title: source.title },
-      )
-    );
   });
+}
+
+async function selectCarrierIdentityWithModel(
+  ctx: ActionCtx,
+  orgId: Id<"organizations">,
+  carrierName: string,
+  sites: CandidateSite[],
+  retrievalText: string,
+): Promise<GroundedCarrierIdentitySelection> {
+  const { output } = await generateObjectForOrg(
+    ctx,
+    orgId,
+    "triage",
+    {
+      schema: CarrierIdentitySelectionSchema,
+      maxOutputTokens: 768,
+      prompt: `Judge which candidate, if any, is the official public website for this insurance carrier.
+
+Carrier designation extracted from the policy: ${carrierName}
+
+Candidate websites and first-party evidence:
+${JSON.stringify(
+  sites.map((site, index) => ({ index, ...site })),
+  null,
+  2,
+)}
+
+Search evidence:
+${retrievalText.slice(0, 8_000)}
+
+Make an identity judgment from the meaning of the evidence. Do not treat token overlap, exact word agreement, acronyms, or domain-name similarity as proof. Account for legal suffixes, jurisdictions, inflections, abbreviations, translations, branch designations, syndicates, and concise public names. A shorter public name may identify the same legal entity when first-party evidence explicitly connects them.
+
+Return:
+- candidateIndex: the official-site candidate index, or -1 when no candidate is supported confidently.
+- officialSite: true only when first-party evidence connects the selected site to this exact carrier, its documented trading name, parent brand, or group brand.
+- publicName: the concise public-facing name visibly used in the selected site's siteName or title, or null when the evidence supports the site but no distinct public name.
+- nameRelationship: "same_legal_entity" when the public name is the same entity's concise public form; "trading_name" for a documented trading name or DBA; "parent_brand" for a documented parent; "group_brand" for a documented group identity; or null when publicName is null.
+- confidence: high only when the relationship is supported by first-party evidence.
+- reason: a concise evidence-based explanation.
+
+Keep the extracted carrier designation intact. Do not choose a login portal, broker, agency, directory, social network, news site, or similarly named unrelated company. If the evidence is ambiguous, return candidateIndex -1, officialSite false, and null public fields.`,
+    },
+    { taskKind: "carrier_identity_selection" },
+  );
+
+  return groundCarrierIdentitySelection(output, sites);
 }
 
 async function enrichPolicyCarrierIdentity(
@@ -305,16 +324,12 @@ async function enrichPolicyCarrierIdentity(
     const retrievalText = boundedEvidence(
       retrievals.map((retrieval) => retrieval.text),
     ) ?? "";
-    const reusablePreviousSources = reusableCacheSources(
-      carrierName,
-      [cachedIdentity],
-    );
+    const reusablePreviousSources = reusableCacheSources([cachedIdentity]);
     let sites = (
       await Promise.all(
         candidateUrls(
           [...reusablePreviousSources, ...retrievalSources],
           retrievalText,
-          carrierName,
         ).map((seed) =>
           inspectCarrierCandidate(
             ctx,
@@ -327,25 +342,33 @@ async function enrichPolicyCarrierIdentity(
     );
     if (sites.length === 0) throw new Error("No candidate carrier websites");
 
-    let firstPartyIdentity = firstPartyCarrierPublicIdentity(
+    let selection = await selectCarrierIdentityWithModel(
+      ctx,
+      policy.orgId,
       carrierName,
       sites,
+      retrievalText,
     );
     let relationshipSourceUrls: string[] = [];
     if (
-      firstPartyIdentity &&
-      firstPartyIdentity.nameRelationship !== "trading_name" &&
+      selection.publicName &&
+      selection.nameRelationship !== "trading_name" &&
       /\b(?:syndicate|managing agency|underwriters)\b/i.test(carrierName)
     ) {
-      const firstPartySite = sites[firstPartyIdentity.candidateIndex];
       try {
-        const hostname = new URL(firstPartySite.website).hostname;
+        const selectedSite = sites[selection.candidateIndex];
+        if (!selectedSite) {
+          throw new Error(
+            "Carrier identity model selected an unavailable website",
+          );
+        }
+        const hostname = new URL(selectedSite.website).hostname;
         const relationshipRetrieval = await runWebRetrieval(
           ctx,
           policy.orgId,
           {
-            query: `"${firstPartyIdentity.publicName}" "trading name"`,
-            goal: `Find a first-party statement on ${hostname} that says whether ${firstPartyIdentity.publicName} is a trading name, DBA, or operating name for the extracted legal insurer or syndicate. Return the exact official page, not a directory or news story.`,
+            query: `"${selection.publicName}" "trading name"`,
+            goal: `Find a first-party statement on ${hostname} that says whether ${selection.publicName} is a trading name, DBA, or operating name for the extracted legal insurer or syndicate. Return the exact official page, not a directory or news story.`,
             allowedDomains: [hostname],
             maxResults: MAX_CANDIDATE_SITES,
           },
@@ -358,7 +381,6 @@ async function enrichPolicyCarrierIdentity(
             candidateUrls(
               relationshipRetrieval.sources,
               relationshipRetrieval.text,
-              carrierName,
             ).map((seed) =>
               inspectCarrierCandidate(
                 ctx,
@@ -376,98 +398,19 @@ async function enrichPolicyCarrierIdentity(
             (site) => !knownSites.has(site.website),
           ),
         ];
-        const strongerIdentity = firstPartyCarrierPublicIdentity(
-          carrierName,
-          sites,
-        );
-        if (strongerIdentity?.nameRelationship === "trading_name") {
-          firstPartyIdentity = strongerIdentity;
-        }
-      } catch {
-        // The initial verified identity remains valid when targeted evidence
-        // retrieval is unavailable.
-      }
-    }
-    let modelSelectedIndex = -1;
-    let publicName = firstPartyIdentity?.publicName;
-    let nameRelationship:
-      | CarrierPublicNameRelationship
-      | undefined = firstPartyIdentity?.nameRelationship;
-    let confidence: "high" | "medium" = firstPartyIdentity
-      ? "high"
-      : "medium";
-    if (!firstPartyIdentity) {
-      try {
-        const { output } = await generateObjectForOrg(
+        selection = await selectCarrierIdentityWithModel(
           ctx,
           policy.orgId,
-          "classification",
-          {
-            schema: CarrierIdentitySelectionSchema,
-            maxOutputTokens: 512,
-            prompt: `Resolve the official public identity for this insurance carrier.
-
-Carrier extracted from the policy: ${carrierName}
-
-Candidate websites:
-${JSON.stringify(
-  sites.map((site, index) => ({ index, ...site })),
-  null,
-  2,
-)}
-
-Search evidence:
-${retrievalText.slice(0, 8_000)}
-
-Return:
-- candidateIndex: the candidate that is the carrier's official website.
-- publicName: the concise public-facing carrier or brand name visibly used by that official site.
-- nameRelationship: "same_legal_entity" when publicName is merely the same entity's public form; "trading_name" only when first-party evidence says it is a trading name or DBA; "parent_brand" only when the carrier operates under that documented parent brand; or "group_brand" only when first-party evidence documents that group identity.
-- confidence: high only when the public site explicitly belongs to this exact legal carrier or its clearly documented parent brand. Return low when the match relies only on a shared word in the name.
-
-Keep the extracted legal name intact; do not shorten it into a guessed brand. Do not choose a login/account portal, broker, agency, directory, social network, news site, or similarly named unrelated company. publicName must appear in the selected site's siteName or title.`,
-          },
+          carrierName,
+          sites,
+          boundedEvidence([
+            retrievalText,
+            relationshipRetrieval.text,
+          ]) ?? retrievalText,
         );
-        if (
-          sites[output.candidateIndex] &&
-          output.confidence === "high" &&
-          isPrimaryCarrierWebsiteCandidate(sites[output.candidateIndex])
-        ) {
-          const selectedSite = sites[output.candidateIndex];
-          const verifiedPublicName = verifiedCarrierPublicName(
-            selectedSite,
-            output.publicName,
-          );
-          const verifiedRelationship = verifiedPublicName
-            ? verifiedCarrierNameRelationship(
-              carrierName,
-              verifiedPublicName,
-              output.nameRelationship,
-              selectedSite.identityEvidence ?? "",
-            )
-            : undefined;
-          if (
-            verifiedPublicName &&
-            verifiedRelationship &&
-            carrierPublicNameHasAffinity(
-              carrierName,
-              verifiedPublicName,
-            ) &&
-            carrierWebsiteCandidateHasAffinity(
-              carrierName,
-              selectedSite,
-              verifiedPublicName,
-            )
-          ) {
-            modelSelectedIndex = output.candidateIndex;
-            publicName = verifiedPublicName;
-            nameRelationship = verifiedRelationship;
-            confidence = output.confidence;
-          }
-        }
       } catch (error) {
         console.warn(
-          "[carrier-identity] model selection failed; using site evidence",
+          "[carrier-identity] targeted relationship selection failed; keeping initial model judgment",
           {
             policyId,
             carrierName,
@@ -476,29 +419,11 @@ Keep the extracted legal name intact; do not shorten it into a guessed brand. Do
         );
       }
     }
-
-    const domainSelectedIndex = fallbackCarrierWebsiteIndex(
-      carrierName,
-      sites,
-    );
-    const selectedIndex = preferredCarrierWebsiteIndex(
-      firstPartyIdentity?.candidateIndex,
-      modelSelectedIndex,
-      domainSelectedIndex,
-    );
-    if (
-      !firstPartyIdentity &&
-      domainSelectedIndex >= 0 &&
-      modelSelectedIndex < 0
-    ) {
-      publicName = undefined;
-      nameRelationship = undefined;
-      confidence = "medium";
-    }
-    const selected = sites[selectedIndex];
+    const selected = sites[selection.candidateIndex];
     if (!selected) {
-      throw new Error("Carrier website could not be identified confidently");
+      throw new Error("Carrier identity model selected an unavailable website");
     }
+    const { publicName, nameRelationship, confidence } = selection;
     const faviconSignals = await readWebsiteFaviconSignals(selected.website);
     const accentColor =
       selected.primaryColor ??
