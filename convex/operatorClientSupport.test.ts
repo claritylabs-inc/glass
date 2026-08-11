@@ -51,10 +51,21 @@ async function seedSupportFixture() {
       email: "admin@example.com",
       accountKind: "customer",
     });
+    await ctx.db.insert("authAccounts", {
+      userId: adminUserId,
+      provider: "resend-otp",
+      providerAccountId: "admin@example.com",
+      emailVerified: "admin@example.com",
+    });
     const memberUserId = await ctx.db.insert("users", {
       name: "Client Member",
       email: "member@example.com",
       accountKind: "customer",
+    });
+    await ctx.db.insert("authAccounts", {
+      userId: memberUserId,
+      provider: "resend-otp",
+      providerAccountId: "member@example.com",
     });
     const clientOrgId = await ctx.db.insert("organizations", {
       name: "Original Client",
@@ -180,6 +191,7 @@ describe("operator client support", () => {
         name: "Support Updated",
         title: "Risk Manager",
         role: "admin",
+        isActivated: false,
       }),
     ]);
     expect(invitations).toEqual([
@@ -201,6 +213,30 @@ describe("operator client support", () => {
     ).rejects.toThrow();
 
     await expect(clientAdmin.query(listMembersFn, {})).resolves.toHaveLength(2);
+  });
+
+  test("reports activation only after an auth account has been verified", async () => {
+    const fixture = await seedSupportFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.operatorUserId}|session`,
+    });
+
+    const members = await operator.query(listMembersFn, {
+      operatorClientOrgId: fixture.clientOrgId,
+    });
+
+    expect(members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: fixture.adminUserId,
+          isActivated: true,
+        }),
+        expect.objectContaining({
+          userId: fixture.memberUserId,
+          isActivated: false,
+        }),
+      ]),
+    );
   });
 
   test("sends operator-scoped invitations and verified email changes", async () => {

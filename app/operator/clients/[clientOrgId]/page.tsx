@@ -505,7 +505,7 @@ function ClientWorkspace({
                 description={
                   client.operatorStatus === "onboarding"
                     ? "Send an activation email to an admin from Team to enable access."
-                    : "Activation emails can be resent to any admin from Team."
+                    : "Activation emails can be resent to admins who have not activated their account."
                 }
                 action={
                   client.operatorStatus === "onboarding" ? (

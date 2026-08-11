@@ -8,6 +8,7 @@ export type TeamMember = {
   email?: string;
   phone?: string;
   title?: string;
+  isActivated: boolean;
   pendingEmailChange?: {
     requestId: Id<"userEmailChangeRequests">;
     newEmail: string;
