@@ -2,9 +2,12 @@
 
 import dayjs from "dayjs";
 import { useAction, useQuery } from "convex/react";
-import { Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
   OperationalPanel,
   OperationalPanelBody,
   OperationalPanelHeader,
@@ -30,17 +33,31 @@ type Routing = {
   wouldHaveChosen?: Route & { decision: string };
   wouldHaveMatched?: boolean;
 };
-type RoutingEvent = {
+export type RoutingEvent = {
   _id: string;
   kind: "model_step" | "direct_fallback" | "run";
+  runId: string;
+  sessionKey: string;
+  orgId?: string;
   task: string;
   taskKind: string;
   channel: string;
+  label: string;
+  phase: string;
   step?: number;
+  hasTools?: boolean;
+  hasToolResults?: boolean;
   requestId?: string;
+  parentRequestId?: string;
   provider?: string;
   model?: string;
+  routeSource?: string;
   routing?: Routing;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  costStatus?: "priced" | "unpriced";
   status?: "complete" | "error" | "fallback";
   toolCallCount?: number;
   workflowOutcomeCount?: number;
@@ -128,6 +145,210 @@ function formatCost(value: number) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatIdentifier(value: string | undefined) {
+  return value?.replaceAll("_", " ") ?? "—";
+}
+
+function formatTokenCount(value: number | undefined) {
+  return value === undefined ? "—" : value.toLocaleString();
+}
+
+function routingEventOutcome(event: RoutingEvent) {
+  if (event.kind === "direct_fallback") {
+    return {
+      label: "Fell back",
+      tone: "warning" as const,
+      description:
+        "The router was unavailable, so Glass used its direct route.",
+    };
+  }
+  if (event.status === "error") {
+    return {
+      label: "Failed",
+      tone: "danger" as const,
+      description: "The model workflow did not complete.",
+    };
+  }
+  return {
+    label: "Succeeded",
+    tone: "success" as const,
+    description: "The routed model call completed.",
+  };
+}
+
+function routingEventSummary(event: RoutingEvent) {
+  if (event.kind === "direct_fallback") {
+    return event.error ?? "Glass used its direct route.";
+  }
+  if (event.kind === "run") {
+    return event.error ?? formatIdentifier(event.status);
+  }
+  return formatIdentifier(event.routing?.decision);
+}
+
+function eventDetailTitle(event: RoutingEvent) {
+  if (event.kind === "direct_fallback") return "Direct fallback";
+  if (event.kind === "run") return "Run error";
+  return "Model call";
+}
+
+export function RoutingEventDrawer({
+  event,
+  onClose,
+}: {
+  event: RoutingEvent;
+  onClose: () => void;
+}) {
+  const outcome = routingEventOutcome(event);
+  const route =
+    event.provider && event.model
+      ? routeLabel({ provider: event.provider, model: event.model })
+      : "—";
+
+  return (
+    <SettingsDrawer
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={eventDetailTitle(event)}
+    >
+      <div className="flex flex-col gap-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusTag tone={outcome.tone}>{outcome.label}</StatusTag>
+            <span
+              className={`text-muted-foreground ${typeStyle("caption.default")}`}
+            >
+              {formatDisplayDateTime(event.timestamp)}
+            </span>
+          </div>
+          <p
+            className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}
+          >
+            {outcome.description}
+          </p>
+        </div>
+
+        <OperationalLabelValueList title="Call">
+          <OperationalLabelValueRow label="Task" value={event.task} />
+          <OperationalLabelValueRow
+            label="Surface"
+            value={`${event.channel}${event.step ? ` · step ${event.step}` : ""}`}
+          />
+          <OperationalLabelValueRow
+            label="Phase"
+            value={`${formatIdentifier(event.phase)} · ${formatIdentifier(event.label)}`}
+          />
+          <OperationalLabelValueRow label="Route" value={route} />
+          <OperationalLabelValueRow
+            label="Request ID"
+            value={
+              event.requestId ? (
+                <code
+                  className={`break-all ${typeStyle("technical.codeCompact")}`}
+                >
+                  {event.requestId}
+                </code>
+              ) : (
+                "—"
+              )
+            }
+          />
+          <OperationalLabelValueRow
+            label="Run ID"
+            value={
+              <code
+                className={`break-all ${typeStyle("technical.codeCompact")}`}
+              >
+                {event.runId}
+              </code>
+            }
+          />
+          {event.error ? (
+            <OperationalLabelValueRow
+              label="Error"
+              value={<span className="text-destructive">{event.error}</span>}
+            />
+          ) : null}
+        </OperationalLabelValueList>
+
+        {event.kind === "model_step" ? (
+          <>
+            <OperationalLabelValueList title="Routing">
+              <OperationalLabelValueRow
+                label="Decision"
+                value={formatIdentifier(event.routing?.decision)}
+              />
+              <OperationalLabelValueRow
+                label="Route source"
+                value={formatIdentifier(
+                  event.routeSource ?? event.routing?.routeSource,
+                )}
+              />
+              <OperationalLabelValueRow
+                label="Attempts"
+                value={(event.routing?.attemptCount ?? 1).toLocaleString()}
+              />
+              <OperationalLabelValueRow
+                label="Policy"
+                value={event.routing?.policyVersion ?? "—"}
+              />
+              <OperationalLabelValueRow
+                label="Sticky route"
+                value={event.routing?.cacheStickinessApplied ? "Yes" : "No"}
+              />
+              {event.routing?.shadowMode ? (
+                <OperationalLabelValueRow
+                  label="Shadow choice"
+                  value={`${routeLabel(event.routing.wouldHaveChosen)} · ${event.routing.wouldHaveMatched ? "matched" : "different"}`}
+                />
+              ) : null}
+            </OperationalLabelValueList>
+
+            <OperationalLabelValueList title="Usage">
+              <OperationalLabelValueRow
+                label="Input tokens"
+                value={formatTokenCount(event.inputTokens)}
+              />
+              <OperationalLabelValueRow
+                label="Output tokens"
+                value={formatTokenCount(event.outputTokens)}
+              />
+              <OperationalLabelValueRow
+                label="Cached input"
+                value={formatTokenCount(event.cachedInputTokens)}
+              />
+              <OperationalLabelValueRow
+                label="Cache write"
+                value={formatTokenCount(event.cacheWriteTokens)}
+              />
+              <OperationalLabelValueRow
+                label="Cost"
+                value={
+                  event.costUsd === null || event.costUsd === undefined
+                    ? "Unpriced"
+                    : formatCost(event.costUsd)
+                }
+              />
+              <OperationalLabelValueRow
+                label="Tools"
+                value={
+                  event.hasTools
+                    ? event.hasToolResults
+                      ? "Used with results"
+                      : "Available"
+                    : "None"
+                }
+              />
+            </OperationalLabelValueList>
+          </>
+        ) : null}
+      </div>
+    </SettingsDrawer>
+  );
 }
 
 function RateMeter({
@@ -409,10 +630,15 @@ export function RoutingTab({
   loadError,
   freezeLoading,
   setGlobalFreeze,
+  selectedEventId,
+  onSelectEvent,
 }: Pick<
   RouterDashboardState,
   "dashboard" | "loading" | "loadError" | "freezeLoading" | "setGlobalFreeze"
->) {
+> & {
+  selectedEventId?: string;
+  onSelectEvent: (event: RoutingEvent) => void;
+}) {
   const events = useQuery(api.modelRoutingEvents.listRecent, { limit: 200 }) as
     | RoutingEvent[]
     | undefined;
@@ -886,8 +1112,8 @@ export function RoutingTab({
 
       <OperationalPanel>
         <OperationalPanelHeader
-          title="Routing event log"
-          description="The latest 50 routed model steps, direct fallbacks, and run errors."
+          title="Recent model activity"
+          description="Succeeded calls, direct fallbacks, and run errors. Select a call to inspect its routing and usage."
         />
         {events === undefined ? (
           <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
@@ -902,7 +1128,7 @@ export function RoutingTab({
         ) : (
           <div className="overflow-x-auto">
             <table
-              className={`w-full min-w-[920px] text-left ${typeStyle("body.default")}`}
+              className={`w-full min-w-[1040px] text-left ${typeStyle("body.default")}`}
             >
               <thead
                 className={`border-b border-foreground/6 text-muted-foreground ${typeStyle("label.table")}`}
@@ -910,6 +1136,9 @@ export function RoutingTab({
                 <tr>
                   <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
                     Time
+                  </th>
+                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
+                    Result
                   </th>
                   <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
                     Task / surface
@@ -929,46 +1158,73 @@ export function RoutingTab({
                 </tr>
               </thead>
               <tbody className="divide-y divide-foreground/6">
-                {recentEvents.map((event) => (
-                  <tr key={event._id}>
-                    <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                      {formatDisplayDateTime(event.timestamp)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`${typeStyle("body.medium")}`}>
-                        {event.task}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {" · "}
-                        {event.channel}
-                        {event.step ? ` · step ${event.step}` : ""}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {routeLabel(
-                        event.provider && event.model
-                          ? { provider: event.provider, model: event.model }
-                          : undefined,
+                {recentEvents.map((event) => {
+                  const outcome = routingEventOutcome(event);
+                  const summary = routingEventSummary(event);
+                  return (
+                    <tr
+                      key={event._id}
+                      className={cn(
+                        "transition-colors",
+                        selectedEventId === event._id && "bg-foreground/[0.03]",
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {routeLabel(event.routing?.wouldHaveChosen)}
-                    </td>
-                    <td
-                      className={`max-w-48 truncate px-4 py-3 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
-                      title={event.requestId}
                     >
-                      {event.requestId ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {event.kind === "direct_fallback"
-                        ? `Direct fallback${event.error ? ` · ${event.error}` : ""}`
-                        : event.kind === "run"
-                          ? `Run error${event.error ? ` · ${event.error}` : ""}`
-                          : (event.routing?.decision ?? "Completed")}
-                    </td>
-                  </tr>
-                ))}
+                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
+                        {formatDisplayDateTime(event.timestamp)}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <StatusTag tone={outcome.tone}>
+                          {outcome.label}
+                        </StatusTag>
+                      </td>
+                      <td className="px-4 py-2">
+                        <button
+                          type="button"
+                          aria-label={`Open ${event.task} call details`}
+                          onClick={() => onSelectEvent(event)}
+                          className="group flex w-full min-w-0 items-center justify-between gap-3 rounded-md px-2 py-1 text-left outline-none transition-colors hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-foreground/20"
+                        >
+                          <span className="min-w-0">
+                            <span
+                              className={`block truncate text-foreground ${typeStyle("body.medium")}`}
+                            >
+                              {event.task}
+                            </span>
+                            <span
+                              className={`block truncate text-muted-foreground ${typeStyle("caption.default")}`}
+                            >
+                              {event.channel}
+                              {event.step ? ` · step ${event.step}` : ""}
+                            </span>
+                          </span>
+                          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-active:translate-x-0.5 motion-reduce:transition-none" />
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        {routeLabel(
+                          event.provider && event.model
+                            ? { provider: event.provider, model: event.model }
+                            : undefined,
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {routeLabel(event.routing?.wouldHaveChosen)}
+                      </td>
+                      <td
+                        className={`max-w-48 truncate px-4 py-3 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
+                        title={event.requestId}
+                      >
+                        {event.requestId ?? "—"}
+                      </td>
+                      <td
+                        className="max-w-64 truncate px-4 py-3 text-muted-foreground"
+                        title={summary}
+                      >
+                        {summary}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
