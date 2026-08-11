@@ -494,7 +494,6 @@ export default function OperatorClientsScreen() {
   return (
     <AppShell
       actions={actions}
-      breadcrumbDetail="Clients"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}

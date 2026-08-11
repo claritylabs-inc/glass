@@ -391,7 +391,6 @@ function OperatorChannelsContent({
 
   return (
     <AppShell
-      breadcrumbDetail="Channels"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
@@ -549,7 +548,6 @@ export default function OperatorChannelsPage() {
     />
   ) : (
     <AppShell
-      breadcrumbDetail="Channels"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}

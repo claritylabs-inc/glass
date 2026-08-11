@@ -16,14 +16,44 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/compliance": { label: "Compliance" },
   "/clients": { label: "Clients" },
   "/certificates": { label: "Certificates" },
-  "/deliveries": { label: "Document deliveries" },
+  "/deliveries": { label: "Deliveries" },
   "/activity": { label: "Activity" },
   "/connections": { label: "Context" },
   "/agent": { label: "Agent Threads", href: "/policies" },
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
-  "/operator": { label: "Operator" },
+  "/operator": { label: "Clients", href: "/operator" },
+  "/operator/clients": { label: "Clients", href: "/operator" },
+  "/operator/brokers": { label: "Brokers" },
+  "/operator/demo-leads": { label: "Demo leads" },
+  "/operator/channels": { label: "Channels" },
+  "/operator/routing": { label: "Routing" },
+  "/operator/extractions": { label: "Extractions" },
 };
+
+export function resolveAppBreadcrumb(pathname: string) {
+  const normalizedPathname =
+    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+
+  let matchedPath = normalizedPathname;
+  let crumb = BREADCRUMB_MAP[normalizedPathname];
+  if (!crumb) {
+    const segments = normalizedPathname.split("/").filter(Boolean);
+    for (let i = segments.length - 1; i >= 1; i--) {
+      const candidate = "/" + segments.slice(0, i).join("/");
+      if (BREADCRUMB_MAP[candidate]) {
+        matchedPath = candidate;
+        crumb = BREADCRUMB_MAP[candidate];
+        break;
+      }
+    }
+  }
+
+  return {
+    label: crumb?.label ?? "Page",
+    href: crumb?.href ?? matchedPath,
+  };
+}
 
 export interface PresenceUser {
   userId: string;
@@ -79,31 +109,7 @@ export function AppTopBar({
   showBrokerShare?: boolean;
 }) {
   const pathname = usePathname();
-  const normalizedPathname =
-    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-
-  // Find matching breadcrumb — walk up path segments until we find a match
-  let matchedPath = normalizedPathname;
-  let crumb = BREADCRUMB_MAP[normalizedPathname];
-  if (!crumb) {
-    const segments = normalizedPathname.split("/").filter(Boolean);
-    // Try progressively shorter paths (e.g. /agent/thread/[id] -> /agent/thread -> /agent)
-    for (let i = segments.length - 1; i >= 1; i--) {
-      const candidate = "/" + segments.slice(0, i).join("/");
-      if (BREADCRUMB_MAP[candidate]) {
-        matchedPath = candidate;
-        crumb = BREADCRUMB_MAP[candidate];
-        break;
-      }
-    }
-    if (!crumb && segments.length >= 1) {
-      matchedPath = "/" + segments[0];
-      crumb = BREADCRUMB_MAP[matchedPath];
-    }
-  }
-
-  const label = crumb?.label ?? "Page";
-  const href = crumb?.href ?? matchedPath;
+  const { label, href } = resolveAppBreadcrumb(pathname);
 
   return (
     <header className="h-12 flex items-center gap-3 px-6 lg:px-8 border-b border-foreground/6 shrink-0">

@@ -113,13 +113,19 @@ export default function ClientPoliciesPage() {
   const pendingExtractionToastsRef = useRef<
     Record<string, { fileName?: string | null }>
   >({});
-  const { setActions, setRightPanel } = useClientDetailActions();
+  const { setActions, setRightPanel, setBreadcrumbExtra } =
+    useClientDetailActions();
 
   // Broker's own agent email (shown in empty state for easy forwarding)
   const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
   const AGENT_DOMAIN = getPublicAgentDomain();
   const agentHandle = viewerOrg?.org?.agentHandle;
   const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
+
+  useEffect(() => {
+    setBreadcrumbExtra("Policies");
+    return () => setBreadcrumbExtra(null);
+  }, [setBreadcrumbExtra]);
 
   useEffect(() => {
     setActions(showArchived ? null : (

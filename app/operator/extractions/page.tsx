@@ -1726,7 +1726,6 @@ export default function OperatorExtractionsPage() {
 
   return (
     <AppShell
-      breadcrumbDetail="Extractions"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}

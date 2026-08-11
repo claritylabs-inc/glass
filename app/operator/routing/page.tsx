@@ -81,7 +81,6 @@ export default function OperatorRoutingPage() {
   return (
     <AppShell
       actions={actions}
-      breadcrumbDetail="Routing"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
