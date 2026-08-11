@@ -47,13 +47,13 @@ export function PolicyDetailSkeleton() {
       <OperationalPanel as="div">
         <OperationalPanelHeader
           title={<Skeleton className="h-4 w-32" />}
-          className="px-4 py-2.5 border-foreground/4"
+          className="px-4 py-2.5 border-border-subtle"
         />
-        <div className="divide-y divide-foreground/4">
+        <div className="divide-y divide-border-subtle">
           {[0, 1, 2, 3, 4].map((item) => (
             <OperationalItem
               key={item}
-              className="grid grid-cols-[minmax(0,1fr)_120px] gap-4 border-foreground/4 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_140px_120px]"
+              className="grid grid-cols-[minmax(0,1fr)_120px] gap-4 border-border-subtle px-4 py-3 sm:grid-cols-[minmax(0,1fr)_140px_120px]"
             >
               <Skeleton className="h-4 w-44 max-w-full" />
               <Skeleton className="h-4 w-24 justify-self-end" />

@@ -162,8 +162,8 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
             : `${row.policyCount} polic${row.policyCount === 1 ? "y" : "ies"}`
           : null;
         return (
-          <section key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${rowIndex}`} className="rounded-md border border-foreground/8 bg-card">
-            <div className="border-b border-foreground/6 px-3 py-3">
+          <section key={`${row.vendorOrgId ?? row.name ?? "vendor"}-${rowIndex}`} className="rounded-md border border-input bg-card">
+            <div className="border-b border-border px-3 py-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -182,7 +182,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
                 {row.vendorOrgId ? (
                   <Link
                     href={`/connect/vendors/${row.vendorOrgId}/policies`}
-                    className={`shrink-0 rounded-full border border-foreground/8 px-2.5 py-1 text-muted-foreground transition-colors hover:border-foreground/14 hover:text-foreground ${typeStyle("label.tag")}`}
+                    className={`shrink-0 rounded-full border border-input px-2.5 py-1 text-muted-foreground transition-colors hover:border-border-hover hover:text-foreground ${typeStyle("label.tag")}`}
                   >
                     View vendor
                   </Link>
@@ -190,7 +190,7 @@ function VendorComplianceChecklist({ rows }: { rows: VendorComplianceRow[] }) {
               </div>
             </div>
             {checks.length > 0 ? (
-              <div className="divide-y divide-foreground/[0.05]">
+              <div className="divide-y divide-border">
                 {checks.map((check, checkIndex) => {
                   const meta = checkStatusMeta(check.status);
                   const StatusIcon = meta.icon;
@@ -262,14 +262,14 @@ function VendorComplianceSummaryCard({
       type="button"
       onClick={onOpen}
       className={`mt-4 w-full max-w-3xl overflow-hidden rounded-md border bg-card text-left transition-colors ${
-        isOpen ? "border-primary/35" : "border-foreground/8 hover:border-foreground/14"
+        isOpen ? "border-primary/35" : "border-input hover:border-border-hover"
       }`}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
         <span className={`truncate text-foreground/85 ${typeStyle("body.medium")}`}>
           Vendor compliance checks
         </span>
-        <Badge variant="outline" className={`h-5 shrink-0 border-foreground/10 px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
+        <Badge variant="outline" className={`h-5 shrink-0 border-border-emphasized px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
           {rows.length} vendor{rows.length === 1 ? "" : "s"}
         </Badge>
       </div>
@@ -313,11 +313,11 @@ export function VendorComplianceSidebar({
 }) {
   const rows = normalizeVendorComplianceRows(artifact.data);
   return (
-    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
-      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-input bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-input px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className={`truncate text-foreground ${typeStyle("heading.micro")}`}>Vendor compliance checks</h2>
-          <Badge variant="outline" className={`h-5 shrink-0 border-foreground/10 px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
+          <Badge variant="outline" className={`h-5 shrink-0 border-border-emphasized px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
             {rows.length} vendor{rows.length === 1 ? "" : "s"}
           </Badge>
         </div>

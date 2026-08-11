@@ -137,7 +137,7 @@ function ChannelCard({
   onChange: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-popover px-4 py-3">
       <div>
         <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
         <p className={`mt-0.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
@@ -173,7 +173,7 @@ function ChannelRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3 text-left transition-colors hover:bg-foreground/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10"
+      className="flex w-full items-center justify-between gap-4 rounded-lg border border-border bg-popover px-4 py-3 text-left transition-colors hover:bg-foreground/2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized"
     >
       <span className="min-w-0">
         <span className={`block text-foreground ${typeStyle("body.medium")}`}>
@@ -302,7 +302,7 @@ function AgentEmailAddressField({
       {canEdit ? (
         <>
           <AutoSaveStatus status={autoSave.status} />
-          <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+          <div className="flex h-9 overflow-hidden rounded-lg border border-input bg-popover focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input">
             <input
               aria-label="Agent email address"
               className={`min-w-0 flex-1 bg-transparent px-3 outline-none placeholder:text-muted-foreground/40 ${typeStyle("control.input")}`}
@@ -318,7 +318,7 @@ function AgentEmailAddressField({
               autoCapitalize="off"
               autoCorrect="off"
             />
-            <span className={`flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
+            <span className={`flex shrink-0 items-center border-l border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
               @{agentDomain}
             </span>
           </div>
@@ -862,7 +862,7 @@ export function AgentChannelsSection({
           : { label: "Not set up", tone: "neutral" as const };
 
   const supportRow = supportChannel ? (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
       <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
         #{supportChannel.channelName}
       </p>
@@ -916,7 +916,7 @@ export function AgentChannelsSection({
   const supportChannelField = (
     <div className="space-y-1.5">
       <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Client support channel</p>
-      <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-foreground/8 bg-popover px-3 py-2">
+      <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-input bg-popover px-3 py-2">
         <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
           #{supportChannel?.channelName ?? `glass-${clientSlug}`}
         </p>
@@ -927,7 +927,7 @@ export function AgentChannelsSection({
 
   const manualSupportFields =
     isOperator && resolvedManualSetupReason ? (
-      <details className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
+      <details className="rounded-lg border border-border bg-foreground/[0.02] px-3 py-2.5">
         <summary className={`cursor-pointer text-foreground ${typeStyle("control.tab")}`}>
           Link a channel manually
         </summary>
@@ -1015,7 +1015,7 @@ export function AgentChannelsSection({
         {setupStep === "install" ? (
           <div className="space-y-4">
             {installComplete && connection ? (
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
                 <div className="min-w-0">
                   <p className={`truncate text-foreground ${typeStyle("body.default")}`}>
                     {connection.teamName}
@@ -1029,7 +1029,7 @@ export function AgentChannelsSection({
                 </StatusTag>
               </div>
             ) : isMockSlack ? (
-              <div className="rounded-lg border border-dashed border-foreground/10 px-3 py-4">
+              <div className="rounded-lg border border-dashed border-border-emphasized px-3 py-4">
                 <p className={`text-foreground ${typeStyle("body.default")}`}>
                   Local Slack workspace
                 </p>
@@ -1042,7 +1042,7 @@ export function AgentChannelsSection({
                 {inviteContactField}
                 {operatorSetup.inviteSentAt &&
                 operatorSetup.inviteRecipientEmail ? (
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
                     <div className="min-w-0">
                       <p className={`truncate text-foreground ${typeStyle("body.default")}`}>
                         {operatorSetup.inviteRecipientEmail}
@@ -1084,7 +1084,7 @@ export function AgentChannelsSection({
             {supportChannelField}
             {inviteContactField}
             {operatorSetup.supportOmittedOperators?.length ? (
-              <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-2.5">
+              <div className="rounded-lg border border-border bg-foreground/[0.02] px-3 py-2.5">
                 <p className={`text-foreground ${typeStyle("body.medium")}`}>
                   Operators not added
                 </p>
@@ -1128,7 +1128,7 @@ export function AgentChannelsSection({
               refreshToken={channelRefreshToken}
             />
           ) : (
-            <div className="rounded-lg border border-foreground/6 bg-foreground/[0.02] px-3 py-3">
+            <div className="rounded-lg border border-border bg-foreground/[0.02] px-3 py-3">
               <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 Waiting for the Slack installation
               </p>
@@ -1191,7 +1191,7 @@ export function AgentChannelsSection({
         <TabsContent value="overview" className="space-y-5">
           <FormSection title="Workspace" divided={false}>
             {connection ? (
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
                 <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
                   {connection.teamName}
                 </p>
@@ -1260,7 +1260,7 @@ export function AgentChannelsSection({
       description="Glass support is finishing Slack setup for your organization."
       divided={false}
     >
-      <div className="flex items-center justify-between gap-3 rounded-lg border border-foreground/6 bg-popover px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
         <p className={`text-foreground ${typeStyle("body.default")}`}>
           {slackNeedsReinstall
             ? "An installation update is required."

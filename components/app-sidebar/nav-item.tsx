@@ -180,7 +180,7 @@ function ShortcutKeycap({ children }: { children: React.ReactNode }) {
   return (
     <kbd
       data-slot="kbd"
-      className={`border border-foreground/10 bg-foreground/4 px-1.5 py-0.5 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
+      className={`border border-border-emphasized bg-foreground/4 px-1.5 py-0.5 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
     >
       {children}
     </kbd>

@@ -341,7 +341,7 @@ export function OrganizationInsuranceProfile({
             onBlur={() => void saveProfileNow()}
             rows={4}
             placeholder="Describe the organization’s current business operations"
-            className={`w-full resize-y rounded-lg border border-foreground/8 bg-popover px-3 py-2 placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8 ${typeStyle("control.input")}`}
+            className={`w-full resize-y rounded-lg border border-input bg-popover px-3 py-2 placeholder:text-muted-foreground/40 focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-input ${typeStyle("control.input")}`}
           />
         </label>
       </FormSection>

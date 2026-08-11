@@ -29,8 +29,8 @@ const tabsListVariants = cva(
   {
     variants: {
       variant: {
-        default: "items-end gap-4 border-b border-foreground/6",
-        line: "items-end gap-4 border-b border-foreground/6 bg-transparent",
+        default: "items-end gap-4 border-b border-border",
+        line: "items-end gap-4 border-b border-border bg-transparent",
         pill: "items-center gap-1 border-none",
       },
     },

@@ -158,8 +158,8 @@ function OperatorLoading({
     >
       <div className="space-y-4">
         <Skeleton className="h-10 w-full rounded-lg" />
-        <div className="rounded-lg border border-foreground/8">
-          <Skeleton className="h-10 w-full rounded-none border-b border-foreground/8" />
+        <div className="rounded-lg border border-input">
+          <Skeleton className="h-10 w-full rounded-none border-b border-input" />
           <div className="p-4">
             <Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" />
           </div>
@@ -173,7 +173,7 @@ function PendingLiveScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-6">
-        <div className="rounded-lg border border-foreground/8 bg-card p-6">
+        <div className="rounded-lg border border-input bg-card p-6">
           <h1 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Workspace is being prepared
           </h1>

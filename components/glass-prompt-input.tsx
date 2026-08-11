@@ -533,7 +533,7 @@ function PreparedInputActions({
               event.preventDefault();
               action.onSelect();
             }}
-            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-foreground/8 bg-card px-2.5 text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-foreground/14 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/10 ${typeStyle("label.tag")}`}
+            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-input bg-card px-2.5 text-muted-foreground/70 transition-colors duration-0 ease-linear hover:border-border-hover hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-border-emphasized ${typeStyle("label.tag")}`}
           >
             {action.icon}
             <span className="hidden sm:inline">{action.label}</span>
@@ -1231,7 +1231,7 @@ export const GlassPromptInput = forwardRef<
       {pickerPortalRoot && activeTrigger && suggestions.length > 0 && pickerRect
         ? createPortal(
             <div
-              className="fixed z-[60] overflow-hidden rounded-xl border border-foreground/8 bg-popover p-1.5 shadow-lg shadow-black/[0.08]"
+              className="fixed z-[60] overflow-hidden rounded-xl border border-input bg-popover p-1.5 shadow-lg shadow-black/[0.08]"
               style={{
                 left: pickerRect.left,
                 width: pickerRect.width,
@@ -1285,10 +1285,10 @@ export const GlassPromptInput = forwardRef<
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={cn(
-          "rounded-xl border bg-card transition-[background-color,border-color,box-shadow] duration-100 overflow-hidden hover:border-foreground/14 focus-within:border-foreground/20 dark:hover:border-[#2f2f2f] dark:focus-within:border-[#3a3a3a] **:data-[slot=input-group]:!border-0 **:data-[slot=input-group]:!ring-0 **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:bg-transparent **:data-[slot=input-group]:!shadow-none",
+          "rounded-xl border bg-card transition-[background-color,border-color,box-shadow] duration-100 overflow-hidden hover:border-border-hover focus-within:border-border-focus **:data-[slot=input-group]:!border-0 **:data-[slot=input-group]:!ring-0 **:data-[slot=input-group]:rounded-none **:data-[slot=input-group]:bg-transparent **:data-[slot=input-group]:!shadow-none",
           isCommandVariant
-            ? "border-foreground/10 shadow-lg shadow-black/[0.08] dark:shadow-black/30"
-            : "border-foreground/6 shadow-none focus-within:shadow-none",
+            ? "border-border-emphasized shadow-lg shadow-black/[0.08] dark:shadow-black/30"
+            : "border-border shadow-none focus-within:shadow-none",
           isDraggingFiles && "border-primary/40 bg-primary/5",
         )}
       >

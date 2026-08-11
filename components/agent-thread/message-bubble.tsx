@@ -50,7 +50,7 @@ export const ThreadMessageBubble = memo(function ThreadMessageBubble({
         channel === "imessage" ? `${typeStyle("body.large")}` : `${typeStyle("body.default")}`,
         channel === "email"
           ? [
-              "border border-foreground/6",
+              "border border-border",
               isOwnMessage ? "bg-foreground/[0.04]" : "bg-foreground/[0.02]",
             ]
           : isOwnMessage

@@ -55,7 +55,7 @@ type BrokerRow = {
 };
 
 const INPUT_CLASSES =
-  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
+  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
 const AFFIXED_INPUT_CLASSES =
   `h-full min-w-0 flex-1 bg-transparent px-3 placeholder:text-muted-foreground/40 focus:outline-none ${typeStyle("body.default")}`;
 const AGENT_DOMAIN = getPublicAgentDomain();
@@ -443,8 +443,8 @@ export default function OperatorBrokersPage() {
             />
           </Field>
           <Field label="Signup link">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <span className={`flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
+            <div className="flex h-9 overflow-hidden rounded-lg border border-input bg-popover focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input">
+              <span className={`flex shrink-0 items-center border-r border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
                 {BROKER_SIGNUP_PREFIX}
               </span>
               <input
@@ -477,14 +477,14 @@ export default function OperatorBrokersPage() {
             />
           </Field>
           <Field label="Agent handle">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
+            <div className="flex h-9 overflow-hidden rounded-lg border border-input bg-popover focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input">
               <input
                 className={AFFIXED_INPUT_CLASSES}
                 value={agentHandle}
                 onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
                 placeholder="release"
               />
-              <span className={`flex shrink-0 items-center border-l border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
+              <span className={`flex shrink-0 items-center border-l border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
                 @{AGENT_DOMAIN}
               </span>
             </div>
@@ -534,8 +534,8 @@ export default function OperatorBrokersPage() {
       ) : selected ? (
         <fieldset disabled={busy} className="space-y-3">
           <Field label="Signup slug">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-foreground/8 bg-popover focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8">
-              <span className={`flex shrink-0 items-center border-r border-foreground/8 bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
+            <div className="flex h-9 overflow-hidden rounded-lg border border-input bg-popover focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input">
+              <span className={`flex shrink-0 items-center border-r border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
                 {BROKER_SIGNUP_PREFIX}
               </span>
               <input

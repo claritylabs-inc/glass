@@ -122,7 +122,7 @@ function ShellContent({
         {customSidebar ? (
           <>
             <aside
-              className={`hidden h-full shrink-0 flex-col border-r border-foreground/6 bg-background sidebar-transition lg:flex ${
+              className={`hidden h-full shrink-0 flex-col border-r border-border bg-background sidebar-transition lg:flex ${
                 customSidebarCollapsed ? "w-14" : "w-[220px]"
               }`}
             >
@@ -144,7 +144,7 @@ function ShellContent({
                     animate={{ x: 0 }}
                     exit={{ x: -280 }}
                     transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
-                    className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-foreground/6 bg-background lg:hidden"
+                    className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-border bg-background lg:hidden"
                   >
                     {renderedMobileCustomSidebar}
                   </motion.aside>

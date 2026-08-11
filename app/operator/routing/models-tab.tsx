@@ -253,7 +253,7 @@ export function ModelsTab() {
         return (
           <OperationalPanel key={group.id}>
             <OperationalPanelHeader title={group.label} />
-            <div className="divide-y divide-foreground/6 px-4">
+            <div className="divide-y divide-border px-4">
               {tasks.map((task) => {
                 const route = settings.routes[task.id] ?? null;
                 const routeIsDefault = sameRoute(

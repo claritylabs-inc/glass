@@ -121,8 +121,8 @@ export function PolicyUploadDrawer({
           }}
           className={`w-full rounded-lg border-2 border-dashed transition-colors px-6 py-10 text-center ${
             dragOver
-              ? "border-foreground/25 bg-foreground/3"
-              : "border-foreground/10 hover:border-foreground/20"
+              ? "border-border-focus bg-foreground/3"
+              : "border-border-emphasized hover:border-border-focus"
           }`}
         >
           <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/4 text-muted-foreground mb-3">
@@ -172,7 +172,7 @@ export function PolicyUploadDrawer({
               {files.map((file, i) => (
                 <OperationalItem
                   key={`${file.name}:${file.size}:${i}`}
-                  className="flex items-center gap-2 border-foreground/4 px-3 py-2"
+                  className="flex items-center gap-2 border-border-subtle px-3 py-2"
                 >
                   <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className={`truncate flex-1 ${typeStyle("body.default")}`}>

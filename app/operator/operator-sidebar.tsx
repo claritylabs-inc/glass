@@ -100,7 +100,7 @@ export function OperatorSidebar({
           />
         </div>
       </div>
-      <div className="border-t border-foreground/6 px-2 py-2">
+      <div className="border-t border-border px-2 py-2">
         {!collapsed && email ? (
           <p className={`truncate px-3 pb-2 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
             {email}

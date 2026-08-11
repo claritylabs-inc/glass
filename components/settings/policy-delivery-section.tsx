@@ -147,8 +147,8 @@ function ChannelToggles({
           disabled={disabled}
           className={`h-8 rounded-lg border px-3 transition-colors ${typeStyle("control.button")} ${
             value.includes(channel)
-              ? "border-foreground/20 bg-foreground/8 text-foreground"
-              : "border-foreground/8 text-muted-foreground hover:bg-foreground/4"
+              ? "border-border-focus bg-foreground/8 text-foreground"
+              : "border-input text-muted-foreground hover:bg-foreground/4"
           } disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {channel === "imessage"
@@ -513,7 +513,7 @@ function PolicyDeliveryEditor({
                 </p>
               </div>
             </div>
-            <div className="flex flex-col gap-3 border-t border-foreground/6 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
               <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 {draft.enabled
                   ? "This client currently follows the broker-wide delivery behavior."

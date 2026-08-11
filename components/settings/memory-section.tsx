@@ -300,13 +300,13 @@ export function MemorySection() {
             }
             className="px-5 py-3.5"
           />
-          <div className="divide-y divide-foreground/6">
+          <div className="divide-y divide-border">
             {grouped[type].map((memory) => (
               <button
                 key={memory._id}
                 type="button"
                 onClick={() => setSelectedMemoryId(memory._id)}
-                className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/10"
+                className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-emphasized"
               >
                 <span className="min-w-0 flex-1">
                   <span className={`block text-foreground ${typeStyle("body.default")}`}>

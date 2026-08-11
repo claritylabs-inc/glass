@@ -16,7 +16,7 @@ export default function SignupPage() {
         <div className="space-y-3">
           <Link
             href="/signup/broker"
-            className="group flex items-start gap-3 rounded-lg border border-foreground/8 bg-popover p-4 transition-colors hover:border-foreground/20"
+            className="group flex items-start gap-3 rounded-lg border border-input bg-popover p-4 transition-colors hover:border-border-focus"
           >
             <Briefcase className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
@@ -32,7 +32,7 @@ export default function SignupPage() {
 
           <Link
             href="/signup/client"
-            className="group flex items-start gap-3 rounded-lg border border-foreground/8 bg-popover p-4 transition-colors hover:border-foreground/20"
+            className="group flex items-start gap-3 rounded-lg border border-input bg-popover p-4 transition-colors hover:border-border-focus"
           >
             <Building2 className="mt-0.5 h-5 w-5 text-foreground" />
             <div className="flex-1">
@@ -46,7 +46,7 @@ export default function SignupPage() {
             <ArrowRight className="mt-1 h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
           </Link>
 
-          <div className="flex items-start gap-3 rounded-lg border border-dashed border-foreground/8 p-4">
+          <div className="flex items-start gap-3 rounded-lg border border-dashed border-input p-4">
             <UserRound className="mt-0.5 h-5 w-5 text-muted-foreground" />
             <div className="flex-1">
               <div className={`text-foreground ${typeStyle("body.medium")}`}>

@@ -17,7 +17,7 @@ import {
 import { typeStyle } from "@/lib/typography";
 
 const inputClass =
-  `h-9 rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
+  `h-9 rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
 
 export function AccentColorPicker({
   value,
@@ -78,7 +78,7 @@ export function AccentColorPicker({
       ))}
       <Popover>
         <PopoverTrigger
-          className={`h-6 w-6 rounded-full border-2 border-dashed border-foreground/20 hover:border-foreground/40 transition-colors flex items-center justify-center text-muted-foreground/60 ${typeStyle("control.buttonCompact")}`}
+          className={`h-6 w-6 rounded-full border-2 border-dashed border-border-focus hover:border-border-subtle0 transition-colors flex items-center justify-center text-muted-foreground/60 ${typeStyle("control.buttonCompact")}`}
           aria-label="Pick custom color"
           title="Custom color"
         >
@@ -118,10 +118,10 @@ function Swatch({
       onClick={onClick}
       aria-label={`Select ${color}`}
       title={title ?? color}
-      className={`relative h-6 w-6 rounded-full border border-foreground/10 transition-[border-color,box-shadow] duration-100 ${
+      className={`relative h-6 w-6 rounded-full border border-border-emphasized transition-[border-color,box-shadow] duration-100 ${
         selected
           ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
-          : "hover:border-foreground/30"
+          : "hover:border-border-focus"
       }`}
       style={{ backgroundColor: color }}
     >
