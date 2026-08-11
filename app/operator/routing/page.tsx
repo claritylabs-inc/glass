@@ -31,7 +31,14 @@ export default function OperatorRoutingPage() {
   const modelSettings = useCachedOperatorGlobalModelSettings() as
     | { updatedAt: number | null }
     | undefined;
-  const { dashboard, loading, loadError, refresh } = useRouterDashboard();
+  const {
+    dashboard,
+    loading,
+    loadError,
+    refresh,
+    freezeLoading,
+    setGlobalFreeze,
+  } = useRouterDashboard();
 
   const router = useRouter();
   const pathname = usePathname();
@@ -104,6 +111,8 @@ export default function OperatorRoutingPage() {
               dashboard={dashboard}
               loading={loading}
               loadError={loadError}
+              freezeLoading={freezeLoading}
+              setGlobalFreeze={setGlobalFreeze}
             />
           </TabsContent>
           <TabsContent value="models">

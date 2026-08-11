@@ -5,9 +5,6 @@
     "convexAgentHealthUrl": "https://merry-platypus-82.convex.site/agent-health",
     "clientPortalUrl": "https://app.glass.insure",
     "clRouterHealthUrlEnv": "GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL",
-    "clRouter": {
-      "expectedFrozen": true
-    },
     "extractionWorkerHealthUrl": "https://glass-extraction-worker-production.up.railway.app/health",
     "imessageWorkerHealthUrl": "https://glass-production-4618.up.railway.app/health",
     "slackWorkerHealthUrlEnv": "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL",
@@ -40,9 +37,6 @@
     "convexAgentHealthUrl": "https://flexible-greyhound-425.convex.site/agent-health",
     "clientPortalUrl": "https://staging.glass.insure",
     "clRouterHealthUrlEnv": "GLASS_STAGING_CL_ROUTER_HEALTH_URL",
-    "clRouter": {
-      "expectedFrozen": true
-    },
     "extractionWorkerHealthUrlEnv": "GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL",
     "extractionWorkerHealthUrl": "https://glass-extraction-worker-staging.up.railway.app/health",
     "imessageWorkerHealthUrlEnv": "GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL",
