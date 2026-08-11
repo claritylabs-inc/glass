@@ -49,7 +49,6 @@ import {
 } from "@/app/policies/[id]/source-provenance";
 import { OperatorSidebar } from "../operator-sidebar";
 import {
-  useCachedOperatorCurrent,
   useCachedOperatorExtractionTraceDetail,
   useCachedOperatorExtractionTraces,
 } from "@/lib/sync/operator-cached-queries";
@@ -463,7 +462,7 @@ function CoverageList({
               />
             </div>
             {visibleTerms.length > 0 ? (
-              <dl className="mt-3 divide-y divide-foreground/6">
+              <dl className="mt-3 divide-y divide-border">
                 {visibleTerms.map((term, termIndex) => (
                   <div
                     key={`${term.label}-${termIndex}`}
@@ -1004,7 +1003,7 @@ function ModelCallDebugPanel({ event }: { event?: TraceEvent }) {
   const details = modelCallDebugDetails(event);
   if (!details) {
     return (
-      <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
+      <div className={`rounded-lg border border-border px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
         No prompt or output details were recorded for this call. Rerun the extraction to capture model-call debug payloads.
       </div>
     );
@@ -1130,7 +1129,7 @@ function TimelineWaterfall({
   }
 
   return (
-    <div className="flex h-[70vh] min-h-96 overflow-hidden rounded-lg border border-foreground/6">
+    <div className="flex h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="relative grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]">
           <div
@@ -1146,18 +1145,18 @@ function TimelineWaterfall({
             className="pointer-events-none absolute inset-0 grid"
             style={{ gridTemplateColumns }}
           >
-            <div className="border-r border-foreground/6" />
+            <div className="border-r border-border" />
             <div className="relative min-w-0">
               {ticks.map((tick) => (
                 <span
                   key={tick}
-                  className="absolute top-0 h-full border-l border-foreground/6"
+                  className="absolute top-0 h-full border-l border-border"
                   style={{ left: `${tick * 100}%` }}
                 />
               ))}
             </div>
           </div>
-          <div className="relative z-10 grid border-b border-foreground/6 bg-muted/20" style={{ gridTemplateColumns }}>
+          <div className="relative z-10 grid border-b border-border bg-muted/20" style={{ gridTemplateColumns }}>
             <div className={`px-2.5 py-2 text-muted-foreground ${typeStyle("caption.medium")}`}>Event</div>
             <div className="relative h-8 min-w-0 overflow-hidden">
               {ticks.map((tick) => (
@@ -1186,7 +1185,7 @@ function TimelineWaterfall({
                 return (
                   <div
                     key={row.id}
-                    className="grid min-h-9 border-b border-foreground/6 text-left hover:bg-muted/40"
+                    className="grid min-h-9 border-b border-border text-left hover:bg-muted/40"
                     style={{ gridTemplateColumns }}
                   >
                     <div className={`min-w-0 py-1.5 pr-2.5 ${row.level > 0 ? "pl-5" : "pl-2.5"}`}>
@@ -1246,7 +1245,7 @@ function TimelineWaterfall({
             </div>
           </div>
         </div>
-        <div className={`flex flex-wrap gap-3 border-t border-foreground/6 px-3 py-2 text-muted-foreground ${typeStyle("caption.default")}`}>
+        <div className={`flex flex-wrap gap-3 border-t border-border px-3 py-2 text-muted-foreground ${typeStyle("caption.default")}`}>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-foreground" />phase</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-blue-500" />model call</span>
           <span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-amber-500" />model fallback</span>
@@ -1270,7 +1269,7 @@ function ModelCallSelector({
 }) {
   if (!events.length) {
     return (
-      <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
+      <div className={`rounded-lg border border-border px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
         No model calls recorded.
       </div>
     );
@@ -1400,7 +1399,6 @@ export default function OperatorExtractionsPage() {
   const rerunExtraction = useAction(api.operator.rerunExtraction);
   const stopExtraction = useMutation(api.operator.stopExtraction);
 
-  const current = useCachedOperatorCurrent();
   const traces = useCachedOperatorExtractionTraces({
     status: status === ALL ? undefined : status as TraceStatus,
     orgId: orgId === ALL ? undefined : orgId,
@@ -1662,7 +1660,7 @@ export default function OperatorExtractionsPage() {
 
             <TabsContent value="extracted" className="pt-1">
               {selectedIsRunning ? (
-                <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
+                <div className={`rounded-lg border border-border px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
                   Extraction is running. Extracted policy data will appear after this run completes.
                 </div>
               ) : detail?.policy ? (
@@ -1673,7 +1671,7 @@ export default function OperatorExtractionsPage() {
                   allowOperatorSourceAccess
                 />
               ) : (
-                <div className={`rounded-lg border border-foreground/6 px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
+                <div className={`rounded-lg border border-border px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
                   Extracted policy data is unavailable for this trace.
                 </div>
               )}
@@ -1700,9 +1698,9 @@ export default function OperatorExtractionsPage() {
             </TabsContent>
 
             <TabsContent value="log" className="space-y-2 pt-1">
-              <div className="rounded-lg border border-foreground/6">
+              <div className="rounded-lg border border-border">
                 {logEvents.length ? logEvents.map((event) => (
-                  <div key={event._id} className="border-b border-foreground/6 px-3 py-2 last:border-b-0">
+                  <div key={event._id} className="border-b border-border px-3 py-2 last:border-b-0">
                     <div className="flex items-center justify-between gap-3">
                       <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                         {dayjs(event.timestamp).format("h:mm:ss A")}{event.phase ? ` · ${event.phase}` : ""}
@@ -1730,11 +1728,10 @@ export default function OperatorExtractionsPage() {
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={current?.user?.email}
           active="extractions"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
@@ -1742,7 +1739,7 @@ export default function OperatorExtractionsPage() {
     >
       <main className="flex w-full flex-col gap-3">
         {filters}
-        <section className="w-full overflow-hidden rounded-lg border border-foreground/6 bg-card">
+        <section className="w-full overflow-hidden rounded-lg border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">

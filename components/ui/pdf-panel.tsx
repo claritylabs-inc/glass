@@ -26,7 +26,7 @@ export function PdfPanel() {
         initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 8 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.1, ease: EASE }}
-        className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col border-l border-foreground/6 bg-background"
+        className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col border-l border-border bg-background"
       >
         <PdfViewer
           fileUrl={fileUrl}

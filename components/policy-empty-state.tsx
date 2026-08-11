@@ -109,7 +109,7 @@ function AgentForwardCard({
 
   return (
     <div
-      className={`rounded-lg border border-foreground/6 bg-foreground/2 px-4 py-3 ${className ?? ""}`}
+      className={`rounded-lg border border-border bg-foreground/2 px-4 py-3 ${className ?? ""}`}
     >
       <div className="flex items-start gap-3">
         <div className="mt-0.5 h-8 w-8 rounded-full bg-foreground/4 flex items-center justify-center shrink-0">
@@ -244,8 +244,8 @@ function DropZone({
         }}
         className={`w-full rounded-lg border-2 border-dashed transition-colors px-6 py-12 text-center ${
           dragOver
-            ? "border-foreground/25 bg-foreground/3"
-            : "border-foreground/10 hover:border-foreground/20"
+            ? "border-border-focus bg-foreground/3"
+            : "border-border-emphasized hover:border-border-focus"
         }`}
       >
         <div className="mx-auto h-10 w-10 flex items-center justify-center rounded-full bg-foreground/4 text-muted-foreground mb-3">
@@ -287,11 +287,11 @@ function DropZone({
       ) : null}
 
       {staged.length > 0 ? (
-        <div className="rounded-lg border border-foreground/6 bg-card text-card-foreground overflow-hidden">
+        <div className="rounded-lg border border-border bg-card text-card-foreground overflow-hidden">
           {staged.map((file, i) => (
             <div
               key={`${file.name}:${file.size}:${i}`}
-              className="flex items-center gap-2 px-3 py-2 border-t border-foreground/4 first:border-t-0"
+              className="flex items-center gap-2 px-3 py-2 border-t border-border-subtle first:border-t-0"
             >
               <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <span className={`truncate flex-1 ${typeStyle("body.default")}`}>{file.name}</span>

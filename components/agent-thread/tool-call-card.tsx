@@ -49,7 +49,7 @@ export function ToolCallCard({
     displayNameOverride ?? TOOL_DISPLAY_NAMES[toolCall.name] ?? toolCall.name;
 
   return (
-    <div className="overflow-hidden rounded-md border border-foreground/6 bg-foreground/[0.015]">
+    <div className="overflow-hidden rounded-md border border-border bg-foreground/[0.015]">
       <Button
         type="button"
         variant="ghost"
@@ -81,13 +81,13 @@ export function ToolCallCard({
         </span>
       </Button>
       {isOpen && (
-        <div className="space-y-2 border-t border-foreground/6 px-2.5 pb-2.5 pt-2">
+        <div className="space-y-2 border-t border-border px-2.5 pb-2.5 pt-2">
           {showOutput && toolCall.output ? (
             <div>
               <p className={`mb-1 text-muted-foreground/40 ${typeStyle("caption.medium")}`}>
                 Output
               </p>
-              <pre className={`max-h-64 overflow-auto rounded border border-foreground/6 bg-background p-2 text-foreground/70 ${typeStyle("technical.codeCompact")}`}>
+              <pre className={`max-h-64 overflow-auto rounded border border-border bg-background p-2 text-foreground/70 ${typeStyle("technical.codeCompact")}`}>
                 <code className="whitespace-pre-wrap break-words">
                   {formatToolInput(toolCall.output)}
                 </code>
@@ -99,7 +99,7 @@ export function ToolCallCard({
               <p className={`mb-1 text-muted-foreground/40 ${typeStyle("caption.medium")}`}>
                 Parameters
               </p>
-              <pre className={`max-h-48 overflow-auto rounded border border-foreground/6 bg-background p-2 text-foreground/70 ${typeStyle("technical.codeCompact")}`}>
+              <pre className={`max-h-48 overflow-auto rounded border border-border bg-background p-2 text-foreground/70 ${typeStyle("technical.codeCompact")}`}>
                 <code className="whitespace-pre-wrap break-words">
                   {formatToolInput(toolCall.input)}
                 </code>

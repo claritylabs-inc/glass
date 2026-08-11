@@ -458,7 +458,7 @@ type DataSection = { label: string; rows: DataRow[] };
 const STRUCTURED_BODY_LABEL_CLASS = "sm:pl-[2.625rem]";
 const STRUCTURED_BODY_VALUE_CLASS = "sm:pr-5";
 const STRUCTURED_BODY_TEXT_CLASS =
-  "border-t border-foreground/4 px-5 pt-3 sm:pl-[2.625rem] sm:pr-5";
+  "border-t border-border-subtle px-5 pt-3 sm:pl-[2.625rem] sm:pr-5";
 
 function firstNumericPage(...values: unknown[]) {
   for (const value of values) {
@@ -826,10 +826,10 @@ function CoveredReasonDetailSection({
   const shouldUseTable = labeledRows.length === items.length;
 
   return (
-    <div className="border-t border-foreground/4 px-5 pt-3 sm:pl-[2.625rem] sm:pr-5">
+    <div className="border-t border-border-subtle px-5 pt-3 sm:pl-[2.625rem] sm:pr-5">
       <p className={`mb-2 text-muted-foreground ${typeStyle("caption.medium")}`}>{title}</p>
       {shouldUseTable ? (
-        <div className="overflow-hidden rounded-md border border-foreground/6">
+        <div className="overflow-hidden rounded-md border border-border">
           <KeyValueTable
             rows={labeledRows}
             labelCellClassName="!pl-3 sm:!pl-3"
@@ -942,7 +942,7 @@ function StructuredItemsCard<T>({
         return (
           <div
             key={i}
-            className="border-t border-foreground/4 first:border-t-0"
+            className="border-t border-border-subtle first:border-t-0"
           >
             <div className="flex items-center gap-2 px-4 py-3 hover:bg-foreground/[0.015] transition-colors">
               <button
@@ -1030,7 +1030,7 @@ function ContactCard({
   ].filter(Boolean) as { label: string; value: string }[];
 
   return (
-    <div className="border-t border-foreground/4 first:border-t-0 px-4 py-3">
+    <div className="border-t border-border-subtle first:border-t-0 px-4 py-3">
       <div className="flex items-center gap-2">
         {contact.name && (
           <p className={`text-foreground ${typeStyle("body.medium")}`}>{contact.name}</p>
@@ -1089,7 +1089,7 @@ function SupplementaryCard({
       {hasStructured ? (
         <>
           <div className="px-5 py-3">{children}</div>
-          <details className="group/raw border-t border-foreground/4">
+          <details className="group/raw border-t border-border-subtle">
             <summary className={`flex items-center gap-2 px-5 py-2.5 text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/[0.015] transition-colors select-none [&::-webkit-details-marker]:hidden [&::marker]:hidden list-none ${typeStyle("control.tab")}`}>
               <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-open/raw:rotate-90" />
               View raw text
@@ -1122,7 +1122,7 @@ function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
   return (
     <div className="-mx-4 -mt-3">
       {gridItems.length > 0 && (
-        <div className="flex flex-col sm:flex-row sm:divide-x divide-foreground/6 border-b border-foreground/4">
+        <div className="flex flex-col sm:flex-row sm:divide-x divide-border border-b border-border-subtle">
           {gridItems.map((item) => (
             <div key={item.label} className="flex-1 px-4 py-2.5">
               <p className={`text-muted-foreground mb-0.5 ${typeStyle("caption.medium")}`}>
@@ -1141,7 +1141,7 @@ function RegulatoryContextStructured({ data }: { data: RegulatoryContext }) {
             {(data.details ?? []).map((d: RegulatoryDetail, i: number) => (
               <tr
                 key={i}
-                className="border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
+                className="border-t border-border-subtle first:border-t-0 hover:bg-foreground/[0.015] transition-colors"
               >
                 <td className={`px-4 py-2.5 text-muted-foreground align-top ${typeStyle("body.default")}`}>
                   {d.label}
@@ -1184,7 +1184,7 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
         </div>
       )}
       {(data.processSteps?.length ?? 0) > 0 && (
-        <div className="border-t border-foreground/4 px-4 py-3">
+        <div className="border-t border-border-subtle px-4 py-3">
           <p className={`text-muted-foreground mb-2 ${typeStyle("caption.medium")}`}>
             Claims Process
           </p>
@@ -1201,7 +1201,7 @@ function ClaimsContactStructured({ data }: { data: ClaimsContact }) {
         </div>
       )}
       {data.reportingTimeLimit && (
-        <div className="border-t border-foreground/4 px-4 py-3">
+        <div className="border-t border-border-subtle px-4 py-3">
           <p className={`text-muted-foreground mb-1 ${typeStyle("caption.medium")}`}>
             Reporting Time Limit
           </p>
@@ -1236,7 +1236,7 @@ function KeyValueTable({
         {rows.map((row, i) => (
           <tr
             key={`${row.section ?? ""}-${row.label}-${i}`}
-            className="block border-t border-foreground/4 first:border-t-0 hover:bg-foreground/[0.015] transition-colors sm:table-row"
+            className="block border-t border-border-subtle first:border-t-0 hover:bg-foreground/[0.015] transition-colors sm:table-row"
           >
             <td
               className={`block px-5 pt-3 pb-1 text-muted-foreground align-top sm:table-cell sm:w-1/3 sm:py-2.5 ${labelCellClassName}`}
@@ -2061,7 +2061,7 @@ function SourceNodeTable({
   const title = sourceTableTitle(node);
 
   return (
-    <div className="overflow-hidden rounded-md border border-foreground/6 bg-card">
+    <div className="overflow-hidden rounded-md border border-border bg-card">
       {title ? (
         <div className="flex min-w-0 items-center gap-2 px-4 py-2.5">
           <p className={`min-w-0 flex-1 truncate text-foreground ${typeStyle("body.medium")}`}>
@@ -2070,10 +2070,10 @@ function SourceNodeTable({
           <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>Table</span>
         </div>
       ) : null}
-      <div className={title ? "border-t border-foreground/6" : undefined}>
+      <div className={title ? "border-t border-border" : undefined}>
         {segments.map((segment, index) => (
           <Fragment key={`${segment.type}-${index}`}>
-            {index > 0 ? <div className="border-t border-foreground/6" /> : null}
+            {index > 0 ? <div className="border-t border-border" /> : null}
             {segment.type === "key_value" ? (
               <SourceTableKeyValueRows
                 rows={segment.rows}
@@ -2331,7 +2331,7 @@ function OutlineNodeRow({
     renderableChildren.length > 0;
 
   return (
-    <div className="border-t border-foreground/6 first:border-t-0">
+    <div className="border-t border-border first:border-t-0">
       <div className="flex min-w-0 items-center gap-2 px-5 py-2.5 transition-colors hover:bg-foreground/[0.015]">
         <button
           type="button"
@@ -2379,7 +2379,7 @@ function OutlineNodeRow({
             />
           ) : null}
           {factRows.length > 0 ? (
-            <div className="overflow-hidden rounded-md border border-foreground/6">
+            <div className="overflow-hidden rounded-md border border-border">
               <KeyValueTable
                 rows={factRows}
                 sourceSpans={rowSourceSpans}
@@ -2414,8 +2414,8 @@ function OutlineNodeRow({
             <div
               className={
                 shouldFrameStructuredChildren
-                  ? "overflow-hidden rounded-md border border-foreground/6 bg-background"
-                  : "-mx-5 border-t border-foreground/6 bg-background"
+                  ? "overflow-hidden rounded-md border border-border bg-background"
+                  : "-mx-5 border-t border-border bg-background"
               }
             >
               {structuredChildren.map((child) => (
@@ -2529,7 +2529,7 @@ export function GroupSection({
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   return (
-    <div className="border-t border-foreground/6 first:border-t-0">
+    <div className="border-t border-border first:border-t-0">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -3020,7 +3020,7 @@ export function ExtractionCards({
                   {(fees as Record<string, unknown>[]).map((f, i: number) => (
                     <tr
                       key={i}
-                      className="border-t border-foreground/4 hover:bg-foreground/[0.015] transition-colors"
+                      className="border-t border-border-subtle hover:bg-foreground/[0.015] transition-colors"
                     >
                       <td className={`px-4 py-2.5 text-foreground ${typeStyle("body.medium")}`}>
                         {String(f.name ?? "—")}

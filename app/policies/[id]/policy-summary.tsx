@@ -266,7 +266,7 @@ export function PolicySummary({
     <OperationalPanel className="mb-6 @container">
       <div
         className={cn(
-          "relative overflow-hidden border-b border-foreground/6 px-5 py-4",
+          "relative overflow-hidden border-b border-border px-5 py-4",
           surfaceClassName,
         )}
         style={surfaceStyle}
@@ -322,7 +322,7 @@ export function PolicySummary({
       {pdfUrl || hasOverviewRows || !hasExtractedDetails ? (
         <OperationalPanelBody className="flex flex-col p-0 @lg:flex-row @lg:items-start">
           {pdfUrl ? (
-            <div className="shrink-0 p-5 pb-5 @lg:pb-5 @lg:pr-4 border-b @lg:border-r @lg:border-b-0 border-foreground/6">
+            <div className="shrink-0 p-5 pb-5 @lg:pb-5 @lg:pr-4 border-b @lg:border-r @lg:border-b-0 border-border">
               <div className="w-fit overflow-clip bg-background">
                 <PolicyPdfThumbnail url={pdfUrl} />
               </div>
@@ -392,7 +392,7 @@ export function PolicySummary({
         </OperationalPanelBody>
       ) : null}
       {realOperationsDescription ? (
-        <dl className="border-t border-foreground/6">
+        <dl className="border-t border-border">
           <OperationalLabelValueRow
             label="Description of operations"
             value={realOperationsDescription}

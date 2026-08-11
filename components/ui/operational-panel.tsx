@@ -18,7 +18,7 @@ function OperationalPanel({
   return (
     <Component
       className={cn(
-        "w-full overflow-hidden rounded-lg border border-foreground/6 bg-card",
+        "w-full overflow-hidden rounded-lg border border-border bg-card",
         className,
       )}
       {...props}
@@ -42,7 +42,7 @@ function OperationalPanelHeader({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-start justify-between gap-4 border-b border-foreground/6 px-4 py-3",
+        "flex min-w-0 items-start justify-between gap-4 border-b border-border px-4 py-3",
         className,
       )}
     >
@@ -81,7 +81,7 @@ function OperationalItem({
     <div
       {...props}
       className={cn(
-        "border-t border-foreground/6 px-4 py-3 first:border-t-0",
+        "border-t border-border px-4 py-3 first:border-t-0",
         className,
       )}
     >
@@ -122,7 +122,7 @@ function OperationalDetailRow({
 }) {
   if (!value) return null;
   return (
-    <div className="flex flex-col gap-1 border-t border-foreground/6 py-3 first:border-t-0">
+    <div className="flex flex-col gap-1 border-t border-border py-3 first:border-t-0">
       <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>{label}</p>
       <p className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}>
         {value}
@@ -165,7 +165,7 @@ function OperationalLabelValueRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-1 gap-1 border-t border-foreground/6 px-4 py-3 first:border-t-0",
+        "grid grid-cols-1 gap-1 border-t border-border px-4 py-3 first:border-t-0",
         layout === "responsive" &&
           "sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3",
       )}
@@ -197,7 +197,7 @@ function OperationalSkeletonList({
   return (
     <OperationalPanel as="div" className={className}>
       {Array.from({ length: rows }).map((_, index) => (
-        <OperationalItem key={index} className="border-foreground/4">
+        <OperationalItem key={index} className="border-border-subtle">
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 flex-1 flex-col gap-2">
               <Skeleton className="h-4 w-48" />

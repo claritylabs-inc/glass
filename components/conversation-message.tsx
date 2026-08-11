@@ -86,7 +86,7 @@ export function QuotedContent({ text }: { text: string }) {
         );
         for (let d = 0; d < block.depth; d++) {
           el = (
-            <div key={`${i}-${d}`} className="pl-3 ml-0.5 border-l-2 border-foreground/8">
+            <div key={`${i}-${d}`} className="pl-3 ml-0.5 border-l-2 border-input">
               {el}
             </div>
           );

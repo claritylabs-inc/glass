@@ -11,7 +11,7 @@ import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { typeStyle } from "@/lib/typography";
 
 const INPUT_CLASSES =
-  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
+  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
 
 const LABEL_CLASSES =
   `text-muted-foreground block mb-1 ${typeStyle("caption.medium")}`;
@@ -106,8 +106,8 @@ export function InviteMemberDrawer({
                 onClick={() => setRole(r)}
                 className={`flex-1 py-2 rounded-lg border transition-colors ${typeStyle("control.button")} ${
                   role === r
-                    ? "border-foreground/15 bg-foreground/3 text-foreground"
-                    : "border-foreground/6 text-muted-foreground hover:border-foreground/10"
+                    ? "border-border-hover bg-foreground/3 text-foreground"
+                    : "border-border text-muted-foreground hover:border-border-emphasized"
                 }`}
               >
                 {r === "admin" ? "Admin" : "Member"}

@@ -212,13 +212,13 @@ function VendorComplianceChecklist({
 }) {
   if (summary.requirementCount === 0) {
     return (
-      <div className={`border-t border-foreground/6 px-4 py-4 text-muted-foreground ${typeStyle("body.default")}`}>
+      <div className={`border-t border-border px-4 py-4 text-muted-foreground ${typeStyle("body.default")}`}>
         No vendor requirements are configured yet.
       </div>
     );
   }
   return (
-    <div className="border-t border-foreground/6">
+    <div className="border-t border-border">
       {summary.checks.map((check) => {
         const detectedLimit =
           check.matchedPolicy?.coverageLimit ??
@@ -226,7 +226,7 @@ function VendorComplianceChecklist({
         return (
           <div
             key={check.requirement._id}
-            className="grid gap-3 border-b border-foreground/4 px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(280px,420px)]"
+            className="grid gap-3 border-b border-border-subtle px-4 py-3 last:border-b-0 md:grid-cols-[minmax(0,1fr)_minmax(280px,420px)]"
           >
             <div className="min-w-0 space-y-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -249,7 +249,7 @@ function VendorComplianceChecklist({
                 </p>
               ) : null}
             </div>
-            <div className="min-w-0 rounded-md border border-foreground/6 bg-background/40 px-3 py-2">
+            <div className="min-w-0 rounded-md border border-border bg-background/40 px-3 py-2">
               {check.matchedPolicy ? (
                 <div className={`space-y-1 text-muted-foreground ${typeStyle("caption.default")}`}>
                   <p className="truncate text-foreground">
@@ -342,7 +342,7 @@ function RelationshipCard({
       : (row._id as Id<"connectedOrgRelationships">);
   const showInviteCopy = row.status !== "active";
   return (
-    <div className="border-b border-foreground/6 last:border-b-0">
+    <div className="border-b border-border last:border-b-0">
       <div className="flex flex-col gap-3 px-4 py-3 transition-colors hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0 sm:flex-1">
           <div className="flex items-center gap-2">

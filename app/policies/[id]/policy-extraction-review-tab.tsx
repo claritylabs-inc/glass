@@ -334,7 +334,7 @@ export function PolicyExtractionReview({
           return (
             <div
               key={questionId}
-              className="rounded-lg border border-foreground/10 bg-background p-4"
+              className="rounded-lg border border-border-emphasized bg-background p-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -352,7 +352,7 @@ export function PolicyExtractionReview({
                 ) : null}
               </div>
 
-              <div className="mt-3 divide-y divide-foreground/6 border-y border-foreground/6">
+              <div className="mt-3 divide-y divide-border border-y border-border">
                 {optionCards.map(({ option, key, heading }) => {
                   const details = optionDetailParts(option);
                   const selected = selectedKey === key;
@@ -403,7 +403,7 @@ export function PolicyExtractionReview({
                           </p>
                         ) : null}
                       </div>
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/10 px-3 py-1 text-muted-foreground ${typeStyle("label.tag")}`}>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border border-border-emphasized px-3 py-1 text-muted-foreground ${typeStyle("label.tag")}`}>
                         {selected ? (
                           <CheckCircle2 className="size-3.5" />
                         ) : null}

@@ -76,7 +76,7 @@ describe("policy delivery automation surfaces", () => {
     expect(clientSettings).toContain('searchParams.get("tab")');
     expect(clientSettings).not.toContain("activeChannel={activeTab}");
     expect(agentChannels).toContain(
-      "rounded-lg border border-foreground/6 bg-popover px-4 py-3",
+      "rounded-lg border border-border bg-popover px-4 py-3",
     );
     expect(agentChannels).not.toContain("<OperationalPanel");
     expect(agentChannels).toContain("<SettingsDrawer");

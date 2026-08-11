@@ -189,7 +189,7 @@ export function SlackConnectionFields({
                 <button
                   id="slack-channel-picker"
                   type="button"
-                  className={`flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-foreground/8 bg-popover px-3 text-left text-foreground outline-none transition-colors hover:border-foreground/14 focus-visible:border-foreground/20 focus-visible:ring-1 focus-visible:ring-foreground/8 disabled:cursor-not-allowed disabled:opacity-50 ${typeStyle("control.button")}`}
+                  className={`flex h-9 w-full items-center justify-between gap-2 rounded-lg border border-input bg-popover px-3 text-left text-foreground outline-none transition-colors hover:border-border-hover focus-visible:border-border-focus focus-visible:ring-1 focus-visible:ring-input disabled:cursor-not-allowed disabled:opacity-50 ${typeStyle("control.button")}`}
                 >
                   <span className="truncate">{selectedLabel}</span>
                   {changingChannelId ? (
@@ -234,7 +234,7 @@ export function SlackConnectionFields({
       <div className="space-y-1.5">
         <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Active channels</p>
         {joinedChannels.length > 0 ? (
-          <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6 bg-popover px-3">
+          <div className="divide-y divide-border rounded-lg border border-border bg-popover px-3">
             {joinedChannels.map((channel) => (
               <div
                 key={channel.id}
@@ -256,7 +256,7 @@ export function SlackConnectionFields({
                       onClick={() => void removeChannel(channel.id)}
                       disabled={changingChannelId !== null}
                       aria-label={`Remove Glass from #${channel.name}`}
-                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {changingChannelId === channel.id ? (
                         <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
@@ -270,7 +270,7 @@ export function SlackConnectionFields({
             ))}
           </div>
         ) : (
-          <div className={`rounded-lg border border-dashed border-foreground/10 px-3 py-4 text-muted-foreground ${typeStyle("body.default")}`}>
+          <div className={`rounded-lg border border-dashed border-border-emphasized px-3 py-4 text-muted-foreground ${typeStyle("body.default")}`}>
             No active channels.
           </div>
         )}

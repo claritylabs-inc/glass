@@ -210,7 +210,7 @@ function RoutingActivityChart({ activity }: { activity: HourlyActivity[] }) {
         <div
           role="img"
           aria-label={`Hourly routing activity: ${totalCalls.toLocaleString()} model attempts in the last 24 hours`}
-          className="grid h-32 grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-1 border-b border-foreground/10 px-1"
+          className="grid h-32 grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-1 border-b border-border-emphasized px-1"
         >
           {activity.map((hour) => {
             const successfulCalls = Math.min(hour.successes, hour.calls);
@@ -263,7 +263,7 @@ function RoutingActivityChart({ activity }: { activity: HourlyActivity[] }) {
         {totalCalls === 0 ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-3">
             <p
-              className={`rounded-md bg-card/90 px-3 py-1.5 text-muted-foreground shadow-sm ring-1 ring-foreground/6 ${typeStyle("caption.default")}`}
+              className={`rounded-md bg-card/90 px-3 py-1.5 text-muted-foreground shadow-sm ring-1 ring-border ${typeStyle("caption.default")}`}
             >
               No model attempts recorded
             </p>
@@ -675,7 +675,7 @@ export function RoutingTab({
                 />
               </div>
             </div>
-            <dl className="grid grid-cols-2 gap-px border-t border-foreground/6 bg-foreground/6 lg:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-px border-t border-border bg-foreground/6 lg:grid-cols-4">
               {[
                 ["Operating mode", posture],
                 ["Shadow comparison", shadowSummary],
@@ -728,9 +728,9 @@ export function RoutingTab({
               </OperationalPanelBody>
             ) : (
               <div>
-                <div className="grid divide-y divide-foreground/6 lg:grid-cols-[minmax(0,1.6fr)_minmax(18rem,1fr)] lg:divide-x lg:divide-y-0">
+                <div className="grid divide-y divide-border lg:grid-cols-[minmax(0,1.6fr)_minmax(18rem,1fr)] lg:divide-x lg:divide-y-0">
                   <RoutingActivityChart activity={hourlyActivity} />
-                  <div className="divide-y divide-foreground/6">
+                  <div className="divide-y divide-border">
                     <RateMeter
                       label="Successful attempts"
                       value={
@@ -757,7 +757,7 @@ export function RoutingTab({
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-px border-t border-foreground/6 bg-foreground/6 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-px border-t border-border bg-foreground/6 sm:grid-cols-2 lg:grid-cols-4">
                   {summaryMetrics.map((metric) => (
                     <div
                       key={metric.label}
@@ -808,7 +808,7 @@ export function RoutingTab({
                   className={`w-full min-w-[780px] text-left ${typeStyle("body.default")}`}
                 >
                   <thead
-                    className={`border-b border-foreground/6 text-muted-foreground ${typeStyle("label.table")}`}
+                    className={`border-b border-border text-muted-foreground ${typeStyle("label.table")}`}
                   >
                     <tr>
                       <th
@@ -838,7 +838,7 @@ export function RoutingTab({
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-foreground/6">
+                  <tbody className="divide-y divide-border">
                     {policies.map((policy) => {
                       const primary = policy.candidates.find(
                         (candidate) => candidate.role === "primary",
@@ -905,7 +905,7 @@ export function RoutingTab({
               className={`w-full min-w-[920px] text-left ${typeStyle("body.default")}`}
             >
               <thead
-                className={`border-b border-foreground/6 text-muted-foreground ${typeStyle("label.table")}`}
+                className={`border-b border-border text-muted-foreground ${typeStyle("label.table")}`}
               >
                 <tr>
                   <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
@@ -928,7 +928,7 @@ export function RoutingTab({
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-foreground/6">
+              <tbody className="divide-y divide-border">
                 {recentEvents.map((event) => (
                   <tr key={event._id}>
                     <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">

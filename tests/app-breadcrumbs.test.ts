@@ -58,6 +58,7 @@ describe("app breadcrumbs", () => {
     ["/operator/channels", "Channels", "/operator/channels"],
     ["/operator/routing", "Routing", "/operator/routing"],
     ["/operator/extractions", "Extractions", "/operator/extractions"],
+    ["/operator/profile", "Profile", "/operator/profile"],
   ])("resolves operator route %s", (pathname, label, href) => {
     expect(resolveAppBreadcrumb(pathname)).toEqual({ label, href });
   });

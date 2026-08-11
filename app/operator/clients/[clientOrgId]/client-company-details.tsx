@@ -157,7 +157,7 @@ export function ClientCompanyDetails({
                 <button
                   type="button"
                   onClick={() => removeRelatedLegalEntity(index)}
-                  className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-foreground/8 text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
+                  className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-input text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
                   aria-label={`Remove ${entity.legalName || "legal entity"}`}
                 >
                   <Trash2 className="size-3.5" />

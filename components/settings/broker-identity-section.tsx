@@ -307,7 +307,7 @@ function BrokerIdentityForm({
             Broker company
           </label>
           {identity.connected ? (
-            <div className={`flex h-9 items-center rounded-lg border border-foreground/6 bg-foreground/3 px-3 text-foreground ${typeStyle("body.default")}`}>
+            <div className={`flex h-9 items-center rounded-lg border border-border bg-foreground/3 px-3 text-foreground ${typeStyle("body.default")}`}>
               {identity.brokerCompanyName || "Broker"}
             </div>
           ) : (

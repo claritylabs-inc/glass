@@ -110,7 +110,7 @@ export function ClientListRow({ row }: { row: ClientRow }) {
   }
 
   const rowClass =
-    "flex items-center gap-4 px-4 py-3 border-b border-foreground/6 last:border-0 hover:bg-muted/50 transition-colors";
+    "flex items-center gap-4 px-4 py-3 border-b border-border last:border-0 hover:bg-muted/50 transition-colors";
 
   const nameBlock = (
     <div className="flex min-w-0 flex-1 items-center gap-2.5">

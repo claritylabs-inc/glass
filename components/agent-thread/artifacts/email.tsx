@@ -286,7 +286,7 @@ export function EmailSummaryCard({
 
   return (
     <div
-      className={`${compact ? "mt-2" : ""} w-fit min-w-64 max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card transition-colors hover:border-foreground/15 hover:bg-foreground/[0.025] sm:min-w-72`}
+      className={`${compact ? "mt-2" : ""} w-fit min-w-64 max-w-md overflow-hidden rounded-md border border-input bg-card transition-colors hover:border-border-hover hover:bg-foreground/[0.025] sm:min-w-72`}
     >
       <button
         type="button"
@@ -306,7 +306,7 @@ export function EmailSummaryCard({
         </span>
       </button>
       {isOpen ? null : (
-        <div className="flex items-center justify-end gap-1.5 border-t border-foreground/6 px-3 py-2.5">
+        <div className="flex items-center justify-end gap-1.5 border-t border-border px-3 py-2.5">
           <PillButton
             type="button"
             size="compact"
@@ -452,8 +452,8 @@ export function EmailStackCard({
   }
 
   return (
-    <div className="w-full max-w-md overflow-hidden rounded-md border border-foreground/8 bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2">
+    <div className="w-full max-w-md overflow-hidden rounded-md border border-input bg-card">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
         <div className="min-w-0">
           <p className={`text-muted-foreground/55 ${typeStyle("caption.medium")}`}>
             Email drafts
@@ -481,7 +481,7 @@ export function EmailStackCard({
           </PillButton>
         ) : null}
       </div>
-      <div className="divide-y divide-foreground/6">
+      <div className="divide-y divide-border">
         {orderedMessages.map((message) => {
           const attachmentCount = message.attachments?.length ?? 0;
           const isOpen = isOpenMessageId === message._id;
@@ -621,8 +621,8 @@ export function EmailThreadSidebar({
   }
 
   return (
-    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
-      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-input bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-input px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className={`truncate text-foreground ${typeStyle("heading.micro")}`}>
             {message.subject ||
@@ -659,7 +659,7 @@ export function EmailThreadSidebar({
         </PillButton>
       </div>
       <dl
-        className="grid items-start gap-x-4 border-b border-foreground/8 px-5 py-5"
+        className="grid items-start gap-x-4 border-b border-input px-5 py-5"
         style={{
           gridTemplateColumns: "5rem minmax(0, 1fr)",
           rowGap: "0.375rem",
@@ -679,7 +679,7 @@ export function EmailThreadSidebar({
         <EmailBodyPreview html={previewHtml} text={previewBody} />
       </div>
       {isDraft ? (
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-foreground/8 px-4 py-3">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-input px-4 py-3">
           <PillButton
             type="button"
             variant="ghost"
@@ -708,7 +708,7 @@ export function EmailThreadSidebar({
           </PillButton>
         </div>
       ) : isCancelled ? (
-        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-foreground/8 px-4 py-3">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-input px-4 py-3">
           <PillButton
             type="button"
             size="compact"

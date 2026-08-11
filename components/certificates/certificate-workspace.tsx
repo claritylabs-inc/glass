@@ -120,7 +120,7 @@ export type PolicyCertificateRecord = {
 export const CERTIFICATE_PANEL_CONTAINER_CLASS = "@container/certificates-panel";
 
 const CERTIFICATE_ROW_CLICKABLE_CLASS =
-  "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-inset";
+  "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-inset";
 
 export function certificatePolicyLabel(policy?: CertificatePolicyRecord | null) {
   return [

@@ -43,7 +43,7 @@ describe("settings panel surfaces", () => {
     );
     const compliance = read("components/compliance-page.tsx");
 
-    expect(primitive).toContain("border-t border-foreground/6 pt-4");
+    expect(primitive).toContain("border-t border-border pt-4");
     expect(primitive).toContain('typeStyle("heading.micro")');
     expect(primitive).toContain('typeStyle("body.default")');
     expect(primitive).toContain("{action ?");
@@ -114,7 +114,7 @@ describe("settings panel surfaces", () => {
     expect(summary).toContain('label="Description of operations"');
     expect(summary).toContain("operationsDescription");
     expect(summary).toContain('layout="stacked"');
-    expect(summary).toContain('className="border-t border-foreground/6"');
+    expect(summary).toContain('className="border-t border-border"');
     expect(summary).not.toContain("function SummaryRow");
     expect(summary).toContain('label="Policy number"');
     expect(summary).toContain('label="Product lines"');

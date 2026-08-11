@@ -306,13 +306,13 @@ function ExactSourceLocations({
   sourceSpans: SourceSpanDoc[];
 }) {
   return (
-    <section className="min-w-0 rounded-md border border-foreground/8 bg-foreground/[0.02]">
-      <div className="border-b border-foreground/6 px-3 py-2">
+    <section className="min-w-0 rounded-md border border-input bg-foreground/[0.02]">
+      <div className="border-b border-border px-3 py-2">
         <p className={`text-foreground ${typeStyle("caption.medium")}`}>
           Exact source locations
         </p>
       </div>
-      <div className="divide-y divide-foreground/6">
+      <div className="divide-y divide-border">
         {sourceSpans.slice(0, 5).map((span) => (
           <div key={span.spanId} className="px-3 py-2">
             <div className="mb-1 flex min-w-0 items-center gap-2">
@@ -453,7 +453,7 @@ function CoverageListPreview({
           )}
         </>
       ) : (
-        <div className={`rounded-md border border-foreground/8 bg-card px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
+        <div className={`rounded-md border border-input bg-card px-3 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
           No coverage schedule extracted yet.
         </div>
       )}
@@ -477,13 +477,13 @@ function CoveragePreviewGroupList({
   sourceSpans?: SourceSpanDoc[];
 }) {
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border border-foreground/8 bg-card text-card-foreground">
+    <div className="min-w-0 overflow-hidden rounded-md border border-input bg-card text-card-foreground">
       {headerTitle ? (
-        <div className={`border-b border-foreground/6 px-3 py-2.5 text-foreground [overflow-wrap:anywhere] ${typeStyle("body.medium")}`}>
+        <div className={`border-b border-border px-3 py-2.5 text-foreground [overflow-wrap:anywhere] ${typeStyle("body.medium")}`}>
           {headerTitle}
         </div>
       ) : null}
-      <div className="divide-y divide-foreground/6">
+      <div className="divide-y divide-border">
         {group.rows.map((row, index) => (
           <CoverageScheduleRow
             key={`${row.name}:${row.limit ?? ""}:${index}`}
@@ -564,8 +564,8 @@ function CoverageScheduleRow({
       <dl
         className={
           showName
-            ? "mt-2 divide-y divide-foreground/6"
-            : "divide-y divide-foreground/6"
+            ? "mt-2 divide-y divide-border"
+            : "divide-y divide-border"
         }
       >
         {visibleTerms.map((term, termIndex) => (

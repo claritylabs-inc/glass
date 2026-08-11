@@ -429,8 +429,8 @@ export function MailboxEmailReviewSidebar({
   const messageParagraphs = splitMailboxMessageParagraphs(liveEmail?.text);
 
   return (
-    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
-      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-input bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-input px-4">
         <h2 className={`min-w-0 truncate text-foreground ${typeStyle("heading.micro")}`}>
           {liveEmail?.subject ?? email.subject}
         </h2>
@@ -482,7 +482,7 @@ export function MailboxEmailReviewSidebar({
           <OperationalPanel as="div">
             <OperationalPanelHeader title="Message" />
             {attachments.length > 0 ? (
-              <div className="border-b border-foreground/6 px-4 py-3">
+              <div className="border-b border-border px-4 py-3">
                 <p className={`mb-2 text-muted-foreground ${typeStyle("caption.medium")}`}>
                   Attachments
                 </p>
@@ -554,7 +554,7 @@ export function MailboxEmailReviewSidebar({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-foreground/8 px-4 py-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-input px-4 py-3">
         <PillButton
           size="compact"
           variant="ghost"

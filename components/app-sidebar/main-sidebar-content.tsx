@@ -122,7 +122,7 @@ export function MainSidebarContent({
         onToggleCollapse={onToggleCollapse}
       />
 
-      <div className="relative px-2 py-2 border-b border-foreground/6">
+      <div className="relative px-2 py-2 border-b border-border">
         <SidebarMenuItem
           onClick={onToggleNotifications}
           label="Notifications"
@@ -211,7 +211,7 @@ export function MainSidebarContent({
         />
       ) : null}
 
-      <div className="border-t border-foreground/6 px-2 py-2 space-y-0.5">
+      <div className="border-t border-border px-2 py-2 space-y-0.5">
         {canManageSettings ? (
           <SidebarMenuItem
             href="/settings"

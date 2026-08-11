@@ -831,8 +831,8 @@ function MessageFooterActions({
         }}
         className={`inline-flex h-6 max-w-52 items-center justify-center gap-1.5 rounded-full border bg-transparent px-2 transition-colors ${typeStyle("label.tag")} ${
           isSelected
-            ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
-            : "border-foreground/8 text-muted-foreground/60 hover:border-foreground/12 hover:bg-foreground/3 hover:text-foreground/75"
+            ? "border-border-focus bg-foreground/[0.04] text-foreground/75"
+            : "border-input text-muted-foreground/60 hover:border-border-emphasized hover:bg-foreground/3 hover:text-foreground/75"
         }`}
       >
         <span className="text-muted-foreground/35">{index + 1}</span>
@@ -860,7 +860,7 @@ function MessageFooterActions({
         }}
         className={`h-6 max-w-64 px-2 ${
           isSelected
-            ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
+            ? "border-border-focus bg-foreground/[0.04] text-foreground/75"
             : "text-muted-foreground/60"
         }`}
       >
@@ -1321,7 +1321,7 @@ function AgentProcessingActivity({
         <button
           type="button"
           onClick={onOpenBackgroundProcess}
-          className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1.5 text-muted-foreground/55 transition-colors hover:border-foreground/15 hover:bg-foreground/[0.04] ${typeStyle("label.tag")}`}
+          className={`inline-flex items-center gap-1.5 rounded-full border border-input bg-foreground/[0.025] px-2.5 py-1.5 text-muted-foreground/55 transition-colors hover:border-border-hover hover:bg-foreground/[0.04] ${typeStyle("label.tag")}`}
         >
           {backgroundProcessContent}
         </button>
@@ -1740,7 +1740,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
       <div
         className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
           isOperatorInitiated
-            ? "border border-foreground/10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+            ? "border border-border-emphasized bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
             : "bg-foreground/8"
         }`}
         title={isOperatorInitiated ? "Clarity Labs" : undefined}
@@ -1880,7 +1880,7 @@ function CopyMessageButton({ content }: { content: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-colors hover:border-foreground/8 hover:bg-foreground/[0.03] hover:text-foreground/70"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-colors hover:border-input hover:bg-foreground/[0.03] hover:text-foreground/70"
       title="Copy response"
     >
       {copied ? (
@@ -1914,7 +1914,7 @@ function TryAgainMessageButton({
           setRetrying(false);
         }
       }}
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-colors hover:border-foreground/8 hover:bg-foreground/[0.03] hover:text-foreground/70 disabled:opacity-50"
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-colors hover:border-input hover:bg-foreground/[0.03] hover:text-foreground/70 disabled:opacity-50"
       title="Try again"
     >
       <RotateCcw className={`h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
@@ -1982,7 +1982,7 @@ function QueuedThreadMessage({
       ? `${message.files.length} attachment${message.files.length === 1 ? "" : "s"}`
       : "Message");
   return (
-    <div className="mb-2 flex items-center gap-2 rounded-lg border border-foreground/8 bg-card px-2.5 py-2">
+    <div className="mb-2 flex items-center gap-2 rounded-lg border border-input bg-card px-2.5 py-2">
       <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/35" />
       <p className={`min-w-0 flex-1 truncate text-muted-foreground/55 ${typeStyle("caption.default")}`}>
         Queued:{" "}
@@ -2569,7 +2569,7 @@ export function UnifiedThreadContent({
       {/* Input — overlaid at bottom, content scrolls under it */}
       <ChatInputOverlay>
         {thread.originChannel === "slack" ? (
-          <div className="flex flex-col items-stretch gap-3 rounded-xl border border-foreground/8 bg-background px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex flex-col items-stretch gap-3 rounded-xl border border-input bg-background px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="min-w-0">
               <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 Continue this conversation in Slack.

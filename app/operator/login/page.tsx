@@ -98,7 +98,7 @@ export default function OperatorLoginPage() {
                 placeholder="you@claritylabs.inc"
                 required
                 autoFocus
-                className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8 ${typeStyle("control.input")}`}
+                className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-input ${typeStyle("control.input")}`}
               />
             </div>
             {error ? <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p> : null}
