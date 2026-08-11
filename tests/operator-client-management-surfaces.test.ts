@@ -117,6 +117,8 @@ describe("operator client management surfaces", () => {
     expect(team).toContain('member.role === "admin"');
     expect(team).toContain('"Send activation"');
     expect(team).toContain('"Resend activation"');
+    expect(team).toContain("member.isActivated");
+    expect(team).toContain('<StatusTag tone="success">Active</StatusTag>');
     expect(team).toContain("adminUserId: member.userId");
   });
 
