@@ -7,6 +7,7 @@ import { convertIndexedToRgb, decode } from "fast-png";
 import { Agent, fetch as undiciFetch } from "undici";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import type { CarrierIdentityAccentColorSource } from "./carrierIdentity";
 
 const USER_AGENT = "Mozilla/5.0 (compatible; GlassBot/1.0)";
 const MAX_HTML_BYTES = 1_000_000;
@@ -28,7 +29,13 @@ type WebsiteBrandSignals = {
   siteName?: string;
   identityEvidence?: string;
   primaryColor?: string;
+  primaryColorSource?: CarrierIdentityAccentColorSource;
   colorCandidates: string[];
+};
+
+type WebsiteBrandColorSignal = {
+  color: string;
+  source: CarrierIdentityAccentColorSource;
 };
 
 function isPublicIpv4(hostname: string) {
@@ -271,38 +278,51 @@ function isUsefulBrandColor(hex: string) {
   return spread >= 24 && luminance >= 0.12 && luminance <= 0.88;
 }
 
-export function extractWebsiteBrandColors(html: string) {
+function extractWebsiteBrandColorSignals(
+  content: string,
+  source: "html" | "stylesheet",
+): WebsiteBrandColorSignal[] {
   const priorityColors: string[] = [];
-  const metaMatches = html.matchAll(
-    /<meta[^>]+(?:name|property)=["'](?:theme-color|msapplication-TileColor)["'][^>]+content=["']([^"']+)["'][^>]*>/gi,
-  );
-  for (const match of metaMatches) priorityColors.push(match[1]);
-  const reverseMetaMatches = html.matchAll(
-    /<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["'](?:theme-color|msapplication-TileColor)["'][^>]*>/gi,
-  );
-  for (const match of reverseMetaMatches) priorityColors.push(match[1]);
+  if (source === "html") {
+    const metaMatches = content.matchAll(
+      /<meta[^>]+(?:name|property)=["'](?:theme-color|msapplication-TileColor)["'][^>]+content=["']([^"']+)["'][^>]*>/gi,
+    );
+    for (const match of metaMatches) priorityColors.push(match[1]);
+    const reverseMetaMatches = content.matchAll(
+      /<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["'](?:theme-color|msapplication-TileColor)["'][^>]*>/gi,
+    );
+    for (const match of reverseMetaMatches) priorityColors.push(match[1]);
+  }
 
   const counts = new Map<string, number>();
-  for (const match of html.matchAll(/#[0-9a-f]{3}(?:[0-9a-f]{3})?\b/gi)) {
+  for (const match of content.matchAll(/#[0-9a-f]{3}(?:[0-9a-f]{3})?\b/gi)) {
     const color = normalizedHex(match[0]);
     if (!color || !isUsefulBrandColor(color)) continue;
     counts.set(color, (counts.get(color) ?? 0) + 1);
   }
 
-  const colors = [
-    ...priorityColors,
+  const signals = [
+    ...priorityColors.map((color) => ({
+      color,
+      source: "theme_meta" as const,
+    })),
     ...Array.from(counts.entries())
       .sort((left, right) => right[1] - left[1])
-      .map(([color]) => color),
+      .map(([color]) => ({ color, source })),
   ];
-  return Array.from(
-    new Set(
-      colors
-        .map(normalizedHex)
-        .filter((color): color is string => Boolean(color))
-        .filter(isUsefulBrandColor),
-    ),
-  ).slice(0, MAX_COLOR_CANDIDATES);
+  const seen = new Set<string>();
+  return signals.flatMap((signal): WebsiteBrandColorSignal[] => {
+    const color = normalizedHex(signal.color);
+    if (!color || !isUsefulBrandColor(color) || seen.has(color)) return [];
+    seen.add(color);
+    return [{ color, source: signal.source }];
+  }).slice(0, MAX_COLOR_CANDIDATES);
+}
+
+export function extractWebsiteBrandColors(html: string) {
+  return extractWebsiteBrandColorSignals(html, "html").map(
+    (signal) => signal.color,
+  );
 }
 
 export function hasSafePngDimensions(bytes: Uint8Array) {
@@ -682,39 +702,51 @@ async function readStylesheetBrandColors(html: string, website: string) {
           response,
           MAX_STYLESHEET_BYTES,
         );
-        return extractWebsiteBrandColors(css);
+        return extractWebsiteBrandColorSignals(css, "stylesheet");
       } catch {
         return [];
       }
     }),
   );
-  return Array.from(new Set(stylesheets.flat()));
+  const seen = new Set<string>();
+  return stylesheets.flat().filter((signal) => {
+    if (seen.has(signal.color)) return false;
+    seen.add(signal.color);
+    return true;
+  });
 }
 
 export async function readWebsiteBrandSignals(
   rawUrl: string,
 ): Promise<WebsiteBrandSignals> {
   const { html, website } = await fetchWebsiteHtml(rawUrl);
-  const [stylesheetColors, favicon] = await Promise.all([
+  const [stylesheetColorSignals, favicon] = await Promise.all([
     readStylesheetBrandColors(html, website),
     fetchFaviconFromHtml(html, website),
   ]);
   const faviconColors = favicon
     ? await extractImageBrandColors(await favicon.arrayBuffer())
     : [];
+  const colorSignals: WebsiteBrandColorSignal[] = [
+    ...faviconColors.map((color) => ({ color, source: "favicon" as const })),
+    ...stylesheetColorSignals,
+    ...extractWebsiteBrandColorSignals(html, "html"),
+  ];
+  const seenColors = new Set<string>();
+  const distinctColorSignals = colorSignals.filter((signal) => {
+    if (seenColors.has(signal.color)) return false;
+    seenColors.add(signal.color);
+    return true;
+  }).slice(0, MAX_COLOR_CANDIDATES);
+  const primaryColor = distinctColorSignals[0];
   return {
     website,
     title: extractTitle(html),
     siteName: extractWebsiteSiteName(html),
     identityEvidence: extractWebsiteIdentityEvidence(html),
-    primaryColor: faviconColors[0],
-    colorCandidates: Array.from(
-      new Set([
-        ...faviconColors,
-        ...stylesheetColors,
-        ...extractWebsiteBrandColors(html),
-      ]),
-    ).slice(0, MAX_COLOR_CANDIDATES),
+    primaryColor: primaryColor?.color,
+    primaryColorSource: primaryColor?.source,
+    colorCandidates: distinctColorSignals.map((signal) => signal.color),
   };
 }
 

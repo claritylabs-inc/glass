@@ -23,9 +23,11 @@ import {
   readWebsiteFaviconSignals,
   readWebsiteBrandSignals,
 } from "../lib/websiteBrand";
-import { readCarrierIdentity } from "../lib/carrierIdentity";
+import {
+  readCarrierIdentity,
+  type CarrierIdentityAccentColorSource,
+} from "../lib/carrierIdentity";
 
-const DEFAULT_ACCENT = "#1E293B";
 const MAX_CANDIDATE_SITES = 4;
 const RETRY_DELAYS_MS = [30_000, 5 * 60_000];
 
@@ -60,6 +62,7 @@ type CandidateSite = {
   siteName?: string;
   identityEvidence?: string;
   primaryColor?: string;
+  primaryColorSource?: CarrierIdentityAccentColorSource;
   colorCandidates: string[];
 };
 
@@ -151,6 +154,7 @@ async function inspectCarrierCandidate(
       extracted?.text,
     ]),
     primaryColor: directSignals?.primaryColor,
+    primaryColorSource: directSignals?.primaryColorSource,
     colorCandidates: directSignals?.colorCandidates ?? [],
   };
 }
@@ -425,11 +429,16 @@ async function enrichPolicyCarrierIdentity(
     }
     const { publicName, nameRelationship, confidence } = selection;
     const faviconSignals = await readWebsiteFaviconSignals(selected.website);
+    const fallbackFaviconColor = faviconSignals.colorCandidates[0];
     const accentColor =
       selected.primaryColor ??
-      faviconSignals.colorCandidates[0] ??
-      selected.colorCandidates[0] ??
-      DEFAULT_ACCENT;
+      fallbackFaviconColor ??
+      selected.colorCandidates[0];
+    const accentColorSource = selected.primaryColor
+      ? selected.primaryColorSource
+      : fallbackFaviconColor
+        ? "favicon"
+        : undefined;
     const iconStorageId = faviconSignals.favicon
       ? await ctx.storage.store(faviconSignals.favicon)
       : null;
@@ -447,6 +456,7 @@ async function enrichPolicyCarrierIdentity(
         websiteTitle: selected.title,
         iconStorageId: iconStorageId ?? undefined,
         accentColor,
+        accentColorSource,
         confidence,
         sourceUrls: Array.from(
           new Set([

@@ -19,7 +19,7 @@ import {
   formatDisplayDate,
   formatDisplayPolicyPeriod,
 } from "@/lib/date-format";
-import { policyCardBranding } from "@/lib/policy-card-branding";
+import { policyOverviewBranding } from "@/lib/policy-card-branding";
 import {
   readCarrierIdentity,
   sameCarrierIdentityName,
@@ -258,19 +258,11 @@ export function PolicySummary({
     !!realPremium ||
     !!realTaxesAndFees ||
     !!realTotalCost;
-  const { patternStyle, surfaceStyle } = policyCardBranding(
-    issuerName,
-    branding?.accentColor,
-  );
+  const { surfaceStyle } = policyOverviewBranding(branding?.accentColor);
 
   return (
     <OperationalPanel className="mb-6 @container">
       <div className="relative overflow-hidden px-5 py-4" style={surfaceStyle}>
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 opacity-70"
-          style={patternStyle}
-        />
         <div className="relative z-10 flex items-start gap-3">
           <BrandIcon
             src={branding?.iconUrl}
