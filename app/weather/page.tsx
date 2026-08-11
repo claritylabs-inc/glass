@@ -64,10 +64,10 @@ export default function WeatherPage() {
           </div>
         ) : (
           <>
-            <div className="rounded-xl border border-foreground/8 overflow-hidden">
+            <div className="rounded-xl border border-input overflow-hidden">
               <table className={`w-full ${typeStyle("body.default")}`}>
                 <thead>
-                  <tr className="border-b border-foreground/8 bg-foreground/[0.02]">
+                  <tr className="border-b border-input bg-foreground/[0.02]">
                     <th className={`px-4 py-3 text-left text-foreground/40 ${typeStyle("label.table")} `}>
                       Task
                     </th>
@@ -85,7 +85,7 @@ export default function WeatherPage() {
                       key={route.task}
                       className={
                         i < config.routes.length - 1
-                          ? "border-b border-foreground/[0.04]"
+                          ? "border-b border-border-subtle"
                           : ""
                       }
                     >

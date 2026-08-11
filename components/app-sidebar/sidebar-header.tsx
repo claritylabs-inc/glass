@@ -33,7 +33,7 @@ export function SidebarHeader({
     : "rounded-full bg-foreground/8 text-foreground";
 
   return (
-    <div className="flex items-center gap-2 px-3 h-12 border-b border-foreground/6">
+    <div className="flex items-center gap-2 px-3 h-12 border-b border-border">
       {!collapsed && backHref ? (
         <Link
           href={backHref}

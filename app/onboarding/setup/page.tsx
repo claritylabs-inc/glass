@@ -88,7 +88,7 @@ const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
 ] as const;
 
 const inputClass =
-  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
+  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
 
 const labelClass =
   `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;

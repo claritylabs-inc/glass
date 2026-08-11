@@ -142,7 +142,7 @@ function CountrySelect({
             {...props}
             type="button"
             data-slot="phone-country-select"
-            className={`inline-flex h-full shrink-0 items-center gap-2 rounded-l-lg rounded-r-none border-r border-foreground/8 px-3 text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50 ${typeStyle("control.button")}`}
+            className={`inline-flex h-full shrink-0 items-center gap-2 rounded-l-lg rounded-r-none border-r border-input px-3 text-foreground transition-colors hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-50 ${typeStyle("control.button")}`}
             disabled={isDisabled}
             aria-label={`Country: ${selected?.label ?? value} (+${callingCode})`}
           >
@@ -282,7 +282,7 @@ export function PhoneInput({
   return (
     <div
       className={cn(
-        "PhoneInput flex h-9 items-center rounded-lg border border-foreground/8 bg-popover transition-colors focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/8",
+        "PhoneInput flex h-9 items-center rounded-lg border border-input bg-popover transition-colors focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input",
         className
       )}
     >

@@ -210,14 +210,14 @@ export function ClientEmailRoutingSection({
           value={mode}
           onValueChange={(value) => setMode(value as EmailAccessMode)}
           disabled={!canEdit}
-          className="gap-0 overflow-hidden rounded-lg border border-foreground/6"
+          className="gap-0 overflow-hidden rounded-lg border border-border"
           aria-label="Recognized senders"
         >
           {ACCESS_MODES.map((option) => (
             <label
               key={option.id}
               className={cn(
-                "flex cursor-pointer items-start gap-3 border-t border-foreground/6 px-4 py-3 first:border-t-0",
+                "flex cursor-pointer items-start gap-3 border-t border-border px-4 py-3 first:border-t-0",
                 mode === option.id && "bg-foreground/3",
                 !canEdit && "cursor-default",
               )}
@@ -236,7 +236,7 @@ export function ClientEmailRoutingSection({
         </RadioGroup>
       </OperationalPanelBody>
 
-      <OperationalPanelBody className="space-y-4 border-t border-foreground/6 px-5 py-5">
+      <OperationalPanelBody className="space-y-4 border-t border-border px-5 py-5">
         <div>
           <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Approved addresses
@@ -274,7 +274,7 @@ export function ClientEmailRoutingSection({
             {emails.map((email) => (
               <span
                 key={email}
-                className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover py-1 pr-1.5 pl-3 text-foreground ${typeStyle("label.tag")}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border border-border-emphasized bg-popover py-1 pr-1.5 pl-3 text-foreground ${typeStyle("label.tag")}`}
               >
                 {email}
                 {canEdit ? (
@@ -285,7 +285,7 @@ export function ClientEmailRoutingSection({
                         current.filter((value) => value !== email),
                       )
                     }
-                    className="rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10"
+                    className="rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized"
                     aria-label={`Remove ${email}`}
                   >
                     <X className="size-3" />
@@ -302,7 +302,7 @@ export function ClientEmailRoutingSection({
       </OperationalPanelBody>
 
       {mode !== "strict" ? (
-        <OperationalPanelBody className="border-t border-foreground/6 px-5 py-4">
+        <OperationalPanelBody className="border-t border-border px-5 py-4">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div>
               <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
@@ -319,7 +319,7 @@ export function ClientEmailRoutingSection({
         </OperationalPanelBody>
       ) : null}
 
-      <OperationalPanelBody className="space-y-4 border-t border-foreground/6 px-5 py-5">
+      <OperationalPanelBody className="space-y-4 border-t border-border px-5 py-5">
         <div>
           <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Approved domains
@@ -357,7 +357,7 @@ export function ClientEmailRoutingSection({
             {domains.map((domain) => (
               <span
                 key={domain}
-                className={`inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-popover py-1 pr-1.5 pl-3 text-foreground ${typeStyle("label.tag")}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border border-border-emphasized bg-popover py-1 pr-1.5 pl-3 text-foreground ${typeStyle("label.tag")}`}
               >
                 @{domain}
                 {canEdit && mode === "domain" ? (
@@ -368,7 +368,7 @@ export function ClientEmailRoutingSection({
                         current.filter((value) => value !== domain),
                       )
                     }
-                    className="rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10"
+                    className="rounded-full p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized"
                     aria-label={`Remove ${domain}`}
                   >
                     <X className="size-3" />
@@ -388,7 +388,7 @@ export function ClientEmailRoutingSection({
                 key={domain}
                 type="button"
                 onClick={() => addDomain(domain)}
-                className={`rounded-full border border-dashed border-foreground/15 px-2.5 py-0.5 text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 ${typeStyle("label.tag")}`}
+                className={`rounded-full border border-dashed border-border-hover px-2.5 py-0.5 text-muted-foreground transition-colors hover:border-border-focus hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized ${typeStyle("label.tag")}`}
               >
                 + @{domain}
               </button>

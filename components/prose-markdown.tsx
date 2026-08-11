@@ -34,11 +34,11 @@ const BASE_STYLES =
   "[&_h2]:mt-3 [&_h2]:mb-1 " +
   "[&_h3]:mt-2.5 [&_h3]:mb-0.5 " +
   "[&_h4]:mt-2 [&_h4]:mb-0.5 " +
-  "[&_hr]:my-3 [&_hr]:border-foreground/8 " +
+  "[&_hr]:my-3 [&_hr]:border-input " +
   "[&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded " +
   "[&_table]:w-full [&_table]:border-collapse " +
-  "[&_th]:text-left [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-foreground/10 [&_th]:bg-foreground/[0.03] [&_th]:whitespace-nowrap [&_th]:text-muted-foreground/60 " +
-  "[&_td]:px-2.5 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-foreground/6 [&_td]:whitespace-nowrap [&_tr:last-child_td]:border-b-0 " +
+  "[&_th]:text-left [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-border-emphasized [&_th]:bg-foreground/[0.03] [&_th]:whitespace-nowrap [&_th]:text-muted-foreground/60 " +
+  "[&_td]:px-2.5 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-border [&_td]:whitespace-nowrap [&_tr:last-child_td]:border-b-0 " +
   "[&_thead]:align-bottom";
 
 /** Compact variant for quoted/reply text */
@@ -52,7 +52,7 @@ const COMPACT_STYLES =
   "[&_h2]:mt-2 [&_h2]:mb-0.5 " +
   "[&_h3]:mt-1.5 [&_h3]:mb-0.5 " +
   "[&_h4]:mt-1 [&_h4]:mb-0.5 " +
-  "[&_hr]:my-2 [&_hr]:border-foreground/8";
+  "[&_hr]:my-2 [&_hr]:border-input";
 
 export type ProseMarkdownProps = {
   children: string;
@@ -145,7 +145,7 @@ const STREAMING_REMEND_OPTIONS = {
 /** Default table wrapper — horizontal scroll + rounded border */
 const defaultGfmComponents: Components = {
   table: ({ children }) => (
-    <div className="overflow-x-auto my-3 rounded-md border border-foreground/6">
+    <div className="overflow-x-auto my-3 rounded-md border border-border">
       <table className={`w-full border-collapse ${typeStyle("caption.default")}`}>{children}</table>
     </div>
   ),

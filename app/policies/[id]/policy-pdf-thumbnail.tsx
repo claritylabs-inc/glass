@@ -19,7 +19,7 @@ export function PolicyPdfThumbnail({ url }: { url: string }) {
     <button
       type="button"
       onClick={() => openWithUrl(url)}
-      className="group relative block w-40 shrink-0 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/6"
+      className="group relative block w-40 shrink-0 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border"
       aria-label="Open policy PDF"
     >
       <div className="relative z-0">
@@ -38,7 +38,7 @@ export function PolicyPdfThumbnail({ url }: { url: string }) {
           />
         </Document>
       </div>
-      <div className="pointer-events-none absolute inset-0 z-10 rounded-md border border-foreground/8 bg-transparent transition-[background-color,border-color] duration-150 ease-out group-hover:border-foreground/14 group-hover:bg-black/6 group-focus-visible:border-foreground/14 group-focus-visible:bg-black/6" />
+      <div className="pointer-events-none absolute inset-0 z-10 rounded-md border border-input bg-transparent transition-[background-color,border-color] duration-150 ease-out group-hover:border-border-hover group-hover:bg-black/6 group-focus-visible:border-border-hover group-focus-visible:bg-black/6" />
     </button>
   );
 }

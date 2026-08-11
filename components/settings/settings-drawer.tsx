@@ -70,9 +70,9 @@ export function SettingsDrawer({
             animate={{ opacity: 1, x: 0 }}
             exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 8 }}
             transition={{ duration: 0.1, ease: EASE }}
-            className="flex min-h-0 w-full flex-1 flex-col border-l border-foreground/6 bg-background"
+            className="flex min-h-0 w-full flex-1 flex-col border-l border-border bg-background"
           >
-            <div className="min-h-12 flex items-center gap-3 px-4 py-2 border-b border-foreground/6 shrink-0">
+            <div className="min-h-12 flex items-center gap-3 px-4 py-2 border-b border-border shrink-0">
               <div className={`min-w-0 flex-1 truncate text-foreground ${typeStyle("body.medium")}`}>
                 {title}
               </div>
@@ -94,7 +94,7 @@ export function SettingsDrawer({
             {hasFooter && (
               <div
                 ref={footerRef}
-                className="border-t border-foreground/6 px-4 py-3 flex flex-col-reverse items-stretch gap-2 shrink-0 sm:flex-row sm:items-center sm:justify-end [&>button]:w-full [&>button]:min-h-8 [&>button]:py-2 [&>button[data-icon-only=true]]:!w-8 [&>button[data-icon-only=true]]:!px-0 [&>button[data-icon-only=true]]:!py-0 [&>button[data-icon-only=true]]:self-start sm:[&>button]:w-auto sm:[&>button]:min-h-7 sm:[&>button]:py-1 sm:[&>button[data-icon-only=true]]:!w-7 sm:[&>button[data-icon-only=true]]:!min-h-7 sm:[&>button[data-icon-only=true]]:self-auto"
+                className="border-t border-border px-4 py-3 flex flex-col-reverse items-stretch gap-2 shrink-0 sm:flex-row sm:items-center sm:justify-end [&>button]:w-full [&>button]:min-h-8 [&>button]:py-2 [&>button[data-icon-only=true]]:!w-8 [&>button[data-icon-only=true]]:!px-0 [&>button[data-icon-only=true]]:!py-0 [&>button[data-icon-only=true]]:self-start sm:[&>button]:w-auto sm:[&>button]:min-h-7 sm:[&>button]:py-1 sm:[&>button[data-icon-only=true]]:!w-7 sm:[&>button[data-icon-only=true]]:!min-h-7 sm:[&>button[data-icon-only=true]]:self-auto"
               >
                 {footer}
               </div>

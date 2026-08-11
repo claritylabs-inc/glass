@@ -127,12 +127,12 @@ export function NewChatEmptyState({
     return (
       <div className="mx-auto w-full max-w-3xl pt-10 pb-8">
         <p className={`mb-4 text-muted-foreground/60 ${typeStyle("body.default")}`}>Get started</p>
-        <div className="border-t border-foreground/10">
+        <div className="border-t border-border-emphasized">
           {GET_STARTED_ACTIONS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`block w-full border-b border-foreground/10 py-2.5 text-left text-foreground/70 transition-colors hover:text-foreground ${typeStyle("control.button")}`}
+              className={`block w-full border-b border-border-emphasized py-2.5 text-left text-foreground/70 transition-colors hover:text-foreground ${typeStyle("control.button")}`}
             >
               {item.label}
             </Link>
@@ -145,13 +145,13 @@ export function NewChatEmptyState({
   return (
     <div className="mx-auto w-full max-w-3xl pt-10 pb-8">
       <p className={`mb-4 text-muted-foreground/60 ${typeStyle("body.default")}`}>Some ideas...</p>
-      <div className="border-t border-foreground/10">
+      <div className="border-t border-border-emphasized">
         {prompts.map((item) => (
           <button
             key={item.label}
             type="button"
             onClick={() => onSelectPrompt(item.prompt)}
-            className={`w-full border-b border-foreground/10 py-2.5 text-left text-foreground/70 transition-colors hover:text-foreground ${typeStyle("control.button")}`}
+            className={`w-full border-b border-border-emphasized py-2.5 text-left text-foreground/70 transition-colors hover:text-foreground ${typeStyle("control.button")}`}
           >
             {item.label}
           </button>

@@ -9,7 +9,7 @@ import type {
 import { cn } from "@/lib/utils";
 
 const actionSurfaceClass =
-  "rounded-lg border border-foreground/6 bg-card text-left transition-colors hover:bg-foreground/[0.02]";
+  "rounded-lg border border-border bg-card text-left transition-colors hover:bg-foreground/[0.02]";
 
 function ActionSurface({
   className,

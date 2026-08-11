@@ -412,7 +412,7 @@ export function PdfViewer({
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Toolbar — single unified bar */}
-      <div className="flex items-center gap-0.5 px-2 h-12 border-b border-foreground/6 shrink-0">
+      <div className="flex items-center gap-0.5 px-2 h-12 border-b border-border shrink-0">
         {onClose && (
           <PillButton
             size="compact"
@@ -451,7 +451,7 @@ export function PdfViewer({
             type="text"
             value={pageInput}
             onChange={(e) => setPageInput(e.target.value)}
-            className={`w-9 text-center border border-foreground/8 rounded px-1 py-0.5 bg-popover focus:outline-none focus:border-foreground/20 ${typeStyle("control.input")}`}
+            className={`w-9 text-center border border-input rounded px-1 py-0.5 bg-popover focus:outline-none focus:border-border-focus ${typeStyle("control.input")}`}
           />
           <span className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}>
             / {numPages || "—"}

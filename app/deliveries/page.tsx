@@ -204,7 +204,7 @@ function DeliveryDrawer({
       }
     >
       <div className="space-y-5">
-        <section className="space-y-3 rounded-lg border border-foreground/6 px-4 py-3">
+        <section className="space-y-3 rounded-lg border border-border px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
@@ -218,7 +218,7 @@ function DeliveryDrawer({
           </div>
           <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{statusDescription(job)}</p>
         </section>
-        <section className="border-t border-foreground/6 pt-5">
+        <section className="border-t border-border pt-5">
           <div className={`space-y-2 ${typeStyle("body.default")}`}>
           <Detail label="Decision" value={actionLabel(job.action)} />
           <Detail label="Rule" value={job.ruleName ?? "Default action"} />
@@ -228,12 +228,12 @@ function DeliveryDrawer({
           {job.lastError ? <Detail label="Error" value={job.lastError} /> : null}
           </div>
         </section>
-        <section className="space-y-2 border-t border-foreground/6 pt-5">
+        <section className="space-y-2 border-t border-border pt-5">
           <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Attempts</p>
           {(job.attempts ?? []).length === 0 ? (
             <p className={`text-muted-foreground ${typeStyle("body.default")}`}>No attempts yet.</p>
           ) : (
-            <div className="divide-y divide-foreground/6 rounded-lg border border-foreground/6">
+            <div className="divide-y divide-border rounded-lg border border-border">
               {(job.attempts ?? []).map((attempt) => (
                 <div key={attempt._id} className={`flex items-center justify-between gap-3 px-3 py-2 ${typeStyle("body.default")}`}>
                   <span>{channelLabel([attempt.channel])}</span>
@@ -283,7 +283,7 @@ function PolicyPreviewCard({ job }: { job: DeliveryJob }) {
   const canPreview = typeof fileUrl === "string" && fileUrl.length > 0;
 
   return (
-    <section className="space-y-2 border-t border-foreground/6 pt-5">
+    <section className="space-y-2 border-t border-border pt-5">
       <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Policy document</p>
       <ActionSurfaceButton
         type="button"
@@ -293,7 +293,7 @@ function PolicyPreviewCard({ job }: { job: DeliveryJob }) {
         disabled={!canPreview}
         className="flex w-full items-center gap-3 px-3 py-3 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <div className="flex h-12 w-9 shrink-0 items-center justify-center rounded-md border border-foreground/8 bg-white text-muted-foreground">
+        <div className="flex h-12 w-9 shrink-0 items-center justify-center rounded-md border border-input bg-white text-muted-foreground">
           <FileText className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">

@@ -142,7 +142,7 @@ export function BrokerAgentTab() {
 
       <OperationalPanel>
         <OperationalPanelHeader title="Email behavior" />
-        <OperationalPanelBody className="divide-y divide-foreground/6 px-5 py-2">
+        <OperationalPanelBody className="divide-y divide-border px-5 py-2">
           <AgentSwitchRow
             title="Email notifications for chat responses"
             description="Send the requesting team member an email copy when the agent replies in chat."
@@ -184,8 +184,8 @@ export function BrokerAgentTab() {
                     onClick={() => setEmailSendDelay(value)}
                     className={`rounded-lg border px-3 py-1.5 transition-colors ${typeStyle("control.button")} ${
                       selected
-                        ? "border-foreground/20 bg-foreground/3 text-foreground"
-                        : "border-foreground/8 bg-popover text-muted-foreground hover:border-foreground/15"
+                        ? "border-border-focus bg-foreground/3 text-foreground"
+                        : "border-input bg-popover text-muted-foreground hover:border-border-hover"
                     }`}
                   >
                     {value === 0 ? "Off" : `${value}s`}

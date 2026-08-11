@@ -256,8 +256,8 @@ export function AddMailboxDrawer({
                 onClick={() => selectPreset(preset)}
                 className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${
                   selected
-                    ? "border-foreground/18 bg-foreground/5"
-                    : "border-foreground/8 hover:border-foreground/14 hover:bg-foreground/3"
+                    ? "border-border-focus bg-foreground/5"
+                    : "border-input hover:border-border-hover hover:bg-foreground/3"
                 }`}
               >
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-foreground">
@@ -318,7 +318,7 @@ export function AddMailboxDrawer({
                   inputMode="numeric"
                 />
               </div>
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/8 px-3 py-3">
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-input px-3 py-3">
                 <div>
                   <p className={`text-foreground ${typeStyle("body.medium")}`}>Use TLS</p>
                   <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
@@ -663,7 +663,7 @@ export function MailboxSettingsDrawer({
 
           <FormSection title="Proactive monitoring">
             {!account.automationConfigured ? (
-              <p className={`rounded-lg border border-foreground/6 bg-foreground/3 px-3 py-2 text-muted-foreground ${typeStyle("body.default")}`}>
+              <p className={`rounded-lg border border-border bg-foreground/3 px-3 py-2 text-muted-foreground ${typeStyle("body.default")}`}>
                 {account.scope === "org"
                   ? "This legacy mailbox is limited to attention alerts."
                   : "Proactive monitoring is off for this legacy mailbox."}
