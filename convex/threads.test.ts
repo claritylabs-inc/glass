@@ -21,6 +21,7 @@ const messagesFn = api.threads.messages as any;
 const listForClientFn = api.threads.listForClient as any;
 const getForClientFn = api.threads.getForClient as any;
 const messagesForClientFn = api.threads.messagesForClient as any;
+const sendMessageFn = api.threads.sendMessage as any;
 const updateTitleFn = api.threads.updateTitle as any;
 const streamContentFn = api.threads.streamContent as any;
 const createProactiveInternalFn = createProactiveInternal as any;
@@ -118,6 +119,48 @@ describe("threads.getAttachmentUrl", () => {
         fileId: attachedFileId,
       }),
     ).rejects.toThrow("threadId");
+  });
+});
+
+describe("Slack thread mutation boundary", () => {
+  test("rejects web messages so Slack mirrors cannot fork from their source", async () => {
+    const t = convexTest(schema, modules);
+    const { userId, threadId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Acme",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", {
+        email: "alice@example.com",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId,
+        userId,
+        role: "admin",
+      });
+      const threadId = await ctx.db.insert("threads", {
+        orgId,
+        title: "DM · Alice",
+        createdBy: userId,
+        lastMessageAt: dayjs().valueOf(),
+        originChannel: "slack",
+        visibility: "user_private",
+        slackChannelId: "D-ALICE",
+        slackThreadTs: "D-ALICE",
+        slackConversationKind: "direct_message",
+      });
+      return { userId, threadId };
+    });
+
+    await expect(
+      t.withIdentity(sessionFor(userId)).mutation(sendMessageFn, {
+        threadId,
+        content: "This must be sent from Slack.",
+      }),
+    ).rejects.toThrow("Continue this conversation in Slack");
+    await expect(
+      t.run((ctx) => ctx.db.query("threadMessages").collect()),
+    ).resolves.toEqual([]);
   });
 });
 

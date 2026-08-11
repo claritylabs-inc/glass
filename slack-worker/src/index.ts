@@ -1,5 +1,6 @@
 import http from "node:http";
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { SendIdempotency, type SendResult } from "./idempotency.js";
 import { toSlackMrkdwn } from "./mrkdwn.js";
@@ -60,7 +61,11 @@ type ActorResolution = {
   isBot: boolean;
   botUserId?: string;
 };
-type SlackResponse = { ok?: boolean; error?: string };
+type SlackResponse = {
+  ok?: boolean;
+  error?: string;
+  not_in_channel?: boolean;
+};
 type SlackFile = {
   id?: string;
   shares?: Record<string, Record<string, Array<{ ts?: string }>>>;
@@ -87,6 +92,7 @@ const actorCache = new Map<
   string,
   { actor: ActorResolution; expiresAt: number }
 >();
+const actorInFlight = new Map<string, Promise<ActorResolution>>();
 const mockFailedAttachments = new Set<string>();
 const mockJoinedChannelIds = new Set<string>();
 const mockLeftChannelIds = new Set<string>();
@@ -184,6 +190,23 @@ async function slackInstallation(teamId: string): Promise<SlackInstallation> {
   }
 }
 
+async function readSlackApiResponse<T extends SlackResponse>(
+  method: string,
+  response: Response,
+): Promise<T> {
+  const payload = (await response.json()) as T;
+  if (method === "conversations.leave" && payload.not_in_channel === true) {
+    return payload;
+  }
+  if (!response.ok || !payload.ok) {
+    const retryAfter = response.headers.get("retry-after");
+    throw new Error(
+      `${payload.error ?? `${method} failed (${response.status})`}${retryAfter ? `; retry after ${retryAfter}s` : ""}`,
+    );
+  }
+  return payload;
+}
+
 async function slackApi<T extends SlackResponse>(
   method: string,
   token: string,
@@ -198,14 +221,37 @@ async function slackApi<T extends SlackResponse>(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  const payload = (await response.json()) as T;
-  if (!response.ok || !payload.ok) {
-    const retryAfter = response.headers.get("retry-after");
-    throw new Error(
-      `${payload.error ?? `${method} failed (${response.status})`}${retryAfter ? `; retry after ${retryAfter}s` : ""}`,
-    );
-  }
-  return payload;
+  return await readSlackApiResponse<T>(method, response);
+}
+
+async function slackFormApi<T extends SlackResponse>(
+  method: string,
+  token: string,
+  body: Record<string, string | number | boolean>,
+): Promise<T> {
+  const response = await fetch(`${slackApiBaseUrl}/${method}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+    },
+    body: new URLSearchParams(
+      Object.entries(body).map(([key, value]) => [key, String(value)]),
+    ),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  return await readSlackApiResponse<T>(method, response);
+}
+
+function slackClientMessageId(value: string) {
+  const hex = createHash("sha256").update(value).digest("hex").slice(0, 32);
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `5${hex.slice(13, 16)}`,
+    `${((Number.parseInt(hex[16] ?? "0", 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
+    hex.slice(20),
+  ].join("-");
 }
 
 function slackFileMessageTs(file: SlackFile | undefined, channelId: string) {
@@ -233,7 +279,7 @@ async function uploadSlackFile(args: {
     throw new Error(`Attachment download failed (${source.status})`);
   }
   const bytes = Buffer.from(await source.arrayBuffer());
-  const upload = await slackApi<
+  const upload = await slackFormApi<
     SlackResponse & { upload_url?: string; file_id?: string }
   >("files.getUploadURLExternal", args.token, {
     filename: args.filename,
@@ -269,7 +315,7 @@ async function uploadSlackFile(args: {
   );
   const completedTs = slackFileMessageTs(completedFile, args.channelId);
   if (completedTs) return completedTs;
-  const info = await slackApi<SlackResponse & { file?: SlackFile }>(
+  const info = await slackFormApi<SlackResponse & { file?: SlackFile }>(
     "files.info",
     args.token,
     { file: upload.file_id },
@@ -311,6 +357,7 @@ async function sendSlack(input: SendRequest): Promise<SendResult> {
         channel: input.channelId,
         text: toSlackMrkdwn(input.text),
         mrkdwn: true,
+        client_msg_id: slackClientMessageId(input.clientMessageId),
         ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
       },
     );
@@ -343,7 +390,7 @@ async function fetchSlackAttachment(input: AttachmentRequest) {
     throw new Error("Mock mode has no remote Slack attachments");
   }
   const token = (await slackInstallation(input.teamId)).botToken;
-  const info = await slackApi<
+  const info = await slackFormApi<
     SlackResponse & {
       file?: { url_private_download?: string; url_private?: string };
     }
@@ -380,47 +427,57 @@ async function resolveSlackActor(input: ActorRequest) {
   const cacheKey = `${input.teamId}:${input.userId}`;
   const cached = actorCache.get(cacheKey);
   if (cached && cached.expiresAt > dayjs().valueOf()) return cached.actor;
-  const installation = await slackInstallation(input.teamId);
-  const payload = await slackApi<
-    SlackResponse & {
-      user?: {
-        id?: string;
-        team_id?: string;
-        name?: string;
-        real_name?: string;
-        is_bot?: boolean;
-        is_app_user?: boolean;
-        profile?: {
-          display_name?: string;
+  const pending = actorInFlight.get(cacheKey);
+  if (pending) return await pending;
+  const request = (async (): Promise<ActorResolution> => {
+    const installation = await slackInstallation(input.teamId);
+    const payload = await slackFormApi<
+      SlackResponse & {
+        user?: {
+          id?: string;
+          team_id?: string;
+          name?: string;
           real_name?: string;
-          email?: string;
-          team?: string;
+          is_bot?: boolean;
+          is_app_user?: boolean;
+          profile?: {
+            display_name?: string;
+            real_name?: string;
+            email?: string;
+            team?: string;
+          };
         };
-      };
+      }
+    >("users.info", installation.botToken, { user: input.userId });
+    const actor = payload.user;
+    const teamId = actor?.team_id ?? actor?.profile?.team;
+    if (!actor?.id || !teamId) {
+      throw new Error("Slack actor metadata is unavailable");
     }
-  >("users.info", installation.botToken, { user: input.userId });
-  const actor = payload.user;
-  const teamId = actor?.team_id ?? actor?.profile?.team;
-  if (!actor?.id || !teamId) {
-    throw new Error("Slack actor metadata is unavailable");
+    const resolved = {
+      teamId,
+      userId: actor.id,
+      displayName:
+        actor.profile?.display_name ||
+        actor.profile?.real_name ||
+        actor.real_name ||
+        actor.name,
+      email: actor.profile?.email,
+      isBot: actor.is_bot === true || actor.is_app_user === true,
+      botUserId: installation.botUserId,
+    };
+    actorCache.set(cacheKey, {
+      actor: resolved,
+      expiresAt: dayjs().add(5, "minute").valueOf(),
+    });
+    return resolved;
+  })();
+  actorInFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    actorInFlight.delete(cacheKey);
   }
-  const resolved = {
-    teamId,
-    userId: actor.id,
-    displayName:
-      actor.profile?.display_name ||
-      actor.profile?.real_name ||
-      actor.real_name ||
-      actor.name,
-    email: actor.profile?.email,
-    isBot: actor.is_bot === true || actor.is_app_user === true,
-    botUserId: installation.botUserId,
-  };
-  actorCache.set(cacheKey, {
-    actor: resolved,
-    expiresAt: dayjs().add(5, "minute").valueOf(),
-  });
-  return resolved;
 }
 
 function channelName(clientSlug: string) {
@@ -437,7 +494,7 @@ async function listConversationMembers(token: string, channelId: string) {
   const memberIds = new Set<string>();
   let cursor: string | undefined;
   do {
-    const result = await slackApi<
+    const result = await slackFormApi<
       SlackResponse & {
         members?: string[];
         response_metadata?: { next_cursor?: string };
@@ -638,7 +695,7 @@ async function listSlackChannels(input: ListChannelsRequest) {
   const channels: SlackChannel[] = [];
   let cursor: string | undefined;
   do {
-    const result = await slackApi<
+    const result = await slackFormApi<
       SlackResponse & {
         channels?: SlackChannelPayload[];
         response_metadata?: { next_cursor?: string };

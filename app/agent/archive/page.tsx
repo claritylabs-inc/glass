@@ -85,7 +85,7 @@ export default function ArchivePage() {
                   variant="icon"
                   onClick={() => handleUnarchive(thread._id)}
                   label="Unarchive"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                 >
                   <ArchiveRestore className="w-4 h-4" />
                 </PillButton>

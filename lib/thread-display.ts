@@ -9,6 +9,7 @@ export type ThreadDisplayLike = {
   originChannel?: "chat" | "email" | "imessage" | "slack";
   threadPhone?: string;
   slackConversationKind?: "channel" | "direct_message";
+  visibility?: "broker_visible" | "client_internal" | "user_private";
 };
 
 export type ThreadConversationItem = {
@@ -16,6 +17,8 @@ export type ThreadConversationItem = {
   id: string;
   label: string;
   time: number;
+  slackConversationKind?: "channel" | "direct_message";
+  isPrivate: boolean;
 };
 
 export const SIDEBAR_AGENT_THREAD_LIMIT = 8;
@@ -64,6 +67,8 @@ export function toThreadConversationItem(
     id: thread._id,
     label: getThreadDisplayLabel(thread),
     time: thread.lastMessageAt ?? thread._creationTime,
+    slackConversationKind: thread.slackConversationKind,
+    isPrivate: thread.visibility === "user_private",
   };
 }
 

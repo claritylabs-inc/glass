@@ -53,7 +53,7 @@ scopes:
 
 - `app_mentions:read`
 - `chat:write`
-- `channels:read`, `channels:join`, `channels:history`
+- `channels:read`, `channels:join`, `channels:write`, `channels:history`
 - `groups:read`, `groups:history`, `groups:write`
 - `im:history`
 - `files:read`, `files:write`
@@ -64,7 +64,7 @@ Customer OAuth requests the narrower set in
 `convex/lib/slackOAuthPolicy.ts`; the Clarity-host installation also needs
 `groups:write` and `conversations.connect:write` for private Connect channel
 creation and invitations. Enable app distribution before sending customer
-install links. Adding `channels:join` requires applying the updated manifest and
+install links. Adding `channels:join` and `channels:write` requires applying the updated manifest and
 having existing installations, including the Clarity host installation,
 authorize the expanded scope before the web app can add Glass to or remove Glass
 from public channels for customers.
@@ -188,7 +188,13 @@ Support-channel messages are canonical from connection onward. A mention starts
 or resumes AI, unmentioned customer replies continue an active thread, an
 operator reply pauses AI, and `@Glass resolve` closes the thread. Outside the
 support channel, only mentions and active-thread replies are retained. A human
-request posts only a content-free link notice into the support channel.
+request posts only a content-free link notice into the support channel. Private
+non-support channels fail closed in the web mirror: the thread is visible only
+to the first mapped Glass member who starts it, or remains Slack-only when no
+current client member can be mapped. A new inbound Slack message automatically
+restores an archived mirror so current activity cannot remain hidden.
+Slack message deletions scrub the mirrored message content, stored attachments,
+edit revisions, and retained inbound event payloads without running the agent.
 
 The App Home Messages tab provides one continuous direct conversation between
 Glass and each customer workspace member. DMs do not require an `@Glass`
@@ -199,6 +205,13 @@ with membership in the connected client org, Convex records the web mirror as
 `visibility: "user_private"` with that user as `createdBy`; otherwise the DM
 continues in Slack but remains absent from the shared web tenant. Multiparty DMs
 remain unsupported.
+
+The web app keeps the eight most recent Slack conversations pinned above
+ordinary web/email threads and provides an All threads page for every older
+active conversation. Slack-origin threads are read-only in Glass, link back to
+Slack, and show a private affordance for `user_private` mirrors. Outbound agent
+messages expose retrying or terminal Slack delivery state instead of presenting
+an undelivered answer as successful.
 
 ## Policy-delivery migration
 

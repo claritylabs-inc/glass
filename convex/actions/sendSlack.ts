@@ -27,6 +27,7 @@ type SlackSendArgs = {
   connectionId: Id<"slackWorkspaceConnections">;
   channelId: string;
   threadTs?: string;
+  keepAttachmentsTopLevel?: boolean;
   content: string;
   attachments?: SlackAttachment[];
 };
@@ -39,6 +40,7 @@ const sendArgs = {
   connectionId: v.id("slackWorkspaceConnections"),
   channelId: v.string(),
   threadTs: v.optional(v.string()),
+  keepAttachmentsTopLevel: v.optional(v.boolean()),
   content: v.string(),
   attachments: v.optional(v.array(attachmentValidator)),
 };
@@ -175,7 +177,9 @@ export const send = internalAction({
         attachments: undefined,
       });
       parts.push(textPart);
-      attachmentThreadTs ??= textPart?.providerMessageId;
+      if (!args.keepAttachmentsTopLevel) {
+        attachmentThreadTs ??= textPart?.providerMessageId;
+      }
     }
     for (const attachment of attachments) {
       parts.push(
@@ -213,6 +217,7 @@ export const retry = internalAction({
       connectionId: row.connectionId,
       channelId: row.channelId,
       threadTs: row.threadTs,
+      keepAttachmentsTopLevel: row.keepAttachmentsTopLevel,
       content: row.content,
       attachments: row.attachments,
     });

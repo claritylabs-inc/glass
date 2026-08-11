@@ -152,8 +152,9 @@ async function ingest(
     senderUserId?: string;
     senderDisplayName?: string;
     senderEmail?: string;
-    eventType?: "message" | "edit";
+    eventType?: "message" | "edit" | "delete";
     isDirectMessage?: boolean;
+    isPrivateChannel?: boolean;
     receivedAt?: number;
   },
 ) {
@@ -171,6 +172,7 @@ async function ingest(
     content: args.content,
     eventType: args.eventType ?? "message",
     isDirectMessage: args.isDirectMessage,
+    isPrivateChannel: args.isPrivateChannel,
     receivedAt: args.receivedAt ?? BASE_TIME,
   }) as { eventId?: Id<"slackInboundEvents">; duplicate: boolean; status: string };
   if (!result.eventId) return { claim: result, prepared: null };
@@ -414,6 +416,12 @@ describe("Slack channel state and authorization", () => {
     expect(first.prepared).toMatchObject({ orgId: clientOrgId });
     expect(first.prepared).not.toHaveProperty("threadTs");
 
+    await t.run(async (ctx) => {
+      const thread = await ctx.db.query("threads").first();
+      if (!thread) throw new Error("DM thread fixture is missing");
+      await ctx.db.patch(thread._id, { archivedAt: BASE_TIME });
+    });
+
     const second = await ingest(t, {
       eventKey: "dm-2",
       channelId: "D-COVE-ADMIN",
@@ -441,6 +449,7 @@ describe("Slack channel state and authorization", () => {
       slackConversationKind: "direct_message",
       slackState: "active",
     });
+    expect(state.threads[0].archivedAt).toBeUndefined();
     expect(state.actors[0]).toMatchObject({ glassUserId });
     expect(state.messages.filter((message) => message.role === "user")).toHaveLength(2);
     expect(
@@ -448,6 +457,56 @@ describe("Slack channel state and authorization", () => {
         .filter((message) => message.role === "user")
         .every((message) => message.userId === glassUserId),
     ).toBe(true);
+  });
+
+  test("fails closed when mirroring a private non-support channel", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId } = await seedSlack(t);
+    const glassUserId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        name: "Private Channel Member",
+        email: "private@cove.test",
+        accountKind: "customer",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId: clientOrgId,
+        userId,
+        role: "member",
+      });
+      await ctx.db.insert("slackChannelMemberships", {
+        connectionId,
+        clientOrgId,
+        channelId: "G-PRIVATE",
+        channelName: "private-claims",
+        isPrivate: true,
+        isShared: false,
+        status: "active",
+        lastSyncedAt: BASE_TIME,
+        createdAt: BASE_TIME,
+        updatedAt: BASE_TIME,
+      });
+      return userId;
+    });
+
+    const result = await ingest(t, {
+      eventKey: "private-channel-1",
+      channelId: "G-PRIVATE",
+      threadTs: "1800000001.500",
+      messageTs: "1800000001.500",
+      senderDisplayName: "Private Channel Member",
+      senderEmail: "private@cove.test",
+      content: "<@U-GLASS> review this claim",
+      isPrivateChannel: true,
+    });
+    expect(result.prepared).not.toBeNull();
+
+    const thread = await t.run((ctx) => ctx.db.query("threads").first());
+    expect(thread).toMatchObject({
+      title: "#private-claims · Private Channel Member",
+      createdBy: glassUserId,
+      visibility: "user_private",
+      slackConversationKind: "channel",
+    });
   });
 
   test("ignores unrelated channel traffic until a mention opens an active thread", async () => {
@@ -504,7 +563,7 @@ describe("Slack channel state and authorization", () => {
           : [],
       };
     });
-    expect(state.thread?.title).toBe("Slack #C-POLICIES — U-CUSTOMER");
+    expect(state.thread?.title).toBe("#C-POLICIES · U-CUSTOMER");
     expect(state.messages.filter((message) => message.role === "user")).toHaveLength(2);
   });
 
@@ -728,6 +787,79 @@ describe("Slack channel state and authorization", () => {
       { previousContent: "<@U-GLASS> first", revisedContent: "<@U-GLASS> corrected" },
     ]);
     expect(first.claim.status).toBe("queued");
+  });
+
+  test("scrubs deleted Slack messages and their retained revisions", async () => {
+    const t = convexTest(schema, modules);
+    await seedSlack(t);
+    const messageTs = "1800000000.333";
+    const original = await ingest(t, {
+      eventKey: "delete-original",
+      messageTs,
+      content: "<@U-GLASS> sensitive details",
+    });
+    const attachmentId = await t.run(async (ctx) => {
+      const fileId = await ctx.storage.store(
+        new Blob(["sensitive attachment"], { type: "text/plain" }),
+      );
+      const message = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_slackTeamId_and_slackMessageTs", (q) =>
+          q.eq("slackTeamId", "T-CUSTOMER").eq("slackMessageTs", messageTs),
+        )
+        .first();
+      if (!message) throw new Error("Slack message fixture is missing");
+      await ctx.db.patch(message._id, {
+        attachments: [
+          {
+            fileId,
+            filename: "sensitive.txt",
+            contentType: "text/plain",
+            size: 20,
+          },
+        ],
+      });
+      return fileId;
+    });
+    await ingest(t, {
+      eventKey: "delete-edit",
+      messageTs,
+      content: "<@U-GLASS> corrected sensitive details",
+      eventType: "edit",
+    });
+    const deleted = await ingest(t, {
+      eventKey: "delete-event",
+      messageTs,
+      content: "",
+      eventType: "delete",
+      receivedAt: BASE_TIME + 1_000,
+    });
+    expect(original.prepared).not.toBeNull();
+    expect(deleted.prepared).toBeNull();
+
+    const state = await t.run(async (ctx) => ({
+      messages: await ctx.db.query("threadMessages").collect(),
+      events: await ctx.db.query("slackInboundEvents").collect(),
+      revisions: await ctx.db.query("slackMessageRevisions").collect(),
+      attachmentUrl: await ctx.storage.getUrl(attachmentId),
+    }));
+    expect(
+      state.messages.find((message) => message.slackMessageTs === messageTs),
+    ).toMatchObject({
+      content: "Message deleted in Slack",
+      slackDeletedAt: BASE_TIME + 1_000,
+    });
+    expect(
+      state.messages.find((message) => message.slackMessageTs === messageTs)
+        ?.attachments,
+    ).toBeUndefined();
+    expect(state.attachmentUrl).toBeNull();
+    expect(
+      state.events
+        .filter((event) => event.messageTs === messageTs)
+        .every((event) => event.content === ""),
+    ).toBe(true);
+    expect(state.revisions).toHaveLength(0);
   });
 
   test("ignores bot echoes and retries failed inbound processing three times", async () => {
@@ -1009,6 +1141,92 @@ describe("Slack setup and outbound durability", () => {
     });
   });
 
+  test("surfaces terminal Slack delivery failure on the mirrored agent message", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId, serviceUserId } = await seedSlack(t);
+    const { threadId, messageId } = await t.run(async (ctx) => {
+      const threadId = await ctx.db.insert("threads", {
+        orgId: clientOrgId,
+        title: "#insurance-support · Customer",
+        createdBy: serviceUserId,
+        lastMessageAt: BASE_TIME,
+        originChannel: "slack",
+        slackConnectionId: connectionId,
+        slackChannelId: "C-PRIMARY",
+        slackThreadTs: "1800000000.800",
+        slackConversationKind: "channel",
+        slackState: "active",
+      });
+      const messageId = await ctx.db.insert("threadMessages", {
+        threadId,
+        orgId: clientOrgId,
+        channel: "slack",
+        role: "agent",
+        content: "Here is the answer.",
+      });
+      return { threadId, messageId };
+    });
+    const args = {
+      idempotencyKey: "agent:delivery-state",
+      orgId: clientOrgId,
+      connectionId,
+      threadId,
+      threadMessageId: messageId,
+      channelId: "C-PRIMARY",
+      threadTs: "1800000000.800",
+      content: "Here is the answer.",
+    };
+
+    let claim = await t.mutation(claimOutboundFn, args);
+    await expect(
+      t.run((ctx) => ctx.db.get(messageId)),
+    ).resolves.toMatchObject({ slackDeliveryStatus: "sending" });
+    await t.mutation(markFailedFn, {
+      id: claim.row._id,
+      error: "timeout",
+      retry: true,
+    });
+    claim = await t.mutation(claimOutboundFn, args);
+    await t.mutation(markFailedFn, {
+      id: claim.row._id,
+      error: "timeout",
+      retry: true,
+    });
+    claim = await t.mutation(claimOutboundFn, args);
+    await t.mutation(markFailedFn, {
+      id: claim.row._id,
+      error: "channel_not_found",
+      retry: true,
+    });
+
+    await expect(
+      t.run((ctx) => ctx.db.get(messageId)),
+    ).resolves.toMatchObject({
+      slackDeliveryStatus: "failed",
+      slackDeliveryError: "channel_not_found",
+    });
+  });
+
+  test("honors Slack Retry-After when scheduling an outbound retry", async () => {
+    vi.setSystemTime(BASE_TIME);
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId } = await seedSlack(t);
+    const claim = await t.mutation(claimOutboundFn, {
+      idempotencyKey: "rate-limited",
+      orgId: clientOrgId,
+      connectionId,
+      channelId: "C-PRIMARY",
+      content: "Retry later",
+    });
+    await expect(
+      t.mutation(markFailedFn, {
+        id: claim.row._id,
+        error: "ratelimited; retry after 60s",
+        retry: true,
+      }),
+    ).resolves.toBe(BASE_TIME + 60_000);
+  });
+
   test("rejects outbound sends whose org, connection, or thread disagree", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, connectionId, serviceUserId } = await seedSlack(t);
@@ -1046,6 +1264,40 @@ describe("Slack setup and outbound durability", () => {
       orgId: clientOrgId,
       threadId: otherThreadId,
     })).rejects.toThrow("Slack thread does not belong to the connection");
+
+    const validThreadId = await t.run((ctx) =>
+      ctx.db.insert("threads", {
+        orgId: clientOrgId,
+        title: "#insurance-support · Customer",
+        createdBy: serviceUserId,
+        lastMessageAt: BASE_TIME,
+        originChannel: "slack",
+        slackConnectionId: connectionId,
+        slackChannelId: "C-PRIMARY",
+        slackThreadTs: "1800000000.555",
+        slackConversationKind: "channel",
+        slackState: "active",
+      }),
+    );
+    await expect(
+      t.mutation(claimOutboundFn, {
+        ...base,
+        idempotencyKey: "wrong-channel",
+        orgId: clientOrgId,
+        threadId: validThreadId,
+        channelId: "C-OTHER",
+        threadTs: "1800000000.555",
+      }),
+    ).rejects.toThrow("does not match the thread channel");
+    await expect(
+      t.mutation(claimOutboundFn, {
+        ...base,
+        idempotencyKey: "wrong-thread",
+        orgId: clientOrgId,
+        threadId: validThreadId,
+        threadTs: "1800000000.999",
+      }),
+    ).rejects.toThrow("does not match the thread timestamp");
   });
 
   test("records a file-bearing policy delivery as one canonical Slack thread", async () => {
