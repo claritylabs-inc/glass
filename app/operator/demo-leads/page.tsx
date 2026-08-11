@@ -174,7 +174,6 @@ export default function OperatorDemoLeadsPage() {
 
   return (
     <AppShell
-      breadcrumbDetail="Demo leads"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
