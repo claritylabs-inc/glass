@@ -154,21 +154,29 @@ function OperationalLabelValueRow({
   label,
   value,
   align = "left",
+  layout = "responsive",
 }: {
   label: ReactNode;
   value?: ReactNode;
   align?: "left" | "right";
+  layout?: "responsive" | "stacked";
 }) {
   if (value === undefined || value === null || value === "") return null;
   return (
-    <div className="grid grid-cols-1 gap-1 border-t border-foreground/6 px-4 py-3 first:border-t-0 sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3">
+    <div
+      className={cn(
+        "grid grid-cols-1 gap-1 border-t border-foreground/6 px-4 py-3 first:border-t-0",
+        layout === "responsive" &&
+          "sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3",
+      )}
+    >
       <dt className={`min-w-0 text-muted-foreground ${typeStyle("label.metadata")}`}>
         {label}
       </dt>
       <dd
         className={cn(
           `min-w-0 break-words text-foreground ${typeStyle("body.default")}`,
-          align === "right" && "sm:text-right",
+          layout === "responsive" && align === "right" && "sm:text-right",
         )}
       >
         {value}
