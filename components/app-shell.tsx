@@ -16,6 +16,7 @@ import { OperatorImpersonationBanner } from "@/components/operator-impersonation
 
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
+import { useGlassSync } from "@/lib/sync/glass-sync";
 import {
   EntityPreviewProvider,
   useEntityPreview,
@@ -95,6 +96,7 @@ function ShellContent({
   });
   const { isPdfOpen, fileUrl } = usePdf();
   const { preview: entityPreview } = useEntityPreview();
+  const { scope } = useGlassSync();
   const hasPdfPanel = isPdfOpen && !!fileUrl;
   const hasEntityPanel = !!entityPreview;
   const hasRightPanel = hasVisibleRightPanel(rightPanel);
@@ -186,6 +188,7 @@ function ShellContent({
           entityPanel={hasEntityPanel ? <EntityPreviewPanel /> : undefined}
           rightPanel={hasRightPanel ? rightPanel : undefined}
           pdfPanel={hasPdfPanel ? <PdfPanel /> : undefined}
+          storageUserId={scope.userId}
         />
       </div>
       <OperatorImpersonationBanner />
