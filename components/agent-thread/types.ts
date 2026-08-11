@@ -31,6 +31,9 @@ export type ThreadMessage = {
   slackUserId?: string;
   slackMessageTs?: string;
   slackEditedAt?: number;
+  slackDeletedAt?: number;
+  slackDeliveryStatus?: "sending" | "sent" | "failed";
+  slackDeliveryError?: string;
   fromEmail?: string;
   fromName?: string;
   toAddresses?: string[];

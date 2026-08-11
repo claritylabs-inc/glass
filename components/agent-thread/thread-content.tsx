@@ -21,7 +21,8 @@ import {
   ArchiveRestore,
   Check,
   FileText,
-  Hash,
+  ExternalLink,
+  LockKeyhole,
   Mail as MailIcon,
   MessageCircle,
   Copy,
@@ -32,6 +33,7 @@ import {
   Paperclip,
   BadgeCheck,
 } from "lucide-react";
+import { SiSlack } from "react-icons/si";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -1136,6 +1138,21 @@ function markdownStylesForChannel(channel?: ThreadMessage["channel"]) {
   return channel === "imessage" ? IMESSAGE_MARKDOWN_STYLES : MARKDOWN_STYLES;
 }
 
+function slackConversationUrl(thread: {
+  slackChannelId?: string;
+  slackThreadTs?: string;
+  slackConversationKind?: "channel" | "direct_message";
+}) {
+  if (!thread.slackChannelId) return undefined;
+  if (
+    thread.slackConversationKind === "direct_message" ||
+    !thread.slackThreadTs
+  ) {
+    return `https://slack.com/app_redirect?channel=${encodeURIComponent(thread.slackChannelId)}`;
+  }
+  return `https://slack.com/archives/${encodeURIComponent(thread.slackChannelId)}/p${thread.slackThreadTs.replace(".", "")}`;
+}
+
 type FooterPanel = "subagents" | "confidence";
 
 const markdownComponents = {
@@ -1371,7 +1388,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
     ) : msg.channel === "imessage" || mirroredToImessage ? (
       <MessageCircle className="w-3 h-3 text-muted-foreground/30" />
     ) : msg.channel === "slack" ? (
-      <Hash className="w-3 h-3 text-muted-foreground/30" />
+      <SiSlack className="w-3 h-3 text-muted-foreground/30" />
     ) : null;
   const agentTargets = useCachedAgentTargets(msg.orgId);
   const promptReferences = useMemo(
@@ -1620,6 +1637,22 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                     {displayContent}
                   </ProseMarkdown>
                 </ThreadMessageBubble>
+                {msg.channel === "slack" &&
+                msg.slackDeliveryStatus !== undefined &&
+                msg.slackDeliveryStatus !== "sent" ? (
+                  <StatusTag
+                    tone={
+                      msg.slackDeliveryStatus === "failed"
+                        ? "danger"
+                        : "info"
+                    }
+                    className="mt-2"
+                  >
+                    {msg.slackDeliveryStatus === "failed"
+                      ? "Not delivered to Slack"
+                      : "Delivering to Slack"}
+                  </StatusTag>
+                ) : null}
                 <MessageFooterActions
                   refs={allRefs}
                   citedSections={citedSections}
@@ -2180,14 +2213,32 @@ export function UnifiedThreadContent({
     if (!thread || !onMeta) return;
     onMeta({
       detail: (
-        <EditableBreadcrumbTitle
-          key={threadId}
-          title={getThreadDisplayLabel(thread)}
-          saveKey={threadId}
-          onSave={async (next) => {
-            await updateTitle({ id: threadId, title: next });
-          }}
-        />
+        <span className="inline-flex min-w-0 items-center gap-2">
+          {thread.originChannel === "slack" ? (
+            <SiSlack
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/45"
+              aria-label="Slack thread"
+            />
+          ) : null}
+          <EditableBreadcrumbTitle
+            key={threadId}
+            title={getThreadDisplayLabel(thread)}
+            saveKey={threadId}
+            onSave={async (next) => {
+              await updateTitle({ id: threadId, title: next });
+            }}
+          />
+          {thread.originChannel === "slack" &&
+          thread.visibility === "user_private" ? (
+            <span
+              className={`inline-flex shrink-0 items-center gap-1 text-muted-foreground/45 ${typeStyle("caption.medium")}`}
+              title="Only you can see this thread in Glass"
+            >
+              <LockKeyhole className="h-3 w-3" />
+              Private
+            </span>
+          ) : null}
+        </span>
       ),
       actions: (
         <UnifiedThreadActions
@@ -2434,6 +2485,7 @@ export function UnifiedThreadContent({
   if (!thread) {
     return <div className="h-full" />;
   }
+  const slackUrl = slackConversationUrl(thread);
 
   return (
     <div className="relative h-full">
@@ -2517,8 +2569,31 @@ export function UnifiedThreadContent({
       {/* Input — overlaid at bottom, content scrolls under it */}
       <ChatInputOverlay>
         {thread.originChannel === "slack" ? (
-          <div className={`rounded-xl border border-input bg-background px-4 py-3 text-muted-foreground shadow-sm ${typeStyle("body.default")}`}>
-            Continue this conversation in Slack. Replies there stay attached to this client record.
+          <div className="flex flex-col items-stretch gap-3 rounded-xl border border-input bg-background px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+                Continue this conversation in Slack.
+              </p>
+              <p className={`mt-0.5 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
+                {thread.visibility === "user_private"
+                  ? "Only you can see this thread in Glass."
+                  : "New Slack replies stay synced to this client record."}
+              </p>
+            </div>
+            {slackUrl ? (
+              <PillButton
+                href={slackUrl}
+                target="_blank"
+                rel="noreferrer"
+                size="compact"
+                variant="secondary"
+                className="self-start sm:self-auto"
+              >
+                <SiSlack className="h-3.5 w-3.5" />
+                Open in Slack
+                <ExternalLink className="h-3 w-3" />
+              </PillButton>
+            ) : null}
           </div>
         ) : (
           <>

@@ -200,6 +200,7 @@ export const processDebounced = internalAction({
         connectionId: prepared.connectionId,
         channelId: prepared.channelId,
         threadTs: prepared.threadTs,
+        keepAttachmentsTopLevel: prepared.threadTs === undefined,
         content: response.content,
         attachments: attachments.length ? attachments : undefined,
       });

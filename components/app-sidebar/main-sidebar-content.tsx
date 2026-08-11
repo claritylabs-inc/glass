@@ -6,6 +6,7 @@ import {
   Bell,
   LogOut,
   Mail,
+  LockKeyhole,
   MessageCircle,
   MessageSquare,
   Pin,
@@ -316,6 +317,15 @@ function ExpandedThreadList({
           onArchiveThread={onArchiveThread}
         />
       ))}
+      <Link
+        href="/agent/threads"
+        className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} ${typeStyle("control.buttonCompact")} ${
+          pathname === "/agent/threads" ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
+        }`}
+      >
+        <MessageSquare className="w-3 h-3 shrink-0" />
+        <span>All threads</span>
+      </Link>
       {archivedThreadCount > 0 ? (
         <SidebarMenuItem
           href="/agent/archive"
@@ -363,6 +373,12 @@ function SidebarThreadRow({
         <MessageSquare className="w-3.5 h-3.5 shrink-0" />
       )}
       <span className="truncate flex-1">{item.label}</span>
+      {item.kind === "slack" && item.isPrivate ? (
+        <LockKeyhole
+          className="w-3 h-3 shrink-0 text-muted-foreground/35"
+          aria-label="Private Slack thread"
+        />
+      ) : null}
       {pinned ? (
         <Pin className="w-3 h-3 shrink-0 rotate-45 text-muted-foreground/35" />
       ) : null}
@@ -424,7 +440,7 @@ function CollapsedThreadList({
           <Link
             key={`${item.kind}-${item.id}`}
             href={`/agent/thread/${item.id}`}
-            title={item.label}
+            title={`${item.label}${item.isPrivate ? " (Private)" : ""}`}
             className={`flex items-center justify-center py-1.5 ${MENU_ITEM_BASE} ${
               isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
             }`}
@@ -463,6 +479,13 @@ function CollapsedThreadList({
           </Link>
         );
       })}
+      <SidebarMenuItem
+        href="/agent/threads"
+        label="All threads"
+        icon={MessageSquare}
+        active={pathname === "/agent/threads"}
+        collapsed
+      />
       {onAskGlass ? (
         <SidebarMenuItem
           onClick={onAskGlass}

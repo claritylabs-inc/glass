@@ -140,6 +140,7 @@ http.route({
       attachments: payload.attachments,
       eventType: payload.eventType,
       isDirectMessage: payload.isDirectMessage,
+      isPrivateChannel: payload.isPrivateChannel,
       receivedAt: Number.isFinite(timestamp) ? timestamp : dayjs().valueOf(),
     });
     return jsonResponse({ ok: true });
