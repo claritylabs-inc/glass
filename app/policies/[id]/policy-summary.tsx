@@ -391,7 +391,7 @@ export function PolicySummary({
           <OperationalLabelValueRow
             label="Description of operations"
             value={realOperationsDescription}
-            align="right"
+            layout="stacked"
           />
         </dl>
       ) : null}

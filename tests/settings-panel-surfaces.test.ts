@@ -113,7 +113,7 @@ describe("settings panel surfaces", () => {
     expect(policy).not.toContain("Description of operations");
     expect(summary).toContain('label="Description of operations"');
     expect(summary).toContain("operationsDescription");
-    expect(summary).toContain('align="right"');
+    expect(summary).toContain('layout="stacked"');
     expect(summary).toContain('className="border-t border-foreground/6"');
     expect(summary).not.toContain("function SummaryRow");
     expect(summary).toContain('label="Policy number"');
@@ -124,7 +124,7 @@ describe("settings panel surfaces", () => {
     expect(summary).toContain('label="Total payable"');
     expect(summary).toContain("sm:items-end");
     expect(summary.match(/<OperationalLabelValueRow/g)).toHaveLength(8);
-    expect(summary.match(/align="right"/g)).toHaveLength(8);
+    expect(summary.match(/align="right"/g)).toHaveLength(7);
     expect(summary).toContain("@lg:flex-row @lg:items-start");
     expect(summary).not.toContain("@lg:items-center");
     expect(summary).toContain("@lg:pr-4");

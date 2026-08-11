@@ -5,6 +5,23 @@ import { describe, expect, it } from "vitest";
 import { PolicySummary } from "@/app/policies/[id]/policy-summary";
 
 describe("PolicySummary date display", () => {
+  it("stacks the description of operations below its label", () => {
+    const markup = renderToStaticMarkup(
+      <PolicySummary
+        linesOfBusiness={[]}
+        operationsDescription="Wholesale specialty insurance broker"
+      />,
+    );
+
+    expect(markup).toContain(
+      "grid grid-cols-1 gap-1 border-t border-foreground/6 px-4 py-3 first:border-t-0",
+    );
+    expect(markup).not.toContain("sm:grid-cols-");
+    expect(markup).toContain(
+      "Description of operations</dt><dd class=\"min-w-0 break-words",
+    );
+  });
+
   it("formats the policy period with the shared display-date convention", () => {
     const markup = renderToStaticMarkup(
       <PolicySummary
