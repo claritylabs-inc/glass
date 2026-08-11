@@ -222,7 +222,7 @@ describe("agent deployment safeguards", () => {
     expect(deployments).toContain("GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL");
     expect(script).toContain("config/deployments.json");
     expect(script).toContain("AGENT_HEALTH_RETRY_DELAY_MS");
-    expect(script).toContain("deployment.clRouter?.expectedFrozen");
+    expect(script).toContain('typeof payload.frozen !== "boolean"');
     expect(script).toContain("worker is not listening on required port");
     expect(http).toContain('path: "/agent-health"');
     expect(http).toContain("emailInboundWebhookSecretConfigured");
@@ -246,12 +246,15 @@ describe("agent deployment safeguards", () => {
     });
   });
 
-  it("fails deployment health when cl-router is unexpectedly unfrozen", async () => {
-    await expect(
-      runAgentHealth("/convex-aligned", "/cl-router-unfrozen"),
-    ).rejects.toMatchObject({
-      stderr: expect.stringContaining("frozen expected true got false"),
-    });
+  it("accepts the operator-controlled cl-router freeze state", async () => {
+    const result = await runAgentHealth(
+      "/convex-aligned",
+      "/cl-router-unfrozen",
+    );
+
+    expect(result.stdout).toContain(
+      "[agent-health] staging deployment health passed",
+    );
   });
 
   it("accepts deployment health only when Convex, worker health, and package spec agree", async () => {

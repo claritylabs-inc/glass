@@ -5,14 +5,17 @@ import { useAction, useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  OperationalLabelValueList,
-  OperationalLabelValueRow,
   OperationalPanel,
   OperationalPanelBody,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
+import { showOperationalStatusToast } from "@/components/ui/operational-toast";
+import { StatusTag } from "@/components/ui/status-tag";
+import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { api } from "@/convex/_generated/api";
 import { formatDisplayDateTime } from "@/lib/date-format";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { cn } from "@/lib/utils";
 
 type Route = { provider: string; model: string };
 type Routing = {
@@ -91,6 +94,18 @@ type DashboardResult = {
   health: { data: RouterHealth | null; error: string | null };
   policy: { data: Policy | Policy[] | null; error: string | null };
   rollups: { data: Rollup[] | null; error: string | null };
+  controls?: { available: boolean; error: string | null };
+};
+type FreezeResult = {
+  frozen: boolean;
+  policyVersion: string;
+  controlVersion: string;
+};
+type HourlyActivity = {
+  hourStart: number;
+  calls: number;
+  successes: number;
+  errors: number;
 };
 
 function routeLabel(route: Route | null | undefined) {
@@ -114,11 +129,182 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function RateMeter({
+  label,
+  value,
+  description,
+  tone,
+}: {
+  label: string;
+  value: number | null;
+  description: string;
+  tone: "success" | "cache" | "pricing";
+}) {
+  const percentage =
+    value === null ? 0 : Math.min(100, Math.max(0, Math.round(value * 100)));
+  const displayValue = value === null ? "—" : `${percentage}%`;
+
+  return (
+    <div className="min-w-0 px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-base font-medium text-foreground">{label}</p>
+        <p className="text-base font-medium tabular-nums text-foreground">
+          {displayValue}
+        </p>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percentage}
+        aria-valuetext={displayValue}
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8"
+      >
+        <div
+          className={cn(
+            "h-full rounded-full",
+            tone === "success" && "bg-chart-3",
+            tone === "cache" && "bg-chart-1",
+            tone === "pricing" && "bg-chart-4",
+          )}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+      <p className="mt-2 text-label leading-4 text-muted-foreground">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function RoutingActivityChart({ activity }: { activity: HourlyActivity[] }) {
+  const maxCalls = Math.max(1, ...activity.map((hour) => hour.calls));
+  const totalCalls = activity.reduce((sum, hour) => sum + hour.calls, 0);
+  const firstHour = activity[0]?.hourStart;
+  const middleHour = activity[Math.floor(activity.length / 2)]?.hourStart;
+  const lastHour = activity.at(-1)?.hourStart;
+
+  return (
+    <div className="min-w-0 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-base font-medium text-foreground">
+            Model attempts by hour
+          </p>
+          <p className="mt-1 text-label leading-4 text-muted-foreground">
+            Includes initial, retry, and fallback attempts.
+          </p>
+        </div>
+        <p className="text-base font-medium tabular-nums text-foreground">
+          {totalCalls.toLocaleString()} attempts
+        </p>
+      </div>
+
+      <div className="relative mt-4">
+        <div
+          role="img"
+          aria-label={`Hourly routing activity: ${totalCalls.toLocaleString()} model attempts in the last 24 hours`}
+          className="grid h-32 grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-1 border-b border-foreground/10 px-1"
+        >
+          {activity.map((hour) => {
+            const successfulCalls = Math.min(hour.successes, hour.calls);
+            const errorCalls = Math.min(
+              hour.errors,
+              Math.max(0, hour.calls - successfulCalls),
+            );
+            const barHeight = hour.calls
+              ? Math.max(4, (hour.calls / maxCalls) * 100)
+              : 0;
+            const successHeight = hour.calls
+              ? (successfulCalls / hour.calls) * 100
+              : 0;
+            const errorHeight = hour.calls
+              ? (errorCalls / hour.calls) * 100
+              : 0;
+            const hourLabel = dayjs(hour.hourStart).format("MMM D, h A");
+
+            return (
+              <div
+                key={hour.hourStart}
+                className="flex h-full min-w-0 items-end"
+                title={`${hourLabel}: ${hour.calls.toLocaleString()} attempts, ${successfulCalls.toLocaleString()} successful, ${errorCalls.toLocaleString()} provider errors`}
+              >
+                {hour.calls ? (
+                  <div
+                    className="flex w-full flex-col-reverse overflow-hidden rounded-t-sm bg-chart-2/35"
+                    style={{ height: `${barHeight}%` }}
+                  >
+                    {successfulCalls ? (
+                      <div
+                        className="min-h-px w-full bg-chart-3"
+                        style={{ height: `${successHeight}%` }}
+                      />
+                    ) : null}
+                    {errorCalls ? (
+                      <div
+                        className="min-h-px w-full bg-destructive"
+                        style={{ height: `${errorHeight}%` }}
+                      />
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="h-px w-full bg-foreground/8" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {totalCalls === 0 ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-3">
+            <p className="rounded-md bg-card/90 px-3 py-1.5 text-label text-muted-foreground shadow-sm ring-1 ring-foreground/6">
+              No model attempts recorded
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-2 flex justify-between text-label tabular-nums text-muted-foreground">
+        <span>{firstHour ? dayjs(firstHour).format("ddd h A") : "—"}</span>
+        <span>{middleHour ? dayjs(middleHour).format("ddd h A") : "—"}</span>
+        <span>{lastHour ? dayjs(lastHour).format("ddd h A") : "—"}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-label text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2 rounded-sm bg-chart-3" />
+          Successful attempt
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-2 rounded-sm bg-destructive" />
+          Provider error
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function environmentLabel(environment: string | undefined) {
+  if (!environment) return "Environment unavailable";
+  if (environment === "production") return "Production";
+  if (environment === "dev") return "Dev";
+  if (environment === "local") return "Local dev";
+  if (environment === "staging") return "Staging (retired)";
+  return environment;
+}
+
+function compactIdentifier(value: string | null | undefined) {
+  if (!value) return "None";
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}…${value.slice(-4)}`;
+}
+
 export function useRouterDashboard() {
   const getDashboard = useAction(api.clRouterOperations.getDashboard);
+  const updateGlobalFreeze = useAction(api.clRouterOperations.setGlobalFreeze);
   const [dashboard, setDashboard] = useState<DashboardResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [freezeLoading, setFreezeLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -151,7 +337,57 @@ export function useRouterDashboard() {
     };
   }, [getDashboard]);
 
-  return { dashboard, loading, loadError, refresh };
+  const setGlobalFreeze = useCallback(
+    async (frozen: boolean) => {
+      setFreezeLoading(true);
+      showOperationalStatusToast({
+        id: "router-global-freeze",
+        title: frozen ? "Freezing autonomous routing" : "Unfreezing routing",
+        description: "Updating the global cl-router control.",
+        tone: "loading",
+        duration: 60_000,
+      });
+      try {
+        const result = (await updateGlobalFreeze({ frozen })) as FreezeResult;
+        await refresh();
+        showOperationalStatusToast({
+          id: "router-global-freeze",
+          title: result.frozen
+            ? "Autonomous routing frozen"
+            : "Autonomous routing enabled",
+          description: result.frozen
+            ? "Model calls will stay on their frozen routes."
+            : "The active routing policy can choose eligible routes.",
+          tone: "success",
+          duration: 4_000,
+        });
+      } catch (error) {
+        await refresh();
+        showOperationalStatusToast({
+          id: "router-global-freeze",
+          title: "Routing control was not changed",
+          description: getUserFacingErrorMessage(
+            error,
+            "Could not update the global routing freeze.",
+          ),
+          tone: "error",
+          duration: 10_000,
+        });
+      } finally {
+        setFreezeLoading(false);
+      }
+    },
+    [refresh, updateGlobalFreeze],
+  );
+
+  return {
+    dashboard,
+    loading,
+    loadError,
+    refresh,
+    freezeLoading,
+    setGlobalFreeze,
+  };
 }
 
 export type RouterDashboardState = ReturnType<typeof useRouterDashboard>;
@@ -160,7 +396,12 @@ export function RoutingTab({
   dashboard,
   loading,
   loadError,
-}: Pick<RouterDashboardState, "dashboard" | "loading" | "loadError">) {
+  freezeLoading,
+  setGlobalFreeze,
+}: Pick<
+  RouterDashboardState,
+  "dashboard" | "loading" | "loadError" | "freezeLoading" | "setGlobalFreeze"
+>) {
   const events = useQuery(api.modelRoutingEvents.listRecent, { limit: 200 }) as
     | RoutingEvent[]
     | undefined;
@@ -195,6 +436,37 @@ export function RoutingTab({
       : health
         ? "Autonomous"
         : "Unknown";
+  const retiredStagingRouter = health?.environment === "staging";
+  const controlError =
+    dashboard?.controls?.error ??
+    (dashboard?.configured
+      ? "Router control metadata is unavailable. Refresh after the latest Convex functions are deployed."
+      : null);
+  const routerHealthy = health?.status === "ok" && health.database;
+  const controlsAvailable = dashboard?.controls?.available === true;
+  const routerStatus = retiredStagingRouter
+    ? { label: "Retired environment", tone: "warning" as const }
+    : routerHealthy
+      ? { label: "Healthy", tone: "success" as const }
+      : health
+        ? { label: "Degraded", tone: "danger" as const }
+        : { label: "Unavailable", tone: "neutral" as const };
+  const controlNotice = loadError
+    ? { title: "Router data unavailable", description: loadError }
+    : retiredStagingRouter
+      ? {
+          title: "Connected to the retired staging router",
+          description:
+            "Glass now has dev and production only. Confirm CL_ROUTER_URL before changing this retired router.",
+        }
+      : !controlsAvailable && controlError
+        ? {
+            title: "Freeze control unavailable",
+            description: controlError,
+          }
+        : null;
+  const shadowSummary =
+    shadowMode === undefined ? "No comparison yet" : shadowMode ? "On" : "Off";
 
   const last24HourRollups = useMemo(() => {
     const cutoff = dayjs().subtract(24, "hour");
@@ -213,8 +485,7 @@ export function RoutingTab({
           cacheHits: sum.cacheHits + row.cacheHitCount,
           feedback: sum.feedback + row.feedbackCount,
           pricedCalls: sum.pricedCalls + row.pricedCallCount,
-          weightedP50:
-            sum.weightedP50 + row.latencyP50Ms * row.callCount,
+          weightedP50: sum.weightedP50 + row.latencyP50Ms * row.callCount,
           peakP95: Math.max(sum.peakP95, row.latencyP95Ms),
           cost: sum.cost + Number(row.costNanoUsd) / 1_000_000_000,
         }),
@@ -233,6 +504,37 @@ export function RoutingTab({
       ),
     [last24HourRollups],
   );
+  const hourlyActivity = useMemo(() => {
+    const byHour = new Map<
+      number,
+      { calls: number; successes: number; errors: number }
+    >();
+    for (const row of last24HourRollups) {
+      const hourStart = dayjs(row.hourStart).startOf("hour").valueOf();
+      const current = byHour.get(hourStart) ?? {
+        calls: 0,
+        successes: 0,
+        errors: 0,
+      };
+      current.calls += row.callCount;
+      current.successes += row.successCount;
+      current.errors += row.providerErrorCount;
+      byHour.set(hourStart, current);
+    }
+
+    const currentHour = dayjs().startOf("hour");
+    return Array.from({ length: 24 }, (_, index) => {
+      const hourStart = currentHour.subtract(23 - index, "hour").valueOf();
+      return {
+        hourStart,
+        ...(byHour.get(hourStart) ?? {
+          calls: 0,
+          successes: 0,
+          errors: 0,
+        }),
+      };
+    });
+  }, [last24HourRollups]);
   const failedRuns = recentRuns.filter((run) => run.status === "error").length;
   const workflowRuns = recentRuns.filter(
     (run) => (run.workflowOutcomeCount ?? 0) > 0,
@@ -240,6 +542,52 @@ export function RoutingTab({
   const workflowFailures = workflowRuns.filter(
     (run) => (run.workflowFailureCount ?? 0) > 0,
   ).length;
+  const summaryMetrics = [
+    {
+      label: "Model attempts",
+      value: totals.calls.toLocaleString(),
+      description: "Initial calls plus every retry and fallback attempt.",
+    },
+    {
+      label: "Recorded cost",
+      value: formatCost(totals.cost),
+      description: "Known model costs; price coverage shows completeness.",
+    },
+    {
+      label: "Fallback attempts",
+      value: totals.fallbacks.toLocaleString(),
+      description: "Attempts superseded before a later route completed.",
+    },
+    {
+      label: "Provider errors",
+      value: totals.errors.toLocaleString(),
+      description: "Attempts that ended in an error or timeout.",
+    },
+    {
+      label: "Typical / tail latency",
+      value: totals.calls
+        ? `${Math.round(totals.weightedP50 / totals.calls).toLocaleString()} / ${totals.peakP95.toLocaleString()} ms`
+        : "—",
+      description: "Weighted hourly median / highest hourly p95.",
+    },
+    {
+      label: "Quality feedback",
+      value: totals.feedback.toLocaleString(),
+      description: "Review or workflow quality signals attached to calls.",
+    },
+    {
+      label: "Workflow failures",
+      value: `${workflowFailures.toLocaleString()} / ${workflowRuns.length.toLocaleString()}`,
+      description:
+        "Runs with a failed workflow outcome / runs with outcomes, from the latest 200 events.",
+    },
+    {
+      label: "Run errors",
+      value: failedRuns.toLocaleString(),
+      description:
+        "Whole agent runs that ended before completion, from the latest 200 events.",
+    },
+  ];
 
   const unconfigured = dashboard !== null && !dashboard.configured;
 
@@ -251,110 +599,166 @@ export function RoutingTab({
           <OperationalPanelBody className="text-base text-muted-foreground">
             CL_ROUTER_URL is not set on this Convex deployment, so router
             health, task policies, and rollups are unavailable. Set
-            CL_ROUTER_URL and CL_ROUTER_ADMIN_SECRET on the deployment with
-            npx convex env set to connect cl-router. Conductor workspace setup
+            CL_ROUTER_URL and CL_ROUTER_ADMIN_SECRET on the deployment with npx
+            convex env set to connect cl-router. Conductor workspace setup
             intentionally removes router environment variables, so this is
             expected in isolated dev deployments.
           </OperationalPanelBody>
         </OperationalPanel>
       ) : (
         <>
-          <OperationalLabelValueList title="Router state">
-            <OperationalLabelValueRow label="Posture" value={posture} />
-            <OperationalLabelValueRow
-              label="Environment"
-              value={health?.environment ?? "Unavailable"}
-            />
-            <OperationalLabelValueRow
-              label="Health"
-              value={
-                health
-                  ? `${health.status} · database ${health.database ? "connected" : "unavailable"}`
-                  : (dashboard?.health.error ?? loadError ?? "Loading")
+          <OperationalPanel>
+            <OperationalPanelHeader
+              title="Router state"
+              description={`${environmentLabel(health?.environment)} · Database ${health?.database ? "connected" : "unavailable"}`}
+              action={
+                <StatusTag tone={routerStatus.tone}>
+                  {routerStatus.label}
+                </StatusTag>
               }
             />
-            <OperationalLabelValueRow
-              label="Policy version"
-              value={health?.policyVersion ?? "None"}
-            />
-            <OperationalLabelValueRow
-              label="Shadow comparison"
-              value={
-                shadowMode === undefined
-                  ? "No recent routed response"
-                  : shadowMode
-                    ? "Enabled"
-                    : "Disabled"
-              }
-            />
-            <OperationalLabelValueRow
-              label="Last refresh"
-              value={
-                dashboard
-                  ? formatDisplayDateTime(dashboard.fetchedAt)
-                  : loading
-                    ? "Loading"
-                    : "Unavailable"
-              }
-            />
-          </OperationalLabelValueList>
+            {controlNotice ? (
+              <div
+                role="alert"
+                className="border-b border-warning/15 bg-warning/[0.06] px-4 py-3"
+              >
+                <p className="text-base font-medium text-warning">
+                  {controlNotice.title}
+                </p>
+                <p className="mt-1 text-base text-muted-foreground">
+                  {controlNotice.description}
+                </p>
+              </div>
+            ) : null}
+            <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-base font-medium text-foreground">
+                  Global freeze
+                </p>
+                <p className="mt-1 text-base text-muted-foreground">
+                  {health?.frozen
+                    ? "Autonomous route changes are paused; model calls continue on the frozen route."
+                    : "The active routing policy can select eligible routes and evaluate challengers."}
+                </p>
+              </div>
+              <div className="flex shrink-0 justify-end">
+                <SettingsSwitch
+                  checked={health?.frozen ?? false}
+                  onCheckedChange={() =>
+                    void setGlobalFreeze(!(health?.frozen ?? false))
+                  }
+                  label={
+                    health?.frozen
+                      ? "Unfreeze global routing"
+                      : "Freeze global routing"
+                  }
+                  disabled={
+                    !health || loading || freezeLoading || !controlsAvailable
+                  }
+                />
+              </div>
+            </div>
+            <dl className="grid grid-cols-2 gap-px border-t border-foreground/6 bg-foreground/6 lg:grid-cols-4">
+              {[
+                ["Operating mode", posture],
+                ["Shadow comparison", shadowSummary],
+                ["Routing policy", compactIdentifier(health?.policyVersion)],
+                [
+                  "Last refreshed",
+                  dashboard
+                    ? formatDisplayDateTime(dashboard.fetchedAt)
+                    : loading
+                      ? "Loading"
+                      : "Unavailable",
+                ],
+              ].map(([label, value]) => (
+                <div key={label} className="min-w-0 bg-card px-4 py-3">
+                  <dt className="text-label text-muted-foreground">{label}</dt>
+                  <dd
+                    className={cn(
+                      "mt-1 truncate text-base font-medium text-foreground",
+                      label === "Routing policy" && "font-mono text-label",
+                    )}
+                    title={
+                      label === "Routing policy"
+                        ? (health?.policyVersion ?? undefined)
+                        : undefined
+                    }
+                  >
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </OperationalPanel>
 
           <OperationalPanel>
-            <OperationalPanelHeader title="Last 24 hours" />
+            <OperationalPanelHeader
+              title="Recent routing events"
+              description="Hourly attempt telemetry covers the last 24 hours. Workflow totals use the latest 200 Glass events."
+            />
             {dashboard?.rollups.error ? (
               <OperationalPanelBody className="text-base text-destructive">
                 {dashboard.rollups.error}
               </OperationalPanelBody>
             ) : (
-              <div className="grid grid-cols-2 divide-x divide-y divide-foreground/6 sm:grid-cols-4">
-                {[
-                  ["Calls", totals.calls.toLocaleString()],
-                  [
-                    "Success",
-                    totals.calls
-                      ? formatPercent(totals.successes / totals.calls)
-                      : "—",
-                  ],
-                  ["Cost", formatCost(totals.cost)],
-                  [
-                    "Cache rate",
-                    totals.calls
-                      ? formatPercent(totals.cacheHits / totals.calls)
-                      : "—",
-                  ],
-                  ["Fallbacks", totals.fallbacks.toLocaleString()],
-                  ["Provider errors", totals.errors.toLocaleString()],
-                  ["Feedback", totals.feedback.toLocaleString()],
-                  [
-                    "Latency p50 / peak p95",
-                    totals.calls
-                      ? `${Math.round(totals.weightedP50 / totals.calls).toLocaleString()} / ${totals.peakP95.toLocaleString()} ms`
-                      : "—",
-                  ],
-                  [
-                    "Priced calls",
-                    `${totals.pricedCalls.toLocaleString()} / ${totals.calls.toLocaleString()}`,
-                  ],
-                  [
-                    "Workflow failures",
-                    workflowRuns.length
-                      ? `${workflowFailures} / ${workflowRuns.length}`
-                      : `0 · ${failedRuns} run errors`,
-                  ],
-                ].map(([label, value]) => (
-                  <div key={label} className="min-w-0 px-4 py-3">
-                    <p className="text-label text-muted-foreground">{label}</p>
-                    <p className="mt-1 truncate text-base font-medium text-foreground">
-                      {value}
-                    </p>
+              <div>
+                <div className="grid divide-y divide-foreground/6 lg:grid-cols-[minmax(0,1.6fr)_minmax(18rem,1fr)] lg:divide-x lg:divide-y-0">
+                  <RoutingActivityChart activity={hourlyActivity} />
+                  <div className="divide-y divide-foreground/6">
+                    <RateMeter
+                      label="Successful attempts"
+                      value={
+                        totals.calls ? totals.successes / totals.calls : null
+                      }
+                      description="Completed normally or with a recoverable soft failure."
+                      tone="success"
+                    />
+                    <RateMeter
+                      label="Cached input"
+                      value={
+                        totals.calls ? totals.cacheHits / totals.calls : null
+                      }
+                      description="Reused provider-cached input tokens; not an app or browser cache."
+                      tone="cache"
+                    />
+                    <RateMeter
+                      label="Price coverage"
+                      value={
+                        totals.calls ? totals.pricedCalls / totals.calls : null
+                      }
+                      description={`${totals.pricedCalls.toLocaleString()} of ${totals.calls.toLocaleString()} attempts have known pricing.`}
+                      tone="pricing"
+                    />
                   </div>
-                ))}
+                </div>
+                <div className="grid grid-cols-1 gap-px border-t border-foreground/6 bg-foreground/6 sm:grid-cols-2 lg:grid-cols-4">
+                  {summaryMetrics.map((metric) => (
+                    <div
+                      key={metric.label}
+                      className="min-w-0 bg-card px-4 py-3"
+                    >
+                      <p className="text-label text-muted-foreground">
+                        {metric.label}
+                      </p>
+                      <p className="mt-1 text-base font-medium tabular-nums text-foreground">
+                        {metric.value}
+                      </p>
+                      <p className="mt-1 text-label leading-4 text-muted-foreground">
+                        {metric.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </OperationalPanel>
 
           <OperationalPanel>
-            <OperationalPanelHeader title="Task policies" />
+            <OperationalPanelHeader
+              title="Task policies"
+              description="The provider and model each task executes, plus any challenger routes under evaluation."
+            />
             {dashboard?.policy.error ? (
               <OperationalPanelBody className="text-base text-destructive">
                 {dashboard.policy.error}
@@ -370,7 +774,9 @@ export function RoutingTab({
                     <tr>
                       <th className="px-4 py-2.5 font-normal">Task</th>
                       <th className="px-4 py-2.5 font-normal">State</th>
-                      <th className="px-4 py-2.5 font-normal">Executing route</th>
+                      <th className="px-4 py-2.5 font-normal">
+                        Executing route
+                      </th>
                       <th className="px-4 py-2.5 font-normal">Challengers</th>
                       <th className="px-4 py-2.5 font-normal">Score / calls</th>
                     </tr>
@@ -420,7 +826,10 @@ export function RoutingTab({
       )}
 
       <OperationalPanel>
-        <OperationalPanelHeader title="Recent routing" />
+        <OperationalPanelHeader
+          title="Routing event log"
+          description="The latest 50 routed model steps, direct fallbacks, and run errors."
+        />
         {events === undefined ? (
           <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
             <Loader2 className="size-5 animate-spin" />
@@ -477,7 +886,7 @@ export function RoutingTab({
                         ? `Direct fallback${event.error ? ` · ${event.error}` : ""}`
                         : event.kind === "run"
                           ? `Run error${event.error ? ` · ${event.error}` : ""}`
-                        : (event.routing?.decision ?? "Completed")}
+                          : (event.routing?.decision ?? "Completed")}
                     </td>
                   </tr>
                 ))}

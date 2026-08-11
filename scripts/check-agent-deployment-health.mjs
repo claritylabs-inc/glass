@@ -151,13 +151,8 @@ const checks = [
       if (!(typeof payload.policyVersion === "string" || payload.policyVersion === null)) {
         throw new Error("policyVersion is invalid");
       }
-      if (
-        typeof deployment.clRouter?.expectedFrozen === "boolean"
-        && payload.frozen !== deployment.clRouter.expectedFrozen
-      ) {
-        throw new Error(
-          `frozen expected ${String(deployment.clRouter.expectedFrozen)} got ${String(payload.frozen)}`,
-        );
+      if (typeof payload.frozen !== "boolean") {
+        throw new Error("frozen state is invalid");
       }
     },
   }] : []),

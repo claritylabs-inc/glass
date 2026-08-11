@@ -57,21 +57,21 @@ TLS; the router never calls Convex.
 
 Every deployed lane needs matching values:
 
-| Runtime | Required values |
-| --- | --- |
-| Convex | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, optional `CL_ROUTER_TIMEOUT_MS`; `CL_ROUTER_ADMIN_SECRET` only when the authenticated `/operator/routing` read surface is enabled |
-| Extraction worker | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, `CL_ROUTER_TENANT_ID=glass`, optional `CL_ROUTER_TIMEOUT_MS` |
-| cl-router | `GLASS_ENV`, `DATABASE_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_ADMIN_SECRET`, `CL_ROUTER_SESSION_HMAC_SECRET`, `CL_ROUTER_FROZEN`, `CL_ROUTER_SHADOW`, optional `CL_ROUTER_POLICY_REFRESH_MS`, `CL_ROUTER_SCORING_INTERVAL_MS`, and provider keys |
+| Runtime           | Required values                                                                                                                                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Convex            | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, optional `CL_ROUTER_TIMEOUT_MS`; `CL_ROUTER_ADMIN_SECRET` only when the authenticated `/operator/routing` control surface is enabled                                                                                          |
+| Extraction worker | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, `CL_ROUTER_TENANT_ID=glass`, optional `CL_ROUTER_TIMEOUT_MS`                                                                                                                                                                  |
+| cl-router         | `GLASS_ENV`, `DATABASE_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_ADMIN_SECRET`, `CL_ROUTER_SESSION_HMAC_SECRET`, optional emergency `CL_ROUTER_FROZEN`, optional diagnostic `CL_ROUTER_SHADOW`, optional `CL_ROUTER_POLICY_REFRESH_MS`, `CL_ROUTER_SCORING_INTERVAL_MS`, and provider keys |
 
 The inference, admin, and session-HMAC secrets must be distinct within each
 lane as well as different between staging and production. The admin secret may
 be copied only to Convex for the operator-authenticated, server-side
-`clRouterOperations.getDashboard` action, which calls the read-only
-`/admin/policy` and `/admin/rollups` endpoints. Never expose it to browsers or
-configure it on extraction, iMessage, or mailbox workers. Provider keys live
-only in the router environment unless a broker route is selected; broker keys
-then transit in the per-request resolved settings snapshot and must never be
-logged.
+`clRouterOperations.getDashboard` and `setGlobalFreeze` actions. They call the
+read-only policy and rollup endpoints and the versioned `/admin/freeze`
+control. Never expose the secret to browsers or configure it on extraction,
+iMessage, or mailbox workers. Provider keys live only in the router environment
+unless a broker route is selected; broker keys then transit in the per-request
+resolved settings snapshot and must never be logged.
 
 Rollout is task-scoped through `CL_ROUTER_TASKS`. An empty value keeps the
 existing direct-provider path. Enable classification, embeddings, and voice
@@ -88,18 +88,25 @@ after the first successful model step. A pre-response connection, timeout, or
 text/object helpers still fail closed when passed tool-loop-only options.
 
 Staging and production may append `chat`, `chat_vision`, `email_draft`,
-`email_reply`, and `mailbox_coordinator` to `CL_ROUTER_TASKS` while both
-`CL_ROUTER_FROZEN=1` and `CL_ROUTER_SHADOW=1` remain set. This routes web,
+`email_reply`, and `mailbox_coordinator` to `CL_ROUTER_TASKS`. This routes web,
 iMessage, MCP, public-demo, inbound-email, email-draft, and mailbox-coordinator
-steps through the pinned adapter without permitting autonomous execution-route
-changes. Do not enable `*`: task gates remain an explicit rollback boundary.
+steps through the pinned adapter. Do not enable `*`: task gates remain an
+explicit rollback boundary.
 
-The exact-pinned `@claritylabs/cl-router-policy` 0.1.0 contract does not yet
-declare function-tool or structured-output capability flags. Glass validates
-function-tool schemas and fails closed on unsupported adapter inputs, but
-candidate elimination must be added in the shared policy and cl-router service
-before any tool-bearing task is unfrozen. Do not duplicate a model capability
-allowlist in Glass.
+The exact-pinned `@claritylabs/cl-router-policy` contract owns model and task
+capability metadata. Glass validates function-tool schemas and fails closed on
+unsupported adapter inputs; do not duplicate a model capability allowlist in
+Glass. Review the active candidates for tool and structured-output compatibility
+before enabling autonomous selection for those task families.
+
+Normal deployed operation leaves `CL_ROUTER_FROZEN=0` and
+`CL_ROUTER_SHADOW=0` (or omits both variables). Authenticated operators use the
+global freeze toggle on `/operator/routing`, which writes an immutable router
+control version with the Glass operator ID in its reason. `CL_ROUTER_FROZEN=1`
+is an environment-level panic switch for incidents where the operator surface
+or admin API is unavailable; it deliberately cannot be overridden by the UI.
+`CL_ROUTER_SHADOW=1` is a separate diagnostic override and is not controlled by
+the freeze toggle.
 
 During the guarded rollout, Glass uses the direct path only for router
 connection failures, timeouts, and HTTP 5xx before the first successful model
@@ -110,9 +117,12 @@ streamed output or a tool result.
 
 `/operator/routing` combines router health, policy and hourly rollups with
 30-day Glass routing events. It shows actual versus shadow routes, request IDs,
-cost and failure aggregates, and agent workflow outcomes. Workflow feedback is
-submitted only when tool results contain concrete workflow outcomes; an HTTP
-200 by itself is never scored as success.
+cost and failure aggregates, and agent workflow outcomes, and owns the
+authenticated global freeze toggle. An active operator can control the healthy
+router configured by `CL_ROUTER_URL` from any Glass environment; the admin
+secret remains server-side. Workflow feedback is submitted only when tool
+results contain concrete workflow outcomes; an HTTP 200 by itself is never
+scored as success.
 
 Health URLs are configured through
 `GLASS_STAGING_CL_ROUTER_HEALTH_URL` and
@@ -124,8 +134,8 @@ AGENT_HEALTH_ATTEMPTS=1 npm run check:agent-health -- --env=staging
 ```
 
 The router must report the matching environment, a live database, and an
-active or bootstrap-ready policy store. Before increasing traffic, exercise
-`POST /admin/freeze`, clear the freeze, inspect `/admin/policy` and
+active or bootstrap-ready policy store. Before increasing traffic, exercise the
+operator global freeze toggle in both directions, inspect `/admin/policy` and
 `/admin/rollups`, then run `/admin/score` in the staging lane.
 
 Local health checks skip cl-router unless `GLASS_CL_ROUTER_HEALTH_URL` is set,
@@ -147,17 +157,13 @@ deliberately running a local router.
 5. Enable one task family in staging and compare route, error, latency, token,
    cost, tool completion, and workflow-failure telemetry with the direct
    baseline in `/operator/routing`.
-6. Set both `CL_ROUTER_FROZEN=1` and `CL_ROUTER_SHADOW=1` throughout the
-   two-week shadow period. Freeze prevents policy changes; shadow mode is the
-   separate control that records the autonomous choice without executing it.
-   Unfreeze one calibrated task family at a time only after three reproducible
-   benchmark replicates and the onboarding gate pass. Change that lane's
-   `clRouter.expectedFrozen` deployment expectation in the same PR as the
-   approved unfreeze so the scheduled health audit keeps enforcing the intended
-   state.
-7. Keep tool-bearing tasks frozen until the shared policy version explicitly
-   filters candidates for function-tool support and the route has calibrated
-   workflow-quality cases. Unfreeze read-only `chat`/`chat_vision` before
-   side-effectful `email_reply` or `mailbox_coordinator`.
-8. For rollback, clear `CL_ROUTER_TASKS`. Use `CL_ROUTER_FROZEN=1` or the admin
-   freeze endpoint when routing must stop changing without disabling traffic.
+6. Keep the router environment panic and diagnostic overrides off. Use the
+   `/operator/routing` global freeze toggle when autonomous route changes should
+   pause or resume, then verify the new posture in the same dashboard.
+7. Review tool and structured-output compatibility plus calibrated workflow
+   quality before enabling autonomous selection for a task family. Introduce
+   read-only `chat`/`chat_vision` traffic before side-effectful `email_reply` or
+   `mailbox_coordinator`.
+8. For rollback, clear `CL_ROUTER_TASKS`. Use the operator global freeze first;
+   reserve `CL_ROUTER_FROZEN=1` for incidents where the control surface is
+   unavailable.
