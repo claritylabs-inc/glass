@@ -454,7 +454,7 @@ describe("model fallback policy", () => {
     );
   });
 
-  test("enables cl-router execution in every Conductor development worker", () => {
+  test("enables cl-router execution when Conductor imports source config", () => {
     const setupSource = readFileSync(
       join(__dirname, "../scripts/setup-conductor-workspace.mjs"),
       "utf-8",
@@ -464,24 +464,15 @@ describe("model fallback policy", () => {
       "utf-8",
     );
 
-    expect(setupSource).toContain(
-      'requiredConvexEnv(convex, "CL_ROUTER_URL")',
-    );
-    expect(setupSource).toContain(
-      'requiredConvexEnv(convex, "CL_ROUTER_TASKS")',
-    );
-    expect(setupSource).toContain(
-      'requiredConvexEnv(convex, "CL_ROUTER_SECRET")',
-    );
+    expect(setupSource).toContain("sourceEnvironmentRead ||");
+    expect(setupSource).toContain("resolveConductorClRouterConfig(");
+    expect(setupSource).toContain("{ required: routerRequired }");
     expect(setupSource).toContain("CL_ROUTER_URL: clRouterUrl");
     expect(setupSource).toContain("CL_ROUTER_TASKS: clRouterTasks");
     expect(setupSource).toContain("CL_ROUTER_SECRET: clRouterSecret");
     expect(workerSource).toContain("clRouterEnabled: clRouter !== null");
     expect(workerSource).toContain(
       "clRouterTasks: [...CL_ROUTER_TASK_FLAGS].sort()",
-    );
-    expect(setupSource).not.toContain(
-      '["CL_ROUTER_TASKS", "CL_ROUTER_SECRET"]',
     );
   });
 

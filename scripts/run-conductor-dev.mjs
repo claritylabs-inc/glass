@@ -6,6 +6,7 @@ import {
   conductorPorts,
   ensureNode24,
   repoRoot,
+  withoutCloudConvexSelection,
 } from "./lib/conductor-workspace.mjs";
 
 ensureNode24();
@@ -55,7 +56,7 @@ const commands = [
 ];
 
 const runEnvironment = {
-  ...process.env,
+  ...withoutCloudConvexSelection(process.env),
   CONDUCTOR_RUN_MARKER: markerPath,
 };
 delete runEnvironment.NO_COLOR;
