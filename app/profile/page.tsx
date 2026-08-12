@@ -282,14 +282,15 @@ export default function ProfilePage() {
       <AutoSaveStatus status={profileAutoSave.status} />
       <PillButton
         size="compact"
-        variant="secondary"
+        variant="icon"
+        label="Change email"
+        expandLabel
         onClick={() => {
           setProactiveDrawerOpen(false);
           setEmailDrawerOpen(true);
         }}
       >
         <Mail className="h-3.5 w-3.5" />
-        Change Email
       </PillButton>
     </>
   );

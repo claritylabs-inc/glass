@@ -67,16 +67,33 @@ describe("operator client management surfaces", () => {
     expect(channels).toContain("<AgentEmailAddressField");
   });
 
-  it("owns client settings on a tabbed detail page", () => {
+  it("owns client settings in the scoped per-client workspace", () => {
     const client = read("app/operator/clients/[clientOrgId]/page.tsx");
+    const clientSidebar = read(
+      "app/operator/clients/[clientOrgId]/operator-client-sidebar.tsx",
+    );
+    const settingsTabs = read(
+      "app/operator/clients/[clientOrgId]/operator-client-tabs.tsx",
+    );
     const companyDetails = read(
       "app/operator/clients/[clientOrgId]/client-company-details.tsx",
     );
 
-    expect(client).toContain('{ id: "overview", label: "Overview" }');
-    expect(client).toContain('{ id: "team", label: "Team" }');
-    expect(client).toContain('{ id: "features", label: "Beta features" }');
-    expect(client).toContain('{ id: "channels", label: "Agent channels" }');
+    expect(clientSidebar).toContain('label="Overview"');
+    expect(clientSidebar).toContain('label: "Policies"');
+    expect(clientSidebar).toContain('label: "Compliance"');
+    expect(clientSidebar).toContain('label: "Certificates"');
+    expect(clientSidebar).toContain('label="Team"');
+    expect(clientSidebar).toContain('label="Settings"');
+    expect(clientSidebar).toContain('<SectionHeader label="Insurance"');
+    expect(clientSidebar).toContain('<SectionHeader label="Settings"');
+    expect(settingsTabs).toContain(
+      '{ id: "features", label: "Beta features" }',
+    );
+    expect(settingsTabs).toContain(
+      '{ id: "channels", label: "Agent channels" }',
+    );
+    expect(settingsTabs).toContain("OperatorClientSettingsTabs");
     expect(client).toContain("useLocalFirstAutoSave");
     expect(client).toContain("FeatureFlagToggleRow");
     expect(client).toContain("AgentChannelsSection");
@@ -90,7 +107,9 @@ describe("operator client management surfaces", () => {
     expect(companyDetails).not.toContain("OperationalPanel");
     expect(client).not.toContain("Login and activation email");
     expect(client).toContain('aria-labelledby="client-identity-title"');
-    expect(client).toContain('breadcrumbDetail={client?.name ?? "Client"}');
+    expect(client).toContain('activeTab === "team"');
+    expect(client).toContain('? "Settings"');
+    expect(client).toContain("<OperatorClientSidebar");
     expect(client).not.toContain('title="Agent address"');
     expect(client).not.toContain("checkHandleAvailability");
     expect(client).not.toContain("agentHandle:");
@@ -120,6 +139,184 @@ describe("operator client management surfaces", () => {
     expect(team).toContain("member.isActivated");
     expect(team).toContain('<StatusTag tone="success">Active</StatusTag>');
     expect(team).toContain("adminUserId: member.userId");
+  });
+
+  it("keeps operator client sections in a grouped secondary sidebar", () => {
+    const sidebar = read(
+      "app/operator/clients/[clientOrgId]/operator-client-sidebar.tsx",
+    );
+    const policies = read(
+      "app/operator/clients/[clientOrgId]/policies/page.tsx",
+    );
+    const policyWorkspace = read(
+      "app/clients/[clientOrgId]/policies/managed-client-policy-workspace.tsx",
+    );
+    const compliance = read(
+      "app/operator/clients/[clientOrgId]/compliance/page.tsx",
+    );
+    const certificates = read(
+      "app/operator/clients/[clientOrgId]/certificates/page.tsx",
+    );
+
+    expect(sidebar).toContain('href="/operator"');
+    expect(sidebar).toContain('label="Overview"');
+    expect(sidebar).toContain('label: "Policies"');
+    expect(sidebar).toContain('label: "Compliance"');
+    expect(sidebar).toContain('label: "Certificates"');
+    expect(sidebar).toContain('label="Team"');
+    expect(sidebar).toContain('label="Settings"');
+    expect(policies).toContain('aria-label="Policy status"');
+    expect(policies).toContain('<div className="flex justify-end">{statusFilter}</div>');
+    expect(policies).toContain("showStatusNavigation={false}");
+    expect(policyWorkspace).toContain('policy.isDemo\n                          ? "demo"');
+    expect(compliance).toContain('<div className="flex justify-end">{toolbar}</div>');
+    expect(compliance).not.toContain("OperatorClientTabs");
+    expect(certificates).not.toContain("OperatorClientTabs");
+    expect(certificates).toContain("<OperatorCertificatesWorkspace");
+  });
+
+  it("keeps the shared impersonation action on every operator client page", () => {
+    const action = read(
+      "app/operator/clients/[clientOrgId]/operator-client-impersonation-action.tsx",
+    );
+    const startHook = read("hooks/use-start-operator-impersonation.ts");
+    const pages = [
+      "app/operator/clients/[clientOrgId]/page.tsx",
+      "app/operator/clients/[clientOrgId]/policies/page.tsx",
+      "app/operator/clients/[clientOrgId]/policies/[id]/page.tsx",
+      "app/operator/clients/[clientOrgId]/compliance/page.tsx",
+      "app/operator/clients/[clientOrgId]/certificates/page.tsx",
+    ].map(read);
+
+    expect(action).toContain("useStartOperatorImpersonation");
+    expect(action).toContain("useStopOperatorImpersonation");
+    expect(action).toContain("UserRoundCog");
+    expect(action).toContain("LogOut");
+    expect(action).toContain('"Stop impersonating"');
+    expect(action).toContain('"Impersonate"');
+    expect(action).toContain('"Retry impersonation"');
+    expect(action).toContain("expandLabel");
+    expect(startHook).toContain("api.operator.startImpersonation");
+    expect(startHook).toContain("useConvexConnectionState");
+    expect(startHook).toContain("IMPERSONATION_ACK_TIMEOUT_MS");
+    pages.forEach((page) => {
+      expect(page).toContain("<OperatorClientImpersonationAction");
+    });
+  });
+
+  it("orders policy actions by task frequency and consequence", () => {
+    const detail = read("app/policies/[id]/policy-detail-body.tsx");
+    const pdfButton = read("app/policies/[id]/policy-certificates-tab.tsx");
+    const toolbarStart = detail.indexOf("onActions(\n      <>");
+    const toolbarEnd = detail.indexOf(
+      "return () => onActions(null)",
+      toolbarStart,
+    );
+    const toolbar = detail.slice(toolbarStart, toolbarEnd);
+
+    expect(toolbar.indexOf("<ViewPdfButton")).toBeLessThan(
+      toolbar.indexOf("<RotateCw"),
+    );
+    expect(toolbar.indexOf("<RotateCw")).toBeLessThan(
+      toolbar.indexOf("<Archive"),
+    );
+    expect(toolbar.indexOf("<Archive")).toBeLessThan(toolbar.indexOf("<Plus"));
+    expect(toolbar.match(/expandLabel/g)).toHaveLength(3);
+    expect(toolbar).toContain('variant="icon"');
+    expect(toolbar).toContain("<RotateCw");
+    expect(toolbar).toContain("<Archive");
+    expect(toolbar).toContain("<Plus");
+    expect(pdfButton).toContain("<Eye");
+    expect(pdfButton).toContain('variant="icon"');
+    expect(pdfButton).toContain("expandLabel");
+    expect(pdfButton).toContain('"Hide PDF" : "View PDF"');
+  });
+
+  it("opens a dedicated operator policy workspace with extraction actions in a drawer", () => {
+    const policies = read(
+      "app/operator/clients/[clientOrgId]/policies/page.tsx",
+    );
+    const preview = read(
+      "app/operator/clients/[clientOrgId]/policies/operator-policy-preview.tsx",
+    );
+    const detail = read("app/policies/[id]/policy-detail-body.tsx");
+    const extraction = read(
+      "app/policies/[id]/operator-policy-extraction-workspace.tsx",
+    );
+    const sidebar = read("app/operator/operator-sidebar.tsx");
+
+    expect(policies).toContain("onPolicySelect={setPreviewPolicyId}");
+    expect(policies).toContain("policyPreview={policyPreview}");
+    expect(preview).toContain("<PolicyPreview");
+    expect(preview).toContain("Open full workspace");
+    expect(preview).not.toContain("?tab=extraction");
+    expect(detail).toContain("<OperatorPolicyWorkspace");
+    expect(detail).toContain("<OperatorPolicyExtractionHistory");
+    expect(detail).toContain("<OperatorPolicyExtractionPanel");
+    expect(detail).toContain("<OperatorPolicyInspectionPanel");
+    expect(detail).toContain("Re-extract");
+    expect(detail).toContain("Demo data");
+    expect(detail).not.toContain('label: "Extraction"');
+    expect(extraction).toContain("Targeted operations");
+    expect(extraction).toContain("Recover coverages");
+    expect(extraction).toContain("Rerun facts");
+    expect(extraction).toContain("Rebuild index");
+    expect(extraction).toContain("Referenced source evidence");
+    expect(extraction).toContain("sourceSpans && sourceSpans.length > 0");
+    expect(extraction).toContain("<SourceEvidenceList");
+    expect(extraction).not.toContain("function SourceEvidenceTable");
+    expect(extraction).not.toContain('title="Run history"');
+    expect(extraction).toContain("ChevronRight");
+    expect(extraction).toContain("hasMeaningfulData");
+    expect(extraction).not.toContain("View data");
+    expect(extraction).not.toContain(
+      "Semantic document outline persisted from source parsing.",
+    );
+    expect(detail).toContain('label: "Extraction history"');
+    expect(extraction).not.toContain("stored artifacts for this policy");
+    expect(extraction).not.toContain("Full worker queue");
+    expect(extraction).not.toContain("description=\"Reparse the original PDF");
+    expect(extraction).toContain('<Tabs defaultValue="overview"');
+    expect(extraction).toContain('<TabsList variant="pill"');
+    expect(extraction).toContain('<TabsTrigger value="overview">Overview');
+    expect(extraction).toContain('<TabsTrigger value="logs">Logs');
+    expect(extraction).not.toContain('title="Extraction timeline"');
+    expect(extraction).toContain("<TimelineWaterfall");
+    expect(extraction).not.toContain('title="Event log"');
+    expect(extraction).toContain('format("HH:mm:ss.SSS")');
+    expect(extraction).toContain("<TraceEventRow");
+    expect(extraction).toContain("<TraceEventList events={detail.events}");
+    expect(extraction).toContain(
+      "return events.map((event) => eventTiming(event, session));",
+    );
+    expect(sidebar).not.toContain('href="/operator/extractions"');
+  });
+
+  it("uses operator-owned certificate and compliance layouts", () => {
+    const table = read("components/ui/table.tsx");
+    const certificates = read(
+      "app/operator/clients/[clientOrgId]/certificates/page.tsx",
+    );
+    const operatorCertificates = read(
+      "app/operator/clients/[clientOrgId]/certificates/operator-certificates-workspace.tsx",
+    );
+    const compliance = read(
+      "app/operator/clients/[clientOrgId]/compliance/page.tsx",
+    );
+    const sharedCompliance = read("components/compliance-page.tsx");
+
+    expect(certificates).toContain("OperatorCertificatesWorkspace");
+    expect(certificates).not.toContain("CertificatesWorkspaceShellArgs");
+    expect(operatorCertificates).not.toContain("CertificateStatusFilter");
+    expect(operatorCertificates).not.toContain("certificateSearchText");
+    expect(operatorCertificates).not.toContain("function Metric");
+    expect(operatorCertificates).toContain('actionPresentation="labels"');
+    expect(compliance).toContain("OperatorComplianceWorkspace");
+    expect(compliance).not.toContain("<CompliancePage");
+    expect(sharedCompliance).not.toContain("OperatorComplianceSummary");
+    expect(sharedCompliance).toContain("OperatorComplianceLineSummary");
+    expect(sharedCompliance).toContain('surface !== "operator"');
+    expect(table).toContain("border-b border-foreground/6");
   });
 
   it("separates global Slack infrastructure from client setup", () => {

@@ -120,8 +120,7 @@ type OperatorNavSection =
   | "brokers"
   | "clients"
   | "channels"
-  | "routing"
-  | "extractions";
+  | "routing";
 
 function getOperatorActiveSection(pathname: string): OperatorNavSection {
   if (pathname.startsWith("/operator/brokers")) return "brokers";
@@ -130,7 +129,6 @@ function getOperatorActiveSection(pathname: string): OperatorNavSection {
   if (pathname.startsWith("/operator/models")) return "routing";
   if (pathname.startsWith("/operator/routing")) return "routing";
   if (pathname.startsWith("/operator/tools")) return "routing";
-  if (pathname.startsWith("/operator/extractions")) return "extractions";
   return "clients";
 }
 

@@ -5,6 +5,7 @@ import { action, internalAction, internalMutation, internalQuery, query } from "
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
+import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
 import {
   certificateHolderDisplayBlock,
   parseCertificateHolderBlock,
@@ -315,7 +316,10 @@ export const getGenerationContext = query({
     const policy = await ctx.db.get(args.policyId);
     if (!policy?.orgId || policy.deletedAt) throw new Error("Policy not found");
 
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
     if (access.accessType === "connected_client") {
       throwUserFacingError(
         userFacingErrorCodes.readOnlyAccess,

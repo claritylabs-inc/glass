@@ -115,7 +115,9 @@ describe("policy preview extraction", () => {
   it("keeps extraction toasts alongside inline placeholder rows", () => {
     const extractionToast = read("components/shared/extraction-banner.tsx");
     const policyList = read("app/policies/page.tsx");
-    const brokerPolicyList = read("app/clients/[clientOrgId]/policies/page.tsx");
+    const brokerPolicyList = read(
+      "app/clients/[clientOrgId]/policies/managed-client-policy-workspace.tsx",
+    );
     const detailsTab = read("app/policies/[id]/policy-details-tab.tsx");
     const detailBody = read("app/policies/[id]/policy-detail-body.tsx");
 

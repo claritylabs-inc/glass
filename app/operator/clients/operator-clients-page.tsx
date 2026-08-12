@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
 import { isValidPhoneNumber } from "react-phone-number-input";
 import { api } from "@/convex/_generated/api";
@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { OperatorSidebar } from "../operator-sidebar";
@@ -45,6 +45,7 @@ import {
   useOperatorClientCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
+import { useStartOperatorImpersonation } from "@/hooks/use-start-operator-impersonation";
 import { formatDisplayDate } from "@/lib/date-format";
 import {
   operatorClientStatusLabel,
@@ -108,7 +109,7 @@ export default function OperatorClientsScreen() {
     createShouldCheckPhone ? { phone: debouncedAdminPhone } : "skip",
   );
   const createClient = useAction(api.operator.createSoloClient);
-  const startImpersonation = useMutation(api.operator.startImpersonation);
+  const { startImpersonation } = useStartOperatorImpersonation();
   const stopOperatorImpersonation = useStopOperatorImpersonation(
     current?.activeImpersonation,
   );
@@ -203,8 +204,9 @@ export default function OperatorClientsScreen() {
       await startImpersonation({
         targetOrgId: client._id,
         targetRole: "admin",
+        destination: "/policies",
+        failureMessage: "Failed to impersonate client",
       });
-      router.push("/policies");
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(error, "Failed to impersonate client"),
@@ -235,17 +237,20 @@ export default function OperatorClientsScreen() {
     <>
       {current?.activeImpersonation ? (
         <PillButton
-          variant="secondary"
+          variant="icon"
           size="compact"
+          label="Stop impersonating"
+          expandLabel
           onClick={async () => {
             await stopOperatorImpersonation();
             toast.success("Impersonation stopped");
           }}
         >
-          Stop impersonating
+          <LogOut className="size-3.5" />
         </PillButton>
       ) : null}
-      <PillButton size="compact" variant="secondary" onClick={openCreate}>
+      <PillButton size="compact" onClick={openCreate}>
+        <Plus className="size-3.5" />
         Create client
       </PillButton>
     </>

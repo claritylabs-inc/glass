@@ -1105,6 +1105,7 @@ function UnifiedThreadActions({
         variant="icon"
         onClick={handleCopyThread}
         label="Copy thread"
+        expandLabel
       >
         <Copy className="w-3.5 h-3.5" />
       </PillButton>
@@ -1113,6 +1114,7 @@ function UnifiedThreadActions({
         variant="icon"
         onClick={handleArchiveToggle}
         label={isArchived ? "Unarchive" : "Archive"}
+        expandLabel
       >
         {isArchived ? (
           <ArchiveRestore className="w-4 h-4" />

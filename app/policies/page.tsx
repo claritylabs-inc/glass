@@ -262,11 +262,10 @@ export default function PoliciesPage() {
         !showArchived ? (
           <PillButton
             size="compact"
-            variant="secondary"
             onClick={() => setUploaderOpen(true)}
           >
             <Upload className="h-3.5 w-3.5" />
-            Upload
+            Upload policy
           </PillButton>
         ) : null
       }

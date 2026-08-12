@@ -77,7 +77,12 @@ type DraftPolicyRow = {
   policyTermType?: string;
   pipelineStatus?: string;
   extractionDataStage?: string;
-  uploadedBySide?: "broker" | "client" | "email_scan" | "agent_email";
+  uploadedBySide?:
+    | "broker"
+    | "client"
+    | "operator"
+    | "email_scan"
+    | "agent_email";
   carrierIdentity?: CarrierIdentity | null;
   policyDetailOverrides?: unknown;
   productIdentity?: unknown;

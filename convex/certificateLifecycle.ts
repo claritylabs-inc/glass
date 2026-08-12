@@ -17,7 +17,10 @@ import {
   compareCertificateHolderAddresses,
   type CertificateHolderResolutionCandidate,
 } from "./lib/certificateHolderResolution";
-import { requireOperator } from "./lib/operatorIdentity";
+import {
+  assertImpersonatedSetupWrite,
+  requireOperator,
+} from "./lib/operatorIdentity";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
@@ -225,7 +228,7 @@ export const listByPolicy = query({
 export const listForOrg = query({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    await getOrgAccess(ctx, args.orgId);
+    await getOrgAccess(ctx, args.orgId, { allowOperator: true });
     const certificates = await ctx.db
       .query("policyCertificates")
       .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
@@ -331,8 +334,11 @@ export const archive = mutation({
   handler: async (ctx, args) => {
     const certificate = await ctx.db.get(args.certificateId);
     if (!certificate) throw new Error("Certificate not found.");
-    const access = await getOrgAccess(ctx, certificate.orgId);
+    const access = await getOrgAccess(ctx, certificate.orgId, {
+      allowOperator: true,
+    });
     assertCanWriteCertificates(access);
+    await assertImpersonatedSetupWrite(ctx, certificate.orgId);
     if (certificate.status === "archived") {
       return { status: "archived", cancelledJobs: 0 };
     }
@@ -372,8 +378,11 @@ export const unarchive = mutation({
   handler: async (ctx, args) => {
     const certificate = await ctx.db.get(args.certificateId);
     if (!certificate) throw new Error("Certificate not found.");
-    const access = await getOrgAccess(ctx, certificate.orgId);
+    const access = await getOrgAccess(ctx, certificate.orgId, {
+      allowOperator: true,
+    });
     assertCanWriteCertificates(access);
+    await assertImpersonatedSetupWrite(ctx, certificate.orgId);
     if (certificate.status !== "archived") {
       throw new Error("Certificate is not archived.");
     }

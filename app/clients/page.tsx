@@ -47,7 +47,7 @@ export default function ClientsPage() {
   };
 
   const headerActions = (
-    <PillButton size="compact" variant="secondary" onClick={openNew}>
+    <PillButton size="compact" onClick={openNew}>
       <UserPlus className="h-3.5 w-3.5" />
       Invite client
     </PillButton>

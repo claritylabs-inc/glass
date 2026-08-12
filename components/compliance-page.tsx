@@ -55,7 +55,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { isFeatureEnabled } from "@/convex/lib/featureFlags";
+import {
+  isFeatureEnabled,
+  type FeatureFlagMap,
+} from "@/convex/lib/featureFlags";
 import {
   REQUIREMENT_LIMIT_KINDS,
   REQUIREMENT_LIMIT_KIND_LABELS,
@@ -84,6 +87,28 @@ type StatusFilter = "all" | ComplianceStatus | "defined";
 type ComplianceView = "overview" | "requirements" | "sources";
 type RequirementKind = "coverage" | "insurer" | "condition";
 type RequirementSourceDocumentType = Exclude<RequirementSourceType, "manual" | "bulk_import">;
+
+export type ComplianceWorkspaceOrgContext = {
+  orgId: Id<"organizations">;
+  orgType: "client" | "broker";
+  role: "admin" | "member" | undefined;
+  featureFlags?: FeatureFlagMap;
+  isReadOnlyImpersonation: boolean;
+};
+
+export type ComplianceWorkspaceShellArgs = {
+  actions: ReactNode;
+  rightPanel: ReactNode;
+  toolbar: ReactNode;
+  children: ReactNode;
+};
+
+export type CompliancePageProps = {
+  orgContext?: ComplianceWorkspaceOrgContext;
+  renderShell?: (args: ComplianceWorkspaceShellArgs) => ReactNode;
+};
+
+type ComplianceSurface = "customer" | "operator";
 
 type ComplianceApi = {
   compliance: {
@@ -534,6 +559,89 @@ function OverviewTab({
         })}
       </div>
     </div>
+  );
+}
+
+function OperatorComplianceLineSummary({
+  requirements,
+  onOpenRequirements,
+}: {
+  requirements: Requirement[];
+  onOpenRequirements: (lineOfBusiness: string) => void;
+}) {
+  const groups = new Map<string, Requirement[]>();
+  for (const requirement of requirements) {
+    const line = requirement.lineOfBusiness ?? "UN";
+    groups.set(line, [...(groups.get(line) ?? []), requirement]);
+  }
+  const rows = Array.from(groups.entries()).sort(([left], [right]) =>
+    lineDisplayLabel(left).localeCompare(lineDisplayLabel(right)),
+  );
+
+  if (rows.length === 0) {
+    return (
+      <OperationalPanel as="div" className="p-5 text-muted-foreground">
+        No requirements have been defined.
+      </OperationalPanel>
+    );
+  }
+
+  return (
+    <OperationalPanel as="div">
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[34%] px-4">Line</TableHead>
+            <TableHead className="w-[16%]">Requirements</TableHead>
+            <TableHead className="w-[16%]">Met</TableHead>
+            <TableHead className="w-[18%]">Needs attention</TableHead>
+            <TableHead className="w-[16%] px-4">Unverified</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map(([line, lineRequirements]) => {
+            const met = lineRequirements.filter(
+              (requirement) => requirement.complianceCheck?.status === "met",
+            ).length;
+            const attention = lineRequirements.filter((requirement) =>
+              needsAttention(requirement.complianceCheck?.status),
+            ).length;
+            const unverified = lineRequirements.length - met - attention;
+            return (
+              <TableRow
+                key={line}
+                className="cursor-pointer"
+                tabIndex={0}
+                onClick={() => onOpenRequirements(line)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  onOpenRequirements(line);
+                }}
+              >
+                <TableCell className={`px-4 text-foreground ${typeStyle("body.medium")}`}>
+                  {lineDisplayLabel(line)}
+                </TableCell>
+                <TableCell className={typeStyle("data.numeric")}>
+                  {lineRequirements.length}
+                </TableCell>
+                <TableCell className={typeStyle("data.numeric")}>{met}</TableCell>
+                <TableCell>
+                  {attention > 0 ? (
+                    <StatusTag tone="danger">{attention}</StatusTag>
+                  ) : (
+                    <span className="text-muted-foreground">0</span>
+                  )}
+                </TableCell>
+                <TableCell className={`px-4 ${typeStyle("data.numeric")}`}>
+                  {Math.max(0, unverified)}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </OperationalPanel>
   );
 }
 
@@ -1407,12 +1515,19 @@ function RequirementSourcesTable({
   );
 }
 
-export function CompliancePage() {
+function ComplianceWorkspace({
+  orgContext,
+  renderShell,
+  surface,
+}: CompliancePageProps & { surface: ComplianceSurface }) {
   const router = useRouter();
-  const currentOrg = useActiveOrgContext();
+  const routeOrg = useActiveOrgContext();
+  const currentOrg = orgContext ?? routeOrg;
   useEffect(() => {
-    if (currentOrg?.orgType === "broker") router.replace("/clients");
-  }, [currentOrg?.orgType, router]);
+    if (!orgContext && currentOrg?.orgType === "broker") {
+      router.replace("/clients");
+    }
+  }, [currentOrg?.orgType, orgContext, router]);
 
   const isBroker = currentOrg?.orgType === "broker";
   const orgId = !isBroker
@@ -1451,7 +1566,9 @@ export function CompliancePage() {
   const importRequirements = useAction(complianceApi.actions.complianceRequirements.importRequirements);
   const recheckOwnRequirement = useAction(complianceApi.actions.complianceReview.recheckOwnRequirement);
 
-  const [view, setView] = useState<ComplianceView>("overview");
+  const [view, setView] = useState<ComplianceView>(
+    surface === "operator" ? "requirements" : "overview",
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"bulk" | "manual">("bulk");
   const [requirementScope, setRequirementScope] = useState<RequirementScope>("own_org");
@@ -1498,6 +1615,39 @@ export function CompliancePage() {
     !showConnectFeatures || isPureVendorAccount ? "own_org" : requirementScope;
   const navigationValue =
     view === "requirements" && showConnectFeatures ? activeRequirementScope : view;
+  const requirementNavigationOptions = showConnectFeatures
+    ? [
+        { value: "own_org", label: "My requirements" },
+        ...(!isPureVendorAccount
+          ? [{ value: "vendors", label: "Vendor requirements" }]
+          : []),
+      ]
+    : [{ value: "requirements", label: "Requirements" }];
+  const navigationOptions: Array<{ value: string; label: string }> =
+    surface === "operator"
+      ? [
+          ...requirementNavigationOptions,
+          { value: "sources", label: "Sources" },
+          { value: "overview", label: "Summary" },
+        ]
+      : [
+          { value: "overview", label: "Overview" },
+          ...requirementNavigationOptions,
+          { value: "sources", label: "Sources" },
+        ];
+  const navigationLabel =
+    navigationOptions.find((option) => option.value === navigationValue)
+      ?.label ?? "Overview";
+
+  function changeNavigation(value: string | null) {
+    if (!value) return;
+    if (value === "own_org" || value === "vendors") {
+      setRequirementScope(value);
+      setView("requirements");
+      return;
+    }
+    setView(value as ComplianceView);
+  }
 
   const scopedRequirements = useMemo(
     () =>
@@ -1529,13 +1679,23 @@ export function CompliancePage() {
   const effectiveLineFilter = lineFilters.includes(lineFilter) ? lineFilter : "all";
   const effectiveLimitFilter = limitFilters.includes(limitFilter) ? limitFilter : "all";
   const effectiveStatusFilter = statusFilters.includes(statusFilter) ? statusFilter : "all";
-  const visibleRequirements = scopedRequirements.filter(
-    (requirement) =>
-      (effectiveSourceFilter === "all" || sourceType(requirement) === effectiveSourceFilter) &&
-      (effectiveLineFilter === "all" || lineFilterValue(requirement.lineOfBusiness) === effectiveLineFilter) &&
-      (effectiveLimitFilter === "all" || requirementLimitFilters(requirement).includes(effectiveLimitFilter)) &&
-      (effectiveStatusFilter === "all" || statusFilterValue(requirement) === effectiveStatusFilter),
-  );
+  const visibleRequirements =
+    surface === "operator"
+      ? scopedRequirements
+      : scopedRequirements.filter(
+          (requirement) =>
+            (effectiveSourceFilter === "all" ||
+              sourceType(requirement) === effectiveSourceFilter) &&
+            (effectiveLineFilter === "all" ||
+              lineFilterValue(requirement.lineOfBusiness) ===
+                effectiveLineFilter) &&
+            (effectiveLimitFilter === "all" ||
+              requirementLimitFilters(requirement).includes(
+                effectiveLimitFilter,
+              )) &&
+            (effectiveStatusFilter === "all" ||
+              statusFilterValue(requirement) === effectiveStatusFilter),
+        );
   const selectedRequirement =
     (requirements ?? []).find((requirement) => requirement._id === selectedRequirementId) ?? null;
   const selectedSource =
@@ -1981,19 +2141,29 @@ export function CompliancePage() {
     />
   ) : null;
 
-  return (
-    <AppShell
-      actions={
-        canManageCompliance ? (
-          <PillButton size="compact" variant="primary" onClick={openAddRequirements}>
-            <Plus className="h-3.5 w-3.5" />
-            Add requirements
-          </PillButton>
-        ) : undefined
-      }
-      rightPanel={detailPanel ?? sourcePanel ?? addPanel}
-    >
-      <div className="flex w-full flex-col gap-4">
+  const actions = canManageCompliance ? (
+    <PillButton size="compact" variant="primary" onClick={openAddRequirements}>
+      <Plus className="h-3.5 w-3.5" />
+      Add requirements
+    </PillButton>
+  ) : null;
+  const rightPanel = detailPanel ?? sourcePanel ?? addPanel;
+  const toolbar = (
+    <Select value={navigationValue} onValueChange={changeNavigation}>
+      <SelectTrigger className="w-44" aria-label="Compliance view">
+        <SelectValue>{navigationLabel}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {navigationOptions.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+  const content = (
+    <div className="flex w-full flex-col gap-4">
         {complianceWriteRestriction ? (
           <OperationalPanel as="div" className="flex items-start gap-3 px-4 py-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -2007,32 +2177,17 @@ export function CompliancePage() {
             </div>
           </OperationalPanel>
         ) : null}
-        <Tabs
-          value={navigationValue}
-          onValueChange={(value) => {
-            if (value === "own_org" || value === "vendors") {
-              setRequirementScope(value);
-              setView("requirements");
-              return;
-            }
-            setView(value as ComplianceView);
-          }}
-        >
-          <TabsList variant="pill">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            {showConnectFeatures ? (
-              <>
-                <TabsTrigger value="own_org">My requirements</TabsTrigger>
-                {!isPureVendorAccount ? (
-                  <TabsTrigger value="vendors">Vendor requirements</TabsTrigger>
-                ) : null}
-              </>
-            ) : (
-              <TabsTrigger value="requirements">Requirements</TabsTrigger>
-            )}
-            <TabsTrigger value="sources">Sources</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {!renderShell ? (
+          <Tabs value={navigationValue} onValueChange={changeNavigation}>
+            <TabsList variant="pill">
+              {navigationOptions.map((option) => (
+                <TabsTrigger key={option.value} value={option.value}>
+                  {option.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        ) : null}
         {view === "sources" ? (
           requirementSources === undefined ? (
             <RequirementsLoadingSkeleton />
@@ -2050,61 +2205,72 @@ export function CompliancePage() {
         (showConnectFeatures && (clientRows === undefined || vendorRows === undefined)) ? (
           <RequirementsLoadingSkeleton />
         ) : view === "overview" ? (
-          <OverviewTab
-            requirements={requirements}
-            onOpenRequirements={(line) => {
-              setSourceFilter("all");
-              setLineFilter(lineFilterValue(line));
-              setLimitFilter("all");
-              setStatusFilter("all");
-              setView("requirements");
-            }}
-            onAdd={openAddRequirements}
-          />
+          surface === "operator" ? (
+            <OperatorComplianceLineSummary
+              requirements={requirements}
+              onOpenRequirements={() => {
+                setView("requirements");
+              }}
+            />
+          ) : (
+            <OverviewTab
+              requirements={requirements}
+              onOpenRequirements={(line) => {
+                setSourceFilter("all");
+                setLineFilter(lineFilterValue(line));
+                setLimitFilter("all");
+                setStatusFilter("all");
+                setView("requirements");
+              }}
+              onAdd={openAddRequirements}
+            />
+          )
         ) : (
           <>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <RequirementsFilterSelect
-                label="Source"
-                value={effectiveSourceFilter}
-                valueLabel={sourceLabel(effectiveSourceFilter)}
-                onValueChange={(value) => setSourceFilter(value as SourceFilter)}
-              >
-                {sourceFilters.map((filter) => (
-                  <SelectItem key={filter} value={filter}>{sourceLabel(filter)}</SelectItem>
-                ))}
-              </RequirementsFilterSelect>
-              <RequirementsFilterSelect
-                label="Line"
-                value={effectiveLineFilter}
-                valueLabel={lineFilterLabel(effectiveLineFilter)}
-                onValueChange={(value) => setLineFilter(value as LineFilter)}
-              >
-                {lineFilters.map((filter) => (
-                  <SelectItem key={filter} value={filter}>{lineFilterLabel(filter)}</SelectItem>
-                ))}
-              </RequirementsFilterSelect>
-              <RequirementsFilterSelect
-                label="Limit type"
-                value={effectiveLimitFilter}
-                valueLabel={limitFilterLabel(effectiveLimitFilter)}
-                onValueChange={(value) => setLimitFilter(value as LimitFilter)}
-              >
-                {limitFilters.map((filter) => (
-                  <SelectItem key={filter} value={filter}>{limitFilterLabel(filter)}</SelectItem>
-                ))}
-              </RequirementsFilterSelect>
-              <RequirementsFilterSelect
-                label="Status"
-                value={effectiveStatusFilter}
-                valueLabel={statusFilterLabel(effectiveStatusFilter)}
-                onValueChange={(value) => setStatusFilter(value as StatusFilter)}
-              >
-                {statusFilters.map((filter) => (
-                  <SelectItem key={filter} value={filter}>{statusFilterLabel(filter)}</SelectItem>
-                ))}
-              </RequirementsFilterSelect>
-            </div>
+            {surface !== "operator" ? (
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <RequirementsFilterSelect
+                  label="Source"
+                  value={effectiveSourceFilter}
+                  valueLabel={sourceLabel(effectiveSourceFilter)}
+                  onValueChange={(value) => setSourceFilter(value as SourceFilter)}
+                >
+                  {sourceFilters.map((filter) => (
+                    <SelectItem key={filter} value={filter}>{sourceLabel(filter)}</SelectItem>
+                  ))}
+                </RequirementsFilterSelect>
+                <RequirementsFilterSelect
+                  label="Line"
+                  value={effectiveLineFilter}
+                  valueLabel={lineFilterLabel(effectiveLineFilter)}
+                  onValueChange={(value) => setLineFilter(value as LineFilter)}
+                >
+                  {lineFilters.map((filter) => (
+                    <SelectItem key={filter} value={filter}>{lineFilterLabel(filter)}</SelectItem>
+                  ))}
+                </RequirementsFilterSelect>
+                <RequirementsFilterSelect
+                  label="Limit type"
+                  value={effectiveLimitFilter}
+                  valueLabel={limitFilterLabel(effectiveLimitFilter)}
+                  onValueChange={(value) => setLimitFilter(value as LimitFilter)}
+                >
+                  {limitFilters.map((filter) => (
+                    <SelectItem key={filter} value={filter}>{limitFilterLabel(filter)}</SelectItem>
+                  ))}
+                </RequirementsFilterSelect>
+                <RequirementsFilterSelect
+                  label="Status"
+                  value={effectiveStatusFilter}
+                  valueLabel={statusFilterLabel(effectiveStatusFilter)}
+                  onValueChange={(value) => setStatusFilter(value as StatusFilter)}
+                >
+                  {statusFilters.map((filter) => (
+                    <SelectItem key={filter} value={filter}>{statusFilterLabel(filter)}</SelectItem>
+                  ))}
+                </RequirementsFilterSelect>
+              </div>
+            ) : null}
             {visibleRequirements.length === 0 ? (
               <EmptyState onAdd={openAddRequirements} />
             ) : (
@@ -2119,7 +2285,26 @@ export function CompliancePage() {
             )}
           </>
         )}
-      </div>
+    </div>
+  );
+
+  if (renderShell) {
+    return renderShell({ actions, rightPanel, toolbar, children: content });
+  }
+
+  return (
+    <AppShell actions={actions} rightPanel={rightPanel}>
+      {content}
     </AppShell>
   );
+}
+
+export function CompliancePage(props: CompliancePageProps = {}) {
+  return <ComplianceWorkspace {...props} surface="customer" />;
+}
+
+export function OperatorComplianceWorkspace(
+  props: CompliancePageProps = {},
+) {
+  return <ComplianceWorkspace {...props} surface="operator" />;
 }

@@ -2,7 +2,6 @@
 
 import { useAuthActions } from "@convex-dev/auth/react";
 import {
-  Activity,
   Building2,
   LogOut,
   MessageSquareText,
@@ -33,8 +32,7 @@ export function OperatorSidebar({
     | "clients"
     | "demo-leads"
     | "channels"
-    | "routing"
-    | "extractions";
+    | "routing";
 }) {
   const { signOut } = useAuthActions();
 
@@ -89,13 +87,6 @@ export function OperatorSidebar({
             label="Routing"
             icon={Route}
             active={active === "routing"}
-            collapsed={collapsed}
-          />
-          <SidebarMenuItem
-            href="/operator/extractions"
-            label="Extractions"
-            icon={Activity}
-            active={active === "extractions"}
             collapsed={collapsed}
           />
         </div>

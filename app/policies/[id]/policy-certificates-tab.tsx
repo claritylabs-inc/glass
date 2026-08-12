@@ -47,11 +47,12 @@ export function ViewPdfButton({
       variant="icon"
       size="compact"
       label={isPdfOpen ? "Hide PDF" : "View PDF"}
+      expandLabel
       disabled={disabled}
       onClick={() => (isPdfOpen ? togglePdf() : openWithUrl(url))}
       className="hidden lg:inline-flex"
     >
-      <Eye className="size-4 shrink-0" />
+      <Eye className="size-3.5" />
     </PillButton>
   );
 }

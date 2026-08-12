@@ -24,8 +24,9 @@ describe("toaster layout", () => {
     expect(toaster).toContain('width: "var(--width)"');
     expect(toaster).toContain('maxWidth: "calc(100vw - 2rem)"');
     expect(toaster).toContain("!overflow-hidden");
-    expect(toaster).toContain("!border-0");
-    expect(toaster).toContain("!ring-1 !ring-foreground/10");
+    expect(toaster).toContain("!border !border-foreground/10");
+    expect(toaster).not.toContain("!border-0");
+    expect(toaster).not.toContain("!ring-1");
     expect(toaster).toContain("!shadow-sm !shadow-black/[0.08]");
     expect(toaster).not.toContain("hover:!border");
     expect(toaster).not.toContain("hover:!shadow");

@@ -1639,6 +1639,7 @@ export default defineSchema({
       v.union(
         v.literal("broker"),
         v.literal("client"),
+        v.literal("operator"),
         v.literal("agent_email"),
       ),
     ),

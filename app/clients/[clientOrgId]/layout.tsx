@@ -49,14 +49,14 @@ export default function ClientDetailLayout({
     (clientOrg as { name?: string } | undefined)?.name?.trim() || "Client";
 
   const actions = (
-    <div className="flex items-center gap-2">
+    <>
       {clientOrg && isClientRoot ? (
         <StatusTag tone={status === "active" ? "success" : "warning"}>
           {statusLabel}
         </StatusTag>
       ) : null}
       {pageActions}
-    </div>
+    </>
   );
 
   return (

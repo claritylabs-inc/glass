@@ -21,10 +21,13 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("RequirementEditForm");
     expect(page).toContain("function latestCheckNote");
     expect(page).toContain('text-muted-foreground/60 ${typeStyle("body.medium")}');
-    expect(page).toContain("TabsTrigger value=\"sources\"");
-    expect(page).toContain('TabsTrigger value="own_org">My requirements');
-    expect(page).toContain('TabsTrigger value="vendors">Vendor requirements');
-    expect(page).toContain('TabsTrigger value="requirements">Requirements');
+    expect(page).toContain('{ value: "sources", label: "Sources" }');
+    expect(page).toContain('{ value: "own_org", label: "My requirements" }');
+    expect(page).toContain('{ value: "vendors", label: "Vendor requirements" }');
+    expect(page).toContain('{ value: "requirements", label: "Requirements" }');
+    expect(page).toContain('<TabsTrigger key={option.value} value={option.value}>');
+    expect(page).toContain('aria-label="Compliance view"');
+    expect(page).toContain("if (renderShell)");
     expect(page).not.toContain("<Tabs value={activeRequirementScope}");
     expect(page).not.toContain("Archive selected");
     expect(page).toContain('className="h-1.5 w-full overflow-hidden rounded-full bg-muted"');

@@ -8,7 +8,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { getOrgAccess, requireAuth } from "./lib/access";
+import { getOrgAccess, requireAuth, type OrgAccess } from "./lib/access";
 import {
   assessRequirementCompliance,
   formatComplianceReasons,
@@ -31,7 +31,10 @@ import {
 } from "./lib/complianceRequirementMigration";
 import { isLobCode, lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 import { notify } from "./lib/notify";
-import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
+import {
+  assertImpersonatedSetupWrite,
+  writeOperatorAudit,
+} from "./lib/operatorIdentity";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
@@ -108,8 +111,11 @@ async function requireOrgMember(
   ctx: QueryCtx | MutationCtx,
   orgId: Id<"organizations">,
 ) {
-  const access = await getOrgAccess(ctx, orgId);
-  if (access.accessType !== "member") {
+  const access = await getOrgAccess(ctx, orgId, { allowOperator: true });
+  if (
+    access.accessType !== "member" &&
+    access.accessType !== "operator"
+  ) {
     throwUserFacingError(
       userFacingErrorCodes.readOnlyAccess,
       "Only members of this organization can manage its compliance requirements.",
@@ -125,6 +131,7 @@ async function requireOrgAdminWrite(
 ) {
   const access = await requireOrgMember(ctx, orgId);
   await assertImpersonatedSetupWrite(ctx, orgId);
+  if (access.accessType === "operator") return access;
   if (access.role !== "admin") {
     throwUserFacingError(userFacingErrorCodes.orgAdminRequired, errorMessage);
   }
@@ -143,15 +150,35 @@ async function requireAdminWriteActor(
       q.eq("orgId", orgId).eq("userId", userId),
     )
     .first();
-  if (membership?.role === "admin") return;
+  if (membership?.role === "admin") {
+    return { userId, accessType: "member" as const };
+  }
 
   const access = await requireOrgMember(ctx, orgId);
   if (access.userId !== userId) {
     throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
   }
   await assertImpersonatedSetupWrite(ctx, orgId);
-  if (access.role === "admin") return;
+  if (access.accessType === "operator") return access;
+  if (access.role === "admin") return access;
   throwUserFacingError(userFacingErrorCodes.orgAdminRequired, errorMessage);
+}
+
+async function writeComplianceOperatorAudit(
+  ctx: MutationCtx,
+  access: Pick<OrgAccess, "userId" | "accessType">,
+  orgId: Id<"organizations">,
+  summary: string,
+  metadata?: Record<string, unknown>,
+) {
+  if (access.accessType !== "operator") return;
+  await writeOperatorAudit(ctx, {
+    operatorUserId: access.userId,
+    type: "setup_write",
+    targetOrgId: orgId,
+    summary,
+    metadata: { domain: "compliance", ...metadata },
+  });
 }
 
 function normalizeText(value: unknown) {
@@ -491,21 +518,30 @@ export const upsertRequirement = mutation({
       updatedByUserId: access.userId,
       updatedAt: now,
     };
-    if (args.requirementId) {
-      const existing = await ctx.db.get(args.requirementId);
+    let requirementId = args.requirementId;
+    if (requirementId) {
+      const existing = await ctx.db.get(requirementId);
       if (!existing || existing.orgId !== args.orgId) {
         throw new Error("Requirement not found");
       }
-      await ctx.db.patch(args.requirementId, patch);
-      return args.requirementId;
+      await ctx.db.patch(requirementId, patch);
+    } else {
+      requirementId = await ctx.db.insert("insuranceRequirements", {
+        orgId: args.orgId,
+        ...patch,
+        status: "active",
+        createdByUserId: access.userId,
+        createdAt: now,
+      });
     }
-    return await ctx.db.insert("insuranceRequirements", {
-      orgId: args.orgId,
-      ...patch,
-      status: "active",
-      createdByUserId: access.userId,
-      createdAt: now,
-    });
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `${args.requirementId ? "Updated" : "Added"} compliance requirement ${sanitized.title}`,
+      { requirementId },
+    );
+    return requirementId;
   },
 });
 
@@ -554,6 +590,13 @@ export const updateRequirementSource = mutation({
       if (args.sourceType !== undefined) requirementPatch.sourceType = args.sourceType;
       await ctx.db.patch(requirement._id, requirementPatch);
     }
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `Updated compliance source ${source.title}`,
+      { sourceDocumentId: args.sourceDocumentId },
+    );
   },
 });
 
@@ -601,6 +644,16 @@ export const archiveRequirementSources = mutation({
       });
       archivedRequirementCount += 1;
     }
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `Archived ${archivedSourceCount} compliance source${archivedSourceCount === 1 ? "" : "s"}`,
+      {
+        sourceDocumentIds,
+        archivedRequirementCount,
+      },
+    );
     return { archivedSourceCount, archivedRequirementCount };
   },
 });
@@ -625,6 +678,13 @@ export const archiveRequirement = mutation({
       updatedByUserId: access.userId,
       updatedAt: dayjs().valueOf(),
     });
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `Archived compliance requirement ${existing.title}`,
+      { requirementId: args.requirementId },
+    );
   },
 });
 
@@ -672,7 +732,7 @@ export const verifyRequirement = mutation({
       throw new Error("Requirement not found");
     }
     const now = dayjs().valueOf();
-    return await ctx.db.insert("complianceChecks", {
+    const checkId = await ctx.db.insert("complianceChecks", {
       orgId: args.orgId,
       requirementId: args.requirementId,
       subjectOrgId: args.subjectOrgId ?? args.orgId,
@@ -693,6 +753,14 @@ export const verifyRequirement = mutation({
       checkedBy: "user",
       checkedByUserId: access.userId,
     });
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `Verified compliance requirement ${requirement.title}`,
+      { requirementId: args.requirementId, checkId },
+    );
+    return checkId;
   },
 });
 
@@ -1005,12 +1073,17 @@ export const saveManualComplianceReviewInternal = internalMutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
+    const access = await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Admin role required",
+    );
     const requirement = await ctx.db.get(args.requirementId);
     if (!requirement || requirement.orgId !== args.orgId) {
       throw new Error("Requirement not found");
     }
-    return await ctx.db.insert("complianceChecks", {
+    const checkId = await ctx.db.insert("complianceChecks", {
       orgId: args.orgId,
       requirementId: args.requirementId,
       subjectOrgId: args.orgId,
@@ -1023,6 +1096,14 @@ export const saveManualComplianceReviewInternal = internalMutation({
       checkedBy: "agent",
       checkedByUserId: args.userId,
     });
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `Rechecked compliance requirement ${requirement.title}`,
+      { requirementId: args.requirementId, checkId },
+    );
+    return checkId;
   },
 });
 
@@ -1049,10 +1130,15 @@ export const upsertRequirementInternal = internalMutation({
     sourcePageEnd: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
+    const access = await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Admin role required",
+    );
     const now = dayjs().valueOf();
     const sanitized = sanitizeRequirementArgs(args);
-    return await ctx.db.insert("insuranceRequirements", {
+    const requirementId = await ctx.db.insert("insuranceRequirements", {
       orgId: args.orgId,
       ...sanitized,
       sourceDocumentId: args.sourceDocumentId,
@@ -1067,6 +1153,14 @@ export const upsertRequirementInternal = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `Added compliance requirement ${sanitized.title}`,
+      { requirementId },
+    );
+    return requirementId;
   },
 });
 
@@ -1151,7 +1245,12 @@ export const createRequirementSourceDocumentInternal = internalMutation({
     parsedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
+    await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Admin role required",
+    );
     const now = dayjs().valueOf();
     return await ctx.db.insert("requirementSourceDocuments", {
       orgId: args.orgId,
@@ -1199,7 +1298,12 @@ export const createRequirementsInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    await requireAdminWriteActor(ctx, args.orgId, args.userId, "Admin role required");
+    const access = await requireAdminWriteActor(
+      ctx,
+      args.orgId,
+      args.userId,
+      "Admin role required",
+    );
     const existing = await listRequirementsForOrg(ctx, args.orgId);
     const seen = new Set(
       existing.map((requirement) =>
@@ -1237,6 +1341,16 @@ export const createRequirementsInternal = internalMutation({
         }),
       );
     }
+    await writeComplianceOperatorAudit(
+      ctx,
+      access,
+      args.orgId,
+      `Imported ${ids.length} compliance requirement${ids.length === 1 ? "" : "s"}`,
+      {
+        requirementIds: ids,
+        sourceDocumentId: args.sourceDocumentId,
+      },
+    );
     return ids;
   },
 });

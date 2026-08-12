@@ -13,7 +13,7 @@ import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
-import { Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Globe2, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -249,13 +249,15 @@ export function OrganizationSection() {
 
   useEffect(() => {
     setActions(
-      <div className="flex items-center gap-3">
+      <>
         <AutoSaveStatus status={organizationSaveStatus} />
         {profileCanReset ? (
           <PillButton
             type="button"
-            variant="secondary"
+            variant="icon"
             size="compact"
+            label={restoringProfile ? "Restoring…" : "Use extracted"}
+            expandLabel
             onClick={() => void handleUseExtracted()}
             disabled={restoringProfile || profileAutoSaveStatus === "saving"}
           >
@@ -264,19 +266,23 @@ export function OrganizationSection() {
             ) : (
               <RotateCcw className="size-3.5" />
             )}
-            {restoringProfile ? "Restoring…" : "Use extracted"}
           </PillButton>
         ) : null}
         <PillButton
-          variant="secondary"
+          variant="icon"
           size="compact"
+          label={extracting ? "Extracting…" : "Extract from website"}
+          expandLabel
           onClick={handleExtract}
           disabled={extracting || !website}
         >
-          {extracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-          {extracting ? "Extracting…" : "Extract from website"}
+          {extracting ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Globe2 className="size-3.5" />
+          )}
         </PillButton>
-      </div>,
+      </>,
     );
     return () => setActions(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps

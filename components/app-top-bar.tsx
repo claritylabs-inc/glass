@@ -28,7 +28,6 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/operator/demo-leads": { label: "Demo leads" },
   "/operator/channels": { label: "Channels" },
   "/operator/routing": { label: "Routing" },
-  "/operator/extractions": { label: "Extractions" },
 };
 
 export function resolveAppBreadcrumb(pathname: string) {
@@ -142,7 +141,7 @@ export function AppTopBar({
       </div>
 
       {/* Presence + actions */}
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex shrink-0 items-center gap-2" data-slot="app-top-bar-actions">
         {presenceUsers && presenceUsers.length > 0 && (
           <>
             <PresenceAvatars users={presenceUsers} />
@@ -150,11 +149,7 @@ export function AppTopBar({
           </>
         )}
         {showBrokerShare ? <BrokerShareLinkButton /> : null}
-        {actions && (
-          <div className="flex items-center gap-2">
-            {actions}
-          </div>
-        )}
+        {actions}
       </div>
     </header>
   );

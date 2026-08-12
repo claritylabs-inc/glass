@@ -217,6 +217,15 @@ wrapping, and truncation local.
   triggers, and non-destructive navigation—not for a locally styled action.
 - A region should have one visually primary action. Additional actions are
   secondary, ghost, or placed in an overflow menu.
+- App top bars order status or presence first, then secondary utility, view,
+  recovery, and reversible archive actions, with at most one create or
+  generate primary action at the right edge. Primary actions keep both their
+  icon and short label visible.
+- Compact secondary app-top-bar actions use `PillButton` with
+  `variant="icon"`, `expandLabel`, a nonempty `label`, and an icon child. They
+  reveal the label on keyboard focus and fine-pointer hover, remain compact on
+  coarse pointers, and respect reduced-motion preferences. Do not use this
+  expanding treatment for dense close, remove, or structural controls.
 - Use `Input`, `Textarea`, `Select`, and the shared field primitives. The
   default field height is `h-9`; compact fields must come from a supported
   primitive size rather than a local height override.

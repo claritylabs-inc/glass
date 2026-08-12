@@ -52,12 +52,14 @@ type ExtractionRangeKey = "all" | "24h" | "30d" | "90d";
 type ExtractionTraceListArgs = {
   status?: TraceStatus;
   orgId?: Id<"organizations">;
+  policyId?: Id<"policies">;
   dateFrom?: number;
   limit?: number;
 };
 type ExtractionTraceFilters = {
   status?: TraceStatus;
   orgId?: string;
+  policyId?: string;
   range: ExtractionRangeKey;
   limit?: number;
 };
@@ -107,6 +109,9 @@ export function operatorExtractionTraceListArgs(
     status: filters.status,
     orgId: filters.orgId
       ? (filters.orgId as Id<"organizations">)
+      : undefined,
+    policyId: filters.policyId
+      ? (filters.policyId as Id<"policies">)
       : undefined,
     dateFrom: stableExtractionDateFrom(filters.range),
     limit: filters.limit ?? 250,

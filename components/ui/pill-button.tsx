@@ -22,11 +22,19 @@ type PillButtonSize = "default" | "compact";
 type PillButtonContentProps =
   | {
       iconOnly: true;
+      expandLabel?: false;
       label: string;
       children?: ReactNode;
     }
   | {
       iconOnly?: false;
+      expandLabel: true;
+      label: string;
+      children?: ReactNode;
+    }
+  | {
+      iconOnly?: false;
+      expandLabel?: false;
       label?: string;
       children?: ReactNode;
     };
@@ -104,12 +112,23 @@ const iconSizeClasses: Record<PillButtonSize, string> = {
   compact: "h-7 w-7 p-0",
 };
 
+const expandableIconSizeClasses: Record<PillButtonSize, string> = {
+  default:
+    "h-8 min-w-8 overflow-hidden px-2 focus-visible:px-5 focus-visible:duration-[280ms] [@media(hover:hover)_and_(pointer:fine)]:hover:px-5 [@media(hover:hover)_and_(pointer:fine)]:hover:duration-[280ms]",
+  compact:
+    "h-7 min-w-7 overflow-hidden px-[7px] focus-visible:px-3 focus-visible:duration-[280ms] [@media(hover:hover)_and_(pointer:fine)]:hover:px-3 [@media(hover:hover)_and_(pointer:fine)]:hover:duration-[280ms]",
+};
+
+const expandingLabelClasses =
+  "min-w-0 -translate-x-0.5 overflow-hidden whitespace-nowrap opacity-0 transition-[opacity,transform] duration-[180ms] [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-focus-visible/pill:translate-x-0 group-focus-visible/pill:opacity-100 group-focus-visible/pill:duration-[280ms] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:translate-x-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:duration-[280ms]";
+
 const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonProps>(
   (
     {
       variant = "primary",
       size = "default",
       iconOnly = false,
+      expandLabel = false,
       label,
       className,
       children,
@@ -120,19 +139,45 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
     ref,
   ) => {
     const isIcon = iconOnly || variant === "icon";
-    const showsLabel = !iconOnly && variant === "iconLabel" && label;
+    const isExpandableIcon =
+      !iconOnly && variant === "icon" && expandLabel && Boolean(label);
+    const showsLabel =
+      !iconOnly && Boolean(label) &&
+      (isExpandableIcon || variant === "iconLabel");
     const config = variantConfig[variant];
     const disabled = "disabled" in props && Boolean(props.disabled);
-    const content = (
+    const renderedLabel = showsLabel ? (
+      <span
+        data-pill-expand-label={isExpandableIcon || undefined}
+        className={isExpandableIcon ? expandingLabelClasses : undefined}
+      >
+        {label}
+      </span>
+    ) : null;
+    const content = isExpandableIcon ? (
+      <span
+        className="grid min-w-0 grid-cols-[auto_minmax(0,0fr)] items-center gap-0 transition-[grid-template-columns,gap] duration-[180ms] [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-focus-visible/pill:grid-cols-[auto_minmax(0,1fr)] group-focus-visible/pill:gap-1.5 group-focus-visible/pill:duration-[280ms] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:grid-cols-[auto_minmax(0,1fr)] [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:gap-1.5 [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:duration-[280ms]"
+      >
+        {children}
+        {renderedLabel}
+      </span>
+    ) : (
       <>
         {children}
-        {showsLabel ? <span>{label}</span> : null}
+        {renderedLabel}
       </>
     );
     const classes = cn(
-      "inline-flex shrink-0 items-center justify-center rounded-full outline-none transition-colors duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:text-current",
+      "inline-flex shrink-0 items-center justify-center rounded-full outline-none duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:text-current",
+      isExpandableIcon
+        ? `group/pill transition-[padding,background-color,border-color,color,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-colors ${typeStyle("control.buttonCompact")}`
+        : "transition-colors",
       config.classes,
-      isIcon ? iconSizeClasses[size] : sizeClasses[size],
+      isExpandableIcon
+        ? expandableIconSizeClasses[size]
+        : isIcon
+          ? iconSizeClasses[size]
+          : sizeClasses[size],
       className,
     );
 
@@ -144,6 +189,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
           aria-disabled={disabled || undefined}
           aria-label={ariaLabel ?? label}
           data-icon-only={isIcon || undefined}
+          data-expand-label={isExpandableIcon || undefined}
           className={classes}
           onClick={(event: MouseEvent<HTMLAnchorElement>) => {
             if (disabled) {
@@ -153,7 +199,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
             onClick?.(event);
           }}
           tabIndex={disabled ? -1 : tabIndex}
-          title={title ?? (isIcon ? label : undefined)}
+          title={title ?? (isIcon && !isExpandableIcon ? label : undefined)}
           transition={MOTION_TRANSITION}
           whileHover={disabled ? undefined : config.hover}
           whileTap={disabled ? undefined : config.tap}
@@ -172,7 +218,8 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
         type={type}
         aria-label={ariaLabel ?? label}
         data-icon-only={isIcon || undefined}
-        title={title ?? (isIcon ? label : undefined)}
+        data-expand-label={isExpandableIcon || undefined}
+        title={title ?? (isIcon && !isExpandableIcon ? label : undefined)}
         whileHover={disabled ? undefined : config.hover}
         whileTap={disabled ? undefined : config.tap}
         transition={MOTION_TRANSITION}

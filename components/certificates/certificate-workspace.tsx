@@ -524,6 +524,7 @@ export function CertificateDetailPanel({
   savingHolder,
   archiving,
   unarchiving,
+  actionPresentation = "icons",
 }: {
   row: PolicyCertificateRecord | null;
   onClose: () => void;
@@ -538,6 +539,7 @@ export function CertificateDetailPanel({
   savingHolder?: boolean;
   archiving?: boolean;
   unarchiving?: boolean;
+  actionPresentation?: "icons" | "labels";
 }) {
   const { openWithUrl } = usePdf();
   const [holderEdit, setHolderEdit] = useState<{
@@ -625,45 +627,70 @@ export function CertificateDetailPanel({
             {!isArchived && onArchive ? (
               <PillButton
                 type="button"
-                variant="icon"
+                variant={actionPresentation === "labels" ? "secondary" : "icon"}
                 size="compact"
                 label="Archive"
-                className="!h-7 !min-h-7 !w-7 !p-0"
+                className={
+                  actionPresentation === "icons"
+                    ? "!h-7 !min-h-7 !w-7 !p-0"
+                    : undefined
+                }
                 onClick={() => onArchive(row)}
                 disabled={archiving}
               >
-                <Archive className="size-4 shrink-0" />
+                {actionPresentation === "icons" ? (
+                  <Archive className="size-4 shrink-0" />
+                ) : archiving ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                {actionPresentation === "labels" ? "Archive" : null}
               </PillButton>
             ) : null}
             {!isArchived && onReissue ? (
               <PillButton
                 type="button"
-                variant="icon"
+                variant={actionPresentation === "labels" ? "secondary" : "icon"}
                 size="compact"
                 label="Reissue"
-                className="!h-7 !min-h-7 !w-7 !p-0"
+                className={
+                  actionPresentation === "icons"
+                    ? "!h-7 !min-h-7 !w-7 !p-0"
+                    : undefined
+                }
                 onClick={() => onReissue(row)}
                 disabled={reissuing}
               >
-                <RefreshCw
-                  className={`size-4 shrink-0 ${reissuing ? "animate-spin" : ""}`}
-                />
+                {actionPresentation === "icons" ? (
+                  <RefreshCw
+                    className={`size-4 shrink-0 ${reissuing ? "animate-spin" : ""}`}
+                  />
+                ) : reissuing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                {actionPresentation === "labels" ? "Reissue" : null}
               </PillButton>
             ) : null}
             {!isArchived && onEditHolder ? (
               <PillButton
                 type="button"
-                variant="icon"
+                variant={actionPresentation === "labels" ? "secondary" : "icon"}
                 size="compact"
                 label="Edit"
-                className="!h-7 !min-h-7 !w-7 !p-0"
+                className={
+                  actionPresentation === "icons"
+                    ? "!h-7 !min-h-7 !w-7 !p-0"
+                    : undefined
+                }
                 onClick={() => setHolderEdit({
                   certificateId: row._id,
                   draft: certificateHolderDraft(row.holder),
                 })}
                 disabled={reissuing || archiving || unarchiving}
               >
-                <Pencil className="size-4 shrink-0" />
+                {actionPresentation === "icons" ? (
+                  <Pencil className="size-4 shrink-0" />
+                ) : null}
+                {actionPresentation === "labels" ? "Edit holder" : null}
               </PillButton>
             ) : null}
             {currentUrl ? (
