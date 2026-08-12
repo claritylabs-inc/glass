@@ -98,6 +98,27 @@ before(async () => {
     if (request.url === "/api/chat.postMessage") {
       return respond(response, { ok: true, ts: "1800000000.100" });
     }
+    if (request.url === "/api/chat.update") {
+      return respond(response, { ok: true, ts: "1800000000.100" });
+    }
+    if (request.url === "/api/assistant.threads.setStatus") {
+      return respond(response, { ok: true });
+    }
+    if (request.url === "/api/chat.startStream") {
+      return respond(response, { ok: true, ts: "1800000000.300" });
+    }
+    if (request.url === "/api/chat.appendStream") {
+      return respond(response, { ok: true });
+    }
+    if (request.url === "/api/chat.stopStream") {
+      return respond(response, { ok: true, ts: "1800000000.300" });
+    }
+    if (request.url === "/api/chat.postEphemeral") {
+      return respond(response, { ok: true, message_ts: "1800000000.400" });
+    }
+    if (request.url === "/api/views.open") {
+      return respond(response, { ok: true, view: { id: "V-FEEDBACK" } });
+    }
     if (request.url === "/api/files.getUploadURLExternal") {
       if (
         !request.headers["content-type"]?.startsWith(
@@ -304,6 +325,8 @@ describe("native Slack worker HTTP adapter", () => {
       channel: "C-CUSTOMER",
       text: "*Policy:* <https://example.test/policy|Open>",
       mrkdwn: true,
+      unfurl_links: false,
+      unfurl_media: false,
     });
     assert.match(
       String(clientMessageId),
@@ -365,6 +388,94 @@ describe("native Slack worker HTTP adapter", () => {
         (call) => call.path === "/api/files.getUploadURLExternal",
       )?.body,
       { filename: "policy.pdf", length: "6" },
+    );
+  });
+
+  test("updates, streams, reports status, and opens feedback through native APIs", async () => {
+    const teamId = "T-CUSTOMER";
+    const channelId = "C-CUSTOMER";
+    const threadTs = "1800000000.050";
+    const stream = await workerRequest("/stream/start", {
+      teamId,
+      channelId,
+      threadTs,
+      recipientUserId: "U-CUSTOMER",
+      recipientTeamId: teamId,
+      status: "Reviewing your request",
+    });
+    assert.deepEqual(await stream.json(), { messageId: "1800000000.300" });
+    await workerRequest("/stream/append", {
+      teamId,
+      channelId,
+      messageTs: "1800000000.300",
+      markdownText: "[[g:Policy found]]",
+      tasks: [{ id: "lookup", title: "Found the policy", status: "complete" }],
+    });
+    await workerRequest("/stream/stop", {
+      teamId,
+      channelId,
+      messageTs: "1800000000.300",
+      text: "[[g:Policy found]]",
+      blocks: [{ type: "section", text: { type: "mrkdwn", text: "Policy" } }],
+    });
+    await workerRequest("/message/update", {
+      teamId,
+      channelId,
+      messageTs: "1800000000.100",
+      text: "Updated",
+      blocks: [],
+    });
+    await workerRequest("/thread/status", {
+      teamId,
+      channelId,
+      threadTs,
+      status: "is checking coverages…",
+    });
+    await workerRequest("/ephemeral", {
+      teamId,
+      channelId,
+      userId: "U-CUSTOMER",
+      threadTs,
+      text: "Thanks",
+    });
+    const view = await workerRequest("/view/open", {
+      teamId,
+      triggerId: "trigger-1",
+      privateMetadata: "interaction-1",
+    });
+    assert.deepEqual(await view.json(), { viewId: "V-FEEDBACK" });
+
+    const paths = [
+      "/api/chat.startStream",
+      "/api/chat.appendStream",
+      "/api/chat.stopStream",
+      "/api/chat.update",
+      "/api/assistant.threads.setStatus",
+      "/api/chat.postEphemeral",
+      "/api/views.open",
+    ];
+    assert(paths.every((path) => apiCalls.some((call) => call.path === path)));
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/chat.appendStream")?.body,
+      {
+        channel: channelId,
+        ts: "1800000000.300",
+        markdown_text: "Policy found",
+        chunks: [{
+          type: "task_update",
+          id: "lookup",
+          title: "Found the policy",
+          status: "complete",
+        }],
+      },
+    );
+    assert.equal(
+      apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body.markdown_text,
+      "Policy found",
+    );
+    assert.equal(
+      apiCalls.find((call) => call.path === "/api/views.open")?.body.trigger_id,
+      "trigger-1",
     );
   });
 

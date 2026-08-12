@@ -93,6 +93,12 @@ function slackWorkerHealth() {
     connectProvisioningEnabled: true,
     channelInventoryEnabled: true,
     publicChannelJoinEnabled: true,
+    blockKitEnabled: true,
+    messageUpdatesEnabled: true,
+    agentStatusEnabled: true,
+    streamingEnabled: true,
+    interactivityResponsesEnabled: true,
+    feedbackModalsEnabled: true,
   };
 }
 

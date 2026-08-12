@@ -44,7 +44,10 @@ for (const target of targets) {
     `${target}.json`,
   );
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  if (bootstrap) delete manifest.settings?.event_subscriptions;
+  if (bootstrap) {
+    delete manifest.settings?.event_subscriptions;
+    delete manifest.settings?.interactivity;
+  }
   const outputPath = path.join(contextDirectory, `${target}.json`);
   const previous = existsSync(outputPath)
     ? JSON.parse(readFileSync(outputPath, "utf8"))

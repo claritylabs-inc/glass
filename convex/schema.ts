@@ -3517,6 +3517,7 @@ export default defineSchema({
     threadTs: v.optional(v.string()),
     keepAttachmentsTopLevel: v.optional(v.boolean()),
     content: v.string(),
+    blocks: v.optional(v.array(v.any())),
     attachments: v.optional(
       v.array(
         v.object({
@@ -3540,6 +3541,76 @@ export default defineSchema({
   })
     .index("by_idempotencyKey", ["idempotencyKey"])
     .index("by_threadMessageId", ["threadMessageId"]),
+
+  slackMessagePresentations: defineTable({
+    orgId: v.id("organizations"),
+    threadId: v.id("threads"),
+    threadMessageId: v.id("threadMessages"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    teamId: v.string(),
+    channelId: v.string(),
+    threadTs: v.optional(v.string()),
+    providerMessageId: v.optional(v.string()),
+    mode: v.union(v.literal("message"), v.literal("stream")),
+    phase: v.union(
+      v.literal("starting"),
+      v.literal("active"),
+      v.literal("final"),
+      v.literal("failed"),
+    ),
+    revision: v.number(),
+    renderVersion: v.number(),
+    lastPayloadHash: v.optional(v.string()),
+    actionTokenHash: v.string(),
+    actionTokenExpiresAt: v.number(),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_threadMessageId", ["threadMessageId"])
+    .index("by_actionTokenHash", ["actionTokenHash"])
+    .index("by_connection_channel_provider", [
+      "connectionId",
+      "channelId",
+      "providerMessageId",
+    ]),
+
+  slackInteractionEvents: defineTable({
+    interactionKey: v.string(),
+    presentationId: v.id("slackMessagePresentations"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    actorId: v.id("slackActors"),
+    actionId: v.string(),
+    value: v.optional(v.string()),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("ignored"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_interactionKey", ["interactionKey"])
+    .index("by_presentationId_and_createdAt", ["presentationId", "createdAt"]),
+
+  agentResponseFeedback: defineTable({
+    orgId: v.id("organizations"),
+    threadId: v.id("threads"),
+    threadMessageId: v.id("threadMessages"),
+    source: v.literal("slack"),
+    slackActorId: v.id("slackActors"),
+    rating: v.union(v.literal("positive"), v.literal("negative")),
+    comment: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_threadMessageId_and_slackActorId", [
+      "threadMessageId",
+      "slackActorId",
+    ])
+    .index("by_orgId_and_createdAt", ["orgId", "createdAt"]),
 
   slackHandoffs: defineTable({
     clientOrgId: v.id("organizations"),

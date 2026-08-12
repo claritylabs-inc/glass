@@ -11,4 +11,11 @@ describe("Slack mrkdwn formatting", () => {
       "*Policy*\n*Carrier:* Acme\n<https://example.test/policy|Open policy> <@U123>",
     );
   });
+
+  test("removes Glass confidence markers", () => {
+    assert.equal(
+      toSlackMrkdwn("[[g:Confirmed]] and [[i]:likely]]"),
+      "Confirmed and likely",
+    );
+  });
 });

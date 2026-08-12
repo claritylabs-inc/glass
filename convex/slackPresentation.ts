@@ -1,0 +1,436 @@
+import dayjs from "dayjs";
+import { v } from "convex/values";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+
+const ACTION_TOKEN_TTL_DAYS = 30;
+
+async function hashToken(token: string): Promise<string> {
+  const bytes = new TextEncoder().encode(token);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function randomToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function interactionActor(
+  ctx: MutationCtx,
+  presentation: Doc<"slackMessagePresentations">,
+  teamId: string,
+  slackUserId: string,
+) {
+  const actor = await ctx.db
+    .query("slackActors")
+    .withIndex("by_connectionId_and_teamId_and_slackUserId", (q) =>
+      q
+        .eq("connectionId", presentation.connectionId)
+        .eq("teamId", teamId)
+        .eq("slackUserId", slackUserId),
+    )
+    .first();
+  if (
+    !actor ||
+    (actor.classification !== "customer_member" &&
+      actor.classification !== "glass_operator")
+  ) {
+    throw new Error("Slack actor is not authorized for this interaction");
+  }
+  return actor;
+}
+
+export const create = internalMutation({
+  args: {
+    orgId: v.id("organizations"),
+    threadId: v.id("threads"),
+    threadMessageId: v.id("threadMessages"),
+    connectionId: v.id("slackWorkspaceConnections"),
+    teamId: v.string(),
+    channelId: v.string(),
+    threadTs: v.optional(v.string()),
+    mode: v.union(v.literal("message"), v.literal("stream")),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("slackMessagePresentations")
+      .withIndex("by_threadMessageId", (q) =>
+        q.eq("threadMessageId", args.threadMessageId),
+      )
+      .first();
+    const [thread, message, connection] = await Promise.all([
+      ctx.db.get(args.threadId),
+      ctx.db.get(args.threadMessageId),
+      ctx.db.get(args.connectionId),
+    ]);
+    if (
+      !thread ||
+      !message ||
+      !connection ||
+      thread.orgId !== args.orgId ||
+      message.threadId !== thread._id ||
+      connection.clientOrgId !== args.orgId ||
+      thread.slackConnectionId !== connection._id
+    ) {
+      throw new Error("Slack presentation context is invalid");
+    }
+    if (existing) {
+      if (
+        existing.orgId !== args.orgId ||
+        existing.threadId !== args.threadId ||
+        existing.connectionId !== args.connectionId ||
+        existing.teamId !== args.teamId ||
+        existing.channelId !== args.channelId ||
+        existing.threadTs !== args.threadTs
+      ) {
+        throw new Error("Slack presentation retry context does not match");
+      }
+      if (existing.phase === "final") {
+        return { presentation: existing, actionToken: undefined };
+      }
+      // Rotate the bearer token on a retry. Only its digest is persisted, and
+      // no interactive buttons have been published before finalization.
+      const actionToken = randomToken();
+      const now = dayjs().valueOf();
+      await ctx.db.patch(existing._id, {
+        actionTokenHash: await hashToken(actionToken),
+        actionTokenExpiresAt: dayjs(now).add(ACTION_TOKEN_TTL_DAYS, "day").valueOf(),
+        ...(existing.phase === "failed"
+          ? { phase: existing.providerMessageId ? "active" as const : "starting" as const }
+          : {}),
+        error: undefined,
+        updatedAt: now,
+      });
+      return {
+        presentation: await ctx.db.get(existing._id),
+        actionToken,
+      };
+    }
+    const actionToken = randomToken();
+    const now = dayjs().valueOf();
+    const id = await ctx.db.insert("slackMessagePresentations", {
+      ...args,
+      phase: "starting",
+      revision: 0,
+      renderVersion: 1,
+      actionTokenHash: await hashToken(actionToken),
+      actionTokenExpiresAt: dayjs(now).add(ACTION_TOKEN_TTL_DAYS, "day").valueOf(),
+      createdAt: now,
+      updatedAt: now,
+    });
+    const presentation = await ctx.db.get(id);
+    if (!presentation) throw new Error("Could not create Slack presentation");
+    return { presentation, actionToken };
+  },
+});
+
+export const get = internalQuery({
+  args: { threadMessageId: v.id("threadMessages") },
+  handler: async (ctx, args) =>
+    await ctx.db
+      .query("slackMessagePresentations")
+      .withIndex("by_threadMessageId", (q) =>
+        q.eq("threadMessageId", args.threadMessageId),
+      )
+      .first(),
+});
+
+export const getInteractionContext = internalQuery({
+  args: { id: v.id("slackInteractionEvents") },
+  handler: async (ctx, args) => {
+    const interaction = await ctx.db.get(args.id);
+    if (!interaction) return null;
+    const [presentation, actor] = await Promise.all([
+      ctx.db.get(interaction.presentationId),
+      ctx.db.get(interaction.actorId),
+    ]);
+    return presentation && actor ? { interaction, presentation, actor } : null;
+  },
+});
+
+export const markActive = internalMutation({
+  args: {
+    id: v.id("slackMessagePresentations"),
+    providerMessageId: v.string(),
+    mode: v.optional(v.union(v.literal("message"), v.literal("stream"))),
+    lastPayloadHash: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row || row.phase === "final") return row;
+    await ctx.db.patch(row._id, {
+      providerMessageId: args.providerMessageId,
+      mode: args.mode ?? row.mode,
+      phase: "active",
+      revision: row.revision + 1,
+      lastPayloadHash: args.lastPayloadHash,
+      error: undefined,
+      updatedAt: dayjs().valueOf(),
+    });
+    return await ctx.db.get(row._id);
+  },
+});
+
+export const markFinal = internalMutation({
+  args: {
+    id: v.id("slackMessagePresentations"),
+    providerMessageId: v.string(),
+    lastPayloadHash: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row) return null;
+    await ctx.db.patch(row._id, {
+      providerMessageId: args.providerMessageId,
+      phase: "final",
+      revision: row.revision + 1,
+      lastPayloadHash: args.lastPayloadHash,
+      error: undefined,
+      updatedAt: dayjs().valueOf(),
+    });
+    await ctx.db.patch(row.threadMessageId, {
+      slackMessageTs: args.providerMessageId,
+      slackTeamId: row.teamId,
+      slackDeliveryStatus: "sent",
+      slackDeliveryError: undefined,
+    });
+    return await ctx.db.get(row._id);
+  },
+});
+
+export const markFailed = internalMutation({
+  args: { id: v.id("slackMessagePresentations"), error: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row) return;
+    await ctx.db.patch(row._id, {
+      phase: "failed",
+      error: args.error,
+      updatedAt: dayjs().valueOf(),
+    });
+  },
+});
+
+export const markPlaintextFallback = internalMutation({
+  args: {
+    id: v.id("slackMessagePresentations"),
+    providerMessageId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row || row.phase === "final") return row;
+    const now = dayjs().valueOf();
+    await ctx.db.patch(row._id, {
+      providerMessageId: args.providerMessageId ?? row.providerMessageId,
+      phase: "final",
+      revision: row.revision + 1,
+      actionTokenExpiresAt: now,
+      error: undefined,
+      updatedAt: now,
+    });
+    await ctx.db.patch(row.threadMessageId, {
+      slackMessageTs: args.providerMessageId ?? row.providerMessageId,
+      slackTeamId: row.teamId,
+      slackDeliveryStatus: "sent",
+      slackDeliveryError: undefined,
+    });
+    return await ctx.db.get(row._id);
+  },
+});
+
+export const claimInteraction = internalMutation({
+  args: {
+    interactionKey: v.string(),
+    actionToken: v.string(),
+    teamId: v.string(),
+    actorTeamId: v.string(),
+    slackUserId: v.string(),
+    channelId: v.string(),
+    messageTs: v.optional(v.string()),
+    actionId: v.string(),
+    value: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("slackInteractionEvents")
+      .withIndex("by_interactionKey", (q) =>
+        q.eq("interactionKey", args.interactionKey),
+      )
+      .first();
+    if (existing) return { claimed: false, interaction: existing };
+    const actionTokenHash = await hashToken(args.actionToken);
+    const presentation = await ctx.db
+      .query("slackMessagePresentations")
+      .withIndex("by_actionTokenHash", (q) =>
+        q.eq("actionTokenHash", actionTokenHash),
+      )
+      .first();
+    if (
+      !presentation ||
+      presentation.phase !== "final" ||
+      presentation.actionTokenExpiresAt < dayjs().valueOf() ||
+      presentation.teamId !== args.teamId ||
+      presentation.channelId !== args.channelId ||
+      !args.messageTs ||
+      presentation.providerMessageId !== args.messageTs
+    ) {
+      throw new Error("Slack action is invalid or expired");
+    }
+    const actor = await interactionActor(
+      ctx,
+      presentation,
+      args.actorTeamId,
+      args.slackUserId,
+    );
+    const now = dayjs().valueOf();
+    const id = await ctx.db.insert("slackInteractionEvents", {
+      interactionKey: args.interactionKey,
+      presentationId: presentation._id,
+      connectionId: presentation.connectionId,
+      actorId: actor._id,
+      actionId: args.actionId,
+      value: args.value,
+      status: "processing",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const interaction = await ctx.db.get(id);
+    if (!interaction) throw new Error("Could not record Slack interaction");
+    return { claimed: true, interaction, presentation, actor };
+  },
+});
+
+export const completeInteraction = internalMutation({
+  args: {
+    id: v.id("slackInteractionEvents"),
+    status: v.union(v.literal("completed"), v.literal("ignored"), v.literal("failed")),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      status: args.status,
+      error: args.error,
+      updatedAt: dayjs().valueOf(),
+    });
+  },
+});
+
+export const upsertFeedback = internalMutation({
+  args: {
+    presentationId: v.id("slackMessagePresentations"),
+    slackActorId: v.id("slackActors"),
+    rating: v.union(v.literal("positive"), v.literal("negative")),
+  },
+  handler: async (ctx, args) => {
+    const presentation = await ctx.db.get(args.presentationId);
+    const actor = await ctx.db.get(args.slackActorId);
+    if (
+      !presentation ||
+      !actor ||
+      actor.connectionId !== presentation.connectionId ||
+      (actor.classification !== "customer_member" &&
+        actor.classification !== "glass_operator")
+    ) {
+      throw new Error("Slack feedback context is invalid");
+    }
+    const existing = await ctx.db
+      .query("agentResponseFeedback")
+      .withIndex("by_threadMessageId_and_slackActorId", (q) =>
+        q
+          .eq("threadMessageId", presentation.threadMessageId)
+          .eq("slackActorId", actor._id),
+      )
+      .first();
+    const now = dayjs().valueOf();
+    if (existing) {
+      await ctx.db.patch(existing._id, { rating: args.rating, updatedAt: now });
+      return existing._id;
+    }
+    return await ctx.db.insert("agentResponseFeedback", {
+      orgId: presentation.orgId,
+      threadId: presentation.threadId,
+      threadMessageId: presentation.threadMessageId,
+      source: "slack",
+      slackActorId: actor._id,
+      rating: args.rating,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const submitFeedbackComment = internalMutation({
+  args: {
+    interactionId: v.id("slackInteractionEvents"),
+    teamId: v.string(),
+    actorTeamId: v.string(),
+    slackUserId: v.string(),
+    comment: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const interaction = await ctx.db.get(args.interactionId);
+    const presentation = interaction
+      ? await ctx.db.get(interaction.presentationId)
+      : null;
+    if (
+      !interaction ||
+      !presentation ||
+      presentation.phase !== "final" ||
+      presentation.teamId !== args.teamId ||
+      !interaction.actionId.startsWith("glass_response_feedback") ||
+      interaction.value !== "negative" ||
+      presentation.actionTokenExpiresAt < dayjs().valueOf()
+    ) {
+      throw new Error("Slack feedback submission is invalid or expired");
+    }
+    const actor = await interactionActor(
+      ctx,
+      presentation,
+      args.actorTeamId,
+      args.slackUserId,
+    );
+    if (interaction.actorId !== actor._id) {
+      throw new Error("Slack feedback submission actor does not match");
+    }
+    const feedback = await ctx.db
+      .query("agentResponseFeedback")
+      .withIndex("by_threadMessageId_and_slackActorId", (q) =>
+        q
+          .eq("threadMessageId", presentation.threadMessageId)
+          .eq("slackActorId", actor._id),
+      )
+      .first();
+    const now = dayjs().valueOf();
+    const comment = args.comment?.trim().slice(0, 2000);
+    if (feedback) {
+      await ctx.db.patch(feedback._id, {
+        rating: "negative",
+        comment: comment || undefined,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("agentResponseFeedback", {
+        orgId: presentation.orgId,
+        threadId: presentation.threadId,
+        threadMessageId: presentation.threadMessageId,
+        source: "slack",
+        slackActorId: actor._id,
+        rating: "negative",
+        comment: comment || undefined,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    return { recorded: true };
+  },
+});
