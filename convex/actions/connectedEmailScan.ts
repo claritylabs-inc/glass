@@ -954,7 +954,8 @@ async function requirementActorForOrg(
   ctx: ActionCtx,
   orgId: Id<"organizations">,
 ): Promise<Id<"users"> | undefined> {
-  const members = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
+  const members: Array<Pick<Doc<"orgMemberships">, "role" | "userId">> =
+    await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
   return members.find((membership) => membership.role === "admin")?.userId;
 }
 
@@ -1221,7 +1222,7 @@ export const scanAllMailboxes = internalAction({
       result: ScanAccountResult;
     }>;
   }> => {
-    const accounts = await ctx.runQuery(
+    const accounts: ConnectedEmailAccount[] = await ctx.runQuery(
       internal.connectedEmail.listAutomationEligibleInternal,
       {},
     );

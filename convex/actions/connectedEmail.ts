@@ -9,7 +9,7 @@ import { action, internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { resolveImapDestination } from "../lib/imapDestination";
 import { preparePdfTextWithParserFallback } from "../lib/liteparsePreprocessor";
 import {
@@ -187,10 +187,8 @@ async function getExistingThreadAttachmentNames(
   ctx: ActionCtx,
   args: { threadId: Id<"threads">; orgId: Id<"organizations"> },
 ) {
-  const attachments = await ctx.runQuery(
-    internal.threads.listThreadAttachmentsInternal,
-    args,
-  );
+  const attachments: Array<Pick<SavedThreadAttachment, "filename">> =
+    await ctx.runQuery(internal.threads.listThreadAttachmentsInternal, args);
   return new Set(
     attachments.map((attachment) =>
       normalizeThreadAttachmentFilename(attachment.filename),
@@ -266,7 +264,8 @@ async function requireOrgMember(
   orgId: Id<"organizations">,
   userId: Id<"users">,
 ) {
-  const members = await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
+  const members: Array<Pick<Doc<"orgMemberships">, "role" | "userId">> =
+    await ctx.runQuery(internal.orgs.getMembersInternal, { orgId });
   const membership = members.find((member) => member.userId === userId);
   if (!membership) {
     throwUserFacingError(
