@@ -112,7 +112,6 @@ export function OperatorClientSidebar({
         />
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
-          <SectionHeader label="Client" collapsed={collapsed} />
           <SidebarMenuItem
             href="/operator"
             label="Clients"
@@ -120,6 +119,8 @@ export function OperatorClientSidebar({
             active={false}
             collapsed={collapsed}
           />
+
+          <SectionHeader label="Client" collapsed={collapsed} />
           <SidebarMenuItem
             href={basePath}
             label="Overview"
