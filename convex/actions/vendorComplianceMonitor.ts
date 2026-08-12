@@ -1,11 +1,11 @@
 "use node";
 
 import dayjs from "dayjs";
-import type { FunctionReturnType } from "convex/server";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import type { ComplianceCheckResult } from "../lib/complianceCheck";
 import {
   resolveEmailAgentIdentity,
   upsertEmailDraftArtifact,
@@ -36,9 +36,24 @@ type OrgMemberWithUser = {
   } | null;
 };
 
-type VendorComplianceRows = FunctionReturnType<
-  typeof internal.compliance.listVendorComplianceInternal
->;
+type VendorComplianceRows = Array<{
+  relationshipId: Id<"connectedOrgRelationships">;
+  vendorOrg: { _id: Id<"organizations"> } | null;
+  vendorName: string;
+  status: string;
+  requirementCount: number;
+  policyCount: number;
+  notMetCount: number;
+  missingCount: number;
+  expiringSoonCount: number;
+  unverifiedCount: number;
+  checks: Array<
+    ComplianceCheckResult & {
+      requirement: Pick<Doc<"insuranceRequirements">, "_id" | "title">;
+      notes?: string;
+    }
+  >;
+}>;
 
 function serializeMonitorRows(rows: VendorComplianceRows) {
   return rows.flatMap((row) => {
@@ -223,7 +238,7 @@ export const run = internalAction({
     let sentEmailCount = 0;
 
     for (const clientOrgId of clientOrgIds) {
-      const complianceRows = await ctx.runQuery(
+      const complianceRows: VendorComplianceRows = await ctx.runQuery(
         internal.compliance.listVendorComplianceInternal,
         { clientOrgId, includePreviewPolicies: false },
       );

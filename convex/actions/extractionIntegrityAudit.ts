@@ -1,19 +1,25 @@
 "use node";
 
 import { v } from "convex/values";
+import type { FunctionReference } from "convex/server";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { readCarrierIdentity } from "../lib/carrierIdentity";
 import {
   buildPromotionEvidenceLedger,
   type ExtractionCompletionManifest,
+  type PromotionEvidenceLedger,
 } from "../lib/extractionPromotion";
-import { classifyExtractionIntegrity } from "../lib/extractionIntegrityAudit";
+import {
+  classifyExtractionIntegrity,
+  type ExtractionIntegrityClassification,
+} from "../lib/extractionIntegrityAudit";
 import {
   normalizeSourceTree,
   sourceNodeFromStoredSource,
   sourceSpanLikeFromStoredSource,
+  type SourceSpanLike,
 } from "../lib/sourceTree";
 
 type EvidencePage = {
@@ -22,15 +28,57 @@ type EvidencePage = {
   isDone: boolean;
 };
 
+type EvidencePageQuery = FunctionReference<
+  "query",
+  "internal",
+  { policyId: Id<"policies">; cursor: string | null },
+  EvidencePage
+>;
+
+type AuditPolicyPage = {
+  page: Array<{
+    policy: Doc<"policies">;
+    run: Doc<"policyExtractionRuns"> | null;
+  }>;
+  continueCursor: string;
+  isDone: boolean;
+};
+
+type AuditResult = {
+  policyId: string;
+  carrier: string | undefined;
+  policyNumber: string | undefined;
+  isZurich: boolean;
+  sourceFingerprint?: string;
+  classification: ExtractionIntegrityClassification;
+  reasons: string[];
+  shouldReextract: boolean;
+};
+
+type AuditResponse = {
+  results: AuditResult[];
+  counts: {
+    verified: number;
+    legacyUnverified: number;
+    postCutoverViolations: number;
+    shouldReextract: number;
+  };
+  nextCursor: string;
+  isDone: boolean;
+};
+
 async function readAllEvidence(
   ctx: ActionCtx,
-  functionRef: any,
+  functionRef: EvidencePageQuery,
   policyId: Id<"policies">,
-) {
+): Promise<Array<Record<string, unknown>>> {
   const values: Array<Record<string, unknown>> = [];
   let cursor: string | null = null;
   while (true) {
-    const result = await ctx.runQuery(functionRef, { policyId, cursor }) as EvidencePage;
+    const result: EvidencePage = await ctx.runQuery(functionRef, {
+      policyId,
+      cursor,
+    });
     values.push(...result.page);
     if (result.isDone) return values;
     cursor = result.continueCursor;
@@ -63,41 +111,41 @@ export const audit = internalAction({
     cursor: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    const page = await ctx.runQuery(
-      (internal as any).extractionIntegrityAudit.listPoliciesPageInternal,
+  handler: async (ctx, args): Promise<AuditResponse> => {
+    const page: AuditPolicyPage = await ctx.runQuery(
+      internal.extractionIntegrityAudit.listPoliciesPageInternal,
       { cursor: args.cursor ?? null, limit: args.limit },
-    ) as {
-      page: Array<{ policy: Record<string, any>; run?: Record<string, any> }>;
-      continueCursor: string;
-      isDone: boolean;
-    };
-    const results = [];
+    );
+    const results: AuditResult[] = [];
     for (const { policy, run } of page.page) {
-      const policyId = policy._id as Id<"policies">;
-      const [spanDocs, nodeDocs] = await Promise.all([
+      const policyId = policy._id;
+      const [spanDocs, nodeDocs]: [
+        Array<Record<string, unknown>>,
+        Array<Record<string, unknown>>,
+      ] = await Promise.all([
         readAllEvidence(
           ctx,
-          (internal as any).extractionIntegrityAudit.listSourceSpansPageInternal,
+          internal.extractionIntegrityAudit.listSourceSpansPageInternal,
           policyId,
         ),
         readAllEvidence(
           ctx,
-          (internal as any).extractionIntegrityAudit.listSourceNodesPageInternal,
+          internal.extractionIntegrityAudit.listSourceNodesPageInternal,
           policyId,
         ),
       ]);
-      const sourceSpans = spanDocs.map((span) =>
+      const sourceSpans: SourceSpanLike[] = spanDocs.map((span) =>
         sourceSpanLikeFromStoredSource(span, String(policyId)));
       const storedNodes = nodeDocs
         .map((node) => sourceNodeFromStoredSource(node, String(policyId)))
         .filter((node): node is NonNullable<typeof node> => Boolean(node));
       const sourceTree = normalizeSourceTree(storedNodes, sourceSpans, String(policyId));
-      const ledger = sourceSpans.length > 0
+      const ledger: PromotionEvidenceLedger | undefined = sourceSpans.length > 0
         ? buildPromotionEvidenceLedger({ sourceSpans, sourceTree })
         : undefined;
       const postCutover = Boolean(policy.extractionPromotion);
-      const manifest = run?.completionManifest as ExtractionCompletionManifest | undefined;
+      const manifest: ExtractionCompletionManifest | undefined =
+        run?.completionManifest;
       const integrity = classifyExtractionIntegrity({
         postCutover,
         ledger,
@@ -136,14 +184,17 @@ export const audit = internalAction({
 
 export const queueAffected = internalAction({
   args: { policyIds: v.array(v.id("policies")) },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    queued: string[];
+    skipped: Array<{ policyId: string; reason: string }>;
+  }> => {
     const queued: string[] = [];
     const skipped: Array<{ policyId: string; reason: string }> = [];
     for (const policyId of [...new Set(args.policyIds)].slice(0, 25)) {
       const candidate = await ctx.runQuery(
-        (internal as any).extractionIntegrityAudit.getQueueCandidateInternal,
+        internal.extractionIntegrityAudit.getQueueCandidateInternal,
         { policyId },
-      ) as { pipelineStatus?: string } | null;
+      );
       if (!candidate) {
         skipped.push({ policyId: String(policyId), reason: "not_an_extractable_final_policy" });
         continue;
@@ -154,7 +205,7 @@ export const queueAffected = internalAction({
       }
       await ctx.scheduler.runAfter(
         0,
-        (internal as any).actions.policyExtraction.retryPolicyExtraction,
+        internal.actions.policyExtraction.retryPolicyExtraction,
         { policyId, mode: "full" },
       );
       queued.push(String(policyId));
