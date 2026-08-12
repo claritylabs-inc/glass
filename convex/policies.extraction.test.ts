@@ -4,24 +4,110 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import {
   pipelineCompleteLease,
+  pipelineSaveArtifact,
   pipelineReconcileTerminalState,
   pipelineRejectExternalJob,
   pipelineSetStatus,
   listForClient,
+  promoteCompletedExtractionInternal,
   updateExtractionInternal,
   updatePreviewExtractionInternal,
 } from "./policies";
 import { policyExtractionRetrySource } from "./actions/policyExtraction";
+import {
+  buildExtractionCompletionManifest,
+  buildPromotionEvidenceLedger,
+  buildPromotionSourceCoverageMap,
+} from "./lib/extractionPromotion";
 
 const modules = import.meta.glob("./**/*.ts");
 const pipelineCompleteLeaseFn = pipelineCompleteLease as any;
+const pipelineSaveArtifactFn = pipelineSaveArtifact as any;
 const pipelineReconcileTerminalStateFn = pipelineReconcileTerminalState as any;
 const pipelineRejectExternalJobFn = pipelineRejectExternalJob as any;
 const pipelineSetStatusFn = pipelineSetStatus as any;
 const listForClientFn = listForClient as any;
 const updateExtractionInternalFn = updateExtractionInternal as any;
+const promoteCompletedExtractionInternalFn =
+  promoteCompletedExtractionInternal as any;
 const updatePreviewExtractionInternalFn =
   updatePreviewExtractionInternal as any;
+
+async function promoteTestPolicy(
+  t: ReturnType<typeof convexTest>,
+  policyId: any,
+  fields: Record<string, unknown>,
+) {
+  const sourceSpans = [{
+    id: "promotion-span",
+    documentId: String(policyId),
+    sourceKind: "policy_pdf",
+    text: "General policy wording retained for promotion testing.",
+    pageStart: 1,
+    pageEnd: 1,
+  }];
+  const sourceTree = [{
+    id: "promotion-node",
+    documentId: String(policyId),
+    kind: "text" as const,
+    title: "Policy wording",
+    description: "Policy wording",
+    sourceSpanIds: ["promotion-span"],
+    order: 0,
+    path: "1",
+  }];
+  const ledger = buildPromotionEvidenceLedger({ sourceSpans, sourceTree });
+  const manifest = buildExtractionCompletionManifest({
+    protocolVersion: "source-tree-v1",
+    extractorVersion: "test",
+    ledger,
+  });
+  const leaseId = "promotion-lease";
+  const ids = await t.run(async (ctx) => {
+    const runId = await ctx.db.insert("policyExtractionRuns", {
+      policyId,
+      pipelineStatus: "running",
+      pipelineCheckpoint: {
+        nextPhase: "extract",
+        state: {},
+        createdAt: 1,
+        lease: { id: leaseId, phase: "extract", expiresAt: 10_000 },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const storageId = await ctx.storage.store(new Blob([JSON.stringify({
+      sourceSpans,
+      sourceTree,
+      evidenceLedger: ledger,
+      completionManifest: manifest,
+    })], { type: "application/json" }));
+    const artifactId = await ctx.db.insert("policyExtractionArtifacts", {
+      policyId,
+      runId,
+      kind: "source_bundle",
+      storageId,
+      sourceFingerprint: ledger.sourceFingerprint,
+      extractorVersion: manifest.extractorVersion,
+      metadata: {
+        evidenceLedgerHash: ledger.ledgerHash,
+        manifestHash: manifest.manifestHash,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    return { runId, artifactId };
+  });
+  return await t.mutation(promoteCompletedExtractionInternalFn, {
+    id: policyId,
+    runId: ids.runId,
+    leaseId,
+    sourceBundleArtifactId: ids.artifactId,
+    fields,
+    evidenceLedger: ledger,
+    completionManifest: manifest,
+  });
+}
 
 describe("policy list extraction visibility", () => {
   test("returns a placeholder row before its extraction run starts", async () => {
@@ -166,6 +252,262 @@ describe("policies.updatePreviewExtractionInternal", () => {
 });
 
 describe("policies.updateExtractionInternal", () => {
+  test("rejects attempts to set the final stage through the generic writer", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Unknown",
+        policyNumber: "Unknown",
+        insuredName: "Unknown",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "Unknown",
+        expirationDate: "Unknown",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+    });
+
+    await expect(t.mutation(updateExtractionInternalFn, {
+      id: policyId,
+      fields: { extractionDataStage: "final" },
+    })).rejects.toThrow("cannot promote a policy to final");
+  });
+
+  test("requires persisted v2 section results before promotion", async () => {
+    const t = convexTest(schema, modules);
+    const contract = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Unknown",
+        policyNumber: "Unknown",
+        insuredName: "Unknown",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "Unknown",
+        expirationDate: "Unknown",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+      const sourceSpans = [{
+        id: "core-span",
+        documentId: String(policyId),
+        sourceKind: "policy_pdf",
+        text: "Policy Number: GL-200",
+        pageStart: 1,
+        pageEnd: 1,
+      }, {
+        id: "coverage-span",
+        documentId: String(policyId),
+        sourceKind: "policy_pdf",
+        text: "Property Coverage Limit $500,000",
+        pageStart: 2,
+        pageEnd: 2,
+      }];
+      const sourceTree = sourceSpans.map((span, index) => ({
+        id: `node-${index}`,
+        documentId: String(policyId),
+        kind: "text" as const,
+        title: index === 0 ? "Policy number" : "Property coverage",
+        description: span.text,
+        sourceSpanIds: [span.id],
+        order: index,
+        path: String(index + 1),
+      }));
+      const ledger = buildPromotionEvidenceLedger({ sourceSpans, sourceTree });
+      const sourceCoverageMap = buildPromotionSourceCoverageMap({
+        sourceSpans,
+        sourceTree,
+      });
+      const coreSpanIds = sourceCoverageMap.entries
+        .filter((entry) => entry.assignment !== "coverage")
+        .map((entry) => entry.sourceSpanId);
+      const coverageSpanIds = sourceCoverageMap.entries
+        .filter((entry) =>
+          entry.assignment === "coverage" || entry.assignment === "both")
+        .map((entry) => entry.sourceSpanId);
+      const sections = [{
+        id: "extraction_policy_core" as const,
+        status: "complete" as const,
+        sourceSpanIds: coreSpanIds,
+        resultHash: "core-result-hash",
+      }, {
+        id: "extraction_policy_coverage" as const,
+        status: "complete" as const,
+        sourceSpanIds: coverageSpanIds,
+        resultHash: "coverage-result-hash",
+      }, {
+        id: "extraction_coverage_cleanup" as const,
+        status: "complete" as const,
+        sourceSpanIds: coverageSpanIds,
+        resultHash: "cleanup-result-hash",
+      }];
+      const manifest = buildExtractionCompletionManifest({
+        protocolVersion: "source-tree-v2",
+        extractorVersion: "test-v2",
+        ledger,
+        sourceCoverageMap,
+        sections,
+      });
+      const leaseId = "v2-promotion-lease";
+      const runId = await ctx.db.insert("policyExtractionRuns", {
+        policyId,
+        pipelineStatus: "running",
+        pipelineCheckpoint: {
+          nextPhase: "extract",
+          state: {},
+          createdAt: 1,
+          lease: { id: leaseId, phase: "extract", expiresAt: 10_000 },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const sourceStorageId = await ctx.storage.store(new Blob(["source"]));
+      const sourceBundleArtifactId = await ctx.db.insert(
+        "policyExtractionArtifacts",
+        {
+          policyId,
+          runId,
+          kind: "source_bundle",
+          storageId: sourceStorageId,
+          sourceFingerprint: ledger.sourceFingerprint,
+          extractorVersion: manifest.extractorVersion,
+          metadata: {
+            evidenceLedgerHash: ledger.ledgerHash,
+            manifestHash: manifest.manifestHash,
+          },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      );
+      return {
+        policyId,
+        runId,
+        leaseId,
+        sourceBundleArtifactId,
+        ledger,
+        manifest,
+        sections,
+      };
+    });
+    const fields = {
+      operationalProfile: {
+        policyNumber: {
+          value: "GL-200",
+          sourceSpanIds: ["core-span"],
+        },
+        coverages: [{
+          name: "Property",
+          sourceSpanIds: ["coverage-span"],
+        }],
+      },
+    };
+    const promote = () => t.mutation(promoteCompletedExtractionInternalFn, {
+      id: contract.policyId,
+      runId: contract.runId,
+      leaseId: contract.leaseId,
+      sourceBundleArtifactId: contract.sourceBundleArtifactId,
+      fields,
+      evidenceLedger: contract.ledger,
+      completionManifest: contract.manifest,
+    });
+
+    await expect(promote()).rejects.toThrow(
+      "requires the persisted extraction_policy_core result",
+    );
+
+    await t.run(async (ctx) => {
+      for (const section of contract.sections) {
+        const storageId = await ctx.storage.store(new Blob([section.resultHash]));
+        await ctx.db.insert("policyExtractionArtifacts", {
+          policyId: contract.policyId,
+          runId: contract.runId,
+          kind: "section_result",
+          storageId,
+          sourceFingerprint: contract.ledger.sourceFingerprint,
+          extractorVersion: contract.manifest.extractorVersion,
+          sectionId: section.id,
+          metadata: {
+            status: section.status,
+            resultHash: section.resultHash,
+          },
+          createdAt: 1,
+          updatedAt: 1,
+        });
+      }
+    });
+
+    await expect(promote()).resolves.toMatchObject({ promoted: true });
+    const policy = await t.run(async (ctx) => ctx.db.get(contract.policyId));
+    expect(policy?.extractionDataStage).toBe("final");
+  });
+
+  test("retains the worker source bundle when promotion evidence is saved", async () => {
+    const t = convexTest(schema, modules);
+    const policyId = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      return await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Unknown",
+        policyNumber: "Unknown",
+        insuredName: "Unknown",
+        linesOfBusiness: ["UN"],
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        documentType: "policy",
+        policyYear: 2026,
+        isRenewal: false,
+        coverages: [],
+      });
+    });
+    const saveBundle = async (artifactRole: string, contents: string) => {
+      const storageId = await t.run((ctx) =>
+        ctx.storage.store(new Blob([contents])));
+      return await t.mutation(pipelineSaveArtifactFn, {
+        jobId: String(policyId),
+        kind: "source_bundle",
+        storageId,
+        sourceFingerprint: "source-fingerprint",
+        extractorVersion: "4.6.0",
+        metadata: { artifactRole },
+      });
+    };
+
+    const firstWorkerBundle = await saveBundle("worker_source", "worker-v1");
+    const promotionBundle = await saveBundle(
+      "promotion_evidence",
+      "promotion",
+    );
+    const currentWorkerBundle = await saveBundle("worker_source", "worker-v2");
+    const artifacts = await t.run((ctx) =>
+      ctx.db
+        .query("policyExtractionArtifacts")
+        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .collect());
+
+    expect(artifacts.map((artifact) => artifact._id)).toEqual(
+      expect.arrayContaining([promotionBundle, currentWorkerBundle]),
+    );
+    expect(artifacts.map((artifact) => artifact._id)).not.toContain(
+      firstWorkerBundle,
+    );
+    expect(artifacts).toHaveLength(2);
+  });
+
   test("clears a provisional product name when final extraction has no product identity", async () => {
     const t = convexTest(schema, modules);
     const policyId = await t.run(async (ctx) => {
@@ -196,12 +538,8 @@ describe("policies.updateExtractionInternal", () => {
       previewVersion: "preview-test",
     });
 
-    await t.mutation(updateExtractionInternalFn, {
-      id: policyId,
-      fields: {
-        extractionDataStage: "final",
-        sourceTreeFieldClears: ["productIdentity", "programName"],
-      },
+    await promoteTestPolicy(t, policyId, {
+      sourceTreeFieldClears: ["productIdentity", "programName"],
     });
 
     const policy = await t.run(async (ctx) => ctx.db.get(policyId));
@@ -242,12 +580,8 @@ describe("policies.updateExtractionInternal", () => {
       });
     });
 
-    await t.mutation(updateExtractionInternalFn, {
-      id: policyId,
-      fields: {
-        extractionDataStage: "final",
-        sourceTreeFieldClears: ["productIdentity", "programName"],
-      },
+    await promoteTestPolicy(t, policyId, {
+      sourceTreeFieldClears: ["productIdentity", "programName"],
     });
 
     const policy = await t.run(async (ctx) => ctx.db.get(policyId));
@@ -544,21 +878,17 @@ describe("policies.updateExtractionInternal", () => {
       });
     });
 
-    await t.mutation(updateExtractionInternalFn, {
-      id: policyId,
-      fields: {
-        extractionDataStage: "final",
-        carrier: "Unknown",
-        security: undefined,
-        policyNumber: "Unknown",
-        insuredName: "Unknown",
-        broker: "",
-        effectiveDate: undefined,
-        expirationDate: "Unknown",
-        fileName: "Unknown.pdf",
-        coverages: [],
-        premium: "$100",
-      },
+    await promoteTestPolicy(t, policyId, {
+      carrier: "Unknown",
+      security: undefined,
+      policyNumber: "Unknown",
+      insuredName: "Unknown",
+      broker: "",
+      effectiveDate: undefined,
+      expirationDate: "Unknown",
+      fileName: "Unknown.pdf",
+      coverages: [],
+      premium: "$100",
     });
 
     const policy = await t.run(async (ctx) => ctx.db.get(policyId));

@@ -16,6 +16,7 @@ import {
 const environment = {
   CL_ROUTER_URL: "https://router.example.test/",
   CL_ROUTER_SECRET: "router-secret",
+  GLASS_ENV: "production",
 };
 
 function responseMetadata() {
@@ -118,12 +119,37 @@ describe("cl-router requests", () => {
     expect(JSON.parse(init.body as string)).toMatchObject({
       tenantId: "glass",
       task: "classification",
+      executionBudgetMs: 179_000,
       orgId: "org-1",
       prompt: "Classify this policy delivery request.",
       trace: { traceId: "trace-1", parentRequestId: "parent-1" },
       settings: {
         providerKeys: { openai: "broker-openai-key" },
       },
+    });
+  });
+
+  test("preserves typed router failure metadata", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      error: {
+        code: "router_unavailable",
+        message: "No eligible route is available.",
+        retryable: true,
+        executionStarted: false,
+        requestId: "failed-request",
+      },
+    }, { status: 503 }));
+
+    await expect(clRouterGenerate(
+      { task: "extraction", prompt: "Extract." },
+      { environment, fetch: fetchMock },
+    )).rejects.toMatchObject({
+      kind: "server",
+      status: 503,
+      routerCode: "router_unavailable",
+      retryable: true,
+      executionStarted: false,
+      requestId: "failed-request",
     });
   });
 
@@ -249,22 +275,41 @@ describe("cl-router requests", () => {
 });
 
 describe("cl-router direct fallback boundary", () => {
-  test("allows only connection, timeout, and server errors", () => {
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("connection", "down"))).toBe(true);
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("timeout", "slow"))).toBe(true);
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("server", "bad", { status: 503 }))).toBe(true);
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("client", "bad", { status: 401 }))).toBe(false);
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("configuration", "missing"))).toBe(false);
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("invalid_response", "bad"))).toBe(false);
+  test("allows production fallback only for proven pre-execution outages", () => {
+    const refused = Object.assign(new Error("refused"), { code: "ECONNREFUSED" });
+    const unavailable = new ClRouterRequestError("server", "down", {
+      status: 503,
+      routerCode: "router_unavailable",
+      retryable: true,
+      executionStarted: false,
+    });
+    expect(isClRouterDirectFallbackError(
+      new ClRouterRequestError("connection", "down", { cause: refused }),
+      environment,
+    )).toBe(true);
+    expect(isClRouterDirectFallbackError(unavailable, environment)).toBe(true);
+    expect(isClRouterDirectFallbackError(unavailable, { GLASS_ENV: "local" })).toBe(false);
+    expect(isClRouterDirectFallbackError(new ClRouterRequestError("timeout", "slow"), environment)).toBe(false);
+    expect(isClRouterDirectFallbackError(
+      new ClRouterRequestError("server", "bad", { status: 503 }),
+      environment,
+    )).toBe(false);
+    expect(isClRouterDirectFallbackError(new ClRouterRequestError("client", "bad"), environment)).toBe(false);
   });
 
-  test("falls back after a connection failure", async () => {
+  test("falls back after a typed pre-execution production outage", async () => {
     const direct = vi.fn(async () => "direct");
     await expect(withClRouterDirectFallback({
       router: async () => {
-        throw new ClRouterRequestError("connection", "down");
+        throw new ClRouterRequestError("server", "down", {
+          status: 503,
+          routerCode: "router_unavailable",
+          retryable: true,
+          executionStarted: false,
+        });
       },
       direct,
+      environment,
     })).resolves.toBe("direct");
     expect(direct).toHaveBeenCalledOnce();
   });
@@ -280,6 +325,7 @@ describe("cl-router direct fallback boundary", () => {
         },
       ).then(() => "router"),
       direct,
+      environment,
     })).rejects.toMatchObject({ kind: "client", status: 401 });
     expect(direct).not.toHaveBeenCalled();
   });

@@ -410,7 +410,7 @@ function RoutingActivityChart({ activity }: { activity: HourlyActivity[] }) {
   const lastHour = activity.at(-1)?.hourStart;
 
   return (
-    <div className="min-w-0 p-4">
+    <div className="flex h-full min-w-0 flex-col p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className={`text-foreground ${typeStyle("body.medium")}`}>
@@ -422,95 +422,101 @@ function RoutingActivityChart({ activity }: { activity: HourlyActivity[] }) {
             Includes initial, retry, and fallback attempts.
           </p>
         </div>
-        <p className={`text-foreground ${typeStyle("data.numeric")}`}>
-          {totalCalls.toLocaleString()} attempts
-        </p>
-      </div>
-
-      <div className="relative mt-4">
-        <div
-          role="img"
-          aria-label={`Hourly routing activity: ${totalCalls.toLocaleString()} model attempts in the last 24 hours`}
-          className="grid h-32 grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-1 border-b border-foreground/10 px-1"
-        >
-          {activity.map((hour) => {
-            const successfulCalls = Math.min(hour.successes, hour.calls);
-            const errorCalls = Math.min(
-              hour.errors,
-              Math.max(0, hour.calls - successfulCalls),
-            );
-            const barHeight = hour.calls
-              ? Math.max(4, (hour.calls / maxCalls) * 100)
-              : 0;
-            const successHeight = hour.calls
-              ? (successfulCalls / hour.calls) * 100
-              : 0;
-            const errorHeight = hour.calls
-              ? (errorCalls / hour.calls) * 100
-              : 0;
-            const hourLabel = dayjs(hour.hourStart).format("MMM D, h A");
-
-            return (
-              <div
-                key={hour.hourStart}
-                className="flex h-full min-w-0 items-end"
-                title={`${hourLabel}: ${hour.calls.toLocaleString()} attempts, ${successfulCalls.toLocaleString()} successful, ${errorCalls.toLocaleString()} provider errors`}
-              >
-                {hour.calls ? (
-                  <div
-                    className="flex w-full flex-col-reverse overflow-hidden rounded-t-sm bg-chart-2/35"
-                    style={{ height: `${barHeight}%` }}
-                  >
-                    {successfulCalls ? (
-                      <div
-                        className="min-h-px w-full bg-chart-3"
-                        style={{ height: `${successHeight}%` }}
-                      />
-                    ) : null}
-                    {errorCalls ? (
-                      <div
-                        className="min-h-px w-full bg-destructive"
-                        style={{ height: `${errorHeight}%` }}
-                      />
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="h-px w-full bg-foreground/8" />
-                )}
-              </div>
-            );
-          })}
-        </div>
-        {totalCalls === 0 ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-3">
-            <p
-              className={`rounded-md bg-card/90 px-3 py-1.5 text-muted-foreground shadow-sm ring-1 ring-foreground/6 ${typeStyle("caption.default")}`}
-            >
-              No model attempts recorded
-            </p>
-          </div>
+        {totalCalls > 0 ? (
+          <p className={`text-foreground ${typeStyle("data.numeric")}`}>
+            {totalCalls.toLocaleString()} attempts
+          </p>
         ) : null}
       </div>
 
-      <div
-        className={`mt-2 flex justify-between text-muted-foreground ${typeStyle("caption.default")}`}
-      >
-        <span>{firstHour ? dayjs(firstHour).format("ddd h A") : "—"}</span>
-        <span>{middleHour ? dayjs(middleHour).format("ddd h A") : "—"}</span>
-        <span>{lastHour ? dayjs(lastHour).format("ddd h A") : "—"}</span>
-      </div>
-      <div
-        className={`mt-3 flex flex-wrap gap-x-4 gap-y-2 text-muted-foreground ${typeStyle("caption.default")}`}
-      >
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-chart-3" />
-          Successful attempt
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2 rounded-sm bg-destructive" />
-          Provider error
-        </span>
-      </div>
+      {totalCalls === 0 ? (
+        <div
+          role="status"
+          className={`flex min-h-32 flex-1 items-center justify-center text-muted-foreground ${typeStyle("body.default")}`}
+        >
+          No model attempts in the last 24 hours.
+        </div>
+      ) : (
+        <>
+          <div className="relative mt-4">
+            <div
+              role="img"
+              aria-label={`Hourly routing activity: ${totalCalls.toLocaleString()} model attempts in the last 24 hours`}
+              className="grid h-32 grid-cols-[repeat(24,minmax(0,1fr))] items-end gap-1 border-b border-foreground/10 px-1"
+            >
+              {activity.map((hour) => {
+                const successfulCalls = Math.min(hour.successes, hour.calls);
+                const errorCalls = Math.min(
+                  hour.errors,
+                  Math.max(0, hour.calls - successfulCalls),
+                );
+                const barHeight = hour.calls
+                  ? Math.max(4, (hour.calls / maxCalls) * 100)
+                  : 0;
+                const successHeight = hour.calls
+                  ? (successfulCalls / hour.calls) * 100
+                  : 0;
+                const errorHeight = hour.calls
+                  ? (errorCalls / hour.calls) * 100
+                  : 0;
+                const hourLabel = dayjs(hour.hourStart).format("MMM D, h A");
+
+                return (
+                  <div
+                    key={hour.hourStart}
+                    className="flex h-full min-w-0 items-end"
+                    title={`${hourLabel}: ${hour.calls.toLocaleString()} attempts, ${successfulCalls.toLocaleString()} successful, ${errorCalls.toLocaleString()} provider errors`}
+                  >
+                    {hour.calls ? (
+                      <div
+                        className="flex w-full flex-col-reverse overflow-hidden rounded-t-sm bg-chart-2/35"
+                        style={{ height: `${barHeight}%` }}
+                      >
+                        {successfulCalls ? (
+                          <div
+                            className="min-h-px w-full bg-chart-3"
+                            style={{ height: `${successHeight}%` }}
+                          />
+                        ) : null}
+                        {errorCalls ? (
+                          <div
+                            className="min-h-px w-full bg-destructive"
+                            style={{ height: `${errorHeight}%` }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="h-px w-full bg-foreground/8" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div
+            className={`mt-2 flex justify-between text-muted-foreground ${typeStyle("caption.default")}`}
+          >
+            <span>{firstHour ? dayjs(firstHour).format("ddd h A") : "—"}</span>
+            <span>
+              {middleHour ? dayjs(middleHour).format("ddd h A") : "—"}
+            </span>
+            <span>{lastHour ? dayjs(lastHour).format("ddd h A") : "—"}</span>
+          </div>
+          <div
+            className={`mt-3 flex flex-wrap gap-x-4 gap-y-2 text-muted-foreground ${typeStyle("caption.default")}`}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-2 rounded-sm bg-chart-3" />
+              Successful attempt
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-2 rounded-sm bg-destructive" />
+              Provider error
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

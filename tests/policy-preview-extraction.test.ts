@@ -95,8 +95,12 @@ describe("policy preview extraction", () => {
   it("clears stale preview errors when full extraction becomes final", () => {
     const policies = read("convex/policies.ts");
 
-    expect(policies).toContain('fields.extractionDataStage === "final"');
+    expect(policies).toContain("promoteCompletedExtractionInternal");
+    expect(policies).toContain('fields.extractionDataStage = "final"');
     expect(policies).toContain("fields.extractionPreviewError = undefined");
+    expect(policies).toContain(
+      "updateExtractionInternal cannot promote a policy to final",
+    );
     expect(policies).toContain('status === "complete" ? { extractionPreviewError: undefined } : {}');
   });
 

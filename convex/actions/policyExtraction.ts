@@ -26,6 +26,12 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { isFeatureEnabled } from "../lib/featureFlags";
 import { isSpecimenPolicyDocument } from "../lib/policyDocumentGate";
+import {
+  buildExtractionCompletionManifest,
+  buildPromotionEvidenceLedger,
+  buildPromotionSourceCoverageMap,
+  type ExtractionCompletionManifest,
+} from "../lib/extractionPromotion";
 
 type ExtractionState = Record<string, unknown>;
 import {
@@ -79,6 +85,7 @@ const SOURCE_STORAGE_BATCH_SIZE = readBoundedIntEnv(
 );
 
 type StoredArtifact = {
+  artifactId: string;
   storageId: string;
   byteLength: number;
   durationMs: number;
@@ -246,6 +253,9 @@ type EmbeddingPayload = Pick<
 >;
 
 type ExternalCompletionPayload = {
+  protocolVersion?: "source-tree-v1" | "source-tree-v2";
+  extractorVersion?: string;
+  sections?: ExtractionCompletionManifest["sections"];
   document: unknown;
   chunks: unknown[];
   sourceSpans: unknown[];
@@ -352,6 +362,9 @@ type ExternalCompleteArgs = {
   warnings?: string[];
   tokenUsage?: unknown;
   performanceReport?: unknown;
+  protocolVersion?: "source-tree-v1" | "source-tree-v2";
+  extractorVersion?: string;
+  sections?: ExtractionCompletionManifest["sections"];
 };
 
 function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
@@ -471,9 +484,12 @@ function validateExternalWorkerCompatibility(args: {
   workerProtocolVersion?: string;
   clSdkVersion?: string;
 }): string | undefined {
+  const allowedProtocols = EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION === "source-tree-v2"
+    ? new Set(["source-tree-v2"])
+    : new Set(["source-tree-v1", "source-tree-v2"]);
   if (
     EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION &&
-    args.workerProtocolVersion !== EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION
+    (!args.workerProtocolVersion || !allowedProtocols.has(args.workerProtocolVersion))
   ) {
     return [
       `External worker ${args.workerId ?? "unknown"} is incompatible`,
@@ -655,8 +671,19 @@ async function loadPdfBytes(
 async function storeJsonArtifact(
   ctx: ActionCtx,
   jobId: string,
-  kind: "cl_sdk_checkpoint" | "embedding_payload" | "external_completion_payload",
+  kind:
+    | "cl_sdk_checkpoint"
+    | "embedding_payload"
+    | "external_completion_payload"
+    | "source_bundle"
+    | "section_result",
   value: unknown,
+  metadata?: {
+    sourceFingerprint?: string;
+    extractorVersion?: string;
+    sectionId?: string;
+    metadata?: unknown;
+  },
 ): Promise<StoredArtifact> {
   const json = JSON.stringify(value);
   const byteLength = new TextEncoder().encode(json).byteLength;
@@ -665,12 +692,17 @@ async function storeJsonArtifact(
     type: "application/json",
   });
   const storageId = String(await ctx.storage.store(blob));
-  await ctx.runMutation(internal.policies.pipelineSaveArtifact, {
-    jobId,
-    kind,
-    storageId: storageId as Id<"_storage">,
-  });
+  const artifactId = String(await ctx.runMutation(
+    internal.policies.pipelineSaveArtifact,
+    {
+      jobId,
+      kind,
+      storageId: storageId as Id<"_storage">,
+      ...metadata,
+    },
+  ));
   return {
+    artifactId,
     storageId,
     byteLength,
     durationMs: nowMs() - startedAt,
@@ -690,13 +722,139 @@ async function loadJsonArtifact<T>(
 async function getLatestArtifactStorageId(
   ctx: ActionCtx,
   jobId: string,
-  kind: "cl_sdk_checkpoint" | "embedding_payload" | "external_completion_payload",
+  kind:
+    | "cl_sdk_checkpoint"
+    | "embedding_payload"
+    | "external_completion_payload"
+    | "source_bundle"
+    | "section_result",
 ): Promise<string | undefined> {
   const artifact = await ctx.runQuery(internal.policies.pipelineGetArtifact, {
     jobId,
     kind,
   }) as { storageId?: string } | null;
   return artifact?.storageId ? String(artifact.storageId) : undefined;
+}
+
+async function persistEvidenceAndPromote(
+  ctx: ActionCtx,
+  args: {
+    policyId: string;
+    sourceSpans: SourceSpanLike[];
+    sourceNodes: DocumentSourceNode[];
+    fields: Record<string, unknown>;
+    protocolVersion?: "source-tree-v1" | "source-tree-v2";
+    extractorVersion?: string;
+    sections?: ExtractionCompletionManifest["sections"];
+  },
+) {
+  const extractorVersion = normalizeVersionSpec(args.extractorVersion)
+    ?? normalizeVersionSpec(EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION)
+    ?? "4.6.0";
+  const ledger = buildPromotionEvidenceLedger({
+    sourceSpans: args.sourceSpans,
+    sourceTree: args.sourceNodes,
+  });
+  const protocolVersion = args.protocolVersion ?? "source-tree-v1";
+  const sourceCoverageMap = protocolVersion === "source-tree-v2"
+    ? buildPromotionSourceCoverageMap({
+        sourceSpans: args.sourceSpans,
+        sourceTree: args.sourceNodes,
+      })
+    : undefined;
+  const manifest = buildExtractionCompletionManifest({
+    protocolVersion,
+    extractorVersion,
+    ledger,
+    sourceCoverageMap,
+    sections: args.sections,
+  });
+  const promotionContext = await ctx.runQuery(
+    (internal as any).policies.pipelineGetPromotionContext,
+    { jobId: args.policyId },
+  ) as {
+    runId: Id<"policyExtractionRuns">;
+    leaseId: string;
+    promotedAt?: number;
+    promotionGateDecision?: {
+      allowed: boolean;
+      reasons: string[];
+      mode: "shadow" | "enforce";
+      sourceFingerprint?: string;
+      evidenceLedgerHash?: string;
+      manifestHash?: string;
+    };
+  } | null;
+  if (!promotionContext) {
+    throw new Error("Extraction promotion lost its current run or lease");
+  }
+  if (promotionContext.promotedAt) {
+    const existing = promotionContext.promotionGateDecision;
+    if (
+      existing &&
+      existing.sourceFingerprint === ledger.sourceFingerprint &&
+      existing.evidenceLedgerHash === ledger.ledgerHash &&
+      existing.manifestHash === manifest.manifestHash
+    ) {
+      return existing;
+    }
+    throw new Error("Extraction run was already promoted with different evidence");
+  }
+  const artifact = await storeJsonArtifact(
+    ctx,
+    args.policyId,
+    "source_bundle",
+    {
+      sourceSpans: args.sourceSpans,
+      sourceTree: args.sourceNodes,
+      evidenceLedger: ledger,
+      completionManifest: manifest,
+    },
+    {
+      sourceFingerprint: ledger.sourceFingerprint,
+      extractorVersion,
+      metadata: {
+        artifactRole: "promotion_evidence",
+        evidenceLedgerHash: ledger.ledgerHash,
+        manifestHash: manifest.manifestHash,
+        protocolVersion: manifest.protocolVersion,
+      },
+    },
+  );
+  const result = await ctx.runMutation(
+    (internal as any).policies.promoteCompletedExtractionInternal,
+    {
+      id: args.policyId as Id<"policies">,
+      runId: promotionContext.runId,
+      leaseId: promotionContext.leaseId,
+      sourceBundleArtifactId: artifact.artifactId as Id<"policyExtractionArtifacts">,
+      fields: args.fields,
+      evidenceLedger: ledger,
+      completionManifest: manifest,
+    },
+  ) as {
+    promoted: boolean;
+    decision: { allowed: boolean; reasons: string[]; mode: "shadow" | "enforce" };
+  };
+  if (!result.decision.allowed) {
+    await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
+      jobId: args.policyId,
+      timestamp: nowMs(),
+      message: `Extraction promotion ${result.decision.mode === "enforce" ? "blocked" : "shadow violation"}: ${result.decision.reasons.join("; ")}`,
+      phase: "extract",
+      level: "warn",
+    });
+  }
+  if (!result.promoted) {
+    await ctx.runMutation(internal.policies.pipelineClearArtifacts, {
+      jobId: args.policyId,
+      kind: "external_completion_payload",
+    });
+    throw new Error(
+      `Extraction promotion blocked: ${result.decision.reasons.join("; ")}`,
+    );
+  }
+  return result.decision;
 }
 
 async function storeEmbeddingPayload(
@@ -744,7 +902,12 @@ async function loadEmbeddingPayload(
 async function clearArtifacts(
   ctx: ActionCtx,
   jobId: string,
-  kind?: "cl_sdk_checkpoint" | "embedding_payload" | "external_completion_payload",
+  kind?:
+    | "cl_sdk_checkpoint"
+    | "embedding_payload"
+    | "external_completion_payload"
+    | "source_bundle"
+    | "section_result",
 ): Promise<void> {
   await ctx.runMutation(internal.policies.pipelineClearArtifacts, {
     jobId,
@@ -1585,31 +1748,28 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         await pCtx.saveState(promotionState);
       }
 
-      await convexCtx.runMutation(
-        (internal as any).policies.updateExtractionInternal,
-        {
-          id: policyId,
-          fields: {
-            fileName: resolvedFileName,
-            ...fields,
-            ...sourceTreePolicyFields({
-              sourceTree: sourceNodes,
-              operationalProfile,
-              sourceSpans: canonicalSpans,
-              existingDocumentMetadata: doc.documentMetadata,
-              existingDeclarations: doc.declarations,
-              existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
-              existingPolicyFields: fieldsWithPersistedCarrierIdentity(
-                fields,
-                existingPolicy,
-              ),
-            }),
-            extractionDataStage: "final",
-            extractionDataStageUpdatedAt: nowMs(),
-            extractionPreviewError: undefined,
-          },
-        },
-      );
+      const finalFields = {
+        fileName: resolvedFileName,
+        ...fields,
+        ...sourceTreePolicyFields({
+          sourceTree: sourceNodes,
+          operationalProfile,
+          sourceSpans: canonicalSpans,
+          existingDocumentMetadata: doc.documentMetadata,
+          existingDeclarations: doc.declarations,
+          existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
+          existingPolicyFields: fieldsWithPersistedCarrierIdentity(
+            fields,
+            existingPolicy,
+          ),
+        }),
+      };
+      await persistEvidenceAndPromote(convexCtx, {
+        policyId,
+        sourceSpans: canonicalSpans,
+        sourceNodes,
+        fields: finalFields,
+      });
 
       await convexCtx.runMutation((internal as any).policies.updateFiles, {
         id: policyId,
@@ -2315,6 +2475,93 @@ export const logExternalJob = action({
   },
 });
 
+export const createExternalExtractionArtifactUploadUrl = action({
+  args: { secret: v.string() },
+  handler: async (ctx, args) => {
+    requireExtractionWorkerSecret(args.secret);
+    return { uploadUrl: await ctx.storage.generateUploadUrl() };
+  },
+});
+
+export const finalizeExternalExtractionArtifact = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+    kind: v.union(v.literal("source_bundle"), v.literal("section_result")),
+    storageId: v.string(),
+    sourceFingerprint: v.string(),
+    extractorVersion: v.string(),
+    sectionId: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args): Promise<
+    { ok: false; artifactId?: undefined } |
+    { ok: true; artifactId: string }
+  > => {
+    requireExtractionWorkerSecret(args.secret);
+    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
+    if (args.kind === "section_result" && !args.sectionId) {
+      throw new Error("section_result artifacts require sectionId");
+    }
+    const artifactId: unknown = await ctx.runMutation(
+      (internal as any).policies.pipelineSaveArtifact,
+      {
+        jobId: args.policyId,
+        kind: args.kind,
+        storageId: args.storageId as Id<"_storage">,
+        sourceFingerprint: args.sourceFingerprint,
+        extractorVersion: args.extractorVersion,
+        sectionId: args.sectionId,
+        metadata: args.metadata,
+      },
+    );
+    return { ok: true, artifactId: String(artifactId) };
+  },
+});
+
+export const getExternalExtractionResumeArtifacts = action({
+  args: {
+    secret: v.string(),
+    policyId: v.string(),
+    leaseId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    requireExtractionWorkerSecret(args.secret);
+    if (!await externalLeaseMatches(ctx, args)) return { ok: false, artifacts: [] };
+    const result = await ctx.runQuery(
+      (internal as any).policies.pipelineListResumableArtifacts,
+      { jobId: args.policyId },
+    ) as {
+      runId: Id<"policyExtractionRuns">;
+      artifacts: Array<{
+        _id: Id<"policyExtractionArtifacts">;
+        kind: "source_bundle" | "section_result";
+        storageId: Id<"_storage">;
+        sourceFingerprint?: string;
+        extractorVersion?: string;
+        sectionId?: string;
+        metadata?: unknown;
+      }>;
+    } | null;
+    if (!result) return { ok: true, artifacts: [] };
+    const artifacts = await Promise.all(result.artifacts.map(async (artifact) => ({
+      artifactId: String(artifact._id),
+      kind: artifact.kind,
+      url: await ctx.storage.getUrl(artifact.storageId),
+      sourceFingerprint: artifact.sourceFingerprint,
+      extractorVersion: artifact.extractorVersion,
+      sectionId: artifact.sectionId,
+      metadata: artifact.metadata,
+    })));
+    return {
+      ok: true,
+      runId: String(result.runId),
+      artifacts: artifacts.filter((artifact) => Boolean(artifact.url)),
+    };
+  },
+});
+
 export const recordExternalTraceEvent = action({
   args: {
     secret: v.string(),
@@ -2429,6 +2676,37 @@ async function completeExternalExtractFromPayload(
         totalModelCallDurationMs?: number;
       }
     | undefined;
+  const protocolVersion = payload?.protocolVersion ?? args.protocolVersion;
+  const extractorVersion = payload?.extractorVersion ?? args.extractorVersion;
+  const rawSections = payload?.sections ?? args.sections;
+  const sections = Array.isArray(rawSections)
+    ? rawSections.flatMap((value): ExtractionCompletionManifest["sections"] => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+        const section = value as Record<string, unknown>;
+        const id = section.id ?? section.sectionId;
+        if (
+          id !== "extraction_policy_core" &&
+          id !== "extraction_policy_coverage" &&
+          id !== "extraction_coverage_cleanup"
+        ) {
+          return [];
+        }
+        const status = section.status;
+        if (status !== "complete" && status !== "not_applicable" && status !== "degraded") {
+          return [];
+        }
+        return [{
+          id,
+          status,
+          sourceSpanIds: Array.isArray(section.sourceSpanIds)
+            ? section.sourceSpanIds.filter((spanId): spanId is string => typeof spanId === "string")
+            : [],
+          ...(typeof section.resultHash === "string" && section.resultHash
+            ? { resultHash: section.resultHash }
+            : {}),
+        }];
+      })
+    : undefined;
   let doc = document as Record<string, unknown>;
   if (!state.orgId || !state.userId) {
     throw new Error("External extraction completion missing orgId or userId");
@@ -2530,27 +2808,30 @@ async function completeExternalExtractFromPayload(
     return { ok: false };
   }
 
-  await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
-    id: policyId,
-    fields: {
-      fileName: resolvedFileName,
-      ...fields,
-      ...sourceTreePolicyFields({
-        sourceTree: sourceNodes,
-        operationalProfile: normalizedOperationalProfile,
-        sourceSpans: canonicalSpans,
-        existingDocumentMetadata: doc.documentMetadata,
-        existingDeclarations: doc.declarations,
-        existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
-        existingPolicyFields: fieldsWithPersistedCarrierIdentity(
-          fields,
-          existingPolicy,
-        ),
-      }),
-      extractionDataStage: "final",
-      extractionDataStageUpdatedAt: nowMs(),
-      extractionPreviewError: undefined,
-    },
+  const finalFields = {
+    fileName: resolvedFileName,
+    ...fields,
+    ...sourceTreePolicyFields({
+      sourceTree: sourceNodes,
+      operationalProfile: normalizedOperationalProfile,
+      sourceSpans: canonicalSpans,
+      existingDocumentMetadata: doc.documentMetadata,
+      existingDeclarations: doc.declarations,
+      existingLinesOfBusiness: existingPolicy?.linesOfBusiness,
+      existingPolicyFields: fieldsWithPersistedCarrierIdentity(
+        fields,
+        existingPolicy,
+      ),
+    }),
+  };
+  await persistEvidenceAndPromote(ctx, {
+    policyId,
+    sourceSpans: canonicalSpans,
+    sourceNodes,
+    fields: finalFields,
+    protocolVersion,
+    extractorVersion,
+    sections,
   });
 
   if (state.fileId) {
@@ -2615,6 +2896,12 @@ export const completeExternalExtract = action({
     warnings: v.optional(v.array(v.string())),
     tokenUsage: v.optional(v.any()),
     performanceReport: v.optional(v.any()),
+    protocolVersion: v.optional(v.union(
+      v.literal("source-tree-v1"),
+      v.literal("source-tree-v2"),
+    )),
+    extractorVersion: v.optional(v.string()),
+    sections: v.optional(v.array(v.any())),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);

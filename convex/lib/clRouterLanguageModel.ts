@@ -18,6 +18,7 @@ import {
   clRouterGenerate,
   clRouterGenerateStream,
   isClRouterDirectFallbackError,
+  isClRouterFailureCode,
   type ClRouterClientOptions,
   type ClRouterGenerateRequest,
   type ClRouterGenerateResponse,
@@ -436,7 +437,7 @@ export function createClRouterLanguageModel(
       } catch (error) {
         if (
           successfulRouterSteps > 0 ||
-          !isClRouterDirectFallbackError(error)
+          !isClRouterDirectFallbackError(error, adapter.client?.environment ?? process.env)
         ) {
           throw error;
         }
@@ -464,7 +465,7 @@ export function createClRouterLanguageModel(
       } catch (error) {
         if (
           successfulRouterSteps > 0 ||
-          !isClRouterDirectFallbackError(error)
+          !isClRouterDirectFallbackError(error, adapter.client?.environment ?? process.env)
         ) {
           throw error;
         }
@@ -523,6 +524,16 @@ export function createClRouterLanguageModel(
                     throw new ClRouterRequestError(
                       event.error.retryable ? "server" : "client",
                       `cl-router stream failed (${event.error.code})`,
+                      {
+                        ...(isClRouterFailureCode(event.error.code)
+                          ? { routerCode: event.error.code }
+                          : {}),
+                        retryable: event.error.retryable,
+                        ...(event.error.executionStarted === undefined
+                          ? {}
+                          : { executionStarted: event.error.executionStarted }),
+                        ...(event.error.requestId ? { requestId: event.error.requestId } : {}),
+                      },
                     );
                   } else {
                     receivedDone = true;
@@ -558,7 +569,10 @@ export function createClRouterLanguageModel(
                 if (
                   !visibleRouterOutput &&
                   successfulRouterSteps === 0 &&
-                  isClRouterDirectFallbackError(error)
+                  isClRouterDirectFallbackError(
+                    error,
+                    adapter.client?.environment ?? process.env,
+                  )
                 ) {
                   try {
                     await switchRunToDirect(error, step);

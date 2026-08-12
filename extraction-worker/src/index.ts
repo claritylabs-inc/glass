@@ -18,9 +18,13 @@ import {
   ACORD_LOB_CODES,
   createExtractor,
   resolveAcordCoverageCode,
+  stableHash,
   toLobCodes,
   type GenerateObject,
+  type ExtractOptions,
   type ExtractionResult,
+  type ExtractionSectionResult,
+  type ExtractionSectionStore,
   type ModelCapabilities,
   type ModelTaskKind,
 } from "@claritylabs/cl-sdk";
@@ -66,6 +70,7 @@ import { applyCarrierIdentityGuidance } from "./extractionPromptGuidance.js";
 import { watchClientDisconnect } from "./httpRequestCancellation.js";
 import { createPdfWorkAdmission } from "./pdfWorkAdmission.js";
 import { resolveWorkerRuntimeAccess } from "./railwayRuntime.js";
+import { preparePdfSourceWithLiteParseFallback } from "./pdfSourceFallback.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -152,12 +157,24 @@ type CompletionPayloadSaveResult = {
   logError?: string;
 };
 
+type ResumableExtractionArtifact = {
+  artifactId: string;
+  kind: "source_bundle" | "section_result";
+  url: string | null;
+  sourceFingerprint?: string;
+  extractorVersion?: string;
+  sectionId?: string;
+  metadata?: unknown;
+};
+
 const require = createRequire(import.meta.url);
 const workerPackage = require("../package.json") as {
   version?: string;
   dependencies?: Record<string, string>;
 };
-const WORKER_PROTOCOL_VERSION = "source-tree-v1";
+const WORKER_PROTOCOL_VERSION = process.env.EXTRACTION_WORKER_PROTOCOL_VERSION === "source-tree-v2"
+  ? "source-tree-v2"
+  : "source-tree-v1";
 
 const actions = {
   saveExternalCompletionPayload: makeFunctionReference<
@@ -232,6 +249,31 @@ const actions = {
     },
     AckResult
   >("actions/policyExtraction.js:logExternalJob"),
+  createExternalExtractionArtifactUploadUrl: makeFunctionReference<
+    "action",
+    { secret: string },
+    { uploadUrl: string }
+  >("actions/policyExtraction.js:createExternalExtractionArtifactUploadUrl"),
+  finalizeExternalExtractionArtifact: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      policyId: string;
+      leaseId: string;
+      kind: "source_bundle" | "section_result";
+      storageId: string;
+      sourceFingerprint: string;
+      extractorVersion: string;
+      sectionId?: string;
+      metadata?: unknown;
+    },
+    { ok: boolean; artifactId?: string }
+  >("actions/policyExtraction.js:finalizeExternalExtractionArtifact"),
+  getExternalExtractionResumeArtifacts: makeFunctionReference<
+    "action",
+    { secret: string; policyId: string; leaseId: string },
+    { ok: boolean; runId?: string; artifacts: ResumableExtractionArtifact[] }
+  >("actions/policyExtraction.js:getExternalExtractionResumeArtifacts"),
   completeExternalExtract: makeFunctionReference<
     "action",
     {
@@ -249,6 +291,9 @@ const actions = {
       warnings?: string[];
       tokenUsage?: unknown;
       performanceReport?: unknown;
+      protocolVersion?: "source-tree-v1" | "source-tree-v2";
+      extractorVersion?: string;
+      sections?: unknown[];
     },
     AckResult
   >("actions/policyExtraction.js:completeExternalExtract"),
@@ -1412,7 +1457,7 @@ async function generateObjectWithClRouter<T>(opts: {
     });
     return { object, usage, route };
   } catch (error) {
-    const canUseDirectFallback = shouldFallBackFromClRouter(error);
+    const canUseDirectFallback = shouldFallBackFromClRouter(error, { GLASS_ENV });
     await recordTraceEvent(opts.job, {
       kind: "model_call",
       label: opts.label,
@@ -1835,6 +1880,8 @@ function startHttpServer(): { close: () => void } | null {
         workerMode: RUNTIME_ACCESS.mode,
         jobsEnabled: RUNTIME_ACCESS.jobsEnabled,
         conversionsEnabled: RUNTIME_ACCESS.conversionsEnabled,
+        clRouterEnabled: clRouter !== null,
+        clRouterTasks: [...CL_ROUTER_TASK_FLAGS].sort(),
         extractionJobConcurrency: EXTRACTION_JOB_CONCURRENCY,
         previewJobConcurrency: PREVIEW_JOB_CONCURRENCY,
         pdfWorkMaxActive: PDF_WORK_MAX_ACTIVE,
@@ -1955,6 +2002,167 @@ async function uploadCompletionPayload(
   throw lastError instanceof Error
     ? lastError
     : new Error(`Failed to upload completion payload: ${String(lastError)}`);
+}
+
+async function uploadExtractionArtifact(
+  job: ClaimedJob,
+  args: {
+    kind: "source_bundle" | "section_result";
+    value: unknown;
+    sourceFingerprint: string;
+    extractorVersion: string;
+    sectionId?: string;
+    metadata?: unknown;
+  },
+) {
+  const json = JSON.stringify(args.value);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= COMPLETION_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const { uploadUrl } = await convex.action(
+        actions.createExternalExtractionArtifactUploadUrl,
+        { secret: SECRET },
+      );
+      const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
+        glassEnv: GLASS_ENV,
+        convexUrl: CONVEX_URL,
+      }), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to upload ${args.kind}: ${response.status} ${await response.text()}`);
+      }
+      const uploaded = await response.json() as { storageId?: string };
+      if (!uploaded.storageId) throw new Error(`${args.kind} upload did not return a storageId`);
+      const finalized = await convex.action(actions.finalizeExternalExtractionArtifact, {
+        secret: SECRET,
+        policyId: job.policyId,
+        leaseId: job.leaseId,
+        kind: args.kind,
+        storageId: uploaded.storageId,
+        sourceFingerprint: args.sourceFingerprint,
+        extractorVersion: args.extractorVersion,
+        sectionId: args.sectionId,
+        metadata: args.metadata,
+      });
+      if (!finalized.ok) throw new Error(`Convex rejected ${args.kind} for ${job.policyId}`);
+      return finalized;
+    } catch (error) {
+      lastError = error;
+      if (attempt < COMPLETION_UPLOAD_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Failed to upload ${args.kind}: ${String(lastError)}`);
+}
+
+async function loadExtractionArtifact(url: string): Promise<unknown> {
+  const response = await fetch(resolveConvexStorageUrl(url, {
+    glassEnv: GLASS_ENV,
+    convexUrl: CONVEX_URL,
+  }));
+  if (!response.ok) {
+    throw new Error(`Failed to load extraction artifact: ${response.status} ${await response.text()}`);
+  }
+  return await response.json();
+}
+
+function sourceBundleFingerprint(sourceSpans: WorkerSourceSpan[]) {
+  return stableHash(sourceSpans.map((span) => ({
+    id: span.id,
+    hash: span.textHash ?? stableHash(span.text),
+    pageStart: span.pageStart,
+    pageEnd: span.pageEnd,
+  })));
+}
+
+type WorkerSourceBundle = {
+  version: "worker-source-bundle-v1";
+  protocolVersion: "source-tree-v2";
+  extractorVersion: string;
+  sourceFingerprint: string;
+  parser: "liteparse" | "pdfjs";
+  sourceSpans: WorkerSourceSpan[];
+  sourceChunks: WorkerSourceChunk[];
+  pageScreenshots?: PageScreenshot[];
+};
+
+const EXTRACTION_SECTION_IDS = new Set([
+  "extraction_policy_core",
+  "extraction_policy_coverage",
+  "extraction_coverage_cleanup",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isExtractionSectionResult(value: unknown): value is ExtractionSectionResult {
+  return isRecord(value) &&
+    value.version === "extraction-section-result-v1" &&
+    typeof value.sectionId === "string" &&
+    EXTRACTION_SECTION_IDS.has(value.sectionId) &&
+    (value.status === "complete" ||
+      value.status === "not_applicable" ||
+      value.status === "degraded") &&
+    typeof value.sourceFingerprint === "string" &&
+    typeof value.extractorVersion === "string" &&
+    Array.isArray(value.sourceSpanIds) &&
+    value.sourceSpanIds.every((id) => typeof id === "string") &&
+    Array.isArray(value.warnings) &&
+    value.warnings.every((warning) => typeof warning === "string") &&
+    (value.error === undefined || typeof value.error === "string") &&
+    (value.operationalProfile === undefined || isRecord(value.operationalProfile)) &&
+    typeof value.resultHash === "string";
+}
+
+async function loadResumableExtraction(job: ClaimedJob) {
+  if (WORKER_PROTOCOL_VERSION !== "source-tree-v2") {
+    return {
+      sourceBundle: undefined,
+      sectionResults: new Map<string, ExtractionSectionResult>(),
+    };
+  }
+  const response = await convex.action(actions.getExternalExtractionResumeArtifacts, {
+    secret: SECRET,
+    policyId: job.policyId,
+    leaseId: job.leaseId,
+  });
+  if (!response.ok) throw new Error(`Lost external extraction lease for ${job.policyId}`);
+  const matching = response.artifacts.filter((artifact) =>
+    artifact.extractorVersion === WORKER_CL_SDK_VERSION && artifact.url);
+  let sourceBundle: WorkerSourceBundle | undefined;
+  const sectionResults = new Map<string, ExtractionSectionResult>();
+  for (const artifact of matching) {
+    const value = await loadExtractionArtifact(artifact.url!);
+    if (artifact.kind === "source_bundle" && !sourceBundle) {
+      const candidate = value as Partial<WorkerSourceBundle>;
+      if (
+        candidate.version === "worker-source-bundle-v1" &&
+        candidate.protocolVersion === "source-tree-v2" &&
+        candidate.extractorVersion === WORKER_CL_SDK_VERSION &&
+        Array.isArray(candidate.sourceSpans) &&
+        Array.isArray(candidate.sourceChunks) &&
+        candidate.sourceFingerprint === sourceBundleFingerprint(candidate.sourceSpans)
+      ) {
+        sourceBundle = candidate as WorkerSourceBundle;
+      }
+    } else if (
+      artifact.kind === "section_result" &&
+      artifact.sectionId &&
+      isExtractionSectionResult(value) &&
+      value.sectionId === artifact.sectionId &&
+      value.extractorVersion === WORKER_CL_SDK_VERSION
+    ) {
+      sectionResults.set(value.sectionId, value);
+    }
+  }
+  return { sourceBundle, sectionResults };
 }
 
 const HEAVY_PAYLOAD_KEYS = new Set([
@@ -2457,39 +2665,37 @@ async function completeJob(
   result: ExtractionResult,
   fallbackSource: Awaited<ReturnType<typeof buildPdfSourceSpans>>,
 ): Promise<void> {
-  const resultSourceSpans = Array.isArray((result as unknown as { sourceSpans?: unknown[] }).sourceSpans)
-    ? (result as unknown as { sourceSpans: Array<Record<string, unknown>> }).sourceSpans
-    : [];
-  const resultSourceChunks = Array.isArray((result as unknown as { sourceChunks?: unknown[] }).sourceChunks)
-    ? (result as unknown as { sourceChunks: Array<Record<string, unknown>> }).sourceChunks
-    : [];
-  const resultSourceTree = Array.isArray((result as unknown as { sourceTree?: unknown[] }).sourceTree)
-    ? (result as unknown as { sourceTree: Array<Record<string, unknown>> }).sourceTree
-    : [];
-  const operationalProfile = (result as unknown as { operationalProfile?: unknown }).operationalProfile;
-  const coverageRecovery = result.coverageRecovery;
-  const warnings = Array.isArray((result as unknown as { warnings?: unknown[] }).warnings)
-    ? (result as unknown as { warnings: unknown[] }).warnings.filter((item): item is string => typeof item === "string")
-    : [];
-
-  const rawSourceSpans = fallbackSource.sourceSpans as unknown as Array<Record<string, unknown>>;
-  const rawSourceChunks = fallbackSource.sourceChunks as unknown as Array<Record<string, unknown>>;
-  const sourceSpans = dedupeById(resultSourceSpans.length > 0
-    ? [...resultSourceSpans, ...rawSourceSpans]
-    : rawSourceSpans);
-  const sourceChunks = dedupeById(resultSourceChunks.length > 0
-    ? [...resultSourceChunks, ...rawSourceChunks]
-    : rawSourceChunks);
+  const resultSourceSpans = result.sourceSpans ?? [];
+  const resultSourceChunks = result.sourceChunks ?? [];
+  const resultSourceTree = result.sourceTree ?? [];
+  const rawSourceSpans = fallbackSource.sourceSpans;
+  const rawSourceChunks = fallbackSource.sourceChunks;
+  const sourceSpanCandidates: Array<{ id?: unknown }> = resultSourceSpans.length > 0
+    ? result.protocolVersion === "source-tree-v2"
+      ? resultSourceSpans
+      : [...resultSourceSpans, ...rawSourceSpans]
+    : rawSourceSpans;
+  const sourceChunkCandidates: Array<{ id?: unknown }> = resultSourceChunks.length > 0
+    ? result.protocolVersion === "source-tree-v2"
+      ? resultSourceChunks
+      : [...resultSourceChunks, ...rawSourceChunks]
+    : rawSourceChunks;
+  const sourceSpans = dedupeById(sourceSpanCandidates);
+  const sourceChunks = dedupeById(sourceChunkCandidates);
   const document = sanitizeCompletionDocument(result.document);
   const payload = {
+    protocolVersion: result.protocolVersion ?? "source-tree-v1",
+    extractorVersion: result.extractorVersion ?? WORKER_CL_SDK_VERSION,
+    sections: result.sections,
+    completionManifest: result.completionManifest,
     document,
     chunks: result.chunks,
     sourceSpans,
     sourceChunks,
     sourceTree: resultSourceTree,
-    operationalProfile,
-    coverageRecovery,
-    warnings,
+    operationalProfile: result.operationalProfile,
+    coverageRecovery: result.coverageRecovery,
+    warnings: result.warnings ?? [],
     tokenUsage: result.tokenUsage,
     performanceReport: result.performanceReport
       ? {
@@ -2590,11 +2796,6 @@ async function processJob(
       return;
     }
 
-    const pdfBytes = await fetchPdfBytes(job.fileUrl);
-    await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
-
-    let result: ExtractionResult;
-    let preparedSource: Awaited<ReturnType<typeof buildPdfSourceSpans>>;
     const extractStartedAt = nowMs();
     await recordTraceEvent(job, {
       kind: "phase",
@@ -2602,93 +2803,170 @@ async function processJob(
       label: "external_extract",
       status: "started",
     });
-    try {
-      const converted = await convertPdfWithLiteParse({
-        pdfBytes,
-        documentId: job.policyId,
-        sourceKind: "policy_pdf",
-        maxPages: LITEPARSE_MAX_PAGES,
-        maxFileSize: LITEPARSE_MAX_FILE_SIZE,
-        priority: "full",
-      });
+    const resumable = await loadResumableExtraction(job);
+    let pdfBytes: Uint8Array<ArrayBufferLike> = new Uint8Array();
+    let preparedSource: {
+      sourceSpans: WorkerSourceSpan[];
+      sourceChunks: WorkerSourceChunk[];
+    };
+    let pageScreenshots: PageScreenshot[] | undefined;
+    if (resumable.sourceBundle) {
+      preparedSource = {
+        sourceSpans: resumable.sourceBundle.sourceSpans,
+        sourceChunks: resumable.sourceBundle.sourceChunks,
+      };
+      pageScreenshots = resumable.sourceBundle.pageScreenshots;
       await logJob(
         job,
-        `LiteParse parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} hierarchical source spans`,
+        `Resumed persisted ${resumable.sourceBundle.parser} source bundle without reparsing the PDF`,
       );
-      const extractor = buildWorkerExtractor({
-        job,
-        log: async (message) => logJob(job, message),
-        modelSettings: job.modelSettings,
-        pageScreenshots: converted.pageScreenshots,
-      });
-      const supplementedSource = await supplementPreparedPdfSource(
-        pdfBytes,
-        job.policyId,
-        {
-          sourceSpans: converted.sourceSpans,
-          sourceChunks: converted.sourceChunks,
+    } else {
+      pdfBytes = await fetchPdfBytes(job.fileUrl);
+      await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
+      const prepared = await preparePdfSourceWithLiteParseFallback({
+        convertWithLiteParse: () => convertPdfWithLiteParse({
+          pdfBytes,
+          documentId: job.policyId,
+          sourceKind: "policy_pdf",
+          maxPages: LITEPARSE_MAX_PAGES,
+          maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+          priority: "full",
+        }),
+        prepareLiteParseSource: async (converted) => {
+          await logJob(
+            job,
+            `LiteParse parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} hierarchical source spans`,
+          );
+          const supplementedSource = await supplementPreparedPdfSource(
+            pdfBytes,
+            job.policyId,
+            {
+              sourceSpans: converted.sourceSpans,
+              sourceChunks: converted.sourceChunks,
+            },
+          );
+          if (supplementedSource.supplementCount > 0) {
+            await logJob(
+              job,
+              `Added ${supplementedSource.supplementCount} Poppler text supplement span${supplementedSource.supplementCount === 1 ? "" : "s"} for visible PDF text omitted by LiteParse`,
+            );
+          }
+          return supplementedSource;
         },
-      );
-      preparedSource = supplementedSource;
-      if (supplementedSource.supplementCount > 0) {
-        await logJob(
+        onLiteParseFailure: (error) => logJob(
           job,
-          `Added ${supplementedSource.supplementCount} Poppler text supplement span${supplementedSource.supplementCount === 1 ? "" : "s"} for visible PDF text omitted by LiteParse`,
-        );
-      }
-      result = await extractor.extract(
-        pdfBytes,
-        job.policyId,
-        {
-          ...(preparedSource.sourceSpans.length > 0
-            ? {
-                sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>>,
-              }
-            : {}),
-          coverageRecovery: job.state.coverageRecovery ?? { enabled: false },
+          `LiteParse unavailable; falling back to PDF.js source spans (${errorMessage(error)})`,
+          "warn",
+        ),
+        preparePdfJsSource: async () => {
+          const pdfJsSource = await buildPdfSourceSpans({
+            pdfBytes,
+            documentId: job.policyId,
+            sourceKind: "policy_pdf",
+          });
+          const fallbackSource = await supplementPreparedPdfSource(
+            pdfBytes,
+            job.policyId,
+            {
+              sourceSpans: pdfJsSource.sourceSpans,
+              sourceChunks: pdfJsSource.sourceChunks,
+            },
+          );
+          if (fallbackSource.sourceSpans.length > 0) {
+            await logJob(
+              job,
+              `Prepared ${fallbackSource.sourceSpans.length} PDF.js/Poppler source spans for source-grounded extraction`,
+            );
+          }
+          return fallbackSource;
         },
-      );
-    } catch (error) {
-      await logJob(
-        job,
-        `LiteParse unavailable; falling back to PDF.js source spans (${errorMessage(error)})`,
-        "warn",
-      );
-      const pdfJsSource = await buildPdfSourceSpans({
-        pdfBytes,
-        documentId: job.policyId,
-        sourceKind: "policy_pdf",
       });
-      preparedSource = await supplementPreparedPdfSource(
-        pdfBytes,
-        job.policyId,
-        {
-          sourceSpans: pdfJsSource.sourceSpans,
-          sourceChunks: pdfJsSource.sourceChunks,
-        },
-      );
-      if (preparedSource.sourceSpans.length > 0) {
-        await logJob(
-          job,
-          `Prepared ${preparedSource.sourceSpans.length} PDF.js/Poppler source spans for source-grounded extraction`,
-        );
+      preparedSource = prepared.prepared;
+      pageScreenshots = prepared.parser === "liteparse"
+        ? prepared.converted.pageScreenshots
+        : undefined;
+      if (WORKER_PROTOCOL_VERSION === "source-tree-v2") {
+        const sourceFingerprint = sourceBundleFingerprint(preparedSource.sourceSpans);
+        const sourceBundle: WorkerSourceBundle = {
+          version: "worker-source-bundle-v1",
+          protocolVersion: "source-tree-v2",
+          extractorVersion: WORKER_CL_SDK_VERSION,
+          sourceFingerprint,
+          parser: prepared.parser,
+          sourceSpans: preparedSource.sourceSpans,
+          sourceChunks: preparedSource.sourceChunks,
+          pageScreenshots,
+        };
+        await uploadExtractionArtifact(job, {
+          kind: "source_bundle",
+          value: sourceBundle,
+          sourceFingerprint,
+          extractorVersion: WORKER_CL_SDK_VERSION,
+          metadata: {
+            artifactRole: "worker_source",
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            parser: prepared.parser,
+          },
+        });
       }
-      const extractor = buildWorkerExtractor({
-        job,
-        log: async (message) => logJob(job, message),
-        modelSettings: job.modelSettings,
-      });
-      result = await extractor.extract(
-        pdfBytes,
-        job.policyId,
-        {
-          ...(preparedSource.sourceSpans.length > 0
-            ? {
-                sourceSpans: preparedSource.sourceSpans as unknown as Array<Record<string, unknown>>,
-              }
-            : {}),
-          coverageRecovery: job.state.coverageRecovery ?? { enabled: false },
-        },
+    }
+    const extractor = buildWorkerExtractor({
+      job,
+      log: async (message) => logJob(job, message),
+      modelSettings: job.modelSettings,
+      pageScreenshots,
+    });
+    const sectionStore: ExtractionSectionStore | undefined =
+      WORKER_PROTOCOL_VERSION === "source-tree-v2"
+      ? {
+          load: async ({ sectionId, sourceFingerprint, extractorVersion }) => {
+            const sectionResult = resumable.sectionResults.get(sectionId);
+            return sectionResult?.sourceFingerprint === sourceFingerprint &&
+              sectionResult.extractorVersion === extractorVersion
+              ? sectionResult
+              : undefined;
+          },
+          save: async (sectionResult) => {
+            resumable.sectionResults.set(sectionResult.sectionId, sectionResult);
+            await uploadExtractionArtifact(job, {
+              kind: "section_result",
+              value: sectionResult,
+              sourceFingerprint: sectionResult.sourceFingerprint,
+              extractorVersion: sectionResult.extractorVersion,
+              sectionId: sectionResult.sectionId,
+              metadata: {
+                status: sectionResult.status,
+                resultHash: sectionResult.resultHash,
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+              },
+            });
+          },
+        }
+      : undefined;
+    const extractOptions: ExtractOptions = {
+      ...(preparedSource.sourceSpans.length > 0
+        ? {
+            sourceSpans: preparedSource.sourceSpans as unknown as NonNullable<
+              ExtractOptions["sourceSpans"]
+            >,
+          }
+        : {}),
+      coverageRecovery: job.state.coverageRecovery ?? { enabled: false },
+      protocolVersion: WORKER_PROTOCOL_VERSION,
+      extractorVersion: WORKER_CL_SDK_VERSION,
+      sectionStore,
+    };
+    const result: ExtractionResult = await extractor.extract(
+      pdfBytes,
+      job.policyId,
+      extractOptions,
+    );
+    if (
+      WORKER_PROTOCOL_VERSION === "source-tree-v2" &&
+      (result as ExtractionResult & { protocolVersion?: string }).protocolVersion !== "source-tree-v2"
+    ) {
+      throw new Error(
+        `Configured source-tree-v2 requires a section-capable cl-sdk; ${WORKER_CL_SDK_VERSION} returned the legacy protocol`,
       );
     }
     await recordTraceEvent(job, {

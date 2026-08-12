@@ -128,6 +128,16 @@ function optionalConvexEnv(convex, name) {
   return capture(convex, ["env", "get", name], { allowFailure: true });
 }
 
+function requiredConvexEnv(convex, name) {
+  const value = optionalConvexEnv(convex, name);
+  if (!value) {
+    throw new Error(
+      `${name} must be configured in the source dev Convex environment so Conductor model calls use cl-router`,
+    );
+  }
+  return value;
+}
+
 function ensureContainerService() {
   if (
     run("node", ["scripts/check-container-cli.mjs"], { allowFailure: true }) ===
@@ -286,16 +296,16 @@ if (cloudEnvironment) {
   }
 }
 
-// A native-local worktree does not start the separate cl-router repository.
-// Keep the imported read-only values (CL_ROUTER_URL, CL_ROUTER_ADMIN_SECRET,
-// CL_ROUTER_TIMEOUT_MS) so /operator/routing can observe shared-dev routing,
-// but never inherit the task flags or caller secret — an isolated worktree
-// must not route model calls or submit feedback through the shared router.
-for (const name of ["CL_ROUTER_TASKS", "CL_ROUTER_SECRET"]) {
-  if (optionalConvexEnv(convex, name)) {
-    run(convex, ["env", "remove", name]);
-  }
-}
+// Conductor does not start a separate router. Every development worktree uses
+// the shared dev router for enabled tasks, and keeps the same execution values
+// in native-local Convex and the extraction worker runtime.
+const clRouterUrl = requiredConvexEnv(convex, "CL_ROUTER_URL");
+const clRouterTasks = requiredConvexEnv(convex, "CL_ROUTER_TASKS");
+const clRouterSecret = requiredConvexEnv(convex, "CL_ROUTER_SECRET");
+const clRouterTimeoutMs =
+  optionalConvexEnv(convex, "CL_ROUTER_TIMEOUT_MS") || "180000";
+const clRouterTenantId =
+  optionalConvexEnv(convex, "CL_ROUTER_TENANT_ID") || "glass";
 
 const extractionPackage = JSON.parse(
   readFileSync(
@@ -378,6 +388,11 @@ writeRuntimeEnv("extraction-worker.env", {
   EXTRACTION_WORKER_ID: `conductor-${workspaceSlug()}`,
   EXTRACTION_JOB_CONCURRENCY: "8",
   EXTRACTION_PREVIEW_CONCURRENCY: "2",
+  CL_ROUTER_URL: clRouterUrl,
+  CL_ROUTER_TASKS: clRouterTasks,
+  CL_ROUTER_SECRET: clRouterSecret,
+  CL_ROUTER_TIMEOUT_MS: clRouterTimeoutMs,
+  CL_ROUTER_TENANT_ID: clRouterTenantId,
   FIREWORKS_API_KEY: optionalConvexEnv(convex, "FIREWORKS_API_KEY"),
   OPENAI_API_KEY: optionalConvexEnv(convex, "OPENAI_API_KEY"),
   ANTHROPIC_API_KEY: optionalConvexEnv(convex, "ANTHROPIC_API_KEY"),

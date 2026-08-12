@@ -135,8 +135,9 @@ describe("PolicySummary date display", () => {
     );
 
     expect(markup).toContain("background-color:#90B3D7;color:#0F172A");
-    expect(markup).toContain("radial-gradient(ellipse at 100% 100%");
-    expect(markup).toMatch(/repeating-|background-size:14px 14px/);
+    expect(markup).toContain("data:image/svg+xml");
+    expect(markup).toContain("mask-repeat:no-repeat");
+    expect(markup).not.toContain("radial-gradient");
   });
 
   it("gives broker-authored insurer overrides precedence over extracted branding", () => {

@@ -38,6 +38,7 @@ export type ClRouterGenerateRequest = {
   schema: Record<string, unknown>;
   schemaDialect?: "https://json-schema.org/draft/2020-12/schema";
   maxTokens?: number;
+  executionBudgetMs?: number;
   sessionKey?: string;
   routing?: { pin?: ClRouterModelRoute; allowFallback?: boolean };
   trace?: Record<string, unknown>;
@@ -105,11 +106,25 @@ export class ClRouterConnectionError extends Error {
 
 export class ClRouterHttpError extends Error {
   readonly status: number;
+  readonly routerCode?: ClRouterFailureCode;
+  readonly retryable?: boolean;
+  readonly executionStarted?: boolean;
+  readonly requestId?: string;
 
-  constructor(status: number, statusText: string) {
-    super(`cl-router returned HTTP ${status}${statusText ? ` ${statusText}` : ""}`);
+  constructor(status: number, statusText: string, options?: {
+    message?: string;
+    routerCode?: ClRouterFailureCode;
+    retryable?: boolean;
+    executionStarted?: boolean;
+    requestId?: string;
+  }) {
+    super(options?.message ?? `cl-router returned HTTP ${status}${statusText ? ` ${statusText}` : ""}`);
     this.name = "ClRouterHttpError";
     this.status = status;
+    if (options?.routerCode !== undefined) this.routerCode = options.routerCode;
+    if (options?.retryable !== undefined) this.retryable = options.retryable;
+    if (options?.executionStarted !== undefined) this.executionStarted = options.executionStarted;
+    if (options?.requestId !== undefined) this.requestId = options.requestId;
   }
 }
 
@@ -122,6 +137,49 @@ export class ClRouterProtocolError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+export const CL_ROUTER_FAILURE_CODES = [
+  "router_unavailable",
+  "router_candidates_exhausted",
+  "router_budget_exhausted",
+  "router_rejected",
+  "router_internal",
+] as const;
+
+export type ClRouterFailureCode = typeof CL_ROUTER_FAILURE_CODES[number];
+
+const CL_ROUTER_FAILURE_CODE_SET = new Set<string>(CL_ROUTER_FAILURE_CODES);
+
+function isClRouterFailureCode(value: unknown): value is ClRouterFailureCode {
+  return typeof value === "string" && CL_ROUTER_FAILURE_CODE_SET.has(value);
+}
+
+async function httpError(response: Response): Promise<ClRouterHttpError> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return new ClRouterHttpError(response.status, response.statusText);
+  }
+  if (
+    isRecord(body) &&
+    isRecord(body.error) &&
+    isClRouterFailureCode(body.error.code) &&
+    typeof body.error.message === "string" &&
+    typeof body.error.retryable === "boolean" &&
+    typeof body.error.executionStarted === "boolean" &&
+    (body.error.requestId === undefined || typeof body.error.requestId === "string")
+  ) {
+    return new ClRouterHttpError(response.status, response.statusText, {
+      message: body.error.message,
+      routerCode: body.error.code,
+      retryable: body.error.retryable,
+      executionStarted: body.error.executionStarted,
+      ...(typeof body.error.requestId === "string" ? { requestId: body.error.requestId } : {}),
+    });
+  }
+  return new ClRouterHttpError(response.status, response.statusText);
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -243,10 +301,14 @@ function requestInput(
 
 export function buildClRouterGenerateRequest(
   input: ClRouterGenerateInput,
+  executionBudgetMs?: number,
 ): ClRouterGenerateRequest {
   const { assets, prompt, ...rest } = input;
   return {
     ...rest,
+    ...(rest.executionBudgetMs === undefined && executionBudgetMs !== undefined
+      ? { executionBudgetMs }
+      : {}),
     ...requestInput(prompt, assets),
   };
 }
@@ -273,9 +335,34 @@ export function isClRouterTaskEnabled(
     && flags.has("extraction");
 }
 
-export function shouldFallBackFromClRouter(error: unknown): boolean {
-  return error instanceof ClRouterConnectionError
-    || (error instanceof ClRouterHttpError && error.status >= 500 && error.status <= 599);
+const PROVEN_PRE_EXECUTION_CONNECTION_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+function nestedErrorCode(value: unknown, depth = 0): string | undefined {
+  if (depth > 4 || !isRecord(value)) return undefined;
+  if (typeof value.code === "string") return value.code;
+  return nestedErrorCode(value.cause, depth + 1);
+}
+
+export function shouldFallBackFromClRouter(
+  error: unknown,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  if (environment.GLASS_ENV?.trim().toLowerCase() !== "production") return false;
+  if (
+    error instanceof ClRouterHttpError &&
+    error.routerCode === "router_unavailable" &&
+    error.executionStarted === false
+  ) {
+    return true;
+  }
+  return error instanceof ClRouterConnectionError &&
+    error.kind === "connection" &&
+    PROVEN_PRE_EXECUTION_CONNECTION_CODES.has(nestedErrorCode(error.cause) ?? "");
 }
 
 export function createClRouterClient(options: ClRouterClientOptions): ClRouterClient {
@@ -295,6 +382,7 @@ export function createClRouterClient(options: ClRouterClientOptions): ClRouterCl
   }
   const fetchImpl = options.fetch ?? fetch;
   const generateUrl = new URL("v1/generate", `${baseUrl.toString().replace(/\/$/, "")}/`);
+  const executionBudgetMs = Math.min(15 * 60_000, Math.max(100, options.timeoutMs - 1_000));
 
   return {
     async generate(input) {
@@ -307,13 +395,13 @@ export function createClRouterClient(options: ClRouterClientOptions): ClRouterCl
             authorization: `Bearer ${options.secret}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify(buildClRouterGenerateRequest(input)),
+          body: JSON.stringify(buildClRouterGenerateRequest(input, executionBudgetMs)),
           signal,
         });
       } catch (error) {
         throw new ClRouterConnectionError(signal.aborted ? "timeout" : "connection", error);
       }
-      if (!response.ok) throw new ClRouterHttpError(response.status, response.statusText);
+      if (!response.ok) throw await httpError(response);
       let body: unknown;
       try {
         body = await response.json();
