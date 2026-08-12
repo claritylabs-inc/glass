@@ -147,8 +147,9 @@ describe("PolicyListItem", () => {
 
     expect(markup).toContain("background-color:#928841");
     expect(markup).toContain("color:#FFFFFF");
-    expect(markup).toContain("repeating-");
-    expect(markup).toContain("radial-gradient(ellipse at 100% 100%");
+    expect(markup).toContain("data:image/svg+xml");
+    expect(markup).toContain("mask-repeat:no-repeat");
+    expect(markup).not.toContain("linear-gradient");
     expect(markup).toContain("https://clearcover.example/favicon.png");
     expect(markup).not.toContain("uppercase");
     expect(markup).not.toContain("inset-x-0 top-0 h-1");

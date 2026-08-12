@@ -2,7 +2,7 @@
 
 import { Loader2, RefreshCw } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,7 +10,12 @@ import { formatDisplayDate } from "@/lib/date-format";
 import { useCachedOperatorGlobalModelSettings } from "@/lib/sync/operator-cached-queries";
 import { OperatorSidebar } from "../operator-sidebar";
 import { ModelsTab } from "./models-tab";
-import { RoutingTab, useRouterDashboard } from "./routing-tab";
+import {
+  RoutingEventDrawer,
+  RoutingTab,
+  useRouterDashboard,
+  type RoutingEvent,
+} from "./routing-tab";
 import { ToolsTab } from "./tools-tab";
 import { typeStyle } from "@/lib/typography";
 
@@ -40,8 +45,10 @@ export default function OperatorRoutingPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeTab = parseRoutingPageTab(searchParams.get("tab"));
+  const [selectedEvent, setSelectedEvent] = useState<RoutingEvent | null>(null);
   const selectTab = useCallback(
     (tab: RoutingPageTab) => {
+      if (tab !== "routing") setSelectedEvent(null);
       const next = new URLSearchParams(searchParams.toString());
       if (tab === "routing") next.delete("tab");
       else next.set("tab", tab);
@@ -88,6 +95,14 @@ export default function OperatorRoutingPage() {
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
+      rightPanel={
+        activeTab === "routing" && selectedEvent ? (
+          <RoutingEventDrawer
+            event={selectedEvent}
+            onClose={() => setSelectedEvent(null)}
+          />
+        ) : undefined
+      }
     >
       <main className="flex w-full flex-col">
         <Tabs
@@ -107,6 +122,8 @@ export default function OperatorRoutingPage() {
               loadError={loadError}
               freezeLoading={freezeLoading}
               setGlobalFreeze={setGlobalFreeze}
+              selectedEventId={selectedEvent?._id}
+              onSelectEvent={setSelectedEvent}
             />
           </TabsContent>
           <TabsContent value="models">

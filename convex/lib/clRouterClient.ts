@@ -87,6 +87,7 @@ export type ClRouterGenerateRequest = {
   schema?: Record<string, unknown>;
   schemaDialect?: "https://json-schema.org/draft/2020-12/schema";
   maxTokens?: number;
+  executionBudgetMs?: number;
   sessionKey?: string;
   tools?: ClRouterToolDefinition[];
   toolChoice?: ClRouterToolChoice;
@@ -122,7 +123,13 @@ export type ClRouterStreamEvent =
   | ({ type: "done"; finishReason: string } & ClRouterResponseMetadata)
   | {
     type: "error";
-    error: { code: string; message: string; retryable: boolean };
+    error: {
+      code: string;
+      message: string;
+      retryable: boolean;
+      executionStarted?: boolean;
+      requestId?: string;
+    };
   };
 
 export type ClRouterGenerateStreamResponse = {
@@ -185,15 +192,42 @@ export type ClRouterErrorKind =
   | "client"
   | "invalid_response";
 
+export const CL_ROUTER_FAILURE_CODES = [
+  "router_unavailable",
+  "router_candidates_exhausted",
+  "router_budget_exhausted",
+  "router_rejected",
+  "router_internal",
+] as const;
+
+export type ClRouterFailureCode = typeof CL_ROUTER_FAILURE_CODES[number];
+
+const CL_ROUTER_FAILURE_CODE_SET = new Set<string>(CL_ROUTER_FAILURE_CODES);
+
 export class ClRouterRequestError extends Error {
   readonly kind: ClRouterErrorKind;
   readonly status?: number;
+  readonly routerCode?: ClRouterFailureCode;
+  readonly retryable?: boolean;
+  readonly executionStarted?: boolean;
+  readonly requestId?: string;
 
-  constructor(kind: ClRouterErrorKind, message: string, options?: { status?: number; cause?: unknown }) {
+  constructor(kind: ClRouterErrorKind, message: string, options?: {
+    status?: number;
+    cause?: unknown;
+    routerCode?: ClRouterFailureCode;
+    retryable?: boolean;
+    executionStarted?: boolean;
+    requestId?: string;
+  }) {
     super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "ClRouterRequestError";
     this.kind = kind;
     if (options?.status !== undefined) this.status = options.status;
+    if (options?.routerCode !== undefined) this.routerCode = options.routerCode;
+    if (options?.retryable !== undefined) this.retryable = options.retryable;
+    if (options?.executionStarted !== undefined) this.executionStarted = options.executionStarted;
+    if (options?.requestId !== undefined) this.requestId = options.requestId;
   }
 }
 
@@ -291,6 +325,57 @@ function clientConfig(environment: ClRouterEnvironment) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isClRouterFailureCode(value: unknown): value is ClRouterFailureCode {
+  return typeof value === "string" && CL_ROUTER_FAILURE_CODE_SET.has(value);
+}
+
+function readClRouterFailure(
+  value: unknown,
+): Pick<ClRouterRequestError, "routerCode" | "retryable" | "executionStarted" | "requestId"> & {
+  message: string;
+} | null {
+  if (!isRecord(value) || !isRecord(value.error)) return null;
+  const error = value.error;
+  if (
+    !isClRouterFailureCode(error.code) ||
+    typeof error.message !== "string" ||
+    typeof error.retryable !== "boolean" ||
+    typeof error.executionStarted !== "boolean" ||
+    (error.requestId !== undefined && typeof error.requestId !== "string")
+  ) {
+    return null;
+  }
+  return {
+    routerCode: error.code,
+    message: error.message,
+    retryable: error.retryable,
+    executionStarted: error.executionStarted,
+    ...(typeof error.requestId === "string" ? { requestId: error.requestId } : {}),
+  };
+}
+
+async function responseFailure(response: Response): Promise<ClRouterRequestError> {
+  let failure: ReturnType<typeof readClRouterFailure> = null;
+  try {
+    failure = readClRouterFailure(await response.json());
+  } catch {
+    // The status still determines the untyped transport error below.
+  }
+  if (failure) {
+    const { message, ...metadata } = failure;
+    return new ClRouterRequestError(
+      response.status >= 500 ? "server" : "client",
+      message,
+      { status: response.status, ...metadata },
+    );
+  }
+  return new ClRouterRequestError(
+    response.status >= 500 ? "server" : "client",
+    `cl-router returned HTTP ${response.status}`,
+    { status: response.status },
+  );
 }
 
 function isModelRoute(value: unknown): value is ModelRoute {
@@ -451,13 +536,7 @@ async function clRouterFetch(
         { cause: error },
       );
     }
-    if (!response.ok) {
-      throw new ClRouterRequestError(
-        response.status >= 500 ? "server" : "client",
-        `cl-router returned HTTP ${response.status}`,
-        { status: response.status },
-      );
-    }
+    if (!response.ok) throw await responseFailure(response);
     try {
       return await response.json();
     } catch (error) {
@@ -502,6 +581,17 @@ function requestPayload<T extends {
     tenantId: request.tenantId ?? CL_ROUTER_TENANT_ID,
     ...(settings ? { settings } : {}),
   };
+}
+
+function generateRequestPayload(
+  request: ClRouterGenerateRequest,
+  environment: ClRouterEnvironment,
+): ReturnType<typeof requestPayload<ClRouterGenerateRequest>> {
+  const timeoutMs = clRouterTimeoutMs(environment);
+  return requestPayload({
+    ...request,
+    executionBudgetMs: request.executionBudgetMs ?? Math.max(100, timeoutMs - 1_000),
+  });
 }
 
 function invalidStreamResponse(message: string, cause?: unknown): ClRouterRequestError {
@@ -571,7 +661,10 @@ function parseStreamEventBlock(block: string): ClRouterStreamEvent | null {
         !isRecord(payload.error) ||
         typeof payload.error.code !== "string" ||
         typeof payload.error.message !== "string" ||
-        typeof payload.error.retryable !== "boolean"
+        typeof payload.error.retryable !== "boolean" ||
+        (payload.error.executionStarted !== undefined &&
+          typeof payload.error.executionStarted !== "boolean") ||
+        (payload.error.requestId !== undefined && typeof payload.error.requestId !== "string")
       ) {
         throw invalidStreamResponse("cl-router returned an invalid error stream event");
       }
@@ -581,6 +674,12 @@ function parseStreamEventBlock(block: string): ClRouterStreamEvent | null {
           code: payload.error.code,
           message: payload.error.message,
           retryable: payload.error.retryable,
+          ...(typeof payload.error.executionStarted === "boolean"
+            ? { executionStarted: payload.error.executionStarted }
+            : {}),
+          ...(typeof payload.error.requestId === "string"
+            ? { requestId: payload.error.requestId }
+            : {}),
         },
       };
     default:
@@ -618,7 +717,7 @@ export async function clRouterGenerateStream(
         "Content-Type": "application/json",
         Accept: "text/event-stream",
       },
-      body: JSON.stringify(requestPayload(request)),
+      body: JSON.stringify(generateRequestPayload(request, environment)),
       signal: controller.signal,
     });
   } catch (error) {
@@ -639,11 +738,7 @@ export async function clRouterGenerateStream(
   }
   if (!response.ok) {
     cleanup();
-    throw new ClRouterRequestError(
-      response.status >= 500 ? "server" : "client",
-      `cl-router returned HTTP ${response.status}`,
-      { status: response.status },
-    );
+    throw await responseFailure(response);
   }
   if (!response.headers.get("content-type")?.toLowerCase().includes("text/event-stream")) {
     cleanup();
@@ -701,22 +796,50 @@ export async function clRouterGenerateStream(
   return { events, headers: response.headers };
 }
 
-export function isClRouterDirectFallbackError(error: unknown): boolean {
-  return (
-    error instanceof ClRouterRequestError &&
-    (error.kind === "connection" || error.kind === "timeout" || error.kind === "server")
-  );
+const PROVEN_PRE_EXECUTION_CONNECTION_CODES = new Set([
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+function nestedErrorCode(value: unknown, depth = 0): string | undefined {
+  if (depth > 4 || !isRecord(value)) return undefined;
+  if (typeof value.code === "string") return value.code;
+  return nestedErrorCode(value.cause, depth + 1);
+}
+
+function isProductionEnvironment(environment: ClRouterEnvironment): boolean {
+  return clean(environment.GLASS_ENV)?.toLowerCase() === "production";
+}
+
+export function isClRouterDirectFallbackError(
+  error: unknown,
+  environment: ClRouterEnvironment = process.env,
+): boolean {
+  if (!isProductionEnvironment(environment) || !(error instanceof ClRouterRequestError)) {
+    return false;
+  }
+  if (
+    error.routerCode === "router_unavailable" &&
+    error.executionStarted === false
+  ) {
+    return true;
+  }
+  return error.kind === "connection" &&
+    PROVEN_PRE_EXECUTION_CONNECTION_CODES.has(nestedErrorCode(error.cause) ?? "");
 }
 
 export async function withClRouterDirectFallback<T>(options: {
   router: () => Promise<T>;
   direct: () => Promise<T>;
   onFallback?: (error: ClRouterRequestError) => void;
+  environment?: ClRouterEnvironment;
 }): Promise<T> {
   try {
     return await options.router();
   } catch (error) {
-    if (!isClRouterDirectFallbackError(error)) throw error;
+    if (!isClRouterDirectFallbackError(error, options.environment ?? process.env)) throw error;
     options.onFallback?.(error as ClRouterRequestError);
     return options.direct();
   }
@@ -728,7 +851,7 @@ export async function clRouterGenerate(
 ): Promise<ClRouterGenerateResponse> {
   const payload = await postJson(
     "/v1/generate",
-    requestPayload(request),
+    generateRequestPayload(request, options.environment ?? process.env),
     options,
   );
   if (!isRecord(payload)) {

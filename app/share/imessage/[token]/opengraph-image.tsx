@@ -1,6 +1,9 @@
 import { ImageResponse } from "next/og";
 import { GLOBE_PATH, ogFonts } from "../../../opengraph-image";
-import { policyCardBranding } from "@/lib/policy-card-branding";
+import {
+  policyAsciiShaderDataUri,
+  policyCardBranding,
+} from "@/lib/policy-card-branding";
 import { readCarrierIdentity } from "@/convex/lib/carrierIdentity";
 import {
   compactList,
@@ -152,82 +155,21 @@ function PolicyPattern({
   variant: number;
   color: string;
 }) {
-  if (variant === 0) {
-    return (
-      <div style={{ position: "absolute", inset: 0, display: "flex", overflow: "hidden" }}>
-        {Array.from({ length: 11 }).map((_, index) => {
-          const size = 180 + index * 44;
-          return (
-            <div
-              key={size}
-              style={{
-                position: "absolute",
-                right: 80 - size / 2,
-                bottom: 20 - size / 2,
-                width: size,
-                height: size,
-                border: `2px solid ${color}`,
-                borderRadius: "999px",
-                opacity: 0.03 + index * 0.012,
-              }}
-            />
-          );
-        })}
-      </div>
-    );
-  }
-  if (variant === 1) {
-    return (
-      <div style={{ position: "absolute", inset: 0, display: "flex", overflow: "hidden" }}>
-        {Array.from({ length: 18 }).map((_, index) => (
-          <div
-            key={index}
-            style={{
-              position: "absolute",
-              right: -160 + index * 32,
-              bottom: -130,
-              width: 2,
-              height: 520,
-              backgroundColor: color,
-              opacity: 0.025 + index * 0.006,
-              transform: "rotate(28deg)",
-            }}
-          />
-        ))}
-      </div>
-    );
-  }
   return (
-    <div style={{ position: "absolute", right: 0, bottom: 0, width: 590, height: 330, display: "flex", overflow: "hidden" }}>
-      {Array.from({ length: 14 }).map((_, index) => (
-        <div
-          key={`v-${index}`}
-          style={{
-            position: "absolute",
-            right: index * 42,
-            bottom: 0,
-            width: 1,
-            height: 330,
-            backgroundColor: color,
-            opacity: 0.03 + index * 0.004,
-          }}
-        />
-      ))}
-      {Array.from({ length: 8 }).map((_, index) => (
-        <div
-          key={`h-${index}`}
-          style={{
-            position: "absolute",
-            right: 0,
-            bottom: index * 42,
-            width: 590,
-            height: 1,
-            backgroundColor: color,
-            opacity: 0.03 + index * 0.006,
-          }}
-        />
-      ))}
-    </div>
+    <img
+      src={policyAsciiShaderDataUri(variant, color)}
+      alt=""
+      width={800}
+      height={450}
+      style={{
+        position: "absolute",
+        right: -32,
+        top: 90,
+        width: 800,
+        height: 450,
+        opacity: 0.14,
+      }}
+    />
   );
 }
 

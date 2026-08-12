@@ -145,7 +145,8 @@ describe("audio transcription routing", () => {
     );
   });
 
-  test("falls back to direct transcription after a router 5xx", async () => {
+  test("falls back to direct transcription after a typed pre-execution production outage", async () => {
+    vi.stubEnv("GLASS_ENV", "production");
     vi.stubEnv("CL_ROUTER_TASKS", "voice_transcription");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
@@ -161,7 +162,15 @@ describe("audio transcription routing", () => {
     }));
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({
+        error: {
+          code: "router_unavailable",
+          message: "No eligible route is available.",
+          retryable: true,
+          executionStarted: false,
+          requestId: "failed-transcription-request",
+        },
+      }, { status: 503 }))
       .mockResolvedValueOnce(Response.json({ text: "Direct transcript." }));
     vi.stubGlobal("fetch", fetchMock);
 

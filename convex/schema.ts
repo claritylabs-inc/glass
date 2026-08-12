@@ -1634,6 +1634,8 @@ export default defineSchema({
     extractionPreviewVersion: v.optional(v.string()),
     extractionPreviewModel: v.optional(v.string()),
     extractionPreviewError: v.optional(v.string()),
+    // Immutable promotion decision recorded by the guarded finalization owner.
+    extractionPromotion: v.optional(v.any()),
     // Provenance — who uploaded and from which side
     uploadedBySide: v.optional(
       v.union(
@@ -2225,6 +2227,12 @@ export default defineSchema({
     // Compact checkpoint only. Large payloads are stored as files referenced by
     // policyExtractionArtifacts so heartbeats and logs rewrite small documents.
     pipelineCheckpoint: v.optional(v.any()),
+    sourceFingerprint: v.optional(v.string()),
+    extractorVersion: v.optional(v.string()),
+    evidenceLedgerHash: v.optional(v.string()),
+    completionManifest: v.optional(v.any()),
+    promotionGateDecision: v.optional(v.any()),
+    promotedAt: v.optional(v.number()),
     pipelineLog: v.optional(
       v.array(
         v.object({
@@ -2280,8 +2288,15 @@ export default defineSchema({
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
       v.literal("external_completion_payload"),
+      v.literal("source_bundle"),
+      v.literal("section_result"),
     ),
     storageId: v.id("_storage"),
+    runId: v.optional(v.id("policyExtractionRuns")),
+    sourceFingerprint: v.optional(v.string()),
+    extractorVersion: v.optional(v.string()),
+    sectionId: v.optional(v.string()),
+    metadata: v.optional(v.any()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

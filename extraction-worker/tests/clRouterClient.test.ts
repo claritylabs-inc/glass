@@ -98,6 +98,7 @@ test("client authenticates and preserves actual routing, request, usage, and cos
     schema: { type: "object" },
   });
   assert.equal(new Headers(request?.headers).get("authorization"), "Bearer shared-secret");
+  assert.equal(JSON.parse(String(request?.body)).executionBudgetMs, 100);
   assert.equal(result.requestId, "router-request-1");
   assert.equal(result.model.provider, "fireworks");
   assert.equal(result.routing.policyVersion, "policy-v1");
@@ -139,22 +140,34 @@ test("client permits plaintext only for loopback hosts", async () => {
   );
 });
 
-test("only connection, timeout, and 5xx failures permit direct-provider fallback", () => {
+test("only proven pre-execution production outages permit direct-provider fallback", () => {
+  const production = { GLASS_ENV: "production" };
+  const refused = Object.assign(new Error("offline"), { code: "ECONNREFUSED" });
   assert.equal(
-    shouldFallBackFromClRouter(new ClRouterConnectionError("connection", new Error("offline"))),
+    shouldFallBackFromClRouter(new ClRouterConnectionError("connection", refused), production),
     true,
   );
-  assert.equal(shouldFallBackFromClRouter(new ClRouterHttpError(503, "Unavailable")), true);
-  assert.equal(shouldFallBackFromClRouter(new ClRouterHttpError(400, "Bad Request")), false);
-  assert.equal(shouldFallBackFromClRouter(new ClRouterProtocolError("invalid")), false);
+  const unavailable = new ClRouterHttpError(503, "Unavailable", {
+    routerCode: "router_unavailable",
+    retryable: true,
+    executionStarted: false,
+  });
+  assert.equal(shouldFallBackFromClRouter(unavailable, production), true);
+  assert.equal(shouldFallBackFromClRouter(unavailable, { GLASS_ENV: "local" }), false);
+  assert.equal(shouldFallBackFromClRouter(new ClRouterConnectionError("timeout", new Error("slow")), production), false);
+  assert.equal(shouldFallBackFromClRouter(new ClRouterHttpError(503, "Unavailable"), production), false);
+  assert.equal(shouldFallBackFromClRouter(new ClRouterProtocolError("invalid"), production), false);
 });
 
-test("client classifies fetch rejection and timeout as safe connection failures", async () => {
+test("client distinguishes proven connection refusal from ambiguous timeout", async () => {
+  const production = { GLASS_ENV: "production" };
   const disconnected = createClRouterClient({
     baseUrl: "https://router.internal",
     secret: "shared-secret",
     timeoutMs: 1000,
-    fetch: async () => { throw new TypeError("fetch failed"); },
+    fetch: async () => {
+      throw Object.assign(new TypeError("fetch failed"), { code: "ECONNREFUSED" });
+    },
   });
   await assert.rejects(
     disconnected.generate({
@@ -165,7 +178,7 @@ test("client classifies fetch rejection and timeout as safe connection failures"
     }),
     (error) => error instanceof ClRouterConnectionError
       && error.kind === "connection"
-      && shouldFallBackFromClRouter(error),
+      && shouldFallBackFromClRouter(error, production),
   );
 
   const timedOut = createClRouterClient({
@@ -185,7 +198,36 @@ test("client classifies fetch rejection and timeout as safe connection failures"
     }),
     (error) => error instanceof ClRouterConnectionError
       && error.kind === "timeout"
-      && shouldFallBackFromClRouter(error),
+      && !shouldFallBackFromClRouter(error, production),
+  );
+});
+
+test("client preserves typed router failure metadata", async () => {
+  const client = createClRouterClient({
+    baseUrl: "https://router.internal",
+    secret: "shared-secret",
+    timeoutMs: 1000,
+    fetch: async () => Response.json({
+      error: {
+        code: "router_unavailable",
+        message: "No eligible cross-provider route is available.",
+        retryable: true,
+        executionStarted: false,
+        requestId: "request-typed",
+      },
+    }, { status: 503 }),
+  });
+  await assert.rejects(
+    client.generate({
+      task: "extraction",
+      tenantId: "glass",
+      prompt: "Extract.",
+      schema: { type: "object" },
+    }),
+    (error) => error instanceof ClRouterHttpError
+      && error.routerCode === "router_unavailable"
+      && error.executionStarted === false
+      && error.requestId === "request-typed",
   );
 });
 

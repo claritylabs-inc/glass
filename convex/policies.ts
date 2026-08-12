@@ -30,9 +30,18 @@ import {
 } from "./lib/valueNormalization";
 import { toLobCodes } from "./lib/linesOfBusiness";
 import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
-import type { CarrierIdentity } from "./lib/carrierIdentity";
+import {
+  readCarrierIdentity,
+  type CarrierIdentity,
+} from "./lib/carrierIdentity";
 import { resolveCarrierIdentity } from "./lib/carrierIdentityProjection";
 import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
+import {
+  extractionContractHash,
+  evaluateExtractionPromotion,
+  type ExtractionCompletionManifest,
+  type PromotionEvidenceLedger,
+} from "./lib/extractionPromotion";
 
 dayjs.extend(customParseFormat);
 
@@ -41,7 +50,9 @@ type PolicyExtractionDataStage = "placeholder" | "preview" | "final";
 type PolicyExtractionArtifactKind =
   | "cl_sdk_checkpoint"
   | "embedding_payload"
-  | "external_completion_payload";
+  | "external_completion_payload"
+  | "source_bundle"
+  | "section_result";
 type PolicyPipelineLogEntry = {
   timestamp: number;
   message: string;
@@ -235,7 +246,7 @@ function preserveKnownFinalExtractionIdentityFields(
   fields: Record<string, unknown>,
   existing: Record<string, unknown> | null,
 ) {
-  if (!existing || fields.extractionDataStage !== "final") return;
+  if (!existing) return;
 
   for (const key of FINAL_EXTRACTION_IDENTITY_FIELDS) {
     if (knownPolicyText(fields[key]) || !knownPolicyText(existing[key])) continue;
@@ -616,6 +627,19 @@ async function clearPolicyExtractionArtifacts(
   for (const artifact of artifacts) {
     await ctx.storage.delete(artifact.storageId).catch(() => {});
     await ctx.db.delete(artifact._id);
+  }
+}
+
+async function clearTransientPolicyExtractionArtifacts(
+  ctx: any,
+  policyId: DataModelId<"policies">,
+) {
+  for (const kind of [
+    "cl_sdk_checkpoint",
+    "embedding_payload",
+    "external_completion_payload",
+  ] as const) {
+    await clearPolicyExtractionArtifacts(ctx, policyId, kind);
   }
 }
 
@@ -2364,6 +2388,51 @@ function dropUnpersistableExtractedAddresses(fields: Record<string, unknown>): v
   }
 }
 
+function prepareExtractionMutationFields(
+  input: Record<string, unknown>,
+) {
+  const fields = normalizeEditableFields(input, {
+    deriveNumericAmounts: false,
+    normalizeMoneyText: false,
+  });
+  const sourceTreeFieldClears = Array.isArray(fields.sourceTreeFieldClears)
+    ? fields.sourceTreeFieldClears
+    : [];
+  delete fields.sourceTreeFieldClears;
+  for (const field of sourceTreeFieldClears) {
+    if (field === "productIdentity" || field === "programName") {
+      fields[field] = undefined;
+    }
+  }
+  dropUnpersistableExtractedAddresses(fields);
+  const operationalProfile = fields.operationalProfile;
+  if (
+    operationalProfile &&
+    typeof operationalProfile === "object" &&
+    !Array.isArray(operationalProfile) &&
+    !(operationalProfile as Record<string, unknown>).premium
+  ) {
+    fields.premium = undefined;
+    fields.premiumAmount = undefined;
+  }
+  return fields;
+}
+
+function hashWithoutKey(value: Record<string, unknown>, key: string) {
+  const withoutKey = { ...value };
+  delete withoutKey[key];
+  return extractionContractHash(withoutKey);
+}
+
+function hasSourceBackedCarrierIdentity(value: unknown) {
+  const identity = readCarrierIdentity(value);
+  if (!identity) return false;
+  return identity.sourceNodeIds.length > 0
+    || identity.sourceSpanIds.length > 0
+    || identity.legalEntities.some((entity) =>
+      entity.sourceNodeIds.length > 0 || entity.sourceSpanIds.length > 0);
+}
+
 // All policy rows for an org (used by DocumentStore)
 export const listByOrgInternal = internalQuery({
   args: { orgId: v.id("organizations") },
@@ -2383,36 +2452,200 @@ export const updateExtractionInternal = internalMutation({
     fields: v.any(), // Accept any policy fields from insuranceDocToPolicy
   },
   handler: async (ctx, args) => {
-    const fields = normalizeEditableFields(args.fields, {
-      deriveNumericAmounts: false,
-      normalizeMoneyText: false,
-    });
-    const sourceTreeFieldClears = Array.isArray(fields.sourceTreeFieldClears)
-      ? fields.sourceTreeFieldClears
-      : [];
-    delete fields.sourceTreeFieldClears;
-    for (const field of sourceTreeFieldClears) {
-      if (field === "productIdentity" || field === "programName") {
-        fields[field] = undefined;
+    if (
+      args.fields &&
+      typeof args.fields === "object" &&
+      !Array.isArray(args.fields) &&
+      (args.fields as Record<string, unknown>).extractionDataStage === "final"
+    ) {
+      throw new Error(
+        "updateExtractionInternal cannot promote a policy to final; use promoteCompletedExtractionInternal",
+      );
+    }
+    const existingPolicy = await ctx.db.get(args.id);
+    if (!existingPolicy) throw new Error("Policy not found");
+    const fields = prepareExtractionMutationFields(
+      args.fields as Record<string, unknown>,
+    );
+    await ctx.db.patch(args.id, fields);
+  },
+});
+
+/**
+ * The only mutation allowed to move extractionDataStage to final. It verifies
+ * that a current leased run persisted the exact source bundle used to compute
+ * the completion manifest, then records the immutable run decision atomically
+ * with the policy projection.
+ */
+export const promoteCompletedExtractionInternal = internalMutation({
+  args: {
+    id: v.id("policies"),
+    runId: v.id("policyExtractionRuns"),
+    leaseId: v.string(),
+    sourceBundleArtifactId: v.id("policyExtractionArtifacts"),
+    fields: v.any(),
+    evidenceLedger: v.any(),
+    completionManifest: v.any(),
+  },
+  handler: async (ctx, args) => {
+    if (
+      !args.fields ||
+      typeof args.fields !== "object" ||
+      Array.isArray(args.fields)
+    ) {
+      throw new Error("Promotion fields must be an object");
+    }
+    if ("extractionDataStage" in (args.fields as Record<string, unknown>)) {
+      throw new Error("The promotion mutation owns extractionDataStage");
+    }
+
+    const [policy, run, artifact] = await Promise.all([
+      ctx.db.get(args.id),
+      ctx.db.get(args.runId),
+      ctx.db.get(args.sourceBundleArtifactId),
+    ]);
+    if (!policy) throw new Error("Policy not found");
+    if (!run || run.policyId !== args.id || run.pipelineStatus !== "running") {
+      throw new Error("Extraction promotion requires the current running run");
+    }
+    const currentRun = await getPolicyExtractionRun(ctx, args.id);
+    if (!currentRun || currentRun._id !== args.runId) {
+      throw new Error("Extraction promotion run is stale");
+    }
+    const checkpoint = run.pipelineCheckpoint as
+      | { lease?: { id?: string } }
+      | undefined;
+    if (checkpoint?.lease?.id !== args.leaseId) {
+      throw new Error("Extraction promotion lease is stale");
+    }
+    if (
+      !artifact ||
+      artifact.policyId !== args.id ||
+      artifact.runId !== args.runId ||
+      artifact.kind !== "source_bundle"
+    ) {
+      throw new Error("Extraction promotion requires its persisted source bundle");
+    }
+    if (run.promotedAt) {
+      throw new Error("This extraction run has already been promoted");
+    }
+
+    const ledger = args.evidenceLedger as PromotionEvidenceLedger;
+    const manifest = args.completionManifest as ExtractionCompletionManifest;
+    if (
+      !ledger ||
+      ledger.version !== "evidence-ledger-v1" ||
+      ledger.ledgerHash !== hashWithoutKey(
+        ledger as unknown as Record<string, unknown>,
+        "ledgerHash",
+      )
+    ) {
+      throw new Error("Evidence ledger hash is invalid");
+    }
+    if (
+      !manifest ||
+      manifest.version !== "extraction-completion-manifest-v1" ||
+      manifest.manifestHash !== hashWithoutKey(
+        manifest as unknown as Record<string, unknown>,
+        "manifestHash",
+      )
+    ) {
+      throw new Error("Extraction completion manifest hash is invalid");
+    }
+    if (
+      artifact.sourceFingerprint !== ledger.sourceFingerprint ||
+      artifact.sourceFingerprint !== manifest.sourceFingerprint ||
+      artifact.extractorVersion !== manifest.extractorVersion ||
+      artifact.metadata?.evidenceLedgerHash !== ledger.ledgerHash ||
+      artifact.metadata?.manifestHash !== manifest.manifestHash
+    ) {
+      throw new Error("Persisted source bundle metadata does not match the promotion evidence");
+    }
+    if (manifest.protocolVersion === "source-tree-v2") {
+      const sectionArtifacts = await ctx.db
+        .query("policyExtractionArtifacts")
+        .withIndex("by_policyId_kind", (q) =>
+          q.eq("policyId", args.id).eq("kind", "section_result"),
+        )
+        .collect();
+      for (const section of manifest.sections) {
+        const resultHash = section.resultHash;
+        const persisted = sectionArtifacts.find((candidate) => {
+          const metadata = candidate.metadata &&
+              typeof candidate.metadata === "object" &&
+              !Array.isArray(candidate.metadata)
+            ? candidate.metadata as Record<string, unknown>
+            : {};
+          return candidate.runId === args.runId &&
+            candidate.sectionId === section.id &&
+            candidate.sourceFingerprint === manifest.sourceFingerprint &&
+            candidate.extractorVersion === manifest.extractorVersion &&
+            metadata.status === section.status &&
+            metadata.resultHash === resultHash;
+        });
+        if (!resultHash || !persisted) {
+          throw new Error(
+            `Extraction promotion requires the persisted ${section.id} result`,
+          );
+        }
       }
     }
-    dropUnpersistableExtractedAddresses(fields);
-    const existingPolicy = await ctx.db.get(args.id);
-    preserveKnownFinalExtractionIdentityFields(fields, existingPolicy);
-    const operationalProfile = fields.operationalProfile;
-    if (
-      operationalProfile &&
-      typeof operationalProfile === "object" &&
-      !Array.isArray(operationalProfile) &&
-      !(operationalProfile as Record<string, unknown>).premium
-    ) {
-      fields.premium = undefined;
-      fields.premiumAmount = undefined;
+
+    const inputFields = args.fields as Record<string, unknown>;
+    const decision = evaluateExtractionPromotion({
+      manifest,
+      ledger,
+      operationalProfile: inputFields.operationalProfile,
+      hasValidCarrierIdentity: hasSourceBackedCarrierIdentity(
+        inputFields.carrierIdentity,
+      ),
+      postCutover: true,
+    });
+    const mode = process.env.EXTRACTION_PROMOTION_GATE_MODE === "enforce"
+      ? "enforce"
+      : "shadow";
+    const decidedAt = nowMs();
+    const recordedDecision = {
+      ...decision,
+      mode,
+      runId: args.runId,
+      sourceBundleArtifactId: args.sourceBundleArtifactId,
+      sourceFingerprint: ledger.sourceFingerprint,
+      evidenceLedgerHash: ledger.ledgerHash,
+      manifestHash: manifest.manifestHash,
+      decidedAt,
+    };
+    const hardBlocked = manifest.sections.some((section) =>
+      section.status === "degraded");
+    if ((mode === "enforce" && !decision.allowed) || hardBlocked) {
+      await ctx.db.patch(args.runId, {
+        sourceFingerprint: ledger.sourceFingerprint,
+        extractorVersion: manifest.extractorVersion,
+        evidenceLedgerHash: ledger.ledgerHash,
+        completionManifest: manifest,
+        promotionGateDecision: recordedDecision,
+        updatedAt: decidedAt,
+      });
+      return { promoted: false as const, decision: recordedDecision };
     }
-    if (fields.extractionDataStage === "final") {
-      fields.extractionPreviewError = undefined;
-    }
+
+    const fields = prepareExtractionMutationFields(inputFields);
+    fields.extractionDataStage = "final";
+    fields.extractionPreviewError = undefined;
+    preserveKnownFinalExtractionIdentityFields(fields, policy);
+    fields.extractionDataStageUpdatedAt = decidedAt;
+    fields.extractionPromotion = recordedDecision;
     await ctx.db.patch(args.id, fields);
+    await ctx.db.patch(args.runId, {
+      sourceFingerprint: ledger.sourceFingerprint,
+      extractorVersion: manifest.extractorVersion,
+      evidenceLedgerHash: ledger.ledgerHash,
+      completionManifest: manifest,
+      promotionGateDecision: recordedDecision,
+      promotedAt: decidedAt,
+      updatedAt: decidedAt,
+    });
+    return { promoted: true as const, decision: recordedDecision };
   },
 });
 
@@ -2644,21 +2877,137 @@ export const pipelineSaveArtifact = internalMutation({
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
       v.literal("external_completion_payload"),
+      v.literal("source_bundle"),
+      v.literal("section_result"),
     ),
     storageId: v.id("_storage"),
+    sourceFingerprint: v.optional(v.string()),
+    extractorVersion: v.optional(v.string()),
+    sectionId: v.optional(v.string()),
+    metadata: v.optional(v.any()),
   },
-  handler: async (ctx, { jobId, kind, storageId }) => {
+  handler: async (ctx, {
+    jobId,
+    kind,
+    storageId,
+    sourceFingerprint,
+    extractorVersion,
+    sectionId,
+    metadata,
+  }) => {
     const policyId = jobId as DataModelId<"policies">;
-    await ensurePolicyExtractionRun(ctx, policyId);
-    await clearPolicyExtractionArtifacts(ctx, policyId, kind);
+    const run = await ensurePolicyExtractionRun(ctx, policyId);
+    if (
+      (kind === "source_bundle" || kind === "section_result") &&
+      (!sourceFingerprint || !extractorVersion)
+    ) {
+      throw new Error(`${kind} artifacts require a source fingerprint and extractor version`);
+    }
+    if (kind === "section_result" && !sectionId) {
+      throw new Error("section_result artifacts require sectionId");
+    }
+    if (kind === "section_result") {
+      const existingSections = await ctx.db
+        .query("policyExtractionArtifacts")
+        .withIndex("by_policyId_kind", (q) =>
+          q.eq("policyId", policyId).eq("kind", kind),
+        )
+        .collect();
+      for (const artifact of existingSections) {
+        if (
+          artifact.runId !== run?._id ||
+          artifact.sectionId !== sectionId ||
+          artifact.sourceFingerprint !== sourceFingerprint ||
+          artifact.extractorVersion !== extractorVersion
+        ) {
+          continue;
+        }
+        await ctx.storage.delete(artifact.storageId).catch(() => {});
+        await ctx.db.delete(artifact._id);
+      }
+    } else if (kind === "source_bundle") {
+      const role = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>).artifactRole
+        : undefined;
+      const existingBundles = await ctx.db
+        .query("policyExtractionArtifacts")
+        .withIndex("by_policyId_kind", (q) =>
+          q.eq("policyId", policyId).eq("kind", kind),
+        )
+        .collect();
+      for (const artifact of existingBundles) {
+        const existingRole = artifact.metadata &&
+            typeof artifact.metadata === "object" &&
+            !Array.isArray(artifact.metadata)
+          ? (artifact.metadata as Record<string, unknown>).artifactRole
+          : undefined;
+        if (
+          artifact.runId !== run?._id ||
+          artifact.sourceFingerprint !== sourceFingerprint ||
+          artifact.extractorVersion !== extractorVersion ||
+          existingRole !== role
+        ) {
+          continue;
+        }
+        await ctx.storage.delete(artifact.storageId).catch(() => {});
+        await ctx.db.delete(artifact._id);
+      }
+    } else {
+      await clearPolicyExtractionArtifacts(ctx, policyId, kind);
+    }
     const now = nowMs();
-    await ctx.db.insert("policyExtractionArtifacts", {
+    return await ctx.db.insert("policyExtractionArtifacts", {
       policyId,
       kind,
       storageId,
+      runId: run?._id,
+      sourceFingerprint,
+      extractorVersion,
+      sectionId,
+      metadata,
       createdAt: now,
       updatedAt: now,
     });
+  },
+});
+
+export const pipelineGetPromotionContext = internalQuery({
+  args: { jobId: v.string() },
+  handler: async (ctx, { jobId }) => {
+    const policyId = jobId as DataModelId<"policies">;
+    const run = await getPolicyExtractionRun(ctx, policyId);
+    const checkpoint = run?.pipelineCheckpoint as
+      | { lease?: { id?: string } }
+      | undefined;
+    if (!run || run.pipelineStatus !== "running" || !checkpoint?.lease?.id) {
+      return null;
+    }
+    return {
+      runId: run._id,
+      leaseId: checkpoint.lease.id,
+      promotionGateDecision: run.promotionGateDecision,
+      promotedAt: run.promotedAt,
+    };
+  },
+});
+
+export const pipelineListResumableArtifacts = internalQuery({
+  args: { jobId: v.string() },
+  handler: async (ctx, { jobId }) => {
+    const policyId = jobId as DataModelId<"policies">;
+    const run = await getPolicyExtractionRun(ctx, policyId);
+    if (!run) return null;
+    const artifacts = await ctx.db
+      .query("policyExtractionArtifacts")
+      .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+      .order("desc")
+      .collect();
+    return {
+      runId: run._id,
+      artifacts: artifacts.filter((artifact) =>
+        artifact.runId === run._id &&
+        (artifact.kind === "source_bundle" || artifact.kind === "section_result")),
+    };
   },
 });
 
@@ -2669,6 +3018,8 @@ export const pipelineGetArtifact = internalQuery({
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
       v.literal("external_completion_payload"),
+      v.literal("source_bundle"),
+      v.literal("section_result"),
     ),
   },
   handler: async (ctx, { jobId, kind }) => {
@@ -2689,14 +3040,27 @@ export const pipelineClearArtifacts = internalMutation({
       v.literal("cl_sdk_checkpoint"),
       v.literal("embedding_payload"),
       v.literal("external_completion_payload"),
+      v.literal("source_bundle"),
+      v.literal("section_result"),
     )),
   },
   handler: async (ctx, { jobId, kind }) => {
+    const policyId = jobId as DataModelId<"policies">;
     await clearPolicyExtractionArtifacts(
       ctx,
-      jobId as DataModelId<"policies">,
+      policyId,
       kind,
     );
+    if (kind === undefined) {
+      await patchPolicyExtractionRun(ctx, policyId, {
+        sourceFingerprint: undefined,
+        extractorVersion: undefined,
+        evidenceLedgerHash: undefined,
+        completionManifest: undefined,
+        promotionGateDecision: undefined,
+        promotedAt: undefined,
+      });
+    }
   },
 });
 
@@ -3688,7 +4052,7 @@ export const pipelineCompleteLease = internalMutation({
         args.status === "complete" ||
         (args.status === "error" && args.error === "Cancelled by user")
       ) {
-        await clearPolicyExtractionArtifacts(ctx, policyId);
+        await clearTransientPolicyExtractionArtifacts(ctx, policyId);
       }
       await ctx.db.patch(
         policyId,
