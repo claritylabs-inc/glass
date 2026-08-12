@@ -14,7 +14,7 @@ describe("PolicySummary date display", () => {
       />,
     );
 
-    expect(markup).toContain("border-b border-foreground/6");
+    expect(markup).toContain("border-b border-border");
   });
 
   it("stacks the description of operations below its label", () => {
@@ -26,7 +26,7 @@ describe("PolicySummary date display", () => {
     );
 
     expect(markup).toContain(
-      "grid grid-cols-1 gap-1 border-t border-foreground/6 px-4 py-3 first:border-t-0",
+      "grid grid-cols-1 gap-1 border-t border-border px-4 py-3 first:border-t-0",
     );
     expect(markup).not.toContain("sm:grid-cols-");
     expect(markup).toContain(

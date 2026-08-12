@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -44,6 +45,8 @@ export default function ClientDetailLayout({
       ? "active"
       : "onboarding";
   const statusLabel = status === "active" ? "Active" : "Onboarding";
+  const clientName =
+    (clientOrg as { name?: string } | undefined)?.name?.trim() || "Client";
 
   const actions = (
     <div className="flex items-center gap-2">
@@ -63,9 +66,18 @@ export default function ClientDetailLayout({
       <AppShell
         breadcrumbDetail={
           <span className="flex items-center gap-1.5 min-w-0">
-            <span className="truncate text-muted-foreground/80">
-              {(clientOrg as { name?: string } | undefined)?.name?.trim() || "Client"}
-            </span>
+            {breadcrumbExtra ? (
+              <Link
+                href={`/clients/${clientOrgId}`}
+                className="truncate text-muted-foreground/80 transition-colors hover:text-foreground"
+              >
+                {clientName}
+              </Link>
+            ) : (
+              <span className="truncate text-muted-foreground/80">
+                {clientName}
+              </span>
+            )}
             {breadcrumbExtra ? (
               <>
                 <span className={`text-muted-foreground/30 ${typeStyle("body.default")}`}>/</span>

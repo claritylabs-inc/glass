@@ -230,7 +230,7 @@ export function ModelsSection() {
   return (
     <div className="space-y-4">
       <OperationalPanel>
-        <div className="px-4 py-3 border-b border-foreground/6 flex items-center justify-between gap-3">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
           <h3 className={`mb-0! text-foreground ${typeStyle("heading.micro")}`}>
             Provider keys
           </h3>
@@ -296,7 +296,7 @@ export function ModelsSection() {
             );
           }
           return (
-            <div className="px-4 divide-y divide-foreground/6">
+            <div className="px-4 divide-y divide-border">
               {rows.map((provider) => {
                 const keyState = settings.providerKeys[provider.id];
                 const saving = savingProvider === provider.id;
@@ -348,7 +348,7 @@ export function ModelsSection() {
                         autoCorrect="off"
                         spellCheck={false}
                         disabled={saving}
-                        className={`h-9 rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors disabled:opacity-50 ${typeStyle("control.input")}`}
+                        className={`h-9 rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors disabled:opacity-50 ${typeStyle("control.input")}`}
                       />
                     ) : (
                       <span />
@@ -414,7 +414,7 @@ export function ModelsSection() {
                   description={group.description}
                   className="px-4 py-3"
                 />
-                <div className="divide-y divide-foreground/6 px-4">
+                <div className="divide-y divide-border px-4">
                   {tasks.map((task: TaskConfig) => {
                     const availableProviders = configuredProviders(
                       task.isEmbedding,

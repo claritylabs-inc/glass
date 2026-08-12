@@ -37,10 +37,10 @@ export function EntityPreviewPanel() {
         initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 8 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.1, ease: EASE }}
-        className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col border-l border-foreground/6 bg-background"
+        className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col border-l border-border bg-background"
       >
         {/* Toolbar */}
-        <div className="h-12 flex items-center justify-between px-4 border-b border-foreground/6 shrink-0 gap-3">
+        <div className="h-12 flex items-center justify-between px-4 border-b border-border shrink-0 gap-3">
           <div className="min-w-0 flex-1">
             <span className={`text-foreground ${typeStyle("body.medium")}`}>
               Policy preview
@@ -69,7 +69,7 @@ export function EntityPreviewPanel() {
         </div>
 
         {currentFooterActions && (
-          <div className="shrink-0 border-t border-foreground/6 px-4 py-3">
+          <div className="shrink-0 border-t border-border px-4 py-3">
             <div className="flex min-w-0 items-center justify-end gap-2">
               <PolicyPreviewButtons
                 fileUrl={currentFooterActions.fileUrl}

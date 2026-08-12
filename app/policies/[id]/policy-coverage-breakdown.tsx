@@ -75,7 +75,7 @@ function CoveredAssetScheduleList({
     <OperationalPanel>
       <OperationalPanelHeader title={schedule.name} />
       {schedule.description ? (
-        <div className={`border-t border-foreground/6 px-4 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
+        <div className={`border-t border-border px-4 py-3 text-muted-foreground ${typeStyle("body.default")}`}>
           {schedule.description}
         </div>
       ) : null}
@@ -102,7 +102,7 @@ function CoveredAssetScheduleList({
                 event.preventDefault();
                 openSource();
               } : undefined}
-              className={`border-t border-foreground/6 px-4 py-3 first:border-t-0 ${
+              className={`border-t border-border px-4 py-3 first:border-t-0 ${
                 canOpenSource ? "cursor-pointer transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40" : ""
               }`}
             >
@@ -111,7 +111,7 @@ function CoveredAssetScheduleList({
                 <div className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{item.description}</div>
               ) : null}
               {item.values.length ? (
-                <dl className="mt-3 divide-y divide-foreground/6">
+                <dl className="mt-3 divide-y divide-border">
                   {item.values.map((value, valueIndex) => (
                     <div key={`${value.label}:${valueIndex}`} className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)] gap-4 py-2 first:pt-0 last:pb-0">
                       <dt className={`text-muted-foreground ${typeStyle("body.default")}`}>{value.label}</dt>
@@ -222,7 +222,7 @@ function CoverageScheduleList({
                     }
                   : undefined
               }
-              className={`border-t border-foreground/6 px-4 py-3 first:border-t-0 ${
+              className={`border-t border-border px-4 py-3 first:border-t-0 ${
                 canOpenSource
                   ? "cursor-pointer transition-colors hover:bg-foreground/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                   : ""
@@ -233,7 +233,7 @@ function CoverageScheduleList({
                   {row.name}
                 </div>
               </div>
-              <dl className="mt-3 divide-y divide-foreground/6">
+              <dl className="mt-3 divide-y divide-border">
                 {visibleTerms.map((term, termIndex) => (
                   <div
                     key={`${term.label}:${termIndex}`}

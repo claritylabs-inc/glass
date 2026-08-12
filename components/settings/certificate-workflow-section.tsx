@@ -123,7 +123,7 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
           title="Certificates"
           description="Choose whether active certificates should be updated when a renewed policy is uploaded."
         />
-        <OperationalPanelBody className="space-y-0 divide-y divide-foreground/6 py-0">
+        <OperationalPanelBody className="space-y-0 divide-y divide-border py-0">
           <ToggleRow
             title="Update certificates on renewal"
             description="When a renewed policy is uploaded, Glass reviews active certificates and prepares updated versions."

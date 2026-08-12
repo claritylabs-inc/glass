@@ -336,6 +336,10 @@ export const listMembers = query({
       memberships.map(async (m) => {
         const user = await ctx.db.get(m.userId);
         if (!user || user.serviceAccountKind) return null;
+        const authAccounts = await ctx.db
+          .query("authAccounts")
+          .withIndex("userIdAndProvider", (q) => q.eq("userId", m.userId))
+          .collect();
         const pendingEmailChanges = await ctx.db
           .query("userEmailChangeRequests")
           .withIndex("by_target_status", (q) =>
@@ -354,6 +358,9 @@ export const listMembers = query({
           email: user?.email,
           phone: user?.phone,
           title: user?.title,
+          isActivated: authAccounts.some(
+            (account) => account.emailVerified || account.phoneVerified,
+          ),
           pendingEmailChange: pendingEmailChange
             ? {
                 requestId: pendingEmailChange._id,

@@ -1,11 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import {
   ResizablePanel,
   ResizablePanelGroup,
   ResizableSeparator,
+  useDefaultLayout,
 } from "@/components/ui/resizable";
 
 type AuxiliaryPanel = {
@@ -24,20 +25,42 @@ const EQUAL_LAYOUT_CONSTRAINTS = {
   mainMinSize: "20%",
 } as const;
 
+const panelLayoutStorage = {
+  getItem(key: string) {
+    if (typeof window === "undefined") return null;
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string) {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {}
+  },
+};
+
 export function AppShellPanelLayout({
   entityPanel,
   main,
   pdfPanel,
   rightPanel,
+  storageUserId,
 }: {
   entityPanel?: ReactNode;
   main: ReactNode;
   pdfPanel?: ReactNode;
   rightPanel?: ReactNode;
+  storageUserId?: string;
 }) {
+  const hasEntityPanel = Boolean(entityPanel);
+  const hasPdfPanel = Boolean(pdfPanel);
+  const hasRightPanel = Boolean(rightPanel);
   const auxiliaryPanels: AuxiliaryPanel[] = [];
 
-  if (entityPanel) {
+  if (hasEntityPanel) {
     auxiliaryPanels.push({
       content: entityPanel,
       defaultWidth: 400,
@@ -49,7 +72,7 @@ export function AppShellPanelLayout({
     });
   }
 
-  if (rightPanel) {
+  if (hasRightPanel) {
     auxiliaryPanels.push({
       content: rightPanel,
       defaultWidth: 420,
@@ -60,7 +83,7 @@ export function AppShellPanelLayout({
     });
   }
 
-  if (pdfPanel) {
+  if (hasPdfPanel) {
     auxiliaryPanels.push({
       content: pdfPanel,
       defaultWidth: 540,
@@ -74,10 +97,28 @@ export function AppShellPanelLayout({
 
   const useEqualLayout = auxiliaryPanels.length >= 2;
   const equalSize = `${100 / (auxiliaryPanels.length + 1)}%`;
+  const panelIds = useMemo(
+    () => [
+      "app-shell-main",
+      ...(hasEntityPanel ? ["app-shell-entity"] : []),
+      ...(hasRightPanel ? ["app-shell-right"] : []),
+      ...(hasPdfPanel ? ["app-shell-pdf"] : []),
+    ],
+    [hasEntityPanel, hasPdfPanel, hasRightPanel],
+  );
+  const layoutStorageId = `glass:app-shell-panels:${storageUserId ?? "pending"}`;
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: layoutStorageId,
+    panelIds,
+    storage: panelLayoutStorage,
+    onlySaveAfterUserInteractions: true,
+  });
 
   return (
     <ResizablePanelGroup
       id="app-shell-panels"
+      defaultLayout={defaultLayout}
+      onLayoutChanged={onLayoutChanged}
       orientation="horizontal"
       className="min-w-0 flex-1 max-lg:[&>[data-panel]]:contents!"
     >

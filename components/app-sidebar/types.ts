@@ -23,6 +23,7 @@ export type ClientThreadItem = {
   originChannel?: "chat" | "email" | "imessage" | "slack";
   threadPhone?: string;
   slackConversationKind?: "channel" | "direct_message";
+  visibility?: "broker_visible" | "client_internal" | "user_private";
 };
 
 export type BrokerContact = {

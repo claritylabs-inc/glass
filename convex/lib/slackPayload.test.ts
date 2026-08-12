@@ -33,6 +33,7 @@ describe("Slack webhook payload narrowing", () => {
       senderUserId: "U-CUSTOMER",
       eventType: "message",
       isDirectMessage: false,
+      isPrivateChannel: false,
       isBotEcho: false,
     });
     expect(
@@ -82,8 +83,27 @@ describe("Slack webhook payload narrowing", () => {
       ],
     });
     expect(
-      parseSlackEventPayload(payload({ subtype: "message_deleted", text: "" })),
-    ).toBeNull();
+      parseSlackEventPayload(
+        payload({
+          type: "message",
+          subtype: "message_deleted",
+          deleted_ts: "1800000000.100",
+          previous_message: {
+            ts: "1800000000.100",
+            thread_ts: "1800000000.000",
+            user: "U-CUSTOMER",
+            user_team: "T-CUSTOMER",
+            text: "deleted content",
+          },
+        }),
+      ),
+    ).toMatchObject({
+      eventKey:
+        "T-CUSTOMER:C-SERVICE:1800000000.100:delete:1800000000.100",
+      eventType: "delete",
+      content: "",
+      messageTs: "1800000000.100",
+    });
     expect(
       parseSlackEventPayload(payload({ bot_id: "B-GLASS" })),
     ).toMatchObject({ isBotEcho: true });
@@ -94,6 +114,15 @@ describe("Slack webhook payload narrowing", () => {
       isDirectMessage: true,
       channelId: "D-PRIVATE",
       threadTs: "D-PRIVATE",
+    });
+    expect(
+      parseSlackEventPayload(
+        payload({ channel: "G-PRIVATE", channel_type: "group" }),
+      ),
+    ).toMatchObject({
+      channelId: "G-PRIVATE",
+      isDirectMessage: false,
+      isPrivateChannel: true,
     });
   });
 });

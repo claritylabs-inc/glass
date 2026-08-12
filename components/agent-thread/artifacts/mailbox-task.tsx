@@ -174,9 +174,9 @@ function MailboxSearchAudit({ searches }: { searches: ReturnType<typeof normaliz
         {searches.map((search, index) => {
           const windowText = [search.dateFrom, search.dateTo].filter(Boolean).join(" to ");
           return (
-            <div key={`${search.accountEmail ?? "account"}-${search.mailbox}-${search.query ?? "all"}-${index}`} className="rounded-md border border-foreground/8 bg-foreground/[0.035] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <div key={`${search.accountEmail ?? "account"}-${search.mailbox}-${search.query ?? "all"}-${index}`} className="rounded-md border border-input bg-foreground/[0.035] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
               <div className={`flex flex-wrap items-center gap-1.5 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
-                <Badge variant="outline" className={`h-5 border-foreground/8 px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
+                <Badge variant="outline" className={`h-5 border-input px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
                   {search.accountEmail ?? "Mailbox"}
                 </Badge>
                 <span>{search.mailbox}</span>
@@ -395,7 +395,7 @@ function MailboxTaskSummaryCard({
         type="button"
         onClick={onOpen}
         className={`inline-flex max-w-full items-center gap-1.5 rounded-full border bg-foreground/[0.025] px-2.5 py-1.5 text-muted-foreground/55 transition-colors ${typeStyle("label.tag")} ${
-          isSelected ? "border-foreground/18 bg-foreground/[0.04]" : "border-foreground/8 hover:border-foreground/15 hover:bg-foreground/[0.04]"
+          isSelected ? "border-border-focus bg-foreground/[0.04]" : "border-input hover:border-border-hover hover:bg-foreground/[0.04]"
         }`}
       >
         {isRunning ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary-light/70" /> : <MailIcon className="h-3 w-3 shrink-0 text-muted-foreground/45" />}
@@ -405,8 +405,8 @@ function MailboxTaskSummaryCard({
   }
 
   return (
-    <div className={flat ? "w-full" : "w-full overflow-hidden rounded-md border border-foreground/8 bg-card"}>
-      <div className={flat ? "hidden" : "flex w-full items-center justify-between gap-3 border-b border-foreground/6 px-3 py-2.5 text-left"}>
+    <div className={flat ? "w-full" : "w-full overflow-hidden rounded-md border border-input bg-card"}>
+      <div className={flat ? "hidden" : "flex w-full items-center justify-between gap-3 border-b border-border px-3 py-2.5 text-left"}>
         <div className="flex min-w-0 items-center gap-2">
           <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground">
             {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MailIcon className="h-3.5 w-3.5" />}
@@ -442,7 +442,7 @@ function MailboxTaskSummaryCard({
             <ol className="space-y-1.5">
               {task.steps.map((step, index) => (
                 <li key={`${step}-${index}`} className={`flex gap-2 text-muted-foreground/70 ${typeStyle("caption.default")}`}>
-                  <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-foreground/8 text-muted-foreground/50 ${typeStyle("caption.default")}`}>
+                  <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-input text-muted-foreground/50 ${typeStyle("caption.default")}`}>
                     {index + 1}
                   </span>
                   <span>{step}</span>
@@ -454,7 +454,7 @@ function MailboxTaskSummaryCard({
         {task.toolCalls.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {task.toolCalls.map((toolCall, index) => (
-              <Badge key={`${toolCall}-${index}`} variant="outline" className={`h-5 border-foreground/8 px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
+              <Badge key={`${toolCall}-${index}`} variant="outline" className={`h-5 border-input px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
                 {scientistSurnameFor(`mailbox-tool:${toolCall}`, index)}
               </Badge>
             ))}
@@ -474,13 +474,13 @@ function MailboxTaskSummaryCard({
                 const emailWithAttachments = { ...email, attachments };
                 const isOpen = openEmailKey === emailKey;
                 return (
-                  <div key={`${email.emailRef ?? email.subject}-${index}`} className="rounded-md border border-foreground/6 bg-background px-3 py-2.5">
+                  <div key={`${email.emailRef ?? email.subject}-${index}`} className="rounded-md border border-border bg-background px-3 py-2.5">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className={`min-w-0 flex-1 truncate text-foreground/85 ${typeStyle("caption.medium")}`}>
                         {email.subject}
                       </span>
                       {email.accountEmail ? (
-                        <Badge variant="outline" className={`h-5 border-foreground/8 px-1.5 text-muted-foreground/50 ${typeStyle("label.tag")}`}>
+                        <Badge variant="outline" className={`h-5 border-input px-1.5 text-muted-foreground/50 ${typeStyle("label.tag")}`}>
                           {email.accountEmail}
                         </Badge>
                       ) : null}
@@ -506,7 +506,7 @@ function MailboxTaskSummaryCard({
                           return (
                             <span
                               key={`${attachment.filename}-${attachmentIndex}`}
-                              className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/8 bg-foreground/[0.02] px-2 py-1 text-muted-foreground/65 ${typeStyle("label.tag")}`}
+                              className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-input bg-foreground/[0.02] px-2 py-1 text-muted-foreground/65 ${typeStyle("label.tag")}`}
                             >
                               <Paperclip className="h-3 w-3 shrink-0" />
                               <span className="truncate">{attachment.filename}</span>
@@ -517,7 +517,7 @@ function MailboxTaskSummaryCard({
                       </div>
                     ) : null}
                     {email.emailRef ? (
-                      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-foreground/6 pt-2">
+                      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border pt-2">
                         <PillButton
                           size="compact"
                           variant="iconLabel"
@@ -594,7 +594,7 @@ function MailboxTaskSummaryCard({
                       </div>
                     ) : null}
                     {isOpen && liveEmail ? (
-                      <div className="mt-2 border-t border-foreground/6 pt-2">
+                      <div className="mt-2 border-t border-border pt-2">
                         <dl className={`space-y-1 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
                           {liveEmail.to ? (
                             <div className="flex gap-2">
@@ -663,8 +663,8 @@ export function MailboxTaskSidebar({
       : "Background agent";
   const displayName = mailboxTaskDisplayName(task);
   return (
-    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-foreground/8 bg-background">
-      <div className="flex h-12 items-center justify-between gap-3 border-b border-foreground/8 px-4">
+    <aside className="flex h-full w-full flex-col overflow-hidden border-l border-input bg-background">
+      <div className="flex h-12 items-center justify-between gap-3 border-b border-input px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className={`truncate text-foreground ${typeStyle("heading.micro")}`}>{displayName}</h2>
           <StatusTag tone={isRunning ? "info" : "neutral"} className="shrink-0">

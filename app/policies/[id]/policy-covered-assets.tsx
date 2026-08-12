@@ -246,7 +246,7 @@ export function PolicyCoveredAssets({
   return (
     <OperationalPanel className="mb-6 @container/covered-assets">
       <OperationalPanelHeader title="Covered property & vehicles" />
-      <div className="divide-y divide-foreground/6">
+      <div className="divide-y divide-border">
         {groups.map((group) => (
           <section key={group.kind} className="px-4 py-3">
             <div className="flex items-baseline justify-between gap-4">
@@ -263,7 +263,7 @@ export function PolicyCoveredAssets({
               {group.sections.map((section, sectionIndex) => (
                 <div
                   key={section.name ?? `${group.kind}:${sectionIndex}`}
-                  className="border-t border-foreground/6 py-2.5 first:border-t-0 first:pt-0 last:pb-0"
+                  className="border-t border-border py-2.5 first:border-t-0 first:pt-0 last:pb-0"
                 >
                   {section.name ? (
                     <div className="mb-2 flex items-baseline justify-between gap-4">
@@ -275,7 +275,7 @@ export function PolicyCoveredAssets({
                       </span>
                     </div>
                   ) : null}
-                  <dl className="divide-y divide-foreground/6">
+                  <dl className="divide-y divide-border">
                     {section.items.map((item, itemIndex) => (
                       <div
                         key={`${item.label}:${itemIndex}`}

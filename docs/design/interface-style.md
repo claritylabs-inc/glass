@@ -52,7 +52,7 @@ Every surface must be checked in light and dark themes.
 
 | Surface | Default use |
 | --- | --- |
-| `bg-background` | Page canvas, app panes, drawers, and full-height sidebars |
+| `bg-background` | Page canvas, app panes, drawers, and full-height sidebars; dark mode uses charcoal rather than black |
 | `bg-card` | A persistent bounded panel or grouped record surface |
 | `bg-popover` | Menus, popovers, and form controls through their shared primitives |
 | `bg-muted` or a foreground tint from 2% to 6% | Selected, hovered, or deliberately quiet subregions |
@@ -68,19 +68,24 @@ Rules:
    replace neutral application structure or status colors.
 5. Muted text is for supporting information. Primary names, values, and actions
    remain `text-foreground`.
+6. Dark mode must preserve visible layers: the canvas is non-black, bounded
+   surfaces step lighter, and muted text remains readable without becoming
+   primary text.
 
 ## Border hierarchy
 
-Borders are one physical pixel and use foreground-relative opacity so their
-weight remains balanced in both themes.
+Borders are one physical pixel and use semantic, theme-adaptive tokens. Dark
+mode borders are intentionally brighter than their light-mode counterparts so
+structure remains visible on low-luminance surfaces.
 
 | Strength | Class | Use |
 | --- | --- | --- |
-| Structural | `border-foreground/6` | Shell edges, panel outlines, section dividers, and row separators |
-| Interactive resting | `border-foreground/8` | Inputs, secondary buttons, and clickable bounded surfaces |
-| Emphasized or floating | `border-foreground/10` or `ring-1 ring-foreground/10` | Popovers, selected outlines, and surfaces above the page |
-| Interactive hover | `border-foreground/14` | Hover feedback for an outlined control |
-| Interactive focus | `border-foreground/20` with `ring-1 ring-foreground/8` | Keyboard or editing focus |
+| Subtle | `border-border-subtle` | Skeletons and deliberately low-priority separators |
+| Structural | `border-border` | Shell edges, panel outlines, section dividers, and row separators |
+| Interactive resting | `border-input` | Inputs, secondary buttons, and clickable bounded surfaces |
+| Emphasized or floating | `border-border-emphasized` or `ring-1 ring-border-emphasized` | Popovers, selected outlines, and surfaces above the page |
+| Interactive hover | `border-border-hover` | Hover feedback for an outlined control |
+| Interactive focus | `border-border-focus` with `ring-1 ring-input` | Keyboard or editing focus |
 | Status | Semantic color at low opacity, usually `/20` | Warning, error, or success boundary |
 
 Additional rules:
@@ -272,7 +277,8 @@ Before merging a browser UI change, confirm:
 
 - The screen answers one clear user question and emphasizes the next action.
 - Theme tokens and shared components own colors and common states.
-- Borders follow the 6 / 8 / 14 / 20 hierarchy.
+- Borders use the semantic subtle / structural / interactive / emphasized /
+  hover / focus hierarchy.
 - Page, panel, row, and form padding follow one consistent container contract.
 - Cards are used only for real bounded objects; repeated data scans as a list or
   table.

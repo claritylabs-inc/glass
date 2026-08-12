@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -10,10 +11,17 @@ import { SiSlack } from "react-icons/si";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
+import { useClientDetailActions } from "../layout";
 
 export default function ClientThreadsPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
   const router = useRouter();
+  const { setBreadcrumbExtra } = useClientDetailActions();
+
+  useEffect(() => {
+    setBreadcrumbExtra("Threads");
+    return () => setBreadcrumbExtra(null);
+  }, [setBreadcrumbExtra]);
 
   const threads = useCachedQuery(
     "threads.listForClient.page",

@@ -11,6 +11,13 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppShellPanelLayout } from "@/components/app-shell-panel-layout";
+import {
+  AppShellSidebarLayout,
+  appSidebarPreferenceStorageKey,
+  clampAppSidebarWidth,
+  parseAppSidebarPreference,
+  type AppSidebarPreference,
+} from "@/components/app-shell-sidebar-layout";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
 import { OperatorImpersonationBanner } from "@/components/operator-impersonation-banner";
 
@@ -20,6 +27,7 @@ import {
   EntityPreviewProvider,
   useEntityPreview,
 } from "@/hooks/use-entity-preview";
+import { useGlassSync } from "@/lib/sync/glass-sync";
 import { EntityPreviewPanel } from "@/components/entity-preview-panel";
 import {
   CommandPalette,
@@ -60,6 +68,27 @@ function hasVisibleRightPanel(node: React.ReactNode): boolean {
   return true;
 }
 
+function readAppSidebarPreference(storageKey: string | null) {
+  if (!storageKey) return parseAppSidebarPreference(null);
+
+  try {
+    return parseAppSidebarPreference(localStorage.getItem(storageKey));
+  } catch {
+    return parseAppSidebarPreference(null);
+  }
+}
+
+function persistAppSidebarPreference(
+  storageKey: string | null,
+  preference: AppSidebarPreference,
+) {
+  if (!storageKey) return;
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(preference));
+  } catch {}
+}
+
 function ShellContent({
   children,
   actions,
@@ -67,7 +96,8 @@ function ShellContent({
   presenceUsers,
   rightPanel,
   customSidebar,
-  customSidebarStorageKey = "custom-sidebar-collapsed",
+  customSidebarPreferenceStorageKey,
+  storageUserId,
   disableCommandPalette = false,
   showBrokerShare = true,
 }: {
@@ -80,54 +110,115 @@ function ShellContent({
     collapsed: boolean;
     onToggleCollapse: () => void;
   }) => React.ReactNode;
-  customSidebarStorageKey?: string;
+  customSidebarPreferenceStorageKey: string | null;
+  storageUserId?: string;
   disableCommandPalette?: boolean;
   showBrokerShare?: boolean;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [customSidebarCollapsed, setCustomSidebarCollapsed] = useState(() => {
-    if (!customSidebar) return false;
-    try {
-      return localStorage.getItem(customSidebarStorageKey) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [customSidebarPreference, setCustomSidebarPreference] = useState(() =>
+    readAppSidebarPreference(customSidebarPreferenceStorageKey),
+  );
   const { isPdfOpen, fileUrl } = usePdf();
   const { preview: entityPreview } = useEntityPreview();
   const hasPdfPanel = isPdfOpen && !!fileUrl;
   const hasEntityPanel = !!entityPreview;
   const hasRightPanel = hasVisibleRightPanel(rightPanel);
+
+  const updateCustomSidebarPreference = useCallback(
+    (update: (current: AppSidebarPreference) => AppSidebarPreference) => {
+      setCustomSidebarPreference((current) => {
+        const next = update(current);
+        if (
+          next.collapsed === current.collapsed &&
+          next.width === current.width
+        ) {
+          return current;
+        }
+        persistAppSidebarPreference(customSidebarPreferenceStorageKey, next);
+        return next;
+      });
+    },
+    [customSidebarPreferenceStorageKey],
+  );
+
   const toggleCustomSidebarCollapse = useCallback(() => {
-    setCustomSidebarCollapsed((current) => {
-      const next = !current;
-      try {
-        localStorage.setItem(customSidebarStorageKey, next ? "1" : "");
-      } catch {}
-      return next;
-    });
-  }, [customSidebarStorageKey]);
+    updateCustomSidebarPreference((current) => ({
+      ...current,
+      collapsed: !current.collapsed,
+    }));
+  }, [updateCustomSidebarPreference]);
+
+  const updateCustomSidebarCollapsed = useCallback(
+    (next: boolean) => {
+      updateCustomSidebarPreference((current) => ({
+        ...current,
+        collapsed: next,
+      }));
+    },
+    [updateCustomSidebarPreference],
+  );
+
+  const updateCustomSidebarWidth = useCallback(
+    (width: number) => {
+      updateCustomSidebarPreference((current) => ({
+        ...current,
+        width: clampAppSidebarWidth(width),
+      }));
+    },
+    [updateCustomSidebarPreference],
+  );
+
   const renderedCustomSidebar = customSidebar?.({
-    collapsed: customSidebarCollapsed,
+    collapsed: customSidebarPreference.collapsed,
     onToggleCollapse: toggleCustomSidebarCollapse,
   });
   const renderedMobileCustomSidebar = customSidebar?.({
     collapsed: false,
     onToggleCollapse: toggleCustomSidebarCollapse,
   });
+  const panelLayout = (
+    <AppShellPanelLayout
+      main={
+        <>
+          <AppTopBar
+            actions={actions}
+            breadcrumbDetail={breadcrumbDetail}
+            presenceUsers={presenceUsers}
+            showBrokerShare={showBrokerShare}
+            onMobileMenuToggle={() => setMobileOpen((v) => !v)}
+          />
+          <div className="relative min-w-0 flex-1 overflow-hidden">
+            <main className="absolute inset-0 min-w-0 overflow-y-auto scrollbar-hide">
+              <div className="w-full min-w-0 px-6 py-6 pb-32 lg:px-8">
+                {children}
+              </div>
+            </main>
+            {disableCommandPalette ? null : <CommandPalette />}
+          </div>
+        </>
+      }
+      entityPanel={hasEntityPanel ? <EntityPreviewPanel /> : undefined}
+      rightPanel={hasRightPanel ? rightPanel : undefined}
+      pdfPanel={hasPdfPanel ? <PdfPanel /> : undefined}
+      storageUserId={storageUserId}
+    />
+  );
 
   return (
     <div className="flex h-dvh w-full min-w-0 flex-col overflow-hidden">
       <div className="flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
         {customSidebar ? (
           <>
-            <aside
-              className={`hidden h-full shrink-0 flex-col border-r border-foreground/6 bg-background sidebar-transition lg:flex ${
-                customSidebarCollapsed ? "w-14" : "w-[220px]"
-              }`}
+            <AppShellSidebarLayout
+              sidebar={renderedCustomSidebar}
+              collapsed={customSidebarPreference.collapsed}
+              defaultWidth={customSidebarPreference.width}
+              onCollapsedChange={updateCustomSidebarCollapsed}
+              onWidthChange={updateCustomSidebarWidth}
             >
-              {renderedCustomSidebar}
-            </aside>
+              {panelLayout}
+            </AppShellSidebarLayout>
             <AnimatePresence>
               {mobileOpen ? (
                 <>
@@ -144,7 +235,7 @@ function ShellContent({
                     animate={{ x: 0 }}
                     exit={{ x: -280 }}
                     transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
-                    className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-foreground/6 bg-background lg:hidden"
+                    className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-border bg-background lg:hidden"
                   >
                     {renderedMobileCustomSidebar}
                   </motion.aside>
@@ -153,40 +244,19 @@ function ShellContent({
             </AnimatePresence>
           </>
         ) : (
-          <Suspense fallback={null}>
-            <AppSidebar
-              mobileOpen={mobileOpen}
-              onMobileClose={() => setMobileOpen(false)}
-              onAskGlass={
-                disableCommandPalette ? undefined : openCommandPalette
-              }
-            />
-          </Suspense>
-        )}
-        <AppShellPanelLayout
-          main={
-            <>
-              <AppTopBar
-                actions={actions}
-                breadcrumbDetail={breadcrumbDetail}
-                presenceUsers={presenceUsers}
-                showBrokerShare={showBrokerShare}
-                onMobileMenuToggle={() => setMobileOpen((v) => !v)}
+          <>
+            <Suspense fallback={null}>
+              <AppSidebar
+                mobileOpen={mobileOpen}
+                onMobileClose={() => setMobileOpen(false)}
+                onAskGlass={
+                  disableCommandPalette ? undefined : openCommandPalette
+                }
               />
-              <div className="relative min-w-0 flex-1 overflow-hidden">
-                <main className="absolute inset-0 min-w-0 overflow-y-auto scrollbar-hide">
-                  <div className="w-full min-w-0 px-6 py-6 pb-32 lg:px-8">
-                    {children}
-                  </div>
-                </main>
-                {disableCommandPalette ? null : <CommandPalette />}
-              </div>
-            </>
-          }
-          entityPanel={hasEntityPanel ? <EntityPreviewPanel /> : undefined}
-          rightPanel={hasRightPanel ? rightPanel : undefined}
-          pdfPanel={hasPdfPanel ? <PdfPanel /> : undefined}
-        />
+            </Suspense>
+            {panelLayout}
+          </>
+        )}
       </div>
       <OperatorImpersonationBanner />
     </div>
@@ -218,17 +288,29 @@ export function AppShell({
   disableCommandPalette?: boolean;
   showBrokerShare?: boolean;
 }) {
+  const { scope } = useGlassSync();
+  const customSidebarPreferenceStorageKey = customSidebar
+    ? appSidebarPreferenceStorageKey(
+        customSidebarStorageKey ?? "custom-sidebar",
+        scope.userId,
+      )
+    : null;
+
   return (
     <PageContextProvider>
       <PdfProvider>
         <EntityPreviewProvider>
           <ShellContent
+            key={customSidebarPreferenceStorageKey ?? "default-app-shell"}
             actions={actions}
             breadcrumbDetail={breadcrumbDetail}
             presenceUsers={presenceUsers}
             rightPanel={rightPanel}
             customSidebar={customSidebar}
-            customSidebarStorageKey={customSidebarStorageKey}
+            customSidebarPreferenceStorageKey={
+              customSidebarPreferenceStorageKey
+            }
+            storageUserId={scope.userId}
             disableCommandPalette={disableCommandPalette}
             showBrokerShare={showBrokerShare}
           >

@@ -1,5 +1,9 @@
 # Glass
 
+Client-facing instructions for web chat, email, iMessage, Slack, connected
+mailboxes, notifications, and document delivery are in the
+[Glass client help](docs/help/README.md) section.
+
 Glass is Clarity Labs' insurance intelligence platform. It combines document extraction, conversational AI, org memory, broker/client workspaces, connected vendor/client access, and API/MCP surfaces in one system.
 
 For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).

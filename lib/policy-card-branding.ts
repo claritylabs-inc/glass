@@ -4,7 +4,9 @@ import { readableTextFor } from "@/lib/branding";
 const BRANDED_CARD_BASE_COLOR = "#1E293B";
 const DEFAULT_CARD_COLOR = "#000000";
 const DEFAULT_OVERVIEW_COLOR = "#FFFFFF";
-const DEFAULT_SURFACE_CLASS_NAME = "bg-background text-foreground";
+const DEFAULT_CARD_SURFACE_CLASS_NAME =
+  "border-border bg-background text-foreground";
+const DEFAULT_OVERVIEW_SURFACE_CLASS_NAME = "bg-background text-foreground";
 const BRAND_COLOR_WEIGHT = 0.52;
 const OVERVIEW_COLOR_WEIGHT = 0.5;
 const PATTERN_WIDTH = 720;
@@ -176,7 +178,9 @@ export function policyOverviewBranding(
   return {
     patternStyle,
     patternVariant,
-    surfaceClassName: brandColor ? undefined : DEFAULT_SURFACE_CLASS_NAME,
+    surfaceClassName: brandColor
+      ? undefined
+      : DEFAULT_OVERVIEW_SURFACE_CLASS_NAME,
     surfaceStyle: brandColor
       ? ({
           backgroundColor: tonePolicyOverviewColor(brandColor),
@@ -200,7 +204,7 @@ export function policyCardBranding(
     cardColor,
     textColor,
     patternVariant,
-    surfaceClassName: brandColor ? undefined : DEFAULT_SURFACE_CLASS_NAME,
+    surfaceClassName: brandColor ? undefined : DEFAULT_CARD_SURFACE_CLASS_NAME,
     surfaceStyle: brandColor
       ? ({
           backgroundColor: cardColor,

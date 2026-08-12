@@ -28,8 +28,8 @@ export function MessageMetaTag({
     `inline-flex h-6 items-center justify-center rounded-full border px-[7px] transition-[border-color,background-color,color,transform] duration-150 ease-out ${typeStyle("label.tag")}`,
     onClick ? "cursor-pointer active:scale-[0.97]" : "",
     isActive
-      ? "border-foreground/18 bg-foreground/[0.04] text-foreground/75"
-      : "border-foreground/8 bg-transparent text-muted-foreground/55 hover:border-foreground/12 hover:bg-foreground/[0.03] hover:text-foreground/75",
+      ? "border-border-focus bg-foreground/[0.04] text-foreground/75"
+      : "border-input bg-transparent text-muted-foreground/55 hover:border-border-emphasized hover:bg-foreground/[0.03] hover:text-foreground/75",
     className,
   );
   const content = (

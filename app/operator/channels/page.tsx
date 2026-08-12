@@ -46,7 +46,7 @@ function ChannelCard({
   return (
     <div
       className={cn(
-        "rounded-lg border border-foreground/6 bg-popover px-4 py-3",
+        "rounded-lg border border-border bg-popover px-4 py-3",
         className,
       )}
     >
@@ -63,7 +63,7 @@ function ChannelDetail({
   children: ReactNode;
 }) {
   return (
-    <div className="grid gap-1 border-t border-foreground/6 py-3 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+    <div className="grid gap-1 border-t border-border py-3 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
       <dt className={`text-muted-foreground ${typeStyle("label.metadata")}`}>{label}</dt>
       <dd className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}>
         {children}
@@ -375,7 +375,7 @@ function OperatorChannelsContent({
           </p>
         </div>
 
-        <div className="rounded-lg border border-foreground/6 bg-foreground/[0.025] p-3">
+        <div className="rounded-lg border border-border bg-foreground/[0.025] p-3">
           <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             How to find your member ID
           </h3>
@@ -391,16 +391,14 @@ function OperatorChannelsContent({
 
   return (
     <AppShell
-      breadcrumbDetail="Channels"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={operatorEmail}
           active="channels"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
@@ -462,7 +460,7 @@ function OperatorChannelsContent({
                     </div>
                   </div>
 
-                  <dl className="mt-3 border-t border-foreground/6">
+                  <dl className="mt-3 border-t border-border">
                     <ChannelDetail label="Slack workspace name">
                       {workspaceName ?? "No workspace connected"}
                     </ChannelDetail>
@@ -486,7 +484,7 @@ function OperatorChannelsContent({
                       </p>
                     </div>
 
-                    <div className="mt-3 border-t border-foreground/6">
+                    <div className="mt-3 border-t border-border">
                       <OperatorIdentityRow
                         identity={currentIdentity}
                         workspaceTeamId={workspaceTeamId}
@@ -501,7 +499,7 @@ function OperatorChannelsContent({
                         </p>
                       ) : null}
 
-                      <div className="border-t border-foreground/6">
+                      <div className="border-t border-border">
                         <p className={`pt-3 text-muted-foreground ${typeStyle("caption.medium")}`}>
                           Other Glass operators
                         </p>
@@ -510,7 +508,7 @@ function OperatorChannelsContent({
                             <Loader2 className="size-4 animate-spin text-muted-foreground" />
                           </div>
                         ) : otherOperators.length ? (
-                          <div className="divide-y divide-foreground/6">
+                          <div className="divide-y divide-border">
                             {otherOperators.map((operator) => (
                               <OperatorIdentityRow
                                 key={operator.userId}
@@ -549,16 +547,14 @@ export default function OperatorChannelsPage() {
     />
   ) : (
     <AppShell
-      breadcrumbDetail="Channels"
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={undefined}
           active="channels"
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}

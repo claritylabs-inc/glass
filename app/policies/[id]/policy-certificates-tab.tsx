@@ -150,7 +150,7 @@ function CertificateHoldState({
           {(hold.requiredChanges ?? []).map((change) => (
             <span
               key={change}
-              className={`rounded-full border border-foreground/10 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
+              className={`rounded-full border border-border-emphasized px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
             >
               {labelForChange(change)}
             </span>
@@ -159,7 +159,7 @@ function CertificateHoldState({
       ) : null}
 
       {evidence.length > 0 ? (
-        <div className="space-y-2 rounded-md border border-foreground/8 p-3">
+        <div className="space-y-2 rounded-md border border-input p-3">
           <p className={`text-muted-foreground ${typeStyle("caption.medium")}`}>
             Evidence checked
           </p>
@@ -176,7 +176,7 @@ function CertificateHoldState({
       ) : null}
 
       {draft ? (
-        <div className="rounded-md border border-foreground/8 p-3">
+        <div className="rounded-md border border-input p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className={`text-muted-foreground ${typeStyle("caption.medium")}`}>

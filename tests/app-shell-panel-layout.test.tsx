@@ -16,10 +16,12 @@ async function renderLayout({
   entityPanel,
   pdfPanel,
   rightPanel,
+  storageUserId,
 }: {
   entityPanel?: ReactNode;
   pdfPanel?: ReactNode;
   rightPanel?: ReactNode;
+  storageUserId?: string;
 }) {
   const container = document.createElement("div");
   container.style.height = "800px";
@@ -35,6 +37,7 @@ async function renderLayout({
         entityPanel={entityPanel}
         rightPanel={rightPanel}
         pdfPanel={pdfPanel}
+        storageUserId={storageUserId}
       />,
     );
     await Promise.resolve();
@@ -53,6 +56,7 @@ afterEach(async () => {
   for (const root of mountedRoots.splice(0)) {
     await act(async () => root.unmount());
   }
+  localStorage.clear();
   document.body.replaceChildren();
 });
 
@@ -116,5 +120,47 @@ describe("AppShellPanelLayout", () => {
       "app-shell-separator-right",
       "app-shell-right",
     ]);
+  });
+
+  it("restores a saved panel layout for the current user", async () => {
+    localStorage.setItem(
+      "react-resizable-panels:glass:app-shell-panels:user-1:app-shell-main:app-shell-right",
+      JSON.stringify({
+        "app-shell-main": 60,
+        "app-shell-right": 40,
+      }),
+    );
+
+    const container = await renderLayout({
+      rightPanel: <div>Details</div>,
+      storageUserId: "user-1",
+    });
+
+    expect(
+      container.querySelector<HTMLElement>(
+        '[data-testid="app-shell-right"]',
+      )?.style.flexGrow,
+    ).toBe("40");
+  });
+
+  it("keeps saved panel layouts isolated by user", async () => {
+    localStorage.setItem(
+      "react-resizable-panels:glass:app-shell-panels:user-1:app-shell-main:app-shell-right",
+      JSON.stringify({
+        "app-shell-main": 60,
+        "app-shell-right": 40,
+      }),
+    );
+
+    const container = await renderLayout({
+      rightPanel: <div>Details</div>,
+      storageUserId: "user-2",
+    });
+
+    expect(
+      container.querySelector<HTMLElement>(
+        '[data-testid="app-shell-right"]',
+      )?.style.flexGrow,
+    ).not.toBe("40");
   });
 });

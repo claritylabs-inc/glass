@@ -119,47 +119,44 @@ function DashboardLoading() {
 type OperatorNavSection =
   | "brokers"
   | "clients"
+  | "demo-leads"
   | "channels"
   | "routing"
-  | "extractions";
+  | "extractions"
+  | "profile";
 
 function getOperatorActiveSection(pathname: string): OperatorNavSection {
   if (pathname.startsWith("/operator/brokers")) return "brokers";
   if (pathname.startsWith("/operator/clients")) return "clients";
+  if (pathname.startsWith("/operator/demo-leads")) return "demo-leads";
   if (pathname.startsWith("/operator/channels")) return "channels";
   if (pathname.startsWith("/operator/models")) return "routing";
   if (pathname.startsWith("/operator/routing")) return "routing";
   if (pathname.startsWith("/operator/tools")) return "routing";
   if (pathname.startsWith("/operator/extractions")) return "extractions";
+  if (pathname.startsWith("/operator/profile")) return "profile";
   return "clients";
 }
 
-function OperatorLoading({
-  pathname,
-  email,
-}: {
-  pathname: string;
-  email?: string;
-}) {
+function OperatorLoading({ pathname }: { pathname: string }) {
   return (
     <AppShell
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          email={email}
           active={getOperatorActiveSection(pathname)}
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
     >
       <div className="space-y-4">
         <Skeleton className="h-10 w-full rounded-lg" />
-        <div className="rounded-lg border border-foreground/8">
-          <Skeleton className="h-10 w-full rounded-none border-b border-foreground/8" />
+        <div className="rounded-lg border border-input">
+          <Skeleton className="h-10 w-full rounded-none border-b border-input" />
           <div className="p-4">
             <Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" />
           </div>
@@ -173,7 +170,7 @@ function PendingLiveScreen() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col justify-center px-6">
-        <div className="rounded-lg border border-foreground/8 bg-card p-6">
+        <div className="rounded-lg border border-input bg-card p-6">
           <h1 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Workspace is being prepared
           </h1>
@@ -455,12 +452,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isPublic) return null;
 
     if (shouldShowOperatorLoading) {
-      return (
-        <OperatorLoading
-          pathname={pathname}
-          email={operatorContext?.user?.email}
-        />
-      );
+      return <OperatorLoading pathname={pathname} />;
     }
 
     // If we know from cache that onboarding is NOT complete, show onboarding loading

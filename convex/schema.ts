@@ -3312,6 +3312,15 @@ export default defineSchema({
     slackUserId: v.optional(v.string()),
     slackMessageTs: v.optional(v.string()),
     slackEditedAt: v.optional(v.number()),
+    slackDeletedAt: v.optional(v.number()),
+    slackDeliveryStatus: v.optional(
+      v.union(
+        v.literal("sending"),
+        v.literal("sent"),
+        v.literal("failed"),
+      ),
+    ),
+    slackDeliveryError: v.optional(v.string()),
     // Email messages
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
@@ -3439,8 +3448,13 @@ export default defineSchema({
         }),
       ),
     ),
-    eventType: v.union(v.literal("message"), v.literal("edit")),
+    eventType: v.union(
+      v.literal("message"),
+      v.literal("edit"),
+      v.literal("delete"),
+    ),
     isDirectMessage: v.optional(v.boolean()),
+    isPrivateChannel: v.optional(v.boolean()),
     isPrimaryChannel: v.boolean(),
     mentionsGlass: v.boolean(),
     mentionedBotUserId: v.optional(v.string()),
@@ -3463,6 +3477,12 @@ export default defineSchema({
       "connectionId",
       "channelId",
       "threadTs",
+    ])
+    .index("by_connection_channel_thread_message", [
+      "connectionId",
+      "channelId",
+      "threadTs",
+      "messageTs",
     ])
     .index("by_connection_channel_thread_status_schedule", [
       "connectionId",
@@ -3495,6 +3515,7 @@ export default defineSchema({
     connectionId: v.id("slackWorkspaceConnections"),
     channelId: v.string(),
     threadTs: v.optional(v.string()),
+    keepAttachmentsTopLevel: v.optional(v.boolean()),
     content: v.string(),
     attachments: v.optional(
       v.array(

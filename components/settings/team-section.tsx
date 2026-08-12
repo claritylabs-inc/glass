@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { Loader2, UserPlus } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
 import { InviteMemberDrawer } from "@/components/settings/invite-member-drawer";
 import { TeamMemberEditDrawer } from "@/components/settings/team-member-edit-drawer";
 import { TeamMembersList } from "@/components/settings/team-members-list";
@@ -577,26 +578,30 @@ export function TeamSection({
           operatorClientOrgId
             ? (member) =>
                 member.role === "admin" ? (
-                  <PillButton
-                    size="compact"
-                    variant="secondary"
-                    disabled={activationUserId !== null || !member.email}
-                    title={
-                      member.email
-                        ? undefined
-                        : "This admin does not have an email address"
-                    }
-                    onClick={() => void sendOperatorActivation(member)}
-                  >
-                    {activationUserId === member.userId ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : null}
-                    {activationUserId === member.userId
-                      ? "Sending…"
-                      : operatorClient?.operatorStatus === "onboarding"
-                        ? "Send activation"
-                        : "Resend activation"}
-                  </PillButton>
+                  member.isActivated ? (
+                    <StatusTag tone="success">Active</StatusTag>
+                  ) : (
+                    <PillButton
+                      size="compact"
+                      variant="secondary"
+                      disabled={activationUserId !== null || !member.email}
+                      title={
+                        member.email
+                          ? undefined
+                          : "This admin does not have an email address"
+                      }
+                      onClick={() => void sendOperatorActivation(member)}
+                    >
+                      {activationUserId === member.userId ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : null}
+                      {activationUserId === member.userId
+                        ? "Sending…"
+                        : operatorClient?.operatorStatus === "onboarding"
+                          ? "Send activation"
+                          : "Resend activation"}
+                    </PillButton>
+                  )
                 ) : null
             : undefined
         }

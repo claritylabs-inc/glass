@@ -14,12 +14,12 @@ describe("policy card branding", () => {
     expect(tonePolicyCardColor("#DA532C")).toBe("#803F33");
   });
 
-  it("uses a black raster fallback and theme-aware browser surface", () => {
+  it("uses a black raster fallback and adaptive browser surface", () => {
     expect(tonePolicyCardColor()).toBe("#000000");
     expect(policyCardBranding("Insurance carrier")).toMatchObject({
       cardColor: "#000000",
       textColor: "#FFFFFF",
-      surfaceClassName: "bg-background text-foreground",
+      surfaceClassName: "border-border bg-background text-foreground",
       surfaceStyle: undefined,
     });
   });

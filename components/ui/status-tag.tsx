@@ -8,7 +8,7 @@ const statusTagVariants = cva("border", {
   variants: {
     tone: {
       neutral:
-        "border-foreground/10 bg-foreground/[0.04] text-muted-foreground",
+        "border-border-emphasized bg-foreground/[0.04] text-muted-foreground",
       info: "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-400",
       success:
         "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",

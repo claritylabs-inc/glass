@@ -924,7 +924,7 @@ export function PolicyDetailBody({
     <>
       <FadeIn when={true} staggerIndex={0} duration={0.6}>
         {isArchived && (
-          <div className="mb-4 flex items-center gap-3 rounded-lg border border-foreground/8 bg-foreground/[0.025] px-4 py-2.5">
+          <div className="mb-4 flex items-center gap-3 rounded-lg border border-input bg-foreground/[0.025] px-4 py-2.5">
             <p className={`flex-1 text-muted-foreground ${typeStyle("body.default")}`}>
               This policy is archived and excluded from active Glass workflows.
             </p>
@@ -1060,7 +1060,7 @@ export function PolicyDetailBody({
               {tab.id === "review" ? (
                 <span className="inline-flex items-center gap-1.5">
                   Review
-                  <span className={`rounded-full border border-foreground/10 px-1.5 text-muted-foreground ${typeStyle("label.tag")}`}>
+                  <span className={`rounded-full border border-border-emphasized px-1.5 text-muted-foreground ${typeStyle("label.tag")}`}>
                     {reviewQuestions.length}
                   </span>
                 </span>
