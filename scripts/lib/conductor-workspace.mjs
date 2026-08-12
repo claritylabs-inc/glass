@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,20 @@ import { fileURLToPath } from "node:url";
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export const repoRoot = path.resolve(scriptDirectory, "../..");
+
+export const cloudConvexSelectionKeys = [
+  "CONDUCTOR_CONVEX_SOURCE_DEPLOY_KEY",
+  "CONDUCTOR_CONVEX_SOURCE_DEPLOYMENT",
+  "CONVEX_DEPLOYMENT",
+  "CONVEX_DEPLOYMENT_TOKEN",
+  "CONVEX_DEPLOY_KEY",
+  "CONVEX_SELF_HOSTED_ADMIN_KEY",
+  "CONVEX_SELF_HOSTED_URL",
+  "CONVEX_SITE_URL",
+  "CONVEX_URL",
+  "NEXT_PUBLIC_CONVEX_SITE_URL",
+  "NEXT_PUBLIC_CONVEX_URL",
+];
 
 export function ensureNode24() {
   if (process.versions.node.split(".")[0] === "24") {
@@ -89,6 +104,74 @@ export function parseEnvText(contents) {
 
 export function parseEnvFile(filePath) {
   return parseEnvText(readFileSync(filePath, "utf8"));
+}
+
+export function withoutCloudConvexSelection(environment) {
+  const sanitized = { ...environment };
+  for (const name of cloudConvexSelectionKeys) delete sanitized[name];
+  return sanitized;
+}
+
+export function convexDeploymentNameFromDeployKey(deployKey) {
+  const selector = deployKey?.trim().split("|", 1)[0];
+  const match = selector?.match(/^(?:dev|prod):([^:|]+)$/);
+  return match?.[1];
+}
+
+export function isMissingConvexAccessToken(output) {
+  return /\bMissingAccessToken\b/i.test(output);
+}
+
+export function canUseAnonymousConvexCloudFallback({
+  isCloud,
+  hasDeployKey,
+  output,
+}) {
+  return isCloud && !hasDeployKey && isMissingConvexAccessToken(output);
+}
+
+export function resolveConductorClRouterConfig(values, { required }) {
+  const executionEntries = [
+    ["CL_ROUTER_URL", values.url?.trim()],
+    ["CL_ROUTER_TASKS", values.tasks?.trim()],
+    ["CL_ROUTER_SECRET", values.secret?.trim()],
+  ];
+  if (!required && executionEntries.every(([, value]) => !value)) {
+    return {};
+  }
+
+  const missing = executionEntries
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.join(", ")} must be configured in the source dev Convex environment so Conductor model calls use cl-router`,
+    );
+  }
+
+  return {
+    url: executionEntries[0][1],
+    tasks: executionEntries[1][1],
+    secret: executionEntries[2][1],
+    timeoutMs: values.timeoutMs?.trim() || "180000",
+    tenantId: values.tenantId?.trim() || "glass",
+  };
+}
+
+export function generateLocalAuthKeys() {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicExponent: 0x10001,
+  });
+  const privateKeyPem = privateKey.export({
+    type: "pkcs8",
+    format: "pem",
+  });
+  const publicJwk = publicKey.export({ format: "jwk" });
+  return {
+    JWT_PRIVATE_KEY: privateKeyPem.trimEnd().replace(/\n/g, " "),
+    JWKS: JSON.stringify({ keys: [{ use: "sig", ...publicJwk }] }),
+  };
 }
 
 export function conductorPorts() {
