@@ -119,13 +119,19 @@ jobs:
 
       - name: Deploy production Convex
         if: github.ref_name == 'main'
-        run: npx convex deploy --yes
+        run: |
+          npx convex deploy --yes
+          sdk_version="$(node -p "require('./extraction-worker/package.json').dependencies['@claritylabs/cl-sdk']")"
+          npx convex env set EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION "$sdk_version"
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
 
       - name: Deploy staging Convex
         if: github.ref_name == 'staging'
-        run: npx convex deploy --yes
+        run: |
+          npx convex deploy --yes
+          sdk_version="$(node -p "require('./extraction-worker/package.json').dependencies['@claritylabs/cl-sdk']")"
+          npx convex env set EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION "$sdk_version"
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY_STAGING }}
 
