@@ -43,6 +43,10 @@
     }
   },
   "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://flexible-greyhound-425.convex.site/slack/interactivity"
+    },
     "event_subscriptions": {
       "request_url": "https://flexible-greyhound-425.convex.site/slack/events",
       "bot_events": [

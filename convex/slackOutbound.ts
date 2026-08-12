@@ -13,6 +13,7 @@ const outboundAttachmentValidator = v.object({
   filename: v.string(),
   contentType: v.string(),
 });
+const slackBlocksValidator = v.array(v.any());
 const STALE_SENDING_MS = 5 * 60 * 1_000;
 
 async function syncThreadMessageDelivery(
@@ -53,6 +54,7 @@ export const claim = internalMutation({
     threadTs: v.optional(v.string()),
     keepAttachmentsTopLevel: v.optional(v.boolean()),
     content: v.string(),
+    blocks: v.optional(slackBlocksValidator),
     attachments: v.optional(v.array(outboundAttachmentValidator)),
   },
   handler: async (ctx, args) => {
