@@ -1,0 +1,18 @@
+FICTIONAL TEST FIXTURE — NOT A LEGAL DOCUMENT
+
+From: Mira Shah <mira.shah@transformer-capital.example>
+To: Adyan Tanver <adyan@cove.dev>
+Date: August 20, 2026
+Subject: Cove investment — E&O aggregate clarification
+
+Adyan,
+
+For Transformer Capital's investment in Cove Technologies Inc., located at 1070 Bridgeview Way, San Francisco, CA 94124, please record one Technology Errors & Omissions Liability requirement: a $5,000,000 annual aggregate.
+
+The per-claim amount is still under negotiation and must not be recorded as a requirement yet. We are not changing the Cyber requirement, and this email does not add Directors & Officers, Commercial General Liability, Workers Compensation, or Automobile Liability coverage.
+
+Please send the certificate to certificates@transformer-capital.example when it is available. Certificate delivery is an administrative request, not an additional insurance coverage requirement.
+
+Thank you,
+Mira
+Transformer Capital

@@ -5,6 +5,7 @@ import { pipelineFields } from "@claritylabs/cl-pipelines/convex";
 import { acordTaxonomyBackfillReportValidator } from "./lib/acordTaxonomyBackfillReport";
 import { agentStepsValidator } from "./lib/agentSteps";
 import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
+import { certificateRequirementSnapshotValidator } from "./lib/certificateRequirementPlan";
 
 const modelProviderValidator = v.union(
   v.literal("openai"),
@@ -1398,6 +1399,10 @@ export default defineSchema({
 
   requirementSourceDocuments: defineTable({
     orgId: v.id("organizations"),
+    certificateHolderId: v.optional(v.id("certificateHolders")),
+    dealName: v.optional(v.string()),
+    dealType: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
@@ -1427,6 +1432,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_orgId", ["orgId"])
+    .index("by_certificateHolderId", ["certificateHolderId"])
     .index("by_orgId_status", ["orgId", "status"]),
 
   insuranceRequirements: defineTable({
@@ -2483,6 +2489,7 @@ export default defineSchema({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
     holderId: v.id("certificateHolders"),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     status: certificateParentStatusValidator,
     dedupeKey: v.string(),
     currentVersionId: v.optional(v.id("certificateVersions")),
@@ -2500,6 +2507,7 @@ export default defineSchema({
     .index("by_orgId", ["orgId"])
     .index("by_policyId", ["policyId"])
     .index("by_holderId", ["holderId"])
+    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
     .index("by_orgId_status", ["orgId", "status"])
     .index("by_policyId_status", ["policyId", "status"])
     .index("by_dedupeKey", ["dedupeKey"]),
@@ -2524,6 +2532,10 @@ export default defineSchema({
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
     descriptionOfOperations: v.optional(v.string()),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    generationBatchId: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     legacyCertificateId: v.optional(v.id("certificates")),
@@ -2539,7 +2551,8 @@ export default defineSchema({
     .index("by_certificateId_versionNumber", ["certificateId", "versionNumber"])
     .index("by_policyId", ["policyId"])
     .index("by_policyVersionId", ["policyVersionId"])
-    .index("by_holderId", ["holderId"]),
+    .index("by_holderId", ["holderId"])
+    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"]),
 
   certificateWorkflowSettings: defineTable({
     brokerOrgId: v.optional(v.id("organizations")),
@@ -2621,12 +2634,17 @@ export default defineSchema({
     requestKind: v.optional(certificateRequestKindValidator),
     additionalInsuredName: v.optional(v.string()),
     descriptionOfOperations: v.optional(v.string()),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    generationBatchId: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
+    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
     .index("by_fileId", ["fileId"]),
 
   certificateRequestHolds: defineTable({
@@ -2636,6 +2654,10 @@ export default defineSchema({
     certificateHolder: v.optional(v.string()),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(v.array(v.string())),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    generationBatchId: v.optional(v.string()),
     source: v.optional(
       v.union(
         v.literal("policy_page"),
@@ -2675,6 +2697,7 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"])
     .index("by_policyId", ["policyId"])
+    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
     .index("by_policyChangeCaseId", ["policyChangeCaseId"])
     .index("by_status", ["status"]),
 

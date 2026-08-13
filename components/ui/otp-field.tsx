@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { OTPFieldPreview as OTPField } from "@base-ui/react/otp-field";
 import { cn } from "@/lib/utils";
 import { typeStyle } from "@/lib/typography";
@@ -16,6 +17,7 @@ export function OtpField({
   disabled = false,
   required = false,
   className,
+  id: idProp,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -25,9 +27,13 @@ export function OtpField({
   disabled?: boolean;
   required?: boolean;
   className?: string;
+  id?: string;
 }) {
+  const generatedId = useId();
+  const inputId = idProp ?? generatedId;
   return (
     <OTPField.Root
+      id={inputId}
       length={length}
       value={value}
       onValueChange={onValueChange}

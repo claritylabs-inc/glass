@@ -173,3 +173,82 @@ export function normalizeRequirementLineOfBusiness(
   const [code] = toLobCodes([sourceCode]);
   return code === "UN" ? undefined : code;
 }
+
+type SemanticCoverageRequirement = {
+  kind?: string;
+  scope?: string;
+  lineOfBusiness?: string;
+  limits?: Array<{ kind: string; amount: number; label?: string }>;
+  maxDeductible?: { amount: number; label?: string };
+  coverageForm?: string;
+  retroactiveDateOnOrBefore?: string;
+  provisions?: string[];
+  requiredForms?: string[];
+};
+
+export function hasCheckableCoverageTerms(
+  requirement: Pick<
+    SemanticCoverageRequirement,
+    | "limits"
+    | "maxDeductible"
+    | "coverageForm"
+    | "retroactiveDateOnOrBefore"
+    | "provisions"
+    | "requiredForms"
+  >,
+) {
+  return Boolean(
+    requirement.limits?.length ||
+      requirement.maxDeductible ||
+      requirement.coverageForm?.trim() ||
+      requirement.retroactiveDateOnOrBefore?.trim() ||
+      requirement.provisions?.length ||
+      requirement.requiredForms?.length,
+  );
+}
+
+function normalizeSemanticTerm(value: string | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Identifies an exact typed coverage requirement independent of prose, title,
+ * source document, and array ordering. Different material terms intentionally
+ * produce different keys so stricter requirements remain separate records.
+ */
+export function coverageRequirementSemanticKey(
+  requirement: SemanticCoverageRequirement,
+) {
+  const limits = (requirement.limits ?? [])
+    .map((limit) => [normalizeSemanticTerm(limit.kind), limit.amount] as const)
+    .sort(([leftKind, leftAmount], [rightKind, rightAmount]) =>
+      leftKind.localeCompare(rightKind) || leftAmount - rightAmount,
+    );
+  const provisions = (requirement.provisions ?? [])
+    .map(normalizeSemanticTerm)
+    .filter(Boolean)
+    .sort();
+  const requiredForms = (requirement.requiredForms ?? [])
+    .map(normalizeSemanticTerm)
+    .filter(Boolean)
+    .sort();
+
+  return JSON.stringify({
+    kind: normalizeSemanticTerm(requirement.kind ?? "coverage"),
+    scope: normalizeSemanticTerm(requirement.scope ?? "vendors"),
+    lineOfBusiness:
+      normalizeRequirementLineOfBusiness(requirement.lineOfBusiness) ??
+      normalizeSemanticTerm(requirement.lineOfBusiness),
+    limits,
+    maxDeductible: requirement.maxDeductible?.amount ?? null,
+    coverageForm: normalizeSemanticTerm(requirement.coverageForm),
+    retroactiveDateOnOrBefore: normalizeSemanticTerm(
+      requirement.retroactiveDateOnOrBefore,
+    ),
+    provisions,
+    requiredForms,
+  });
+}

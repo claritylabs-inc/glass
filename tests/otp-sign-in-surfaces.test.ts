@@ -38,6 +38,13 @@ describe("OTP sign-in", () => {
     });
   });
 
+  it("keeps auth cookies across browser restarts for the backend session lifetime", () => {
+    const proxy = read("proxy.ts");
+
+    expect(proxy).toContain("60 * 60 * 24 * 30");
+    expect(proxy).toContain("cookieConfig: { maxAge: AUTH_COOKIE_MAX_AGE_SECONDS }");
+  });
+
   it("preserves proxy verification errors for the existing friendly error copy", async () => {
     vi.stubGlobal(
       "fetch",
@@ -84,5 +91,16 @@ describe("OTP sign-in", () => {
     expect(source).toContain("await completeOtpSignIn(");
     expect(source).toMatch(/window\.location\.(assign|reload)\(/);
     expect(source).not.toMatch(/await signIn\("resend-otp", \{[^\n]*code/);
+  });
+
+  it("associates each visible OTP label with the first input", () => {
+    const field = read("components/ui/otp-field.tsx");
+    const auth = read("components/auth-entry-page.tsx");
+
+    expect(field).toContain("const generatedId = useId()");
+    expect(field).toContain("const inputId = idProp ?? generatedId");
+    expect(field).toContain("id={inputId}");
+    expect(auth).toContain('htmlFor="auth-verification-code"');
+    expect(auth).toContain('id="auth-verification-code"');
   });
 });

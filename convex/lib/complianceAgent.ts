@@ -16,14 +16,42 @@ type Requirement = Pick<
   | "lineOfBusiness"
   | "limits"
   | "maxDeductible"
+  | "coverageForm"
+  | "retroactiveDateOnOrBefore"
   | "provisions"
   | "requiredForms"
   | "sourceType"
+  | "sourceDocumentId"
   | "sourceDocumentName"
   | "sourceExcerpt"
   | "sourcePageStart"
   | "sourcePageEnd"
 > & {
+  complianceCheck?: {
+    status: string;
+    reasons?: string[];
+    matchedPolicyIds?: Array<Doc<"policies">["_id"]>;
+    matchedSummary?: string;
+    checkedBy?: "system" | "user" | "agent";
+    matchedPolicy?: {
+      carrier?: string;
+      policyNumber?: string;
+      coverageName?: string;
+      coverageLimit?: string;
+    };
+  };
+  requirementSource?: {
+    title: string;
+    sourceType: string;
+    dealName?: string;
+    dealType?: string;
+    holder?: {
+      displayName: string;
+      contactName?: string;
+      email?: string;
+      address?: unknown;
+    } | null;
+  };
   clientRequirementSource?: {
     clientOrg: {
       name: string;
@@ -67,6 +95,9 @@ function formatRequirementDetails(requirement: Requirement) {
     requirement.sourceDocumentName
       ? `sourceDocument: ${requirement.sourceDocumentName}`
       : undefined,
+    requirement.sourceDocumentId
+      ? `requirementSourceDocumentId: ${requirement.sourceDocumentId}`
+      : undefined,
     requirement.sourcePageStart
       ? `sourcePage: ${
           requirement.sourcePageEnd &&
@@ -83,6 +114,12 @@ function formatRequirementDetails(requirement: Requirement) {
     requirement.maxDeductible
       ? `maxDeductible: ${requirement.maxDeductible.label ?? requirement.maxDeductible.amount}`
       : undefined,
+    requirement.coverageForm
+      ? `coverageForm: ${requirement.coverageForm}`
+      : undefined,
+    requirement.retroactiveDateOnOrBefore
+      ? `retroactiveDateOnOrBefore: ${requirement.retroactiveDateOnOrBefore}`
+      : undefined,
     requirement.provisions?.length
       ? `provisions: ${requirement.provisions
           .map(
@@ -95,6 +132,32 @@ function formatRequirementDetails(requirement: Requirement) {
       : undefined,
     requirement.requiredForms?.length
       ? `requiredForms: ${requirement.requiredForms.join(", ")}`
+      : undefined,
+    requirement.requirementSource?.holder?.displayName
+      ? `certificateHolder: ${requirement.requirementSource.holder.displayName}`
+      : undefined,
+    requirement.requirementSource?.dealName
+      ? `dealName: ${requirement.requirementSource.dealName}`
+      : undefined,
+    requirement.requirementSource?.dealType
+      ? `dealType: ${requirement.requirementSource.dealType}`
+      : undefined,
+    requirement.complianceCheck
+      ? `currentComplianceStatus: ${requirement.complianceCheck.status}`
+      : undefined,
+    requirement.complianceCheck?.reasons?.length
+      ? `currentComplianceReasons: ${requirement.complianceCheck.reasons.join(", ")}`
+      : undefined,
+    requirement.complianceCheck?.matchedPolicy
+      ? `matchedPolicy: ${[
+          requirement.complianceCheck.matchedPolicy.carrier,
+          requirement.complianceCheck.matchedPolicy.policyNumber,
+          requirement.complianceCheck.matchedPolicy.coverageName,
+          requirement.complianceCheck.matchedPolicy.coverageLimit,
+        ].filter(Boolean).join(" · ")}`
+      : undefined,
+    requirement.complianceCheck?.matchedSummary
+      ? `complianceSummary: ${requirement.complianceCheck.matchedSummary}`
       : undefined,
   ];
   return details.filter(Boolean).join("; ");
@@ -139,7 +202,7 @@ export function formatComplianceRequirement(requirement: Requirement) {
   const source = requirement.sourceExcerpt
     ? `\n  Source language: ${requirement.sourceExcerpt}`
     : "";
-  return `- ${requirement.title} (${details})\n  ${requirement.requirementText}${source}`;
+  return `- ${requirement.title} (requirementId: ${requirement._id}; ${details})\n  ${requirement.requirementText}${source}`;
 }
 
 export function formatComplianceRequirementsContext(
@@ -169,5 +232,5 @@ export function formatComplianceRequirementsContext(
     );
   }
 
-  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are typed insurance coverage requirements checked against structured policy coverage evidence. scope says whose obligation this is. Prefer these records over policy documents when the user asks what the org requires.\n${sections.join("\n\n")}`;
+  return `\n\nCOMPLIANCE REQUIREMENTS:\nThese are typed insurance coverage requirements checked against structured policy coverage evidence. scope says whose obligation this is. Prefer these records over policy documents when the user asks what the org requires. currentComplianceStatus and currentComplianceReasons are the authoritative saved assessment: never independently promote unverified or not_met to met from a generic policy limit. A generic or undifferentiated limit does not prove distinct per-claim, per-occurrence, or aggregate requirements. A policy effective date is not a retroactive date. Source holder and deal fields are authoritative when present; do not infer them from abbreviations. Requirement-mode certificate generation is gated: if every selected requirement is unverified, not_met, or expired, explain that Glass would block generation until at least one is met or expiring_soon; do not say Glass could generate the requirement COIs now.\n${sections.join("\n\n")}`;
 }

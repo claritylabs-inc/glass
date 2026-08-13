@@ -408,6 +408,11 @@ describe("user-private thread access", () => {
         channel: "chat",
         role: "agent",
         content: "Private mailbox result",
+        reasoning: "Hidden provider reasoning",
+        agentSteps: [
+          { type: "reasoning", text: "Hidden provider reasoning" },
+          { type: "tool", name: "lookup_policy", completed: true },
+        ],
         status: "processing",
         attachments: [
           {
@@ -460,7 +465,14 @@ describe("user-private thread access", () => {
       _id: seeded.privateThreadId,
     });
     await expect(teammate.query(getThreadFn, { id: seeded.privateThreadId })).resolves.toBeNull();
-    await expect(owner.query(messagesFn, { threadId: seeded.privateThreadId })).resolves.toHaveLength(1);
+    const ownerMessages = await owner.query(messagesFn, {
+      threadId: seeded.privateThreadId,
+    });
+    expect(ownerMessages).toHaveLength(1);
+    expect(ownerMessages[0]).not.toHaveProperty("reasoning");
+    expect(ownerMessages[0]?.agentSteps).toEqual([
+      { type: "tool", name: "lookup_policy", completed: true },
+    ]);
     await expect(teammate.query(messagesFn, { threadId: seeded.privateThreadId })).resolves.toEqual([]);
     await expect(
       owner.query(getAttachmentUrlFn, {

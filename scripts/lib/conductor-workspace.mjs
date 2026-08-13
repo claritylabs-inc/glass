@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -91,8 +91,108 @@ export function parseEnvFile(filePath) {
   return parseEnvText(readFileSync(filePath, "utf8"));
 }
 
-export function conductorPorts() {
-  const basePort = Number.parseInt(process.env.CONDUCTOR_PORT ?? "8080", 10);
+const convexSelectionKeys = new Set([
+  "CONVEX_DEPLOYMENT",
+  "CONVEX_SELF_HOSTED_ADMIN_KEY",
+  "CONVEX_SELF_HOSTED_URL",
+  "CONVEX_SITE_URL",
+  "CONVEX_URL",
+  "NEXT_PUBLIC_CONVEX_SITE_URL",
+  "NEXT_PUBLIC_CONVEX_URL",
+]);
+
+function envAssignmentKey(rawLine) {
+  const line = rawLine.trim().replace(/^export\s+/, "");
+  const separator = line.indexOf("=");
+  if (separator < 1) return undefined;
+  return line.slice(0, separator).trim();
+}
+
+export function localConvexSelectionContents(contents, config) {
+  const deploymentName = config?.deploymentName;
+  const cloudPort = config?.ports?.cloud;
+  const sitePort = config?.ports?.site;
+  if (
+    typeof deploymentName !== "string" ||
+    deploymentName.length === 0 ||
+    !Number.isInteger(cloudPort) ||
+    cloudPort <= 0 ||
+    cloudPort > 65535 ||
+    !Number.isInteger(sitePort) ||
+    sitePort <= 0 ||
+    sitePort > 65535
+  ) {
+    throw new Error("The worktree-local Convex configuration is invalid");
+  }
+
+  const deploymentType = deploymentName.startsWith("anonymous-")
+    ? "anonymous"
+    : "local";
+  const expected = new Map([
+    ["CONVEX_DEPLOYMENT", `${deploymentType}:${deploymentName}`],
+    ["NEXT_PUBLIC_CONVEX_URL", `http://127.0.0.1:${cloudPort}`],
+    ["NEXT_PUBLIC_CONVEX_SITE_URL", `http://127.0.0.1:${sitePort}`],
+  ]);
+  const written = new Set();
+  const lines = contents.split(/\r?\n/);
+  const output = [];
+
+  for (const rawLine of lines) {
+    const key = envAssignmentKey(rawLine);
+    if (!key || !convexSelectionKeys.has(key)) {
+      output.push(rawLine);
+      continue;
+    }
+    if (expected.has(key) && !written.has(key)) {
+      output.push(`${key}=${expected.get(key)}`);
+      written.add(key);
+    }
+  }
+
+  for (const [key, value] of expected) {
+    if (written.has(key)) continue;
+    while (output.at(-1) === "") output.pop();
+    output.push(`${key}=${value}`);
+  }
+
+  return `${output.join("\n").replace(/\n+$/, "")}\n`;
+}
+
+export function repairLocalConvexSelection(workspaceRoot = repoRoot) {
+  const configPath = path.join(
+    workspaceRoot,
+    ".convex",
+    "local",
+    "default",
+    "config.json",
+  );
+  const envPath = path.join(workspaceRoot, ".env.local");
+  const config = JSON.parse(readFileSync(configPath, "utf8"));
+  const contents = readFileSync(envPath, "utf8");
+  const repaired = localConvexSelectionContents(contents, config);
+  if (repaired === contents) return false;
+  writeFileSync(envPath, repaired);
+  return true;
+}
+
+export function conductorPorts(workspaceRoot = repoRoot) {
+  const configPath = path.join(
+    workspaceRoot,
+    ".convex",
+    "local",
+    "default",
+    "config.json",
+  );
+  let configuredBasePort;
+  if (!process.env.CONDUCTOR_PORT && existsSync(configPath)) {
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    const cloudPort = config?.ports?.cloud;
+    if (Number.isInteger(cloudPort)) configuredBasePort = cloudPort - 3;
+  }
+  const basePort = Number.parseInt(
+    process.env.CONDUCTOR_PORT ?? String(configuredBasePort ?? 8080),
+    10,
+  );
   if (!Number.isInteger(basePort) || basePort <= 0 || basePort > 65530) {
     throw new Error("CONDUCTOR_PORT must be an integer between 1 and 65530");
   }
@@ -103,6 +203,20 @@ export function conductorPorts() {
     convexCloud: basePort + 3,
     convexSite: basePort + 4,
     slack: basePort + 5,
+  };
+}
+
+export function conductorLocalRuntimeOverrides() {
+  const { web, extraction, imessage, slack } = conductorPorts();
+  const appUrl = `http://localhost:${web}`;
+  return {
+    APP_SITE_URL: appUrl,
+    AUTH_LINK_SITE_URL: appUrl,
+    CLIENT_PORTAL_URL: appUrl,
+    SITE_URL: appUrl,
+    EXTRACTION_WORKER_URL: `http://127.0.0.1:${extraction}`,
+    IMESSAGE_WORKER_URL: `http://127.0.0.1:${imessage}`,
+    SLACK_WORKER_URL: `http://127.0.0.1:${slack}`,
   };
 }
 
@@ -236,19 +350,51 @@ export async function waitForLocalConvex({ timeoutMs = 120_000 } = {}) {
   );
 }
 
-export function containerGateway() {
-  const result = spawnSync(
-    "container",
-    ["network", "list", "--format", "json"],
-    {
+/**
+ * @typedef {(command: string, args: string[], options: import("node:child_process").SpawnSyncOptionsWithStringEncoding | import("node:child_process").SpawnSyncOptions) => { error?: Error; status: number | null; stdout: string; stderr?: string }} ConductorCommandRunner
+ */
+
+/**
+ * @param {{ startServiceIfNeeded?: boolean; runCommand?: ConductorCommandRunner }} [options]
+ */
+export function containerGateway({
+  startServiceIfNeeded = false,
+  runCommand = /** @type {ConductorCommandRunner} */ (spawnSync),
+} = {}) {
+  const inspectNetworks = () =>
+    runCommand("container", ["network", "list", "--format", "json"], {
       cwd: repoRoot,
       encoding: "utf8",
-    },
-  );
+    });
+
+  let result = inspectNetworks();
   if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error("Unable to inspect the Apple container default network");
+  if (result.status !== 0 && startServiceIfNeeded) {
+    console.log("Apple container service is unavailable; starting it...");
+    const start = runCommand(
+      "/bin/zsh",
+      ["-c", "yes | container system start"],
+      {
+        cwd: repoRoot,
+        env: process.env,
+        stdio: "inherit",
+      },
+    );
+    if (start.error) throw start.error;
+    if (start.status !== 0) {
+      throw new Error(
+        "Unable to start the Apple container service. Run `npm run container:system:start` and retry Dev.",
+      );
+    }
+    result = inspectNetworks();
+    if (result.error) throw result.error;
   }
+  if (result.status !== 0) {
+    throw new Error(
+      "Unable to inspect the Apple container default network. Run `npm run container:system:start` and retry Dev.",
+    );
+  }
+
   const networks = JSON.parse(result.stdout);
   const defaultNetwork = networks.find(
     (network) =>
@@ -259,4 +405,47 @@ export function containerGateway() {
     throw new Error("Apple container did not report an IPv4 gateway");
   }
   return gateway;
+}
+
+export async function listenOnContainerGateway(
+  server,
+  {
+    gateway,
+    port,
+    timeoutMs = 30_000,
+    retryDelayMs = 250,
+    now = () => performance.now(),
+    sleep = (delayMs) =>
+      new Promise((resolve) => setTimeout(resolve, delayMs)),
+  },
+) {
+  const started = now();
+  let lastError;
+
+  while (now() - started < timeoutMs) {
+    try {
+      await new Promise((resolve, reject) => {
+        const onError = (error) => {
+          server.off("listening", onListening);
+          reject(error);
+        };
+        const onListening = () => {
+          server.off("error", onError);
+          resolve();
+        };
+        server.once("error", onError);
+        server.once("listening", onListening);
+        server.listen(port, gateway);
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (error?.code !== "EADDRNOTAVAIL") throw error;
+      await sleep(retryDelayMs);
+    }
+  }
+
+  throw new Error(
+    `Apple container gateway ${gateway} did not become available within ${timeoutMs / 1000} seconds: ${lastError instanceof Error ? lastError.message : "unknown error"}`,
+  );
 }

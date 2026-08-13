@@ -25,6 +25,32 @@ describe("policy certificate workspace", () => {
     expect(policyTab).not.toContain("CertificatePolicyGroupCard");
   });
 
+  it("generates from certificate pages through one policy-or-requirements drawer", () => {
+    const certificatesPage = read("components/certificates/certificates-workspace.tsx");
+    const generatePanel = read(
+      "components/certificates/certificate-generate-panel.tsx",
+    );
+    const managedClientPage = read(
+      "app/clients/[clientOrgId]/certificates/page.tsx",
+    );
+    const operatorPage = read(
+      "app/operator/clients/[clientOrgId]/certificates/operator-certificates-workspace.tsx",
+    );
+
+    expect(certificatesPage).toContain("Generate certificate");
+    expect(generatePanel).toContain('value="policy">Policy');
+    expect(generatePanel).toContain('value="requirements">Requirements source');
+    expect(generatePanel).toContain("requirementSourceDocumentId");
+    expect(generatePanel).not.toContain("Add requirements");
+    expect(generatePanel).toContain("api.certificates.generateBatchForPolicy");
+    expect(generatePanel).toContain("every available coverage");
+    expect(managedClientPage).toContain("<CertificatesWorkspace");
+    expect(operatorPage).toContain("<CertificateGeneratePanel");
+
+    const searchableSelect = read("components/ui/searchable-select.tsx");
+    expect(searchableSelect).toContain("min-w-0 flex-1 truncate");
+  });
+
   it("archives a selected certificate through the shared detail drawer", () => {
     const detail = read("app/policies/[id]/policy-detail-body.tsx");
 

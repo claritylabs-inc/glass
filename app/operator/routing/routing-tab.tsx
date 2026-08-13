@@ -803,7 +803,7 @@ export function RoutingTab({
                 No active router policies.
               </OperationalPanelBody>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scrollbar overflow-x-auto">
                 <table
                   className={`w-full min-w-[780px] text-left ${typeStyle("body.default")}`}
                 >
@@ -900,7 +900,7 @@ export function RoutingTab({
             No routed model steps recorded yet.
           </OperationalPanelBody>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-scrollbar overflow-x-auto">
             <table
               className={`w-full min-w-[920px] text-left ${typeStyle("body.default")}`}
             >

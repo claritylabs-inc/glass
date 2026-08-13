@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   conductorPorts,
   ensureNode24,
+  repairLocalConvexSelection,
   repoRoot,
 } from "./lib/conductor-workspace.mjs";
 
@@ -12,6 +13,7 @@ ensureNode24();
 process.chdir(repoRoot);
 
 const requiredPaths = [
+  ".env.local",
   ".context/extraction-worker.env",
   ".context/slack-worker.env",
   ".convex/local/default/config.json",
@@ -30,6 +32,10 @@ for (const relativePath of requiredPaths) {
       `${relativePath} is missing. Run npm run conductor:setup before starting Conductor development.`,
     );
   }
+}
+
+if (repairLocalConvexSelection()) {
+  console.log("Restored this workspace's local Convex selection in .env.local.");
 }
 
 const { web, extraction, slack, convexCloud, convexSite } = conductorPorts();

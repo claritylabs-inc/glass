@@ -166,6 +166,7 @@ export type RequirementImportEntry =
       subject: string;
       createdCount: number;
       requirementIds: Id<"insuranceRequirements">[];
+      sourceDocumentId: Id<"requirementSourceDocuments">;
     }
   | {
       source: "attachment";
@@ -173,6 +174,7 @@ export type RequirementImportEntry =
       fileName: string;
       createdCount: number;
       requirementIds: Id<"insuranceRequirements">[];
+      sourceDocumentId: Id<"requirementSourceDocuments">;
     };
 
 export type RequirementImportOutcome =
@@ -1125,6 +1127,10 @@ export const importRequirementAttachmentsInternal = internalAction({
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
     scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
+    holder: v.optional(v.object({
+      displayName: v.string(),
+      email: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args): Promise<RequirementImportOutcome> => {
     const ref = parseMessageRef(args.emailRef);
@@ -1172,6 +1178,15 @@ export const importRequirementAttachmentsInternal = internalAction({
         stored,
         emailText: args.includeEmailBody ? buildEmailRequirementText(parsed) : "",
         subject: parsed.subject ?? "(no subject)",
+        holder: args.holder ?? (args.scope === "own_org" && parsed.from?.value[0]
+          ? {
+              displayName:
+                parsed.from.value[0].name.trim() ||
+                parsed.from.value[0].address?.trim() ||
+                "Requirement sender",
+              email: parsed.from.value[0].address?.trim() || undefined,
+            }
+          : undefined),
       };
     });
     if (sources.stored.length === 0 && !sources.emailText) {
@@ -1190,6 +1205,7 @@ export const importRequirementAttachmentsInternal = internalAction({
           sourceName: args.sourceName,
           scope: args.scope,
           appliesTo: args.appliesTo,
+          holder: sources.holder,
         },
       );
       imports.push({
@@ -1197,6 +1213,7 @@ export const importRequirementAttachmentsInternal = internalAction({
         subject: sources.subject,
         createdCount: result.createdCount,
         requirementIds: result.requirementIds,
+        sourceDocumentId: result.sourceDocumentId,
       });
     }
 
@@ -1213,6 +1230,7 @@ export const importRequirementAttachmentsInternal = internalAction({
           sourceName: args.sourceName,
           scope: args.scope,
           appliesTo: args.appliesTo,
+          holder: sources.holder,
         },
       );
       imports.push({
@@ -1221,6 +1239,7 @@ export const importRequirementAttachmentsInternal = internalAction({
         fileName: file.fileName,
         createdCount: result.createdCount,
         requirementIds: result.requirementIds,
+        sourceDocumentId: result.sourceDocumentId,
       });
     }
 
@@ -1250,6 +1269,10 @@ export const importRequirementAttachments = action({
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
     scope: v.optional(v.union(v.literal("vendors"), v.literal("own_org"))),
+    holder: v.optional(v.object({
+      displayName: v.string(),
+      email: v.optional(v.string()),
+    })),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<RequirementImportOutcome> => {
@@ -1268,6 +1291,7 @@ export const importRequirementAttachments = action({
         sourceType: args.sourceType,
         scope: args.scope,
         appliesTo: args.appliesTo,
+        holder: args.holder,
       },
     );
     return outcome;

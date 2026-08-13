@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
@@ -83,6 +83,7 @@ export function AppSidebar({
   onMobileClose?: () => void;
   onAskGlass?: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -379,15 +380,55 @@ export function AppSidebar({
 
   const activeContent = renderBaseActiveContent(collapsed);
   const mobileActiveContent = renderBaseActiveContent(false);
+  const activeMode = isClientDetailMode
+    ? "client"
+    : isSettingsMode
+      ? "settings"
+      : "main";
+  const activeModeMovesRight = activeMode !== "main";
 
   return (
     <>
       <aside
-        className={`hidden lg:flex flex-col shrink-0 h-full border-r sidebar-transition ${
+        className={`hidden lg:flex flex-col shrink-0 h-full overflow-hidden border-r sidebar-transition ${
           collapsed ? "w-14" : "w-[220px]"
         } border-foreground/6 bg-background`}
       >
-        {activeContent}
+        <div className="relative h-full min-h-0 w-full overflow-hidden">
+          <AnimatePresence initial={false} mode="sync">
+            <motion.div
+              key={activeMode}
+              initial={
+                reduceMotion
+                  ? false
+                  : {
+                      opacity: 0,
+                      x: activeModeMovesRight ? 12 : -12,
+                    }
+              }
+              animate={{ opacity: 1, x: 0 }}
+              exit={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : {
+                      opacity: 0,
+                      x: activeModeMovesRight ? 6 : -6,
+                    }
+              }
+              transition={
+                reduceMotion
+                  ? { duration: 0 }
+                  : {
+                      opacity: { duration: 0.1, ease: [0.2, 0, 0, 1] },
+                      x: { duration: 0.16, ease: [0.2, 0, 0, 1] },
+                    }
+              }
+              className="absolute inset-0 overflow-hidden bg-background will-change-transform"
+            >
+              {activeContent}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </aside>
 
       {notificationsPanelOpen && isDesktop && currentOrg?.orgId && (

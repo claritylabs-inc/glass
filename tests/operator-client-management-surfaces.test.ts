@@ -82,7 +82,7 @@ describe("operator client management surfaces", () => {
     expect(clientSidebar).toContain('label="Overview"');
     expect(clientSidebar).toContain('label: "Policies"');
     expect(clientSidebar).toContain('label: "Compliance"');
-    expect(clientSidebar).toContain('label: "Certificates"');
+    expect(clientSidebar).not.toContain('label: "Certificates"');
     expect(clientSidebar).toContain('label="Team"');
     expect(clientSidebar).toContain('label="Settings"');
     expect(clientSidebar).toContain('<SectionHeader label="Insurance"');
@@ -162,17 +162,26 @@ describe("operator client management surfaces", () => {
     expect(sidebar).toContain('label="Overview"');
     expect(sidebar).toContain('label: "Policies"');
     expect(sidebar).toContain('label: "Compliance"');
-    expect(sidebar).toContain('label: "Certificates"');
+    expect(sidebar).not.toContain('label: "Certificates"');
     expect(sidebar).toContain('label="Team"');
     expect(sidebar).toContain('label="Settings"');
+    expect(policies).toContain('<TabsList\n        variant="pill"');
     expect(policies).toContain('aria-label="Policy status"');
-    expect(policies).toContain('<div className="flex justify-end">{statusFilter}</div>');
+    expect(policies).toContain(
+      '<div className="overflow-x-auto">{statusNavigation}</div>',
+    );
+    expect(policies).not.toContain("<Select");
     expect(policies).toContain("showStatusNavigation={false}");
     expect(policyWorkspace).toContain('policy.isDemo\n                          ? "demo"');
-    expect(compliance).toContain('<div className="flex justify-end">{toolbar}</div>');
+    expect(compliance).toContain(
+      '<div className="overflow-x-auto">{toolbar}</div>',
+    );
+    expect(compliance).toContain("<OperatorCertificatesWorkspace");
     expect(compliance).not.toContain("OperatorClientTabs");
     expect(certificates).not.toContain("OperatorClientTabs");
-    expect(certificates).toContain("<OperatorCertificatesWorkspace");
+    expect(certificates).toContain(
+      "redirect(`/operator/clients/${clientOrgId}/compliance?tab=certificates`)",
+    );
   });
 
   it("keeps the shared impersonation action on every operator client page", () => {
@@ -185,7 +194,6 @@ describe("operator client management surfaces", () => {
       "app/operator/clients/[clientOrgId]/policies/page.tsx",
       "app/operator/clients/[clientOrgId]/policies/[id]/page.tsx",
       "app/operator/clients/[clientOrgId]/compliance/page.tsx",
-      "app/operator/clients/[clientOrgId]/certificates/page.tsx",
     ].map(read);
 
     expect(action).toContain("useStartOperatorImpersonation");
@@ -305,17 +313,22 @@ describe("operator client management surfaces", () => {
     );
     const sharedCompliance = read("components/compliance-page.tsx");
 
-    expect(certificates).toContain("OperatorCertificatesWorkspace");
-    expect(certificates).not.toContain("CertificatesWorkspaceShellArgs");
+    expect(certificates).toContain("redirect(");
+    expect(certificates).toContain("/compliance?tab=certificates");
     expect(operatorCertificates).not.toContain("CertificateStatusFilter");
     expect(operatorCertificates).not.toContain("certificateSearchText");
     expect(operatorCertificates).not.toContain("function Metric");
     expect(operatorCertificates).toContain('actionPresentation="labels"');
     expect(compliance).toContain("OperatorComplianceWorkspace");
+    expect(compliance).toContain("OperatorCertificatesWorkspace");
     expect(compliance).not.toContain("<CompliancePage");
     expect(sharedCompliance).not.toContain("OperatorComplianceSummary");
-    expect(sharedCompliance).toContain("OperatorComplianceLineSummary");
+    expect(sharedCompliance).not.toContain("OperatorComplianceLineSummary");
+    expect(sharedCompliance).not.toContain('label: "Status by line"');
     expect(sharedCompliance).toContain('surface !== "operator"');
+    expect(sharedCompliance).toContain(
+      '{ value: "certificates", label: "Certificates" }',
+    );
     expect(table).toContain("border-b border-foreground/6");
   });
 

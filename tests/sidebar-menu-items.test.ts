@@ -58,4 +58,19 @@ describe("sidebar menu items", () => {
       "archivedThreadCount={archivedThreads?.length ?? 0}",
     );
   });
+
+  it("keeps the sidebar rail mounted while route-specific menus transition", () => {
+    const appSidebar = read("components/app-sidebar.tsx");
+    const clientsLayout = read("app/clients/layout.tsx");
+    const clientsPage = read("app/clients/page.tsx");
+    const clientDetailLayout = read("app/clients/[clientOrgId]/layout.tsx");
+
+    expect(appSidebar).toContain('key={activeMode}');
+    expect(appSidebar).toContain('<AnimatePresence initial={false} mode="sync">');
+    expect(appSidebar).toContain('className="absolute inset-0 overflow-hidden bg-background will-change-transform"');
+    expect(appSidebar).toContain('useReducedMotion()');
+    expect(clientsLayout).toContain("<ClientWorkspaceShell>{children}</ClientWorkspaceShell>");
+    expect(clientsPage).not.toContain("<AppShell");
+    expect(clientDetailLayout).not.toContain("<AppShell");
+  });
 });

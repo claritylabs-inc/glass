@@ -15,6 +15,8 @@ describe("certificate API surfaces", () => {
     expect(http).toContain("parts.length > 5");
     expect(http).toContain("parts.length !== 5");
     expect(http).toContain('/api/v1/certificate-holders');
+    expect(http).toContain('path: "/api/v1/certificates/generate"');
+    expect(http).toContain('"/api/v1/certificates/generate"');
     expect(http).toContain('"/api/v1/policies/{id}/certificates"');
     expect(http).toContain('"/api/v1/policies/{id}/versions"');
     expect(http).toContain('"/api/v1/policies/{id}/certificate-versions"');
@@ -27,6 +29,8 @@ describe("certificate API surfaces", () => {
     expect(http).toContain('/mcp/certificates/review-jobs/list');
     expect(http).toContain('name: "list_policy_certificates"');
     expect(http).toContain('name: "generate_policy_certificate"');
+    expect(http).toContain("requirementSourceDocumentId");
+    expect(http).toContain("Choose either policyId or a requirement source");
     expect(http).toContain('name: "list_certificate_holders"');
     expect(http).toContain('name: "list_policy_versions"');
     expect(http).toContain('name: "list_certificate_versions"');

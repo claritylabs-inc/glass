@@ -158,6 +158,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
 
     expect(processThreadChat).toContain("function hasCoiEmailIntent");
     expect(processThreadChat).toContain("function claimsCoiEmailCompletion");
+    expect(processThreadChat).toContain("function explicitlyForbidsSideEffects");
+    expect(processThreadChat).toContain("!explicitlyForbidsSideEffects(text)");
     expect(processThreadChat).toContain("completedCoiEmailSideEffect");
     expect(processThreadChat).toContain("function hasEmailSendIntent");
     expect(processThreadChat).toContain("function claimsEmailSendCompletion");

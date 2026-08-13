@@ -1444,7 +1444,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
           </div>
 
           <AgentActivity
-            reasoning={msg.reasoning ?? ""}
             steps={msg.agentSteps}
             isStreaming
             className="mb-2"
@@ -1600,7 +1599,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             ) : (
               <>
                 <AgentActivity
-                  reasoning={msg.reasoning ?? ""}
                   steps={msg.agentSteps}
                   fallbackToolCalls={regularToolCalls}
                   className="mb-2"

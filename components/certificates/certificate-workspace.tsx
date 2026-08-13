@@ -74,6 +74,9 @@ export type CertificateVersionRecord = {
   requestKind?: string;
   additionalInsuredName?: string;
   descriptionOfOperations?: string;
+  requirementIds?: Id<"insuranceRequirements">[];
+  requirementSnapshots?: Array<{ requirementId?: string; title?: string }>;
+  generationBatchId?: string;
   formCode?:
     | "acord25"
     | "acord24"
@@ -895,6 +898,21 @@ export function CertificateDetailPanel({
               { label: "Insured", value: row.policy?.insuredName },
             ]}
           />
+
+          {currentVersion?.requirementSnapshots?.length ? (
+            <CertificateDetailCard
+              title="Requirements"
+              rows={[
+                {
+                  label: "Selected",
+                  value: currentVersion.requirementSnapshots
+                    .map((requirement) => requirement.title)
+                    .filter(Boolean)
+                    .join(", "),
+                },
+              ]}
+            />
+          ) : null}
 
           <OperationalPanel as="div" className={CERTIFICATE_PANEL_CONTAINER_CLASS}>
             <OperationalPanelHeader title="Versions" />

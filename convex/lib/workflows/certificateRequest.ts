@@ -16,7 +16,9 @@ export type CertificateRequestNextAction =
   | "report_failure";
 
 export type CertificateRequestWorkflowParams = {
-  policyId: string;
+  policyId?: string;
+  requirementSourceDocumentId?: string;
+  requirementId?: string;
   holderName: string;
   certificateHolder?: string;
   holderContactName?: string;

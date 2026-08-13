@@ -545,6 +545,7 @@ export function buildAgentToolExecutors(
       ...confirmPolicyFact,
       execute: async (params: {
         policyId: string;
+        requirementIds?: string[];
         fact: string;
         sourceSpanIds: string[];
         fieldUpdates?: Record<string, string | undefined>;
@@ -585,7 +586,9 @@ export function buildAgentToolExecutors(
     generate_coi: {
       ...generateCoi,
       execute: async (params: {
-        policyId: string;
+        policyId?: string;
+        requirementSourceDocumentId?: string;
+        requirementId?: string;
         certificateHolder?: string;
         holderContactName?: string;
         holderEmail?: string;
@@ -602,20 +605,53 @@ export function buildAgentToolExecutors(
         additionalInsuredName?: string;
         explicitReissue?: boolean;
       }) => {
-        const resolved = await resolveFinalWritablePolicy(
-          ctx,
-          options,
-          params.policyId,
-          "certificate generation",
-        );
-        if (!resolved.ok) return resolved.message;
         try {
-          const policy = resolved.policy;
+          const requirementsMode = Boolean(
+            params.requirementSourceDocumentId || params.requirementId,
+          );
+          if (Boolean(params.policyId) === requirementsMode) {
+            return "Choose either a policy or a requirements source for certificate generation.";
+          }
+          let targetOrgId: Id<"organizations">;
+          let policy: ToolPolicy | undefined;
+          if (params.policyId) {
+            const resolved = await resolveFinalWritablePolicy(
+              ctx,
+              options,
+              params.policyId,
+              "certificate generation",
+            );
+            if (!resolved.ok) return resolved.message;
+            policy = resolved.policy;
+            targetOrgId = policy.orgId;
+          } else {
+            const writableOrgIds = options.writableOrgIds ?? options.scope.writableOrgIds;
+            const matchingOrgIds: Id<"organizations">[] = [];
+            for (const orgId of writableOrgIds) {
+              const plan = await ctx.runQuery(
+                internal.compliance.getCertificateRequirementSourcePlanInternal,
+                {
+                  orgId,
+                  sourceDocumentId: params.requirementSourceDocumentId as Id<"requirementSourceDocuments"> | undefined,
+                  requirementId: params.requirementId as Id<"insuranceRequirements"> | undefined,
+                },
+              ).catch(() => null);
+              if (plan) matchingOrgIds.push(orgId);
+            }
+            if (matchingOrgIds.length !== 1) {
+              return matchingOrgIds.length > 1
+                ? "That requirement reference is ambiguous across writable organizations. Ask the user which client they mean."
+                : "I could not find a writable requirement source with complete certificate-holder details.";
+            }
+            targetOrgId = matchingOrgIds[0];
+          }
           const holderName =
             params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-            "Certificate holder";
+            (requirementsMode ? "Requirements source holder" : "Certificate holder");
           const workflowParams: CertificateRequestWorkflowParams = {
-            policyId: String(policy._id),
+            policyId: policy ? String(policy._id) : undefined,
+            requirementSourceDocumentId: params.requirementSourceDocumentId,
+            requirementId: params.requirementId,
             holderName,
             certificateHolder: params.certificateHolder,
             holderContactName: params.holderContactName,
@@ -631,12 +667,14 @@ export function buildAgentToolExecutors(
             descriptionOfOperations: params.descriptionOfOperations,
             requestedEndorsements: params.requestedEndorsements,
           };
-          const generated = await ctx.runAction(
-            internal.certificates.generateForOrg,
+          const batch = await ctx.runAction(
+            internal.certificates.generateBatchForOrg,
             {
-              policyId: policy._id,
-              orgId: policy.orgId,
-              holderName,
+              primaryPolicyId: policy?._id,
+              requirementSourceDocumentId: params.requirementSourceDocumentId as Id<"requirementSourceDocuments"> | undefined,
+              requirementId: params.requirementId as Id<"insuranceRequirements"> | undefined,
+              orgId: targetOrgId,
+              holderName: requirementsMode ? undefined : holderName,
               certificateHolder: params.certificateHolder,
               holderContactName: params.holderContactName,
               holderEmail: params.holderEmail,
@@ -656,6 +694,47 @@ export function buildAgentToolExecutors(
               createdByUserId: options.userId,
             },
           );
+          const batchResults = (batch?.results ?? []) as Array<Record<string, any>>;
+          const batchGaps = (batch?.gaps ?? []) as Array<Record<string, any>>;
+          if (requirementsMode || batchResults.length > 1 || batchGaps.length > 0) {
+            const attachments: ToolAttachment[] = [];
+            for (const item of batchResults) {
+              if (item.policyId) {
+                await options.onPolicyReferenced?.(item.policyId as Id<"policies">);
+              }
+              if (item.fileId) {
+                const attachment = {
+                  filename: item.fileName ?? "certificate-of-insurance.pdf",
+                  contentType: "application/pdf",
+                  size: Number(item.size ?? 0),
+                  fileId: item.fileId as Id<"_storage">,
+                };
+                attachments.push(attachment);
+                await options.onResponseAttachment?.(attachment);
+              }
+              await options.onToolArtifact?.({
+                type: item.status === "held_policy_change_required"
+                  ? "certificate_hold"
+                  : "certificate_result",
+                data: item,
+              });
+            }
+            const readyCount = attachments.length;
+            return {
+              message: batchGaps.length
+                ? `${readyCount} certificate${readyCount === 1 ? " is" : "s are"} attached. ${batchGaps.length} selected requirement${batchGaps.length === 1 ? " has" : "s have"} a coverage gap that needs review.`
+                : `${readyCount} certificates were generated from the policies supporting the selected requirements and attached to this response.`,
+              status: batch.status,
+              generationBatchId: batch.generationBatchId,
+              requirementSourceDocumentId: batch.requirementSourceDocumentId,
+              certificateHolder: batch.holder,
+              attachments,
+              results: batchResults,
+              gaps: batchGaps,
+            };
+          }
+          if (!policy) return COI_GENERATION_FAILED_MESSAGE;
+          const generated = batchResults[0];
           if (!generated) return COI_GENERATION_FAILED_MESSAGE;
           if (generated.status === "ambiguous_certificate_holder") {
             const workflowOutcome = certificateRecoverableOutcome({

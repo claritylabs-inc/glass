@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAction, useMutation } from "convex/react";
+import { BadgeCheck } from "lucide-react";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { api } from "@/convex/_generated/api";
@@ -43,11 +44,13 @@ import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { usePageContext } from "@/hooks/use-page-context";
 import { usePdf } from "@/components/pdf-context";
 import { typeStyle } from "@/lib/typography";
+import { CertificateGeneratePanel } from "@/components/certificates/certificate-generate-panel";
 
 type CertificateWorkspaceTab = "active" | "review" | "archived";
 type CertificatePolicyFilter = "all" | `policy:${string}`;
 
 export type CertificatesWorkspaceShellArgs = {
+  actions: ReactNode;
   rightPanel: ReactNode;
   toolbar: ReactNode;
   children: ReactNode;
@@ -268,6 +271,7 @@ export function CertificatesWorkspace({
   const unarchiveCertificateMutation = useMutation(api.certificateLifecycle.unarchive);
   const { openWithUrl } = usePdf();
   const [tab, setTab] = useState<CertificateWorkspaceTab>("active");
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [selectedCertificateId, setSelectedCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [reissuingCertificateId, setReissuingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
   const [savingCertificateId, setSavingCertificateId] = useState<Id<"policyCertificates"> | null>(null);
@@ -351,7 +355,7 @@ export function CertificatesWorkspace({
     certificates === undefined ||
     jobs === undefined;
 
-  const archiveCertificate = async (row: PolicyCertificateRecord) => {
+  const archiveCertificate = useCallback(async (row: PolicyCertificateRecord) => {
     setArchivingCertificateId(row._id);
     try {
       await archiveCertificateMutation({ certificateId: row._id });
@@ -364,9 +368,9 @@ export function CertificatesWorkspace({
     } finally {
       setArchivingCertificateId(null);
     }
-  };
+  }, [archiveCertificateMutation]);
 
-  const unarchiveCertificate = async (row: PolicyCertificateRecord) => {
+  const unarchiveCertificate = useCallback(async (row: PolicyCertificateRecord) => {
     setUnarchivingCertificateId(row._id);
     try {
       await unarchiveCertificateMutation({ certificateId: row._id });
@@ -379,9 +383,9 @@ export function CertificatesWorkspace({
     } finally {
       setUnarchivingCertificateId(null);
     }
-  };
+  }, [unarchiveCertificateMutation]);
 
-  const reissueCertificate = async (row: PolicyCertificateRecord) => {
+  const reissueCertificate = useCallback(async (row: PolicyCertificateRecord) => {
     const holder = row.holder;
     if (!holder?.displayName) {
       toast.error("Certificate holder is missing");
@@ -409,9 +413,9 @@ export function CertificatesWorkspace({
     } finally {
       setReissuingCertificateId(null);
     }
-  };
+  }, [generateCertificate, openWithUrl]);
 
-  const editCertificateHolder = async (
+  const editCertificateHolder = useCallback(async (
     row: PolicyCertificateRecord,
     draft: CertificateHolderDraft,
   ) => {
@@ -448,22 +452,55 @@ export function CertificatesWorkspace({
     } finally {
       setSavingCertificateId(null);
     }
-  };
+  }, [generateCertificate, openWithUrl]);
 
-  const rightPanel = selectedCertificate ? (
-    <CertificateDetailPanel
-      row={selectedCertificate}
-      onClose={() => setSelectedCertificateId(null)}
-      onReissue={!readOnly ? reissueCertificate : undefined}
-      onEditHolder={!readOnly ? editCertificateHolder : undefined}
-      onArchive={!readOnly ? archiveCertificate : undefined}
-      onUnarchive={!readOnly ? unarchiveCertificate : undefined}
-      reissuing={reissuingCertificateId === selectedCertificate._id}
-      savingHolder={savingCertificateId === selectedCertificate._id}
-      archiving={archivingCertificateId === selectedCertificate._id}
-      unarchiving={unarchivingCertificateId === selectedCertificate._id}
-    />
-  ) : null;
+  const certificateDetailPanel = useMemo(() => selectedCertificate ? (
+      <CertificateDetailPanel
+        row={selectedCertificate}
+        onClose={() => setSelectedCertificateId(null)}
+        onReissue={!readOnly ? reissueCertificate : undefined}
+        onEditHolder={!readOnly ? editCertificateHolder : undefined}
+        onArchive={!readOnly ? archiveCertificate : undefined}
+        onUnarchive={!readOnly ? unarchiveCertificate : undefined}
+        reissuing={reissuingCertificateId === selectedCertificate._id}
+        savingHolder={savingCertificateId === selectedCertificate._id}
+        archiving={archivingCertificateId === selectedCertificate._id}
+        unarchiving={unarchivingCertificateId === selectedCertificate._id}
+      />
+    ) : null, [
+      archiveCertificate,
+      archivingCertificateId,
+      editCertificateHolder,
+      readOnly,
+      reissueCertificate,
+      reissuingCertificateId,
+      savingCertificateId,
+      selectedCertificate,
+      unarchiveCertificate,
+      unarchivingCertificateId,
+    ]);
+  const generatePanel = useMemo(() => orgId ? (
+      <CertificateGeneratePanel
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+        orgId={orgId}
+      />
+    ) : null, [generateOpen, orgId]);
+  const rightPanel = generateOpen ? generatePanel : certificateDetailPanel;
+  const actions = useMemo(() => !readOnly && orgId ? (
+      <PillButton
+        type="button"
+        size="compact"
+        variant="primary"
+        onClick={() => {
+          setSelectedCertificateId(null);
+          setGenerateOpen(true);
+        }}
+      >
+        <BadgeCheck className="size-3.5" />
+        Generate certificate
+      </PillButton>
+    ) : null, [orgId, readOnly]);
   const toolbar = (
     <Select
       value={visibleTab}
@@ -561,8 +598,8 @@ export function CertificatesWorkspace({
   );
 
   if (renderShell) {
-    return renderShell({ rightPanel, toolbar, children: content });
+    return renderShell({ actions, rightPanel, toolbar, children: content });
   }
 
-  return <AppShell rightPanel={rightPanel}>{content}</AppShell>;
+  return <AppShell actions={actions} rightPanel={rightPanel}>{content}</AppShell>;
 }

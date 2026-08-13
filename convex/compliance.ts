@@ -18,6 +18,8 @@ import {
 } from "./lib/complianceCheck";
 import {
   complianceCheckStatusValidator,
+  coverageRequirementSemanticKey,
+  hasCheckableCoverageTerms,
   isRequirementLimitKind,
   isRequirementProvision,
   requirementKindValidator,
@@ -39,6 +41,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
+import { upsertCertificateHolder } from "./certificateHolders";
 
 const sourceDocumentTypeValidator = v.union(
   v.literal("lease_agreement"),
@@ -61,6 +64,24 @@ const limitValidator = v.object({
 const deductibleValidator = v.object({
   amount: v.number(),
   label: v.optional(v.string()),
+});
+
+const certificateHolderAddressValidator = v.object({
+  line1: v.optional(v.string()),
+  line2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  postalCode: v.optional(v.string()),
+  country: v.optional(v.string()),
+  formatted: v.optional(v.string()),
+});
+
+const requirementSourceHolderValidator = v.object({
+  displayName: v.string(),
+  contactName: v.optional(v.string()),
+  email: v.optional(v.string()),
+  phone: v.optional(v.string()),
+  address: v.optional(certificateHolderAddressValidator),
 });
 
 const evidenceValidator = v.object({
@@ -181,11 +202,9 @@ async function writeComplianceOperatorAudit(
   });
 }
 
-function normalizeText(value: unknown) {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+function cleanOptionalString(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
 }
 
 function orgLegalNames(org: Doc<"organizations"> | null | undefined) {
@@ -230,8 +249,10 @@ function sanitizeRequirementArgs(args: {
       amount: limit.amount,
       label: limit.label?.trim() || undefined,
     }));
-  if (limits.length === 0 && !args.maxDeductible && !args.provisions?.length) {
-    throw new Error("Coverage requirements need at least one limit, deductible, or provision");
+  if (!hasCheckableCoverageTerms({ ...args, limits })) {
+    throw new Error(
+      "Coverage requirements need at least one limit, deductible, coverage form, retroactive date, provision, or required form",
+    );
   }
 
   return {
@@ -417,7 +438,52 @@ async function listRequirementsVisibleToOrg(
       canArchive: true,
     });
   }
-  return [...ownRows, ...clientRequirements].sort((a, b) => b.updatedAt - a.updatedAt);
+  const rows = [...ownRows, ...clientRequirements].sort(
+    (a, b) => b.updatedAt - a.updatedAt,
+  );
+  const sourceIds = Array.from(
+    new Set(
+      rows
+        .map((requirement) => requirement.sourceDocumentId)
+        .filter(
+          (sourceId): sourceId is Id<"requirementSourceDocuments"> =>
+            Boolean(sourceId),
+        ),
+    ),
+  );
+  const sourceEntries = await Promise.all(
+    sourceIds.map(async (sourceId) => {
+      const source = await ctx.db.get(sourceId);
+      if (!source || source.archivedAt) return [sourceId, null] as const;
+      const holder = source.certificateHolderId
+        ? await ctx.db.get(source.certificateHolderId)
+        : null;
+      return [
+        sourceId,
+        {
+          title: source.title,
+          sourceType: source.sourceType,
+          dealName: source.dealName,
+          dealType: source.dealType,
+          holder: holder
+            ? {
+                displayName: holder.displayName,
+                contactName: holder.contactName,
+                email: holder.email,
+                address: holder.address,
+              }
+            : null,
+        },
+      ] as const;
+    }),
+  );
+  const sourcesById = new Map(sourceEntries);
+  return rows.map((requirement) => ({
+    ...requirement,
+    requirementSource: requirement.sourceDocumentId
+      ? sourcesById.get(requirement.sourceDocumentId) ?? undefined
+      : undefined,
+  }));
 }
 
 export const listRequirements = query({
@@ -435,6 +501,112 @@ export const listRequirements = query({
     }
     await requireOrgMember(ctx, orgId);
     return await listRequirementsVisibleToOrg(ctx, orgId);
+  },
+});
+
+export const listCertificateRequirements = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx, args.orgId, { allowOperator: true });
+    if (access.accessType === "connected_client") {
+      throwUserFacingError(
+        userFacingErrorCodes.readOnlyAccess,
+        "Connected organization access is read-only.",
+      );
+    }
+    const requirements = await listRequirementsVisibleToOrg(ctx, args.orgId);
+    return requirements.filter(
+      (requirement) =>
+        requirement.scope === "own_org" || "clientRequirementSource" in requirement,
+    );
+  },
+});
+
+async function enrichRequirementSource(
+  ctx: QueryCtx,
+  source: Doc<"requirementSourceDocuments">,
+  requirements: Doc<"insuranceRequirements">[],
+) {
+  const holder = source.certificateHolderId
+    ? await ctx.db.get(source.certificateHolderId)
+    : null;
+  return {
+    ...source,
+    holder,
+    requirementCount: requirements.filter(
+      (requirement) => requirement.sourceDocumentId === source._id,
+    ).length,
+  };
+}
+
+export const listCertificateRequirementSources = query({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx, args.orgId, { allowOperator: true });
+    if (access.accessType === "connected_client") {
+      throwUserFacingError(
+        userFacingErrorCodes.readOnlyAccess,
+        "Connected organization access is read-only.",
+      );
+    }
+    const requirements = (await listRequirementsVisibleToOrg(ctx, args.orgId)).filter(
+      (requirement) =>
+        requirement.sourceDocumentId &&
+        (requirement.scope === "own_org" || "clientRequirementSource" in requirement),
+    );
+    const sourceIds = Array.from(new Set(
+      requirements.map((requirement) => requirement.sourceDocumentId!),
+    ));
+    const sources = (await Promise.all(sourceIds.map((sourceId) => ctx.db.get(sourceId))))
+      .filter((source): source is Doc<"requirementSourceDocuments"> => Boolean(source && !source.archivedAt))
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+    return await Promise.all(sources.map(async (source) => {
+      const sourceRequirements = requirements.filter(
+        (requirement) => requirement.sourceDocumentId === source._id,
+      );
+      const connectedClientOrg = sourceRequirements.find(
+        (requirement) => "clientRequirementSource" in requirement,
+      )?.clientRequirementSource.clientOrg;
+      const holder = source.certificateHolderId
+        ? await ctx.db.get(source.certificateHolderId)
+        : connectedClientOrg
+          ? { displayName: connectedClientOrg.name }
+          : null;
+      if (source.orgId !== args.orgId) {
+        return {
+          _id: source._id,
+          orgId: source.orgId,
+          sourceType: source.sourceType,
+          title: source.title,
+          dealName: source.dealName,
+          dealType: source.dealType,
+          status: source.status,
+          createdAt: source.createdAt,
+          updatedAt: source.updatedAt,
+          holder,
+          requirementCount: sourceRequirements.length,
+          requirements: sourceRequirements.map((requirement) => ({
+            requirementId: requirement._id,
+            title: requirement.title,
+            status: requirement.complianceCheck?.status ?? "unverified",
+            reasons: requirement.complianceCheck?.reasons ?? [],
+            summary: requirement.complianceCheck?.matchedSummary,
+          })),
+        };
+      }
+      return {
+        ...source,
+        holder,
+        requirementCount: sourceRequirements.length,
+        requirements: sourceRequirements.map((requirement) => ({
+          requirementId: requirement._id,
+          title: requirement.title,
+          status: requirement.complianceCheck?.status ?? "unverified",
+          reasons: requirement.complianceCheck?.reasons ?? [],
+          summary: requirement.complianceCheck?.matchedSummary,
+        })),
+      };
+    }));
   },
 });
 
@@ -459,21 +631,12 @@ export const listRequirementSources = query({
         .collect(),
       listRequirementsForOrg(ctx, orgId),
     ]);
-    const countsBySourceId = new Map<Id<"requirementSourceDocuments">, number>();
-    for (const requirement of requirements) {
-      if (!requirement.sourceDocumentId) continue;
-      countsBySourceId.set(
-        requirement.sourceDocumentId,
-        (countsBySourceId.get(requirement.sourceDocumentId) ?? 0) + 1,
-      );
-    }
-    return sources
-      .filter((source) => !source.archivedAt)
-      .map((source) => ({
-        ...source,
-        requirementCount: countsBySourceId.get(source._id) ?? 0,
-      }))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+    return await Promise.all(
+      sources
+        .filter((source) => !source.archivedAt)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map((source) => enrichRequirementSource(ctx, source, requirements)),
+    );
   },
 });
 
@@ -507,11 +670,22 @@ export const upsertRequirement = mutation({
     );
     const now = dayjs().valueOf();
     const sanitized = sanitizeRequirementArgs(args);
+    const source = args.sourceDocumentId
+      ? await ctx.db.get(args.sourceDocumentId)
+      : null;
+    if (
+      args.sourceDocumentId &&
+      (!source || source.orgId !== args.orgId || source.archivedAt)
+    ) {
+      throw new Error("Requirement source not found");
+    }
     const patch = {
       ...sanitized,
-      sourceDocumentId: args.sourceDocumentId,
-      sourceDocumentName: args.sourceDocumentName?.trim() || undefined,
-      sourceType: args.sourceType ?? "manual",
+      sourceDocumentId: source?._id,
+      sourceDocumentName: source?.title,
+      sourceType: (source?.sourceType ?? "manual") as NonNullable<
+        Doc<"insuranceRequirements">["sourceType"]
+      >,
       sourceExcerpt: args.sourceExcerpt?.trim() || undefined,
       sourcePageStart: args.sourcePageStart,
       sourcePageEnd: args.sourcePageEnd,
@@ -551,6 +725,10 @@ export const updateRequirementSource = mutation({
     sourceDocumentId: v.id("requirementSourceDocuments"),
     title: v.optional(v.string()),
     sourceType: v.optional(sourceDocumentTypeValidator),
+    holder: v.optional(requirementSourceHolderValidator),
+    dealName: v.optional(v.string()),
+    dealType: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const access = await requireOrgAdminWrite(
@@ -564,7 +742,14 @@ export const updateRequirementSource = mutation({
     }
     const title = args.title?.trim();
     if (args.title !== undefined && !title) throw new Error("Source name is required");
-    if (title === undefined && args.sourceType === undefined) {
+    if (
+      title === undefined &&
+      args.sourceType === undefined &&
+      args.holder === undefined &&
+      args.dealName === undefined &&
+      args.dealType === undefined &&
+      args.internalNotes === undefined
+    ) {
       throw new Error("No source updates provided");
     }
     const now = dayjs().valueOf();
@@ -573,6 +758,26 @@ export const updateRequirementSource = mutation({
     };
     if (title !== undefined) sourcePatch.title = title;
     if (args.sourceType !== undefined) sourcePatch.sourceType = args.sourceType;
+    if (args.holder !== undefined) {
+      const displayName = args.holder.displayName.trim();
+      if (!displayName) throw new Error("Certificate holder name is required");
+      sourcePatch.certificateHolderId = await upsertCertificateHolder(ctx, {
+        orgId: args.orgId,
+        displayName,
+        contactName: args.holder.contactName,
+        email: args.holder.email,
+        phone: args.holder.phone,
+        address: args.holder.address,
+        source: "manual",
+        sourceRef: String(args.sourceDocumentId),
+        notes: args.internalNotes,
+        createdByUserId: access.userId,
+        updatedByUserId: access.userId,
+      });
+    }
+    if (args.dealName !== undefined) sourcePatch.dealName = cleanOptionalString(args.dealName);
+    if (args.dealType !== undefined) sourcePatch.dealType = cleanOptionalString(args.dealType);
+    if (args.internalNotes !== undefined) sourcePatch.internalNotes = cleanOptionalString(args.internalNotes);
     await ctx.db.patch(args.sourceDocumentId, sourcePatch);
     const requirements = await ctx.db
       .query("insuranceRequirements")
@@ -924,6 +1129,162 @@ export const listRequirementsInternal = internalQuery({
   handler: async (ctx, args) => await listRequirementsVisibleToOrg(ctx, args.orgId),
 });
 
+export const planCertificateRequirementsInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    requirementIds: v.array(v.id("insuranceRequirements")),
+  },
+  handler: async (ctx, args) => {
+    const [visibleRequirements, policies, org] = await Promise.all([
+      listRequirementsVisibleToOrg(ctx, args.orgId),
+      listPoliciesForOrg(ctx, args.orgId),
+      ctx.db.get(args.orgId),
+    ]);
+    const eligible = visibleRequirements.filter(
+      (requirement) =>
+        requirement.scope === "own_org" || "clientRequirementSource" in requirement,
+    );
+    const visibleById = new Map(
+      eligible.map((requirement) => [requirement._id, requirement]),
+    );
+    const selected = args.requirementIds.map((requirementId) => {
+      const requirement = visibleById.get(requirementId);
+      if (!requirement) {
+        throw new Error("Certificate requirement not found or not applicable.");
+      }
+      return requirement;
+    });
+
+    return selected.map((requirement) => {
+      const assessment = assessRequirementCompliance(requirement, policies, {
+        expectedInsuredName: org?.name,
+        expectedInsuredNames: orgLegalNames(org),
+        includePreviewPolicies: false,
+      });
+      return {
+        requirementId: requirement._id,
+        status: assessment.status,
+        matchedPolicyIds: assessment.matchedPolicyIds,
+        reasons: assessment.reasons,
+        summary: assessment.matchedSummary,
+        snapshot: {
+          requirementId: requirement._id,
+          title: requirement.title,
+          requirementText: requirement.requirementText,
+          lineOfBusiness: requirement.lineOfBusiness,
+          limits: requirement.limits,
+          maxDeductible: requirement.maxDeductible,
+          coverageForm: requirement.coverageForm,
+          retroactiveDateOnOrBefore: requirement.retroactiveDateOnOrBefore,
+          provisions: requirement.provisions,
+          requiredForms: requirement.requiredForms,
+          sourceDocumentId: requirement.sourceDocumentId,
+          sourceDocumentName: requirement.sourceDocumentName,
+          sourceExcerpt: requirement.sourceExcerpt,
+          updatedAt: requirement.updatedAt,
+        },
+      };
+    });
+  },
+});
+
+export const getCertificateRequirementSourcePlanInternal = internalQuery({
+  args: {
+    orgId: v.id("organizations"),
+    sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementId: v.optional(v.id("insuranceRequirements")),
+  },
+  handler: async (ctx, args) => {
+    if (Boolean(args.sourceDocumentId) === Boolean(args.requirementId)) {
+      throw new Error("Choose either one requirement source or one requirement.");
+    }
+    const [requirements, policies, org] = await Promise.all([
+      listRequirementsVisibleToOrg(ctx, args.orgId),
+      listPoliciesForOrg(ctx, args.orgId),
+      ctx.db.get(args.orgId),
+    ]);
+    const requestedRequirement = args.requirementId
+      ? requirements.find((row) => row._id === args.requirementId)
+      : undefined;
+    if (args.requirementId && !requestedRequirement) {
+      throw new Error("Certificate requirement not found.");
+    }
+    const sourceDocumentId = args.sourceDocumentId ?? requestedRequirement?.sourceDocumentId;
+    if (!sourceDocumentId) {
+      throw new Error("This requirement is not connected to a requirement source.");
+    }
+    const sourceRequirements = requirements.filter(
+      (requirement) =>
+        requirement.sourceDocumentId === sourceDocumentId &&
+        (requirement.scope === "own_org" || "clientRequirementSource" in requirement),
+    );
+    const source = await ctx.db.get(sourceDocumentId);
+    if (!source || source.archivedAt || sourceRequirements.length === 0) {
+      throw new Error("Certificate requirement source not found.");
+    }
+    const storedHolder = source.certificateHolderId
+      ? await ctx.db.get(source.certificateHolderId)
+      : null;
+    const selectedForHolder = requestedRequirement ?? sourceRequirements[0];
+    const connectedClientOrg = selectedForHolder && "clientRequirementSource" in selectedForHolder
+      ? (selectedForHolder as {
+          clientRequirementSource: {
+            clientOrg: { name: string } | null;
+          };
+        }).clientRequirementSource.clientOrg
+      : null;
+    const holder = storedHolder ?? (connectedClientOrg
+      ? { displayName: connectedClientOrg.name }
+      : null);
+    if (!holder) {
+      throw new Error(
+        "Add certificate holder details to this requirement source before generating certificates.",
+      );
+    }
+    const selected = sourceRequirements.filter((requirement) =>
+      (!args.requirementId || requirement._id === args.requirementId),
+    );
+    if (selected.length === 0) {
+      throw new Error("This source has no active requirements for your organization.");
+    }
+    return {
+      source,
+      holder,
+      requirements: selected.map((requirement) => {
+        const assessment = requirement.complianceCheck ??
+          assessRequirementCompliance(requirement, policies, {
+            expectedInsuredName: org?.name,
+            expectedInsuredNames: orgLegalNames(org),
+            includePreviewPolicies: false,
+          });
+        return {
+          requirementId: requirement._id,
+          status: assessment.status,
+          matchedPolicyIds: assessment.matchedPolicyIds,
+          reasons: assessment.reasons,
+          summary: assessment.matchedSummary,
+          snapshot: {
+            requirementId: requirement._id,
+            title: requirement.title,
+            requirementText: requirement.requirementText,
+            lineOfBusiness: requirement.lineOfBusiness,
+            limits: requirement.limits,
+            maxDeductible: requirement.maxDeductible,
+            coverageForm: requirement.coverageForm,
+            retroactiveDateOnOrBefore: requirement.retroactiveDateOnOrBefore,
+            provisions: requirement.provisions,
+            requiredForms: requirement.requiredForms,
+            sourceDocumentId: requirement.sourceDocumentId,
+            sourceDocumentName: requirement.sourceDocumentName,
+            sourceExcerpt: requirement.sourceExcerpt,
+            updatedAt: requirement.updatedAt,
+          },
+        };
+      }),
+    };
+  },
+});
+
 export type OwnComplianceAssessment = Awaited<
   ReturnType<typeof assessForSubject>
 > & { title: string };
@@ -1195,6 +1556,12 @@ export const getRequirementImportContextInternal = internalQuery({
         requirementText: requirement.requirementText,
         lineOfBusiness: requirement.lineOfBusiness,
         conditionType: requirement.conditionType,
+        limits: requirement.limits,
+        maxDeductible: requirement.maxDeductible,
+        coverageForm: requirement.coverageForm,
+        retroactiveDateOnOrBefore: requirement.retroactiveDateOnOrBefore,
+        provisions: requirement.provisions,
+        requiredForms: requirement.requiredForms,
       })),
     };
   },
@@ -1219,6 +1586,12 @@ export const getRequirementImportContextForUserInternal = internalQuery({
         requirementText: requirement.requirementText,
         lineOfBusiness: requirement.lineOfBusiness,
         conditionType: requirement.conditionType,
+        limits: requirement.limits,
+        maxDeductible: requirement.maxDeductible,
+        coverageForm: requirement.coverageForm,
+        retroactiveDateOnOrBefore: requirement.retroactiveDateOnOrBefore,
+        provisions: requirement.provisions,
+        requiredForms: requirement.requiredForms,
       })),
     };
   },
@@ -1243,6 +1616,10 @@ export const createRequirementSourceDocumentInternal = internalMutation({
       ),
     ),
     parsedAt: v.optional(v.number()),
+    holder: v.optional(requirementSourceHolderValidator),
+    dealName: v.optional(v.string()),
+    dealType: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireAdminWriteActor(
@@ -1252,8 +1629,28 @@ export const createRequirementSourceDocumentInternal = internalMutation({
       "Admin role required",
     );
     const now = dayjs().valueOf();
+    const holderName = args.holder?.displayName.trim();
+    const certificateHolderId = holderName
+      ? await upsertCertificateHolder(ctx, {
+          orgId: args.orgId,
+          displayName: holderName,
+          contactName: args.holder?.contactName,
+          email: args.holder?.email,
+          phone: args.holder?.phone,
+          address: args.holder?.address,
+          source: "agent",
+          sourceRef: args.title,
+          notes: args.internalNotes,
+          createdByUserId: args.userId,
+          updatedByUserId: args.userId,
+        })
+      : undefined;
     return await ctx.db.insert("requirementSourceDocuments", {
       orgId: args.orgId,
+      certificateHolderId,
+      dealName: cleanOptionalString(args.dealName),
+      dealType: cleanOptionalString(args.dealType),
+      internalNotes: cleanOptionalString(args.internalNotes),
       fileId: args.fileId,
       fileName: args.fileName,
       contentType: args.contentType,
@@ -1305,21 +1702,13 @@ export const createRequirementsInternal = internalMutation({
       "Admin role required",
     );
     const existing = await listRequirementsForOrg(ctx, args.orgId);
-    const seen = new Set(
-      existing.map((requirement) =>
-        normalizeText(
-          `${requirement.kind} ${requirement.lineOfBusiness ?? requirement.conditionType ?? ""} ${requirement.title}`,
-        ),
-      ),
-    );
+    const seen = new Set(existing.map(coverageRequirementSemanticKey));
     const now = dayjs().valueOf();
     const ids: Id<"insuranceRequirements">[] = [];
     for (const requirement of args.requirements) {
       const scope = requirement.scope ?? args.scope ?? "vendors";
       const sanitized = sanitizeRequirementArgs({ ...requirement, scope });
-      const key = normalizeText(
-        `${sanitized.kind} ${sanitized.lineOfBusiness ?? sanitized.conditionType ?? ""} ${sanitized.title}`,
-      );
+      const key = coverageRequirementSemanticKey(sanitized);
       if (seen.has(key)) continue;
       seen.add(key);
       ids.push(

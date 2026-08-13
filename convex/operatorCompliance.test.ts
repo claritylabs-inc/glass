@@ -38,7 +38,16 @@ async function seedOperatorComplianceFixture() {
       type: "client",
       operatorStatus: "live",
     });
-    return { operatorUserId, clientOrgId };
+    const sourceDocumentId = await ctx.db.insert("requirementSourceDocuments", {
+      orgId: clientOrgId,
+      sourceType: "client_contract",
+      title: "Client agreement",
+      status: "complete",
+      createdByUserId: operatorUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { operatorUserId, clientOrgId, sourceDocumentId };
   });
   return { t, ...ids };
 }
@@ -64,6 +73,9 @@ describe("operator client compliance management", () => {
       requirementText: "$1M per occurrence",
       lineOfBusiness: "CGL",
       limits: [{ kind: "per_occurrence", amount: 1_000_000 }],
+      sourceDocumentId: fixture.sourceDocumentId,
+      sourceDocumentName: "Untrusted source name",
+      sourceType: "manual",
     })) as Id<"insuranceRequirements">;
 
     await operator.mutation(upsertRequirementFn, {
@@ -75,6 +87,7 @@ describe("operator client compliance management", () => {
       requirementText: "$2M per occurrence",
       lineOfBusiness: "CGL",
       limits: [{ kind: "per_occurrence", amount: 2_000_000 }],
+      sourceDocumentId: fixture.sourceDocumentId,
     });
 
     await expect(
@@ -85,6 +98,9 @@ describe("operator client compliance management", () => {
       expect.objectContaining({
         _id: requirementId,
         title: "General liability minimum",
+        sourceDocumentId: fixture.sourceDocumentId,
+        sourceDocumentName: "Client agreement",
+        sourceType: "client_contract",
       }),
     ]);
 
@@ -116,5 +132,62 @@ describe("operator client compliance management", () => {
         }),
       ]),
     );
+  });
+
+  test("keeps requirements without a source internal and rejects foreign sources", async () => {
+    const fixture = await seedOperatorComplianceFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.operatorUserId}|session`,
+    });
+    const foreignSourceId = await fixture.t.run(async (ctx) => {
+      const foreignOrgId = await ctx.db.insert("organizations", {
+        name: "Other client",
+        type: "client",
+        operatorStatus: "live",
+      });
+      return await ctx.db.insert("requirementSourceDocuments", {
+        orgId: foreignOrgId,
+        sourceType: "client_contract",
+        title: "Other client agreement",
+        status: "complete",
+        createdByUserId: fixture.operatorUserId,
+        createdAt: dayjs().valueOf(),
+        updatedAt: dayjs().valueOf(),
+      });
+    });
+
+    const internalRequirementId = (await operator.mutation(upsertRequirementFn, {
+      orgId: fixture.clientOrgId,
+      kind: "coverage",
+      scope: "own_org",
+      title: "Internal umbrella minimum",
+      requirementText: "$2M umbrella limit",
+      lineOfBusiness: "UMBRC",
+      limits: [{ kind: "per_occurrence", amount: 2_000_000 }],
+    })) as Id<"insuranceRequirements">;
+
+    await expect(
+      operator.mutation(upsertRequirementFn, {
+        orgId: fixture.clientOrgId,
+        kind: "coverage",
+        scope: "own_org",
+        title: "Foreign source requirement",
+        requirementText: "$1M general liability limit",
+        lineOfBusiness: "CGL",
+        limits: [{ kind: "per_occurrence", amount: 1_000_000 }],
+        sourceDocumentId: foreignSourceId,
+      }),
+    ).rejects.toThrow("Requirement source not found");
+
+    const internalRequirement = await fixture.t.run((ctx) =>
+      ctx.db.get(internalRequirementId),
+    );
+    expect(internalRequirement).toEqual(
+      expect.objectContaining({
+        sourceType: "manual",
+      }),
+    );
+    expect(internalRequirement?.sourceDocumentId).toBeUndefined();
+    expect(internalRequirement?.sourceDocumentName).toBeUndefined();
   });
 });

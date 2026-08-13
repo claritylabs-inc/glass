@@ -13,12 +13,10 @@ import {
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   useCachedOperatorClients,
@@ -58,8 +56,8 @@ export default function OperatorClientPoliciesPage() {
     [clientOrgId, previewPolicyId],
   );
 
-  const statusFilter = (
-    <Select
+  const statusNavigation = (
+    <Tabs
       value={policyStatus}
       onValueChange={(value) => {
         if (!value) return;
@@ -67,16 +65,15 @@ export default function OperatorClientPoliciesPage() {
         router.push(value === "archived" ? `${basePath}?view=archived` : basePath);
       }}
     >
-      <SelectTrigger className="w-40" aria-label="Policy status">
-        <SelectValue>
-          {policyStatus === "archived" ? "Archived" : "Active"}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="active">Active</SelectItem>
-        <SelectItem value="archived">Archived</SelectItem>
-      </SelectContent>
-    </Select>
+      <TabsList
+        variant="pill"
+        aria-label="Policy status"
+        className="min-w-max"
+      >
+        <TabsTrigger value="active">Active</TabsTrigger>
+        <TabsTrigger value="archived">Archived</TabsTrigger>
+      </TabsList>
+    </Tabs>
   );
 
   const impersonationAction = (
@@ -146,7 +143,7 @@ export default function OperatorClientPoliciesPage() {
         </OperationalPanel>
       ) : (
         <main className="w-full space-y-6">
-          <div className="flex justify-end">{statusFilter}</div>
+          <div className="overflow-x-auto">{statusNavigation}</div>
           {activeImpersonation ? (
             <OperationalPanel
               as="div"

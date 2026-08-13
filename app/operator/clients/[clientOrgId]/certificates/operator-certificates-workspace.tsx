@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAction, useMutation } from "convex/react";
+import { BadgeCheck } from "lucide-react";
 import { toast } from "sonner";
 import {
   CertificateDetailPanel,
@@ -29,6 +30,8 @@ import { formatDisplayDateTime } from "@/lib/date-format";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { PillButton } from "@/components/ui/pill-button";
+import { CertificateGeneratePanel } from "@/components/certificates/certificate-generate-panel";
 
 type CertificateWorkflowJob = {
   _id: Id<"certificateWorkflowJobs">;
@@ -61,10 +64,12 @@ function statusTone(status?: string) {
 export function OperatorCertificatesWorkspace({
   orgId,
   readOnly,
+  onActions,
   onRightPanel,
 }: {
   orgId: Id<"organizations">;
   readOnly: boolean;
+  onActions: (actions: ReactNode) => void;
   onRightPanel: (panel: ReactNode) => void;
 }) {
   const certificates = useCachedQuery(
@@ -82,6 +87,7 @@ export function OperatorCertificatesWorkspace({
   const unarchiveCertificateMutation = useMutation(api.certificateLifecycle.unarchive);
   const [selectedCertificateId, setSelectedCertificateId] =
     useState<Id<"policyCertificates"> | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [reissuingCertificateId, setReissuingCertificateId] =
     useState<Id<"policyCertificates"> | null>(null);
   const [savingCertificateId, setSavingCertificateId] =
@@ -193,6 +199,34 @@ export function OperatorCertificatesWorkspace({
   }, [generateCertificate]);
 
   useEffect(() => {
+    onActions(readOnly ? null : (
+      <PillButton
+        type="button"
+        size="compact"
+        variant="primary"
+        onClick={() => {
+          setSelectedCertificateId(null);
+          setGenerateOpen(true);
+        }}
+      >
+        <BadgeCheck className="size-3.5" />
+        Generate certificate
+      </PillButton>
+    ));
+    return () => onActions(null);
+  }, [onActions, readOnly]);
+
+  useEffect(() => {
+    if (generateOpen && !readOnly) {
+      onRightPanel(
+        <CertificateGeneratePanel
+          open
+          onOpenChange={setGenerateOpen}
+          orgId={orgId}
+        />,
+      );
+      return () => onRightPanel(null);
+    }
     if (!selectedCertificate) {
       onRightPanel(null);
       return;
@@ -217,7 +251,9 @@ export function OperatorCertificatesWorkspace({
     archivingCertificateId,
     archiveCertificate,
     editCertificateHolder,
+    generateOpen,
     onRightPanel,
+    orgId,
     readOnly,
     reissueCertificate,
     reissuingCertificateId,

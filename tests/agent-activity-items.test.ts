@@ -6,22 +6,20 @@ import { buildAgentActivityItems } from "../components/agent-thread/agent-activi
 import type { AgentStep } from "../convex/lib/agentSteps";
 
 describe("buildAgentActivityItems", () => {
-  it("keeps tool calls at their position between thinking segments", () => {
+  it("keeps tool calls while hiding provider reasoning segments", () => {
     const steps: AgentStep[] = [
       { type: "reasoning", text: "First I need the policy details." },
       { type: "tool", name: "lookup_policy", completed: true },
       { type: "reasoning", text: "The policy covers general liability." },
     ];
 
-    const items = buildAgentActivityItems(steps, "");
-    expect(items.map((item) => item.kind)).toEqual([
-      "thought",
-      "tool",
-      "thought",
+    const items = buildAgentActivityItems(steps);
+    expect(items).toEqual([
+      { kind: "tool", step: { type: "tool", name: "lookup_policy", completed: true } },
     ]);
   });
 
-  it("splits a thinking segment into paragraphs on blank lines", () => {
+  it("does not expose reasoning-only activity", () => {
     const items = buildAgentActivityItems(
       [
         {
@@ -29,46 +27,22 @@ describe("buildAgentActivityItems", () => {
           text: "First paragraph of thought.\n\nSecond paragraph of thought.",
         },
       ],
-      "",
     );
 
-    expect(items).toEqual([
-      {
-        kind: "thought",
-        paragraphs: [
-          "First paragraph of thought.",
-          "Second paragraph of thought.",
-        ],
-      },
-    ]);
+    expect(items).toEqual([]);
   });
 
-  it("falls back to the legacy reasoning string for old messages", () => {
-    const items = buildAgentActivityItems(
-      undefined,
-      "Old message reasoning. It has two sentences.",
-    );
-
-    expect(items).toEqual([
-      {
-        kind: "thought",
-        paragraphs: [
-          "Old message reasoning.",
-          "It has two sentences.",
-        ],
-      },
-    ]);
+  it("does not create activity without tool calls", () => {
+    expect(buildAgentActivityItems(undefined)).toEqual([]);
   });
 
-  it("appends legacy tool calls after the legacy thought", () => {
+  it("uses legacy tool calls when ordered steps are unavailable", () => {
     const items = buildAgentActivityItems(
       undefined,
-      "Old message reasoning.",
       [{ name: "lookup_policy", input: '{"query":"gl"}' }],
     );
 
     expect(items).toEqual([
-      { kind: "thought", paragraphs: ["Old message reasoning."] },
       {
         kind: "tool",
         step: {
@@ -81,10 +55,9 @@ describe("buildAgentActivityItems", () => {
     ]);
   });
 
-  it("ignores legacy tool calls when ordered steps exist", () => {
+  it("ignores legacy tool calls when ordered tool steps exist", () => {
     const items = buildAgentActivityItems(
       [{ type: "tool", name: "generate_coi", completed: true }],
-      "",
       [{ name: "lookup_policy" }],
     );
 
@@ -94,7 +67,7 @@ describe("buildAgentActivityItems", () => {
   });
 
   it("returns nothing when there is no activity", () => {
-    expect(buildAgentActivityItems(undefined, "  ")).toEqual([]);
-    expect(buildAgentActivityItems([], "")).toEqual([]);
+    expect(buildAgentActivityItems(undefined)).toEqual([]);
+    expect(buildAgentActivityItems([])).toEqual([]);
   });
 });

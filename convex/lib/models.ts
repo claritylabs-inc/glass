@@ -316,7 +316,13 @@ function clRouterGenerateInput(
   options: RoutedGenerateTextOptions,
 ): Pick<ClRouterGenerateRequest, "system" | "messages" | "prompt" | "maxTokens"> | null {
   const record = options as Record<string, unknown>;
-  const supportedKeys = new Set(["system", "messages", "prompt", "maxOutputTokens"]);
+  const supportedKeys = new Set([
+    "system",
+    "messages",
+    "prompt",
+    "maxOutputTokens",
+    "abortSignal",
+  ]);
   if (Object.keys(record).some((key) => record[key] !== undefined && !supportedKeys.has(key))) {
     return null;
   }
@@ -1665,7 +1671,7 @@ export async function generateTextForOrg(
         label: "convex.models.generateTextForOrg",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
       },
-    })),
+    }, { abortSignal: options.abortSignal })),
     direct: () => direct(settings),
     onFallback: (error) => warnClRouterFallback(task, error),
   });
@@ -1706,7 +1712,7 @@ export async function generateObjectForOrg<T>(
         label: "convex.models.generateObjectForOrg",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
       },
-    }), schema),
+    }, { abortSignal: textOptions.abortSignal }), schema),
     direct: () => direct(settings),
     onFallback: (error) => warnClRouterFallback(task, error),
   });
@@ -1738,7 +1744,7 @@ export async function generateTextForPublicTask(
         label: "convex.models.generateTextForPublicTask",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
       },
-    })),
+    }, { abortSignal: options.abortSignal })),
     direct: () => direct(settings),
     onFallback: (error) => warnClRouterFallback(task, error),
   });
@@ -1777,7 +1783,7 @@ export async function generateObjectForPublicTask<T>(
         label: "convex.models.generateObjectForPublicTask",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
       },
-    }), schema),
+    }, { abortSignal: textOptions.abortSignal }), schema),
     direct: () => direct(settings),
     onFallback: (error) => warnClRouterFallback(task, error),
   });

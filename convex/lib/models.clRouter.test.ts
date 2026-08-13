@@ -143,6 +143,34 @@ describe("Convex cl-router generation integration", () => {
     });
   });
 
+  test("forwards a caller abort signal through structured cl-router calls", async () => {
+    vi.stubEnv("CL_ROUTER_TASKS", "classification");
+    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
+    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.signal?.aborted).toBe(true);
+      throw new DOMException("aborted", "AbortError");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateObjectForOrg(
+      routerContext() as never,
+      "org-1" as Id<"organizations">,
+      "classification",
+      {
+        schema: z.object({ disposition: z.enum(["deliver", "hold"]) }),
+        prompt: "Should this policy be delivered?",
+        abortSignal: controller.signal,
+      },
+    )).rejects.toMatchObject({
+      name: "ClRouterRequestError",
+      kind: "aborted",
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   test("routes simple message-based text classification", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "classification");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");

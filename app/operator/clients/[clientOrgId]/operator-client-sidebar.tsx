@@ -3,7 +3,6 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
-  BadgeCheck,
   ClipboardCheck,
   FileText,
   Settings,
@@ -22,7 +21,6 @@ type OperatorClientNavigationSection =
   | "overview"
   | "policies"
   | "compliance"
-  | "certificates"
   | "team"
   | "settings";
 
@@ -33,12 +31,6 @@ const INSURANCE_NAV_ITEMS = [
     label: "Compliance",
     href: "/compliance",
     icon: ClipboardCheck,
-  },
-  {
-    id: "certificates",
-    label: "Certificates",
-    href: "/certificates",
-    icon: BadgeCheck,
   },
 ] as const;
 
@@ -67,7 +59,7 @@ function activeClientSection({
     pathname === `${basePath}/certificates` ||
     pathname.startsWith(`${basePath}/certificates/`)
   ) {
-    return "certificates";
+    return "compliance";
   }
   if (pathname === basePath || pathname === `${basePath}/`) {
     if (tab === "team") return "team";

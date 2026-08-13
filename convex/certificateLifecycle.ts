@@ -25,6 +25,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
+import { certificateRequirementSnapshotValidator } from "./lib/certificateRequirementPlan";
 
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
@@ -132,6 +133,7 @@ async function collectIssuedCertificateCandidates(ctx: ReadCtx, args: {
   policyVersionId?: Id<"policyVersions">;
   requestKind?: "holder" | "additional_insured";
   requestSignature?: string;
+  requireRequestSignature?: boolean;
 }) {
   const policy = await ctx.db.get(args.policyId);
   if (!policy || policy.orgId !== args.orgId || policy.deletedAt) return [];
@@ -153,7 +155,8 @@ async function collectIssuedCertificateCandidates(ctx: ReadCtx, args: {
     if (version.policyId !== args.policyId) continue;
     if (policyVersionId && version.policyVersionId !== policyVersionId) continue;
     if (args.requestKind && (version.requestKind ?? "holder") !== args.requestKind) continue;
-    if (args.requestSignature && version.requestSignature !== args.requestSignature) continue;
+    if (args.requireRequestSignature && version.requestSignature !== args.requestSignature) continue;
+    if (!args.requireRequestSignature && args.requestSignature && version.requestSignature !== args.requestSignature) continue;
     const url = await ctx.storage.getUrl(version.fileId);
     const data = {
       candidateId: String(parent._id),
@@ -416,6 +419,7 @@ export const getOrCreateParentInternal = internalMutation({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
     holderId: v.id("certificateHolders"),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
     source: v.optional(certificateSourceValidator),
     createdByUserId: v.optional(v.id("users")),
   },
@@ -430,12 +434,25 @@ export const getOrCreateParentInternal = internalMutation({
       .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
       .collect())
       .find((row) => row.status !== "archived");
-    if (existing) return existing._id;
+    if (existing) {
+      if (
+        args.requirementSourceDocumentId &&
+        existing.requirementSourceDocumentId !== args.requirementSourceDocumentId
+      ) {
+        await ctx.db.patch(existing._id, {
+          requirementSourceDocumentId: args.requirementSourceDocumentId,
+          updatedByUserId: args.createdByUserId,
+          updatedAt: dayjs().valueOf(),
+        });
+      }
+      return existing._id;
+    }
     const now = dayjs().valueOf();
     return await ctx.db.insert("policyCertificates", {
       orgId: args.orgId,
       policyId: args.policyId,
       holderId: args.holderId,
+      requirementSourceDocumentId: args.requirementSourceDocumentId,
       status: "active",
       dedupeKey,
       source: args.source,
@@ -454,6 +471,7 @@ export const findIssuedCertificateHolderCandidatesInternal = internalQuery({
     policyVersionId: v.optional(v.id("policyVersions")),
     requestKind: v.optional(certificateRequestKindValidator),
     requestSignature: v.optional(v.string()),
+    requireRequestSignature: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     return await collectIssuedCertificateCandidates(ctx, args);
@@ -655,6 +673,10 @@ export const recordIssuedVersionInternal = internalMutation({
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
     descriptionOfOperations: v.optional(v.string()),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    generationBatchId: v.optional(v.string()),
     createdByUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -790,6 +812,10 @@ export const recordIssuedVersionInternal = internalMutation({
       formCode: args.formCode,
       requestSignature: args.requestSignature,
       descriptionOfOperations: args.descriptionOfOperations,
+      requirementIds: args.requirementIds,
+      requirementSourceDocumentId: args.requirementSourceDocumentId,
+      requirementSnapshots: args.requirementSnapshots,
+      generationBatchId: args.generationBatchId,
       issuedAt: now,
       createdByUserId: args.createdByUserId,
       createdAt: now,

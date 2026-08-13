@@ -138,7 +138,7 @@ export const upsertForCurrentOrg = mutation({
   },
   handler: async (ctx, args) => {
     const { orgId, userId } = await requireCurrentOrgAccess(ctx);
-    return await upsertHolder(ctx, {
+    return await upsertCertificateHolder(ctx, {
       ...args,
       orgId,
       source: "manual",
@@ -148,7 +148,7 @@ export const upsertForCurrentOrg = mutation({
   },
 });
 
-async function upsertHolder(ctx: MutationCtx, args: {
+export async function upsertCertificateHolder(ctx: MutationCtx, args: {
   orgId: Id<"organizations">;
   displayName: string;
   contactName?: string;
@@ -243,7 +243,7 @@ export const upsertInternal = internalMutation({
     updatedByUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    return await upsertHolder(ctx, args);
+    return await upsertCertificateHolder(ctx, args);
   },
 });
 
@@ -336,7 +336,7 @@ export const populateForPolicyInternal = internalMutation({
     let holderCount = 0;
     let linkCount = 0;
     for (const candidate of candidates) {
-      const holderId = await upsertHolder(ctx, {
+      const holderId = await upsertCertificateHolder(ctx, {
         orgId: policy.orgId,
         displayName: candidate.displayName,
         email: candidate.email,

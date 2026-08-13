@@ -647,23 +647,36 @@ async function buildMessageHistoryWithAttachmentContext(
   return { history, latestAttachmentNames };
 }
 
+function explicitlyForbidsSideEffects(text: string): boolean {
+  return /\b(?:do not|don['’]t|dont|without)\b[^.!?\n]{0,100}\b(?:generate|create|send|email|forward|deliver|change)\b/i.test(
+    text,
+  );
+}
+
 function hasCoiEmailIntent(text: string): boolean {
   return (
+    !explicitlyForbidsSideEffects(text) &&
     /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text) &&
     /\b(send|email|forward|deliver)\b/i.test(text)
   );
 }
 
 function claimsCoiEmailCompletion(text: string): boolean {
-  return (
-    /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text) &&
-    /\b(done|sent|sending|emailing|delivering|generated|attached)\b/i.test(text)
-  );
+  if (!/\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text)) return false;
+  for (const match of text.matchAll(
+    /\b(done|sent|sending|emailing|delivering|generated|attached)\b/gi,
+  )) {
+    if (!isNegatedActionClaim(text, match.index)) return true;
+  }
+  return false;
 }
 
 function hasEmailSendIntent(text: string): boolean {
-  return /\b(send|sent|email|emailed|forward|forwarded|deliver|delivered)\b/i.test(
-    text,
+  return (
+    !explicitlyForbidsSideEffects(text) &&
+    /\b(send|sent|email|emailed|forward|forwarded|deliver|delivered)\b/i.test(
+      text,
+    )
   );
 }
 

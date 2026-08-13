@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import {
   OperatorComplianceWorkspace,
+  type ComplianceCertificatesTabArgs,
   type ComplianceWorkspaceShellArgs,
 } from "@/components/compliance-page";
 import { AppShell } from "@/components/app-shell";
@@ -21,6 +22,7 @@ import {
 import { typeStyle } from "@/lib/typography";
 import { OperatorClientSidebar } from "../operator-client-sidebar";
 import { OperatorClientImpersonationAction } from "../operator-client-impersonation-action";
+import { OperatorCertificatesWorkspace } from "../certificates/operator-certificates-workspace";
 
 export default function OperatorClientCompliancePage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
@@ -121,6 +123,17 @@ export default function OperatorClientCompliancePage() {
         featureFlags: client.featureFlags,
         isReadOnlyImpersonation: Boolean(activeImpersonation),
       }}
+      renderCertificatesTab={({
+        onActions,
+        onRightPanel,
+      }: ComplianceCertificatesTabArgs) => (
+        <OperatorCertificatesWorkspace
+          orgId={client._id}
+          readOnly={Boolean(activeImpersonation)}
+          onActions={onActions}
+          onRightPanel={onRightPanel}
+        />
+      )}
       renderShell={({
         actions,
         rightPanel,
@@ -147,7 +160,7 @@ export default function OperatorClientCompliancePage() {
           showBrokerShare={false}
         >
           <main className="w-full space-y-6">
-            <div className="flex justify-end">{toolbar}</div>
+            <div className="overflow-x-auto">{toolbar}</div>
             {children}
           </main>
         </AppShell>

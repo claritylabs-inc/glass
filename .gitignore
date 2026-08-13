@@ -33,6 +33,10 @@
 /docs/deployment/*
 !/docs/deployment/environments.md
 !/docs/deployment/slack.md
+!/docs/testing/
+/docs/testing/*
+!/docs/testing/requirements-fixtures/
+!/docs/testing/requirements-fixtures/**
 
 # debug
 npm-debug.log*

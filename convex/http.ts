@@ -851,6 +851,14 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
           (item): item is string => typeof item === "string",
         )
       : undefined;
+  const requirementSourceDocumentId =
+    (typeof body.requirementSourceDocumentId === "string" && body.requirementSourceDocumentId) ||
+    (typeof body.requirement_source_document_id === "string" && body.requirement_source_document_id) ||
+    undefined;
+  const requirementId =
+    (typeof body.requirementId === "string" && body.requirementId) ||
+    (typeof body.requirement_id === "string" && body.requirement_id) ||
+    undefined;
 
   return {
     holderName,
@@ -906,6 +914,8 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.description_of_operations === "string" && body.description_of_operations.trim()) ||
       undefined,
     requestedEndorsements,
+    requirementSourceDocumentId: requirementSourceDocumentId as Id<"requirementSourceDocuments"> | undefined,
+    requirementId: requirementId as Id<"insuranceRequirements"> | undefined,
     additionalInsuredName:
       (typeof body.additionalInsuredName === "string" && body.additionalInsuredName.trim()) ||
       (typeof body.additional_insured_name === "string" && body.additional_insured_name.trim()) ||
@@ -916,6 +926,16 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       body.explicit_reissue === true ||
       body.reissue === true,
   };
+}
+
+function compatibleCertificateGenerationResponse(
+  batch: Record<string, any>,
+  requirementsMode: boolean,
+) {
+  if (requirementsMode) return batch;
+  return Array.isArray(batch.results) && batch.results.length === 1
+    ? batch.results[0]
+    : batch;
 }
 
 function certificateWorkflowJobStatusParam(status: string | null) {
@@ -1256,23 +1276,31 @@ http.route({
       requireMcpWriteScope(identity);
       const body = (await request.json()) as Record<string, unknown>;
       const policyId = body.policyId ?? body.policy_id;
-      if (typeof policyId !== "string" || !policyId) {
-        return jsonResponse({ error: "Missing policyId" }, 400);
-      }
-
       const certificate = normalizeCertificateRequest(body);
-      if (!certificate.holderName) {
+      const requirementsMode = Boolean(
+        certificate.requirementSourceDocumentId || certificate.requirementId,
+      );
+      if (Boolean(policyId) === requirementsMode) {
+        return jsonResponse({ error: "Choose either policyId or a requirement source" }, 400);
+      }
+      if (!requirementsMode && !certificate.holderName) {
         return jsonResponse({ error: "Missing certificate holder" }, 400);
       }
 
-      const result = await ctx.runAction(internal.certificates.generateForOrg, {
+      const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
         orgId: identity.orgId as Id<"organizations">,
-        policyId: policyId as Id<"policies">,
+        primaryPolicyId: policyId as Id<"policies"> | undefined,
         ...certificate,
         source: "mcp",
         createdByUserId: identity.userId as Id<"users">,
       });
-      return jsonResponse(result, 201);
+      return jsonResponse(
+        compatibleCertificateGenerationResponse(
+          result,
+          requirementsMode,
+        ),
+        201,
+      );
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse({ error: String(e) }, 500);
@@ -1505,11 +1533,13 @@ const MCP_TOOLS = [
   {
     name: "generate_policy_certificate",
     description:
-      "Generate or retrieve an informational Certificate of Insurance PDF for a policy. Same holder/current policy version returns the existing certificate unless explicitReissue is true. Additional-insured requests generate only when policy evidence supports them; otherwise they create a broker follow-up. Requires write scope.",
+      "Generate certificate PDFs in one exclusive mode: policyId plus holder details for one all-coverages certificate, or requirementSourceDocumentId/requirementId for source-owned holder details and requirement-specific certificates across matching policies. Requires write scope.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        policyId: { type: "string", description: "The policy ID" },
+        policyId: { type: "string", description: "Policy-mode ID; omit in requirements mode" },
+        requirementSourceDocumentId: { type: "string", description: "Requirements-mode source ID; omit policy and holder inputs" },
+        requirementId: { type: "string", description: "Requirements-mode single requirement ID; Glass uses its connected source" },
         holderName: { type: "string", description: "Certificate holder name" },
         holderContactName: { type: "string", description: "Certificate holder contact or attention name" },
         holderEmail: { type: "string", description: "Certificate holder email for renewal delivery" },
@@ -1551,7 +1581,11 @@ const MCP_TOOLS = [
             "Force a new certificate version even if an issued certificate already exists for this holder and current policy version",
         },
       },
-      required: ["policyId", "holderName"],
+      oneOf: [
+        { required: ["policyId", "holderName"] },
+        { required: ["requirementSourceDocumentId"] },
+        { required: ["requirementId"] },
+      ],
     },
   },
   {
@@ -2125,20 +2159,30 @@ async function handleToolCall(
     case "generate_policy_certificate": {
       requireMcpWriteScope(identity);
       const policyId = args.policyId ?? args.policy_id;
-      if (typeof policyId !== "string" || !policyId)
-        throw new Error("Missing policyId parameter");
       const certificate = normalizeCertificateRequest(args);
-      if (!certificate.holderName)
+      const requirementsMode = Boolean(
+        certificate.requirementSourceDocumentId || certificate.requirementId,
+      );
+      if (Boolean(policyId) === requirementsMode)
+        throw new Error("Choose either policyId or a requirement source");
+      if (!requirementsMode && !certificate.holderName)
         throw new Error("Missing certificate holder");
-      const result = await ctx.runAction(internal.certificates.generateForOrg, {
+      const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
         orgId,
-        policyId: policyId as Id<"policies">,
+        primaryPolicyId: policyId as Id<"policies"> | undefined,
         ...certificate,
         source: "mcp",
         createdByUserId: userId,
       });
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [{
+          type: "text",
+          text: JSON.stringify(
+            compatibleCertificateGenerationResponse(result, requirementsMode),
+            null,
+            2,
+          ),
+        }],
       };
     }
     case "list_threads": {
@@ -3364,6 +3408,17 @@ async function handlePolicyRestPost(ctx: ActionCtx, request: Request) {
 
     const body = (await request.json()) as Record<string, unknown>;
     const certificate = normalizeCertificateRequest(body);
+    if (certificate.requirementSourceDocumentId || certificate.requirementId) {
+      return jsonResponse(
+        {
+          error: {
+            code: "bad_request",
+            message: "Use POST /api/v1/certificates/generate for requirement-source generation",
+          },
+        },
+        400,
+      );
+    }
     if (!certificate.holderName) {
       return jsonResponse(
         {
@@ -3376,14 +3431,19 @@ async function handlePolicyRestPost(ctx: ActionCtx, request: Request) {
       );
     }
 
-    const result = await ctx.runAction(internal.certificates.generateForOrg, {
+    const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
       orgId: identity.orgId,
-      policyId,
+      primaryPolicyId: policyId,
       ...certificate,
       source: "api",
       createdByUserId: identity.userId,
     });
-    return jsonResponse({ data: result }, 201);
+    return jsonResponse({
+      data: compatibleCertificateGenerationResponse(
+        result,
+        Boolean(certificate.requirementSourceDocumentId || certificate.requirementId),
+      ),
+    }, 201);
   } catch (e) {
     if (e instanceof Response) return e;
     return jsonResponse(
@@ -3403,6 +3463,73 @@ http.route({
   pathPrefix: "/api/v1/policies/",
   method: "POST",
   handler: httpAction(handlePolicyRestPost),
+});
+
+http.route({
+  path: "/api/v1/certificates/generate",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const identity = await requireApiAuth(ctx, request);
+      if (!identity.scopes.includes("write")) {
+        return jsonResponse(
+          {
+            error: {
+              code: "insufficient_scope",
+              message: "Write scope required",
+              request_id: identity.requestId,
+            },
+          },
+          403,
+        );
+      }
+      const body = (await request.json()) as Record<string, unknown>;
+      const policyId = body.policyId ?? body.policy_id;
+      const certificate = normalizeCertificateRequest(body);
+      const requirementsMode = Boolean(
+        certificate.requirementSourceDocumentId || certificate.requirementId,
+      );
+      if (Boolean(policyId) === requirementsMode) {
+        return jsonResponse(
+          {
+            error: {
+              code: "bad_request",
+              message: "Choose either policy_id or a requirement source",
+            },
+          },
+          400,
+        );
+      }
+      if (!requirementsMode && !certificate.holderName) {
+        return jsonResponse(
+          {
+            error: {
+              code: "bad_request",
+              message: "Missing certificate_holder_name",
+            },
+          },
+          400,
+        );
+      }
+      const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
+        orgId: identity.orgId,
+        primaryPolicyId: policyId as Id<"policies"> | undefined,
+        ...certificate,
+        source: "api",
+        createdByUserId: identity.userId,
+      });
+      return jsonResponse(
+        { data: compatibleCertificateGenerationResponse(result, requirementsMode) },
+        201,
+      );
+    } catch (e) {
+      if (e instanceof Response) return e;
+      return jsonResponse(
+        { error: { code: "internal_error", message: String(e) } },
+        500,
+      );
+    }
+  }),
 });
 
 // ── GET /api/v1/certificate-holders ──
@@ -3826,6 +3953,19 @@ http.route({
               "201": {
                 description:
                   "Certificate generated, retrieved, or held for broker follow-up",
+              },
+            },
+          },
+        },
+        "/api/v1/certificates/generate": {
+          post: {
+            tags: ["Certificates"],
+            summary:
+              "Generate certificates from either one policy with all coverages or one requirement source with requirement-specific coverages (write)",
+            responses: {
+              "201": {
+                description:
+                  "One policy certificate or a source-linked certificate batch",
               },
             },
           },

@@ -104,6 +104,7 @@ export const BROKER_NAV_ITEMS: NavItemConfig[] = [
 export const CLIENT_DETAIL_NAV: NavItemConfig[] = [
   { href: "", label: "Details", icon: User },
   { href: "/policies", label: "Policies", icon: FileText },
+  { href: "/certificates", label: "Certificates", icon: BadgeCheck },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

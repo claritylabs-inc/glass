@@ -58,10 +58,10 @@ import {
   type PolicyDetailsEditSection,
 } from "./policy-details-editor";
 import {
-  CertificateCreatePanel,
   CertificatesTab,
   ViewPdfButton,
 } from "./policy-certificates-tab";
+import { CertificateGeneratePanel } from "@/components/certificates/certificate-generate-panel";
 import {
   useCachedPolicyDetail,
   useCachedPolicySummary,
@@ -911,12 +911,14 @@ export function PolicyDetailBody({
       );
       return () => onRightPanel(null);
     }
-    if (showCertificateSheet && !readOnly && isPolicyFinal) {
+    if (showCertificateSheet && !readOnly && isPolicyFinal && policy.orgId) {
       onRightPanel(
-        <CertificateCreatePanel
+        <CertificateGeneratePanel
           open={showCertificateSheet}
           onOpenChange={setShowCertificateSheet}
-          policyId={policy._id}
+          orgId={policy.orgId}
+          initialPolicyId={policy._id}
+          policyLocked
         />,
       );
       return () => onRightPanel(null);

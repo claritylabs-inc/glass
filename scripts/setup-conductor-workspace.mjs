@@ -16,6 +16,7 @@ import {
   ensureNode24,
   localConvexUrls,
   parseEnvFile,
+  repairLocalConvexSelection,
   repoRoot,
   workspaceSlug,
 } from "./lib/conductor-workspace.mjs";
@@ -257,6 +258,8 @@ if (createdLocalDeployment) {
     sourceDeployment,
   ]);
   stripCloudConvexSelection();
+} else if (repairLocalConvexSelection()) {
+  console.log("Restored this workspace's local Convex selection in .env.local.");
 }
 
 const { web, extraction, imessage, slack, convexCloud, convexSite } = conductorPorts();

@@ -5,6 +5,7 @@ import {
   conductorImageTag,
   containerGateway,
   ensureNode24,
+  listenOnContainerGateway,
   repoRoot,
   waitForLocalConvex,
 } from "./lib/conductor-workspace.mjs";
@@ -20,7 +21,7 @@ if (!Number.isInteger(port) || port <= 0 || port > 65535) {
 const { cloud } = await waitForLocalConvex();
 const localConvexUrl = new URL(cloud);
 const convexPort = Number.parseInt(localConvexUrl.port, 10);
-const gateway = containerGateway();
+const gateway = containerGateway({ startServiceIfNeeded: true });
 const containerName = conductorContainerName("extraction", port);
 
 function containerCommand(args, options = {}) {
@@ -66,15 +67,14 @@ const proxy = net.createServer((client) => {
   client.on("error", () => upstream.destroy());
   upstream.on("error", () => client.destroy());
 });
-await new Promise((resolve, reject) => {
-  proxy.once("error", reject);
-  proxy.listen(convexPort, gateway, () => {
-    proxy.off("error", reject);
-    resolve();
-  });
-});
 
 const containerConvexUrl = `http://${gateway}:${convexPort}`;
+let stopping = false;
+let proxyReady = false;
+let rejectStartup;
+const startupFailure = new Promise((_, reject) => {
+  rejectStartup = reject;
+});
 const child = spawn(
   "container",
   [
@@ -101,7 +101,6 @@ const child = spawn(
   },
 );
 
-let stopping = false;
 function stop() {
   if (stopping) return;
   stopping = true;
@@ -115,14 +114,42 @@ process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
 
 child.on("error", (error) => {
+  if (!proxyReady) {
+    rejectStartup(error);
+    return;
+  }
   console.error(error);
   proxy.close();
   detachCleanup();
   process.exitCode = 1;
 });
 child.on("exit", (code, signal) => {
+  if (!proxyReady) {
+    rejectStartup(
+      new Error(
+        `Apple extraction container exited during startup (${signal ?? code ?? "unknown"})`,
+      ),
+    );
+    return;
+  }
   proxy.close();
   if (stopping) return;
   if (signal) process.kill(process.pid, signal);
   process.exitCode = code ?? 1;
 });
+
+try {
+  await Promise.race([
+    listenOnContainerGateway(proxy, {
+      gateway,
+      port: convexPort,
+    }),
+    startupFailure,
+  ]);
+  proxyReady = true;
+} catch (error) {
+  proxy.close();
+  child.kill("SIGTERM");
+  detachCleanup();
+  throw error;
+}
