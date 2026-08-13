@@ -16,8 +16,9 @@ export type SlackInboundPayload = {
   senderUserId: string;
   content: string;
   attachments?: SlackInboundAttachment[];
-  eventType: "message" | "edit";
+  eventType: "message" | "edit" | "delete";
   isDirectMessage: boolean;
+  isPrivateChannel: boolean;
   isBotEcho: boolean;
 };
 
@@ -68,25 +69,32 @@ export function parseSlackEventPayload(
   }
 
   const subtype = string(outerEvent?.subtype)?.toLowerCase();
-  if (subtype === "message_deleted" || subtype === "message_replied") {
+  if (subtype === "message_replied") {
     return null;
   }
   const isEdit = subtype === "message_changed";
-  const message = isEdit ? record(outerEvent?.message) : outerEvent;
+  const isDelete = subtype === "message_deleted";
+  const message = isDelete
+    ? record(outerEvent?.previous_message)
+    : isEdit
+      ? record(outerEvent?.message)
+      : outerEvent;
   const messageSubtype = string(message?.subtype)?.toLowerCase();
-  if (!message || messageSubtype === "message_deleted") return null;
+  if (!message) return null;
 
   const teamId = string(envelope?.team_id ?? outerEvent?.team);
   const channelId = string(outerEvent?.channel ?? message?.channel);
-  const messageTs = string(message?.ts);
+  const messageTs = string(
+    isDelete ? outerEvent?.deleted_ts ?? message?.ts : message?.ts,
+  );
   const senderUserId = string(message?.user);
   if (!teamId || !channelId || !messageTs || !senderUserId) return null;
 
-  const content = string(message?.text) ?? "";
-  const attachments = slackFiles(message?.files);
-  if (!content && !attachments?.length) return null;
+  const content = isDelete ? "" : string(message?.text) ?? "";
+  const attachments = isDelete ? undefined : slackFiles(message?.files);
+  if (!isDelete && !content && !attachments?.length) return null;
 
-  const eventType = isEdit ? "edit" : "message";
+  const eventType = isDelete ? "delete" : isEdit ? "edit" : "message";
   const revisionTs = string(
     outerEvent?.event_ts ?? record(message?.edited)?.ts,
   );
@@ -95,7 +103,7 @@ export function parseSlackEventPayload(
     channelId,
     messageTs,
     eventType,
-    ...(eventType === "edit" && revisionTs ? [revisionTs] : []),
+    ...(eventType !== "message" && revisionTs ? [revisionTs] : []),
   ].join(":");
   const channelType = string(outerEvent?.channel_type)?.toLowerCase();
   const isDirectMessage = channelType === "im" || channelId.startsWith("D");
@@ -121,6 +129,7 @@ export function parseSlackEventPayload(
     ...(attachments ? { attachments } : {}),
     eventType,
     isDirectMessage,
+    isPrivateChannel: channelType === "group",
     isBotEcho:
       Boolean(string(message?.bot_id ?? outerEvent?.bot_id)) ||
       messageSubtype === "bot_message" ||

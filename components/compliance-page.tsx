@@ -866,7 +866,7 @@ function RequirementDrawer({
           </OperationalPanel>
         ) : null}
         <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{requirement.requirementText}</p>
-        <section className="space-y-2 border-t border-foreground/6 pt-5">
+        <section className="space-y-2 border-t border-border pt-5">
           {requirement.lineOfBusiness ? (
             <DrawerDetail label="Line" value={lineDisplayLabel(requirement.lineOfBusiness)} />
           ) : null}
@@ -901,7 +901,7 @@ function RequirementDrawer({
           <DrawerDetail label="Source" value={requirementSourceLine(requirement)} />
         </section>
         {check ? (
-          <section className="space-y-2 border-t border-foreground/6 pt-5">
+          <section className="space-y-2 border-t border-border pt-5">
             <p className={`text-muted-foreground/60 ${typeStyle("body.medium")}`}>
               Latest check
             </p>
@@ -1590,7 +1590,7 @@ function SourceDrawer({
             ) : null}
           </div>
         </FormSection>
-        <section className="space-y-2 border-t border-foreground/6 pt-5">
+        <section className="space-y-2 border-t border-border pt-5">
           {source.fileName ? <DrawerDetail label="File" value={source.fileName} /> : null}
           <DrawerDetail
             label="Added"
@@ -1664,7 +1664,7 @@ function SourceDrawer({
                 return (
                   <div
                     key={requirement._id}
-                    className="rounded-md border border-foreground/8 bg-background"
+                    className="rounded-md border border-input bg-background"
                   >
                     <button
                       type="button"
@@ -1689,7 +1689,7 @@ function SourceDrawer({
                       </span>
                     </button>
                     {expanded && canManage ? (
-                      <div className="border-t border-foreground/6 px-3 pb-3 pt-3">
+                      <div className="border-t border-border px-3 pb-3 pt-3">
                         <RequirementEditForm
                           requirement={requirement}
                           onSave={(values) => onSaveRequirement(requirement, values)}
@@ -1697,7 +1697,7 @@ function SourceDrawer({
                         />
                       </div>
                     ) : expanded ? (
-                      <div className="space-y-2 border-t border-foreground/6 px-3 pb-3 pt-3">
+                      <div className="space-y-2 border-t border-border px-3 pb-3 pt-3">
                         <DrawerDetail
                           label="Line"
                           value={lineDisplayLabel(requirement.lineOfBusiness)}

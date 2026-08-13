@@ -54,7 +54,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          `fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-background p-4 ring-1 ring-foreground/10 outline-none transition-[opacity,transform] duration-75 ease-linear sm:max-w-sm data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0 ${typeStyle("body.default")}`,
+          `fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-background p-4 ring-1 ring-border-emphasized outline-none transition-[opacity,transform] duration-75 ease-linear sm:max-w-sm data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0 ${typeStyle("body.default")}`,
           className,
         )}
         {...props}
@@ -102,7 +102,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse items-stretch gap-2 rounded-b-xl border-t border-foreground/6 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end [&>button]:w-full [&>button]:min-h-8 [&>button]:py-2 sm:[&>button]:w-auto sm:[&>button]:min-h-7 sm:[&>button]:py-1",
+        "-mx-4 -mb-4 flex flex-col-reverse items-stretch gap-2 rounded-b-xl border-t border-border bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-end [&>button]:w-full [&>button]:min-h-8 [&>button]:py-2 sm:[&>button]:w-auto sm:[&>button]:min-h-7 sm:[&>button]:py-1",
         className,
       )}
       {...props}

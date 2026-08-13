@@ -7,6 +7,7 @@ import {
   MessageSquareText,
   Route,
   Radio,
+  User,
   Users,
 } from "lucide-react";
 import {
@@ -16,23 +17,21 @@ import {
 } from "@/components/app-sidebar/nav-item";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import { typeStyle } from "@/lib/typography";
 
 export function OperatorSidebar({
   collapsed,
   onToggleCollapse,
-  email,
   active,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
-  email?: string;
   active:
     | "brokers"
     | "clients"
     | "demo-leads"
     | "channels"
-    | "routing";
+    | "routing"
+    | "profile";
 }) {
   const { signOut } = useAuthActions();
 
@@ -91,12 +90,14 @@ export function OperatorSidebar({
           />
         </div>
       </div>
-      <div className="border-t border-foreground/6 px-2 py-2">
-        {!collapsed && email ? (
-          <p className={`truncate px-3 pb-2 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
-            {email}
-          </p>
-        ) : null}
+      <div className="space-y-0.5 border-t border-border px-2 py-2">
+        <SidebarMenuItem
+          href="/operator/profile"
+          label="Profile"
+          icon={User}
+          active={active === "profile"}
+          collapsed={collapsed}
+        />
         <SidebarMenuItem
           onClick={() => void signOut()}
           label="Sign out"

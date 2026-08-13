@@ -39,7 +39,7 @@ type RequestData = {
 
 const connectedOrgsApi = api as unknown as ConnectedOrgsApi;
 const INPUT_CLASSES =
-  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
+  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
 const LABEL_CLASSES = `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 function isEmailLike(value: string): boolean {
@@ -220,7 +220,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         ) : step === "details" ? (
           <form onSubmit={handleDetailsSubmit} className="space-y-4">
             {requestData.note ? (
-              <p className={`rounded-lg border border-foreground/6 bg-foreground/3 p-3 text-muted-foreground ${typeStyle("body.default")}`}>
+              <p className={`rounded-lg border border-border bg-foreground/3 p-3 text-muted-foreground ${typeStyle("body.default")}`}>
                 {requestData.note}
               </p>
             ) : null}

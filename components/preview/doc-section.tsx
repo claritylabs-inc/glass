@@ -38,7 +38,7 @@ export function DocSection({
   const typeLabel = type === "endorsement" ? "Endorsement" : type === "exclusion" ? "Exclusion" : type === "condition" ? "Condition" : type === "definition" ? "Definition" : null;
 
   return (
-    <div className="min-w-0 overflow-hidden rounded-lg border border-foreground/8 bg-card text-card-foreground">
+    <div className="min-w-0 overflow-hidden rounded-lg border border-input bg-card text-card-foreground">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -60,7 +60,7 @@ export function DocSection({
         />
       </button>
       {open && (
-        <div className="min-w-0 overflow-x-hidden border-t border-foreground/4 px-3 pb-3 pt-3">
+        <div className="min-w-0 overflow-x-hidden border-t border-border-subtle px-3 pb-3 pt-3">
           <FormattedSectionContent content={content} />
         </div>
       )}

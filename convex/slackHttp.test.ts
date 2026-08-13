@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import dayjs from "dayjs";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import schema from "./schema";
+import { internal } from "./_generated/api";
 import { signSlackRequest } from "./lib/slackSecurity";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -115,6 +116,24 @@ async function signedRequest(
   });
 }
 
+async function signedInteraction(
+  t: ReturnType<typeof convexTest>,
+  payload: unknown,
+) {
+  const rawBody = new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
+  const timestamp = String(dayjs().unix());
+  const signature = await signSlackRequest(SIGNING_SECRET, timestamp, rawBody);
+  return await t.fetch("/slack/interactivity", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Slack-Request-Timestamp": timestamp,
+      "X-Slack-Signature": signature,
+    },
+    body: rawBody,
+  });
+}
+
 describe("Slack Events API webhook", () => {
   test("answers signed URL verification while event processing is disabled", async () => {
     const t = convexTest(schema, modules);
@@ -220,5 +239,189 @@ describe("Slack Events API webhook", () => {
     }));
     expect(state.connection?.status).toBe("revoked");
     expect(state.settings?.slackEnabled).toBe(false);
+  });
+
+  test("verifies, authorizes, deduplicates, and acknowledges Block Kit actions", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId } = await seedConnection(t);
+    const fixture = await t.run(async (ctx) => {
+      const actorId = await ctx.db.insert("slackActors", {
+        connectionId,
+        clientOrgId,
+        teamId: "T-CUSTOMER",
+        slackUserId: "U-CUSTOMER",
+        classification: "customer_member",
+        displayName: "Customer",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const threadId = await ctx.db.insert("threads", {
+        orgId: clientOrgId,
+        title: "Slack support",
+        createdBy: (await ctx.db.get(connectionId))!.serviceUserId,
+        lastMessageAt: 1,
+        originChannel: "slack",
+        slackConnectionId: connectionId,
+        slackChannelId: "C-PRIMARY",
+        slackThreadTs: "1800.0",
+        slackConversationKind: "channel",
+        slackState: "active",
+      });
+      const messageId = await ctx.db.insert("threadMessages", {
+        threadId,
+        orgId: clientOrgId,
+        channel: "slack",
+        role: "agent",
+        content: "Answer",
+      });
+      return { actorId, threadId, messageId };
+    });
+    const created = await t.mutation((internal as any).slackPresentation.create, {
+      orgId: clientOrgId,
+      threadId: fixture.threadId,
+      threadMessageId: fixture.messageId,
+      connectionId,
+      teamId: "T-CUSTOMER",
+      channelId: "C-PRIMARY",
+      threadTs: "1800.0",
+      mode: "message",
+    });
+    await t.mutation((internal as any).slackPresentation.markActive, {
+      id: created.presentation._id,
+      providerMessageId: "1800.1",
+    });
+    await t.mutation((internal as any).slackPresentation.markFinal, {
+      id: created.presentation._id,
+      providerMessageId: "1800.1",
+    });
+    const payload = {
+      type: "block_actions",
+      team: { id: "T-CUSTOMER" },
+      user: { id: "U-CUSTOMER", team_id: "T-CUSTOMER" },
+      channel: { id: "C-PRIMARY" },
+      message: { ts: "1800.1" },
+      actions: [{
+        action_id: "glass_response_feedback",
+        action_ts: "1800.2",
+        value: `positive:${created.actionToken}`,
+      }],
+    };
+    expect((await signedInteraction(t, payload)).status).toBe(200);
+    expect((await signedInteraction(t, payload)).status).toBe(200);
+    const interactions = await t.run((ctx) =>
+      ctx.db.query("slackInteractionEvents").collect(),
+    );
+    expect(interactions).toHaveLength(1);
+    expect(interactions[0]).toMatchObject({
+      actionId: "glass_response_feedback",
+      actorId: fixture.actorId,
+    });
+
+    const missingMessage = structuredClone(payload);
+    delete (missingMessage as { message?: unknown }).message;
+    expect((await signedInteraction(t, missingMessage)).status).toBe(200);
+    const interactionsAfterMissingMessage = await t.run((ctx) =>
+      ctx.db.query("slackInteractionEvents").collect(),
+    );
+    expect(interactionsAfterMissingMessage).toHaveLength(1);
+  });
+
+  test("records a signed negative-feedback modal submission for the same actor", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId } = await seedConnection(t);
+    const fixture = await t.run(async (ctx) => {
+      const actorId = await ctx.db.insert("slackActors", {
+        connectionId,
+        clientOrgId,
+        teamId: "T-CUSTOMER",
+        slackUserId: "U-CUSTOMER",
+        classification: "customer_member",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const connection = await ctx.db.get(connectionId);
+      const threadId = await ctx.db.insert("threads", {
+        orgId: clientOrgId,
+        title: "Slack feedback",
+        createdBy: connection!.serviceUserId,
+        lastMessageAt: 1,
+        originChannel: "slack",
+        slackConnectionId: connectionId,
+        slackChannelId: "C-PRIMARY",
+        slackThreadTs: "1800.0",
+        slackConversationKind: "channel",
+        slackState: "active",
+      });
+      const messageId = await ctx.db.insert("threadMessages", {
+        threadId,
+        orgId: clientOrgId,
+        channel: "slack",
+        role: "agent",
+        content: "Answer",
+      });
+      return { actorId, threadId, messageId };
+    });
+    const created = await t.mutation(internal.slackPresentation.create, {
+      orgId: clientOrgId,
+      threadId: fixture.threadId,
+      threadMessageId: fixture.messageId,
+      connectionId,
+      teamId: "T-CUSTOMER",
+      channelId: "C-PRIMARY",
+      threadTs: "1800.0",
+      mode: "message",
+    });
+    if (!created.presentation || !created.actionToken) {
+      throw new Error("Expected a new Slack presentation");
+    }
+    await t.mutation(internal.slackPresentation.markActive, {
+      id: created.presentation._id,
+      providerMessageId: "1800.1",
+    });
+    await t.mutation(internal.slackPresentation.markFinal, {
+      id: created.presentation._id,
+      providerMessageId: "1800.1",
+    });
+    const claimed = await t.mutation(internal.slackPresentation.claimInteraction, {
+      interactionKey: "negative-feedback-click",
+      actionToken: created.actionToken,
+      teamId: "T-CUSTOMER",
+      actorTeamId: "T-CUSTOMER",
+      slackUserId: "U-CUSTOMER",
+      channelId: "C-PRIMARY",
+      messageTs: "1800.1",
+      actionId: "glass_response_feedback",
+      value: "negative",
+    });
+    const submission = {
+      type: "view_submission",
+      team: { id: "T-CUSTOMER" },
+      user: { id: "U-CUSTOMER", team_id: "T-CUSTOMER" },
+      view: {
+        callback_id: "glass_negative_feedback",
+        private_metadata: claimed.interaction._id,
+        state: {
+          values: {
+            glass_feedback_comment_block: {
+              glass_feedback_comment: {
+                action_id: "glass_feedback_comment",
+                value: "The coverage limit was wrong.",
+              },
+            },
+          },
+        },
+      },
+    };
+    expect((await signedInteraction(t, submission)).status).toBe(200);
+    const feedback = await t.run((ctx) =>
+      ctx.db.query("agentResponseFeedback").collect(),
+    );
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0]).toMatchObject({
+      threadMessageId: fixture.messageId,
+      slackActorId: fixture.actorId,
+      rating: "negative",
+      comment: "The coverage limit was wrong.",
+    });
   });
 });

@@ -43,9 +43,10 @@ files and unset the temporary token.
 If the native `/slack/events` route has not reached a lane yet, create the app
 without Events API subscriptions using
 `npm run slack:provision-apps -- --bootstrap <environment>`. This is only a
-bootstrap: after the route and signing secret are deployed, rerun the normal
-command for that environment so `apps.manifest.update` applies and verifies the
-complete manifest before enabling Slack.
+bootstrap and also omits interactivity: after both routes and the signing secret
+are deployed, rerun the normal command for that environment so
+`apps.manifest.update` applies and verifies the complete manifest before
+enabling Slack.
 
 The app manifests enable token rotation and subscribe the Events API to the
 environment's `<CONVEX_SITE_URL>/slack/events` route. They request these bot
@@ -53,18 +54,23 @@ scopes:
 
 - `app_mentions:read`
 - `chat:write`
-- `channels:read`, `channels:join`, `channels:history`
+- `channels:read`, `channels:join`, `channels:write`, `channels:history`
 - `groups:read`, `groups:history`, `groups:write`
 - `im:history`
 - `files:read`, `files:write`
 - `users:read`, `users:read.email`
 - `conversations.connect:write`
 
+The same manifests enable interactive components at
+`<CONVEX_SITE_URL>/slack/interactivity`. Apply the complete manifest in both
+live environments; rich responses are not controlled by a separate feature
+flag or cohort.
+
 Customer OAuth requests the narrower set in
 `convex/lib/slackOAuthPolicy.ts`; the Clarity-host installation also needs
 `groups:write` and `conversations.connect:write` for private Connect channel
 creation and invitations. Enable app distribution before sending customer
-install links. Adding `channels:join` requires applying the updated manifest and
+install links. Adding `channels:join` and `channels:write` requires applying the updated manifest and
 having existing installations, including the Clarity host installation,
 authorize the expanded scope before the web app can add Glass to or remove Glass
 from public channels for customers.
@@ -105,7 +111,11 @@ matching installation.
 
 `slack-worker/` calls Slack Web API directly. It owns:
 
-- `chat.postMessage` with Slack-mrkdwn conversion;
+- `chat.postMessage` and `chat.update` with Slack-mrkdwn and Block Kit;
+- `assistant.threads.setStatus`, `chat.startStream`, `chat.appendStream`, and
+  `chat.stopStream` for live agent status and task progress;
+- `chat.postEphemeral` for interaction confirmations;
+- `views.open` for optional negative-feedback detail;
 - `files.getUploadURLExternal` plus `files.completeUploadExternal` for outbound
   files (never retired `files.upload`);
 - `files.info` and authenticated private downloads for inbound files;
@@ -119,9 +129,9 @@ matching installation.
 
 Private and Slack Connect channels cannot be joined from Glass. A Slack member
 must add the app from Slack, after which the next channel inventory sync reports
-the membership. The worker exposes `channelInventoryEnabled` and
-`publicChannelJoinEnabled` in health output so deploy checks can distinguish
-these capabilities from basic outbound messaging.
+the membership. The worker exposes channel, Block Kit, message-update,
+assistant-status, streaming, and interaction-response capabilities in health
+output so deploy checks can distinguish them from basic outbound messaging.
 
 Never infer that a sender belongs to the installation workspace when native
 event data omits `user_team`. Actor resolution must succeed before
@@ -136,7 +146,7 @@ Convex requires:
 
 | Variable | Purpose |
 | --- | --- |
-| `SLACK_ENABLED` | `true` only after the lane passes rollout gates |
+| `SLACK_ENABLED` | Global Slack service switch; `true` in configured staging and production lanes |
 | `SLACK_MODE` | `slack` for native live testing; `mock` for the isolated fixture |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Credentials for that lane's native app |
 | `SLACK_SIGNING_SECRET` | Verify native Slack requests |
@@ -156,7 +166,9 @@ Use `GLASS_STAGING_SLACK_WORKER_HEALTH_URL` and
 `GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
 health must report `tokenBrokerConfigured`, `outboundEnabled`,
 `actorResolutionEnabled`, `clarityTeamConfigured`, `channelInventoryEnabled`,
-and `publicChannelJoinEnabled` before enabling a lane.
+`publicChannelJoinEnabled`, `blockKitEnabled`, `messageUpdatesEnabled`,
+`agentStatusEnabled`, `streamingEnabled`, `interactivityResponsesEnabled`, and
+`feedbackModalsEnabled`.
 The Convex agent health endpoint separately verifies that the Clarity host
 workspace has an active encrypted installation; worker configuration alone
 cannot prove that OAuth installation exists.
@@ -188,7 +200,13 @@ Support-channel messages are canonical from connection onward. A mention starts
 or resumes AI, unmentioned customer replies continue an active thread, an
 operator reply pauses AI, and `@Glass resolve` closes the thread. Outside the
 support channel, only mentions and active-thread replies are retained. A human
-request posts only a content-free link notice into the support channel.
+request posts only a content-free link notice into the support channel. Private
+non-support channels fail closed in the web mirror: the thread is visible only
+to the first mapped Glass member who starts it, or remains Slack-only when no
+current client member can be mapped. A new inbound Slack message automatically
+restores an archived mirror so current activity cannot remain hidden.
+Slack message deletions scrub the mirrored message content, stored attachments,
+edit revisions, and retained inbound event payloads without running the agent.
 
 The App Home Messages tab provides one continuous direct conversation between
 Glass and each customer workspace member. DMs do not require an `@Glass`
@@ -199,6 +217,41 @@ with membership in the connected client org, Convex records the web mirror as
 `visibility: "user_private"` with that user as `createdBy`; otherwise the DM
 continues in Slack but remains absent from the shared web tenant. Multiparty DMs
 remain unsupported.
+
+The web app keeps the eight most recent Slack conversations pinned above
+ordinary web/email threads and provides an All threads page for every older
+active conversation. Slack-origin threads are read-only in Glass, link back to
+Slack, and show a private affordance for `user_private` mirrors. Outbound agent
+messages expose retrying or terminal Slack delivery state instead of presenting
+an undelivered answer as successful.
+
+## Rich responses and interactions
+
+Every Slack agent run creates one durable `slackMessagePresentations` row before
+delivery. Thread replies use Slack streaming with a timeline of sanitized tool
+milestones; App Home DMs use one mutable Block Kit message. Finalization keeps
+the canonical answer in the same Slack message and adds policy cards, linked
+policy details, native certificate-file delivery, an optional human-service
+action in shared threads, and per-response feedback. Only curated activity
+labels are rendered; model reasoning and raw tool input or output are never
+projected into Slack.
+
+The final renderer uses current Slack `card`, `context_actions`, and
+`feedback_buttons` primitives. If Slack rejects a newer block type for a
+particular surface, that same message is retried immediately with classic
+`section` and `actions` blocks. This automatic protocol degradation is part of
+the renderer and is not a rollout gate. If both renderers fail, Glass preserves
+the existing durable plaintext-and-attachment fallback.
+
+Interactive payloads use the same five-minute signature and raw-body validation
+as Events API requests. Buttons carry a random bearer token whose SHA-256 digest
+and 30-day expiry are stored with the presentation; plaintext tokens are never
+persisted. Convex binds every action back to the exact team, channel, provider
+message, connection, tenant, and resolved Slack actor. It idempotently records
+`slackInteractionEvents`, stores one `agentResponseFeedback` row per actor and
+response, opens an optional detail modal after negative feedback, and routes
+human requests through the existing audited handoff mutation. URL buttons
+remain ordinary access-controlled Glass deep links.
 
 ## Policy-delivery migration
 
@@ -217,14 +270,15 @@ npx convex run policyDelivery:verifyDeliveryOwnerBackfill
 The verifier must return zero missing owners before a later narrowing release.
 `brokerOrgId` and `broker_review` remain optional legacy context.
 
-## Rollout and rollback
+## Validation and rollback
 
-Roll out local fixture, staging test app/workspace, then production. For each
-live lane apply the complete manifest, reconnect both host and customer
-installations for the added scopes, and verify OAuth, native signature
+For each live lane apply the complete manifest and verify OAuth, native signature
 rejection/acceptance, uninstall and reinstall, Connect actor identity, App Home
-DMs, mentions, thread replies, edits, multiple inbound files, outbound PDF
-upload, proactive alerts, and policy delivery.
+DMs, mentions, thread replies, edits, progress streaming, policy cards,
+feedback, human handoff, multiple inbound files, outbound certificate/PDF
+upload, proactive alerts, and policy delivery. No new scopes are required by the
+rich-response APIs, so existing installations do not require reauthorization
+for this change.
 
 Before progression run Slack-focused tests, worker build/tests, root and Convex
 typechecks, lint, build, worker checks, deployment health, and

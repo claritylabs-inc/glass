@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  policyAsciiShaderDataUri,
   policyCardBranding,
   policyOverviewBranding,
   tonePolicyCardColor,
@@ -13,12 +14,12 @@ describe("policy card branding", () => {
     expect(tonePolicyCardColor("#DA532C")).toBe("#803F33");
   });
 
-  it("uses a black raster fallback and theme-aware browser surface", () => {
+  it("uses a black raster fallback and adaptive browser surface", () => {
     expect(tonePolicyCardColor()).toBe("#000000");
     expect(policyCardBranding("Insurance carrier")).toMatchObject({
       cardColor: "#000000",
       textColor: "#FFFFFF",
-      surfaceClassName: "bg-background text-foreground",
+      surfaceClassName: "border-border bg-background text-foreground",
       surfaceStyle: undefined,
     });
   });
@@ -39,8 +40,25 @@ describe("policy card branding", () => {
       surfaceClassName: "bg-background text-foreground",
       surfaceStyle: undefined,
     });
-    expect(overviewBranding.patternStyle.backgroundImage).toContain(
+    expect(overviewBranding.patternStyle.backgroundColor).toContain(
       "currentColor",
     );
+  });
+
+  it("uses quiet static phases of the Clarity ASCII shader", () => {
+    const svgs = [0, 1, 2].map((variant) =>
+      decodeURIComponent(
+        policyAsciiShaderDataUri(variant, "#FFFFFF").split(",")[1],
+      ),
+    );
+
+    svgs.forEach((svg, phase) => {
+      expect(svg).toContain('data-pattern="ascii-shader"');
+      expect(svg).toContain(`data-phase="${phase}"`);
+      expect(svg).toContain("<text");
+      expect(svg).not.toContain("<path");
+      expect(svg).not.toContain("<ellipse");
+    });
+    expect(new Set(svgs).size).toBe(3);
   });
 });

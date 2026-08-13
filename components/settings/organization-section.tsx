@@ -379,7 +379,7 @@ export function OrganizationSection() {
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => void saveOrgSettingsNow()}
                 placeholder="Acme Corp"
-                className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+                className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
               />
             </div>
 
@@ -389,7 +389,7 @@ export function OrganizationSection() {
                   Workspace link
                 </label>
                 <div className="flex items-stretch gap-0">
-                  <span className={`inline-flex items-center rounded-l-lg border border-r-0 border-foreground/8 bg-foreground/3 px-3 text-muted-foreground select-none whitespace-nowrap ${typeStyle("body.default")}`}>
+                  <span className={`inline-flex items-center rounded-l-lg border border-r-0 border-input bg-foreground/3 px-3 text-muted-foreground select-none whitespace-nowrap ${typeStyle("body.default")}`}>
                     {WORKSPACE_DOMAIN}/
                   </span>
                   <input
@@ -403,7 +403,7 @@ export function OrganizationSection() {
                     onFocus={() => setSlugFocused(true)}
                     onBlur={() => setSlugFocused(false)}
                     placeholder="my-brokerage"
-                    className={`h-9 flex-1 min-w-0 rounded-r-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+                    className={`h-9 flex-1 min-w-0 rounded-r-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                   />
                 </div>
                 <HandleAvailability
@@ -430,11 +430,11 @@ export function OrganizationSection() {
                 onChange={(e) => setWebsite(e.target.value)}
                 onBlur={() => void saveOrgSettingsNow()}
                 placeholder="https://yourcompany.com"
-                className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+                className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
               />
             </div>
 
-            <div className="space-y-3 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+            <div className="space-y-3 rounded-lg border border-border bg-popover px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <label className={`text-muted-foreground block ${typeStyle("label.field")}`}>
@@ -469,12 +469,12 @@ export function OrganizationSection() {
                         }
                         onBlur={() => void saveOrgSettingsNow()}
                         placeholder="Alternate legal name, DBA, FKA, parent, subsidiary, or affiliate"
-                        className={`h-9 min-w-0 flex-1 rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+                        className={`h-9 min-w-0 flex-1 rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                       />
                       <button
                         type="button"
                         onClick={() => removeRelatedLegalEntity(index)}
-                        className="inline-flex h-9 w-10 items-center justify-center rounded-lg border border-foreground/8 text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
+                        className="inline-flex h-9 w-10 items-center justify-center rounded-lg border border-input text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
                         aria-label="Remove legal entity"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -709,7 +709,7 @@ function BrandingCard({
       />
       <OperationalPanelBody className="space-y-5 px-5 py-5">
         {isBroker && (
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-popover px-4 py-3">
             <div>
               <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 White labeling
@@ -751,11 +751,11 @@ function BrandingCard({
               isBroker && !whiteLabelingEnabled ? "cursor-not-allowed" : ""
             } ${
               dragActive && (!isBroker || whiteLabelingEnabled)
-                ? "border-foreground/30 bg-foreground/3"
-                : "border-foreground/12 bg-popover hover:border-foreground/20"
+                ? "border-border-focus bg-foreground/3"
+                : "border-border-emphasized bg-popover hover:border-border-focus"
             }`}
           >
-            <div className="h-10 w-10 rounded-md border border-foreground/8 bg-white flex items-center justify-center overflow-hidden shrink-0">
+            <div className="h-10 w-10 rounded-md border border-input bg-white flex items-center justify-center overflow-hidden shrink-0">
               {logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img

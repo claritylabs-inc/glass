@@ -118,7 +118,7 @@ export function CertificateHoldArtifacts({
                   {requiredChanges.map((change) => (
                     <span
                       key={change}
-                      className={`rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
+                      className={`rounded-full border border-border-emphasized bg-background px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
                     >
                       {labelForChange(change)}
                     </span>
@@ -127,7 +127,7 @@ export function CertificateHoldArtifacts({
               ) : null}
 
               {evidence.length > 0 ? (
-                <details className="mt-3 rounded-md border border-foreground/8 bg-background/60 p-2">
+                <details className="mt-3 rounded-md border border-input bg-background/60 p-2">
                   <summary className={`flex cursor-pointer items-center gap-1.5 text-muted-foreground ${typeStyle("control.tab")}`}>
                     <AlertTriangle className="size-3.5" />
                     Evidence checked
@@ -147,7 +147,7 @@ export function CertificateHoldArtifacts({
               ) : null}
 
               {draft ? (
-                <div className="mt-3 rounded-md border border-foreground/8 bg-background/70 p-2.5">
+                <div className="mt-3 rounded-md border border-input bg-background/70 p-2.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className={`text-foreground/85 ${typeStyle("caption.medium")}`}>

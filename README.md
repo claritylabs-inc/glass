@@ -1,5 +1,9 @@
 # Glass
 
+Client-facing instructions for web chat, email, iMessage, Slack, connected
+mailboxes, notifications, and document delivery are in the
+[Glass client help](docs/help/README.md) section.
+
 Glass is Clarity Labs' insurance intelligence platform. It combines document extraction, conversational AI, org memory, broker/client workspaces, connected vendor/client access, and API/MCP surfaces in one system.
 
 For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
@@ -46,13 +50,15 @@ deployment and database that belong only to that worktree. Workspace setup:
 
 1. Installs Node 24 and the root and worker dependencies.
 2. Reads the copied cloud-dev selection from `.env.local`, imports that
-   deployment's environment variables into a new native local deployment, and
-   replaces the worktree's Convex URLs with loopback URLs.
-3. Forces local safety settings (`GLASS_ENV=local`, captured email, terminal
-   iMessage, dev clear enabled), maps the copied `NEXT_PUBLIC_MAPBOX_TOKEN` to
-   Convex `MAPBOX_ACCESS_TOKEN` for agent address validation, creates
-   worktree-local worker secrets, and points Convex at the worktree's worker
-   ports.
+   deployment's environment variables when Convex credentials are available,
+   and replaces the worktree's Convex URLs with loopback URLs. A credential-free
+   Conductor Cloud workspace continues with an anonymous local deployment
+   instead of failing on `401 MissingAccessToken`.
+3. Generates a worktree-local Convex Auth signing keypair, forces local safety
+   settings (`GLASS_ENV=local`, captured email, terminal iMessage, dev clear
+   enabled), maps the copied `NEXT_PUBLIC_MAPBOX_TOKEN` to Convex
+   `MAPBOX_ACCESS_TOKEN` for agent address validation, creates worktree-local
+   worker secrets, and points Convex at the worktree's worker ports.
 4. Pushes the schema/functions and seeds the new database once with a curated,
    minimal shared-dev fixture: `terry@claritylabs.inc` as an operator,
    Montgomery Risk with `terry@montgomeryrisk.com` as its admin, Cove with
@@ -67,13 +73,14 @@ deployment and database that belong only to that worktree. Workspace setup:
    worktree-tagged Linux/amd64 worker images; cloud setup uses the compiled
    workers directly.
 
-The imported environment includes provider/auth configuration but never cloud
-database rows or files. Local database state and secrets persist under
-gitignored `.convex/local/default/` and `.context/`. Rerunning setup preserves
-the existing local database and does not reseed it. The fixture copies only a
-small allowlist of identity, organization, relationship, and policy-summary
-fields; it never copies shared-dev auth sessions, email content, documents,
-storage objects, or operational history.
+When credentials are available, the imported environment includes provider and
+integration configuration but never cloud database rows or files. Local auth
+always uses the workspace's own signing keys. Local database state and secrets
+persist under gitignored `.convex/local/default/` and `.context/`. Rerunning
+setup preserves the existing local database and does not reseed it. The fixture
+copies only a small allowlist of identity, organization, relationship, and
+policy-summary fields; it never copies shared-dev auth sessions, email content,
+documents, storage objects, or operational history.
 
 Conductor's archive hook deletes `.convex/local/default/`, including local data
 and auth state, before the worktree is removed. Closing a Conductor tab or the
@@ -118,7 +125,14 @@ loopback-only Convex port.
 
 The checked-in `.worktreeinclude` copies `.env.local` and worker-local env files
 from the repository root. The copied root `.env.local` must initially select a
-cloud dev deployment so setup can import its environment. Keep
+cloud dev deployment. Local workspaces use the signed-in Convex CLI to import
+its environment. Cloud workspaces without a Convex credential skip that import
+and still support seeded browser, auth, email/OTP, and mock-channel QA; AI and
+other provider-backed flows remain unavailable. For full cloud-workspace parity,
+add a deployment-scoped key for the selected dev deployment as
+`CONDUCTOR_CONVEX_SOURCE_DEPLOY_KEY` in the Conductor Cloud Computer environment
+before creating a fresh workspace. A matching standard `CONVEX_DEPLOY_KEY` is
+also accepted. Keep
 `imessage-worker/.env.local` configured with a local test user's E.164
 `IMESSAGE_TERMINAL_FROM_PHONE`; setup assigns that number to the seeded broker
 admin and generates distinct client/public terminal aliases. Generated runtime

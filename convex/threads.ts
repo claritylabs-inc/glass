@@ -480,6 +480,9 @@ export const sendMessage = mutation({
       ctx,
       args.threadId,
     );
+    if (thread.originChannel === "slack") {
+      throw new Error("Continue this conversation in Slack");
+    }
 
     if (args.clientMutationId) {
       const existing = await ctx.db

@@ -325,7 +325,8 @@ describe("model task routing", () => {
         /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
       );
     }
-    expect(appPackage.dependencies["@claritylabs/cl-router-policy"]).toBe("0.1.0");
+    expect(appPackage.dependencies["@claritylabs/cl-router-policy"]).toBe("0.2.0");
+    expect(appPackage.dependencies["@claritylabs/cl-sdk"]).toBe("4.6.0");
   });
 
   test("uses the published router policy package as the single routing vocabulary", () => {
@@ -450,6 +451,28 @@ describe("model fallback policy", () => {
     );
     expect(sdkCallbackSource).toContain(
       "AI Gateway is not a fallback for Glass embeddings",
+    );
+  });
+
+  test("enables cl-router execution when Conductor imports source config", () => {
+    const setupSource = readFileSync(
+      join(__dirname, "../scripts/setup-conductor-workspace.mjs"),
+      "utf-8",
+    );
+    const workerSource = readFileSync(
+      join(__dirname, "../extraction-worker/src/index.ts"),
+      "utf-8",
+    );
+
+    expect(setupSource).toContain("sourceEnvironmentRead ||");
+    expect(setupSource).toContain("resolveConductorClRouterConfig(");
+    expect(setupSource).toContain("{ required: routerRequired }");
+    expect(setupSource).toContain("CL_ROUTER_URL: clRouterUrl");
+    expect(setupSource).toContain("CL_ROUTER_TASKS: clRouterTasks");
+    expect(setupSource).toContain("CL_ROUTER_SECRET: clRouterSecret");
+    expect(workerSource).toContain("clRouterEnabled: clRouter !== null");
+    expect(workerSource).toContain(
+      "clRouterTasks: [...CL_ROUTER_TASK_FLAGS].sort()",
     );
   });
 

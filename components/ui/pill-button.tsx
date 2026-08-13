@@ -72,12 +72,12 @@ type VariantConfig = {
 const variantConfig: Record<PillButtonVariant, VariantConfig> = {
   primary: {
     classes:
-      "[--pill-primary-bg:var(--brand,#000000)] [--pill-primary-fg:var(--brand-foreground,#ffffff)] dark:[--pill-primary-bg:var(--foreground)] dark:[--pill-primary-fg:var(--background)] !bg-[var(--pill-primary-bg)] ![color:var(--pill-primary-fg)] hover:!bg-[color-mix(in_srgb,var(--pill-primary-bg)_86%,var(--background))] hover:ring-1 hover:ring-foreground/10 active:!bg-[color-mix(in_srgb,var(--pill-primary-bg)_76%,var(--background))]",
+      "[--pill-primary-bg:var(--brand,#000000)] [--pill-primary-fg:var(--brand-foreground,#ffffff)] dark:[--pill-primary-bg:var(--foreground)] dark:[--pill-primary-fg:var(--background)] !bg-[var(--pill-primary-bg)] ![color:var(--pill-primary-fg)] hover:!bg-[color-mix(in_srgb,var(--pill-primary-bg)_86%,var(--background))] hover:ring-1 hover:ring-border-emphasized active:!bg-[color-mix(in_srgb,var(--pill-primary-bg)_76%,var(--background))]",
     tap: { scale: 0.98 },
   },
   secondary: {
     classes:
-      "border border-foreground/8 bg-transparent text-muted-foreground hover:border-foreground/14 hover:bg-foreground/[0.03] hover:text-foreground",
+      "border border-input bg-transparent text-muted-foreground hover:border-border-hover hover:bg-foreground/[0.03] hover:text-foreground",
     tap: { opacity: 0.78 },
   },
   destructive: {
@@ -168,7 +168,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
       </>
     );
     const classes = cn(
-      "inline-flex shrink-0 items-center justify-center rounded-full outline-none duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-foreground/10 disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:text-current",
+      "inline-flex shrink-0 items-center justify-center rounded-full outline-none duration-150 ease-out select-none focus-visible:ring-2 focus-visible:ring-border-emphasized disabled:opacity-50 disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:text-current",
       isExpandableIcon
         ? `group/pill transition-[padding,background-color,border-color,color,opacity] duration-[180ms] [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] motion-reduce:transition-colors ${typeStyle("control.buttonCompact")}`
         : "transition-colors",

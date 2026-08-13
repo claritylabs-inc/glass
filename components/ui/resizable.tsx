@@ -1,7 +1,12 @@
 "use client";
 
 import type { ComponentProps } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import {
+  Group,
+  Panel,
+  Separator,
+  useDefaultLayout,
+} from "react-resizable-panels";
 
 import { cn } from "@/lib/utils";
 
@@ -41,4 +46,9 @@ function ResizableSeparator({
   );
 }
 
-export { ResizablePanel, ResizablePanelGroup, ResizableSeparator };
+export {
+  ResizablePanel,
+  ResizablePanelGroup,
+  ResizableSeparator,
+  useDefaultLayout,
+};

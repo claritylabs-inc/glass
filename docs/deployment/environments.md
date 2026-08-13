@@ -83,9 +83,11 @@ Tool-bearing agent loops use `getAgentLanguageModelForOrg`,
 `generateAgentTextForPublicTask`. These helpers preserve AI SDK tools and
 `stopWhen`, require stable run and surface metadata, select through cl-router
 once, pin the chosen route for the remaining steps, and disable router fallback
-after the first successful model step. A pre-response connection, timeout, or
-5xx failure switches the entire run to its direct break-glass model. Generic
-text/object helpers still fail closed when passed tool-loop-only options.
+after the first successful model step. Routed generation carries one total
+execution budget. Production switches the entire run to its direct break-glass
+model only for a typed `router_unavailable` response with
+`executionStarted: false`, or a proven pre-connection refusal/DNS failure.
+Generic text/object helpers still fail closed when passed tool-loop-only options.
 
 Staging and production may append `chat`, `chat_vision`, `email_draft`,
 `email_reply`, and `mailbox_coordinator` to `CL_ROUTER_TASKS`. This routes web,
@@ -108,12 +110,13 @@ or admin API is unavailable; it deliberately cannot be overridden by the UI.
 `CL_ROUTER_SHADOW=1` is a separate diagnostic override and is not controlled by
 the freeze toggle.
 
-During the guarded rollout, Glass uses the direct path only for router
-connection failures, timeouts, and HTTP 5xx before the first successful model
-step. Authentication, validation, other 4xx responses, malformed successful
-responses, and every failure after a successful step fail closed. Chat retains
-a permanent direct break-glass path and never switches routes after visible
-streamed output or a tool result.
+During the guarded rollout, Glass uses direct break-glass only in production
+for proven pre-execution outages. Timeouts, generic 5xx responses,
+authentication/validation failures, other 4xx responses, malformed responses,
+and every failure after a successful step fail closed. Enabled tasks in local,
+shared development, and staging also fail closed so analytics cannot be
+silently bypassed. Chat never switches routes after visible streamed output or
+a tool result.
 
 `/operator/routing` combines router health, policy and hourly rollups with
 30-day Glass routing events. It shows actual versus shadow routes, request IDs,

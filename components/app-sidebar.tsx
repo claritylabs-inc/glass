@@ -392,7 +392,7 @@ export function AppSidebar({
       <aside
         className={`hidden lg:flex flex-col shrink-0 h-full overflow-hidden border-r sidebar-transition ${
           collapsed ? "w-14" : "w-[220px]"
-        } border-foreground/6 bg-background`}
+        } border-border bg-background`}
       >
         <div className="relative h-full min-h-0 w-full overflow-hidden">
           <AnimatePresence initial={false} mode="sync">
@@ -457,7 +457,7 @@ export function AppSidebar({
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
-              className="fixed left-0 top-0 bottom-0 w-[260px] z-50 border-r border-foreground/6 bg-background lg:hidden"
+              className="fixed left-0 top-0 bottom-0 w-[260px] z-50 border-r border-border bg-background lg:hidden"
             >
               {mobileActiveContent}
             </motion.aside>

@@ -179,7 +179,7 @@ function McpSection() {
           className="px-5 py-3.5"
         />
         <OperationalPanelBody className="px-5 py-5">
-          <div className="flex items-center gap-2 rounded-lg border border-foreground/6 bg-foreground/3 p-3">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-foreground/3 p-3">
             <Globe className="size-4 shrink-0 text-muted-foreground" />
             <code className={`flex-1 break-all text-foreground ${typeStyle("technical.codeCompact")}`}>
               {mcpUrl}
@@ -266,7 +266,7 @@ function McpSection() {
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-foreground/6">
+          <div className="divide-y divide-border">
             {connectedApps.map((app) => (
               <div key={app.tokenId} className="flex items-center gap-3 px-5 py-3.5">
                 <div className="min-w-0 flex-1">
@@ -322,7 +322,7 @@ function CliSection() {
       />
       <OperationalPanelBody className="px-5 py-5">
         <div className="relative">
-          <pre className={`overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
+          <pre className={`overflow-x-auto rounded-lg border border-border bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
             {cliSnippet}
           </pre>
           <div className="absolute right-2 top-2">
@@ -373,7 +373,7 @@ function AdvancedSection() {
           Glass sign-in on first use.
         </p>
         <div className="relative">
-          <pre className={`overflow-x-auto rounded-lg border border-foreground/6 bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
+          <pre className={`overflow-x-auto rounded-lg border border-border bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
             {localSnippet}
           </pre>
           <div className="absolute right-2 top-2">

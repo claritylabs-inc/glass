@@ -28,6 +28,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/operator/demo-leads": { label: "Demo leads" },
   "/operator/channels": { label: "Channels" },
   "/operator/routing": { label: "Routing" },
+  "/operator/profile": { label: "Profile" },
 };
 
 export function resolveAppBreadcrumb(pathname: string) {
@@ -111,7 +112,7 @@ export function AppTopBar({
   const { label, href } = resolveAppBreadcrumb(pathname);
 
   return (
-    <header className="h-12 flex items-center gap-3 px-6 lg:px-8 border-b border-foreground/6 shrink-0">
+    <header className="h-12 flex items-center gap-3 px-6 lg:px-8 border-b border-border shrink-0">
       {/* Mobile hamburger */}
       <button
         type="button"

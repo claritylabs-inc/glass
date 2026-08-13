@@ -86,7 +86,7 @@ export default function OperatorClientPolicyDetailPage() {
           clientOrgId={clientOrgId}
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}

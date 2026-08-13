@@ -12,6 +12,10 @@ import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import { canAccessThread } from "./lib/threadAccess";
 import { parseSlackEventPayload } from "./lib/slackPayload";
 import { verifySlackRequest } from "./lib/slackSecurity";
+import {
+  parseSlackInteraction,
+  slackActionToken,
+} from "./lib/slackInteractions";
 import { getSlackMode } from "./lib/slackConfig";
 import {
   type McpPolicySummarySource,
@@ -140,9 +144,114 @@ http.route({
       attachments: payload.attachments,
       eventType: payload.eventType,
       isDirectMessage: payload.isDirectMessage,
+      isPrivateChannel: payload.isPrivateChannel,
       receivedAt: Number.isFinite(timestamp) ? timestamp : dayjs().valueOf(),
     });
     return jsonResponse({ ok: true });
+  }),
+});
+
+http.route({
+  path: "/slack/interactivity",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.SLACK_SIGNING_SECRET?.trim();
+    if (!secret) return jsonResponse({ error: "Slack webhook is not configured" }, 503);
+    const rawBody = await request.text();
+    const verification = await verifySlackRequest({
+      secret,
+      timestamp: request.headers.get("X-Slack-Request-Timestamp"),
+      signature: request.headers.get("X-Slack-Signature"),
+      rawBody,
+    });
+    if (!verification.ok) return jsonResponse({ error: verification.reason }, 401);
+    if (process.env.SLACK_ENABLED !== "true") {
+      return jsonResponse({ error: "Slack is not enabled" }, 404);
+    }
+    const payload = parseSlackInteraction(rawBody);
+    if (!payload) return jsonResponse({ error: "Unsupported Slack interaction" }, 400);
+    if (payload.type === "view_submission") {
+      if (payload.callbackId !== "glass_negative_feedback") {
+        return jsonResponse({ response_action: "clear" });
+      }
+      try {
+        await ctx.runMutation(internalApi.slackPresentation.submitFeedbackComment, {
+          interactionId: payload.privateMetadata,
+          teamId: payload.teamId,
+          actorTeamId: payload.actorTeamId,
+          slackUserId: payload.userId,
+          comment: payload.comment,
+        });
+      } catch (error) {
+        console.warn("[slack] Rejected feedback submission", error);
+      }
+      return jsonResponse({ response_action: "clear" });
+    }
+    const action = slackActionToken(payload.actionId, payload.value);
+    if (!action) return jsonResponse({ error: "Invalid Slack action" }, 400);
+    const interactionKey = [
+      payload.teamId,
+      payload.channelId,
+      payload.messageTs ?? "no-message",
+      payload.userId,
+      payload.actionId,
+      payload.actionTs ?? payload.value,
+    ].join(":");
+    try {
+      const claim = await ctx.runMutation(
+        internalApi.slackPresentation.claimInteraction,
+        {
+          interactionKey,
+          actionToken: action.token,
+          teamId: payload.teamId,
+          actorTeamId: payload.actorTeamId,
+          slackUserId: payload.userId,
+          channelId: payload.channelId,
+          messageTs: payload.messageTs,
+          actionId: payload.actionId,
+          value: action.value,
+        },
+      );
+      if (claim.claimed) {
+        let feedbackModalOpened = false;
+        if (action.value === "negative" && payload.triggerId) {
+          try {
+            const workerUrl = process.env.SLACK_WORKER_URL?.trim().replace(/\/$/, "");
+            const workerSecret = process.env.SLACK_WORKER_SECRET?.trim();
+            if (workerUrl && workerSecret) {
+              const response = await fetch(`${workerUrl}/view/open`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${workerSecret}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  teamId: payload.teamId,
+                  triggerId: payload.triggerId,
+                  privateMetadata: claim.interaction._id,
+                }),
+                signal: AbortSignal.timeout(1_500),
+              });
+              feedbackModalOpened = response.ok;
+            }
+          } catch (error) {
+            console.warn("[slack] Could not open feedback detail modal", error);
+          }
+        }
+        await ctx.scheduler.runAfter(
+          0,
+          internalApi.actions.slackPresentation.processInteraction,
+          {
+            interactionId: claim.interaction._id,
+            feedbackModalOpened,
+          },
+        );
+      }
+      return jsonResponse({ ok: true });
+    } catch (error) {
+      console.warn("[slack] Rejected interactive action", error);
+      return jsonResponse({ ok: true });
+    }
   }),
 });
 

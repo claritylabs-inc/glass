@@ -47,12 +47,12 @@ export function SidebarBrokerContact({
   };
 
   return (
-    <div className="py-4 px-3 space-y-4 border-t border-foreground/6">
+    <div className="py-4 px-3 space-y-4 border-t border-border">
       <div className="flex items-center gap-2.5">
         <div
           className={`h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ${
             isGlassFallback
-              ? "bg-white ring-1 ring-inset ring-foreground/10"
+              ? "bg-white ring-1 ring-inset ring-border-emphasized"
               : hasBrokerIcon
                 ? "bg-transparent"
               : ""

@@ -54,6 +54,9 @@ describe("sidebar source conversations", () => {
         thread(`slack-${index}`, {
           originChannel: "slack",
           title: index % 2 === 0 ? `DM · Contact ${index}` : `#glass-cove · Contact ${index}`,
+          slackConversationKind:
+            index % 2 === 0 ? "direct_message" : "channel",
+          visibility: index % 2 === 0 ? "user_private" : undefined,
         }),
       ),
     );
@@ -71,6 +74,13 @@ describe("sidebar source conversations", () => {
     expect(pinnedConversations.filter((item) => item.kind === "imessage")).toHaveLength(8);
     expect(pinnedConversations.filter((item) => item.kind === "slack")).toHaveLength(8);
     expect(pinnedConversations[0]?.label).toBe("Contact 0");
+    expect(
+      pinnedConversations.find((item) => item.id === "slack-0"),
+    ).toMatchObject({
+      kind: "slack",
+      slackConversationKind: "direct_message",
+      isPrivate: true,
+    });
   });
 
   it("renders Slack and iMessage threads as pinned rows above agent threads", () => {
@@ -83,6 +93,8 @@ describe("sidebar source conversations", () => {
     expect(mainSidebar).toContain('shortcutLabel="pinned thread"');
     expect(mainSidebar).toContain("<Pin");
     expect(mainSidebar).toContain("<SiSlack");
+    expect(mainSidebar).toContain('href="/agent/threads"');
+    expect(mainSidebar).toContain("Private Slack thread");
     expect(mainSidebar.indexOf("pinnedConversations.map")).toBeLessThan(
       mainSidebar.indexOf("agentConversations.map"),
     );
@@ -93,5 +105,7 @@ describe("sidebar source conversations", () => {
       clientSidebar.indexOf("agentConversations.map"),
     );
     expect(threadContent).toContain("getThreadDisplayLabel(thread)");
+    expect(threadContent).toContain("Only you can see this thread in Glass");
+    expect(threadContent).toContain("Not delivered to Slack");
   });
 });

@@ -167,7 +167,7 @@ export function BrandIcon({
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-md bg-transparent text-foreground",
         sizeClasses[size],
-        showImage ? "overflow-hidden" : "border border-foreground/12",
+        showImage ? "overflow-hidden" : "border border-border-emphasized",
         className,
       )}
       style={showImage ? { backgroundColor: imageBackgroundColor } : undefined}

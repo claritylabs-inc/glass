@@ -38,7 +38,7 @@ describe("PolicyListItem", () => {
 
     expect(interactiveMarkup).toContain("cursor-pointer");
     expect(interactiveMarkup).toContain("before:duration-100");
-    expect(interactiveMarkup).toContain("border-current/6");
+    expect(interactiveMarkup).toContain("border-border");
     expect(interactiveMarkup).toContain(
       "[@media(hover:hover)_and_(pointer:fine)]:hover:before:bg-current/[0.03]",
     );
@@ -49,7 +49,7 @@ describe("PolicyListItem", () => {
     expect(staticMarkup).not.toContain("hover:before:bg-current/[0.03]");
   });
 
-  it("uses a white or black theme surface when carrier branding is unavailable", () => {
+  it("uses the adaptive theme surface when carrier branding is unavailable", () => {
     const markup = renderToStaticMarkup(
       <PolicyListItem
         carrier="Unbranded Carrier"
@@ -58,7 +58,7 @@ describe("PolicyListItem", () => {
       />,
     );
 
-    expect(markup).toContain("bg-background text-foreground");
+    expect(markup).toContain("border-border bg-background text-foreground");
     expect(markup).toContain("color-mix(in srgb, currentColor");
     expect(markup).not.toContain("background-color:#1E293B");
   });
@@ -147,8 +147,9 @@ describe("PolicyListItem", () => {
 
     expect(markup).toContain("background-color:#928841");
     expect(markup).toContain("color:#FFFFFF");
-    expect(markup).toContain("repeating-");
-    expect(markup).toContain("radial-gradient(ellipse at 100% 100%");
+    expect(markup).toContain("data:image/svg+xml");
+    expect(markup).toContain("mask-repeat:no-repeat");
+    expect(markup).not.toContain("linear-gradient");
     expect(markup).toContain("https://clearcover.example/favicon.png");
     expect(markup).not.toContain("uppercase");
     expect(markup).not.toContain("inset-x-0 top-0 h-1");

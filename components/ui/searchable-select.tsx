@@ -63,7 +63,7 @@ function SearchableSelectControl({
       autoHighlight
       disabled={disabled}
     >
-      <Combobox.Trigger className={`flex h-9 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg border border-foreground/8 bg-popover px-3 text-left transition-colors hover:border-foreground/14 hover:bg-foreground/1.5 focus:border-foreground/20 focus:outline-none focus:ring-1 focus:ring-foreground/8 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-foreground/8 disabled:hover:bg-popover ${typeStyle("control.menu")}`}>
+      <Combobox.Trigger className={`flex h-9 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg border border-input bg-popover px-3 text-left transition-colors hover:border-border-hover hover:bg-foreground/1.5 focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-input disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-input disabled:hover:bg-popover ${typeStyle("control.menu")}`}>
         <span
           className={`block min-w-0 flex-1 truncate ${selected ? "text-foreground" : "text-muted-foreground/40"}`}
           title={selected?.label}
@@ -75,8 +75,8 @@ function SearchableSelectControl({
 
       <Combobox.Portal>
         <Combobox.Positioner align="start" sideOffset={4} className="isolate z-50">
-          <Combobox.Popup className={`z-50 w-(--anchor-width) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-hidden duration-75 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 ${typeStyle("control.menu")}`}>
-            <div className="p-1.5 border-b border-foreground/6">
+          <Combobox.Popup className={`z-50 w-(--anchor-width) overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-border-emphasized outline-hidden duration-75 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 ${typeStyle("control.menu")}`}>
+            <div className="p-1.5 border-b border-border">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground/40" />
                 <Combobox.Input

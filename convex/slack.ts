@@ -8,6 +8,7 @@ import {
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { normalizeEmailAddress } from "./lib/emailAddress";
+import { slackRetryDelayMs } from "./lib/slackRetry";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -180,13 +181,13 @@ function canonicalEventKey(
     canonicalChannelKey: string;
     eventPrefix: string;
     messageTs: string;
-    eventType: "message" | "edit";
+    eventType: "message" | "edit" | "delete";
   },
 ) {
-  const editPrefix = `${args.eventPrefix}:${args.messageTs}:edit:`;
-  const revisionKey = args.eventType === "edit"
-    ? args.eventKey.startsWith(editPrefix)
-      ? args.eventKey.slice(editPrefix.length)
+  const revisionPrefix = `${args.eventPrefix}:${args.messageTs}:${args.eventType}:`;
+  const revisionKey = args.eventType !== "message"
+    ? args.eventKey.startsWith(revisionPrefix)
+      ? args.eventKey.slice(revisionPrefix.length)
       : args.providerEventId ?? args.eventKey
     : "";
   return `${connectionId}:${args.canonicalChannelKey}:${args.messageTs}:${args.eventType}:${revisionKey}`;
@@ -261,6 +262,50 @@ async function createHandoff(
   return handoffId;
 }
 
+async function scrubDeletedSlackMessage(
+  ctx: MutationCtx,
+  args: {
+    connectionId: Id<"slackWorkspaceConnections">;
+    event: Doc<"slackInboundEvents">;
+    message: Doc<"threadMessages">;
+    now: number;
+  },
+) {
+  for (const attachment of args.message.attachments ?? []) {
+    if (attachment.fileId) await ctx.storage.delete(attachment.fileId);
+  }
+  const revisions = await ctx.db
+    .query("slackMessageRevisions")
+    .withIndex("by_threadMessageId_and_editedAt", (q) =>
+      q.eq("threadMessageId", args.message._id),
+    )
+    .collect();
+  for (const revision of revisions) await ctx.db.delete(revision._id);
+  const sourceEvents = await ctx.db
+    .query("slackInboundEvents")
+    .withIndex("by_connection_channel_thread_message", (q) =>
+      q
+        .eq("connectionId", args.connectionId)
+        .eq("channelId", args.event.channelId)
+        .eq("threadTs", args.event.threadTs)
+        .eq("messageTs", args.event.messageTs),
+    )
+    .collect();
+  for (const sourceEvent of sourceEvents) {
+    await ctx.db.patch(sourceEvent._id, {
+      content: "",
+      attachment: undefined,
+      attachments: undefined,
+      updatedAt: args.now,
+    });
+  }
+  await ctx.db.patch(args.message._id, {
+    content: "Message deleted in Slack",
+    attachments: undefined,
+    slackDeletedAt: args.event.receivedAt,
+  });
+}
+
 export const claimInbound = internalMutation({
   args: {
     eventKey: v.string(),
@@ -277,8 +322,13 @@ export const claimInbound = internalMutation({
     content: v.string(),
     attachment: v.optional(attachmentValidator),
     attachments: v.optional(v.array(attachmentValidator)),
-    eventType: v.union(v.literal("message"), v.literal("edit")),
+    eventType: v.union(
+      v.literal("message"),
+      v.literal("edit"),
+      v.literal("delete"),
+    ),
     isDirectMessage: v.optional(v.boolean()),
+    isPrivateChannel: v.optional(v.boolean()),
     receivedAt: v.number(),
   },
   handler: async (ctx, args) => {
@@ -338,7 +388,12 @@ export const claimInbound = internalMutation({
     const mentionsGlass = connection.botUserId
       ? args.content.includes(`<@${connection.botUserId}>`)
       : false;
-    if (!args.isDirectMessage && !identity.isPrimaryChannel && !mentionsGlass) {
+    if (
+      args.eventType !== "delete" &&
+      !args.isDirectMessage &&
+      !identity.isPrimaryChannel &&
+      !mentionsGlass
+    ) {
       const activeThread = await ctx.db
         .query("threads")
         .withIndex(
@@ -599,7 +654,7 @@ export const prepareBatch = internalMutation({
         )
         .first();
 
-      if (event.eventType === "edit") {
+      if (event.eventType === "edit" || event.eventType === "delete") {
         const message = existingThread
           ? await ctx.db
               .query("threadMessages")
@@ -610,7 +665,18 @@ export const prepareBatch = internalMutation({
               )
               .first()
           : null;
-        if (message && message.content !== event.content) {
+        if (message && event.eventType === "delete") {
+          await scrubDeletedSlackMessage(ctx, {
+            connectionId: connection._id,
+            event,
+            message,
+            now,
+          });
+          if (trigger?.userMessageId === message._id) {
+            await ctx.db.delete(trigger.agentMessageId);
+            trigger = undefined;
+          }
+        } else if (message && message.content !== event.content) {
           await ctx.db.insert("slackMessageRevisions", {
             threadMessageId: message._id,
             slackTeamId: event.teamId,
@@ -643,16 +709,30 @@ export const prepareBatch = internalMutation({
         continue;
       }
 
+      const membership = !isDirectMessage
+        ? await ctx.db
+            .query("slackChannelMemberships")
+            .withIndex("by_connectionId_and_channelId", (q) =>
+              q
+                .eq("connectionId", connection._id)
+                .eq("channelId", threadChannelId),
+            )
+            .first()
+        : null;
+      const isPrivateChannel =
+        !isDirectMessage &&
+        !event.isPrimaryChannel &&
+        (event.isPrivateChannel === true ||
+          membership?.isPrivate === true ||
+          threadChannelId.startsWith("G"));
+      const isUserPrivate = isDirectMessage || isPrivateChannel;
+      const privateOwnerId =
+        !isDirectMessage && existingThread?.visibility === "user_private"
+          ? existingThread.createdBy
+          : actor.glassUserId ?? connection.serviceUserId;
+
       let thread = existingThread;
       if (!thread) {
-        const membership = await ctx.db
-          .query("slackChannelMemberships")
-          .withIndex("by_connectionId_and_channelId", (q) =>
-            q
-              .eq("connectionId", connection._id)
-              .eq("channelId", threadChannelId),
-          )
-          .first();
         const channelLabel = membership?.status === "active"
           ? membership.channelName
           : event.isPrimaryChannel && binding
@@ -663,14 +743,13 @@ export const prepareBatch = internalMutation({
           orgId: connection.clientOrgId,
           title: isDirectMessage
             ? `DM · ${actorName}`
-            : `Slack #${channelLabel} — ${actorName}`,
-          createdBy:
-            isDirectMessage && actor.glassUserId
-              ? actor.glassUserId
-              : connection.serviceUserId,
+            : `#${channelLabel} · ${actorName}`,
+          createdBy: isUserPrivate
+            ? privateOwnerId
+            : connection.serviceUserId,
           lastMessageAt: event.receivedAt,
           originChannel: "slack",
-          visibility: isDirectMessage ? "user_private" : undefined,
+          visibility: isUserPrivate ? "user_private" : undefined,
           slackConnectionId: connection._id,
           slackChannelId: threadChannelId,
           slackThreadTs: event.threadTs,
@@ -688,17 +767,19 @@ export const prepareBatch = internalMutation({
         });
         thread = await ctx.db.get(threadId);
         if (!thread) throw new Error("Could not create Slack thread");
-      } else if (isDirectMessage) {
-        const dmOwnerId = actor.glassUserId ?? connection.serviceUserId;
+      } else if (isUserPrivate) {
         if (
-          thread.createdBy !== dmOwnerId ||
+          thread.createdBy !== privateOwnerId ||
           thread.visibility !== "user_private" ||
-          thread.slackConversationKind !== "direct_message"
+          (isDirectMessage &&
+            thread.slackConversationKind !== "direct_message")
         ) {
           await ctx.db.patch(thread._id, {
-            createdBy: dmOwnerId,
+            createdBy: privateOwnerId,
             visibility: "user_private",
-            slackConversationKind: "direct_message",
+            ...(isDirectMessage
+              ? { slackConversationKind: "direct_message" as const }
+              : {}),
           });
         }
       }
@@ -734,7 +815,10 @@ export const prepareBatch = internalMutation({
           `[Attached ${inboundAttachments.map((attachment) => attachment.filename).join(", ") || "file"}]`,
         attachments: attachments.length ? attachments : undefined,
       });
-      await ctx.db.patch(thread._id, { lastMessageAt: event.receivedAt });
+      await ctx.db.patch(thread._id, {
+        lastMessageAt: event.receivedAt,
+        archivedAt: undefined,
+      });
 
       if (operator && (event.isPrimaryChannel || !event.mentionsGlass)) {
         if (trigger) await ctx.db.delete(trigger.agentMessageId);
@@ -798,6 +882,8 @@ export const prepareBatch = internalMutation({
           connectionId: connection._id,
           channelId: first.channelId,
           threadTs: first.isDirectMessage ? undefined : first.threadTs,
+          recipientUserId: first.senderUserId,
+          recipientTeamId: first.senderTeamId,
         }
       : null;
   },
@@ -818,7 +904,10 @@ export const failEvents = internalMutation({
         const shouldRetry = event.attemptCount < 3;
         const scheduledFor = shouldRetry
           ? dayjs()
-              .add(2 ** event.attemptCount, "second")
+              .add(
+                slackRetryDelayMs(args.error, event.attemptCount),
+                "millisecond",
+              )
               .valueOf()
           : event.scheduledFor;
         await ctx.db.patch(eventId, {

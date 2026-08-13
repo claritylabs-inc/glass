@@ -22,7 +22,7 @@ function FormSection({
     <section
       className={cn(
         "space-y-3",
-        divided && "border-t border-foreground/6 pt-4",
+        divided && "border-t border-border pt-4",
         className,
       )}
     >

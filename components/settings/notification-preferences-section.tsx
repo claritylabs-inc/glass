@@ -162,7 +162,7 @@ function NotificationPreferenceDrawer({
         }
         divided={false}
       >
-        <OperationalPanel as="div" className="divide-y divide-foreground/6">
+        <OperationalPanel as="div" className="divide-y divide-border">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <div>
               <p className={`text-foreground ${typeStyle("body.medium")}`}>Email</p>
@@ -382,7 +382,7 @@ export function NotificationPreferencesSection({
       {groups.map((group) => (
         <OperationalPanel key={group}>
           <OperationalPanelHeader title={group} className="px-5 py-3.5" />
-          <div className="divide-y divide-foreground/6">
+          <div className="divide-y divide-border">
             {visibleRows
               .filter((row) => row.group === group)
               .map((row) => {
@@ -396,7 +396,7 @@ export function NotificationPreferencesSection({
                     key={row.type}
                     type="button"
                     onClick={() => setSelectedType(row.type)}
-                    className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/10"
+                    className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-emphasized"
                   >
                     <span className={`min-w-0 flex-1 text-foreground ${typeStyle("body.medium")}`}>
                       {row.label}

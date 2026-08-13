@@ -13,6 +13,56 @@ afterEach(() => {
 });
 
 describe("sendSlack", () => {
+  test("persists and sends Block Kit even when the fallback text is empty", async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Cove",
+        type: "client",
+      });
+      const serviceUserId = await ctx.db.insert("users", {
+        name: "Glass Slack",
+        accountKind: "customer",
+        serviceAccountKind: "slack",
+      });
+      const connectionId = await ctx.db.insert("slackWorkspaceConnections", {
+        clientOrgId: orgId,
+        teamId: "T-CUSTOMER",
+        teamName: "Cove",
+        botUserId: "U-GLASS",
+        grantedScopes: ["chat:write"],
+        status: "active",
+        serviceUserId,
+        thirdPartyVisibilityAcknowledged: true,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { orgId, connectionId };
+    });
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        text: "",
+        blocks: [{ type: "section" }],
+      });
+      return Response.json({ messageId: "1800000000.500" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example");
+    vi.stubEnv("SLACK_WORKER_SECRET", "test-secret");
+
+    const result = await t.action(sendFn, {
+      idempotencyKey: "rich-only",
+      orgId: seeded.orgId,
+      connectionId: seeded.connectionId,
+      channelId: "C-PRIMARY",
+      content: "",
+      blocks: [{ type: "section" }],
+    });
+    expect(result).toMatchObject({ status: "sent" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   test("threads file parts under a new text message", async () => {
     const t = convexTest(schema, modules);
     const seeded = await t.run(async (ctx) => {

@@ -185,10 +185,19 @@ describe("sdkCallbacks PDF inputs", () => {
   });
 
   test("falls back to the original direct callback only for eligible router failures", async () => {
+    vi.stubEnv("GLASS_ENV", "production");
     vi.stubEnv("CL_ROUTER_TASKS", "extraction");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 503 })));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      error: {
+        code: "router_unavailable",
+        message: "No eligible route is available.",
+        retryable: true,
+        executionStarted: false,
+        requestId: "failed-generation-request",
+      },
+    }, { status: 503 })));
 
     const routing = { ...testRouting(), traceId: "trace-1" };
     await expect(makeGenerateObject("extraction", routing)({
@@ -220,10 +229,19 @@ describe("sdkCallbacks PDF inputs", () => {
   });
 
   test("reuses one settings snapshot for router and direct embedding fallback", async () => {
+    vi.stubEnv("GLASS_ENV", "production");
     vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 503 })));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      error: {
+        code: "router_unavailable",
+        message: "No eligible route is available.",
+        retryable: true,
+        executionStarted: false,
+        requestId: "failed-embedding-request",
+      },
+    }, { status: 503 })));
     const runQuery = vi.fn(async () => ({
       routes: { embeddings: { provider: "openai", model: "text-embedding-3-small" } },
       routeSources: { embeddings: "broker" },

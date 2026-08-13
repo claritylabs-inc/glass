@@ -299,6 +299,12 @@ const checks = [
         connectProvisioningEnabled: true,
         channelInventoryEnabled: true,
         publicChannelJoinEnabled: true,
+        blockKitEnabled: true,
+        messageUpdatesEnabled: true,
+        agentStatusEnabled: true,
+        streamingEnabled: true,
+        interactivityResponsesEnabled: true,
+        feedbackModalsEnabled: true,
       };
       const failures = Object.entries(expected)
         .filter(([key, value]) => payload[key] !== value)

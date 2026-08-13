@@ -26,12 +26,20 @@ async function freePort() {
   return address.port;
 }
 
-async function readJson(request: http.IncomingMessage) {
+async function readBody(request: http.IncomingMessage) {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const body = Buffer.concat(chunks).toString("utf8");
+  if (
+    request.headers["content-type"]?.startsWith(
+      "application/x-www-form-urlencoded",
+    )
+  ) {
+    return Object.fromEntries(new URLSearchParams(body));
+  }
+  return JSON.parse(body);
 }
 
 function respond(response: http.ServerResponse, body: unknown) {
@@ -65,7 +73,15 @@ before(async () => {
   const providerPort = await freePort();
   providerOrigin = `http://127.0.0.1:${providerPort}`;
   provider = http.createServer(async (request, response) => {
-    const body = await readJson(request);
+    if (request.url === "/source.pdf") {
+      response.writeHead(200, { "Content-Type": "application/pdf" });
+      return response.end("policy");
+    }
+    if (request.url === "/upload") {
+      response.writeHead(200);
+      return response.end();
+    }
+    const body = await readBody(request);
     apiCalls.push({
       path: request.url ?? "",
       authorization: request.headers.authorization,
@@ -82,7 +98,80 @@ before(async () => {
     if (request.url === "/api/chat.postMessage") {
       return respond(response, { ok: true, ts: "1800000000.100" });
     }
+    if (request.url === "/api/chat.update") {
+      return respond(response, { ok: true, ts: "1800000000.100" });
+    }
+    if (request.url === "/api/assistant.threads.setStatus") {
+      return respond(response, { ok: true });
+    }
+    if (request.url === "/api/chat.startStream") {
+      return respond(response, { ok: true, ts: "1800000000.300" });
+    }
+    if (request.url === "/api/chat.appendStream") {
+      return respond(response, { ok: true });
+    }
+    if (request.url === "/api/chat.stopStream") {
+      return respond(response, { ok: true, ts: "1800000000.300" });
+    }
+    if (request.url === "/api/chat.postEphemeral") {
+      return respond(response, { ok: true, message_ts: "1800000000.400" });
+    }
+    if (request.url === "/api/views.open") {
+      return respond(response, { ok: true, view: { id: "V-FEEDBACK" } });
+    }
+    if (request.url === "/api/files.getUploadURLExternal") {
+      if (
+        !request.headers["content-type"]?.startsWith(
+          "application/x-www-form-urlencoded",
+        )
+      ) {
+        return respond(response, { ok: false, error: "invalid_arguments" });
+      }
+      return respond(response, {
+        ok: true,
+        upload_url: `${providerOrigin}/upload`,
+        file_id: "F-POLICY",
+      });
+    }
+    if (request.url === "/api/files.completeUploadExternal") {
+      return respond(response, {
+        ok: true,
+        files: [
+          {
+            id: "F-POLICY",
+            shares: {
+              private: { "C-CUSTOMER": [{ ts: "1800000000.200" }] },
+            },
+          },
+        ],
+      });
+    }
+    if (request.url === "/api/files.info") {
+      if (
+        !request.headers["content-type"]?.startsWith(
+          "application/x-www-form-urlencoded",
+        )
+      ) {
+        return respond(response, { ok: false, error: "file_not_found" });
+      }
+      return respond(response, {
+        ok: true,
+        file: {
+          url_private_download: `${providerOrigin}/source.pdf`,
+          shares: {
+            private: { "C-CUSTOMER": [{ ts: "1800000000.200" }] },
+          },
+        },
+      });
+    }
     if (request.url === "/api/users.info") {
+      if (
+        !request.headers["content-type"]?.startsWith(
+          "application/x-www-form-urlencoded",
+        )
+      ) {
+        return respond(response, { ok: false, error: "user_not_found" });
+      }
       return respond(response, {
         ok: true,
         user: {
@@ -227,17 +316,21 @@ describe("native Slack worker HTTP adapter", () => {
       messageId: "1800000000.100",
       attachmentFailures: [],
     });
-    assert.deepEqual(
-      apiCalls.find((call) => call.path === "/api/chat.postMessage"),
-      {
-        path: "/api/chat.postMessage",
-        authorization: "Bearer xoxb-customer",
-        body: {
-          channel: "C-CUSTOMER",
-          text: "*Policy:* <https://example.test/policy|Open>",
-          mrkdwn: true,
-        },
-      },
+    const chatCall = apiCalls.find(
+      (call) => call.path === "/api/chat.postMessage",
+    );
+    assert(chatCall);
+    const { client_msg_id: clientMessageId, ...chatBody } = chatCall.body;
+    assert.deepEqual(chatBody, {
+      channel: "C-CUSTOMER",
+      text: "*Policy:* <https://example.test/policy|Open>",
+      mrkdwn: true,
+      unfurl_links: false,
+      unfurl_media: false,
+    });
+    assert.match(
+      String(clientMessageId),
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
 
     const actor = await workerRequest("/actor", {
@@ -252,6 +345,138 @@ describe("native Slack worker HTTP adapter", () => {
       isBot: false,
       botUserId: "U-GLASS",
     });
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/users.info"),
+      {
+        path: "/api/users.info",
+        authorization: "Bearer xoxb-customer",
+        body: { user: "U-CUSTOMER" },
+      },
+    );
+  });
+
+  test("uses form encoding for Slack file metadata and upload URL calls", async () => {
+    const attachment = await workerRequest("/attachment", {
+      teamId: "T-CUSTOMER",
+      fileId: "F-POLICY",
+    });
+    assert.equal(await attachment.text(), "policy");
+
+    const send = await workerRequest("/send", {
+      clientMessageId: "native-file-1",
+      teamId: "T-CUSTOMER",
+      channelId: "C-CUSTOMER",
+      text: "",
+      attachments: [
+        {
+          url: `${providerOrigin}/source.pdf`,
+          filename: "policy.pdf",
+          contentType: "application/pdf",
+        },
+      ],
+    });
+    assert.deepEqual(await send.json(), {
+      messageId: "1800000000.200",
+      attachmentFailures: [],
+    });
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/files.info")?.body,
+      { file: "F-POLICY" },
+    );
+    assert.deepEqual(
+      apiCalls.find(
+        (call) => call.path === "/api/files.getUploadURLExternal",
+      )?.body,
+      { filename: "policy.pdf", length: "6" },
+    );
+  });
+
+  test("updates, streams, reports status, and opens feedback through native APIs", async () => {
+    const teamId = "T-CUSTOMER";
+    const channelId = "C-CUSTOMER";
+    const threadTs = "1800000000.050";
+    const stream = await workerRequest("/stream/start", {
+      teamId,
+      channelId,
+      threadTs,
+      recipientUserId: "U-CUSTOMER",
+      recipientTeamId: teamId,
+      status: "Reviewing your request",
+    });
+    assert.deepEqual(await stream.json(), { messageId: "1800000000.300" });
+    await workerRequest("/stream/append", {
+      teamId,
+      channelId,
+      messageTs: "1800000000.300",
+      markdownText: "[[g:Policy found]]",
+      tasks: [{ id: "lookup", title: "Found the policy", status: "complete" }],
+    });
+    await workerRequest("/stream/stop", {
+      teamId,
+      channelId,
+      messageTs: "1800000000.300",
+      text: "[[g:Policy found]]",
+      blocks: [{ type: "section", text: { type: "mrkdwn", text: "Policy" } }],
+    });
+    await workerRequest("/message/update", {
+      teamId,
+      channelId,
+      messageTs: "1800000000.100",
+      text: "Updated",
+      blocks: [],
+    });
+    await workerRequest("/thread/status", {
+      teamId,
+      channelId,
+      threadTs,
+      status: "is checking coverages…",
+    });
+    await workerRequest("/ephemeral", {
+      teamId,
+      channelId,
+      userId: "U-CUSTOMER",
+      threadTs,
+      text: "Thanks",
+    });
+    const view = await workerRequest("/view/open", {
+      teamId,
+      triggerId: "trigger-1",
+      privateMetadata: "interaction-1",
+    });
+    assert.deepEqual(await view.json(), { viewId: "V-FEEDBACK" });
+
+    const paths = [
+      "/api/chat.startStream",
+      "/api/chat.appendStream",
+      "/api/chat.stopStream",
+      "/api/chat.update",
+      "/api/assistant.threads.setStatus",
+      "/api/chat.postEphemeral",
+      "/api/views.open",
+    ];
+    assert(paths.every((path) => apiCalls.some((call) => call.path === path)));
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/chat.appendStream")?.body,
+      {
+        channel: channelId,
+        ts: "1800000000.300",
+        markdown_text: "Policy found",
+        chunks: [{
+          type: "task_update",
+          id: "lookup",
+          title: "Found the policy",
+          status: "complete",
+        }],
+      },
+    );
+    assert.equal(
+      apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body.markdown_text,
+      "Policy found",
+    );
+    assert.equal(
+      apiCalls.find((call) => call.path === "/api/views.open")?.body.trigger_id,
+      "trigger-1",
+    );
   });
 
   test("uses the separate Clarity installation for Connect provisioning", async () => {
@@ -350,8 +575,8 @@ describe("native Slack worker HTTP adapter", () => {
         authorization: "Bearer xoxb-customer",
         body: {
           types: "public_channel,private_channel",
-          exclude_archived: true,
-          limit: 200,
+          exclude_archived: "true",
+          limit: "200",
         },
       },
     );

@@ -1,5 +1,6 @@
 import http from "node:http";
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { SendIdempotency, type SendResult } from "./idempotency.js";
 import { toSlackMrkdwn } from "./mrkdwn.js";
@@ -10,7 +11,57 @@ type SendRequest = {
   channelId: string;
   threadTs?: string;
   text: string;
+  blocks?: SlackBlock[];
   attachments?: Array<{ url: string; filename: string; contentType: string }>;
+};
+type SlackBlock = Record<string, unknown>;
+type UpdateRequest = {
+  teamId: string;
+  channelId: string;
+  messageTs: string;
+  text: string;
+  blocks?: SlackBlock[];
+};
+type StatusRequest = {
+  teamId: string;
+  channelId: string;
+  threadTs: string;
+  status: string;
+};
+type StreamStartRequest = {
+  teamId: string;
+  channelId: string;
+  threadTs: string;
+  recipientUserId: string;
+  recipientTeamId: string;
+  status?: string;
+};
+type StreamAppendRequest = {
+  teamId: string;
+  channelId: string;
+  messageTs: string;
+  markdownText?: string;
+  tasks?: Array<{
+    id: string;
+    title: string;
+    status: "pending" | "in_progress" | "complete" | "error";
+  }>;
+};
+type StreamStopRequest = StreamAppendRequest & {
+  text: string;
+  blocks?: SlackBlock[];
+};
+type EphemeralRequest = {
+  teamId: string;
+  channelId: string;
+  userId: string;
+  threadTs?: string;
+  text: string;
+};
+type OpenViewRequest = {
+  teamId: string;
+  triggerId: string;
+  privateMetadata: string;
 };
 
 type AttachmentRequest = { teamId: string; fileId: string };
@@ -60,7 +111,11 @@ type ActorResolution = {
   isBot: boolean;
   botUserId?: string;
 };
-type SlackResponse = { ok?: boolean; error?: string };
+type SlackResponse = {
+  ok?: boolean;
+  error?: string;
+  not_in_channel?: boolean;
+};
 type SlackFile = {
   id?: string;
   shares?: Record<string, Record<string, Array<{ ts?: string }>>>;
@@ -87,6 +142,7 @@ const actorCache = new Map<
   string,
   { actor: ActorResolution; expiresAt: number }
 >();
+const actorInFlight = new Map<string, Promise<ActorResolution>>();
 const mockFailedAttachments = new Set<string>();
 const mockJoinedChannelIds = new Set<string>();
 const mockLeftChannelIds = new Set<string>();
@@ -126,7 +182,7 @@ function validateSend(input: SendRequest) {
   if (!input.clientMessageId || !input.teamId || !input.channelId) {
     throw new Error("clientMessageId, teamId, and channelId are required");
   }
-  if (!input.text.trim() && !input.attachments?.length) {
+  if (!input.text.trim() && !input.blocks?.length && !input.attachments?.length) {
     throw new Error("A message or attachment is required");
   }
 }
@@ -184,6 +240,23 @@ async function slackInstallation(teamId: string): Promise<SlackInstallation> {
   }
 }
 
+async function readSlackApiResponse<T extends SlackResponse>(
+  method: string,
+  response: Response,
+): Promise<T> {
+  const payload = (await response.json()) as T;
+  if (method === "conversations.leave" && payload.not_in_channel === true) {
+    return payload;
+  }
+  if (!response.ok || !payload.ok) {
+    const retryAfter = response.headers.get("retry-after");
+    throw new Error(
+      `${payload.error ?? `${method} failed (${response.status})`}${retryAfter ? `; retry after ${retryAfter}s` : ""}`,
+    );
+  }
+  return payload;
+}
+
 async function slackApi<T extends SlackResponse>(
   method: string,
   token: string,
@@ -198,14 +271,37 @@ async function slackApi<T extends SlackResponse>(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  const payload = (await response.json()) as T;
-  if (!response.ok || !payload.ok) {
-    const retryAfter = response.headers.get("retry-after");
-    throw new Error(
-      `${payload.error ?? `${method} failed (${response.status})`}${retryAfter ? `; retry after ${retryAfter}s` : ""}`,
-    );
-  }
-  return payload;
+  return await readSlackApiResponse<T>(method, response);
+}
+
+async function slackFormApi<T extends SlackResponse>(
+  method: string,
+  token: string,
+  body: Record<string, string | number | boolean>,
+): Promise<T> {
+  const response = await fetch(`${slackApiBaseUrl}/${method}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+    },
+    body: new URLSearchParams(
+      Object.entries(body).map(([key, value]) => [key, String(value)]),
+    ),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  return await readSlackApiResponse<T>(method, response);
+}
+
+function slackClientMessageId(value: string) {
+  const hex = createHash("sha256").update(value).digest("hex").slice(0, 32);
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `5${hex.slice(13, 16)}`,
+    `${((Number.parseInt(hex[16] ?? "0", 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
+    hex.slice(20),
+  ].join("-");
 }
 
 function slackFileMessageTs(file: SlackFile | undefined, channelId: string) {
@@ -233,7 +329,7 @@ async function uploadSlackFile(args: {
     throw new Error(`Attachment download failed (${source.status})`);
   }
   const bytes = Buffer.from(await source.arrayBuffer());
-  const upload = await slackApi<
+  const upload = await slackFormApi<
     SlackResponse & { upload_url?: string; file_id?: string }
   >("files.getUploadURLExternal", args.token, {
     filename: args.filename,
@@ -269,7 +365,7 @@ async function uploadSlackFile(args: {
   );
   const completedTs = slackFileMessageTs(completedFile, args.channelId);
   if (completedTs) return completedTs;
-  const info = await slackApi<SlackResponse & { file?: SlackFile }>(
+  const info = await slackFormApi<SlackResponse & { file?: SlackFile }>(
     "files.info",
     args.token,
     { file: upload.file_id },
@@ -303,14 +399,18 @@ async function sendSlack(input: SendRequest): Promise<SendResult> {
 
   const installation = await slackInstallation(input.teamId);
   let messageId: string | undefined;
-  if (input.text.trim()) {
+  if (input.text.trim() || input.blocks?.length) {
     const sent = await slackApi<SlackResponse & { ts?: string }>(
       "chat.postMessage",
       installation.botToken,
       {
         channel: input.channelId,
         text: toSlackMrkdwn(input.text),
+        ...(input.blocks?.length ? { blocks: input.blocks } : {}),
         mrkdwn: true,
+        unfurl_links: false,
+        unfurl_media: false,
+        client_msg_id: slackClientMessageId(input.clientMessageId),
         ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
       },
     );
@@ -338,12 +438,167 @@ async function sendSlack(input: SendRequest): Promise<SendResult> {
   return { messageId, attachmentFailures };
 }
 
+function streamTaskChunks(tasks: StreamAppendRequest["tasks"]) {
+  return (tasks ?? []).map((task) => ({
+    type: "task_update",
+    id: task.id,
+    title: task.title.slice(0, 256),
+    status: task.status,
+  }));
+}
+
+async function updateSlackMessage(input: UpdateRequest) {
+  if (mode === "mock") return { messageId: input.messageTs };
+  const installation = await slackInstallation(input.teamId);
+  const updated = await slackApi<SlackResponse & { ts?: string }>(
+    "chat.update",
+    installation.botToken,
+    {
+      channel: input.channelId,
+      ts: input.messageTs,
+      text: toSlackMrkdwn(input.text),
+      blocks: input.blocks ?? [],
+    },
+  );
+  return { messageId: updated.ts ?? input.messageTs };
+}
+
+async function setSlackStatus(input: StatusRequest) {
+  if (mode === "mock") return { ok: true };
+  const installation = await slackInstallation(input.teamId);
+  await slackApi<SlackResponse>(
+    "assistant.threads.setStatus",
+    installation.botToken,
+    {
+      channel_id: input.channelId,
+      thread_ts: input.threadTs,
+      status: input.status.slice(0, 100),
+    },
+  );
+  return { ok: true };
+}
+
+async function startSlackStream(input: StreamStartRequest) {
+  if (mode === "mock") return { messageId: `mock-stream-${input.threadTs}` };
+  const installation = await slackInstallation(input.teamId);
+  const started = await slackApi<SlackResponse & { ts?: string }>(
+    "chat.startStream",
+    installation.botToken,
+    {
+      channel: input.channelId,
+      thread_ts: input.threadTs,
+      recipient_user_id: input.recipientUserId,
+      recipient_team_id: input.recipientTeamId,
+      chunks: [
+        {
+          type: "task_update",
+          id: "glass-review",
+          title: (input.status ?? "Reviewing your request").slice(0, 256),
+          status: "in_progress",
+        },
+      ],
+      task_display_mode: "timeline",
+    },
+  );
+  if (!started.ts) throw new Error("Slack did not return a streaming message timestamp");
+  return { messageId: started.ts };
+}
+
+async function appendSlackStream(input: StreamAppendRequest) {
+  const taskChunks = streamTaskChunks(input.tasks);
+  if (!input.markdownText?.trim() && taskChunks.length === 0) {
+    throw new Error("markdownText or tasks are required");
+  }
+  if (mode === "mock") return { messageId: input.messageTs };
+  const installation = await slackInstallation(input.teamId);
+  await slackApi<SlackResponse>("chat.appendStream", installation.botToken, {
+    channel: input.channelId,
+    ts: input.messageTs,
+    ...(input.markdownText?.trim()
+      ? { markdown_text: toSlackMrkdwn(input.markdownText) }
+      : {}),
+    ...(taskChunks.length ? { chunks: taskChunks } : {}),
+  });
+  return { messageId: input.messageTs };
+}
+
+async function stopSlackStream(input: StreamStopRequest) {
+  if (mode === "mock") return { messageId: input.messageTs };
+  const installation = await slackInstallation(input.teamId);
+  const taskChunks = streamTaskChunks(input.tasks);
+  const stopped = await slackApi<SlackResponse & { ts?: string }>(
+    "chat.stopStream",
+    installation.botToken,
+    {
+      channel: input.channelId,
+      ts: input.messageTs,
+      ...(input.text.trim() ? { markdown_text: toSlackMrkdwn(input.text) } : {}),
+      ...(input.blocks?.length ? { blocks: input.blocks } : {}),
+      ...(taskChunks.length ? { chunks: taskChunks } : {}),
+    },
+  );
+  return { messageId: stopped.ts ?? input.messageTs };
+}
+
+async function postEphemeral(input: EphemeralRequest) {
+  if (mode === "mock") return { messageId: `mock-ephemeral-${input.userId}` };
+  const installation = await slackInstallation(input.teamId);
+  const sent = await slackApi<SlackResponse & { message_ts?: string }>(
+    "chat.postEphemeral",
+    installation.botToken,
+    {
+      channel: input.channelId,
+      user: input.userId,
+      text: input.text,
+      ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
+    },
+  );
+  return { messageId: sent.message_ts };
+}
+
+async function openFeedbackView(input: OpenViewRequest) {
+  if (mode === "mock") return { viewId: `mock-view-${input.triggerId}` };
+  const installation = await slackInstallation(input.teamId);
+  const opened = await slackApi<
+    SlackResponse & { view?: { id?: string } }
+  >("views.open", installation.botToken, {
+    trigger_id: input.triggerId,
+    view: {
+      type: "modal",
+      callback_id: "glass_negative_feedback",
+      private_metadata: input.privateMetadata,
+      title: { type: "plain_text", text: "Help Glass improve" },
+      submit: { type: "plain_text", text: "Send feedback" },
+      close: { type: "plain_text", text: "Cancel" },
+      blocks: [
+        {
+          type: "input",
+          block_id: "glass_feedback_comment_block",
+          optional: true,
+          label: { type: "plain_text", text: "What could be better?" },
+          element: {
+            type: "plain_text_input",
+            action_id: "glass_feedback_comment",
+            multiline: true,
+            max_length: 2000,
+            placeholder: {
+              type: "plain_text",
+              text: "Missing context, incorrect details, or anything else",
+            },
+          },
+        },
+      ],
+    },
+  });
+  return { viewId: opened.view?.id };
+}
+
 async function fetchSlackAttachment(input: AttachmentRequest) {
   if (mode === "mock") {
     throw new Error("Mock mode has no remote Slack attachments");
   }
   const token = (await slackInstallation(input.teamId)).botToken;
-  const info = await slackApi<
+  const info = await slackFormApi<
     SlackResponse & {
       file?: { url_private_download?: string; url_private?: string };
     }
@@ -380,47 +635,57 @@ async function resolveSlackActor(input: ActorRequest) {
   const cacheKey = `${input.teamId}:${input.userId}`;
   const cached = actorCache.get(cacheKey);
   if (cached && cached.expiresAt > dayjs().valueOf()) return cached.actor;
-  const installation = await slackInstallation(input.teamId);
-  const payload = await slackApi<
-    SlackResponse & {
-      user?: {
-        id?: string;
-        team_id?: string;
-        name?: string;
-        real_name?: string;
-        is_bot?: boolean;
-        is_app_user?: boolean;
-        profile?: {
-          display_name?: string;
+  const pending = actorInFlight.get(cacheKey);
+  if (pending) return await pending;
+  const request = (async (): Promise<ActorResolution> => {
+    const installation = await slackInstallation(input.teamId);
+    const payload = await slackFormApi<
+      SlackResponse & {
+        user?: {
+          id?: string;
+          team_id?: string;
+          name?: string;
           real_name?: string;
-          email?: string;
-          team?: string;
+          is_bot?: boolean;
+          is_app_user?: boolean;
+          profile?: {
+            display_name?: string;
+            real_name?: string;
+            email?: string;
+            team?: string;
+          };
         };
-      };
+      }
+    >("users.info", installation.botToken, { user: input.userId });
+    const actor = payload.user;
+    const teamId = actor?.team_id ?? actor?.profile?.team;
+    if (!actor?.id || !teamId) {
+      throw new Error("Slack actor metadata is unavailable");
     }
-  >("users.info", installation.botToken, { user: input.userId });
-  const actor = payload.user;
-  const teamId = actor?.team_id ?? actor?.profile?.team;
-  if (!actor?.id || !teamId) {
-    throw new Error("Slack actor metadata is unavailable");
+    const resolved = {
+      teamId,
+      userId: actor.id,
+      displayName:
+        actor.profile?.display_name ||
+        actor.profile?.real_name ||
+        actor.real_name ||
+        actor.name,
+      email: actor.profile?.email,
+      isBot: actor.is_bot === true || actor.is_app_user === true,
+      botUserId: installation.botUserId,
+    };
+    actorCache.set(cacheKey, {
+      actor: resolved,
+      expiresAt: dayjs().add(5, "minute").valueOf(),
+    });
+    return resolved;
+  })();
+  actorInFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    actorInFlight.delete(cacheKey);
   }
-  const resolved = {
-    teamId,
-    userId: actor.id,
-    displayName:
-      actor.profile?.display_name ||
-      actor.profile?.real_name ||
-      actor.real_name ||
-      actor.name,
-    email: actor.profile?.email,
-    isBot: actor.is_bot === true || actor.is_app_user === true,
-    botUserId: installation.botUserId,
-  };
-  actorCache.set(cacheKey, {
-    actor: resolved,
-    expiresAt: dayjs().add(5, "minute").valueOf(),
-  });
-  return resolved;
 }
 
 function channelName(clientSlug: string) {
@@ -437,7 +702,7 @@ async function listConversationMembers(token: string, channelId: string) {
   const memberIds = new Set<string>();
   let cursor: string | undefined;
   do {
-    const result = await slackApi<
+    const result = await slackFormApi<
       SlackResponse & {
         members?: string[];
         response_metadata?: { next_cursor?: string };
@@ -638,7 +903,7 @@ async function listSlackChannels(input: ListChannelsRequest) {
   const channels: SlackChannel[] = [];
   let cursor: string | undefined;
   do {
-    const result = await slackApi<
+    const result = await slackFormApi<
       SlackResponse & {
         channels?: SlackChannelPayload[];
         response_metadata?: { next_cursor?: string };
@@ -741,6 +1006,12 @@ const server = http.createServer(async (request, response) => {
         mode === "mock" || Boolean(clarityTeamId && tokenBrokerConfigured),
       channelInventoryEnabled: mode === "mock" || tokenBrokerConfigured,
       publicChannelJoinEnabled: mode === "mock" || tokenBrokerConfigured,
+      blockKitEnabled: tokenBrokerConfigured,
+      messageUpdatesEnabled: tokenBrokerConfigured,
+      agentStatusEnabled: tokenBrokerConfigured,
+      streamingEnabled: tokenBrokerConfigured,
+      interactivityResponsesEnabled: tokenBrokerConfigured,
+      feedbackModalsEnabled: tokenBrokerConfigured,
     });
   }
   if (!authorized(request))
@@ -766,6 +1037,55 @@ const server = http.createServer(async (request, response) => {
         idempotency.release(input.clientMessageId);
         throw error;
       }
+    }
+    if (request.method === "POST" && request.url === "/message/update") {
+      return json(
+        response,
+        200,
+        await updateSlackMessage(await readJson<UpdateRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/thread/status") {
+      return json(
+        response,
+        200,
+        await setSlackStatus(await readJson<StatusRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/stream/start") {
+      return json(
+        response,
+        200,
+        await startSlackStream(await readJson<StreamStartRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/stream/append") {
+      return json(
+        response,
+        200,
+        await appendSlackStream(await readJson<StreamAppendRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/stream/stop") {
+      return json(
+        response,
+        200,
+        await stopSlackStream(await readJson<StreamStopRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/ephemeral") {
+      return json(
+        response,
+        200,
+        await postEphemeral(await readJson<EphemeralRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/view/open") {
+      return json(
+        response,
+        200,
+        await openFeedbackView(await readJson<OpenViewRequest>(request)),
+      );
     }
     if (request.method === "POST" && request.url === "/attachment") {
       const input = await readJson<AttachmentRequest>(request);

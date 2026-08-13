@@ -18,6 +18,7 @@ import {
 const environment = {
   CL_ROUTER_URL: "https://router.example.test",
   CL_ROUTER_SECRET: "router-secret",
+  GLASS_ENV: "production",
 };
 
 const usage: LanguageModelV3Usage = {
@@ -53,6 +54,18 @@ function sseResponse(events: unknown[]): Response {
   return new Response(body, {
     headers: { "content-type": "text/event-stream; charset=utf-8" },
   });
+}
+
+function unavailableResponse(): Response {
+  return Response.json({
+    error: {
+      code: "router_unavailable",
+      message: "No eligible router route is available.",
+      retryable: true,
+      executionStarted: false,
+      requestId: "failed-request",
+    },
+  }, { status: 503 });
 }
 
 function directStream(text: string) {
@@ -209,12 +222,12 @@ describe("cl-router LanguageModelV3 adapter", () => {
     expect(directModel.doStreamCalls).toHaveLength(0);
   });
 
-  test("uses the direct model for an HTTP 5xx before router output", async () => {
+  test("uses the direct model for a typed pre-execution outage", async () => {
     const directModel = new MockLanguageModelV3({
       doStream: directStream("Direct answer."),
     });
     const fetchMock = vi.fn<typeof globalThis.fetch>(
-      async () => new Response(null, { status: 503 }),
+      async () => unavailableResponse(),
     );
     const model = createClRouterLanguageModel(
       adapterOptions(directModel, fetchMock),
@@ -235,7 +248,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
       }),
     });
     const fetchMock = vi.fn<typeof globalThis.fetch>(
-      async () => new Response(null, { status: 503 }),
+      async () => unavailableResponse(),
     );
     const model = createClRouterLanguageModel(
       adapterOptions(directModel, fetchMock),
@@ -283,9 +296,11 @@ describe("cl-router LanguageModelV3 adapter", () => {
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () => sseResponse([{
       type: "error",
       error: {
-        code: "stream_failed",
-        message: "The model stream failed.",
+        code: "router_unavailable",
+        message: "No eligible router route is available.",
         retryable: true,
+        executionStarted: false,
+        requestId: "failed-request",
       },
     }]));
     const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
@@ -359,16 +374,13 @@ describe("cl-router LanguageModelV3 adapter", () => {
     expect(directModel.doStreamCalls).toHaveLength(0);
   });
 
-  test("falls back when the router connection drops before visible output", async () => {
-    const response = new Response(new ReadableStream<Uint8Array>({
-      pull(controller) {
-        controller.error(new TypeError("socket reset"));
-      },
-    }), { headers: { "content-type": "text/event-stream" } });
+  test("falls back when the router connection is refused before execution", async () => {
     const directModel = new MockLanguageModelV3({ doStream: directStream("Direct answer.") });
     const model = createClRouterLanguageModel(adapterOptions(
       directModel,
-      vi.fn<typeof globalThis.fetch>(async () => response),
+      vi.fn<typeof globalThis.fetch>(async () => {
+        throw Object.assign(new TypeError("fetch failed"), { code: "ECONNREFUSED" });
+      }),
     ));
 
     const result = streamText({ model, prompt: "Hello" });

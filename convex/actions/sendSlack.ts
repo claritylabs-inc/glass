@@ -10,6 +10,7 @@ const attachmentValidator = v.object({
   filename: v.string(),
   contentType: v.string(),
 });
+const slackBlocksValidator = v.array(v.any());
 const WORKER_TIMEOUT_MS = 30_000;
 const internalApi = internal as any;
 
@@ -27,7 +28,9 @@ type SlackSendArgs = {
   connectionId: Id<"slackWorkspaceConnections">;
   channelId: string;
   threadTs?: string;
+  keepAttachmentsTopLevel?: boolean;
   content: string;
+  blocks?: Array<Record<string, unknown>>;
   attachments?: SlackAttachment[];
 };
 
@@ -39,7 +42,9 @@ const sendArgs = {
   connectionId: v.id("slackWorkspaceConnections"),
   channelId: v.string(),
   threadTs: v.optional(v.string()),
+  keepAttachmentsTopLevel: v.optional(v.boolean()),
   content: v.string(),
+  blocks: v.optional(slackBlocksValidator),
   attachments: v.optional(v.array(attachmentValidator)),
 };
 
@@ -59,6 +64,7 @@ async function performSend(
     channelId: string;
     threadTs?: string;
     content: string;
+    blocks?: Array<Record<string, unknown>>;
     attachments?: SlackAttachment[];
   },
 ) {
@@ -91,6 +97,7 @@ async function performSend(
       channelId: args.channelId,
       threadTs: args.threadTs,
       text: args.content,
+      blocks: args.blocks,
       attachments: attachments.map(({ filename, contentType, url }) => ({
         filename,
         contentType,
@@ -135,6 +142,7 @@ async function sendSingle(ctx: ActionCtx, args: SlackSendArgs) {
       channelId: claim.row.channelId,
       threadTs: claim.row.threadTs,
       content: claim.row.content,
+      blocks: claim.row.blocks as Array<Record<string, unknown>> | undefined,
       attachments: claim.row.attachments,
     });
   } catch (error) {
@@ -168,14 +176,16 @@ export const send = internalAction({
 
     const parts = [];
     let attachmentThreadTs = args.threadTs;
-    if (args.content.trim()) {
+    if (args.content.trim() || args.blocks?.length) {
       const textPart = await sendSingle(ctx, {
         ...args,
         idempotencyKey: `${args.idempotencyKey}:text`,
         attachments: undefined,
       });
       parts.push(textPart);
-      attachmentThreadTs ??= textPart?.providerMessageId;
+      if (!args.keepAttachmentsTopLevel) {
+        attachmentThreadTs ??= textPart?.providerMessageId;
+      }
     }
     for (const attachment of attachments) {
       parts.push(
@@ -213,7 +223,9 @@ export const retry = internalAction({
       connectionId: row.connectionId,
       channelId: row.channelId,
       threadTs: row.threadTs,
+      keepAttachmentsTopLevel: row.keepAttachmentsTopLevel,
       content: row.content,
+      blocks: row.blocks as Array<Record<string, unknown>> | undefined,
       attachments: row.attachments,
     });
   },

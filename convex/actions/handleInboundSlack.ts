@@ -158,6 +158,26 @@ export const processDebounced = internalAction({
       });
       if (!prepared) return;
 
+      let actionToken: string | undefined;
+      try {
+        const presentation = await ctx.runAction(
+          internalApi.actions.slackPresentation.start,
+          {
+            orgId: prepared.orgId,
+            threadId: prepared.threadId,
+            threadMessageId: prepared.agentMessageId,
+            connectionId: prepared.connectionId,
+            channelId: prepared.channelId,
+            threadTs: prepared.threadTs,
+            recipientUserId: prepared.recipientUserId,
+            recipientTeamId: prepared.recipientTeamId,
+          },
+        );
+        actionToken = presentation?.actionToken;
+      } catch (error) {
+        console.warn("[slack] Could not start rich response presentation", error);
+      }
+
       await runChannelAgent(ctx, {
         execution: "thread",
         surface: "slack",
@@ -183,26 +203,81 @@ export const processDebounced = internalAction({
       }
       const attachments = (response.attachments ?? []).flatMap((attachment) =>
         attachment.fileId
-          ? [
-              {
-                fileId: attachment.fileId,
-                filename: attachment.filename,
-                contentType: attachment.contentType,
-              },
-            ]
+          ? [{
+              fileId: attachment.fileId,
+              filename: attachment.filename,
+              contentType: attachment.contentType,
+            }]
           : [],
       );
-      await ctx.runAction(internalApi.actions.sendSlack.send, {
-        idempotencyKey: `agent:${response._id}`,
-        orgId: prepared.orgId,
-        threadId: prepared.threadId,
-        threadMessageId: response._id,
-        connectionId: prepared.connectionId,
-        channelId: prepared.channelId,
-        threadTs: prepared.threadTs,
-        content: response.content,
-        attachments: attachments.length ? attachments : undefined,
-      });
+      if (!actionToken) {
+        try {
+          const presentation = await ctx.runAction(
+            internalApi.actions.slackPresentation.start,
+            {
+              orgId: prepared.orgId,
+              threadId: prepared.threadId,
+              threadMessageId: prepared.agentMessageId,
+              connectionId: prepared.connectionId,
+              channelId: prepared.channelId,
+              threadTs: prepared.threadTs,
+              recipientUserId: prepared.recipientUserId,
+              recipientTeamId: prepared.recipientTeamId,
+            },
+          );
+          actionToken = presentation?.actionToken;
+        } catch (error) {
+          console.warn("[slack] Could not recover rich response presentation", error);
+        }
+      }
+      try {
+        await ctx.runAction(
+          internalApi.actions.slackPresentation.projectProgress,
+          { threadMessageId: response._id },
+        );
+      } catch (error) {
+        console.warn("[slack] Could not project agent progress", error);
+      }
+      let deliveredRichResponse = false;
+      try {
+        const finished = await ctx.runAction(
+          internalApi.actions.slackPresentation.finish,
+          { threadMessageId: response._id, actionToken },
+        );
+        deliveredRichResponse = finished?.phase === "final";
+      } catch (error) {
+        console.warn("[slack] Rich response failed; sending plaintext fallback", error);
+      }
+      if (!deliveredRichResponse) {
+        const fallback = await ctx.runAction(internalApi.actions.sendSlack.send, {
+          idempotencyKey: `agent:${response._id}:fallback`,
+          orgId: prepared.orgId,
+          threadId: prepared.threadId,
+          threadMessageId: response._id,
+          connectionId: prepared.connectionId,
+          channelId: prepared.channelId,
+          threadTs: prepared.threadTs,
+          keepAttachmentsTopLevel: prepared.threadTs === undefined,
+          content: response.content,
+          attachments,
+        });
+        if (fallback?.status !== "sent") {
+          throw new Error(fallback?.error ?? "Slack plaintext fallback is retrying");
+        }
+        const presentation = await ctx.runQuery(
+          internalApi.slackPresentation.get,
+          { threadMessageId: response._id },
+        );
+        if (presentation) {
+          await ctx.runMutation(
+            internalApi.slackPresentation.markPlaintextFallback,
+            {
+              id: presentation._id,
+              providerMessageId: fallback.providerMessageId,
+            },
+          );
+        }
+      }
     } catch (error) {
       await ctx.runMutation(internalApi.slack.failEvents, {
         eventIds,

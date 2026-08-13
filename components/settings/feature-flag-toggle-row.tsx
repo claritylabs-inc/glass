@@ -19,7 +19,7 @@ export function FeatureFlagToggleRow({
   loading?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-foreground/6 bg-popover px-4 py-3">
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-popover px-4 py-3">
       <div>
         <p className={`text-foreground ${typeStyle("body.medium")}`}>{flag.label}</p>
         <p className={`mt-0.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>

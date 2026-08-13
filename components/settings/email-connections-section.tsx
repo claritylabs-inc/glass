@@ -205,7 +205,7 @@ export function EmailConnectionsSection() {
           <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
         </div>
       ) : connectedEmailAccounts.length > 0 ? (
-        <div className="divide-y divide-foreground/6">
+        <div className="divide-y divide-border">
           {connectedEmailAccounts.map((account) => {
             const ProviderIcon = iconForMailboxHost(account.host);
             const error = account.lastScanError ?? account.lastError;
@@ -215,7 +215,7 @@ export function EmailConnectionsSection() {
                 key={account._id}
                 type="button"
                 onClick={() => void openMailbox(account._id)}
-                className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/10"
+                className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-foreground/3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-emphasized"
               >
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-foreground">
                   <ProviderIcon className="size-4" />

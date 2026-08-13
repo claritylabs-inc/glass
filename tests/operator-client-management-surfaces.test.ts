@@ -24,6 +24,37 @@ describe("operator client management surfaces", () => {
     expect(brokers).toContain('setPanelMode("details")');
   });
 
+  it("moves operator appearance controls into a proper profile page", () => {
+    const sidebar = read("app/operator/operator-sidebar.tsx");
+    const profile = read("app/operator/profile/page.tsx");
+    const selector = read("components/ui/theme-mode-selector.tsx");
+
+    expect(sidebar).toContain('href="/operator/profile"');
+    expect(sidebar).toContain('label="Profile"');
+    expect(sidebar).not.toContain("ThemeModeSelector");
+    expect(profile).toContain('<OperationalPanelHeader title="Account"');
+    expect(profile).toContain('<OperationalPanelHeader title="Appearance"');
+    expect(profile).toContain("api.users.updateProfile");
+    expect(profile).toContain("useLocalFirstAutoSave");
+    expect(profile).toContain('<ThemeModeSelector className="max-w-lg" />');
+    expect(profile).toContain('<div className="w-full">');
+    expect(profile).toContain('active="profile"');
+    expect(selector).toContain('label: "Light"');
+    expect(selector).toContain('label: "Dark"');
+    expect(selector).toContain('label: "System"');
+    expect(selector).toContain('mode: "system"');
+    expect(selector).toContain('mode: "light"');
+    expect(selector).toContain('mode: "dark"');
+    expect(selector).toContain('aria-label="Color theme"');
+    expect(selector).toContain("aria-pressed={selected}");
+    expect(selector).toContain('"grid w-full grid-cols-3 gap-2"');
+    expect(selector).toContain('"bg-foreground/[0.07] text-foreground"');
+    expect(selector).toContain(
+      '"text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"',
+    );
+    expect(selector).toContain("rounded-lg px-3 py-2");
+  });
+
   it("keeps the client list drawer as a compact preview", () => {
     const clients = read("app/operator/clients/operator-clients-page.tsx");
 
@@ -252,6 +283,12 @@ describe("operator client management surfaces", () => {
       "app/policies/[id]/operator-policy-extraction-workspace.tsx",
     );
     const sidebar = read("app/operator/operator-sidebar.tsx");
+    const operatorClientShellRoutes = [
+      "app/operator/clients/[clientOrgId]/page.tsx",
+      "app/operator/clients/[clientOrgId]/policies/page.tsx",
+      "app/operator/clients/[clientOrgId]/policies/[id]/page.tsx",
+      "app/operator/clients/[clientOrgId]/compliance/page.tsx",
+    ].map(read);
 
     expect(policies).toContain("onPolicySelect={setPreviewPolicyId}");
     expect(policies).toContain("policyPreview={policyPreview}");
@@ -298,6 +335,11 @@ describe("operator client management surfaces", () => {
       "return events.map((event) => eventTiming(event, session));",
     );
     expect(sidebar).not.toContain('href="/operator/extractions"');
+    expect(
+      operatorClientShellRoutes.every((source) =>
+        source.includes('customSidebarStorageKey="operator-sidebar"'),
+      ),
+    ).toBe(true);
   });
 
   it("uses operator-owned certificate and compliance layouts", () => {

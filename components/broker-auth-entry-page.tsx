@@ -156,7 +156,7 @@ export function BrokerAuthEntryPage({
                   placeholder="you@company.com"
                   required
                   autoFocus
-                  className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+                  className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                 />
               </div>
               {error && <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>}

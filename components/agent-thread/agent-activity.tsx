@@ -107,7 +107,7 @@ export const AgentActivity = memo(function AgentActivity({
           isOpen ? "mt-2 max-h-96 opacity-100" : "mt-0 max-h-0 opacity-0",
         )}
       >
-        <div className="ml-[5px] max-h-96 overflow-y-auto border-l border-foreground/10 pl-4">
+        <div className="ml-[5px] max-h-96 overflow-y-auto border-l border-border-emphasized pl-4">
           <div className="space-y-3">
             {items.map((item, index) =>
                 <div key={index} className="flex gap-2">

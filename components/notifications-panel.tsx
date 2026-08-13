@@ -155,12 +155,12 @@ export function NotificationsPanel({
       ref={panelRef}
       className={
         variant === "pane"
-          ? "flex h-full w-full min-w-0 max-w-full shrink-0 flex-col overflow-hidden border-r border-foreground/6 bg-background"
-          : "absolute left-2 right-2 top-full mt-2 z-50 min-w-[18rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-foreground/10 bg-background shadow-lg"
+          ? "flex h-full w-full min-w-0 max-w-full shrink-0 flex-col overflow-hidden border-r border-border bg-background"
+          : "absolute left-2 right-2 top-full mt-2 z-50 min-w-[18rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border-emphasized bg-background shadow-lg"
       }
     >
       {/* Header */}
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-foreground/6 px-3">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-3">
         <span className={`min-w-0 truncate text-foreground ${typeStyle("body.medium")}`}>
           Notifications
         </span>
@@ -174,7 +174,7 @@ export function NotificationsPanel({
       </div>
 
       <div
-        className="flex h-12 min-w-0 shrink-0 items-center gap-1 border-b border-foreground/6 px-2"
+        className="flex h-12 min-w-0 shrink-0 items-center gap-1 border-b border-border px-2"
         role="tablist"
       >
         <button
@@ -243,7 +243,7 @@ export function NotificationsPanel({
                 onClick={() =>
                   handleNotificationClick(notification as Notification)
                 }
-                className={`flex w-full min-w-0 items-start gap-2.5 border-b border-foreground/4 px-3 py-2.5 text-left transition-colors ${
+                className={`flex w-full min-w-0 items-start gap-2.5 border-b border-border-subtle px-3 py-2.5 text-left transition-colors ${
                   isClickable ? "hover:bg-foreground/4" : "cursor-default"
                 } ${isUnread ? "bg-foreground/2" : ""}`}
               >
@@ -290,7 +290,7 @@ export function NotificationsPanel({
 
       {/* Footer */}
       {activeTab === "unread" && unreadCount > 0 && (
-        <div className="px-3 py-2 border-t border-foreground/6">
+        <div className="px-3 py-2 border-t border-border">
           <button
             type="button"
             onClick={() => {

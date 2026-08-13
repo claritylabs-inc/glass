@@ -77,7 +77,7 @@ export default function OperatorClientCompliancePage() {
         actions={impersonationAction}
         breadcrumbDetail={breadcrumb}
         customSidebar={sidebar}
-        customSidebarStorageKey="operator-sidebar-collapsed"
+        customSidebarStorageKey="operator-sidebar"
         disablePersistentChat
         disableCommandPalette
         showBrokerShare={false}
@@ -97,7 +97,7 @@ export default function OperatorClientCompliancePage() {
         actions={impersonationAction}
         breadcrumbDetail={breadcrumb}
         customSidebar={sidebar}
-        customSidebarStorageKey="operator-sidebar-collapsed"
+        customSidebarStorageKey="operator-sidebar"
         disablePersistentChat
         disableCommandPalette
         showBrokerShare={false}
@@ -154,7 +154,7 @@ export default function OperatorClientCompliancePage() {
           breadcrumbDetail={breadcrumb}
           rightPanel={rightPanel}
           customSidebar={sidebar}
-          customSidebarStorageKey="operator-sidebar-collapsed"
+          customSidebarStorageKey="operator-sidebar"
           disablePersistentChat
           disableCommandPalette
           showBrokerShare={false}

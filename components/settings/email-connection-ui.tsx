@@ -204,7 +204,7 @@ export function AutomationToggleRows({
   ];
 
   return (
-    <OperationalPanel as="div" className="divide-y divide-foreground/6">
+    <OperationalPanel as="div" className="divide-y divide-border">
       {rows.map((row) => (
         <div
           key={row.key}

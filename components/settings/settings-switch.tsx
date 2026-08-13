@@ -26,7 +26,7 @@ export function SettingsSwitch({
       aria-label={label}
       disabled={disabled}
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10",
+        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized",
         !checked && "bg-foreground/15",
         disabled && "cursor-not-allowed opacity-50",
         className,

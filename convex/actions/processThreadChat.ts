@@ -1586,6 +1586,18 @@ export const run = internalAction({
         }
       };
 
+      const projectSlackProgress = async () => {
+        if (surface !== "slack") return;
+        try {
+          await ctx.runAction(
+            internal.actions.slackPresentation.projectProgress,
+            { threadMessageId: agentMsgId },
+          );
+        } catch (error) {
+          console.warn("[slack] Could not project agent progress", error);
+        }
+      };
+
       const consumeChatStream = async (fullStream: AsyncIterable<any>) => {
         for await (const part of fullStream) {
           if (await isAgentResponseCancelled()) return false;
@@ -1648,6 +1660,7 @@ export const run = internalAction({
               reasoning: normalizeReasoningText(reasoning),
               agentSteps: agentStepsSnapshot(),
             });
+            await projectSlackProgress();
             const label =
               TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
             await ctx.runMutation(internal.threads.streamAgentMessage, {
@@ -1767,6 +1780,7 @@ export const run = internalAction({
               reasoning: normalizeReasoningText(reasoning),
               agentSteps: agentStepsSnapshot(),
             });
+            await projectSlackProgress();
           }
         }
         return true;

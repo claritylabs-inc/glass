@@ -31,7 +31,7 @@ import type { CarrierIdentity } from "@/convex/lib/carrierIdentity";
 import { typeStyle } from "@/lib/typography";
 
 const INPUT_CLASSES =
-  `h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("body.default")}`;
+  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
 
 const LABEL_CLASSES =
   `text-muted-foreground block mb-1 ${typeStyle("caption.medium")}`;
@@ -642,8 +642,8 @@ export function InviteClientDrawer({
             }}
             className={`w-full rounded-lg border border-dashed px-4 py-5 text-left transition-colors ${
               dragOver
-                ? "border-foreground/25 bg-foreground/3"
-                : "border-foreground/10 hover:border-foreground/20"
+                ? "border-border-focus bg-foreground/3"
+                : "border-border-emphasized hover:border-border-focus"
             }`}
           >
             <div className="flex items-center gap-3">
@@ -684,7 +684,7 @@ export function InviteClientDrawer({
               {policyFiles.map((file, index) => (
                 <OperationalItem
                   key={`${file.name}:${file.size}:${index}`}
-                  className="flex items-center gap-2 border-t border-foreground/4 px-3 py-2 first:border-t-0"
+                  className="flex items-center gap-2 border-t border-border-subtle px-3 py-2 first:border-t-0"
                 >
                   <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className={`min-w-0 flex-1 truncate ${typeStyle("body.default")}`}>

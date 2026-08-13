@@ -651,7 +651,7 @@ export default function OperatorClientPage() {
           clientOrgId={clientOrgId}
         />
       )}
-      customSidebarStorageKey="operator-sidebar-collapsed"
+      customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}

@@ -10,15 +10,21 @@ import {
 } from "node:fs";
 import path from "node:path";
 import {
+  canUseAnonymousConvexCloudFallback,
+  cloudConvexSelectionKeys,
   conductorContainerNamesOnPort,
   conductorImageTag,
   conductorPorts,
+  convexDeploymentNameFromDeployKey,
   ensureNode24,
+  generateLocalAuthKeys,
   localConvexUrls,
   parseEnvFile,
   repairLocalConvexSelection,
   repoRoot,
+  resolveConductorClRouterConfig,
   workspaceSlug,
+  withoutCloudConvexSelection,
 } from "./lib/conductor-workspace.mjs";
 
 ensureNode24();
@@ -34,15 +40,7 @@ const localConfigPath = path.join(
   "default",
   "config.json",
 );
-const convexSelectionKeys = new Set([
-  "CONVEX_DEPLOYMENT",
-  "CONVEX_SELF_HOSTED_ADMIN_KEY",
-  "CONVEX_SELF_HOSTED_URL",
-  "CONVEX_SITE_URL",
-  "CONVEX_URL",
-  "NEXT_PUBLIC_CONVEX_SITE_URL",
-  "NEXT_PUBLIC_CONVEX_URL",
-]);
+const convexSelectionKeys = new Set(cloudConvexSelectionKeys);
 
 function run(command, args, options = {}) {
   console.log(`\n> ${[command, ...args].join(" ")}`);
@@ -78,6 +76,21 @@ function capture(command, args, options = {}) {
   }
   const value = result.stdout.trim();
   return value.length > 0 ? value : undefined;
+}
+
+function captureResult(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    env: process.env,
+    encoding: "utf8",
+    ...options,
+  });
+  if (result.error) throw result.error;
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
 }
 
 function requiredValue(values, key, source) {
@@ -119,6 +132,26 @@ function stripCloudConvexSelection() {
 function deploymentNameFromSelector(selector) {
   const separator = selector.indexOf(":");
   return separator >= 0 ? selector.slice(separator + 1) : selector;
+}
+
+function sourceDeploymentKey(sourceDeployment) {
+  const dedicatedKey =
+    process.env.CONDUCTOR_CONVEX_SOURCE_DEPLOY_KEY?.trim();
+  if (dedicatedKey) {
+    if (convexDeploymentNameFromDeployKey(dedicatedKey) !== sourceDeployment) {
+      throw new Error(
+        "CONDUCTOR_CONVEX_SOURCE_DEPLOY_KEY must be a deployment-scoped key for the configured source deployment.",
+      );
+    }
+    return dedicatedKey;
+  }
+
+  const ambientKey =
+    process.env.CONVEX_DEPLOY_KEY?.trim() ||
+    process.env.CONVEX_DEPLOYMENT_TOKEN?.trim();
+  return convexDeploymentNameFromDeployKey(ambientKey) === sourceDeployment
+    ? ambientKey
+    : undefined;
 }
 
 function setConvexEnvFromFile(convex, filePath) {
@@ -237,6 +270,7 @@ mkdirSync(contextDirectory, { recursive: true });
 const convex = path.join(repoRoot, "node_modules", ".bin", "convex");
 const createdLocalDeployment = !existsSync(localConfigPath);
 let cloudEnvironment;
+let sourceEnvironmentRead = false;
 
 if (createdLocalDeployment) {
   const sourceSelector =
@@ -248,19 +282,47 @@ if (createdLocalDeployment) {
     );
   }
   const sourceDeployment = deploymentNameFromSelector(sourceSelector);
+  const deployKey = sourceDeploymentKey(sourceDeployment);
   console.log(
     `Cloning Convex environment variables from ${sourceDeployment}...`,
   );
-  cloudEnvironment = capture(convex, [
-    "env",
-    "list",
-    "--deployment",
-    sourceDeployment,
-  ]);
+  const listArguments = deployKey
+    ? ["env", "list"]
+    : ["env", "list", "--deployment", sourceDeployment];
+  const listEnvironment = deployKey
+    ? {
+        ...withoutCloudConvexSelection(process.env),
+        CONVEX_DEPLOY_KEY: deployKey,
+      }
+    : withoutCloudConvexSelection(process.env);
+  const result = captureResult(convex, listArguments, {
+    env: listEnvironment,
+  });
+  if (result.status === 0) {
+    sourceEnvironmentRead = true;
+    cloudEnvironment = result.stdout.trim() || undefined;
+  } else if (
+    canUseAnonymousConvexCloudFallback({
+      isCloud: process.env.CONDUCTOR_IS_LOCAL === "0",
+      hasDeployKey: Boolean(deployKey),
+      output: `${result.stderr}\n${result.stdout}`,
+    })
+  ) {
+    console.warn(
+      "Convex CLI credentials are unavailable in this Conductor Cloud workspace. Continuing with an anonymous local deployment without shared-dev environment variables; basic browser QA and local email/OTP capture remain available. To enable provider-backed flows, add a dev-scoped CONDUCTOR_CONVEX_SOURCE_DEPLOY_KEY to the Conductor Cloud Computer environment before creating a fresh workspace.",
+    );
+  } else {
+    if (result.stderr) process.stderr.write(result.stderr);
+    throw new Error(
+      `${convex} exited with status ${result.status} while reading ${sourceDeployment}`,
+    );
+  }
   stripCloudConvexSelection();
 } else if (repairLocalConvexSelection()) {
   console.log("Restored this workspace's local Convex selection in .env.local.");
 }
+
+for (const name of cloudConvexSelectionKeys) delete process.env[name];
 
 const { web, extraction, imessage, slack, convexCloud, convexSite } = conductorPorts();
 run(
@@ -289,16 +351,27 @@ if (cloudEnvironment) {
   }
 }
 
-// A native-local worktree does not start the separate cl-router repository.
-// Keep the imported read-only values (CL_ROUTER_URL, CL_ROUTER_ADMIN_SECRET,
-// CL_ROUTER_TIMEOUT_MS) so /operator/routing can observe shared-dev routing,
-// but never inherit the task flags or caller secret — an isolated worktree
-// must not route model calls or submit feedback through the shared router.
-for (const name of ["CL_ROUTER_TASKS", "CL_ROUTER_SECRET"]) {
-  if (optionalConvexEnv(convex, name)) {
-    run(convex, ["env", "remove", name]);
-  }
-}
+// A successful source import must include complete router execution settings.
+// Credential-free Conductor Cloud setup has no imported settings and keeps
+// provider-backed flows disabled while basic local browser QA remains usable.
+const routerRequired =
+  sourceEnvironmentRead || process.env.CONDUCTOR_IS_LOCAL !== "0";
+const {
+  url: clRouterUrl,
+  tasks: clRouterTasks,
+  secret: clRouterSecret,
+  timeoutMs: clRouterTimeoutMs,
+  tenantId: clRouterTenantId,
+} = resolveConductorClRouterConfig(
+  {
+    url: optionalConvexEnv(convex, "CL_ROUTER_URL"),
+    tasks: optionalConvexEnv(convex, "CL_ROUTER_TASKS"),
+    secret: optionalConvexEnv(convex, "CL_ROUTER_SECRET"),
+    timeoutMs: optionalConvexEnv(convex, "CL_ROUTER_TIMEOUT_MS"),
+    tenantId: optionalConvexEnv(convex, "CL_ROUTER_TENANT_ID"),
+  },
+  { required: routerRequired },
+);
 
 const extractionPackage = JSON.parse(
   readFileSync(
@@ -324,12 +397,24 @@ const slackWebhookSecret = createdLocalDeployment
   ? randomBytes(32).toString("hex")
   : optionalConvexEnv(convex, "SLACK_SIGNING_SECRET") ||
     randomBytes(32).toString("hex");
+const existingJwtPrivateKey = createdLocalDeployment
+  ? undefined
+  : optionalConvexEnv(convex, "JWT_PRIVATE_KEY");
+const existingJwks = createdLocalDeployment
+  ? undefined
+  : optionalConvexEnv(convex, "JWKS");
+const localAuthKeys =
+  existingJwtPrivateKey && existingJwks
+    ? { JWT_PRIVATE_KEY: existingJwtPrivateKey, JWKS: existingJwks }
+    : generateLocalAuthKeys();
 const localAppUrl = `http://localhost:${web}`;
 const overridesPath = path.join(contextDirectory, "convex-local-overrides.env");
 
 try {
   writeRuntimeEnv("convex-local-overrides.env", {
     GLASS_ENV: "local",
+    JWT_PRIVATE_KEY: localAuthKeys.JWT_PRIVATE_KEY,
+    JWKS: localAuthKeys.JWKS,
     MAPBOX_ACCESS_TOKEN:
       initialRootEnv.get("MAPBOX_ACCESS_TOKEN")?.trim() ||
       initialRootEnv.get("NEXT_PUBLIC_MAPBOX_TOKEN")?.trim(),
@@ -381,6 +466,11 @@ writeRuntimeEnv("extraction-worker.env", {
   EXTRACTION_WORKER_ID: `conductor-${workspaceSlug()}`,
   EXTRACTION_JOB_CONCURRENCY: "8",
   EXTRACTION_PREVIEW_CONCURRENCY: "2",
+  CL_ROUTER_URL: clRouterUrl,
+  CL_ROUTER_TASKS: clRouterTasks,
+  CL_ROUTER_SECRET: clRouterSecret,
+  CL_ROUTER_TIMEOUT_MS: clRouterTimeoutMs,
+  CL_ROUTER_TENANT_ID: clRouterTenantId,
   FIREWORKS_API_KEY: optionalConvexEnv(convex, "FIREWORKS_API_KEY"),
   OPENAI_API_KEY: optionalConvexEnv(convex, "OPENAI_API_KEY"),
   ANTHROPIC_API_KEY: optionalConvexEnv(convex, "ANTHROPIC_API_KEY"),

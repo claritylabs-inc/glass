@@ -93,6 +93,12 @@ function slackWorkerHealth() {
     connectProvisioningEnabled: true,
     channelInventoryEnabled: true,
     publicChannelJoinEnabled: true,
+    blockKitEnabled: true,
+    messageUpdatesEnabled: true,
+    agentStatusEnabled: true,
+    streamingEnabled: true,
+    interactivityResponsesEnabled: true,
+    feedbackModalsEnabled: true,
   };
 }
 
@@ -188,6 +194,10 @@ describe("agent deployment safeguards", () => {
     expect(deploy).toContain("needs:\n      - validate-root\n      - validate-workers\n      - validate-packages");
     expect(deploy).toContain("publish-cli:");
     expect(deploy).toContain("publish-operator-cli:");
+    expect(
+      deploy.match(/npx convex env set EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION/g),
+    ).toHaveLength(2);
+    expect(deploy.match(/extraction-worker\/package\.json/g)).toHaveLength(2);
     const publishCli = deploy.slice(
       deploy.indexOf("publish-cli:"),
       deploy.indexOf("publish-operator-cli:"),

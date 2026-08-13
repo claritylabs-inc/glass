@@ -124,7 +124,7 @@ export function TeamMemberEditDrawer({
           <input
             value={name}
             onChange={(event) => onNameChange(event.target.value)}
-            className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+            className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
             placeholder="Name"
           />
         </label>
@@ -135,7 +135,7 @@ export function TeamMemberEditDrawer({
           <input
             value={title}
             onChange={(event) => onTitleChange(event.target.value)}
-            className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+            className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
             placeholder="Title"
           />
         </label>
@@ -175,7 +175,7 @@ export function TeamMemberEditDrawer({
             </SelectContent>
           </Select>
         </div>
-        <div className="rounded-lg border border-foreground/8 bg-popover px-3 py-2.5">
+        <div className="rounded-lg border border-input bg-popover px-3 py-2.5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className={`${typeStyle("body.medium")}`}>Primary contact</p>
@@ -204,14 +204,14 @@ export function TeamMemberEditDrawer({
           </div>
         </div>
         <FormSection title="Account email">
-          <div className="rounded-lg border border-foreground/8 bg-foreground/[0.02] px-3 py-2">
+          <div className="rounded-lg border border-input bg-foreground/[0.02] px-3 py-2">
             <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Current email</p>
             <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
               {member.email ?? "No email"}
             </p>
           </div>
           {member.pendingEmailChange ? (
-            <div className="rounded-lg border border-foreground/8 bg-popover px-3 py-2.5">
+            <div className="rounded-lg border border-input bg-popover px-3 py-2.5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
@@ -248,7 +248,7 @@ export function TeamMemberEditDrawer({
                     type="email"
                     value={email}
                     onChange={(event) => onEmailChange(event.target.value)}
-                    className={`h-9 w-full rounded-lg border border-foreground/8 bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 focus:ring-1 focus:ring-foreground/8 transition-colors ${typeStyle("control.input")}`}
+                    className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                     placeholder="new@example.com"
                   />
                   <PillButton
