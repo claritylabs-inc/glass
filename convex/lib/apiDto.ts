@@ -317,6 +317,10 @@ export interface CertificateDtoSource {
   additionalInsuredName?: string;
   requestSignature?: string;
   descriptionOfOperations?: string;
+  requirementIds?: DtoId[];
+  requirementSourceDocumentId?: DtoId;
+  requirementSnapshots?: Jsonish;
+  generationBatchId?: string;
   createdAt: number;
   url?: string | null;
 }
@@ -333,6 +337,10 @@ export interface CertificateDto {
   additional_insured_name: string | null;
   request_signature: string | null;
   description_of_operations: string | null;
+  requirement_ids: string[];
+  requirement_source_document_id: string | null;
+  requirement_snapshots: Jsonish;
+  generation_batch_id: string | null;
   created_at: number;
   url: string | null;
 }
@@ -350,6 +358,10 @@ export function toCertificateDto(certificate: CertificateDtoSource): Certificate
     additional_insured_name: certificate.additionalInsuredName ?? null,
     request_signature: certificate.requestSignature ?? null,
     description_of_operations: certificate.descriptionOfOperations ?? null,
+    requirement_ids: certificate.requirementIds ?? [],
+    requirement_source_document_id: certificate.requirementSourceDocumentId ?? null,
+    requirement_snapshots: certificate.requirementSnapshots ?? [],
+    generation_batch_id: certificate.generationBatchId ?? null,
     created_at: certificate.createdAt,
     url: certificate.url ?? null,
   };
@@ -463,6 +475,10 @@ export interface CertificateVersionDtoSource {
   additionalInsuredName?: string;
   requestSignature?: string;
   descriptionOfOperations?: string;
+  requirementIds?: DtoId[];
+  requirementSourceDocumentId?: DtoId;
+  requirementSnapshots?: Jsonish;
+  generationBatchId?: string;
   issuedAt?: number;
   supersededAt?: number;
   voidedAt?: number;
@@ -503,6 +519,10 @@ export function toCertificateVersionDto(version: CertificateVersionDtoSource) {
     additional_insured_name: version.additionalInsuredName ?? null,
     request_signature: version.requestSignature ?? null,
     description_of_operations: version.descriptionOfOperations ?? null,
+    requirement_ids: version.requirementIds ?? [],
+    requirement_source_document_id: version.requirementSourceDocumentId ?? null,
+    requirement_snapshots: version.requirementSnapshots ?? [],
+    generation_batch_id: version.generationBatchId ?? null,
     issued_at: version.issuedAt ?? null,
     superseded_at: version.supersededAt ?? null,
     voided_at: version.voidedAt ?? null,

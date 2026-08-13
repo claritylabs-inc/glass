@@ -217,6 +217,35 @@ function coverageText(coverage: NonNullable<Doc<"policies">["coverages"]>[number
   );
 }
 
+const COVERAGE_SEARCH_TERMS: Partial<Record<string, string[]>> = {
+  CYBER: ["cyber", "privacy", "network security", "data breach"],
+  EO: ["errors omissions", "professional liability"],
+  PL: ["professional liability"],
+  CGL: ["commercial general liability", "general liability"],
+  CRIM: ["crime", "fidelity"],
+  DO: ["directors officers", "d o liability"],
+  EPLI: ["employment practices"],
+  FIDUC: ["fiduciary"],
+};
+
+function coverageMatchScore(
+  coverage: NonNullable<Doc<"policies">["coverages"]>[number],
+  requiredCode: string | undefined,
+) {
+  if (!requiredCode) return 1;
+  if (
+    normalizeRequirementLineOfBusiness(coverage.lineOfBusiness) === requiredCode
+  ) {
+    return 100;
+  }
+  const text = coverageText(coverage);
+  const terms = COVERAGE_SEARCH_TERMS[requiredCode] ?? [];
+  return terms.reduce(
+    (score, term) => score + (text.includes(term) ? term.split(" ").length * 10 : 0),
+    0,
+  );
+}
+
 function policyText(policy: Doc<"policies">) {
   return normalizeText(
     [
@@ -287,13 +316,6 @@ function coverageAmountForKind(
   );
   if (exact) return exact;
   if (
-    (requiredKind === "aggregate" || requiredKind === "general_aggregate") &&
-    candidates.length === 1 &&
-    candidates[0]?.amount !== undefined
-  ) {
-    return candidates[0];
-  }
-  if (
     requiredKind === "other" &&
     candidates.length === 1 &&
     candidates[0]?.amount !== undefined
@@ -309,30 +331,24 @@ function bestCoverageForRequirement(
 ) {
   const required = requirement.lineOfBusiness;
   const requiredCode = normalizeRequirementLineOfBusiness(required);
-  const requiredText = normalizeText(
-    [required, required ? lobLabel(required) : undefined].join(" "),
-  );
   let best:
     | NonNullable<Doc<"policies">["coverages"]>[number]
     | undefined;
+  let bestScore = 0;
   for (const coverage of policy.coverages ?? []) {
-    const text = coverageText(coverage);
-    const matches =
-      !requiredText ||
-      text.includes(requiredText) ||
-      (requiredCode &&
-        normalizeRequirementLineOfBusiness(coverage.lineOfBusiness) ===
-          requiredCode);
-    if (!matches) continue;
-    if (!best) {
+    const score = coverageMatchScore(coverage, requiredCode);
+    if (score === 0) continue;
+    if (!best || score > bestScore) {
       best = coverage;
+      bestScore = score;
       continue;
     }
+    if (score < bestScore) continue;
     const bestAmount = best.limitAmount ?? 0;
     const amount = coverage.limitAmount ?? 0;
     if (amount > bestAmount) best = coverage;
   }
-  return best ?? policy.coverages?.[0];
+  return best;
 }
 
 function matchedPolicySummary(args: {
@@ -363,6 +379,21 @@ function sentenceForReason(reason: string) {
   if (reason === "deductible_above_required") {
     return "Deductible is above the required maximum.";
   }
+  if (reason === "deductible_unverifiable") {
+    return "Deductible is not structured on the matched coverage.";
+  }
+  if (reason === "coverage_form_unverifiable") {
+    return "Occurrence or claims-made form is not structured on the matched policy.";
+  }
+  if (reason === "coverage_form_mismatch") {
+    return "Policy coverage form does not match the requirement.";
+  }
+  if (reason === "retroactive_date_unverifiable") {
+    return "Retroactive date is not structured on the matched coverage.";
+  }
+  if (reason === "retroactive_date_after_required") {
+    return "Policy retroactive date is later than the permitted date.";
+  }
   if (reason === "limit_unverifiable") {
     return "Structured limits do not show the required amount.";
   }
@@ -388,26 +419,45 @@ export function formatComplianceReasons(reasons: readonly string[]) {
   return reasons.map(sentenceForReason).join(" ");
 }
 
-function manualCheckIsCurrent(
+function savedReviewIsCurrent(
   requirement: Doc<"insuranceRequirements">,
   check: ManualCheck | undefined,
   now: number,
+  policies: Doc<"policies">[],
 ) {
-  if (!check || check.checkedBy !== "user") return false;
+  if (!check || (check.checkedBy !== "user" && check.checkedBy !== "agent")) {
+    return false;
+  }
   if (check.checkedAt < requirement.updatedAt) return false;
+  const matchedPolicyIds = new Set(check.matchedPolicyIds.map(String));
+  const relevantPolicies = matchedPolicyIds.size
+    ? policies.filter((policy) => matchedPolicyIds.has(String(policy._id)))
+    : policies;
+  if (
+    relevantPolicies.some(
+      (policy) =>
+        Math.max(
+          policy.extractionDataStageUpdatedAt ?? 0,
+          policy.policyDetailOverridesUpdatedAt ?? 0,
+        ) > check.checkedAt,
+    )
+  ) {
+    return false;
+  }
   const validUntil = check.evidence?.validUntil;
   if (!validUntil) return true;
   const expires = parseDate(validUntil);
   return Number.isFinite(expires) ? expires >= now : true;
 }
 
-export function latestManualCheck(
+export function latestSavedReview(
   requirement: Doc<"insuranceRequirements">,
   checks: ManualCheck[],
+  policies: Doc<"policies">[],
   now = dayjs().valueOf(),
 ) {
   return checks
-    .filter((check) => manualCheckIsCurrent(requirement, check, now))
+    .filter((check) => savedReviewIsCurrent(requirement, check, now, policies))
     .sort((a, b) => b.checkedAt - a.checkedAt)[0];
 }
 
@@ -423,18 +473,23 @@ export function assessRequirementCompliance(
   },
 ): ComplianceCheckResult {
   const now = options?.now ?? dayjs().valueOf();
-  const manual = latestManualCheck(requirement, options?.existingChecks ?? [], now);
-  if (manual) {
+  const savedReview = latestSavedReview(
+    requirement,
+    options?.existingChecks ?? [],
+    policies,
+    now,
+  );
+  if (savedReview) {
     return {
       requirementId: requirement._id,
-      status: manual.status,
-      reasons: manual.reasons ?? [],
-      matchedPolicyIds: manual.matchedPolicyIds,
-      matchedSummary: manual.matchedSummary,
-      expiresAt: manual.expiresAt,
-      checkedAt: manual.checkedAt,
-      checkedBy: manual.checkedBy,
-      evidence: manual.evidence,
+      status: savedReview.status,
+      reasons: savedReview.reasons ?? [],
+      matchedPolicyIds: savedReview.matchedPolicyIds,
+      matchedSummary: savedReview.matchedSummary,
+      expiresAt: savedReview.expiresAt,
+      checkedAt: savedReview.checkedAt,
+      checkedBy: savedReview.checkedBy,
+      evidence: savedReview.evidence,
     };
   }
 
@@ -508,12 +563,38 @@ export function assessRequirementCompliance(
     }
   }
   if (
-    active.coverage &&
     requirement.maxDeductible?.amount !== undefined &&
-    active.coverage.deductibleAmount !== undefined &&
+    active.coverage?.deductibleAmount === undefined
+  ) {
+    reasons.push("deductible_unverifiable");
+  } else if (
+    requirement.maxDeductible?.amount !== undefined &&
+    active.coverage?.deductibleAmount !== undefined &&
     active.coverage.deductibleAmount > requirement.maxDeductible.amount
   ) {
     reasons.push("deductible_above_required");
+  }
+  if (requirement.coverageForm) {
+    const actualForm = normalizeText(active.policy.coverageForm);
+    if (!actualForm) {
+      reasons.push("coverage_form_unverifiable");
+    } else if (actualForm !== normalizeText(requirement.coverageForm)) {
+      reasons.push("coverage_form_mismatch");
+    }
+  }
+  if (requirement.retroactiveDateOnOrBefore) {
+    const actualRetroactiveDate = parseDate(active.coverage?.retroactiveDate);
+    const requiredRetroactiveDate = parseDate(
+      requirement.retroactiveDateOnOrBefore,
+    );
+    if (!Number.isFinite(actualRetroactiveDate)) {
+      reasons.push("retroactive_date_unverifiable");
+    } else if (
+      Number.isFinite(requiredRetroactiveDate) &&
+      actualRetroactiveDate > requiredRetroactiveDate
+    ) {
+      reasons.push("retroactive_date_after_required");
+    }
   }
   for (const rawProvision of requirement.provisions ?? []) {
     if (!isRequirementProvision(rawProvision)) continue;
@@ -528,6 +609,7 @@ export function assessRequirementCompliance(
   }
   if (
     active.expiration >= now &&
+    insuredNames.length > 0 &&
     !insuredNames.some((name) => insuredNameMatches(active.policy.insuredName, name))
   ) {
     reasons.push("insured_name_mismatch");
@@ -536,11 +618,19 @@ export function assessRequirementCompliance(
   const daysUntilExpiration = Number.isFinite(active.expiration)
     ? Math.ceil((active.expiration - now) / (24 * 60 * 60 * 1000))
     : undefined;
+  const onlyUnverifiableReasons =
+    reasons.length > 0 &&
+    reasons.every(
+      (reason) =>
+        reason.includes("unverifiable") || reason === "manual_verification_required",
+    );
   const status: ComplianceCheckStatus =
     active.expiration < now
       ? "expired"
       : reasons.length > 0
-        ? "not_met"
+        ? onlyUnverifiableReasons
+          ? "unverified"
+          : "not_met"
         : daysUntilExpiration !== undefined && daysUntilExpiration <= 30
           ? "expiring_soon"
           : "met";

@@ -117,10 +117,10 @@ export default function OperatorLoginPage() {
         ) : (
           <form onSubmit={verifyCode} className="space-y-4">
             <div>
-              <label className={`mb-2 block text-muted-foreground ${typeStyle("label.field")}`}>
+              <label htmlFor="operator-verification-code" className={`mb-2 block text-muted-foreground ${typeStyle("label.field")}`}>
                 Verification Code
               </label>
-              <OtpField value={code} onValueChange={setCode} autoFocus required />
+              <OtpField id="operator-verification-code" value={code} onValueChange={setCode} autoFocus required />
               <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
                 We sent a 6-digit code to <span className={`text-foreground ${typeStyle("body.medium")}`}>{email}</span>
               </p>

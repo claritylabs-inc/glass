@@ -189,6 +189,8 @@ export function buildEmailExpertTool(
             country: z.string().optional(),
             requestText: z.string().optional(),
             requestedEndorsements: z.array(z.string()).optional(),
+            requirementSourceDocumentId: z.string().optional(),
+            requirementId: z.string().optional(),
           }),
         )
         .optional()
@@ -228,7 +230,14 @@ async function runEmailSubagent(
     defaultRecipientName: context.defaultRecipientName,
     attachments: input.attachments,
   });
-  const { allowMultipleCoiAttachments } = safeRequestedAttachments;
+  let allowMultipleCoiAttachments =
+    safeRequestedAttachments.allowMultipleCoiAttachments ||
+    safeRequestedAttachments.attachments.some(
+      (attachment) =>
+        attachment.kind === "coi" && Boolean(
+          attachment.requirementSourceDocumentId || attachment.requirementId,
+        ),
+    );
   const sourcePolicyIds = new Set(
     (context.referencedPolicyIds ?? []).map(String),
   );
@@ -335,7 +344,7 @@ async function runEmailSubagent(
   };
 
   const generateCoiAttachment = async (
-    policyId: string,
+    policyId?: string,
     certificateHolder?: string,
     holderContactName?: string,
     holderEmail?: string,
@@ -349,17 +358,24 @@ async function runEmailSubagent(
     requestText?: string,
     requestedEndorsements?: string[],
     additionalInsuredName?: string,
+    requirementSourceDocumentId?: string,
+    requirementId?: string,
   ): Promise<string> => {
     if (!context.userId) {
       return "Cannot generate a COI without an authenticated user context.";
     }
+    if (requirementSourceDocumentId || requirementId) {
+      allowMultipleCoiAttachments = true;
+    }
     const holderKey = normalizeAttachmentText(certificateHolder);
-    const requestCoiKey = `${normalizeAttachmentText(policyId)}:${holderKey}`;
+    const requestReference =
+      policyId ?? requirementSourceDocumentId ?? requirementId;
+    const requestCoiKey = `${normalizeAttachmentText(requestReference)}:${holderKey}`;
     if (attachedCoiKeys.has(requestCoiKey)) {
       return "Generated COI is already attached.";
     }
     let resolvedPolicyId: Id<"policies"> | undefined;
-    let generatedAttachment: EmailAttachmentMeta | undefined;
+    const generatedAttachments: EmailAttachmentMeta[] = [];
     const singleOrgScope: AgentScope = {
       mode: "client",
       surface: context.channel,
@@ -380,16 +396,18 @@ async function runEmailSubagent(
       },
       onResponseAttachment: (attachment) => {
         if (!attachment.fileId) return;
-        generatedAttachment = {
+        generatedAttachments.push({
           filename: attachment.filename,
           contentType: attachment.contentType,
           size: attachment.size,
           fileId: attachment.fileId,
-        };
+        });
       },
     });
     const result = await executors.generate_coi.execute({
       policyId,
+      requirementSourceDocumentId,
+      requirementId,
       certificateHolder,
       holderContactName,
       holderEmail,
@@ -405,13 +423,15 @@ async function runEmailSubagent(
       additionalInsuredName,
     });
 
-    if (generatedAttachment) {
+    if (generatedAttachments.length > 0) {
       const resolvedCoiKey = `${resolvedPolicyId ?? policyId}:${holderKey}`;
       attachedCoiKeys.add(requestCoiKey);
       attachedCoiKeys.add(resolvedCoiKey);
-      addAttachment(generatedAttachment);
-      generatedCoiAttachmentIds.add(String(generatedAttachment.fileId));
-      return "Attached COI.";
+      for (const generatedAttachment of generatedAttachments) {
+        addAttachment(generatedAttachment);
+        generatedCoiAttachmentIds.add(String(generatedAttachment.fileId));
+      }
+      return `Attached ${generatedAttachments.length} COI${generatedAttachments.length === 1 ? "" : "s"}.`;
     }
 
     if (typeof result === "string") return result;
@@ -447,7 +467,10 @@ async function runEmailSubagent(
   for (const requested of safeRequestedAttachments.attachments) {
     if (requested.kind === "original_policy" && requested.policyId) {
       await attachOriginalPolicy(requested.policyId);
-    } else if (requested.kind === "coi" && requested.policyId) {
+    } else if (
+      requested.kind === "coi" &&
+      (requested.policyId || requested.requirementSourceDocumentId || requested.requirementId)
+    ) {
       await generateCoiAttachment(
         requested.policyId,
         requested.certificateHolder,
@@ -462,6 +485,9 @@ async function runEmailSubagent(
         requested.country,
         requested.requestText,
         requested.requestedEndorsements,
+        undefined,
+        requested.requirementSourceDocumentId,
+        requested.requirementId,
       );
     } else if (requested.kind === "uploaded_file" && requested.fileId) {
       attachUploadedFile(requested.fileId, requested.filename);
@@ -891,9 +917,11 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
       }),
       generate_coi_attachment: tool({
         description:
-          "Generate a COI PDF for a policy and attach it to the outbound email.",
+          "Attach certificates in either policy mode or requirements-source mode. Never combine the modes.",
         inputSchema: z.object({
-          policyId: z.string(),
+          policyId: z.string().optional(),
+          requirementSourceDocumentId: z.string().optional(),
+          requirementId: z.string().optional(),
           certificateHolder: z.string().optional(),
           holderContactName: z.string().optional(),
           holderEmail: z.string().optional(),
@@ -923,6 +951,8 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
           requestText,
           requestedEndorsements,
           additionalInsuredName,
+          requirementSourceDocumentId,
+          requirementId,
         }) =>
           generateCoiAttachment(
             policyId,
@@ -939,6 +969,8 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
             requestText,
             requestedEndorsements,
             additionalInsuredName,
+            requirementSourceDocumentId,
+            requirementId,
           ),
       }),
       send_or_draft_email: tool({

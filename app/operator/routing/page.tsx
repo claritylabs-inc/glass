@@ -63,8 +63,10 @@ export default function OperatorRoutingPage() {
   const actions =
     activeTab === "routing" ? (
       <PillButton
-        variant="secondary"
+        variant="icon"
         size="compact"
+        label={loading ? "Refreshing…" : "Refresh"}
+        expandLabel
         disabled={loading}
         onClick={() => void refresh()}
       >
@@ -73,7 +75,6 @@ export default function OperatorRoutingPage() {
         ) : (
           <RefreshCw className="size-3.5" />
         )}
-        Refresh
       </PillButton>
     ) : activeTab === "models" && modelSettings?.updatedAt ? (
       <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>

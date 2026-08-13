@@ -1,7 +1,8 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import {
   conductorPorts,
+  conductorLocalRuntimeOverrides,
   ensureNode24,
   repoRoot,
   waitForLocalConvex,
@@ -12,6 +13,21 @@ process.chdir(repoRoot);
 
 const { web } = conductorPorts();
 await waitForLocalConvex();
+const convex = path.join(repoRoot, "node_modules", ".bin", "convex");
+for (const [name, value] of Object.entries(conductorLocalRuntimeOverrides())) {
+  const result = spawnSync(convex, ["env", "set", name, value], {
+    cwd: repoRoot,
+    env: process.env,
+    encoding: "utf8",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(
+      `Could not refresh ${name} for this Conductor workspace: ${result.stderr.trim()}`,
+    );
+  }
+}
+console.log("Refreshed this workspace's local app and worker URLs.");
 
 const child = spawn(
   path.join(repoRoot, "node_modules", ".bin", "next"),

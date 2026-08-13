@@ -1,4 +1,4 @@
-import { LiteParse, type ParsedPage, type TextItem } from "@llamaindex/liteparse";
+import type { LiteParse, ParsedPage, TextItem } from "@llamaindex/liteparse";
 import dayjs from "dayjs";
 import {
   buildSourceSpan,
@@ -694,6 +694,7 @@ export async function convertPdfWithLiteParse(params: {
 
   return withSerializedLiteParse(async () => {
     const startedAt = dayjs().valueOf();
+    const { LiteParse } = await import("@llamaindex/liteparse");
     const parser = new LiteParse({
       ocrEnabled: readBooleanEnv("LITEPARSE_OCR_ENABLED", false),
       ocrLanguage: process.env.LITEPARSE_OCR_LANGUAGE ?? "eng",

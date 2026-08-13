@@ -1,8 +1,14 @@
 import { convexAuthNextjsMiddleware } from "@convex-dev/auth/nextjs/server";
 
-// Minimal wiring: enable server-side session cookies for Convex Auth.
+const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+
+// Keep browser cookies aligned with Convex Auth's default 30-day session.
+// Session-only cookies sign users out whenever the browser process closes even
+// though the backend refresh session is still valid.
 // No route protection / redirects — auth gating happens at the component level.
-export default convexAuthNextjsMiddleware();
+export default convexAuthNextjsMiddleware(undefined, {
+  cookieConfig: { maxAge: AUTH_COOKIE_MAX_AGE_SECONDS },
+});
 
 export const config = {
   // Run on every request EXCEPT static assets, Next internals, and

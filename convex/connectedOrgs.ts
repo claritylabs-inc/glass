@@ -229,8 +229,15 @@ export const listVendors = query({
 
     const rows = [];
     for (const membership of memberships) {
-      const access = await getOrgAccess(ctx, membership.orgId);
-      if (access.accessType !== "member") continue;
+      const access = await getOrgAccess(ctx, membership.orgId, {
+        allowOperator: true,
+      });
+      if (
+        access.accessType !== "member" &&
+        access.accessType !== "operator"
+      ) {
+        continue;
+      }
       const org = await ctx.db.get(membership.orgId);
       if ((org?.type ?? "client") === "broker") continue;
       const [relationships, invitations] = await Promise.all([
@@ -279,8 +286,15 @@ export const listClients = query({
 
     const rows = [];
     for (const membership of memberships) {
-      const access = await getOrgAccess(ctx, membership.orgId);
-      if (access.accessType !== "member") continue;
+      const access = await getOrgAccess(ctx, membership.orgId, {
+        allowOperator: true,
+      });
+      if (
+        access.accessType !== "member" &&
+        access.accessType !== "operator"
+      ) {
+        continue;
+      }
       const org = await ctx.db.get(membership.orgId);
       if ((org?.type ?? "client") === "broker") continue;
       const [relationships, invitations] = await Promise.all([

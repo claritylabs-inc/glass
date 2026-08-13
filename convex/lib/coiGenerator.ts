@@ -45,7 +45,10 @@ type ClientProfileFacts = {
 
 export function policyToCoiData(
   policy: any,
-  options: { clientProfileFacts?: ClientProfileFacts } = {},
+  options: {
+    clientProfileFacts?: ClientProfileFacts;
+    includedLineOfBusinessCodes?: string[];
+  } = {},
 ): CoiData {
   const profile = operationalProfile(policy);
   const limits: any = policy.limits ?? {};
@@ -78,6 +81,25 @@ export function policyToCoiData(
     expirationDate: expDate,
     coverageForm,
   });
+  const requestedCodes = options.includedLineOfBusinessCodes?.length
+    ? policyLobCodes({ linesOfBusiness: options.includedLineOfBusinessCodes })
+    : [];
+  const selectedCoverageLines = requestedCodes.length > 0
+    ? coverageLines.filter((line) => coverageMatchesRequestedLobs(line, requestedCodes))
+    : coverageLines;
+  const selectedFallbackLines = requestedCodes.length > 0
+    ? buildFallbackCoverageLines(requestedCodes, limits, {
+        policyNumber,
+        effectiveDate: effDate,
+        expirationDate: expDate,
+        coverageForm,
+      })
+    : buildFallbackCoverageLines(linesOfBusiness, limits, {
+        policyNumber,
+        effectiveDate: effDate,
+        expirationDate: expDate,
+        coverageForm,
+      });
 
   return {
     title: deriveCertificateTitle(),
@@ -95,15 +117,33 @@ export function policyToCoiData(
     insuredAddress: partyContext.insuredAddress,
     insuredFein: policy.insuredFein,
     insurers,
-    coverages: coverageLines.length ? coverageLines : buildFallbackCoverageLines(linesOfBusiness, limits, {
-      policyNumber,
-      effectiveDate: effDate,
-      expirationDate: expDate,
-      coverageForm,
-    }),
+    coverages: selectedCoverageLines.length ? selectedCoverageLines : selectedFallbackLines,
     description: partyContext.operationsDescription,
     ...propertyFields,
   };
+}
+
+const LOB_FAMILIES: ReadonlyArray<ReadonlySet<string>> = [
+  new Set(["CGL", "GL", "BOP", "BOPGL"]),
+  new Set(["AUTO", "AUTOB", "AUTOP", "GARAG", "TRUCK"]),
+  new Set(["UMBRC", "UMBRL", "UMBRP", "EXLIA"]),
+  new Set(["WORK", "WCMA", "WORKP", "WORKV"]),
+];
+
+function coverageMatchesRequestedLobs(
+  coverage: CoverageLine,
+  requestedCodes: readonly string[],
+) {
+  const coverageCodes = policyLobCodes({
+    linesOfBusiness: [coverage.lineOfBusiness, coverage.type].filter(
+      (value): value is string => Boolean(value),
+    ),
+  });
+  if (coverageCodes.some((code) => requestedCodes.includes(code))) return true;
+  return LOB_FAMILIES.some((family) =>
+    coverageCodes.some((code) => family.has(code)) &&
+    requestedCodes.some((code) => family.has(code)),
+  );
 }
 
 function operationalProfile(policy: any): any | undefined {

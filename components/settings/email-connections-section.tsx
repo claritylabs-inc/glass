@@ -140,7 +140,6 @@ export function EmailConnectionsSection() {
     setActions(
       <PillButton
         size="compact"
-        variant="secondary"
         onClick={() => void openAddMailbox()}
       >
         <Plus className="size-3.5" />

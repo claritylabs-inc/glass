@@ -178,10 +178,10 @@ export function BrokerAuthEntryPage({
           ) : (
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
-                <label className={`text-muted-foreground block mb-2 ${typeStyle("label.field")}`}>
+                <label htmlFor="broker-verification-code" className={`text-muted-foreground block mb-2 ${typeStyle("label.field")}`}>
                   Verification Code
                 </label>
-                <OtpField value={code} onValueChange={setCode} autoFocus required />
+                <OtpField id="broker-verification-code" value={code} onValueChange={setCode} autoFocus required />
                 <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
                   We sent a 6-digit code to{" "}
                   <span className={`text-foreground ${typeStyle("body.medium")}`}>{email}</span>

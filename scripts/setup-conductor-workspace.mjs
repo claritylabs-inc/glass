@@ -20,6 +20,7 @@ import {
   generateLocalAuthKeys,
   localConvexUrls,
   parseEnvFile,
+  repairLocalConvexSelection,
   repoRoot,
   resolveConductorClRouterConfig,
   workspaceSlug,
@@ -317,6 +318,8 @@ if (createdLocalDeployment) {
     );
   }
   stripCloudConvexSelection();
+} else if (repairLocalConvexSelection()) {
+  console.log("Restored this workspace's local Convex selection in .env.local.");
 }
 
 for (const name of cloudConvexSelectionKeys) delete process.env[name];

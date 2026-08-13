@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     // Generated / external
+    ".context/**",
     ".worktrees/**",
     ".claude/worktrees/**",
     // Convex codegen output — regenerated on every `convex dev`.

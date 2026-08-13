@@ -23,6 +23,7 @@ import { typeStyle } from "@/lib/typography";
 type UploadedBySide =
   | "broker"
   | "client"
+  | "operator"
   | "email_scan"
   | "agent_email"
   | undefined;
@@ -65,6 +66,16 @@ function ProvenanceBadge({ side }: { side: UploadedBySide }) {
         className="border-current/20 bg-transparent text-current"
       >
         Email scan
+      </Badge>
+    );
+  }
+  if (side === "operator") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-current/20 bg-transparent text-current"
+      >
+        Operator provided
       </Badge>
     );
   }

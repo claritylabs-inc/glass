@@ -80,7 +80,6 @@ describe("auto-save surfaces", () => {
     const profile = read("app/profile/page.tsx");
     const broker = read("app/operator/brokers/page.tsx");
     const client = read("app/operator/clients/[clientOrgId]/page.tsx");
-
     expect(hook).toContain("sequencer.run");
     expect(hook).not.toContain("enqueueMutation");
     expect(hook).not.toContain("flushPendingMutations");
@@ -199,6 +198,9 @@ describe("auto-save surfaces", () => {
   it("drains operator saves before dependent actions", () => {
     const broker = read("app/operator/brokers/page.tsx");
     const client = read("app/operator/clients/[clientOrgId]/page.tsx");
+    const clientImpersonation = read(
+      "app/operator/clients/[clientOrgId]/operator-client-impersonation-action.tsx",
+    );
     const organization = read(
       "components/settings/organization-section.tsx",
     );
@@ -209,12 +211,9 @@ describe("auto-save surfaces", () => {
       broker.indexOf("await saveBrokerSettingsBeforeTransition()"),
     ).toBeLessThan(broker.indexOf("await startImpersonation"));
 
-    const clientImpersonation = client.slice(
-      client.indexOf("const impersonate = useCallback"),
-      client.indexOf("const disableAccount = useCallback"),
-    );
+    expect(client).toContain("beforeStart={saveClientSettingsNow}");
     expect(
-      clientImpersonation.indexOf("await saveClientSettingsNow()"),
+      clientImpersonation.indexOf("await beforeStart?.()"),
     ).toBeLessThan(clientImpersonation.indexOf("await startImpersonation"));
 
     expect(

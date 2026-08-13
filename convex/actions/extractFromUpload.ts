@@ -35,10 +35,20 @@ export const extractFromUpload = action({
     const viewer = await ctx.runQuery(api.users.viewer) as { _id: string } | null;
     if (!viewer) return { error: "Not authenticated" };
 
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as { membership: { orgId: string } } | null;
-    if (!orgData) return { error: "No organization" };
-
-    const orgId = orgData.membership.orgId as Id<"organizations">;
+    let orgId: Id<"organizations">;
+    if (args.policyId) {
+      const policy = await ctx.runQuery(api.policies.get, {
+        id: args.policyId,
+      }) as { orgId?: Id<"organizations"> } | null;
+      if (!policy?.orgId) return { error: "Policy not found" };
+      orgId = policy.orgId;
+    } else {
+      const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as {
+        membership: { orgId: string };
+      } | null;
+      if (!orgData) return { error: "No organization" };
+      orgId = orgData.membership.orgId as Id<"organizations">;
+    }
     const userId = viewer._id as Id<"users">;
     const uploadFileSha256s = [
       args.fileSha256,

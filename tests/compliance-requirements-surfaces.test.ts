@@ -15,16 +15,45 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(page).toContain("SourceFilter");
     expect(page).toContain("OverviewTab");
     expect(page).toContain("RequirementsTable");
+    const requirementsTable = page.slice(
+      page.indexOf("function RequirementsTable"),
+      page.indexOf("function RequirementsFilterSelect"),
+    );
+    expect(requirementsTable).toContain("<TableHead>Line</TableHead>");
+    expect(requirementsTable).toContain("<TableHead>Source</TableHead>");
+    expect(requirementsTable).not.toContain(">Coverage</TableHead>");
+    expect(requirementsTable).not.toContain(">Policy match</TableHead>");
+    expect(requirementsTable).not.toContain("truncate");
     expect(page).toContain("RequirementDrawer");
     expect(page).toContain("RequirementSourcesTable");
     expect(page).toContain("SourceDrawer");
+    expect(page).toContain('title="Certificate holder"');
+    expect(page).toContain('title="Deal context"');
+    expect(page).toContain('title="Certificates"');
+    expect(page).toContain("Generate certificates");
+    expect(page).toContain("api.certificates.listByRequirementSource");
+    expect(page).toContain('title="Import requirements"');
+    expect(page).toContain('title="Add requirement"');
+    expect(page).toContain("Source (optional)");
+    expect(page).toContain("No source — internal requirement");
+    expect(page).toContain("Internal requirements");
+    expect(page).toContain("requirementSourceFilter");
+    expect(page).toContain('<FileUp className="h-3.5 w-3.5" />');
+    expect(page).toContain('<Plus className="h-3.5 w-3.5" />');
+    expect(page).not.toContain('<TabsTrigger value="bulk">');
+    expect(page).not.toContain('<TabsTrigger value="manual">');
     expect(page).toContain("RequirementEditForm");
     expect(page).toContain("function latestCheckNote");
     expect(page).toContain('text-muted-foreground/60 ${typeStyle("body.medium")}');
-    expect(page).toContain("TabsTrigger value=\"sources\"");
-    expect(page).toContain('TabsTrigger value="own_org">My requirements');
-    expect(page).toContain('TabsTrigger value="vendors">Vendor requirements');
-    expect(page).toContain('TabsTrigger value="requirements">Requirements');
+    expect(page).toContain('{ value: "sources", label: "Sources" }');
+    expect(page).toContain('{ value: "own_org", label: "My requirements" }');
+    expect(page).toContain('{ value: "vendors", label: "Vendor requirements" }');
+    expect(page).toContain('{ value: "requirements", label: "Requirements" }');
+    expect(page).toContain('{ value: "certificates", label: "Certificates" }');
+    expect(page).toContain('requestedTab === "certificates"');
+    expect(page).toContain('<TabsTrigger key={option.value} value={option.value}>');
+    expect(page).toContain('variant="pill"\n        aria-label="Compliance view"');
+    expect(page).toContain("if (renderShell)");
     expect(page).not.toContain("<Tabs value={activeRequirementScope}");
     expect(page).not.toContain("Archive selected");
     expect(page).toContain('className="h-1.5 w-full overflow-hidden rounded-full bg-muted"');
@@ -88,6 +117,8 @@ describe("coverage-only compliance requirement surfaces", () => {
     expect(compliance).toContain("listRequirementSources");
     expect(compliance).toContain("updateRequirementSource");
     expect(compliance).toContain("archiveRequirementSources");
+    expect(compliance).toContain("getCertificateRequirementSourcePlanInternal");
+    expect(compliance).toContain("upsertCertificateHolder");
     expect(compliance).toContain("archiveNonCoverageRequirementsInternal");
     expect(compliance).toContain('row.kind === "coverage"');
     expect(extraction).not.toContain('z.enum(["coverage", "insurer", "condition"])');

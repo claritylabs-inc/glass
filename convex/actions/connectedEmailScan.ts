@@ -73,6 +73,8 @@ type AutomationMessage = {
   sourceMessageId?: string;
   subject: string;
   from?: string;
+  fromName?: string;
+  fromEmail?: string;
   receivedAt?: number;
   snippet: string;
   textPreview: string;
@@ -291,6 +293,8 @@ async function fetchAutomationMessage(
     sourceMessageId: metadata.envelope?.messageId,
     subject: metadata.envelope?.subject ?? "(no subject)",
     from: formatEnvelopeAddresses(metadata.envelope?.from),
+    fromName: metadata.envelope?.from?.[0]?.name?.trim() || undefined,
+    fromEmail: metadata.envelope?.from?.[0]?.address?.trim() || undefined,
     receivedAt,
     snippet: textPreview.slice(0, 1_500),
     textPreview,
@@ -522,6 +526,13 @@ function sourceNameForMessage(message: AutomationMessage) {
     .slice(0, 180);
 }
 
+function requirementHolderForMessage(message: AutomationMessage) {
+  const displayName = message.fromName || message.fromEmail;
+  return displayName
+    ? { displayName, email: message.fromEmail }
+    : undefined;
+}
+
 async function processAutomationDecision(
   ctx: ActionCtx,
   args: {
@@ -615,6 +626,10 @@ async function processAutomationDecision(
             sourceName: sourceNameForMessage(message),
             sourceType: decision.requirementSourceType ?? "other",
             scope: decision.requirementScope ?? "own_org",
+            holder:
+              (decision.requirementScope ?? "own_org") === "own_org"
+                ? requirementHolderForMessage(message)
+                : undefined,
           },
         );
         const importedIds = imported.status === "imported"

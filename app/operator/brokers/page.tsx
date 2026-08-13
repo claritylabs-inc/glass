@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut, Plus } from "lucide-react";
 import { OperatorSidebar } from "../operator-sidebar";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
@@ -33,6 +33,7 @@ import {
   useOperatorBrokerCacheActions,
 } from "@/lib/sync/operator-cached-queries";
 import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
+import { useStartOperatorImpersonation } from "@/hooks/use-start-operator-impersonation";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { formatDisplayDate } from "@/lib/date-format";
@@ -131,7 +132,7 @@ export default function OperatorBrokersPage() {
   const launchBroker = useAction(api.operator.launchBroker);
   const setBrokerStatus = useMutation(api.operator.setBrokerStatus);
   const updateBrokerSettings = useMutation(api.operator.updateBrokerSettings);
-  const startImpersonation = useMutation(api.operator.startImpersonation);
+  const { startImpersonation } = useStartOperatorImpersonation();
   const stopOperatorImpersonation = useStopOperatorImpersonation(
     current?.activeImpersonation,
   );
@@ -290,8 +291,12 @@ export default function OperatorBrokersPage() {
     try {
       const saved = await saveBrokerSettingsBeforeTransition();
       if (!saved) return;
-      await startImpersonation({ targetOrgId: broker._id, targetRole: "admin" });
-      router.push("/clients");
+      await startImpersonation({
+        targetOrgId: broker._id,
+        targetRole: "admin",
+        destination: "/clients",
+        failureMessage: "Failed to impersonate broker",
+      });
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(error, "Failed to impersonate broker"),
@@ -335,8 +340,10 @@ export default function OperatorBrokersPage() {
     <>
       {current?.activeImpersonation ? (
         <PillButton
-          variant="secondary"
+          variant="icon"
           size="compact"
+          label="Stop impersonating"
+          expandLabel
           onClick={async () => {
             const saved = await saveBrokerSettingsBeforeTransition();
             if (!saved) return;
@@ -344,12 +351,11 @@ export default function OperatorBrokersPage() {
             toast.success("Impersonation stopped");
           }}
         >
-          Stop impersonating
+          <LogOut className="size-3.5" />
         </PillButton>
       ) : null}
       <PillButton
         size="compact"
-        variant="secondary"
         onClick={async () => {
           const saved = await saveBrokerSettingsBeforeTransition();
           if (!saved) return;
@@ -357,6 +363,7 @@ export default function OperatorBrokersPage() {
           setPanelMode("create");
         }}
       >
+        <Plus className="size-3.5" />
         Create broker
       </PillButton>
     </>

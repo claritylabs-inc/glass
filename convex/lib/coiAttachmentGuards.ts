@@ -24,6 +24,8 @@ export type RequestedEmailAttachment = {
   country?: string;
   requestText?: string;
   requestedEndorsements?: string[];
+  requirementSourceDocumentId?: string;
+  requirementId?: string;
 };
 
 export const MULTIPLE_COI_SINGLE_RECIPIENT_WARNING =

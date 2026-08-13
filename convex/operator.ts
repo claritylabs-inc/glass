@@ -61,6 +61,7 @@ const extractionTraceStatusValidator = v.union(
 );
 const internalApi = internal as any;
 const OPERATOR_TRACE_EVENT_LIMIT = 500;
+const OPERATOR_POLICY_ARTIFACT_COUNT_LIMIT = 1_000;
 const CANCELLED_BY_USER = "Cancelled by user";
 const REMOVED_PROGRAM_ADMIN_TABLES = [
   "partnerPrograms",
@@ -88,6 +89,23 @@ const REMOVED_POLICY_CHANGE_LINK_TABLES = [
 const CLEAR_AGENT_MEMORY_CONFIRMATION = "CLEAR_AGENT_MEMORY";
 
 type OperatorSourceNode = Doc<"sourceNodes">;
+
+async function assertNoActiveOperatorImpersonationForPolicyWrite(
+  ctx: QueryCtx | MutationCtx,
+  operatorUserId: Id<"users">,
+) {
+  const activeImpersonation = await ctx.db
+    .query("operatorImpersonationSessions")
+    .withIndex("by_operator_status", (q) =>
+      q.eq("operatorUserId", operatorUserId).eq("status", "active"),
+    )
+    .first();
+  if (activeImpersonation) {
+    throw new Error(
+      "Policy management is read-only during active impersonation.",
+    );
+  }
+}
 
 function normalizeSlug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
@@ -709,6 +727,7 @@ export const listExtractionTraces = query({
   args: {
     status: v.optional(extractionTraceStatusValidator),
     orgId: v.optional(v.id("organizations")),
+    policyId: v.optional(v.id("policies")),
     dateFrom: v.optional(v.number()),
     dateTo: v.optional(v.number()),
     limit: v.optional(v.number()),
@@ -716,7 +735,19 @@ export const listExtractionTraces = query({
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 500));
-    const sessions = args.orgId
+    const sessions = args.policyId
+      ? await ctx.db
+        .query("policyExtractionTraceSessions")
+        .withIndex("by_policyId_startedAt", (q) => {
+          const byPolicy = q.eq("policyId", args.policyId!);
+          if (args.dateFrom !== undefined && args.dateTo !== undefined) return byPolicy.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
+          if (args.dateFrom !== undefined) return byPolicy.gte("startedAt", args.dateFrom);
+          if (args.dateTo !== undefined) return byPolicy.lte("startedAt", args.dateTo);
+          return byPolicy;
+        })
+        .order("desc")
+        .take(limit)
+      : args.orgId
       ? await ctx.db
         .query("policyExtractionTraceSessions")
         .withIndex("by_orgId_startedAt", (q) => {
@@ -752,6 +783,7 @@ export const listExtractionTraces = query({
           .take(limit);
     const filtered = sessions
       .filter((session) => !args.status || session.status === args.status)
+      .filter((session) => !args.policyId || session.policyId === args.policyId)
       .filter((session) => args.dateFrom === undefined || session.startedAt >= args.dateFrom!)
       .filter((session) => args.dateTo === undefined || session.startedAt <= args.dateTo!)
       .slice(0, limit);
@@ -797,6 +829,133 @@ export const listExtractionTraces = query({
         documentType: session.sourceKind ?? "policy",
       };
     });
+  },
+});
+
+function boundedArtifactCount(rows: unknown[]) {
+  const capped = rows.length > OPERATOR_POLICY_ARTIFACT_COUNT_LIMIT;
+  return {
+    count: capped ? OPERATOR_POLICY_ARTIFACT_COUNT_LIMIT : rows.length,
+    capped,
+  };
+}
+
+export const getPolicyExtractionOperations = query({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) return null;
+
+    const takeCount = OPERATOR_POLICY_ARTIFACT_COUNT_LIMIT + 1;
+    const [
+      run,
+      queue,
+      previewQueue,
+      sourceSpans,
+      sourceNodes,
+      documentChunks,
+      sourceChunks,
+      policyFiles,
+      artifacts,
+      versions,
+      latestTrace,
+    ] = await Promise.all([
+      ctx.db
+        .query("policyExtractionRuns")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .first(),
+      ctx.db
+        .query("policyExtractionQueue")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .first(),
+      ctx.db
+        .query("policyExtractionPreviewQueue")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .first(),
+      ctx.db
+        .query("sourceSpans")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .take(takeCount),
+      ctx.db
+        .query("sourceNodes")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .take(takeCount),
+      ctx.db
+        .query("documentChunks")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .take(takeCount),
+      ctx.db
+        .query("sourceChunks")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .take(takeCount),
+      ctx.db
+        .query("policyFiles")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .take(takeCount),
+      ctx.db
+        .query("policyExtractionArtifacts")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .take(takeCount),
+      ctx.db
+        .query("policyVersions")
+        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .take(takeCount),
+      ctx.db
+        .query("policyExtractionTraceSessions")
+        .withIndex("by_policyId_startedAt", (q) => q.eq("policyId", args.policyId))
+        .order("desc")
+        .first(),
+    ]);
+
+    return {
+      policyId: policy._id,
+      orgId: policy.orgId,
+      run: run
+        ? {
+            pipelineStatus: run.pipelineStatus,
+            pipelineError: run.pipelineError,
+            pipelineCheckpoint: run.pipelineCheckpoint,
+            createdAt: run.createdAt,
+            updatedAt: run.updatedAt,
+          }
+        : null,
+      queue: queue
+        ? {
+            status: queue.status,
+            leaseExpiresAt: queue.leaseExpiresAt,
+            heartbeatAt: queue.heartbeatAt,
+            updatedAt: queue.updatedAt,
+          }
+        : null,
+      previewQueue: previewQueue
+        ? {
+            status: previewQueue.status,
+            leaseExpiresAt: previewQueue.leaseExpiresAt,
+            heartbeatAt: previewQueue.heartbeatAt,
+            updatedAt: previewQueue.updatedAt,
+          }
+        : null,
+      counts: {
+        sourceSpans: boundedArtifactCount(sourceSpans),
+        sourceNodes: boundedArtifactCount(sourceNodes),
+        documentChunks: boundedArtifactCount(documentChunks),
+        sourceChunks: boundedArtifactCount(sourceChunks),
+        policyFiles: boundedArtifactCount(policyFiles),
+        artifacts: boundedArtifactCount(artifacts),
+        versions: boundedArtifactCount(versions),
+      },
+      artifactKinds: artifacts.map((artifact) => artifact.kind),
+      latestTrace: latestTrace
+        ? {
+            traceId: latestTrace.traceId,
+            status: latestTrace.status,
+            startedAt: latestTrace.startedAt,
+            completedAt: latestTrace.completedAt,
+            error: latestTrace.error,
+          }
+        : null,
+    };
   },
 });
 
@@ -849,17 +1008,24 @@ export const rerunExtraction = action({
   handler: async (ctx, args): Promise<{ success: boolean; traceId?: string }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
-
-    const policy = await ctx.runQuery(internalApi.policies.getInternal, {
-      id: args.policyId,
-    });
-    if (!policy) throw new Error("Policy not found");
+    const access = await ctx.runQuery(internalApi.operator.requireOperatorPolicyWriteForUserInternal, {
+      userId,
+      policyId: args.policyId,
+    }) as { pipelineStatus?: string };
+    if (access.pipelineStatus === "running" || access.pipelineStatus === "paused") {
+      throw new Error("An extraction is already running for this policy.");
+    }
 
     const result = await ctx.runAction(internalApi.actions.policyExtraction.retryPolicyExtraction, {
       policyId: args.policyId,
       mode: "full",
     }) as { success?: boolean; traceId?: string } | undefined;
+    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
+      operatorUserId: userId,
+      policyId: args.policyId,
+      operation: "full_extraction",
+      metadata: result?.traceId ? { traceId: result.traceId } : undefined,
+    });
     return { success: true, traceId: result?.traceId };
   },
 });
@@ -872,14 +1038,81 @@ export const backfillCoverageRecovery = action({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
-    return await ctx.runAction(
+    const access = await ctx.runQuery(internalApi.operator.requireOperatorPolicyWriteForUserInternal, {
+      userId,
+      policyId: args.policyId,
+    }) as { pipelineStatus?: string };
+    if (access.pipelineStatus !== "complete") {
+      throw new Error("Coverage recovery requires a complete policy extraction.");
+    }
+    const result = await ctx.runAction(
       internalApi.actions.policyExtraction.backfillStoredCoverageRecovery,
       {
         policyId: args.policyId,
         force: args.force === true,
       },
     );
+    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
+      operatorUserId: userId,
+      policyId: args.policyId,
+      operation: "coverage_recovery",
+      metadata: result,
+    });
+    return result;
+  },
+});
+
+export const rerunSupplementaryExtraction = action({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    const access = await ctx.runQuery(internalApi.operator.requireOperatorPolicyWriteForUserInternal, {
+      userId,
+      policyId: args.policyId,
+    }) as { pipelineStatus?: string };
+    if (access.pipelineStatus !== "complete") {
+      throw new Error(
+        "Supplementary extraction requires a complete policy extraction.",
+      );
+    }
+    const result = await ctx.runAction(
+      internalApi.actions.extractSupplementary.extractOne,
+      { policyId: args.policyId, force: true },
+    );
+    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
+      operatorUserId: userId,
+      policyId: args.policyId,
+      operation: "supplementary_extraction",
+      metadata: result,
+    });
+    return result;
+  },
+});
+
+export const rebuildPolicySearchIndex = action({
+  args: { policyId: v.id("policies") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    const access = await ctx.runQuery(
+      internalApi.operator.requireOperatorPolicyWriteForUserInternal,
+      { userId, policyId: args.policyId },
+    ) as { orgId: Id<"organizations">; pipelineStatus?: string };
+    if (access.pipelineStatus !== "complete") {
+      throw new Error("Search indexing requires a complete policy extraction.");
+    }
+    const result = await ctx.runAction(
+      internalApi.actions.rechunkPolicy.rechunkOne,
+      { policyId: args.policyId, orgId: access.orgId },
+    );
+    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
+      operatorUserId: userId,
+      policyId: args.policyId,
+      operation: "search_index",
+      metadata: result,
+    });
+    return result;
   },
 });
 
@@ -892,6 +1125,10 @@ export const stopExtraction = mutation({
       .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
       .first();
     if (!session) throw new Error("Extraction trace not found");
+    await assertNoActiveOperatorImpersonationForPolicyWrite(
+      ctx,
+      operator.userId,
+    );
     if (session.status !== "running") {
       return { success: true, stopped: false };
     }
@@ -950,6 +1187,18 @@ export const stopExtraction = mutation({
       error: CANCELLED_BY_USER,
       durationMs: timestamp - session.startedAt,
       expiresAt: session.expiresAt,
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: session.orgId,
+      summary: "Stopped a policy extraction",
+      metadata: {
+        domain: "policies",
+        policyId: session.policyId,
+        traceId: session.traceId,
+        operation: "stop_extraction",
+      },
     });
 
     return { success: true, stopped: true };
@@ -1499,6 +1748,23 @@ export const startImpersonation = mutation({
         q.eq("operatorUserId", operator.userId).eq("status", "active"),
       )
       .collect();
+
+    const matchingSession = active
+      .filter(
+        (session) =>
+          session.targetOrgId === args.targetOrgId &&
+          session.targetRole === args.targetRole,
+      )
+      .sort((left, right) => right.createdAt - left.createdAt)[0];
+
+    if (matchingSession) {
+      for (const session of active) {
+        if (session._id === matchingSession._id) continue;
+        await ctx.db.patch(session._id, { status: "ended", endedAt: now });
+      }
+      return { sessionId: matchingSession._id, reused: true };
+    }
+
     for (const session of active) {
       await ctx.db.patch(session._id, { status: "ended", endedAt: now });
     }
@@ -1515,7 +1781,7 @@ export const startImpersonation = mutation({
       targetOrgId: args.targetOrgId,
       summary: `Started ${args.targetRole} impersonation for ${org.name}`,
     });
-    return { sessionId };
+    return { sessionId, reused: false };
   },
 });
 
@@ -1673,6 +1939,69 @@ export const requireOperatorForUserInternal = internalQuery({
   handler: async (ctx, args) => {
     const operator = await requireOperatorForUser(ctx, args.userId);
     return { userId: operator.userId, profile: operator.profile };
+  },
+});
+
+export const requireOperatorPolicyWriteForUserInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperatorForUser(ctx, args.userId);
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) throw new Error("Policy not found");
+    await assertNoActiveOperatorImpersonationForPolicyWrite(
+      ctx,
+      operator.userId,
+    );
+    const run = await ctx.db
+      .query("policyExtractionRuns")
+      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .first();
+    return {
+      userId: operator.userId,
+      orgId: policy.orgId,
+      pipelineStatus: run?.pipelineStatus ?? policy.pipelineStatus,
+    };
+  },
+});
+
+export const recordPolicyExtractionOperationInternal = internalMutation({
+  args: {
+    operatorUserId: v.id("users"),
+    policyId: v.id("policies"),
+    operation: v.union(
+      v.literal("full_extraction"),
+      v.literal("coverage_recovery"),
+      v.literal("supplementary_extraction"),
+      v.literal("search_index"),
+    ),
+    metadata: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) return;
+    await ctx.db.insert("policyAuditLog", {
+      policyId: args.policyId,
+      userId: args.operatorUserId,
+      orgId: policy.orgId,
+      action: `operator_${args.operation}`,
+      detail: "Operator started a targeted extraction operation",
+      metadata: args.metadata,
+    });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: args.operatorUserId,
+      type: "setup_write",
+      targetOrgId: policy.orgId,
+      summary: `Ran policy extraction operation: ${args.operation.replaceAll("_", " ")}`,
+      metadata: {
+        domain: "policies",
+        policyId: args.policyId,
+        operation: args.operation,
+        result: args.metadata,
+      },
+    });
   },
 });
 
