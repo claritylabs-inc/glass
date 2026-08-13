@@ -47,14 +47,17 @@ describe("chat rendering performance", () => {
     expect(overrideHtml).toContain('data-policy-link="true"');
   });
 
-  it("keeps the processing path isolated from settled message rendering", () => {
+  it("renders processing as one opaque thinking bubble", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
 
     expect(threadContent).toContain("useStableMessages(rawMessages)");
     expect(threadContent).toContain("memo(function UnifiedMessageBubble");
     expect(threadContent).toContain('message.status === "processing"');
-    expect(threadContent).toContain("<StreamingProseMarkdown");
+    expect(threadContent).toContain("<AgentThinkingBubble");
+    expect(threadContent).toContain('aria-label="Glass is thinking"');
     expect(threadContent).toContain("<ProseMarkdown");
+    expect(threadContent).not.toContain("<StreamingProseMarkdown");
+    expect(threadContent).not.toContain("<AgentActivity");
     expect(threadContent).toContain("useStickToBottom");
     expect(threadContent).toContain("ref={scrollRef}");
     expect(threadContent).toContain("ref={contentRef}");
@@ -70,6 +73,18 @@ describe("chat rendering performance", () => {
     expect(threadContent).toContain("isActive={isSourcesExpanded}");
     expect(threadContent).toContain(
       "onClick={() => setIsSourcesExpanded((value) => !value)}",
+    );
+  });
+
+  it("gives messages and the composer the same wider conversation measure", () => {
+    const threadContent = read("components/agent-thread/thread-content.tsx");
+    const promptInput = read("components/glass-prompt-input.tsx");
+
+    expect(threadContent).toContain(
+      'className="mx-auto w-full max-w-3xl space-y-4"',
+    );
+    expect(promptInput).toContain(
+      'className="mx-auto w-full max-w-3xl"',
     );
   });
 

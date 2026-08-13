@@ -32,12 +32,13 @@ describe("reasoning formatting", () => {
     ]);
   });
 
-  it("normalizes reasoning before streaming and final persistence", () => {
+  it("keeps model reasoning private in web chat", () => {
     const processThreadChat = read("convex/actions/processThreadChat.ts");
 
-    expect(processThreadChat).toContain("function normalizeReasoningText");
     expect(processThreadChat).toContain(
-      "reasoning: normalizeReasoningText(reasoning)",
+      "Model reasoning stays private and is intentionally discarded.",
     );
+    expect(processThreadChat).not.toContain("reasoning +=");
+    expect(processThreadChat).not.toContain("normalizeReasoningText");
   });
 });

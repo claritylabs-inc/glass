@@ -29,7 +29,7 @@ Glass stores the conversation and any approved workspace actions, not merely a
 copy of the latest answer. Depending on the channel, a thread may include:
 
 - policy and requirement references;
-- source-backed answers and confidence details;
+- source-backed answers and source links;
 - uploaded or generated documents;
 - certificate, policy-change, and email-draft status;
 - delivery attempts and failures; and

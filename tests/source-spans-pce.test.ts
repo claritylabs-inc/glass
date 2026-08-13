@@ -135,20 +135,20 @@ describe("source spans and policy update backend surfaces", () => {
     expect(inboundImessage).toContain("buildAgentToolExecutors");
   });
 
-  it("renders chat sources as compact footer controls and tool calls in the activity timeline", () => {
+  it("renders chat sources as compact footer controls without tool activity", () => {
     const threadContent = read("components/agent-thread/thread-content.tsx");
     const referenceCards = read("components/context-reference-card.tsx");
 
     expect(threadContent).toContain("function MessageFooterActions");
     expect(threadContent).toContain("MessageMetaTag");
-    expect(threadContent).toContain("steps={msg.agentSteps}");
-    expect(threadContent).toContain("fallbackToolCalls={regularToolCalls}");
+    expect(threadContent).not.toContain("steps={msg.agentSteps}");
+    expect(threadContent).not.toContain("fallbackToolCalls={regularToolCalls}");
     expect(threadContent).not.toContain('"Tool" : "Tools"');
-    expect(threadContent).toContain("msg.usedTools ?? []");
+    expect(threadContent).not.toContain("msg.usedTools ?? []");
     expect(threadContent).toContain("relatedEmailMessages.flatMap");
     expect(referenceCards).toContain("function PolicyCitation");
     expect(referenceCards).toContain("function PolicySourcePill");
-    expect(threadContent).toContain("showSingleCount");
+    expect(threadContent).not.toContain("showSingleCount");
     expect(referenceCards).not.toContain("index: number");
     expect(referenceCards).not.toContain("{index}");
     expect(referenceCards).not.toContain(">Sources<");

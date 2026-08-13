@@ -1471,7 +1471,7 @@ export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
           paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="max-w-2xl mx-auto">{children}</div>
+        <div className="mx-auto w-full max-w-3xl">{children}</div>
       </div>
     </div>
   );

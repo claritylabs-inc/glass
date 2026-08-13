@@ -81,7 +81,7 @@ export default function ClientThreadReadOnlyPage() {
   const firstUserIdx = messages.findIndex((m) => m.role === "user");
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4">
+    <div className="mx-auto w-full max-w-3xl space-y-4">
       {messages.length === 0 && (
         <div className="text-center py-16">
           <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>No messages</p>
@@ -101,7 +101,6 @@ export default function ClientThreadReadOnlyPage() {
               msg={msg}
               viewerId={viewer?._id}
               viewerEmail={viewer?.email ?? undefined}
-              isFirstUserMessage={false}
               threadContext={undefined}
               brokerPerspective
             />

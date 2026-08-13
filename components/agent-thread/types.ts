@@ -62,6 +62,7 @@ export type ThreadMessage = {
   usedTools?: string[];
   toolCalls?: { name: string; input?: string; output?: string }[];
   toolArtifacts?: { type: string; data: unknown }[];
+  agentRunStartedAt?: number;
   status?:
     | "processing"
     | "error"

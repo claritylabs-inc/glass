@@ -23,7 +23,9 @@ export const ThreadMessageBubble = memo(function ThreadMessageBubble({
         <div
           className={cn(
             "text-foreground",
-            channel === "imessage" ? `${typeStyle("body.large")}` : `${typeStyle("body.default")}`,
+            channel === "imessage"
+              ? typeStyle("body.large")
+              : typeStyle("body.default"),
           )}
         >
           {children}
@@ -34,7 +36,7 @@ export const ThreadMessageBubble = memo(function ThreadMessageBubble({
     return (
       <div
         className={cn(
-          "rounded-lg border border-red-500/20 bg-red-500/5 text-red-600 dark:text-red-400",
+          "rounded-lg border border-destructive/20 bg-destructive/5 text-destructive",
           channel === "imessage" ? "px-3 py-2" : "px-3.5 py-2.5",
         )}
       >
@@ -47,7 +49,9 @@ export const ThreadMessageBubble = memo(function ThreadMessageBubble({
     <div
       className={cn(
         "rounded-lg px-3.5 py-2.5 text-foreground",
-        channel === "imessage" ? `${typeStyle("body.large")}` : `${typeStyle("body.default")}`,
+        channel === "imessage"
+          ? typeStyle("body.large")
+          : typeStyle("body.default"),
         channel === "email"
           ? [
               "border border-border",

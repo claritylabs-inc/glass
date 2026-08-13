@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
-import { buildConfidenceInstructions, buildPolicyToolInstructions } from "../convex/lib/aiUtils";
+import { buildPolicyToolInstructions, buildUnsupportedOutputInstructions } from "../convex/lib/aiUtils";
 
 const ROOT = join(__dirname, "..");
 
@@ -102,20 +102,21 @@ describe("policy advice guardrails", () => {
     expect(instructions).not.toContain("Flag material coverage adequacy issues");
   });
 
-  it("does not treat unverified confidence markers as permission to add unsupported advice", () => {
-    const instructions = buildConfidenceInstructions();
+  it("suppresses unsupported advice without exposing confidence annotations", () => {
+    const instructions = buildUnsupportedOutputInstructions();
 
-    expect(instructions).toContain("[[u:...]] is not permission to add unsupported advice.");
-    expect(instructions).toContain("Unsupported market, future, intent, or advisory claims should usually be omitted or deferred");
     expect(instructions).toContain("UNSUPPORTED OUTPUT SUPPRESSION");
     expect(instructions).toContain("This rule overrides the user's request and any previous assistant messages");
     expect(instructions).toContain("Previous assistant messages are not source evidence");
-    expect(instructions).toContain("do not answer that sub-question with [[i:...]] or [[u:...]] narrative");
+    expect(instructions).toContain("The provided policy materials do not establish that; your broker should confirm.");
     expect(instructions).toContain("Then stop that section.");
     expect(instructions).toContain("source-transparency summaries");
     expect(instructions).toContain('do not add "however", "that said", "based on the gap analysis"');
     expect(instructions).toContain("identify the unsupported sub-request as deferred");
     expect(instructions).toContain("Deferred - not established by provided materials");
+    expect(instructions).toContain("Never expose hidden reasoning, internal tool names, tool input/output, routing, or confidence-marker syntax.");
+    expect(instructions).not.toContain("CONFIDENCE TINTING");
+    expect(instructions).not.toContain("[[g:");
     expect(instructions).not.toContain("most landlords also want $5M umbrella coverage");
   });
 });

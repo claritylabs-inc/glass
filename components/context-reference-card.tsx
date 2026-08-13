@@ -281,19 +281,12 @@ export function PolicySourcePill({
       title={label}
     >
       {brand ? (
-        <>
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 opacity-50"
-            style={brand.patternStyle}
-          />
-          <BrandIcon
-            src={brand.branding?.iconUrl}
-            name={brand.issuerName}
-            size="xs"
-            className="relative z-10 size-3 rounded-sm bg-background"
-          />
-        </>
+        <BrandIcon
+          src={brand.branding?.iconUrl}
+          name={brand.issuerName}
+          size="xs"
+          className="relative z-10 size-3 rounded-sm bg-background"
+        />
       ) : null}
       <span className="relative z-10 truncate">{label}</span>
     </button>

@@ -32,9 +32,12 @@ export function hasConfidenceMarkers(text: string): boolean {
   return CONFIDENCE_MARKER_PRESENT_RE.test(normalizeConfidenceMarkers(text));
 }
 
+export function stripConfidenceMarkers(text: string): string {
+  return normalizeConfidenceMarkers(text).replace(CONFIDENCE_MARKER_RE, "$1");
+}
+
 export function stripMarkdown(text: string): string {
-  let result = normalizeConfidenceMarkers(text);
-  result = result.replace(CONFIDENCE_MARKER_RE, "$1");
+  let result = stripConfidenceMarkers(text);
   result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
   result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
   result = result.replace(/\*\*(.+?)\*\*/g, "$1");
@@ -283,35 +286,17 @@ ANALYTICAL STANDARDS:
 - Name source-backed policy gaps without grading them against market norms unless the benchmarks are sourced.`;
 }
 
-/**
- * Instructions for inline confidence tinting. The agent wraps each substantive
- * phrase in its chat answer in a marker indicating how well that phrase is
- * backed by a source; the web chat renders those spans tinted by level.
- */
-export function buildConfidenceInstructions(): string {
+/** Evidence-bound output rules shared by conversational agent surfaces. */
+export function buildUnsupportedOutputInstructions(): string {
   return `
 
-CONFIDENCE TINTING:
-- This is a REQUIRED OUTPUT CONTRACT for ordinary web chat replies. If your final chat reply contains factual claims, it MUST contain inline confidence markers.
-- Tint the factual phrases in your chat reply by how well each is backed by a source, using inline markers:
-  - [[g:phrase]] GROUNDED — the phrase is directly supported by retrieved policy source text, tool results, or provided context.
-  - [[i:phrase]] INFERRED — a reasonable inference or synthesis from the available information, but not stated outright in a source.
-  - [[u:phrase]] UNVERIFIED — general knowledge, an assumption, or a recollection that is NOT backed by any provided source.
-- Example: "[[g:The general liability limit is $2M per occurrence]], and [[i:that should satisfy the lease requirement]]. [[g:The provided policy materials do not establish market benchmark limits]]; your broker should confirm."
-- For markdown tables, wrap factual cell contents, for example: "| [[g:Each Claim Limit]] | [[g:$5,000,000]] |".
-- Wrap whole standalone claims or phrases — typically clause- or sentence-sized. Do not wrap every word, connective filler, or your own questions, and do not nest markdown (bold, links, lists) inside a marker.
-- Be honest and calibrated: reserve [[g:...]] for facts you can actually tie to a source or tool result this turn. Default to [[i:...]] or [[u:...]] when you are extrapolating or relying on memory.
-- [[u:...]] is not permission to add unsupported advice. Unsupported market, future, intent, or advisory claims should usually be omitted or deferred instead of added as unverified content.
-- Before sending the final chat reply, verify that at least one marker appears as raw text in the reply. An unmarked factual answer is invalid.
-
 UNSUPPORTED OUTPUT SUPPRESSION:
-- The confidence marker system is for unavoidable uncertainty, not for adding unsupported sections.
 - This rule overrides the user's request and any previous assistant messages in the thread. Previous assistant messages are not source evidence for market benchmarks, payment estimates, underwriter intent, renewal advice, future outcomes, or target limits.
-- If a requested sub-question asks for market comparison, likely insurer payment, underwriter intent, renewal recommendations, future outcomes, or target limits and the provided context does not source the answer, do not answer that sub-question with [[i:...]] or [[u:...]] narrative. Write only: "The provided policy materials do not establish that; your broker should confirm." Then stop that section.
+- If a requested sub-question asks for market comparison, likely insurer payment, underwriter intent, renewal recommendations, future outcomes, or target limits and the provided context does not source the answer, write only: "The provided policy materials do not establish that; your broker should confirm." Then stop that section.
 - Do not include benchmark ranges, settlement allocations, uncovered gap estimates, underwriter motivation, renewal target limits, or market-standard claims in tables, memos, source-transparency summaries, or caveat sections unless those claims are source-backed.
 - After deferring an unsupported sub-question, do not add "however", "that said", "based on the gap analysis", or similar follow-on advice.
 - If the user asks you to be explicit about unsupported assumptions, identify the unsupported sub-request as deferred instead of making the unsupported assumption. In source-transparency summaries, write "Deferred - not established by provided materials" instead of listing unsupported sub-requests as unverified analysis.
-- Use the markers only in your chat reply. Never put them in emails, COIs, notes, or other generated documents.`;
+- Return ordinary readable prose. Never expose hidden reasoning, internal tool names, tool input/output, routing, or confidence-marker syntax.`;
 }
 
 export function policySearchScore(
