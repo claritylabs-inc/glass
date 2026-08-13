@@ -38,6 +38,8 @@ type ManualReviewContext = {
   policies: Array<{ _id: Id<"policies"> }>;
 };
 
+const COMPLIANCE_REVIEW_TIMEOUT_MS = 75_000;
+
 function truncate(value: unknown, maxLength = 1200) {
   if (typeof value !== "string") return value;
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
@@ -88,11 +90,16 @@ export const recheckOwnRequirement = action({
       ),
     );
     const today = dayjs().format("YYYY-MM-DD");
-    const result = await generateObjectForOrg(ctx, args.orgId, "analysis", {
-      schema: ComplianceReviewSchema,
-      system:
-        "You are a careful commercial insurance compliance reviewer. Decide whether the organization's current policies satisfy a single insurance requirement using only the provided structured policy evidence. Do not guess. If the evidence is ambiguous, incomplete, internally inconsistent, or requires human interpretation, return needs_review.",
-      prompt: `Today is ${today}.
+    const abortSignal = AbortSignal.timeout(COMPLIANCE_REVIEW_TIMEOUT_MS);
+    let result;
+    try {
+      result = await generateObjectForOrg(ctx, args.orgId, "analysis", {
+        schema: ComplianceReviewSchema,
+        abortSignal,
+        maxOutputTokens: 500,
+        system:
+          "You are a careful commercial insurance compliance reviewer. Decide whether the organization's current policies satisfy a single insurance requirement using only the provided structured policy evidence. Do not guess. If the evidence is ambiguous, incomplete, internally inconsistent, or requires human interpretation, return unverified.",
+        prompt: `Today is ${today}.
 
 Status rules:
 - met: active policy evidence clearly satisfies the requirement.
@@ -106,7 +113,15 @@ Use matchedPolicyIds only from the provided policies. Keep notes short and speci
 
 Review context:
 ${compactContext(context)}`,
-    });
+      });
+    } catch (error) {
+      if (abortSignal.aborted) {
+        throw new Error(
+          "The deeper compliance check took too long. Try again in a moment.",
+        );
+      }
+      throw error;
+    }
 
     const matchedPolicyIds = result.object.matchedPolicyIds
       .filter((id: string) => knownPolicyIds.has(id))

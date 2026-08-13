@@ -432,11 +432,10 @@ export function TeamSection({
     setSettingsActions(
       <PillButton
         size="compact"
-        variant="secondary"
         onClick={() => setInviteOpen(true)}
       >
         <UserPlus className="w-3.5 h-3.5" />
-        Invite Member
+        Invite member
       </PillButton>,
     );
     return () => setSettingsActions(null);

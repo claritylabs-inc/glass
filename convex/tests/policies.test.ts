@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 // Task 1: Schema compile-time guard
 test("policies schema accepts uploadedBySide=broker", () => {
-  const sides = ["broker", "client", "email_scan"] as const;
+  const sides = ["broker", "client", "operator", "email_scan"] as const;
   for (const side of sides) {
     expect(sides).toContain(side);
   }
@@ -34,12 +34,33 @@ function makeBrokerAccess(brokerOrgId = "b1"): OrgAccess {
   };
 }
 
+function makeOperatorAccess(): OrgAccess {
+  return {
+    accessType: "operator",
+    userId: "u1" as any,
+    org: { _id: "org1" } as any,
+    orgType: "client",
+    role: undefined,
+    brokerOrgId: undefined,
+  };
+}
+
 test("assertCanUploadPolicy allows member", () => {
   expect(() => assertCanUploadPolicy(makeMemberAccess())).not.toThrow();
 });
 
 test("assertCanUploadPolicy allows broker_of_client", () => {
   expect(() => assertCanUploadPolicy(makeBrokerAccess())).not.toThrow();
+});
+
+test("policy capabilities allow explicit operator support access", () => {
+  expect(() => assertCanUploadPolicy(makeOperatorAccess())).not.toThrow();
+  expect(() =>
+    assertCanArchivePolicy(makeOperatorAccess(), {
+      uploadedBySide: "client",
+      uploadedByBrokerOrgId: undefined,
+    }),
+  ).not.toThrow();
 });
 
 test("assertCanArchivePolicy blocks broker archiving client-uploaded policy", () => {

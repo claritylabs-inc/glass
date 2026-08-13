@@ -97,7 +97,7 @@ async function seedOperatorPolicyFixture() {
 }
 
 describe("operator teardown policy-detail queries", () => {
-  test("return empty state instead of throwing after impersonation ends", async () => {
+  test("fall back to direct operator policy access after impersonation ends", async () => {
     const {
       t,
       operatorUserId,
@@ -134,10 +134,17 @@ describe("operator teardown policy-detail queries", () => {
         policyId,
         spanIds: ["span-a"],
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual([
+      expect.objectContaining({
+        spanId: "span-a",
+        text: "Policy source evidence",
+      }),
+    ]);
     await expect(
       operatorSession.query(listActivityByPolicyFn, { policyId }),
-    ).resolves.toEqual({ certificates: [], holds: [] });
+    ).resolves.toMatchObject({
+      holds: [expect.objectContaining({ holderName: "Holder" })],
+    });
     await expect(
       operatorSession.query(getPolicyFileUrlFn, { policyId }),
     ).resolves.toBeNull();

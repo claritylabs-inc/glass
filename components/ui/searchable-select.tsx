@@ -63,8 +63,11 @@ function SearchableSelectControl({
       autoHighlight
       disabled={disabled}
     >
-      <Combobox.Trigger className={`h-9 w-full flex items-center justify-between rounded-lg border border-input bg-popover px-3 text-left transition-colors hover:border-border-hover hover:bg-foreground/1.5 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-input disabled:hover:bg-popover ${typeStyle("control.menu")}`}>
-        <span className={selected ? "text-foreground" : "text-muted-foreground/40"}>
+      <Combobox.Trigger className={`flex h-9 w-full min-w-0 items-center justify-between gap-2 overflow-hidden rounded-lg border border-input bg-popover px-3 text-left transition-colors hover:border-border-hover hover:bg-foreground/1.5 focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-input disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-input disabled:hover:bg-popover ${typeStyle("control.menu")}`}>
+        <span
+          className={`block min-w-0 flex-1 truncate ${selected ? "text-foreground" : "text-muted-foreground/40"}`}
+          title={selected?.label}
+        >
           {selected?.label || placeholder}
         </span>
         <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />

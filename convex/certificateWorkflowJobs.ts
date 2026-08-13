@@ -192,7 +192,7 @@ export const listForOrg = query({
     kind: v.optional(jobKindValidator),
   },
   handler: async (ctx, args) => {
-    await getOrgAccess(ctx, args.orgId);
+    await getOrgAccess(ctx, args.orgId, { allowOperator: true });
     const rows = args.policyId
       ? await ctx.db
           .query("certificateWorkflowJobs")

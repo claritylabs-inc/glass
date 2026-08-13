@@ -1,0 +1,184 @@
+{
+  "fixtureSet": "Transformer Capital investment in Cove",
+  "fictional": true,
+  "subject": {
+    "organization": "Cove Technologies Inc.",
+    "businessAddress": "1070 Bridgeview Way, San Francisco, CA 94124"
+  },
+  "certificateHolder": {
+    "displayName": "Transformer Capital",
+    "contactName": "Mira Shah",
+    "email": "certificates@transformer-capital.example"
+  },
+  "documents": [
+    {
+      "file": "01-transformer-capital-balanced-requirements.pdf",
+      "documentId": "TC-COVE-REQ-001",
+      "expectedCreatedCount": 2,
+      "requirements": [
+        {
+          "lineOfBusiness": "EO",
+          "coverageForm": "claims_made",
+          "limits": [
+            {
+              "kind": "per_claim",
+              "amount": 2000000
+            },
+            {
+              "kind": "aggregate",
+              "amount": 5000000
+            }
+          ],
+          "maxDeductible": {
+            "amount": 100000
+          },
+          "retroactiveDateOnOrBefore": "March 15, 2026",
+          "sourcePageStart": 1,
+          "sourcePageEnd": 1
+        },
+        {
+          "lineOfBusiness": "CYBER",
+          "coverageForm": "claims_made",
+          "limits": [
+            {
+              "kind": "per_claim",
+              "amount": 1000000
+            },
+            {
+              "kind": "aggregate",
+              "amount": 3000000
+            }
+          ],
+          "maxDeductible": {
+            "amount": 100000
+          },
+          "sourcePageStart": 2,
+          "sourcePageEnd": 2
+        }
+      ],
+      "mustNotExtract": [
+        "additional_insured",
+        "waiver_of_subrogation",
+        "primary_non_contributory",
+        "CGL",
+        "DO",
+        "WORK",
+        "AUTOB",
+        "AM Best rating",
+        "certificate delivery",
+        "cancellation notice"
+      ]
+    },
+    {
+      "file": "02-transformer-capital-strict-closing-conditions.pdf",
+      "documentId": "TC-COVE-REQ-002",
+      "expectedCreatedCount": 2,
+      "requirements": [
+        {
+          "lineOfBusiness": "EO",
+          "coverageForm": "claims_made",
+          "limits": [
+            {
+              "kind": "per_claim",
+              "amount": 7500000
+            },
+            {
+              "kind": "aggregate",
+              "amount": 10000000
+            }
+          ],
+          "maxDeductible": {
+            "amount": 25000
+          },
+          "requiredForms": [
+            "TC EO 01 (08/26)"
+          ],
+          "sourcePageStart": 1,
+          "sourcePageEnd": 1
+        },
+        {
+          "lineOfBusiness": "CYBER",
+          "limits": [
+            {
+              "kind": "per_occurrence",
+              "amount": 5000000
+            },
+            {
+              "kind": "aggregate",
+              "amount": 5000000
+            }
+          ],
+          "maxDeductible": {
+            "amount": 25000
+          },
+          "sourcePageStart": 1,
+          "sourcePageEnd": 1
+        }
+      ],
+      "mustNotExtract": [
+        "certificate delivery"
+      ]
+    },
+    {
+      "file": "03-transformer-capital-requirements-amendment.docx",
+      "documentId": "TC-COVE-REQ-003",
+      "expectedCreatedCount": 1,
+      "requirements": [
+        {
+          "lineOfBusiness": "EO",
+          "coverageForm": "claims_made",
+          "limits": [
+            {
+              "kind": "per_claim",
+              "amount": 1000000
+            },
+            {
+              "kind": "aggregate",
+              "amount": 1000000
+            }
+          ]
+        }
+      ],
+      "mustNotExtract": [
+        "additional_insured",
+        "waiver_of_subrogation",
+        "primary_non_contributory",
+        "CGL",
+        "DO",
+        "WORK",
+        "AUTOB",
+        "AM Best rating",
+        "certificate delivery",
+        "cancellation notice",
+        "claims reporting",
+        "subcontractor flow-down",
+        "indemnification"
+      ]
+    },
+    {
+      "file": "04-transformer-capital-aggregate-clarification.txt",
+      "documentId": "email-2026-08-20",
+      "expectedCreatedCount": 1,
+      "requirements": [
+        {
+          "lineOfBusiness": "EO",
+          "limits": [
+            {
+              "kind": "aggregate",
+              "amount": 5000000
+            }
+          ]
+        }
+      ],
+      "mustNotExtract": [
+        "per_claim",
+        "CYBER",
+        "CGL",
+        "DO",
+        "WORK",
+        "AUTOB",
+        "certificate delivery"
+      ]
+    }
+  ]
+}

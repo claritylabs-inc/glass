@@ -19,12 +19,17 @@ import {
 } from "./userFacingErrors";
 
 type Ctx = QueryCtx | MutationCtx;
+type OrgAccessOptions = { allowOperator?: boolean };
 
 export type OrgAccess = {
   userId: Id<"users">;
   org: Doc<"organizations">;
   orgType: "broker" | "client" | "partner";
-  accessType: "member" | "broker_of_client" | "connected_client";
+  accessType:
+    | "member"
+    | "broker_of_client"
+    | "connected_client"
+    | "operator";
   role: "admin" | "member" | undefined;
   brokerOrgId: Id<"organizations"> | undefined;
   connectedClientOrgId?: Id<"organizations">;
@@ -62,9 +67,15 @@ export async function requireAuth(ctx: Ctx): Promise<{ userId: Id<"users"> }> {
  * 1. Direct org membership       → accessType = "member"
  * 2. Broker-of-client            → accessType = "broker_of_client"
  *    (user is a member of the broker org that manages this client org)
- * 3. No access                   → throws "Unauthorized"
+ * 3. Opted-in active operator    → accessType = "operator"
+ *    (explicit org-scoped support surfaces only; never current membership)
+ * 4. No access                   → throws "Unauthorized"
  */
-export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promise<OrgAccess> {
+export async function getOrgAccess(
+  ctx: Ctx,
+  orgId: Id<"organizations">,
+  options: OrgAccessOptions = {},
+): Promise<OrgAccess> {
   const { userId } = await requireAuth(ctx);
 
   const org = await ctx.db.get(orgId);
@@ -141,7 +152,25 @@ export async function getOrgAccess(ctx: Ctx, orgId: Id<"organizations">): Promis
     }
   }
 
-  // 3. Connected client/vendor access: org members of a client/customer org
+  // 3. Direct operator support access. Callers must explicitly opt in, and
+  // active impersonation is resolved above so a live impersonation keeps its
+  // existing read-only write gates. This branch is intentionally distinct from
+  // membership.
+  const operator = options.allowOperator
+    ? await getActiveOperatorProfile(ctx)
+    : null;
+  if (operator && !impersonation) {
+    return {
+      userId,
+      org,
+      orgType,
+      accessType: "operator",
+      role: undefined,
+      brokerOrgId: orgType === "client" ? org.brokerOrgId : undefined,
+    };
+  }
+
+  // 4. Connected client/vendor access: org members of a client/customer org
   // can read an approved vendor's selected insurance data. This is intentionally
   // one-hop and read-only; vendor access does not imply access to any vendors of
   // that vendor or to its broker portal capabilities.
@@ -196,9 +225,10 @@ async function shouldSuppressOperatorTeardownUnauthorized(ctx: Ctx, error: unkno
 export async function getOrgAccessForQuery(
   ctx: Ctx,
   orgId: Id<"organizations">,
+  options: OrgAccessOptions = {},
 ): Promise<OrgAccess | null> {
   try {
-    return await getOrgAccess(ctx, orgId);
+    return await getOrgAccess(ctx, orgId, options);
   } catch (error) {
     if (await shouldSuppressOperatorTeardownUnauthorized(ctx, error)) return null;
     throw error;
@@ -383,6 +413,7 @@ export function assertCanUploadPolicy(access: OrgAccess): void {
 }
 
 export function assertCanEditPolicyExtractedFields(access: OrgAccess): void {
+  if (access.accessType === "operator") return;
   if (access.accessType === "broker_of_client") return;
   if (access.accessType === "member" && access.orgType === "broker") return;
   throwUserFacingError(
@@ -436,7 +467,9 @@ async function resolvePolicyAccessForQuery(
 ): Promise<PolicyAccessForQuery | null> {
   const policy = await ctx.db.get(policyId);
   if (!policyHasOrg(policy)) return null;
-  const access = await getOrgAccessForQuery(ctx, policy.orgId);
+  const access = await getOrgAccessForQuery(ctx, policy.orgId, {
+    allowOperator: true,
+  });
   if (!access) return null;
   return { policy, access };
 }

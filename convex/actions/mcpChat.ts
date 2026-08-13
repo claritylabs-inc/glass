@@ -58,7 +58,17 @@ export const run = internalAction({
   handler: async (
     ctx,
     args,
-  ): Promise<{ threadId: string; response: string }> => {
+  ): Promise<{
+    threadId: string;
+    response: string;
+    attachments?: Array<{
+      filename: string;
+      contentType: string;
+      size: number;
+      fileId?: Id<"_storage">;
+      url?: string | null;
+    }>;
+  }> => {
     // Load org
     const org = await ctx.runQuery(internal.orgs.getInternal, {
       id: args.orgId,
@@ -458,6 +468,14 @@ MCP MODE:
       }
     }
 
-    return { threadId: threadId as string, response: content };
+    const attachments = responseAttachments.length > 0
+      ? await Promise.all(responseAttachments.map(async (attachment) => ({
+          ...attachment,
+          url: attachment.fileId
+            ? await ctx.storage.getUrl(attachment.fileId)
+            : null,
+        })))
+      : undefined;
+    return { threadId: threadId as string, response: content, attachments };
   },
 });

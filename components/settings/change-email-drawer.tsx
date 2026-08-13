@@ -47,8 +47,8 @@ function PendingEmailChangeBlock({
         </p>
       </div>
       <div className="space-y-1.5">
-        <span className={labelClass}>Verification code</span>
-        <OtpField value={code} onValueChange={setCode} />
+        <label htmlFor="change-email-verification-code" className={labelClass}>Verification code</label>
+        <OtpField id="change-email-verification-code" value={code} onValueChange={setCode} />
       </div>
     </div>
   );

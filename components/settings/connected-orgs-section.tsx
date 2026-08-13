@@ -513,11 +513,10 @@ export function ConnectedOrgsSection({
       page === "vendors" ? (
         <PillButton
           size="compact"
-          variant="secondary"
           onClick={() => setRequestOpen(true)}
         >
           <Link2 className="h-3.5 w-3.5" />
-          Add Vendor
+          Add vendor
         </PillButton>
       ) : null,
     );

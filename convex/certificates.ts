@@ -5,6 +5,7 @@ import { action, internalAction, internalMutation, internalQuery, query } from "
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
+import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
 import {
   certificateHolderDisplayBlock,
   parseCertificateHolderBlock,
@@ -33,6 +34,13 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
+import {
+  buildCertificateRequirementPlan,
+  certificateRequirementSnapshotValidator,
+  certificateRequirementSignature,
+  type CertificateRequirementPlanRow,
+  type CertificateRequirementSnapshot,
+} from "./lib/certificateRequirementPlan";
 
 const certificateSourceValidator = v.union(
   v.literal("policy_page"),
@@ -309,13 +317,52 @@ export const listActivityByPolicy = query({
   },
 });
 
+export const listByRequirementSource = query({
+  args: {
+    orgId: v.id("organizations"),
+    requirementSourceDocumentId: v.id("requirementSourceDocuments"),
+  },
+  handler: async (ctx, args) => {
+    await getOrgAccess(ctx, args.orgId, { allowOperator: true });
+    const versions = await ctx.db
+      .query("certificateVersions")
+      .withIndex("by_requirementSourceDocumentId", (q) =>
+        q.eq("requirementSourceDocumentId", args.requirementSourceDocumentId),
+      )
+      .order("desc")
+      .collect();
+    const visible = versions.filter((version) => version.orgId === args.orgId);
+    return await Promise.all(visible.map(async (version) => {
+      const [policy, holder] = await Promise.all([
+        ctx.db.get(version.policyId),
+        ctx.db.get(version.holderId),
+      ]);
+      return {
+        ...version,
+        policy: policy
+          ? {
+              _id: policy._id,
+              carrier: policy.carrier,
+              policyNumber: policy.policyNumber,
+            }
+          : null,
+        holder,
+        url: version.fileId ? await ctx.storage.getUrl(version.fileId) : null,
+      };
+    }));
+  },
+});
+
 export const getGenerationContext = query({
   args: { policyId: v.id("policies") },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
     if (!policy?.orgId || policy.deletedAt) throw new Error("Policy not found");
 
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
     if (access.accessType === "connected_client") {
       throwUserFacingError(
         userFacingErrorCodes.readOnlyAccess,
@@ -330,15 +377,40 @@ export const getGenerationContext = query({
 export const getGenerationContextForOrg = internalQuery({
   args: {
     orgId: v.id("organizations"),
-    policyId: v.id("policies"),
+    policyId: v.optional(v.id("policies")),
   },
   handler: async (ctx, args) => {
+    if (!args.policyId) return { orgId: args.orgId };
     const policy = await ctx.db.get(args.policyId);
     if (!policy || policy.orgId !== args.orgId || policy.deletedAt) {
       throw new Error("Policy not found");
     }
 
     return { orgId: args.orgId };
+  },
+});
+
+export const getGenerationContextForCertificateRequest = query({
+  args: {
+    orgId: v.id("organizations"),
+    policyId: v.optional(v.id("policies")),
+  },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx, args.orgId, { allowOperator: true });
+    await assertImpersonatedSetupWrite(ctx, args.orgId);
+    if (access.accessType === "connected_client") {
+      throwUserFacingError(
+        userFacingErrorCodes.readOnlyAccess,
+        "Connected organization access is read-only. Ask the organization to create this certificate.",
+      );
+    }
+    if (args.policyId) {
+      const policy = await ctx.db.get(args.policyId);
+      if (!policy || policy.orgId !== args.orgId || policy.deletedAt) {
+        throw new Error("Policy not found");
+      }
+    }
+    return { orgId: args.orgId, userId: access.userId };
   },
 });
 
@@ -405,6 +477,7 @@ function certificateRequestSignature(args: {
   additionalInsuredName?: string;
   requiredChanges?: CertificateEndorsementKind[];
   descriptionOfOperations?: string;
+  requirementSignature?: string;
 }) {
   const nonAdditionalInsuredKinds = (args.requiredChanges ?? [])
     .filter((kind) => kind !== "additional_insured")
@@ -418,15 +491,18 @@ function certificateRequestSignature(args: {
   const operationsSuffix = descriptionOfOperations
     ? `|operations:${descriptionOfOperations}`
     : "";
+  const requirementSuffix = args.requirementSignature
+    ? `|requirements:${args.requirementSignature}`
+    : "";
   const signedName = normalizeSignatureText(
     args.requestKind === "additional_insured"
       ? args.additionalInsuredName ?? args.holderName
       : args.holderName,
   );
   if (args.requestKind === "additional_insured") {
-    return `additional_insured:${signedName}${endorsementSuffix}${operationsSuffix}`;
+    return `additional_insured:${signedName}${endorsementSuffix}${operationsSuffix}${requirementSuffix}`;
   }
-  return `holder:${signedName}${endorsementSuffix}${operationsSuffix}`;
+  return `holder:${signedName}${endorsementSuffix}${operationsSuffix}${requirementSuffix}`;
 }
 
 export function resolveCertificateRequestMetadata(args: {
@@ -436,6 +512,7 @@ export function resolveCertificateRequestMetadata(args: {
   requestedEndorsements?: string[];
   additionalInsuredName?: string;
   descriptionOfOperations?: string;
+  requirementSignature?: string;
 }) {
   const inferredChanges = inferCertificateEndorsements({
     certificateHolder: args.certificateHolder,
@@ -462,6 +539,7 @@ export function resolveCertificateRequestMetadata(args: {
     additionalInsuredName,
     requiredChanges,
     descriptionOfOperations: cleanOptionalText(args.descriptionOfOperations),
+    requirementSignature: args.requirementSignature,
   });
 
   return {
@@ -716,6 +794,203 @@ export const generateForPolicy = action({
   },
 });
 
+const certificateBatchHolderArgs = {
+  holderName: v.optional(v.string()),
+  certificateHolder: v.optional(v.string()),
+  holderContactName: v.optional(v.string()),
+  holderEmail: v.optional(v.string()),
+  holderPhone: v.optional(v.string()),
+  addressLine1: v.optional(v.string()),
+  addressLine2: v.optional(v.string()),
+  city: v.optional(v.string()),
+  state: v.optional(v.string()),
+  postalCode: v.optional(v.string()),
+  country: v.optional(v.string()),
+  additionalInsuredName: v.optional(v.string()),
+  requestText: v.optional(v.string()),
+  descriptionOfOperations: v.optional(v.string()),
+  requestedEndorsements: v.optional(requestedEndorsementValidator),
+  forceReissue: v.optional(v.boolean()),
+};
+
+export const generateBatchForPolicy = action({
+  args: {
+    orgId: v.id("organizations"),
+    primaryPolicyId: v.optional(v.id("policies")),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementId: v.optional(v.id("insuranceRequirements")),
+    ...certificateBatchHolderArgs,
+  },
+  handler: async (ctx, args): Promise<any> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
+    if (Boolean(args.primaryPolicyId) === Boolean(args.requirementSourceDocumentId || args.requirementId)) {
+      throw new Error("Choose either one policy or one requirements source.");
+    }
+    const context = await ctx.runQuery(
+      api.certificates.getGenerationContextForCertificateRequest,
+      { orgId: args.orgId, policyId: args.primaryPolicyId },
+    );
+    return await ctx.runAction(internal.certificates.generateBatchForOrg, {
+      ...args,
+      orgId: context.orgId,
+      source: "policy_page",
+      createdByUserId: context.userId,
+    });
+  },
+});
+
+export const generateBatchForOrg = internalAction({
+  args: {
+    orgId: v.id("organizations"),
+    primaryPolicyId: v.optional(v.id("policies")),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementId: v.optional(v.id("insuranceRequirements")),
+    source: v.optional(certificateSourceValidator),
+    createdByUserId: v.optional(v.id("users")),
+    ...certificateBatchHolderArgs,
+  },
+  handler: async (ctx, args): Promise<any> => {
+    const requirementsMode = Boolean(
+      args.requirementSourceDocumentId || args.requirementId,
+    );
+    if (Boolean(args.primaryPolicyId) === requirementsMode) {
+      throw new Error("Choose either one policy or one requirements source.");
+    }
+    const sourcePlan = requirementsMode
+      ? await ctx.runQuery(
+          internal.compliance.getCertificateRequirementSourcePlanInternal,
+          {
+            orgId: args.orgId,
+            sourceDocumentId: args.requirementSourceDocumentId,
+            requirementId: args.requirementId,
+          },
+        ) as {
+          source: { _id: Id<"requirementSourceDocuments"> };
+          holder: {
+            displayName: string;
+            contactName?: string;
+            email?: string;
+            phone?: string;
+            address?: {
+              line1?: string;
+              line2?: string;
+              city?: string;
+              state?: string;
+              postalCode?: string;
+              country?: string;
+            };
+          };
+          requirements: CertificateRequirementPlanRow[];
+        }
+      : null;
+    const holderName = (sourcePlan?.holder.displayName ?? args.holderName ?? "").trim();
+    if (!holderName) throw new Error("Certificate holder is required.");
+    await ctx.runQuery(internal.certificates.getGenerationContextForOrg, {
+      orgId: args.orgId,
+      policyId: args.primaryPolicyId,
+    });
+    const policyRows = await ctx.runQuery(
+      internal.policies.listAllPreviewReadableInternal,
+      { orgId: args.orgId },
+    ) as Array<Record<string, any> & { _id: Id<"policies"> }>;
+    const primaryPolicy = args.primaryPolicyId
+      ? policyRows.find((policy) => policy._id === args.primaryPolicyId)
+      : undefined;
+    if (args.primaryPolicyId && (!primaryPolicy || !policyReadyForCertificate(primaryPolicy))) {
+      throw new Error("The selected policy is not ready for certificate generation.");
+    }
+    const requirements = sourcePlan?.requirements ?? [];
+    if (requirements.length > 25) {
+      throw new Error("A requirement source can include no more than 25 active requirements.");
+    }
+    const plan = buildCertificateRequirementPlan({
+      primaryPolicyId: args.primaryPolicyId,
+      requirements,
+      policies: policyRows.map((policy) => ({
+        policyId: policy._id,
+        final: policyReadyForCertificate(policy),
+      })),
+    });
+    const generationBatchId = crypto.randomUUID();
+    const results = [];
+    for (const target of plan.targets) {
+      const requestedEndorsements = Array.from(
+        new Set([
+          ...(args.requestedEndorsements ?? []),
+          ...target.requestedEndorsements,
+        ]),
+      );
+      const generated = await ctx.runAction(internal.certificates.generateForOrg, {
+        orgId: args.orgId,
+        policyId: target.policyId,
+        holderName,
+        certificateHolder: requirementsMode ? undefined : args.certificateHolder,
+        holderContactName: sourcePlan?.holder.contactName ?? args.holderContactName,
+        holderEmail: sourcePlan?.holder.email ?? args.holderEmail,
+        holderPhone: sourcePlan?.holder.phone ?? args.holderPhone,
+        addressLine1: sourcePlan?.holder.address?.line1 ?? args.addressLine1,
+        addressLine2: sourcePlan?.holder.address?.line2 ?? args.addressLine2,
+        city: sourcePlan?.holder.address?.city ?? args.city,
+        state: sourcePlan?.holder.address?.state ?? args.state,
+        postalCode: sourcePlan?.holder.address?.postalCode ?? args.postalCode,
+        country: sourcePlan?.holder.address?.country ?? args.country,
+        additionalInsuredName: args.additionalInsuredName,
+        requestText: args.requestText,
+        descriptionOfOperations: args.descriptionOfOperations,
+        requestedEndorsements: requestedEndorsements.length
+          ? requestedEndorsements
+          : undefined,
+        forceReissue: args.forceReissue,
+        source: args.source,
+        createdByUserId: args.createdByUserId,
+        requirementIds: target.requirementIds,
+        requirementSourceDocumentId: sourcePlan?.source._id,
+        requirementSnapshots: target.requirementSnapshots,
+        includedLineOfBusinessCodes:
+          target.includedLineOfBusinessCodes.length > 0
+            ? target.includedLineOfBusinessCodes
+            : undefined,
+        generationBatchId,
+      });
+      results.push({
+        policyId: target.policyId,
+        requirementIds: target.requirementIds,
+        ...generated,
+      });
+    }
+    const completed = results.filter((result) =>
+      result.status === "generated" || result.status === "existing",
+    ).length;
+    const held = results.filter((result) =>
+      result.status === "held_policy_change_required",
+    ).length;
+    return {
+      status:
+        plan.gaps.length === 0 && completed === results.length
+          ? "completed"
+          : completed > 0
+            ? "partial"
+            : held > 0
+              ? "held"
+              : "blocked",
+      generationBatchId,
+      requirementSourceDocumentId: sourcePlan?.source._id,
+      holder: sourcePlan
+        ? {
+            displayName: sourcePlan.holder.displayName,
+            contactName: sourcePlan.holder.contactName,
+            email: sourcePlan.holder.email,
+            phone: sourcePlan.holder.phone,
+            address: sourcePlan.holder.address,
+          }
+        : undefined,
+      results,
+      gaps: plan.gaps,
+    };
+  },
+});
+
 export const generateForOrg = internalAction({
   args: {
     orgId: v.id("organizations"),
@@ -742,6 +1017,11 @@ export const generateForOrg = internalAction({
     formCode: v.optional(certificateFormValidator),
     forceReissue: v.optional(v.boolean()),
     updateHolderDetails: v.optional(v.boolean()),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    includedLineOfBusinessCodes: v.optional(v.array(v.string())),
+    generationBatchId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<any> => {
     const holderName = args.holderName.trim();
@@ -804,6 +1084,9 @@ export const generateForOrg = internalAction({
       requestedEndorsements: args.requestedEndorsements,
       additionalInsuredName: args.additionalInsuredName,
       descriptionOfOperations: args.descriptionOfOperations,
+      requirementSignature: certificateRequirementSignature(
+        args.requirementSnapshots as CertificateRequirementSnapshot[] | undefined,
+      ),
     });
     const {
       requiredChanges,
@@ -814,7 +1097,7 @@ export const generateForOrg = internalAction({
       requestSignature,
     } = requestMetadata;
     const reusableRequestSignature =
-      requestKind === "holder" && requiredChanges.length === 0
+      requestKind === "holder" && requiredChanges.length === 0 && !(args.requirementIds?.length)
         ? undefined
         : requestSignature;
     const policyVersionId = args.policyVersionId ?? await ctx.runMutation(
@@ -838,6 +1121,7 @@ export const generateForOrg = internalAction({
           policyVersionId,
           requestKind,
           requestSignature: reusableRequestSignature,
+          requireRequestSignature: Boolean(args.requirementIds?.length),
         },
       ) as CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
       const deterministicResolution = resolveDeterministicCertificateHolder(
@@ -953,6 +1237,10 @@ export const generateForOrg = internalAction({
         certificateHolder,
         requestText: args.requestText,
         requestedEndorsements: args.requestedEndorsements,
+        requirementIds: args.requirementIds,
+        requirementSourceDocumentId: args.requirementSourceDocumentId,
+        requirementSnapshots: args.requirementSnapshots,
+        generationBatchId: args.generationBatchId,
         source: args.source,
         status: "held",
         reasonCode: gate.reasonCode,
@@ -1004,6 +1292,7 @@ export const generateForOrg = internalAction({
           orgId: args.orgId,
           policyId: args.policyId,
           holderId,
+          requirementSourceDocumentId: args.requirementSourceDocumentId,
           source: args.source ?? "unknown",
           createdByUserId: args.createdByUserId,
         },
@@ -1040,6 +1329,11 @@ export const generateForOrg = internalAction({
       endorsements: endorsementCitations,
       requestSignature,
       updateHolderDetails: args.updateHolderDetails,
+      requirementIds: args.requirementIds,
+      requirementSourceDocumentId: args.requirementSourceDocumentId,
+      requirementSnapshots: args.requirementSnapshots,
+      includedLineOfBusinessCodes: args.includedLineOfBusinessCodes,
+      generationBatchId: args.generationBatchId,
     });
     if (!generated) throw new Error("COI generation failed.");
 
@@ -1079,6 +1373,10 @@ export const recordGenerated = internalMutation({
     formCode: v.optional(certificateFormValidator),
     requestSignature: v.optional(v.string()),
     descriptionOfOperations: v.optional(v.string()),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    generationBatchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.policyId);
@@ -1100,6 +1398,10 @@ export const recordGenerated = internalMutation({
       formCode: args.formCode,
       requestSignature: args.requestSignature,
       descriptionOfOperations: args.descriptionOfOperations,
+      requirementIds: args.requirementIds,
+      requirementSourceDocumentId: args.requirementSourceDocumentId,
+      requirementSnapshots: args.requirementSnapshots,
+      generationBatchId: args.generationBatchId,
       createdAt: dayjs().valueOf(),
     });
   },
@@ -1113,6 +1415,10 @@ export const recordHoldInternal = internalMutation({
     certificateHolder: v.optional(v.string()),
     requestText: v.optional(v.string()),
     requestedEndorsements: v.optional(requestedEndorsementValidator),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    generationBatchId: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
     status: v.union(
       v.literal("held"),

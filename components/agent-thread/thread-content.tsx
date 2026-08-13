@@ -1107,6 +1107,7 @@ function UnifiedThreadActions({
         variant="icon"
         onClick={handleCopyThread}
         label="Copy thread"
+        expandLabel
       >
         <Copy className="w-3.5 h-3.5" />
       </PillButton>
@@ -1115,6 +1116,7 @@ function UnifiedThreadActions({
         variant="icon"
         onClick={handleArchiveToggle}
         label={isArchived ? "Unarchive" : "Archive"}
+        expandLabel
       >
         {isArchived ? (
           <ArchiveRestore className="w-4 h-4" />
@@ -1459,7 +1461,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
           </div>
 
           <AgentActivity
-            reasoning={msg.reasoning ?? ""}
             steps={msg.agentSteps}
             isStreaming
             className="mb-2"
@@ -1615,7 +1616,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             ) : (
               <>
                 <AgentActivity
-                  reasoning={msg.reasoning ?? ""}
                   steps={msg.agentSteps}
                   fallbackToolCalls={regularToolCalls}
                   className="mb-2"

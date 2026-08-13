@@ -196,9 +196,17 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate or retrieve the right insurance certificate PDF for a specific policy and attach it to the current chat/iMessage/SMS response. When the user supplied a holder address, call lookup_address first and pass its validated structured fields here. Holder-only requests generate immediately. Additional insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
+    "Generate certificate PDFs in exactly one of two modes. Policy mode uses policyId plus a holder and includes all available policy coverages; when the user provides an address, call lookup_address first. Requirements mode uses requirementSourceDocumentId or one requirementId; the saved source supplies the holder and Glass creates the necessary certificates from matching policies with only the relevant coverages. Do not combine these modes. Additional-insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
-    policyId: z.string().describe("The policy reference to generate the COI for. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
+    policyId: z.string().optional().describe("Policy-mode reference. Omit in requirements mode."),
+    requirementSourceDocumentId: z
+      .string()
+      .optional()
+      .describe("Requirements-mode source ID returned by lookup_compliance_requirements. The source provides the holder and all active requirements."),
+    requirementId: z
+      .string()
+      .optional()
+      .describe("Requirements-mode exact requirement ID. Glass uses its connected source and generates only for this requirement."),
     certificateHolder: z
       .string()
       .optional()

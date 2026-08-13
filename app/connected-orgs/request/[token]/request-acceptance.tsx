@@ -246,8 +246,8 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
         ) : (
           <form onSubmit={handleCodeSubmit} className="space-y-4">
             <div>
-              <span className={LABEL_CLASSES}>Verification code</span>
-              <OtpField value={code} onValueChange={setCode} autoFocus required />
+              <label htmlFor="connected-org-verification-code" className={LABEL_CLASSES}>Verification code</label>
+              <OtpField id="connected-org-verification-code" value={code} onValueChange={setCode} autoFocus required />
             </div>
             {error ? <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>{error}</p> : null}
             <PillButton type="submit" disabled={loading || code.length < 6} className={`w-full justify-center shadow-none sm:w-auto ${typeStyle("control.button")}`}>

@@ -20,6 +20,7 @@ import {
   normalizeCertificateDescription,
 } from "../lib/certificateDescription";
 import { effectiveOrganizationProfileFacts } from "../lib/orgProfileFacts";
+import { certificateRequirementSnapshotValidator } from "../lib/certificateRequirementPlan";
 
 const holderAddressValidator = v.object({
   line1: v.optional(v.string()),
@@ -83,6 +84,7 @@ async function ensureCertificateLifecycleContext(
       formatted?: string;
     };
     source?: string;
+    requirementSourceDocumentId?: Id<"requirementSourceDocuments">;
     createdByUserId?: Id<"users">;
   },
 ) {
@@ -123,6 +125,7 @@ async function ensureCertificateLifecycleContext(
       orgId: args.orgId,
       policyId: args.policyId,
       holderId,
+      requirementSourceDocumentId: args.requirementSourceDocumentId,
       source: args.source ?? "unknown",
       createdByUserId: args.createdByUserId,
     },
@@ -221,6 +224,11 @@ export const run = internalAction({
     )),
     additionalInsuredName: v.optional(v.string()),
     descriptionOfOperations: v.optional(v.string()),
+    requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    includedLineOfBusinessCodes: v.optional(v.array(v.string())),
+    generationBatchId: v.optional(v.string()),
     formCode: v.optional(certificateFormValidator),
     holderRelationship: v.optional(v.string()),
     endorsements: v.optional(v.array(endorsementCitationValidator)),
@@ -263,6 +271,7 @@ export const run = internalAction({
           org && typeof org === "object"
             ? effectiveOrganizationProfileFacts(org as Record<string, unknown>)
             : undefined,
+        includedLineOfBusinessCodes: args.includedLineOfBusinessCodes,
       });
       coiData = {
         ...coiData,
@@ -334,6 +343,10 @@ export const run = internalAction({
         formCode,
         requestSignature: args.requestSignature,
         descriptionOfOperations: finalDescriptionOfOperations,
+        requirementIds: args.requirementIds,
+        requirementSourceDocumentId: args.requirementSourceDocumentId,
+        requirementSnapshots: args.requirementSnapshots,
+        generationBatchId: args.generationBatchId,
       });
       const issuedVersion = await ctx.runMutation(
         (internal as any).certificateLifecycle.recordIssuedVersionInternal,
@@ -360,6 +373,10 @@ export const run = internalAction({
           formCode,
           requestSignature: args.requestSignature,
           descriptionOfOperations: finalDescriptionOfOperations,
+          requirementIds: args.requirementIds,
+          requirementSourceDocumentId: args.requirementSourceDocumentId,
+          requirementSnapshots: args.requirementSnapshots,
+          generationBatchId: args.generationBatchId,
           createdByUserId: args.createdByUserId,
         },
       );

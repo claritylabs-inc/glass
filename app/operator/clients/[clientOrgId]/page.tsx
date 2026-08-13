@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
@@ -51,8 +52,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
 import {
   useCachedOperatorBrokers,
   useCachedOperatorClients,
@@ -65,7 +64,13 @@ import {
   ClientCompanyDetails,
   type OperatorClientRelatedLegalEntity,
 } from "./client-company-details";
-import { OperatorSidebar } from "../../operator-sidebar";
+import { OperatorClientImpersonationAction } from "./operator-client-impersonation-action";
+import {
+  OperatorClientSettingsTabs,
+  parseOperatorClientSection,
+  type OperatorClientPageTab,
+} from "./operator-client-tabs";
+import { OperatorClientSidebar } from "./operator-client-sidebar";
 import {
   operatorClientStatusLabel,
   type OperatorBrokerRow,
@@ -73,14 +78,7 @@ import {
 } from "../client-model";
 import { typeStyle } from "@/lib/typography";
 
-const CLIENT_TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "team", label: "Team" },
-  { id: "features", label: "Beta features" },
-  { id: "channels", label: "Agent channels" },
-] as const;
-
-type ClientTab = (typeof CLIENT_TABS)[number]["id"];
+type ClientTab = OperatorClientPageTab;
 type ClientSupportDetails = NonNullable<
   FunctionReturnType<typeof api.operator.getClientSupportDetails>
 >;
@@ -88,12 +86,7 @@ type ClientSupportDetails = NonNullable<
 const STANDALONE_VALUE = "__standalone__";
 
 function parseTab(value: string | null): ClientTab {
-  if (value === "email" || value === "imessage" || value === "slack") {
-    return "channels";
-  }
-  return CLIENT_TABS.some((tab) => tab.id === value)
-    ? (value as ClientTab)
-    : "overview";
+  return parseOperatorClientSection(value);
 }
 
 function slackChannelSlug(client: OperatorClientRow) {
@@ -136,12 +129,20 @@ function ClientWorkspace({
   client,
   supportDetails,
   brokers,
+  activeImpersonation,
   setShellActions,
   setRightPanel,
 }: {
   client: OperatorClientRow;
   supportDetails: ClientSupportDetails;
   brokers: OperatorBrokerRow[];
+  activeImpersonation:
+    | {
+        targetOrgId: string;
+        targetOrgType: "broker" | "client";
+      }
+    | null
+    | undefined;
   setShellActions: (actions: React.ReactNode) => void;
   setRightPanel: (panel: React.ReactNode) => void;
 }) {
@@ -179,7 +180,6 @@ function ClientWorkspace({
   );
   const setClientFeatureFlag = useMutation(api.operator.setClientFeatureFlag);
   const setClientStatus = useMutation(api.operator.setSoloClientStatus);
-  const startImpersonation = useMutation(api.operator.startImpersonation);
 
   const selectedBroker =
     brokers.find((broker) => broker._id === brokerOrgId) ?? null;
@@ -268,24 +268,6 @@ function ClientWorkspace({
 
   const saveClientSettingsNow = clientSettingsAutoSave.saveNow;
 
-  const impersonate = useCallback(async () => {
-    setBusy(true);
-    try {
-      if (!(await saveClientSettingsNow())) return;
-      await startImpersonation({
-        targetOrgId: client._id,
-        targetRole: "admin",
-      });
-      router.push("/policies");
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(error, "Failed to impersonate client"),
-      );
-    } finally {
-      setBusy(false);
-    }
-  }, [client._id, router, saveClientSettingsNow, startImpersonation]);
-
   const disableAccount = useCallback(async () => {
     setBusy(true);
     try {
@@ -320,57 +302,61 @@ function ClientWorkspace({
   }
 
   useEffect(() => {
+    const impersonationAction = (
+      <OperatorClientImpersonationAction
+        clientOrgId={clientOrgId}
+        activeImpersonation={activeImpersonation}
+        beforeStart={saveClientSettingsNow}
+        disabled={busy}
+      />
+    );
+
     if (activeTab === "overview") {
       setShellActions(
         <>
           <AutoSaveStatus status={combinedSaveStatus} />
-          <PillButton
-            size="compact"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => void impersonate()}
-          >
-            Impersonate
-          </PillButton>
+          {impersonationAction}
         </>,
       );
     } else if (activeTab === "team") {
       setShellActions(
-        <PillButton
-          size="compact"
-          variant="secondary"
-          onClick={() => setTeamInviteOpen(true)}
-        >
-          <UserPlus className="size-3.5" />
-          Invite member
-        </PillButton>,
+        <>
+          {impersonationAction}
+          <PillButton
+            size="compact"
+            onClick={() => setTeamInviteOpen(true)}
+          >
+            <UserPlus className="size-3.5" />
+            Invite member
+          </PillButton>
+        </>,
       );
     } else {
-      setShellActions(null);
+      setShellActions(impersonationAction);
     }
 
     return () => {
       setShellActions(null);
     };
-  }, [activeTab, busy, combinedSaveStatus, impersonate, setShellActions]);
+  }, [
+    activeImpersonation,
+    activeTab,
+    busy,
+    clientOrgId,
+    combinedSaveStatus,
+    saveClientSettingsNow,
+    setShellActions,
+  ]);
 
   return (
     <>
       <main className="w-full space-y-6">
-        <div className="-mx-1 overflow-x-auto px-1 scrollbar-hide">
-          <Tabs
+        {activeTab === "features" || activeTab === "channels" ? (
+          <OperatorClientSettingsTabs
+            clientOrgId={clientOrgId}
             value={activeTab}
-            onValueChange={(value) => navigate(value as ClientTab)}
-          >
-            <TabsList variant="pill" className="min-w-max">
-              {CLIENT_TABS.map((tab) => (
-                <TabsTrigger key={tab.id} value={tab.id}>
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </div>
+          />
+        ) : null}
 
         {activeTab === "overview" ? (
           <div className="space-y-5">
@@ -609,49 +595,60 @@ function ClientWorkspace({
 
 export default function OperatorClientPage() {
   const { clientOrgId } = useParams<{ clientOrgId: string }>();
+  const searchParams = useSearchParams();
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients();
   const brokers = useCachedOperatorBrokers();
   const supportDetails = useQuery(api.operator.getClientSupportDetails, {
     clientOrgId: clientOrgId as Id<"organizations">,
   });
-  const stopOperatorImpersonation = useStopOperatorImpersonation(
-    current?.activeImpersonation,
-  );
   const [workspaceActions, setWorkspaceActions] =
     useState<React.ReactNode>(null);
   const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
   const client = clients?.find((item) => item._id === clientOrgId) ?? null;
-  const stopImpersonationAction = current?.activeImpersonation ? (
-    <PillButton
-      variant="secondary"
-      size="compact"
-      onClick={async () => {
-        await stopOperatorImpersonation();
-        toast.success("Impersonation stopped");
-      }}
-    >
-      Stop impersonating
-    </PillButton>
-  ) : null;
-  const actions =
-    workspaceActions || stopImpersonationAction ? (
-      <>
-        {workspaceActions}
-        {stopImpersonationAction}
-      </>
-    ) : null;
+  const activeTab = parseOperatorClientSection(searchParams.get("tab"));
+  const breadcrumbSection =
+    activeTab === "team"
+      ? "Team"
+      : activeTab === "features" || activeTab === "channels"
+        ? "Settings"
+        : null;
 
   return (
     <AppShell
-      actions={actions}
-      breadcrumbDetail={client?.name ?? "Client"}
+      actions={
+        workspaceActions ?? (
+          <OperatorClientImpersonationAction
+            clientOrgId={clientOrgId}
+            activeImpersonation={current?.activeImpersonation}
+            disabled={!client}
+          />
+        )
+      }
+      breadcrumbDetail={
+        breadcrumbSection ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Link
+              href={`/operator/clients/${clientOrgId}`}
+              className="truncate text-muted-foreground/80 transition-colors hover:text-foreground"
+            >
+              {client?.name ?? "Client"}
+            </Link>
+            <span className="text-muted-foreground/30" aria-hidden="true">
+              /
+            </span>
+            <span className="truncate">{breadcrumbSection}</span>
+          </span>
+        ) : (
+          client?.name ?? "Client"
+        )
+      }
       rightPanel={rightPanel}
       customSidebar={({ collapsed, onToggleCollapse }) => (
-        <OperatorSidebar
+        <OperatorClientSidebar
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
-          active="clients"
+          clientOrgId={clientOrgId}
         />
       )}
       customSidebarStorageKey="operator-sidebar"
@@ -680,6 +677,7 @@ export default function OperatorClientPage() {
           client={client}
           supportDetails={supportDetails}
           brokers={brokers ?? []}
+          activeImpersonation={current?.activeImpersonation}
           setShellActions={setWorkspaceActions}
           setRightPanel={setRightPanel}
         />

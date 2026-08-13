@@ -1,6 +1,7 @@
 "use node";
 
 import mammoth from "mammoth";
+import { Buffer } from "node:buffer";
 import { z } from "zod";
 import { v } from "convex/values";
 import dayjs from "dayjs";
@@ -14,6 +15,7 @@ import {
   REQUIREMENT_LIMIT_KINDS,
   REQUIREMENT_PROVISIONS,
   REQUIREMENT_SCOPES,
+  hasCheckableCoverageTerms,
   normalizeRequirementLineOfBusiness,
   type RequirementScope,
 } from "../lib/complianceTypes";
@@ -94,10 +96,31 @@ type ExistingRequirement = {
   requirementText: string;
   lineOfBusiness?: string;
   conditionType?: string;
+  limits?: Array<{ kind: string; amount: number; label?: string }>;
+  maxDeductible?: { amount: number; label?: string };
+  coverageForm?: "occurrence" | "claims_made";
+  retroactiveDateOnOrBefore?: string;
+  provisions?: string[];
+  requiredForms?: string[];
 };
 type RequirementImportContext = {
   userId: Id<"users">;
   existingRequirements: ExistingRequirement[];
+};
+type RequirementSourceHolderInput = {
+  displayName: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  address?: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    formatted?: string;
+  };
 };
 type ExtractedFileText = {
   text: string;
@@ -107,6 +130,7 @@ type ExtractedFileText = {
 
 const MAX_SOURCE_CHARS = 40_000;
 const PDF_REQUIREMENT_WORKER_TIMEOUT_MS = 20_000;
+const REQUIREMENT_EXTRACTION_TIMEOUT_MS = 90_000;
 
 function truncateSource(value: string) {
   const trimmed = value.trim();
@@ -177,9 +201,7 @@ function isCheckableCoverageRequirement(
 ) {
   return Boolean(
     requirement.lineOfBusiness &&
-    (requirement.limits.length > 0 ||
-      requirement.maxDeductible ||
-      requirement.provisions?.length),
+      hasCheckableCoverageTerms(requirement),
   );
 }
 
@@ -205,8 +227,8 @@ async function extractPdfRequirementText(
   };
 }
 
-async function extractDocxText(buffer: ArrayBuffer) {
-  const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+export async function extractDocxText(buffer: ArrayBuffer) {
+  const result = await mammoth.extractRawText({ buffer: Buffer.from(buffer) });
   return result.value;
 }
 
@@ -256,8 +278,18 @@ function buildPrompt({
   const existing = existingRequirements.length
     ? existingRequirements
         .map(
-          (requirement) =>
-            `- ${requirement.scope}/${requirement.lineOfBusiness ?? "n/a"}: ${requirement.title}: ${requirement.requirementText}`,
+          (requirement) => `- ${JSON.stringify({
+            scope: requirement.scope,
+            lineOfBusiness: requirement.lineOfBusiness,
+            title: requirement.title,
+            limits: requirement.limits,
+            maxDeductible: requirement.maxDeductible,
+            coverageForm: requirement.coverageForm,
+            retroactiveDateOnOrBefore:
+              requirement.retroactiveDateOnOrBefore,
+            provisions: requirement.provisions,
+            requiredForms: requirement.requiredForms,
+          })}`,
         )
         .join("\n")
     : "None";
@@ -289,10 +321,11 @@ ${commonLobs}
 - sourceExcerpt is required and should be the shortest exact source language supporting the rule.
 - Set source pages when obvious from page markers; otherwise leave null.
 - Do not invent unsupported requirements.
-- Merge duplicates and avoid duplicating existing requirements.
+- Extract every source-backed coverage rule, even when an existing requirement has the same line of business or a similar title. The server performs exact typed deduplication after extraction.
+- Within this source, merge rules only when every material typed term is equivalent. Different limit kinds or amounts, deductible ceilings, coverage forms, retroactive dates, provisions, or required forms are distinct requirements.
 - Keep titles short and scannable.
 
-Existing active requirements:
+Existing active requirements (reference only; do not suppress a rule unless every material typed term is equivalent):
 ${existing}
 
 Source text:
@@ -311,12 +344,17 @@ async function runRequirementImport(
     sourceName?: string;
     scope?: RequirementScope;
     appliesTo?: RequirementScope | "both";
+    holder?: RequirementSourceHolderInput;
+    dealName?: string;
+    dealType?: string;
+    internalNotes?: string;
   },
   context: RequirementImportContext,
   titlePrefix: "Pasted requirements" | "Mailbox requirements",
 ): Promise<{
   createdCount: number;
   requirementIds: Id<"insuranceRequirements">[];
+  sourceDocumentId: Id<"requirementSourceDocuments">;
 }> {
   let sourceText = args.pastedText?.trim() ?? "";
   let fileExtraction: ExtractedFileText | undefined;
@@ -348,6 +386,34 @@ async function runRequirementImport(
     args.fileName ||
     `${titlePrefix} ${dayjs().format("YYYY-MM-DD HH:mm")}`;
 
+  const abortSignal = AbortSignal.timeout(REQUIREMENT_EXTRACTION_TIMEOUT_MS);
+  let result;
+  try {
+    result = await generateObjectForOrg(ctx, args.orgId, "requirement_extraction", {
+      schema: RequirementImportSchema,
+      abortSignal,
+      maxOutputTokens: 3_000,
+      system:
+        "You convert contract, lease, certificate, and vendor insurance language into typed ACORD-25-style coverage requirements for Glass.",
+      prompt: buildPrompt({
+        sourceText,
+        existingRequirements: context.existingRequirements,
+        scope,
+      }),
+    });
+  } catch (error) {
+    if (abortSignal.aborted) {
+      throw new Error(
+        "Requirement extraction took too long. Try the import again in a moment.",
+      );
+    }
+    throw error;
+  }
+
+  // Do not leave a completed-looking source behind when extraction fails. A
+  // successful import still records the source even when every extracted row
+  // is an exact duplicate, preserving that audit trail without creating an
+  // orphan for model errors or timeouts.
   const sourceDocumentId: Id<"requirementSourceDocuments"> =
     await ctx.runMutation(
       internal.compliance.createRequirementSourceDocumentInternal,
@@ -362,19 +428,12 @@ async function runRequirementImport(
         sourceTextExcerpt: sourceText.slice(0, 4000),
         parserBackend: fileExtraction?.parserBackend,
         parsedAt: fileExtraction?.parsedAt,
+        holder: args.holder,
+        dealName: args.dealName,
+        dealType: args.dealType,
+        internalNotes: args.internalNotes,
       },
     );
-
-  const result = await generateObjectForOrg(ctx, args.orgId, "requirement_extraction", {
-    schema: RequirementImportSchema,
-    system:
-      "You convert contract, lease, certificate, and vendor insurance language into typed ACORD-25-style coverage requirements for Glass.",
-    prompt: buildPrompt({
-      sourceText,
-      existingRequirements: context.existingRequirements,
-      scope,
-    }),
-  });
 
   const requirementIds: Id<"insuranceRequirements">[] = await ctx.runMutation(
     internal.compliance.createRequirementsInternal,
@@ -391,7 +450,7 @@ async function runRequirementImport(
     },
   );
 
-  return { createdCount: requirementIds.length, requirementIds };
+  return { createdCount: requirementIds.length, requirementIds, sourceDocumentId };
 }
 
 export const importRequirements = action({
@@ -407,6 +466,24 @@ export const importRequirements = action({
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
+    holder: v.optional(v.object({
+      displayName: v.string(),
+      contactName: v.optional(v.string()),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      address: v.optional(v.object({
+        line1: v.optional(v.string()),
+        line2: v.optional(v.string()),
+        city: v.optional(v.string()),
+        state: v.optional(v.string()),
+        postalCode: v.optional(v.string()),
+        country: v.optional(v.string()),
+        formatted: v.optional(v.string()),
+      })),
+    })),
+    dealName: v.optional(v.string()),
+    dealType: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
   },
   handler: async (
     ctx,
@@ -414,6 +491,7 @@ export const importRequirements = action({
   ): Promise<{
     createdCount: number;
     requirementIds: Id<"insuranceRequirements">[];
+    sourceDocumentId: Id<"requirementSourceDocuments">;
   }> => {
     const context: RequirementImportContext = await ctx.runQuery(
       internal.compliance.getRequirementImportContextInternal,
@@ -442,6 +520,24 @@ export const importRequirementsInternal = internalAction({
     appliesTo: v.optional(
       v.union(v.literal("vendors"), v.literal("own_org"), v.literal("both")),
     ),
+    holder: v.optional(v.object({
+      displayName: v.string(),
+      contactName: v.optional(v.string()),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      address: v.optional(v.object({
+        line1: v.optional(v.string()),
+        line2: v.optional(v.string()),
+        city: v.optional(v.string()),
+        state: v.optional(v.string()),
+        postalCode: v.optional(v.string()),
+        country: v.optional(v.string()),
+        formatted: v.optional(v.string()),
+      })),
+    })),
+    dealName: v.optional(v.string()),
+    dealType: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
   },
   handler: async (
     ctx,
@@ -449,6 +545,7 @@ export const importRequirementsInternal = internalAction({
   ): Promise<{
     createdCount: number;
     requirementIds: Id<"insuranceRequirements">[];
+    sourceDocumentId: Id<"requirementSourceDocuments">;
   }> => {
     const context: RequirementImportContext = await ctx.runQuery(
       internal.compliance.getRequirementImportContextForUserInternal,

@@ -10,7 +10,7 @@ function read(path: string) {
 
 describe("policy page COI generation UI", () => {
   it("keeps certificate-holder inputs aligned with the chat COI tool", () => {
-    const ui = read("app/policies/[id]/policy-certificates-tab.tsx");
+    const ui = read("components/certificates/certificate-generate-panel.tsx");
     const chatTools = read("convex/lib/chatTools.ts");
     const agentToolExecutors = read("convex/lib/agentToolExecutors.ts");
     const workspace = read("components/certificates/certificate-workspace.tsx");
@@ -42,9 +42,10 @@ describe("policy page COI generation UI", () => {
     expect(ui).toContain("<AddressAutofillInput");
     expect(ui).toContain('display="street1"');
     expect(ui).toContain('placeholder="Search for an address"');
-    expect(ui).toContain("CertificateHoldState");
-    expect(ui).toContain("emailDraft");
-    expect(ui).toContain("mailto:");
+    const policyTab = read("app/policies/[id]/policy-certificates-tab.tsx");
+    expect(policyTab).toContain("CertificateHoldActivityRow");
+    expect(policyTab).toContain("emailDraft");
+    expect(policyTab).toContain("mailto:");
 
     for (const field of sharedHolderFields) {
       expect(chatTools).toContain(field);

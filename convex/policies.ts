@@ -14,10 +14,16 @@ import {
   assertCanReadPolicies,
   assertCanReadPolicy,
   getOrgAccess,
+  type OrgAccess,
 } from "./lib/access";
 import { recordBrokerActivity } from "./lib/brokerActivity";
 import { notify } from "./lib/notify";
-import { assertImpersonatedBrokerTaskWrite } from "./lib/operatorIdentity";
+import {
+  assertImpersonatedBrokerTaskWrite,
+  assertImpersonatedSetupWrite,
+  requireOperator,
+  writeOperatorAudit,
+} from "./lib/operatorIdentity";
 import type { Id as DataModelId } from "./_generated/dataModel";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -132,6 +138,28 @@ function normalizeFileSha256s(values?: string[]): string[] | undefined {
     ),
   );
   return hashes.length > 0 ? hashes : undefined;
+}
+
+async function writePolicyOperatorAudit(
+  ctx: MutationCtx,
+  access: OrgAccess,
+  policyId: DataModelId<"policies">,
+  orgId: DataModelId<"organizations">,
+  summary: string,
+  metadata?: Record<string, unknown>,
+) {
+  if (access.accessType !== "operator") return;
+  await writeOperatorAudit(ctx, {
+    operatorUserId: access.userId,
+    type: "setup_write",
+    targetOrgId: orgId,
+    summary,
+    metadata: {
+      domain: "policies",
+      policyId,
+      ...metadata,
+    },
+  });
 }
 
 function effectiveExtractionDataStage(policy: {
@@ -830,7 +858,7 @@ export const get = query({
     const policy = await ctx.db.get(args.id);
     if (!policy || !policy.orgId) return null;
     try {
-      await getOrgAccess(ctx, policy.orgId);
+      await getOrgAccess(ctx, policy.orgId, { allowOperator: true });
     } catch {
       return null;
     }
@@ -847,7 +875,7 @@ export const getSummary = query({
     const policy = await ctx.db.get(args.id);
     if (!policy || !policy.orgId) return null;
     try {
-      await getOrgAccess(ctx, policy.orgId);
+      await getOrgAccess(ctx, policy.orgId, { allowOperator: true });
     } catch {
       return null;
     }
@@ -1619,8 +1647,11 @@ export const updateExtractedFields = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
     assertCanEditPolicyExtractedFields(access);
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
 
     const patch: Record<string, unknown> = {};
     const normalizedFields = normalizeEditableFields(args.fields);
@@ -1642,6 +1673,14 @@ export const updateExtractedFields = mutation({
       detail: `Updated ${Object.keys(patch).join(", ")}`,
       metadata: { fields: Object.keys(patch) },
     });
+    await writePolicyOperatorAudit(
+      ctx,
+      access,
+      args.id,
+      policy.orgId,
+      `Updated extracted fields on policy ${policy.policyNumber ?? args.id}`,
+      { fields: Object.keys(patch) },
+    );
   },
 });
 
@@ -1680,8 +1719,11 @@ export const updatePolicyDetails = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
     assertCanEditPolicyExtractedFields(access);
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
 
     const existingOverrides = policy.policyDetailOverrides ?? {};
     const patch: Record<string, unknown> = {
@@ -1801,6 +1843,14 @@ export const updatePolicyDetails = mutation({
         fields: updatedFields,
       },
     });
+    await writePolicyOperatorAudit(
+      ctx,
+      access,
+      args.id,
+      policy.orgId,
+      `Updated ${args.update.section} details on policy ${policy.policyNumber ?? args.id}`,
+      { section: args.update.section, fields: updatedFields },
+    );
     return { section: args.update.section, fields: updatedFields };
   },
 });
@@ -1846,8 +1896,11 @@ export const answerCoverageReviewQuestion = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
     assertCanUploadPolicy(access);
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
 
     const review = policy.extractionReview as
       | { questions?: Array<Record<string, unknown>> }
@@ -1924,6 +1977,14 @@ export const answerCoverageReviewQuestion = mutation({
         coverageName: question.coverageName,
       },
     });
+    await writePolicyOperatorAudit(
+      ctx,
+      access,
+      args.id,
+      policy.orgId,
+      `Answered an extraction review question on policy ${policy.policyNumber ?? args.id}`,
+      { questionId: args.questionId, selectedValue: args.selectedValue },
+    );
   },
 });
 
@@ -1935,8 +1996,11 @@ export const requestCoverageReviewBrokerHelp = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
     assertCanUploadPolicy(access);
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
     const org = await ctx.db.get(policy.orgId);
     if (!org || org.type !== "client" || !org.brokerOrgId) {
       throw new Error("No connected broker is available for this policy");
@@ -2081,6 +2145,18 @@ export const generateUploadUrl = mutation({
   },
 });
 
+export const generateUploadUrlForOrg = mutation({
+  args: { orgId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const access = await getOrgAccess(ctx, args.orgId, {
+      allowOperator: true,
+    });
+    assertCanUploadPolicy(access);
+    await assertImpersonatedSetupWrite(ctx, args.orgId);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
 export const checkDuplicateUploadByHash = mutation({
   args: {
     orgId: v.id("organizations"),
@@ -2090,7 +2166,9 @@ export const checkDuplicateUploadByHash = mutation({
     const fileSha256 = normalizeFileSha256(args.fileSha256);
     if (!fileSha256) return null;
 
-    const access = await getOrgAccess(ctx, args.orgId);
+    const access = await getOrgAccess(ctx, args.orgId, {
+      allowOperator: true,
+    });
     assertCanUploadPolicy(access);
 
     const policies = await ctx.db
@@ -2197,6 +2275,66 @@ export const createBrokerUpload = mutation({
   },
 });
 
+// Operators use an explicit client target instead of impersonating a client or
+// pretending to be its broker. The resulting policy keeps operator provenance
+// and records the support write in the operator audit trail.
+export const createOperatorUpload = mutation({
+  args: {
+    clientOrgId: v.id("organizations"),
+    fileId: v.id("_storage"),
+    fileName: v.optional(v.string()),
+    fileSha256: v.optional(v.string()),
+    uploadFileSha256s: v.optional(v.array(v.string())),
+    documentType: v.literal("policy"),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const client = await ctx.db.get(args.clientOrgId);
+    if (!client || client.type !== "client") throw new Error("Client not found");
+    await assertImpersonatedSetupWrite(ctx, args.clientOrgId);
+    const fileSha256 = normalizeFileSha256(args.fileSha256);
+
+    const policyId = await ctx.db.insert("policies", {
+      orgId: args.clientOrgId,
+      fileId: args.fileId,
+      fileName: args.fileName,
+      uploadFileSha256s: normalizeFileSha256s(
+        args.uploadFileSha256s ?? (fileSha256 ? [fileSha256] : undefined),
+      ),
+      documentType: args.documentType,
+      carrier: "Extracting...",
+      policyNumber: "Extracting...",
+      linesOfBusiness: ["UN"],
+      policyYear: dayjs().year(),
+      effectiveDate: "Extracting...",
+      expirationDate: "Extracting...",
+      isRenewal: false,
+      coverages: [],
+      insuredName: "Extracting...",
+      extractionDataStage: "placeholder",
+      extractionDataStageUpdatedAt: nowMs(),
+      uploadedBySide: "operator",
+      uploadedByUserId: operator.userId,
+    });
+
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: args.clientOrgId,
+      summary: `Uploaded a policy for ${client.name}`,
+      metadata: {
+        domain: "policies",
+        policyId,
+        documentType: args.documentType,
+        fileName: args.fileName,
+      },
+    });
+
+    return policyId;
+  },
+});
+
 // Broker queries all policies for a client org they manage.
 export const listForBroker = query({
   args: {
@@ -2205,7 +2343,9 @@ export const listForBroker = query({
     archived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const access = await getOrgAccessForQuery(ctx, args.clientOrgId);
+    const access = await getOrgAccessForQuery(ctx, args.clientOrgId, {
+      allowOperator: true,
+    });
     if (!access) return [];
     assertCanReadPolicy(access);
     const all = await ctx.db
@@ -2265,9 +2405,15 @@ export const listForClient = query({
 export const cancelExtraction = mutation({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireCurrentOrgAccess(ctx);
     const policy = await ctx.db.get(args.id);
-    if (!policy || policy.orgId !== orgId) throw new Error("Not found");
+    if (!policy?.orgId) throw new Error("Not found");
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
+    assertCanUploadPolicy(access);
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
+    const { userId } = access;
+    const orgId = policy.orgId;
     const state = await readPolicyPipelineState(ctx, args.id);
     const cancelable = ["idle", "running", "paused", "error"];
     if (state?.pipelineStatus && !cancelable.includes(state.pipelineStatus)) {
@@ -2297,6 +2443,13 @@ export const cancelExtraction = mutation({
       orgId,
       action: "cancelled",
     });
+    await writePolicyOperatorAudit(
+      ctx,
+      access,
+      args.id,
+      orgId,
+      `Cancelled extraction for policy ${policy.policyNumber ?? args.id}`,
+    );
   },
 });
 
@@ -2305,8 +2458,11 @@ export const archive = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
     assertCanArchivePolicy(access, policy);
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
     if (policy.deletedAt) return;
     await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
     await deactivatePolicyDeclarationFacts(ctx, args.id, policy.orgId);
@@ -2316,6 +2472,13 @@ export const archive = mutation({
       orgId: policy.orgId,
       action: "archived",
     });
+    await writePolicyOperatorAudit(
+      ctx,
+      access,
+      args.id,
+      policy.orgId,
+      `Archived policy ${policy.policyNumber ?? args.id}`,
+    );
   },
 });
 
@@ -2827,8 +2990,11 @@ export const restore = mutation({
   handler: async (ctx, args) => {
     const policy = await ctx.db.get(args.id);
     if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccess(ctx, policy.orgId);
+    const access = await getOrgAccess(ctx, policy.orgId, {
+      allowOperator: true,
+    });
     assertCanArchivePolicy(access, policy);
+    await assertImpersonatedSetupWrite(ctx, policy.orgId);
     if (!policy.deletedAt) return;
     await ctx.db.patch(args.id, { deletedAt: undefined });
     await reactivatePolicyDeclarationFacts(ctx, args.id, policy.orgId);
@@ -2838,6 +3004,13 @@ export const restore = mutation({
       orgId: policy.orgId,
       action: "restored",
     });
+    await writePolicyOperatorAudit(
+      ctx,
+      access,
+      args.id,
+      policy.orgId,
+      `Restored policy ${policy.policyNumber ?? args.id}`,
+    );
   },
 });
 
@@ -2847,7 +3020,9 @@ export const listForOrg = query({
     documentType: v.optional(v.literal("policy")),
   },
   handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx, args.orgId);
+    const access = await getOrgAccess(ctx, args.orgId, {
+      allowOperator: true,
+    });
     assertCanReadPolicies(access);
     const all = await ctx.db
       .query("policies")

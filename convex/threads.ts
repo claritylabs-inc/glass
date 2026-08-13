@@ -174,6 +174,15 @@ function canCurrentOrgUserAccessThread(args: {
   });
 }
 
+function clientVisibleMessage(message: Doc<"threadMessages">) {
+  const { reasoning: _reasoning, agentSteps, ...visible } = message;
+  const toolSteps = agentSteps?.filter((step) => step.type === "tool");
+  return {
+    ...visible,
+    ...(toolSteps?.length ? { agentSteps: toolSteps } : {}),
+  };
+}
+
 async function requireCurrentOrgThread(
   ctx: QueryCtx | MutationCtx,
   threadId: Id<"threads">,
@@ -255,10 +264,11 @@ export const messages = query({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.threadId);
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread })) return [];
-    return await ctx.db
+    const messages = await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
       .collect();
+    return messages.map(clientVisibleMessage);
   },
 });
 
@@ -332,10 +342,11 @@ export const messagesForClient = query({
         clientOrg: access.org,
       })
     ) return [];
-    return await ctx.db
+    const messages = await ctx.db
       .query("threadMessages")
       .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
       .collect();
+    return messages.map(clientVisibleMessage);
   },
 });
 

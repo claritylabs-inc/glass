@@ -145,7 +145,7 @@ const STREAMING_REMEND_OPTIONS = {
 /** Default table wrapper — horizontal scroll + rounded border */
 const defaultGfmComponents: Components = {
   table: ({ children }) => (
-    <div className="overflow-x-auto my-3 rounded-md border border-border">
+    <div className="table-scrollbar my-3 overflow-x-auto rounded-md border border-border">
       <table className={`w-full border-collapse ${typeStyle("caption.default")}`}>{children}</table>
     </div>
   ),

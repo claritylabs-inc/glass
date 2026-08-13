@@ -56,7 +56,7 @@ describe("workflow orchestration contract", () => {
 describe("workflow orchestration wiring", () => {
   it("keeps certificate workflow sequencing in code rather than prompt-only behavior", () => {
     const executors = read("convex/lib/agentToolExecutors.ts");
-    const generator = executors.indexOf("internal.certificates.generateForOrg");
+    const generator = executors.indexOf("internal.certificates.generateBatchForOrg");
     const certificates = read("convex/certificates.ts");
     const lifecycleCandidates = certificates.indexOf(
       "findIssuedCertificateHolderCandidatesInternal",
