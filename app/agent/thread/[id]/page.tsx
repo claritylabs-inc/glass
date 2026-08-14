@@ -31,8 +31,6 @@ export default function ThreadPage({
   const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
   const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
   const presenceUsers = usePresence(`thread:${id}`);
-  const agentHandle =
-    viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
   const agentBranding =
     viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
       ? {
@@ -78,7 +76,6 @@ export default function ThreadPage({
               onRightPanel={setRightPanel}
               viewerId={viewer?._id}
               viewerEmail={viewer?.email ?? undefined}
-              agentHandle={agentHandle ?? undefined}
               agentBranding={agentBranding}
             />
           </div>

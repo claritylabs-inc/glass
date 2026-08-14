@@ -11,8 +11,6 @@ import mammoth from "mammoth";
 import JSZip from "jszip";
 import {
   fallbackRouteForCall,
-  generateTextForOrg,
-  generatedTextFromResult,
   getAgentLanguageModelForOrg,
   getModelForRoute,
   getProviderOptionsForRoute,
@@ -28,8 +26,6 @@ import {
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import {
   addToolStep,
-  appendReasoningDelta,
-  beginReasoningStep,
   completeToolStep,
   serializeAgentSteps,
   type AgentStep,
@@ -45,12 +41,12 @@ import {
 import {
   buildSystemPromptForContext,
   buildBrokerPortfolioSystemPrompt,
+  stripConfidenceMarkers,
   stripMarkdown,
   markdownToHtml,
   buildChannelInstructions,
   buildPolicyToolInstructions,
-  buildConfidenceInstructions,
-  hasConfidenceMarkers,
+  buildUnsupportedOutputInstructions,
   logAiError,
 } from "../lib/aiUtils";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
@@ -94,62 +90,12 @@ import {
   spreadsheetBufferToText,
 } from "../lib/spreadsheetText";
 
-function normalizeConfidenceRepair(text: string, fallback: string): string {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
-  const repaired = fenced ? fenced[1].trim() : trimmed;
-  return hasConfidenceMarkers(repaired) ? repaired : fallback;
-}
-
 function restoreSentenceBoundarySpacing(text: string): string {
   return text
     .replace(/([a-z0-9)"')\]][.!?])(?=[A-Z])/g, "$1 ")
     .replace(/([a-z0-9)"')\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
     .replace(/([a-z0-9)"')\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
     .replace(/([a-z0-9)"')\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
-}
-
-function normalizeReasoningText(text: string): string {
-  return restoreSentenceBoundarySpacing(text).replace(
-    /([a-z0-9)"')\]][.!?])(?=["'([]?[A-Z])/g,
-    "$1 ",
-  );
-}
-
-async function repairMissingConfidenceMarkers({
-  ctx,
-  orgId,
-  content,
-}: {
-  ctx: ActionCtx;
-  orgId: Id<"organizations">;
-  content: string;
-}): Promise<string> {
-  if (!content.trim() || hasConfidenceMarkers(content)) return content;
-
-  const result = await generateTextForOrg(ctx, orgId, "chat", {
-    maxOutputTokens: 4096,
-    system: `You are a precise Markdown editor for Glass chat answers.
-
-Rewrite the assistant answer by adding confidence markers to factual phrases.
-Preserve the original wording, order, Markdown structure, table pipes, headings, numbers, and punctuation. Do not add claims. Do not remove claims.
-
-Use exactly these inline markers:
-- [[g:phrase]] for facts directly supported by policy data, retrieved source text, tool results, or provided context.
-- [[i:phrase]] for reasonable calculations, deductions, or synthesis from the available information.
-- [[u:phrase]] for assumptions, general knowledge, or claims not backed by provided context.
-
-Wrap factual table cell contents too, while preserving the table shape.
-Leave purely conversational filler and user-facing questions unwrapped.
-Return only the rewritten Markdown. Do not use a code fence.
-The rewritten answer is invalid unless it contains at least one confidence marker.`,
-    prompt: `Assistant answer to annotate:\n\n${content}`,
-  }, {
-    taskKind: "query_reason",
-  });
-
-  const repairedText = generatedTextFromResult(result);
-  return repairedText ? normalizeConfidenceRepair(repairedText, content) : content;
 }
 
 type DraftEmailForBatchRevision = {
@@ -635,7 +581,7 @@ async function buildMessageHistoryWithAttachmentContext(
       history.push({
         role: "assistant",
         content: buildAssistantMessageContentWithArtifacts({
-          content,
+          content: stripConfidenceMarkers(content),
           toolArtifacts: msg.toolArtifacts,
           usedTools: msg.usedTools,
           attachments: msg.attachments,
@@ -1099,7 +1045,7 @@ export const run = internalAction({
         selectedSteeringBlock +
         complianceBlock +
         attachmentNote +
-        buildConfidenceInstructions();
+        buildUnsupportedOutputInstructions();
 
       const orgMembers = (await ctx.runQuery(
         internal.users.listByOrgInternal,
@@ -1276,11 +1222,6 @@ export const run = internalAction({
         current: null,
       };
       let content = "";
-      let lastFlush = dayjs().valueOf();
-      const FLUSH_INTERVAL = 150;
-      let reasoning = "";
-      let hasStartedReasoning = false;
-      let lastReasoningFlush = dayjs().valueOf();
       const citedSections = new Set<string>(); // source/outline titles from lookup_policy_section results
       const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
       const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
@@ -1291,11 +1232,11 @@ export const run = internalAction({
         input?: string;
         output?: string;
       }> = [];
-      // Ordered timeline of reasoning segments and tool calls, saved alongside
-      // the legacy concatenated `reasoning` string so the UI can interleave.
+      // Tool steps remain durable audit/channel-presentation data. Web chat
+      // intentionally does not persist or expose model reasoning.
       const agentSteps: AgentStep[] = [];
       const agentStepsSnapshot = () =>
-        serializeAgentSteps(agentSteps, normalizeReasoningText);
+        serializeAgentSteps(agentSteps, restoreSentenceBoundarySpacing);
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
@@ -1481,7 +1422,8 @@ export const run = internalAction({
                     )
                     .slice(-12)
                     .map(
-                      (m: Record<string, unknown>) => `${m.role}: ${m.content}`,
+                      (m: Record<string, unknown>) =>
+                        `${m.role}: ${stripConfidenceMarkers(String(m.content ?? ""))}`,
                     )
                     .join("\n") +
                   (currentDraftContext ? `\n\n${currentDraftContext}` : ""),
@@ -1493,35 +1435,7 @@ export const run = internalAction({
           : {}),
       };
 
-      // Immediately show "Thinking..." by ensuring processing message is visible
-      await ctx.runMutation(internal.threads.streamAgentMessage, {
-        id: agentMsgId,
-        content: "",
-      });
       if (await isAgentResponseCancelled(true)) return;
-
-      // Tool call display names for the "thinking" UI
-      const TOOL_LABELS: Record<string, string> = {
-        lookup_address: "Validating address...",
-        lookup_policy: "Searching policies...",
-        lookup_policy_section: "Reading policy sources...",
-        attach_policy_document: "Attaching policy PDF...",
-        compare_coverages: "Comparing coverages...",
-        lookup_compliance_requirements: "Checking requirements...",
-        lookup_connected_vendors: "Checking vendors...",
-        lookup_vendor_policies: "Reading vendor policies...",
-        lookup_vendor_compliance: "Checking vendor compliance...",
-        send_email: "Drafting email...",
-        email_expert: "Preparing email...",
-        save_note: "Saving note...",
-        confirm_policy_fact: "Confirming policy facts...",
-        generate_coi: "Generating COI...",
-        create_imessage_group_chat: "Starting iMessage group...",
-        request_human_service: "Requesting human service...",
-        coordinate_mailbox_task: "Coordinating mailbox task...",
-        web_research: "Searching the web...",
-        render_email_preview: "Rendering email preview...",
-      };
       const SUBAGENT_TOOL_NAMES = new Set([
         "email_expert",
         "coordinate_mailbox_task",
@@ -1559,22 +1473,9 @@ export const run = internalAction({
           stopWhen: stepCountIs(25),
         });
 
-      const resetStreamStateForRetry = async () => {
+      const resetStreamStateForRetry = () => {
         content = "";
-        reasoning = "";
         agentSteps.length = 0;
-        hasStartedReasoning = false;
-        lastFlush = dayjs().valueOf();
-        lastReasoningFlush = dayjs().valueOf();
-        await ctx.runMutation(internal.threads.streamAgentMessage, {
-          id: agentMsgId,
-          content: "",
-        });
-        await ctx.runMutation(internal.threads.streamReasoning, {
-          id: agentMsgId,
-          reasoning: "",
-          agentSteps: [],
-        });
       };
 
       const serializeToolOutput = (output: unknown) => {
@@ -1589,6 +1490,11 @@ export const run = internalAction({
       const projectSlackProgress = async () => {
         if (surface !== "slack") return;
         try {
+          await ctx.runMutation(internal.threads.streamReasoning, {
+            id: agentMsgId,
+            reasoning: "",
+            agentSteps: agentStepsSnapshot(),
+          });
           await ctx.runAction(
             internal.actions.slackPresentation.projectProgress,
             { threadMessageId: agentMsgId },
@@ -1603,40 +1509,10 @@ export const run = internalAction({
           if (await isAgentResponseCancelled()) return false;
           if (part.type === "error") {
             throw part;
-          } else if (part.type === "reasoning-start") {
-            // Each provider reasoning block becomes its own timeline segment
-            beginReasoningStep(agentSteps);
           } else if (part.type === "reasoning-delta") {
-            // Stream reasoning separately from content
-            const delta =
-              ((part as Record<string, unknown>).text as string) ??
-              ((part as Record<string, unknown>).delta as string) ??
-              "";
-            reasoning += delta;
-            appendReasoningDelta(agentSteps, delta);
-            if (!hasStartedReasoning) {
-              hasStartedReasoning = true;
-            }
-            // Flush reasoning periodically
-            const now = dayjs().valueOf();
-            if (now - lastReasoningFlush >= FLUSH_INTERVAL) {
-              lastReasoningFlush = now;
-              await ctx.runMutation(internal.threads.streamReasoning, {
-                id: agentMsgId,
-                reasoning: normalizeReasoningText(reasoning),
-                agentSteps: agentStepsSnapshot(),
-              });
-            }
+            // Model reasoning stays private and is intentionally discarded.
           } else if (part.type === "text-delta") {
             content += part.text;
-            const now = dayjs().valueOf();
-            if (now - lastFlush >= FLUSH_INTERVAL) {
-              lastFlush = now;
-              await ctx.runMutation(internal.threads.streamAgentMessage, {
-                id: agentMsgId,
-                content: restoreSentenceBoundarySpacing(content),
-              });
-            }
           } else if (part.type === "tool-call") {
             lastToolName = part.toolName;
             const input =
@@ -1655,20 +1531,7 @@ export const run = internalAction({
               name: part.toolName,
               input: serializedInput,
             });
-            await ctx.runMutation(internal.threads.streamReasoning, {
-              id: agentMsgId,
-              reasoning: normalizeReasoningText(reasoning),
-              agentSteps: agentStepsSnapshot(),
-            });
             await projectSlackProgress();
-            const label =
-              TOOL_LABELS[part.toolName] ?? `Using ${part.toolName}...`;
-            await ctx.runMutation(internal.threads.streamAgentMessage, {
-              id: agentMsgId,
-              content: content
-                ? restoreSentenceBoundarySpacing(content) + `\n\n*${label}*`
-                : `*${label}*`,
-            });
           } else if (part.type === "tool-result") {
             const output = (part as Record<string, unknown>).output;
             let lastToolCall:
@@ -1770,16 +1633,6 @@ export const run = internalAction({
                 }
               }
             }
-            // Clear the tool label but keep accumulated content
-            await ctx.runMutation(internal.threads.streamAgentMessage, {
-              id: agentMsgId,
-              content: restoreSentenceBoundarySpacing(content || ""),
-            });
-            await ctx.runMutation(internal.threads.streamReasoning, {
-              id: agentMsgId,
-              reasoning: normalizeReasoningText(reasoning),
-              agentSteps: agentStepsSnapshot(),
-            });
             await projectSlackProgress();
           }
         }
@@ -1830,7 +1683,7 @@ export const run = internalAction({
           console.warn(
             `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
           );
-          await resetStreamStateForRetry();
+          resetStreamStateForRetry();
           const completed = await consumeChatStream(
             startChatStream(retryModel, retryRoute).fullStream,
           );
@@ -1859,7 +1712,8 @@ export const run = internalAction({
 
       if (await isAgentResponseCancelled(true)) return;
 
-      // Final update — save content, reasoning, and cited sections
+      // Publish one complete reply after the run finishes. Web chat observes
+      // only the processing state before this atomic final update.
       content = restoreSentenceBoundarySpacing(content);
       const emailResult = emailToolResult.current;
       const completedEmailSend =
@@ -1894,14 +1748,6 @@ export const run = internalAction({
       ) {
         content =
           "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
-      }
-      if (!emailResult && !completedCoiEmailSideEffect) {
-        content = await repairMissingConfidenceMarkers({
-          ctx,
-          orgId: args.orgId,
-          content,
-        });
-        content = restoreSentenceBoundarySpacing(content);
       }
       const finalReferencedPolicyIds = new Set<string>([
         ...selectedPolicyIds,
@@ -2052,15 +1898,6 @@ export const run = internalAction({
           );
         }
       }
-      // Save final reasoning if any
-      if (reasoning) {
-        await ctx.runMutation(internal.threads.streamReasoning, {
-          id: agentMsgId,
-          reasoning: normalizeReasoningText(reasoning),
-          agentSteps: agentStepsSnapshot(),
-        });
-      }
-
       await ctx.runMutation(internal.threads.touchThread, {
         threadId: args.threadId,
       });

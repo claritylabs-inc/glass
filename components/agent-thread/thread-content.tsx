@@ -16,10 +16,10 @@ import JSZip from "jszip";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
-  Loader2,
   Archive,
   ArchiveRestore,
   Check,
+  CheckCheck,
   FileText,
   ExternalLink,
   LockKeyhole,
@@ -31,7 +31,6 @@ import {
   Clock,
   Download,
   Paperclip,
-  BadgeCheck,
 } from "lucide-react";
 import { SiSlack } from "react-icons/si";
 import { api } from "@/convex/_generated/api";
@@ -42,7 +41,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
 import { useMediaQuery } from "@/components/app-sidebar/utils";
-import { stripConfidenceMarkers, summarizeConfidence } from "@/lib/confidence";
+import { stripConfidenceMarkers } from "@/lib/confidence";
 import {
   useArchivedThreadCacheActions,
   useCachedAgentTargets,
@@ -68,15 +67,10 @@ import {
   type GlassPromptInputHandle,
 } from "@/components/glass-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
-import {
-  ProseMarkdown,
-  StreamingProseMarkdown,
-} from "@/components/prose-markdown";
+import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { BrandIcon } from "@/components/ui/brand-icon";
-import { AgentActivity } from "@/components/agent-thread/agent-activity";
-import { ToolCallCard } from "@/components/agent-thread/tool-call-card";
 import {
   PromptReferenceText,
   type PromptReference,
@@ -86,7 +80,6 @@ import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachmen
 import { usePdf } from "@/components/pdf-context";
 import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
 import { formatDisplayDateTime } from "@/lib/date-format";
-import { scientistSurnameFor } from "@/components/agent-thread/scientist-surnames";
 import {
   optimisticPromptAttachments,
   promptReferenceIds,
@@ -273,10 +266,6 @@ function messagePromptReferences(
   return references;
 }
 
-const SUBAGENT_TOOL_NAMES = new Set([
-  "email_expert",
-  "coordinate_mailbox_task",
-]);
 const EMAIL_SENDING_RE = /^sending email to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.{3}$/i;
 const EMAIL_SENT_RE = /^email sent to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.$/i;
 
@@ -372,8 +361,7 @@ function ThreadAttachmentList({
           {attachments.map((att, i) => (
             <span
               key={`${att.fileId ?? att.filename}-${i}`}
-              className="min-w-0 transition-[opacity,transform] duration-200 ease-out"
-              style={{ transitionDelay: `${Math.min(i * 25, 100)}ms` }}
+              className="min-w-0"
             >
               <ThreadAttachmentChip
                 attachment={att}
@@ -582,6 +570,51 @@ type ThreadMessageRenderPlan = {
   relatedEmailsByMessageId: Map<string, ThreadMessage[]>;
 };
 
+type WebMessageReceiptStatus = "delivered" | "read";
+
+function isMessageFromViewer(
+  message: ThreadMessage,
+  viewerId?: string,
+  viewerEmail?: string,
+) {
+  return Boolean(
+    (viewerId && message.userId === viewerId) ||
+      (viewerEmail &&
+        message.fromEmail?.toLowerCase() === viewerEmail.toLowerCase()),
+  );
+}
+
+export function latestOwnWebMessageReceipt(
+  messages: ThreadMessage[],
+  viewerId?: string,
+  viewerEmail?: string,
+): { messageId: Id<"threadMessages">; status: WebMessageReceiptStatus } | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (
+      message.role !== "user" ||
+      message.channel !== "chat" ||
+      !isMessageFromViewer(message, viewerId, viewerEmail)
+    ) {
+      continue;
+    }
+
+    const reply = messages.find(
+      (candidate) => candidate.replyToMessageId === message._id,
+    );
+    const isOptimistic = String(message._id).includes(":local:");
+    if (isOptimistic) return null;
+
+    const status: WebMessageReceiptStatus =
+      reply?.agentRunStartedAt != null ||
+      (reply != null && reply.status !== "processing")
+        ? "read"
+        : "delivered";
+    return { messageId: message._id, status };
+  }
+  return null;
+}
+
 function buildThreadMessageRenderPlan(
   messages: ThreadMessage[],
 ): ThreadMessageRenderPlan {
@@ -677,18 +710,12 @@ function MessageFooterActions({
   citedSourceSpanIds,
   attachments,
   threadId,
-  subagentActivityCount,
   mailboxArtifacts,
   messageId,
   onOpenMailboxArtifact,
   openMailboxArtifactRef,
   copyContent,
   retryMessageId,
-  showSubagentActivity,
-  onToggleSubagentActivity,
-  confidenceContent,
-  showConfidence,
-  onToggleConfidence,
   rightAligned,
 }: {
   refs: { type: "policy"; id: string; page?: number }[];
@@ -697,18 +724,12 @@ function MessageFooterActions({
   citedSourceSpanIds?: string[];
   attachments?: ThreadAttachment[];
   threadId: Id<"threads">;
-  subagentActivityCount?: number;
   mailboxArtifacts?: ToolArtifactData[];
   messageId?: Id<"threadMessages">;
   onOpenMailboxArtifact?: (ref: MailboxArtifactRef) => void;
   openMailboxArtifactRef?: MailboxArtifactRef | null;
   copyContent?: string;
   retryMessageId?: Id<"threadMessages">;
-  showSubagentActivity?: boolean;
-  onToggleSubagentActivity?: () => void;
-  confidenceContent?: string;
-  showConfidence?: boolean;
-  onToggleConfidence?: () => void;
   rightAligned?: boolean;
 }) {
   const [isMailboxExpanded, setIsMailboxExpanded] = useState(false);
@@ -716,7 +737,6 @@ function MessageFooterActions({
   const [isAttachmentExpanded, setIsAttachmentExpanded] = useState(false);
   const [isDownloadingAttachments, setIsDownloadingAttachments] =
     useState(false);
-  const hasSubagentActivity = (subagentActivityCount ?? 0) > 0;
   const attachmentList = useMemo(() => attachments ?? [], [attachments]);
   const hasAttachments = attachmentList.length > 0;
   const attachmentFileIds = useMemo(
@@ -750,16 +770,6 @@ function MessageFooterActions({
     .filter(({ task }) => task.status !== "needs_review")
     .map(({ index }) => index);
   const hasMailboxTasks = mailboxTasks.length > 0;
-  const confidenceSummary = useMemo(
-    () => (confidenceContent ? summarizeConfidence(confidenceContent) : null),
-    [confidenceContent],
-  );
-  const confidencePhraseCount = confidenceSummary
-    ? confidenceSummary.counts.grounded +
-      confidenceSummary.counts.inferred +
-      confidenceSummary.counts.unverified
-    : 0;
-  const hasConfidence = confidencePhraseCount > 0;
   const selectedMailboxIndex =
     openMailboxArtifactRef?.messageId === messageId
       ? (openMailboxArtifactRef?.index ?? null)
@@ -770,10 +780,8 @@ function MessageFooterActions({
       : null;
   if (
     refs.length === 0 &&
-    !hasSubagentActivity &&
     !hasAttachments &&
     !hasMailboxTasks &&
-    !hasConfidence &&
     !copyContent?.trim() &&
     !retryMessageId
   )
@@ -882,19 +890,12 @@ function MessageFooterActions({
                 icon={<FileText />}
                 label={refs.length === 1 ? "Source" : "Sources"}
                 count={refs.length}
-                showSingleCount
                 isActive={isSourcesExpanded}
                 onClick={() => setIsSourcesExpanded((value) => !value)}
               />
               {isSourcesExpanded
-                ? refs.map((ref, index) => (
-                    <span
-                      key={`${ref.type}:${ref.id}`}
-                      className="transition-[opacity,transform] duration-200 ease-out"
-                      style={{
-                        transitionDelay: `${Math.min(index * 25, 100)}ms`,
-                      }}
-                    >
+                ? refs.map((ref) => (
+                    <span key={`${ref.type}:${ref.id}`}>
                       <PolicySourcePill
                         id={ref.id}
                         page={ref.page}
@@ -907,14 +908,6 @@ function MessageFooterActions({
                 : null}
             </>
           )}
-          {hasConfidence && confidenceContent && onToggleConfidence ? (
-            <MessageMetaTag
-              icon={<BadgeCheck />}
-              label="Confidence"
-              isActive={showConfidence ?? false}
-              onClick={onToggleConfidence}
-            />
-          ) : null}
           {attachmentList.length === 1 ? (
             <ThreadAttachmentChip
               attachment={attachmentList[0]}
@@ -930,15 +923,6 @@ function MessageFooterActions({
               onClick={() => setIsAttachmentExpanded((value) => !value)}
             />
           ) : null}
-          {hasSubagentActivity && (
-            <MessageMetaTag
-              icon={<LogoIcon size={12} static className="h-3 w-3" />}
-              label={subagentActivityCount === 1 ? "Subagent" : "Subagents"}
-              count={subagentActivityCount}
-              isActive={showSubagentActivity ?? false}
-              onClick={onToggleSubagentActivity}
-            />
-          )}
           {mailboxReviewEmails.map((entry) => (
             <span key={`mailbox-review-${entry.index}-${entry.emailIndex}`}>
               {renderMailboxReviewPill(entry)}
@@ -959,13 +943,7 @@ function MessageFooterActions({
                 <div className="flex flex-wrap items-start gap-1.5">
                   {backgroundMailboxIndexes.map((index) => {
                     return (
-                      <span
-                        key={`mailbox-footer-${index}`}
-                        className="transition-[opacity,transform] duration-200 ease-out"
-                        style={{
-                          transitionDelay: `${Math.min(index * 25, 100)}ms`,
-                        }}
-                      >
+                      <span key={`mailbox-footer-${index}`}>
                         {renderMailboxAgentPill(index)}
                       </span>
                     );
@@ -993,8 +971,7 @@ function MessageFooterActions({
           {attachmentList.map((att, i) => (
             <span
               key={`${att.fileId ?? att.filename}-${i}`}
-              className="min-w-0 transition-[opacity,transform] duration-200 ease-out"
-              style={{ transitionDelay: `${Math.min(i * 25, 100)}ms` }}
+              className="min-w-0"
             >
               <ThreadAttachmentChip
                 attachment={att}
@@ -1155,8 +1132,6 @@ function slackConversationUrl(thread: {
   return `https://slack.com/archives/${encodeURIComponent(thread.slackChannelId)}/p${thread.slackThreadTs.replace(".", "")}`;
 }
 
-type FooterPanel = "subagents" | "confidence";
-
 const markdownComponents = {
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
     if (href?.startsWith("/policies/")) {
@@ -1176,37 +1151,6 @@ const markdownComponents = {
     );
   },
 };
-
-function SubagentActivityPanel({
-  toolCalls,
-}: {
-  toolCalls: { name: string; input?: string; output?: string }[];
-}) {
-  const genericSubagentCalls = toolCalls.filter(
-    (toolCall) => toolCall.name !== "coordinate_mailbox_task",
-  );
-  if (genericSubagentCalls.length === 0) return null;
-
-  return (
-    <div className="mt-1.5 space-y-1.5">
-      {genericSubagentCalls.map((toolCall, index) => {
-        const displayName = scientistSurnameFor(
-          `${toolCall.name}:${toolCall.input ?? ""}:${toolCall.output ?? ""}`,
-          index,
-        );
-        return (
-          <ToolCallCard
-            key={`subagent-${toolCall.name}-${index}`}
-            toolCall={toolCall}
-            index={index}
-            showOutput
-            displayName={displayName}
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 /* ── Pending email countdown + cancel ── */
 function PendingSendCountdown({
@@ -1258,8 +1202,10 @@ function PendingSendCountdown({
       <span className={`text-muted-foreground/50 ${typeStyle("caption.default")}`}>
         Sending in {remaining}s...
       </span>
-      <button
+      <PillButton
         type="button"
+        variant="destructive"
+        size="compact"
         onClick={async () => {
           try {
             await cancelMutation({ id: pendingEmailId });
@@ -1271,67 +1217,50 @@ function PendingSendCountdown({
             toast.error("Failed to cancel");
           }
         }}
-        className={`text-red-500 hover:text-red-600 transition-colors ${typeStyle("control.buttonCompact")}`}
       >
         Cancel
-      </button>
+      </PillButton>
     </div>
   );
 }
 
-function AgentProcessingActivity({
-  label,
-  isStale,
-  showStatus = true,
-  backgroundProcessCount,
-  onOpenBackgroundProcess,
-}: {
-  label?: string | null;
-  isStale?: boolean;
-  /** When false, only background-agent activity renders — the caller has its own working cue. */
-  showStatus?: boolean;
-  backgroundProcessCount: number;
-  onOpenBackgroundProcess?: () => void;
-}) {
-  const status =
-    label ?? (isStale ? "Taking longer than expected" : "Thinking");
-  if (!showStatus && backgroundProcessCount === 0) return null;
-  const backgroundProcessContent = (
-    <>
-      <Loader2 className="h-3 w-3 animate-spin text-primary-light/70" />
-      {backgroundProcessCount} background agent
-      {backgroundProcessCount === 1 ? "" : "s"} running
-    </>
-  );
-
+export function AgentThinkingBubble() {
   return (
-    <div className="mt-2 flex max-w-full flex-wrap items-center gap-2">
-      {showStatus ? (
-        <StatusTag
-          tone={isStale ? "warning" : "info"}
-          className="h-auto min-w-0 gap-2 px-2.5 py-1.5"
-        >
-          <LogoIcon
-            size={12}
-            static
-            className="h-3 w-3 shrink-0 animate-spin text-primary-light/70 [animation-duration:1.8s]"
-          />
-          <span className="truncate">{status}</span>
-        </StatusTag>
-      ) : null}
-      {backgroundProcessCount > 0 && onOpenBackgroundProcess ? (
-        <button
-          type="button"
-          onClick={onOpenBackgroundProcess}
-          className={`inline-flex items-center gap-1.5 rounded-full border border-input bg-foreground/[0.025] px-2.5 py-1.5 text-muted-foreground/55 transition-colors hover:border-border-hover hover:bg-foreground/[0.04] ${typeStyle("label.tag")}`}
-        >
-          {backgroundProcessContent}
-        </button>
-      ) : backgroundProcessCount > 0 ? (
-        <StatusTag tone="info" className="h-auto px-2.5 py-1.5">
-          {backgroundProcessContent}
-        </StatusTag>
-      ) : null}
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Glass is thinking"
+      className="inline-flex h-9 items-center gap-1 rounded-lg bg-foreground/[0.03] px-3"
+    >
+      {[0, 160, 320].map((delay) => (
+        <span
+          key={delay}
+          aria-hidden
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/45 motion-reduce:animate-none"
+          style={{ animationDelay: `${delay}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function WebMessageReceipt({
+  status,
+}: {
+  status: WebMessageReceiptStatus;
+}) {
+  const isRead = status === "read";
+  return (
+    <div
+      className={`mt-1 flex items-center justify-end gap-1 text-muted-foreground/45 ${typeStyle("caption.default")}`}
+      aria-label={isRead ? "Read by Glass" : "Delivered to Glass"}
+    >
+      {isRead ? (
+        <CheckCheck className="h-3 w-3" aria-hidden="true" />
+      ) : (
+        <Check className="h-3 w-3" aria-hidden="true" />
+      )}
+      <span>{isRead ? "Read" : "Delivered"}</span>
     </div>
   );
 }
@@ -1342,7 +1271,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   relatedEmailMessages = EMPTY_RELATED_EMAIL_MESSAGES,
   viewerId,
   viewerEmail,
-  isFirstUserMessage,
+  receiptStatus,
   mirroredToImessage,
   threadContext,
   brokerPerspective,
@@ -1359,7 +1288,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   relatedEmailMessages?: ThreadMessage[];
   viewerId?: string;
   viewerEmail?: string;
-  isFirstUserMessage?: boolean;
+  receiptStatus?: WebMessageReceiptStatus;
   mirroredToImessage?: boolean;
   threadContext?: { pageType: string; entityId?: string; summary?: string };
   /** When true, render agent messages as if sent "by the broker" — right-aligned. */
@@ -1375,22 +1304,14 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   openMailboxArtifactRef?: MailboxArtifactRef | null;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
-  const [activeFooterPanel, setActiveFooterPanel] =
-    useState<FooterPanel | null>(null);
-  const showSubagentActivity = activeFooterPanel === "subagents";
-  const showConfidence = activeFooterPanel === "confidence";
-  const toggleFooterPanel = (panel: FooterPanel) => {
-    setActiveFooterPanel((current) => (current === panel ? null : panel));
-  };
-  const [now] = useState(() => dayjs().valueOf());
   const time = dayjs(msg._creationTime);
   const channelIcon =
     msg.channel === "email" ? (
-      <MailIcon className="w-3 h-3 text-muted-foreground/30" />
+      <MailIcon className="h-3 w-3 text-muted-foreground/45" />
     ) : msg.channel === "imessage" || mirroredToImessage ? (
-      <MessageCircle className="w-3 h-3 text-muted-foreground/30" />
+      <MessageCircle className="h-3 w-3 text-muted-foreground/45" />
     ) : msg.channel === "slack" ? (
-      <SiSlack className="w-3 h-3 text-muted-foreground/30" />
+      <SiSlack className="h-3 w-3 text-muted-foreground/45" />
     ) : null;
   const agentTargets = useCachedAgentTargets(msg.orgId);
   const promptReferences = useMemo(
@@ -1398,33 +1319,9 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
     [agentTargets, msg, threadContext],
   );
 
-  // Processing state — unified bubble with thinking, tool status, and streaming content
+  // Processing stays intentionally opaque: Glass reads the message, thinks,
+  // then publishes one complete response like the other conversation channels.
   if (msg.role === "agent" && msg.status === "processing") {
-    const hasContent = msg.content && msg.content.length > 0;
-    const ageMs = now - msg._creationTime;
-    const isStale = ageMs > 60_000;
-    // Tool status messages are like "*Searching policies...*"
-    const isToolStatus =
-      hasContent && /^\*[^*]+\.\.\.\*$/.test(msg.content.trim());
-    const toolLabel = isToolStatus
-      ? msg.content.trim().replace(/^\*|\*$/g, "")
-      : null;
-    // Clean content strips tool labels — only show real generated text
-    const displayContent = isToolStatus ? "" : msg.content;
-    const mailboxArtifacts =
-      msg.toolArtifacts?.filter(
-        (artifact) => artifact.type === "mailbox_task",
-      ) ?? [];
-    const runningMailboxArtifacts = mailboxArtifacts.filter(
-      (artifact) => normalizeMailboxTask(artifact.data).status === "running",
-    );
-    const backgroundProcessCount =
-      runningMailboxArtifacts.length || mailboxArtifacts.length;
-    // One working cue at a time: before real text exists, show the status pill;
-    // once text streams, the bubble itself is the progress signal unless the
-    // message has stalled.
-    const showStatusPill = !displayContent || isStale;
-
     return (
       <div className="flex w-full items-start gap-2.5">
         <div
@@ -1443,55 +1340,20 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             <LogoIcon
               size={14}
               static
-              className={`text-primary-light ${
-                showStatusPill
-                  ? ""
-                  : "animate-spin [animation-duration:1.8s] motion-reduce:animate-none"
-              }`}
+              className="text-primary-light"
             />
           )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
+            <p className={`text-muted-foreground/60 ${typeStyle("caption.medium")}`}>
               {agentBranding?.name ?? "Glass"}
             </p>
             {channelIcon}
             <CancelButton messageId={msg._id} show />
           </div>
 
-          <AgentActivity
-            steps={msg.agentSteps}
-            isStreaming
-            className="mb-2"
-          />
-
-          {displayContent ? (
-            <div className="mt-1 text-foreground">
-              <StreamingProseMarkdown
-                gfm
-                breaks
-                flagConfidence
-                compact={msg.channel === "imessage"}
-                className={markdownStylesForChannel(msg.channel)}
-                components={markdownComponents}
-              >
-                {displayContent}
-              </StreamingProseMarkdown>
-            </div>
-          ) : null}
-          <AgentProcessingActivity
-            label={toolLabel}
-            isStale={isStale}
-            showStatus={showStatusPill}
-            backgroundProcessCount={backgroundProcessCount}
-            onOpenBackgroundProcess={
-              mailboxArtifacts.length > 0
-                ? () =>
-                    onOpenMailboxArtifact?.({ messageId: msg._id, index: 0 })
-                : undefined
-            }
-          />
+          <AgentThinkingBubble />
           {relatedEmailMessages.length > 0 ? (
             <div className="mt-3">
               <EmailStackCard
@@ -1509,8 +1371,8 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   // Error state
   if (msg.status === "error" && msg.role !== "agent") {
     return (
-      <div className="rounded-lg bg-red-50/50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 p-3">
-        <p className={`text-red-600 dark:text-red-400 ${typeStyle("caption.default")}`}>
+      <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+        <p className={`text-destructive ${typeStyle("caption.default")}`}>
           {msg.error ?? "An error occurred processing this message."}
         </p>
         <RetryButton messageId={msg._id} />
@@ -1521,33 +1383,21 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   // Agent message
   if (msg.role === "agent") {
     const isError = msg.status === "error";
-    const displayContent = msg.content?.trim()
+    const storedContent = msg.content?.trim()
       ? msg.content
       : isError
         ? (msg.error ?? "An error occurred processing this message.")
         : msg.content;
+    const displayContent = stripConfidenceMarkers(storedContent);
 
     // Cited sections from tool results (stored on message by processThreadChat)
     const citedSections = msg.citedSections;
     const citedCoverageNames = msg.citedCoverageNames;
     const citedSourceSpanIds = msg.citedSourceSpanIds;
-    const toolCalls = msg.toolCalls?.length
-      ? msg.toolCalls
-      : (msg.usedTools ?? []).map((name) => ({ name }));
-    const subagentToolCalls = toolCalls.filter((toolCall) =>
-      SUBAGENT_TOOL_NAMES.has(toolCall.name),
-    );
-    const regularToolCalls = toolCalls.filter(
-      (toolCall) => !SUBAGENT_TOOL_NAMES.has(toolCall.name),
-    );
     const mailboxArtifacts =
       msg.toolArtifacts?.filter(
         (artifact) => artifact.type === "mailbox_task",
       ) ?? [];
-    const genericSubagentToolCalls = subagentToolCalls.filter(
-      (toolCall) => toolCall.name !== "coordinate_mailbox_task",
-    );
-    const subagentActivityCount = genericSubagentToolCalls.length;
 
     // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
     const allRefs: { type: "policy"; id: string; page?: number }[] = [];
@@ -1591,7 +1441,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
               className={`flex items-center gap-2 mb-1 ${brokerPerspective ? "justify-end" : ""}`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <p className={`shrink-0 text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
+                <p className={`shrink-0 text-muted-foreground/60 ${typeStyle("caption.medium")}`}>
                   {agentBranding?.name ?? "Glass"}
                 </p>
                 {msg.channel === "email" && !collapseEmailMessages ? (
@@ -1601,8 +1451,8 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                   />
                 ) : null}
                 {channelIcon}
-                <span className="text-muted-foreground/20">·</span>
-                <span className={`text-muted-foreground/25 ${typeStyle("caption.default")}`}>
+                <span className="text-muted-foreground/30">·</span>
+                <span className={`text-muted-foreground/45 ${typeStyle("caption.default")}`}>
                   {formatDisplayDateTime(time)}
                 </span>
               </div>
@@ -1615,11 +1465,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
               />
             ) : (
               <>
-                <AgentActivity
-                  steps={msg.agentSteps}
-                  fallbackToolCalls={regularToolCalls}
-                  className="mb-2"
-                />
                 <ThreadMessageBubble
                   role="agent"
                   channel={msg.channel}
@@ -1628,8 +1473,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                   <ProseMarkdown
                     gfm
                     breaks
-                    flagConfidence
-                    confidenceFullView={showConfidence}
                     compact={msg.channel === "imessage"}
                     className={markdownStylesForChannel(msg.channel)}
                     components={markdownComponents}
@@ -1660,7 +1503,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                   citedSourceSpanIds={citedSourceSpanIds}
                   attachments={msg.attachments}
                   threadId={msg.threadId}
-                  subagentActivityCount={subagentActivityCount}
                   mailboxArtifacts={mailboxArtifacts}
                   messageId={msg._id}
                   onOpenMailboxArtifact={onOpenMailboxArtifact}
@@ -1671,13 +1513,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                       ? msg._id
                       : undefined
                   }
-                  showSubagentActivity={showSubagentActivity}
-                  onToggleSubagentActivity={() =>
-                    toggleFooterPanel("subagents")
-                  }
-                  confidenceContent={!isError ? displayContent : undefined}
-                  showConfidence={showConfidence}
-                  onToggleConfidence={() => toggleFooterPanel("confidence")}
                   rightAligned={brokerPerspective}
                 />
                 <VendorComplianceArtifacts
@@ -1698,9 +1533,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
                     />
                   </div>
                 ) : null}
-                {subagentActivityCount > 0 && showSubagentActivity && (
-                  <SubagentActivityPanel toolCalls={subagentToolCalls} />
-                )}
               </>
             )}
             {msg.status === "pending_send" && msg.pendingEmailId && (
@@ -1713,9 +1545,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   }
 
   // User message
-  const isOwnMessage =
-    (viewerId && msg.userId === viewerId) ||
-    (viewerEmail && msg.fromEmail?.toLowerCase() === viewerEmail.toLowerCase());
+  const isOwnMessage = isMessageFromViewer(msg, viewerId, viewerEmail);
 
   const displayName = messageSenderName(msg);
   const isOperatorInitiated = Boolean(msg.operatorInitiated);
@@ -1740,7 +1570,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
       <div
         className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
           isOperatorInitiated
-            ? "border border-border-emphasized bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+            ? "border border-border-emphasized bg-background"
             : "bg-foreground/8"
         }`}
         title={isOperatorInitiated ? "Clarity Labs" : undefined}
@@ -1779,8 +1609,8 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             />
           ) : null}
           {channelIcon}
-          <span className="text-muted-foreground/20">·</span>
-          <span className={`text-muted-foreground/25 ${typeStyle("caption.default")}`}>
+          <span className="text-muted-foreground/30">·</span>
+          <span className={`text-muted-foreground/45 ${typeStyle("caption.default")}`}>
             {formatDisplayDateTime(time)}
           </span>
         </div>
@@ -1823,11 +1653,9 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             )}
           </ThreadMessageBubble>
         )}
-        {isFirstUserMessage && threadContext && (
-          <div className="mt-2">
-            <ThreadContextLink context={threadContext} />
-          </div>
-        )}
+        {isOwnMessage && receiptStatus ? (
+          <WebMessageReceipt status={receiptStatus} />
+        ) : null}
       </div>
     </div>
   );
@@ -2030,7 +1858,6 @@ export function UnifiedThreadContent({
   onRightPanel?: (panel: React.ReactNode | null) => void;
   viewerId?: string;
   viewerEmail?: string;
-  agentHandle?: string;
   agentBranding?: { name: string; iconUrl?: string | null };
 }) {
   const thread = useCachedQuery("threads.get.current", api.threads.get, {
@@ -2077,6 +1904,10 @@ export function UnifiedThreadContent({
           !messageRenderPlan.attachedEmailMessageIds.has(message._id),
       ),
     [messageRenderPlan, messages],
+  );
+  const latestOwnReceipt = useMemo(
+    () => latestOwnWebMessageReceipt(messages ?? [], viewerId, viewerEmail),
+    [messages, viewerEmail, viewerId],
   );
   const mailboxReviewSourceMessage = mailboxReviewArtifact
     ? messages?.find((message) => message._id === mailboxReviewMessageId)
@@ -2494,7 +2325,7 @@ export function UnifiedThreadContent({
         ref={scrollRef}
         className="absolute inset-0 overflow-y-auto scrollbar-hide p-4 pr-5"
       >
-        <div ref={contentRef} className="max-w-2xl mx-auto space-y-4">
+        <div ref={contentRef} className="mx-auto w-full max-w-3xl space-y-4">
           {messages && messages.length === 0 && (
             <NewChatEmptyState
               orgId={thread.orgId}
@@ -2511,13 +2342,13 @@ export function UnifiedThreadContent({
             const isFirstUser =
               msg._id === messageRenderPlan.firstUserMessageId;
             const firstUserIsOwn =
-              isFirstUser &&
-              ((viewerId && msg.userId === viewerId) ||
-                (viewerEmail &&
-                  msg.fromEmail?.toLowerCase() ===
-                    viewerEmail.toLowerCase()));
+              isFirstUser && isMessageFromViewer(msg, viewerId, viewerEmail);
             const relatedEmailMessages =
               messageRenderPlan.relatedEmailsByMessageId.get(msg._id);
+            const receiptStatus =
+              latestOwnReceipt?.messageId === msg._id
+                ? latestOwnReceipt.status
+                : null;
 
             return (
               <div key={msg._id}>
@@ -2526,11 +2357,11 @@ export function UnifiedThreadContent({
                   relatedEmailMessages={relatedEmailMessages}
                   viewerId={viewerId}
                   viewerEmail={viewerEmail}
+                  receiptStatus={receiptStatus ?? undefined}
                   mirroredToImessage={
                     thread.originChannel === "imessage" &&
                     msg.channel === "chat"
                   }
-                  isFirstUserMessage={false}
                   threadContext={
                     isFirstUser ? thread?.initialContext : undefined
                   }
@@ -2556,7 +2387,7 @@ export function UnifiedThreadContent({
             );
           })}
           {chatError && (
-            <div className={`mx-4 mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700 ${typeStyle("body.default")}`}>
+            <div className={`mx-4 mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-destructive ${typeStyle("body.default")}`}>
               {chatError}
             </div>
           )}

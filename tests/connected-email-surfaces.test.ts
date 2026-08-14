@@ -233,10 +233,10 @@ describe("connected email surfaces", () => {
     expect(mailboxTask).toContain("Search audit");
     expect(mailboxTask).toContain("Background agent");
     expect(mailboxTask).toContain("MailboxTaskSidebar");
-    expect(threadContent).toContain("AgentProcessingActivity");
-    expect(threadContent).toContain("backgroundProcessCount");
-    expect(threadContent).toContain("onOpenBackgroundProcess");
-    expect(threadContent).toContain("background agent");
+    expect(threadContent).toContain("AgentThinkingBubble");
+    expect(threadContent).not.toContain("AgentProcessingActivity");
+    expect(threadContent).not.toContain("backgroundProcessCount");
+    expect(threadContent).not.toContain("onOpenBackgroundProcess");
     expect(threadContent).toContain("mailboxArtifacts={mailboxArtifacts}");
     expect(threadContent).toContain("mailboxTaskDisplayName");
     expect(threadContent).toContain("api.connectedEmailAutomation.reviewForThread");
