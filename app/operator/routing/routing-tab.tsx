@@ -16,56 +16,14 @@ import { showOperationalStatusToast } from "@/components/ui/operational-toast";
 import { StatusTag } from "@/components/ui/status-tag";
 import { SettingsSwitch } from "@/components/settings/settings-switch";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { cn } from "@/lib/utils";
 
 type Route = { provider: string; model: string };
-type Routing = {
-  decision: string;
-  candidatesConsidered: Route[];
-  policyVersion: string | null;
-  cacheStickinessApplied: boolean;
-  routeSource?: string;
-  attemptCount?: number;
-  shadowMode?: boolean;
-  wouldHaveChosen?: Route & { decision: string };
-  wouldHaveMatched?: boolean;
-};
-export type RoutingEvent = {
-  _id: string;
-  kind: "model_step" | "direct_fallback" | "run";
-  runId: string;
-  sessionKey: string;
-  orgId?: string;
-  task: string;
-  taskKind: string;
-  channel: string;
-  label: string;
-  phase: string;
-  step?: number;
-  hasTools?: boolean;
-  hasToolResults?: boolean;
-  requestId?: string;
-  parentRequestId?: string;
-  provider?: string;
-  model?: string;
-  routeSource?: string;
-  routing?: Routing;
-  inputTokens?: number;
-  outputTokens?: number;
-  cachedInputTokens?: number;
-  cacheWriteTokens?: number;
-  costStatus?: "priced" | "unpriced";
-  status?: "complete" | "error" | "fallback";
-  toolCallCount?: number;
-  workflowOutcomeCount?: number;
-  workflowFailureCount?: number;
-  costUsd?: number | null;
-  error?: string;
-  timestamp: number;
-};
+export type RoutingEvent = Doc<"modelRoutingEvents">;
 type RouterHealth = {
   status: "ok" | "degraded";
   environment: string;
@@ -126,7 +84,7 @@ type HourlyActivity = {
   errors: number;
 };
 
-function routeLabel(route: Route | null | undefined) {
+export function routeLabel(route: Route | null | undefined) {
   return route ? `${route.provider} / ${route.model}` : "None";
 }
 
@@ -155,13 +113,13 @@ function formatTokenCount(value: number | undefined) {
   return value === undefined ? "—" : value.toLocaleString();
 }
 
-function routingEventOutcome(event: RoutingEvent) {
+export function routingEventOutcome(event: RoutingEvent) {
   if (event.kind === "direct_fallback") {
     return {
       label: "Fell back",
       tone: "warning" as const,
       description:
-        "The router was unavailable, so Glass used its direct route.",
+        "The primary path failed before execution, so Glass used a direct fallback route.",
     };
   }
   if (event.status === "error") {
@@ -171,6 +129,14 @@ function routingEventOutcome(event: RoutingEvent) {
       description: "The model workflow did not complete.",
     };
   }
+  if (event.fallbackModel) {
+    return {
+      label: "Recovered",
+      tone: "warning" as const,
+      description:
+        "The primary route failed before execution, and the configured fallback completed the run.",
+    };
+  }
   return {
     label: "Succeeded",
     tone: "success" as const,
@@ -178,7 +144,7 @@ function routingEventOutcome(event: RoutingEvent) {
   };
 }
 
-function routingEventSummary(event: RoutingEvent) {
+export function routingEventSummary(event: RoutingEvent) {
   if (event.kind === "direct_fallback") {
     return event.error ?? "Glass used its direct route.";
   }
@@ -190,7 +156,7 @@ function routingEventSummary(event: RoutingEvent) {
 
 function eventDetailTitle(event: RoutingEvent) {
   if (event.kind === "direct_fallback") return "Direct fallback";
-  if (event.kind === "run") return "Run error";
+  if (event.kind === "run") return "Agent run";
   return "Model call";
 }
 
@@ -244,6 +210,16 @@ export function RoutingEventDrawer({
           />
           <OperationalLabelValueRow label="Route" value={route} />
           <OperationalLabelValueRow
+            label="Transport"
+            value={formatIdentifier(event.transport)}
+          />
+          {event.fallbackModel ? (
+            <OperationalLabelValueRow
+              label="Fallback"
+              value={`${event.fallbackProvider ?? "unknown"} / ${event.fallbackModel}`}
+            />
+          ) : null}
+          <OperationalLabelValueRow
             label="Request ID"
             value={
               event.requestId ? (
@@ -273,66 +249,76 @@ export function RoutingEventDrawer({
               value={<span className="text-destructive">{event.error}</span>}
             />
           ) : null}
+          {event.fallbackReason && !event.error ? (
+            <OperationalLabelValueRow
+              label="Fallback reason"
+              value={
+                <span className="text-warning">{event.fallbackReason}</span>
+              }
+            />
+          ) : null}
         </OperationalLabelValueList>
 
         {event.kind === "model_step" ? (
-          <>
-            <OperationalLabelValueList title="Routing">
+          <OperationalLabelValueList title="Routing">
+            <OperationalLabelValueRow
+              label="Decision"
+              value={formatIdentifier(event.routing?.decision)}
+            />
+            <OperationalLabelValueRow
+              label="Route source"
+              value={formatIdentifier(
+                event.routeSource ?? event.routing?.routeSource,
+              )}
+            />
+            <OperationalLabelValueRow
+              label="Attempts"
+              value={(event.routing?.attemptCount ?? 1).toLocaleString()}
+            />
+            <OperationalLabelValueRow
+              label="Policy"
+              value={event.routing?.policyVersion ?? "—"}
+            />
+            <OperationalLabelValueRow
+              label="Sticky route"
+              value={event.routing?.cacheStickinessApplied ? "Yes" : "No"}
+            />
+            {event.routing?.shadowMode ? (
               <OperationalLabelValueRow
-                label="Decision"
-                value={formatIdentifier(event.routing?.decision)}
+                label="Shadow choice"
+                value={`${routeLabel(event.routing.wouldHaveChosen)} · ${event.routing.wouldHaveMatched ? "matched" : "different"}`}
               />
-              <OperationalLabelValueRow
-                label="Route source"
-                value={formatIdentifier(
-                  event.routeSource ?? event.routing?.routeSource,
-                )}
-              />
-              <OperationalLabelValueRow
-                label="Attempts"
-                value={(event.routing?.attemptCount ?? 1).toLocaleString()}
-              />
-              <OperationalLabelValueRow
-                label="Policy"
-                value={event.routing?.policyVersion ?? "—"}
-              />
-              <OperationalLabelValueRow
-                label="Sticky route"
-                value={event.routing?.cacheStickinessApplied ? "Yes" : "No"}
-              />
-              {event.routing?.shadowMode ? (
-                <OperationalLabelValueRow
-                  label="Shadow choice"
-                  value={`${routeLabel(event.routing.wouldHaveChosen)} · ${event.routing.wouldHaveMatched ? "matched" : "different"}`}
-                />
-              ) : null}
-            </OperationalLabelValueList>
+            ) : null}
+          </OperationalLabelValueList>
+        ) : null}
 
-            <OperationalLabelValueList title="Usage">
-              <OperationalLabelValueRow
-                label="Input tokens"
-                value={formatTokenCount(event.inputTokens)}
-              />
-              <OperationalLabelValueRow
-                label="Output tokens"
-                value={formatTokenCount(event.outputTokens)}
-              />
-              <OperationalLabelValueRow
-                label="Cached input"
-                value={formatTokenCount(event.cachedInputTokens)}
-              />
-              <OperationalLabelValueRow
-                label="Cache write"
-                value={formatTokenCount(event.cacheWriteTokens)}
-              />
-              <OperationalLabelValueRow
-                label="Cost"
-                value={
-                  event.costUsd === null || event.costUsd === undefined
-                    ? "Unpriced"
-                    : formatCost(event.costUsd)
-                }
-              />
+        {event.inputTokens !== undefined || event.outputTokens !== undefined ? (
+          <OperationalLabelValueList title="Usage">
+            <OperationalLabelValueRow
+              label="Input tokens"
+              value={formatTokenCount(event.inputTokens)}
+            />
+            <OperationalLabelValueRow
+              label="Output tokens"
+              value={formatTokenCount(event.outputTokens)}
+            />
+            <OperationalLabelValueRow
+              label="Cached input"
+              value={formatTokenCount(event.cachedInputTokens)}
+            />
+            <OperationalLabelValueRow
+              label="Cache write"
+              value={formatTokenCount(event.cacheWriteTokens)}
+            />
+            <OperationalLabelValueRow
+              label="Cost"
+              value={
+                event.costUsd === null || event.costUsd === undefined
+                  ? "Unpriced"
+                  : formatCost(event.costUsd)
+              }
+            />
+            {event.kind === "model_step" ? (
               <OperationalLabelValueRow
                 label="Tools"
                 value={
@@ -343,8 +329,8 @@ export function RoutingEventDrawer({
                     : "None"
                 }
               />
-            </OperationalLabelValueList>
-          </>
+            ) : null}
+          </OperationalLabelValueList>
         ) : null}
       </div>
     </SettingsDrawer>
@@ -645,9 +631,7 @@ export function RoutingTab({
   selectedEventId?: string;
   onSelectEvent: (event: RoutingEvent) => void;
 }) {
-  const events = useQuery(api.modelRoutingEvents.listRecent, { limit: 200 }) as
-    | RoutingEvent[]
-    | undefined;
+  const events = useQuery(api.modelRoutingEvents.listRecent, { limit: 200 });
 
   const policies = useMemo(() => {
     const value = dashboard?.policy.data;

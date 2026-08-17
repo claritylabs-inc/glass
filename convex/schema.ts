@@ -785,6 +785,12 @@ export default defineSchema({
     provider: v.optional(modelProviderValidator),
     model: v.optional(v.string()),
     routeSource: v.optional(v.string()),
+    transport: v.optional(
+      v.union(v.literal("direct"), v.literal("cl-router")),
+    ),
+    fallbackProvider: v.optional(modelProviderValidator),
+    fallbackModel: v.optional(v.string()),
+    fallbackReason: v.optional(v.string()),
     routing: v.optional(extractionTraceRoutingValidator),
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
