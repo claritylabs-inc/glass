@@ -86,8 +86,8 @@ const sdkSchemas = [
   ["PceSubmissionPacketSchema", PceSubmissionPacketSchema],
 ];
 const FIREWORKS_REASONING_MODEL = "accounts/fireworks/models/glm-5p2";
-const FIREWORKS_CHAT_MODEL = "accounts/fireworks/models/deepseek-v4-flash";
-const FIREWORKS_EXTRACTION_MODEL = "accounts/fireworks/models/deepseek-v4-flash";
+const FIREWORKS_CHAT_MODEL = "accounts/fireworks/models/deepseek-v4-flash-0731";
+const FIREWORKS_EXTRACTION_MODEL = "accounts/fireworks/models/deepseek-v4-flash-0731";
 
 for (const envFile of [".env.local", ".env.development.local", "extraction-worker/.env"]) {
   if (process.env.FIREWORKS_API_KEY || typeof process.loadEnvFile !== "function") break;

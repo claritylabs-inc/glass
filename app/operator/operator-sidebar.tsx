@@ -5,6 +5,7 @@ import {
   Building2,
   LogOut,
   MessageSquareText,
+  ScrollText,
   Route,
   Radio,
   User,
@@ -31,6 +32,7 @@ export function OperatorSidebar({
     | "demo-leads"
     | "channels"
     | "routing"
+    | "telemetry"
     | "profile";
 }) {
   const { signOut } = useAuthActions();
@@ -86,6 +88,13 @@ export function OperatorSidebar({
             label="Routing"
             icon={Route}
             active={active === "routing"}
+            collapsed={collapsed}
+          />
+          <SidebarMenuItem
+            href="/operator/telemetry"
+            label="Telemetry"
+            icon={ScrollText}
+            active={active === "telemetry"}
             collapsed={collapsed}
           />
         </div>

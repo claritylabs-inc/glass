@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, query } from "./_generated/server";
@@ -6,6 +7,18 @@ import type { ClRouterResponseMetadata } from "./lib/clRouterClient";
 import { requireOperator } from "./lib/operatorIdentity";
 
 const RETENTION_DAYS = 30;
+
+const modelProviderValidator = v.union(
+  v.literal("openai"),
+  v.literal("anthropic"),
+  v.literal("google"),
+  v.literal("xai"),
+  v.literal("mistral"),
+  v.literal("cohere"),
+  v.literal("fireworks"),
+  v.literal("moonshot"),
+  v.literal("deepseek"),
+);
 
 const runValidator = v.object({
   runId: v.string(),
@@ -44,6 +57,7 @@ export const recordResponseInternal = internalMutation({
       provider: response.model.provider,
       model: response.model.model,
       routeSource: response.routing.routeSource,
+      transport: "cl-router",
       routing: response.routing,
       inputTokens: response.usage.inputTokens,
       outputTokens: response.usage.outputTokens,
@@ -64,6 +78,12 @@ export const recordFallbackInternal = internalMutation({
     hasTools: v.boolean(),
     hasToolResults: v.boolean(),
     error: v.string(),
+    provider: v.optional(modelProviderValidator),
+    model: v.optional(v.string()),
+    fallbackProvider: v.optional(modelProviderValidator),
+    fallbackModel: v.optional(v.string()),
+    routeSource: v.optional(v.string()),
+    transport: v.optional(v.union(v.literal("direct"), v.literal("cl-router"))),
   },
   handler: async (ctx, args) => {
     const timestamp = dayjs().valueOf();
@@ -75,6 +95,12 @@ export const recordFallbackInternal = internalMutation({
       hasToolResults: args.hasToolResults,
       status: "fallback",
       error: args.error,
+      provider: args.provider,
+      model: args.model,
+      fallbackProvider: args.fallbackProvider,
+      fallbackModel: args.fallbackModel,
+      routeSource: args.routeSource,
+      transport: args.transport,
       timestamp,
       expiresAt: expiresAt(timestamp),
     });
@@ -86,6 +112,17 @@ export const recordRunInternal = internalMutation({
     run: runValidator,
     status: v.union(v.literal("complete"), v.literal("error")),
     requestId: v.optional(v.string()),
+    provider: v.optional(modelProviderValidator),
+    model: v.optional(v.string()),
+    routeSource: v.optional(v.string()),
+    transport: v.optional(v.union(v.literal("direct"), v.literal("cl-router"))),
+    fallbackProvider: v.optional(modelProviderValidator),
+    fallbackModel: v.optional(v.string()),
+    fallbackReason: v.optional(v.string()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    cachedInputTokens: v.optional(v.number()),
+    cacheWriteTokens: v.optional(v.number()),
     toolCallCount: v.number(),
     workflowOutcomeCount: v.number(),
     workflowFailureCount: v.number(),
@@ -98,6 +135,17 @@ export const recordRunInternal = internalMutation({
       ...args.run,
       status: args.status,
       requestId: args.requestId,
+      provider: args.provider,
+      model: args.model,
+      routeSource: args.routeSource,
+      transport: args.transport,
+      fallbackProvider: args.fallbackProvider,
+      fallbackModel: args.fallbackModel,
+      fallbackReason: args.fallbackReason,
+      inputTokens: args.inputTokens,
+      outputTokens: args.outputTokens,
+      cachedInputTokens: args.cachedInputTokens,
+      cacheWriteTokens: args.cacheWriteTokens,
       toolCallCount: args.toolCallCount,
       workflowOutcomeCount: args.workflowOutcomeCount,
       workflowFailureCount: args.workflowFailureCount,
@@ -120,6 +168,20 @@ export const listRecent = query({
       .withIndex("by_timestamp")
       .order("desc")
       .take(limit);
+  },
+});
+
+export const listPaginated = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    return await ctx.db
+      .query("modelRoutingEvents")
+      .withIndex("by_timestamp")
+      .order("desc")
+      .paginate(args.paginationOpts);
   },
 });
 

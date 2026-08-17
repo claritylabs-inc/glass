@@ -28,6 +28,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/operator/demo-leads": { label: "Demo leads" },
   "/operator/channels": { label: "Channels" },
   "/operator/routing": { label: "Routing" },
+  "/operator/telemetry": { label: "Telemetry" },
   "/operator/profile": { label: "Profile" },
 };
 

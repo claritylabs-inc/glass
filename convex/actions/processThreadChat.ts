@@ -14,9 +14,10 @@ import {
   getAgentLanguageModelForOrg,
   getModelForRoute,
   getProviderOptionsForRoute,
+  isPreExecutionFallbackEligibleError,
+  recordAgentRoutingFallback,
   recordAgentRoutingRun,
 } from "../lib/models";
-import { ClRouterVisibleOutputError } from "../lib/clRouterLanguageModel";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -124,51 +125,6 @@ function errorText(error: unknown): string {
   } catch {
     return String(error);
   }
-}
-
-function errorCode(error: unknown): string {
-  if (!error || typeof error !== "object") return "";
-  const record = error as Record<string, unknown>;
-  const nested = record.error;
-  if (nested && typeof nested === "object") {
-    const nestedCode = (nested as Record<string, unknown>).code;
-    if (typeof nestedCode === "string") return nestedCode;
-  }
-  return typeof record.code === "string" ? record.code : "";
-}
-
-function errorStatus(error: unknown): number | undefined {
-  if (!error || typeof error !== "object") return undefined;
-  const record = error as Record<string, unknown>;
-  const status =
-    record.statusCode ??
-    record.status ??
-    (record.response && typeof record.response === "object"
-      ? (record.response as Record<string, unknown>).status
-      : undefined);
-  return typeof status === "number" ? status : undefined;
-}
-
-function isTransientChatStreamError(error: unknown): boolean {
-  const nestedError = error && typeof error === "object"
-    ? (error as Record<string, unknown>).error
-    : undefined;
-  if (
-    error instanceof ClRouterVisibleOutputError ||
-    nestedError instanceof ClRouterVisibleOutputError
-  ) {
-    return false;
-  }
-  const code = errorCode(error);
-  const status = errorStatus(error);
-  const text = errorText(error);
-  return (
-    code === "server_error" ||
-    (typeof status === "number" && status >= 500 && status < 600) ||
-    /server_error|internal server error|temporarily unavailable|overloaded|timeout|ECONNRESET|ETIMEDOUT|fetch failed/i.test(
-      text,
-    )
-  );
 }
 
 function normalizeDraftMatchText(value: string | undefined): string {
@@ -1453,12 +1409,37 @@ export const run = internalAction({
           channel: surface,
         },
       } as const;
-      const chatModel = await getAgentLanguageModelForOrg(
-        ctx,
-        args.orgId,
-        chatTask,
-        chatRun,
-      );
+      let chatModel: Awaited<ReturnType<typeof getAgentLanguageModelForOrg>>;
+      try {
+        chatModel = await getAgentLanguageModelForOrg(
+          ctx,
+          args.orgId,
+          chatTask,
+          chatRun,
+        );
+      } catch (error) {
+        await recordAgentRoutingRun(
+          ctx,
+          args.orgId,
+          chatTask,
+          chatRun,
+          { usedTools: [], toolCalls: [], workflowOutcomes: [] },
+          undefined,
+          error,
+        );
+        throw error;
+      }
+      let completedRoute = chatModel.route;
+      let completedRouteSource = chatModel.routeSource;
+      let completedTransport = chatModel.transport;
+      let completedFallback:
+        | {
+            from: typeof chatModel.route;
+            to: typeof chatModel.route;
+            reason: string;
+          }
+        | undefined;
+      let modelExecutionStarted = false;
       const startChatStream = (
         model: typeof chatModel.model,
         route: typeof chatModel.route,
@@ -1476,6 +1457,7 @@ export const run = internalAction({
       const resetStreamStateForRetry = () => {
         content = "";
         agentSteps.length = 0;
+        modelExecutionStarted = false;
       };
 
       const serializeToolOutput = (output: unknown) => {
@@ -1510,10 +1492,13 @@ export const run = internalAction({
           if (part.type === "error") {
             throw part;
           } else if (part.type === "reasoning-delta") {
+            modelExecutionStarted = true;
             // Model reasoning stays private and is intentionally discarded.
           } else if (part.type === "text-delta") {
+            if (part.text) modelExecutionStarted = true;
             content += part.text;
           } else if (part.type === "tool-call") {
+            modelExecutionStarted = true;
             lastToolName = part.toolName;
             const input =
               ((part as Record<string, unknown>).input as
@@ -1533,6 +1518,7 @@ export const run = internalAction({
             });
             await projectSlackProgress();
           } else if (part.type === "tool-result") {
+            modelExecutionStarted = true;
             const output = (part as Record<string, unknown>).output;
             let lastToolCall:
               | { name: string; input?: string; output?: string }
@@ -1654,12 +1640,13 @@ export const run = internalAction({
           if (!completed) return;
         } catch (streamError) {
           const hasStartedSideEffectfulWork =
+            modelExecutionStarted ||
             usedTools.length > 0 ||
             toolCalls.length > 0 ||
             toolArtifacts.length > 0 ||
             responseAttachments.length > 0;
           if (
-            !isTransientChatStreamError(streamError) ||
+            !isPreExecutionFallbackEligibleError(streamError) ||
             hasStartedSideEffectfulWork
           ) {
             throw streamError;
@@ -1676,16 +1663,34 @@ export const run = internalAction({
             (!hasImageInput || modelSupportsImageInput(fallbackRoute))
               ? fallbackRoute
               : null;
-          const retryRoute = compatibleFallbackRoute ?? chatModel.route;
-          const retryModel = compatibleFallbackRoute
-            ? getModelForRoute(compatibleFallbackRoute)
-            : chatModel.model;
+          if (!compatibleFallbackRoute) throw streamError;
+          const fallback = {
+            from: chatModel.route,
+            to: compatibleFallbackRoute,
+            reason: errorText(streamError).slice(0, 1_000),
+          };
+          await recordAgentRoutingFallback(
+            ctx,
+            args.orgId,
+            chatTask,
+            chatRun,
+            chatModel,
+            fallback,
+            Object.keys(tools).length > 0,
+          );
           console.warn(
-            `[processThreadChat] Retrying chat stream after transient provider error on ${chatModel.route.provider}:${chatModel.route.model}; retrying with ${retryRoute.provider}:${retryRoute.model}. ${errorText(streamError)}`,
+            `[processThreadChat] Pre-execution provider failure on ${chatModel.route.provider}:${chatModel.route.model}; using ${compatibleFallbackRoute.provider}:${compatibleFallbackRoute.model}. ${errorText(streamError)}`,
           );
           resetStreamStateForRetry();
+          completedRoute = compatibleFallbackRoute;
+          completedRouteSource = "fallback";
+          completedTransport = "direct";
+          completedFallback = fallback;
           const completed = await consumeChatStream(
-            startChatStream(retryModel, retryRoute).fullStream,
+            startChatStream(
+              getModelForRoute(compatibleFallbackRoute),
+              compatibleFallbackRoute,
+            ).fullStream,
           );
           if (!completed) return;
         }
@@ -1695,7 +1700,16 @@ export const run = internalAction({
           chatTask,
           chatRun,
           routingAudit(),
-          chatModel.routerResponses.at(-1),
+          completedTransport === "cl-router"
+            ? chatModel.routerResponses.at(-1)
+            : undefined,
+          undefined,
+          {
+            route: completedRoute,
+            routeSource: completedRouteSource,
+            transport: completedTransport,
+            fallback: completedFallback,
+          },
         );
       } catch (streamError) {
         await recordAgentRoutingRun(
@@ -1704,8 +1718,16 @@ export const run = internalAction({
           chatTask,
           chatRun,
           routingAudit(),
-          chatModel.routerResponses.at(-1),
+          completedTransport === "cl-router"
+            ? chatModel.routerResponses.at(-1)
+            : undefined,
           streamError,
+          {
+            route: completedRoute,
+            routeSource: completedRouteSource,
+            transport: completedTransport,
+            fallback: completedFallback,
+          },
         );
         throw streamError;
       }

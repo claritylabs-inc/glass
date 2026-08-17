@@ -35,6 +35,7 @@ import {
   type ClRouterUsage,
 } from "./clRouterClient";
 import {
+  ClRouterVisibleOutputError,
   createClRouterLanguageModel,
   type ClRouterLanguageModelOptions,
 } from "./clRouterLanguageModel";
@@ -195,7 +196,31 @@ type RoutedGenerateTextResult = AiGenerateTextResult & {
   routeSource?: string;
   transport?: ModelTransport;
   clRouter?: ClRouterResponseMetadata;
+  fallback?: AgentModelFallback;
 };
+export type AgentModelFallback = {
+  from: ModelRoute;
+  to: ModelRoute;
+  reason: string;
+};
+type AgentModelRouteTelemetry = {
+  route: ModelRoute;
+  routeSource?: string;
+  transport?: ModelTransport;
+  fallback?: AgentModelFallback;
+};
+class AgentModelFallbackAttemptError extends Error {
+  constructor(
+    readonly fallback: AgentModelFallback,
+    cause: unknown,
+  ) {
+    super(
+      `Configured fallback ${fallback.to.provider}/${fallback.to.model} failed: ${errorText(cause)}`,
+      { cause },
+    );
+    this.name = "AgentModelFallbackAttemptError";
+  }
+}
 export type AgentModelRunOptions = {
   sessionKey: string;
   taskKind: ModelCallTaskKind;
@@ -211,7 +236,8 @@ export type AgentModelRunOptions = {
       | "mcp"
       | "email"
       | "mailbox"
-      | "public_demo";
+      | "public_demo"
+      | "canary";
   };
   onResponse?: ClRouterLanguageModelOptions["onResponse"];
   onDirectFallback?: ClRouterLanguageModelOptions["onDirectFallback"];
@@ -853,6 +879,91 @@ function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
     .join(" ");
 }
 
+function errorRecords(error: unknown): Array<Record<string, unknown>> {
+  const records: Array<Record<string, unknown>> = [];
+  const seen = new Set<unknown>();
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    const record = value as Record<string, unknown>;
+    records.push(record);
+    visit(record.error);
+    visit(record.cause);
+    visit(record.data);
+    visit(record.response);
+  };
+  visit(error);
+  return records;
+}
+
+/**
+ * Availability failures may use the configured fallback only before a model
+ * step completes or a tool begins. Callers own that execution boundary; this
+ * helper only classifies the provider/router failure itself.
+ */
+export function isPreExecutionFallbackEligibleError(error: unknown): boolean {
+  const records = errorRecords(error);
+  if (
+    error instanceof ClRouterVisibleOutputError ||
+    records.some((record) => record instanceof ClRouterVisibleOutputError) ||
+    records.some((record) => record.executionStarted === true)
+  ) {
+    return false;
+  }
+
+  const statuses = records
+    .flatMap((record) => [record.statusCode, record.status])
+    .filter((value): value is number => typeof value === "number");
+  if (
+    statuses.some(
+      (status) =>
+        status === 404 ||
+        status === 408 ||
+        status === 429 ||
+        (status >= 500 && status < 600),
+    )
+  ) {
+    return true;
+  }
+
+  const codes = records
+    .flatMap((record) => [record.code, record.routerCode])
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.toUpperCase());
+  if (
+    codes.some((code) =>
+      [
+        "NOT_FOUND",
+        "SERVER_ERROR",
+        "RATE_LIMIT_EXCEEDED",
+        "ECONNRESET",
+        "ECONNREFUSED",
+        "ENOTFOUND",
+        "EAI_AGAIN",
+        "ETIMEDOUT",
+      ].includes(code),
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    records.some(
+      (record) =>
+        record instanceof ClRouterRequestError &&
+        (record.kind === "connection" ||
+          record.kind === "timeout" ||
+          record.kind === "server"),
+    )
+  ) {
+    return true;
+  }
+
+  return /server_error|internal server error|temporarily unavailable|overloaded|timed?\s*out|fetch failed|rate limit|connection refused|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|\bNOT_FOUND\b|\bnot found\b|inaccessible|not deployed/i.test(
+    errorTextForMatching(error),
+  );
+}
+
 function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
   const directModel = directProviderModelForRoute(route);
   if (!directModel) {
@@ -1440,8 +1551,8 @@ async function recordAgentRun(
   error?: unknown,
   auditOverride?: AgentToolAudit,
   routerResponseOverride?: ClRouterResponseMetadata,
+  routeOverride?: AgentModelRouteTelemetry,
 ) {
-  if (!shouldUseClRouterForCall(task, run.taskKind)) return;
   const audit =
     auditOverride ??
     (result
@@ -1454,11 +1565,40 @@ async function recordAgentRun(
   const failures = workflowFailureCount(audit.workflowOutcomes);
   const requestId =
     routerResponseOverride?.requestId ?? result?.clRouter?.requestId;
+  const route = result?.route ?? routeOverride?.route;
+  const routeSource = result?.routeSource ?? routeOverride?.routeSource;
+  const transport = result?.transport ?? routeOverride?.transport;
+  const fallback = result?.fallback ?? routeOverride?.fallback;
+  const usage = result?.totalUsage ?? result?.usage;
   try {
     await ctx.runMutation(internal.modelRoutingEvents.recordRunInternal, {
       run: routingEventRun(orgId, task, run),
       status: error ? "error" : "complete",
       ...(requestId ? { requestId } : {}),
+      ...(route
+        ? { provider: route.provider, model: route.model }
+        : {}),
+      ...(routeSource ? { routeSource } : {}),
+      ...(transport ? { transport } : {}),
+      ...(fallback
+        ? {
+            fallbackProvider: fallback.to.provider,
+            fallbackModel: fallback.to.model,
+            fallbackReason: fallback.reason,
+          }
+        : {}),
+      ...(usage?.inputTokens === undefined
+        ? {}
+        : { inputTokens: usage.inputTokens }),
+      ...(usage?.outputTokens === undefined
+        ? {}
+        : { outputTokens: usage.outputTokens }),
+      ...(usage?.inputTokenDetails?.cacheReadTokens === undefined
+        ? {}
+        : { cachedInputTokens: usage.inputTokenDetails.cacheReadTokens }),
+      ...(usage?.inputTokenDetails?.cacheWriteTokens === undefined
+        ? {}
+        : { cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens }),
       toolCallCount: audit.toolCalls.length,
       workflowOutcomeCount: audit.workflowOutcomes.length,
       workflowFailureCount: failures,
@@ -1504,6 +1644,7 @@ export async function recordAgentRoutingRun(
   audit: AgentToolAudit,
   routerResponse?: ClRouterResponseMetadata,
   error?: unknown,
+  routeOverride?: AgentModelRouteTelemetry,
 ) {
   await recordAgentRun(
     ctx,
@@ -1514,7 +1655,39 @@ export async function recordAgentRoutingRun(
     error,
     audit,
     routerResponse,
+    routeOverride,
   );
+}
+
+export async function recordAgentRoutingFallback(
+  ctx: ActionCtx,
+  orgId: Id<"organizations"> | undefined,
+  task: ModelTask,
+  run: AgentModelRunOptions,
+  resolved: ResolvedAgentLanguageModel,
+  fallback: AgentModelFallback,
+  hasTools: boolean,
+) {
+  try {
+    await ctx.runMutation(internal.modelRoutingEvents.recordFallbackInternal, {
+      run: routingEventRun(orgId, task, run),
+      step: 0,
+      hasTools,
+      hasToolResults: false,
+      error: fallback.reason,
+      provider: fallback.from.provider,
+      model: fallback.from.model,
+      fallbackProvider: fallback.to.provider,
+      fallbackModel: fallback.to.model,
+      routeSource: resolved.routeSource,
+      transport: resolved.transport,
+    });
+  } catch (telemetryError) {
+    console.warn(
+      "[model-routing] Failed to record pre-execution fallback",
+      telemetryError,
+    );
+  }
 }
 
 export async function getAgentLanguageModelForOrg(
@@ -1562,30 +1735,105 @@ export async function getAgentLanguageModelForPublicTask(
 
 async function generateAgentTextForResolvedModel(
   resolved: ResolvedAgentLanguageModel,
+  task: ModelTask,
+  taskKind: ModelCallTaskKind,
   options: RoutedGenerateTextOptions,
+  onFallback: (fallback: AgentModelFallback) => Promise<void>,
 ): Promise<RoutedGenerateTextResult> {
   const { generateText } = await import("ai");
-  const result = withGeneratedText(
-    await generateText(
-      withModelTimeout({
-        ...options,
-        model: resolved.model,
-        providerOptions: routeProviderOptions(
-          resolved,
-          options.providerOptions,
-        ),
-      } as AiGenerateTextOptions),
-    ),
-  );
-  return {
-    ...result,
-    route: resolved.route,
-    routeSource: resolved.routeSource,
-    transport: resolved.transport,
-    ...(resolved.routerResponses.length > 0
-      ? { clRouter: resolved.routerResponses.at(-1) }
-      : {}),
-  };
+  let executionStarted = false;
+  const originalOnStepFinish = options.onStepFinish;
+  const originalOnToolCallStart = options.experimental_onToolCallStart;
+  const primaryOptions = {
+    ...options,
+    onStepFinish: async (...args: Parameters<NonNullable<typeof originalOnStepFinish>>) => {
+      executionStarted = true;
+      await originalOnStepFinish?.(...args);
+    },
+    experimental_onToolCallStart: async (
+      ...args: Parameters<NonNullable<typeof originalOnToolCallStart>>
+    ) => {
+      executionStarted = true;
+      await originalOnToolCallStart?.(...args);
+    },
+  } as RoutedGenerateTextOptions;
+
+  const run = async (
+    model: LanguageModel,
+    route: ModelRoute,
+    runOptions: RoutedGenerateTextOptions,
+  ) =>
+    withGeneratedText(
+      await generateText(
+        withModelTimeout({
+          ...runOptions,
+          model,
+          providerOptions: mergeProviderOptions(
+            getProviderOptionsForRoute(route),
+            runOptions.providerOptions,
+          ),
+        } as AiGenerateTextOptions),
+      ),
+    );
+
+  try {
+    const result = await run(resolved.model, resolved.route, primaryOptions);
+    return {
+      ...result,
+      route: resolved.route,
+      routeSource: resolved.routeSource,
+      transport: resolved.transport,
+      ...(resolved.routerResponses.length > 0
+        ? { clRouter: resolved.routerResponses.at(-1) }
+        : {}),
+    };
+  } catch (error) {
+    if (executionStarted || !isPreExecutionFallbackEligibleError(error)) {
+      throw error;
+    }
+    const fallbackRoute = fallbackRouteForCall({
+      task,
+      taskKind,
+      primaryRoute: resolved.route,
+      fallbackRoute: resolved.fallbackRoute,
+    });
+    if (
+      !fallbackRoute ||
+      !modelRouteSupportsTask(task, fallbackRoute) ||
+      (fallbackRoute.provider === resolved.route.provider &&
+        fallbackRoute.model === resolved.route.model)
+    ) {
+      throw error;
+    }
+    const fallback: AgentModelFallback = {
+      from: resolved.route,
+      to: fallbackRoute,
+      reason: errorText(error),
+    };
+    let fallbackModel: LanguageModel;
+    try {
+      fallbackModel = modelFromRoute(fallbackRoute);
+    } catch {
+      throw error;
+    }
+    await onFallback(fallback);
+    console.warn(
+      `[model-routing] Pre-execution ${resolved.route.provider}:${resolved.route.model} failure; using ${fallbackRoute.provider}:${fallbackRoute.model}. ${fallback.reason}`,
+    );
+    let result;
+    try {
+      result = await run(fallbackModel, fallbackRoute, options);
+    } catch (fallbackError) {
+      throw new AgentModelFallbackAttemptError(fallback, fallbackError);
+    }
+    return {
+      ...result,
+      route: fallbackRoute,
+      routeSource: "fallback",
+      transport: "direct",
+      fallback,
+    };
+  }
 }
 
 export async function generateAgentTextForOrg(
@@ -1597,11 +1845,36 @@ export async function generateAgentTextForOrg(
 ): Promise<RoutedGenerateTextResult> {
   let resolved: ResolvedAgentLanguageModel | undefined;
   try {
-    resolved = await getAgentLanguageModelForOrg(ctx, orgId, task, run);
-    const result = await generateAgentTextForResolvedModel(resolved, options);
+    const resolvedModel = await getAgentLanguageModelForOrg(
+      ctx,
+      orgId,
+      task,
+      run,
+    );
+    resolved = resolvedModel;
+    const result = await generateAgentTextForResolvedModel(
+      resolvedModel,
+      task,
+      run.taskKind,
+      options,
+      (fallback) =>
+        recordAgentRoutingFallback(
+          ctx,
+          orgId,
+          task,
+          run,
+          resolvedModel,
+          fallback,
+          Boolean(options.tools && Object.keys(options.tools).length > 0),
+        ),
+    );
     await recordAgentRun(ctx, orgId, task, run, result);
     return result;
   } catch (error) {
+    const failedFallback =
+      error instanceof AgentModelFallbackAttemptError
+        ? error.fallback
+        : undefined;
     await recordAgentRun(
       ctx,
       orgId,
@@ -1611,6 +1884,14 @@ export async function generateAgentTextForOrg(
       error,
       undefined,
       resolved?.routerResponses.at(-1),
+      resolved
+        ? {
+            route: failedFallback?.to ?? resolved.route,
+            routeSource: failedFallback ? "fallback" : resolved.routeSource,
+            transport: failedFallback ? "direct" : resolved.transport,
+            fallback: failedFallback,
+          }
+        : undefined,
     );
     throw error;
   }
@@ -1624,11 +1905,35 @@ export async function generateAgentTextForPublicTask(
 ): Promise<RoutedGenerateTextResult> {
   let resolved: ResolvedAgentLanguageModel | undefined;
   try {
-    resolved = await getAgentLanguageModelForPublicTask(ctx, task, run);
-    const result = await generateAgentTextForResolvedModel(resolved, options);
+    const resolvedModel = await getAgentLanguageModelForPublicTask(
+      ctx,
+      task,
+      run,
+    );
+    resolved = resolvedModel;
+    const result = await generateAgentTextForResolvedModel(
+      resolvedModel,
+      task,
+      run.taskKind,
+      options,
+      (fallback) =>
+        recordAgentRoutingFallback(
+          ctx,
+          undefined,
+          task,
+          run,
+          resolvedModel,
+          fallback,
+          Boolean(options.tools && Object.keys(options.tools).length > 0),
+        ),
+    );
     await recordAgentRun(ctx, undefined, task, run, result);
     return result;
   } catch (error) {
+    const failedFallback =
+      error instanceof AgentModelFallbackAttemptError
+        ? error.fallback
+        : undefined;
     await recordAgentRun(
       ctx,
       undefined,
@@ -1638,6 +1943,14 @@ export async function generateAgentTextForPublicTask(
       error,
       undefined,
       resolved?.routerResponses.at(-1),
+      resolved
+        ? {
+            route: failedFallback?.to ?? resolved.route,
+            routeSource: failedFallback ? "fallback" : resolved.routeSource,
+            transport: failedFallback ? "direct" : resolved.transport,
+            fallback: failedFallback,
+          }
+        : undefined,
     );
     throw error;
   }

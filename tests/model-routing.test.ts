@@ -10,6 +10,7 @@ import {
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   fallbackRouteForCall,
   generatedTextFromResult,
+  isPreExecutionFallbackEligibleError,
   modelTaskForCall,
   primaryRouteForCall,
 } from "../convex/lib/models";
@@ -325,7 +326,7 @@ describe("model task routing", () => {
         /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
       );
     }
-    expect(appPackage.dependencies["@claritylabs/cl-router-policy"]).toBe("0.2.0");
+    expect(appPackage.dependencies["@claritylabs/cl-router-policy"]).toBe("0.2.1");
     expect(appPackage.dependencies["@claritylabs/cl-sdk"]).toBe("4.6.0");
   });
 
@@ -384,19 +385,19 @@ describe("thread chat streaming reliability", () => {
     expect(generatedTextFromResult(undefined)).toBe("");
   });
 
-  test("retries transient provider stream errors before tool side effects", () => {
+  test("uses the shared pre-execution fallback policy before tool side effects", () => {
     const source = readFileSync(
       join(__dirname, "../convex/actions/processThreadChat.ts"),
       "utf-8",
     );
 
-    expect(source).toContain("isTransientChatStreamError");
+    expect(source).toContain("isPreExecutionFallbackEligibleError");
     expect(source).toContain('part.type === "error"');
     expect(source).toContain("hasStartedSideEffectfulWork");
     expect(source).toContain("resetStreamStateForRetry");
     expect(source).toContain("fallbackRouteForCall({");
     expect(source).toContain("fallbackRoute: chatModel.fallbackRoute");
-    expect(source).toContain("Retrying chat stream after transient provider error");
+    expect(source).toContain("Pre-execution provider failure");
     expect(source).not.toContain("via Vercel AI Gateway");
   });
 
@@ -414,6 +415,45 @@ describe("thread chat streaming reliability", () => {
 });
 
 describe("model fallback policy", () => {
+  test("treats pre-output provider 404 NOT_FOUND errors as fallback eligible", () => {
+    expect(
+      isPreExecutionFallbackEligibleError({
+        type: "error",
+        error: {
+          statusCode: 404,
+          data: {
+            error: {
+              code: "NOT_FOUND",
+              message: "Model not found, inaccessible, and/or not deployed",
+            },
+          },
+        },
+      }),
+    ).toBe(true);
+  });
+
+  test("keeps fallback limited to availability failures before execution", () => {
+    expect(
+      isPreExecutionFallbackEligibleError({
+        statusCode: 503,
+        message: "temporarily unavailable",
+      }),
+    ).toBe(true);
+    expect(
+      isPreExecutionFallbackEligibleError({
+        statusCode: 404,
+        executionStarted: true,
+        message: "model not found",
+      }),
+    ).toBe(false);
+    expect(
+      isPreExecutionFallbackEligibleError({
+        statusCode: 400,
+        message: "invalid tool schema",
+      }),
+    ).toBe(false);
+  });
+
   test("uses Fireworks DeepSeek V4 Pro as the default fallback provider", () => {
     expect(FALLBACK_MODEL).toEqual({
       provider: "fireworks",
