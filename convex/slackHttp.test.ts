@@ -120,7 +120,9 @@ async function signedInteraction(
   t: ReturnType<typeof convexTest>,
   payload: unknown,
 ) {
-  const rawBody = new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
+  const rawBody = new URLSearchParams({
+    payload: JSON.stringify(payload),
+  }).toString();
   const timestamp = String(dayjs().unix());
   const signature = await signSlackRequest(SIGNING_SECRET, timestamp, rawBody);
   return await t.fetch("/slack/interactivity", {
@@ -179,12 +181,12 @@ describe("Slack Events API webhook", () => {
     const payload = messagePayload();
     const staleTimestamp = String(dayjs().subtract(6, "minute").unix());
 
-    expect((await signedRequest(t, payload, { timestamp: staleTimestamp })).status).toBe(
-      401,
-    );
-    expect((await signedRequest(t, payload, { signature: "v0=invalid" })).status).toBe(
-      401,
-    );
+    expect(
+      (await signedRequest(t, payload, { timestamp: staleTimestamp })).status,
+    ).toBe(401);
+    expect(
+      (await signedRequest(t, payload, { signature: "v0=invalid" })).status,
+    ).toBe(401);
     await expect(
       t.run((ctx) => ctx.db.query("slackInboundEvents").collect()),
     ).resolves.toHaveLength(0);
@@ -206,7 +208,9 @@ describe("Slack Events API webhook", () => {
       bot_id: "B-GLASS",
     });
 
-    expect(await (await signedRequest(t, dm)).json()).toMatchObject({ ok: true });
+    expect(await (await signedRequest(t, dm)).json()).toMatchObject({
+      ok: true,
+    });
     expect(await (await signedRequest(t, echo)).json()).toMatchObject({
       ok: true,
       ignored: true,
@@ -223,22 +227,31 @@ describe("Slack Events API webhook", () => {
     });
   });
 
-  test("records a signed installation revocation and disables Slack", async () => {
+  test("records a signed installation revocation and preserves preferences", async () => {
     const t = convexTest(schema, modules);
     const { connectionId } = await seedConnection(t);
 
     const response = await signedRequest(t, {
       type: "event_callback",
+      event_id: "Ev-uninstall-1",
+      event_time: dayjs().unix(),
       event: { type: "app_uninstalled" },
       team_id: "T-CUSTOMER",
     });
     expect(response.status).toBe(200);
+    const lifecycleEvent = await t.run((ctx) =>
+      ctx.db.query("slackLifecycleEvents").first(),
+    );
+    expect(lifecycleEvent).not.toBeNull();
+    await t.mutation((internal as any).slackLifecycle.process, {
+      eventId: lifecycleEvent!._id,
+    });
     const state = await t.run(async (ctx) => ({
       connection: await ctx.db.get(connectionId),
       settings: await ctx.db.query("agentChannelSettings").first(),
     }));
     expect(state.connection?.status).toBe("revoked");
-    expect(state.settings?.slackEnabled).toBe(false);
+    expect(state.settings?.slackEnabled).toBe(true);
   });
 
   test("verifies, authorizes, deduplicates, and acknowledges Block Kit actions", async () => {
@@ -276,16 +289,19 @@ describe("Slack Events API webhook", () => {
       });
       return { actorId, threadId, messageId };
     });
-    const created = await t.mutation((internal as any).slackPresentation.create, {
-      orgId: clientOrgId,
-      threadId: fixture.threadId,
-      threadMessageId: fixture.messageId,
-      connectionId,
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      threadTs: "1800.0",
-      mode: "message",
-    });
+    const created = await t.mutation(
+      (internal as any).slackPresentation.create,
+      {
+        orgId: clientOrgId,
+        threadId: fixture.threadId,
+        threadMessageId: fixture.messageId,
+        connectionId,
+        teamId: "T-CUSTOMER",
+        channelId: "C-PRIMARY",
+        threadTs: "1800.0",
+        mode: "message",
+      },
+    );
     await t.mutation((internal as any).slackPresentation.markActive, {
       id: created.presentation._id,
       providerMessageId: "1800.1",
@@ -300,11 +316,13 @@ describe("Slack Events API webhook", () => {
       user: { id: "U-CUSTOMER", team_id: "T-CUSTOMER" },
       channel: { id: "C-PRIMARY" },
       message: { ts: "1800.1" },
-      actions: [{
-        action_id: "glass_response_feedback",
-        action_ts: "1800.2",
-        value: `positive:${created.actionToken}`,
-      }],
+      actions: [
+        {
+          action_id: "glass_response_feedback",
+          action_ts: "1800.2",
+          value: `positive:${created.actionToken}`,
+        },
+      ],
     };
     expect((await signedInteraction(t, payload)).status).toBe(200);
     expect((await signedInteraction(t, payload)).status).toBe(200);
@@ -382,17 +400,20 @@ describe("Slack Events API webhook", () => {
       id: created.presentation._id,
       providerMessageId: "1800.1",
     });
-    const claimed = await t.mutation(internal.slackPresentation.claimInteraction, {
-      interactionKey: "negative-feedback-click",
-      actionToken: created.actionToken,
-      teamId: "T-CUSTOMER",
-      actorTeamId: "T-CUSTOMER",
-      slackUserId: "U-CUSTOMER",
-      channelId: "C-PRIMARY",
-      messageTs: "1800.1",
-      actionId: "glass_response_feedback",
-      value: "negative",
-    });
+    const claimed = await t.mutation(
+      internal.slackPresentation.claimInteraction,
+      {
+        interactionKey: "negative-feedback-click",
+        actionToken: created.actionToken,
+        teamId: "T-CUSTOMER",
+        actorTeamId: "T-CUSTOMER",
+        slackUserId: "U-CUSTOMER",
+        channelId: "C-PRIMARY",
+        messageTs: "1800.1",
+        actionId: "glass_response_feedback",
+        value: "negative",
+      },
+    );
     const submission = {
       type: "view_submission",
       team: { id: "T-CUSTOMER" },

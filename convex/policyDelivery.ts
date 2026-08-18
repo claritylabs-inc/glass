@@ -1,6 +1,11 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireCurrentOrgAccess } from "./lib/access";
@@ -11,6 +16,10 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
+import {
+  isSlackBindingReachable,
+  isSlackConnectionHealthy,
+} from "./lib/slackAvailability";
 
 const channelValidator = v.union(
   v.literal("email"),
@@ -34,7 +43,10 @@ const statusValidator = v.union(
   v.literal("suppressed"),
   v.literal("cancelled"),
 );
-const sourceKindValidator = v.union(v.literal("policy"), v.literal("endorsement"));
+const sourceKindValidator = v.union(
+  v.literal("policy"),
+  v.literal("endorsement"),
+);
 const filtersValidator = v.object({
   carriers: v.optional(v.array(v.string())),
   securities: v.optional(v.array(v.string())),
@@ -75,7 +87,9 @@ export const getClientOwnedSettings = query({
     return await ctx.db
       .query("policyDeliverySettings")
       .withIndex("by_brokerOrgId_clientOrgId", (q) =>
-        q.eq("brokerOrgId", client.brokerOrgId).eq("clientOrgId", args.clientOrgId),
+        q
+          .eq("brokerOrgId", client.brokerOrgId)
+          .eq("clientOrgId", args.clientOrgId),
       )
       .first();
   },
@@ -97,7 +111,11 @@ async function upsertClientOwnedSettings(
     clientOrgId: Id<"organizations">;
     enabled: boolean;
     channels: DeliveryChannel[];
-    defaultAction: "auto_send" | "broker_review" | "service_review" | "do_not_send";
+    defaultAction:
+      | "auto_send"
+      | "broker_review"
+      | "service_review"
+      | "do_not_send";
     deliverBeforeClientAcceptance: boolean;
     copyInstructions?: string;
     updatedByUserId: Id<"users">;
@@ -184,7 +202,9 @@ export const updateClientOwnedSettingsForOperator = mutation({
   },
 });
 
-async function requireBrokerAdmin(ctx: Parameters<typeof requireCurrentOrgAccess>[0]) {
+async function requireBrokerAdmin(
+  ctx: Parameters<typeof requireCurrentOrgAccess>[0],
+) {
   const access = await requireCurrentOrgAccess(ctx);
   if ((access.org.type ?? "client") !== "broker") {
     throwUserFacingError(
@@ -269,7 +289,9 @@ export const getClientOverride = query({
     return await ctx.db
       .query("policyDeliverySettings")
       .withIndex("by_brokerOrgId_clientOrgId", (q) =>
-        q.eq("brokerOrgId", access.brokerOrgId).eq("clientOrgId", args.clientOrgId),
+        q
+          .eq("brokerOrgId", access.brokerOrgId)
+          .eq("clientOrgId", args.clientOrgId),
       )
       .first();
   },
@@ -283,7 +305,9 @@ export const getClientSettings = query({
       ctx.db
         .query("policyDeliverySettings")
         .withIndex("by_brokerOrgId_clientOrgId", (q) =>
-          q.eq("brokerOrgId", access.brokerOrgId).eq("clientOrgId", args.clientOrgId),
+          q
+            .eq("brokerOrgId", access.brokerOrgId)
+            .eq("clientOrgId", args.clientOrgId),
         )
         .first(),
       ctx.db
@@ -307,7 +331,10 @@ export const updateClientOverride = mutation({
     copyInstructions: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const access = await requireBrokerAdminAccessToClient(ctx, args.clientOrgId);
+    const access = await requireBrokerAdminAccessToClient(
+      ctx,
+      args.clientOrgId,
+    );
     const now = dayjs().valueOf();
     const patch = {
       deliveryOwnerOrgId: args.clientOrgId,
@@ -322,7 +349,9 @@ export const updateClientOverride = mutation({
     const existing = await ctx.db
       .query("policyDeliverySettings")
       .withIndex("by_brokerOrgId_clientOrgId", (q) =>
-        q.eq("brokerOrgId", access.brokerOrgId).eq("clientOrgId", args.clientOrgId),
+        q
+          .eq("brokerOrgId", access.brokerOrgId)
+          .eq("clientOrgId", args.clientOrgId),
       )
       .first();
     if (existing) {
@@ -341,11 +370,16 @@ export const updateClientOverride = mutation({
 export const clearClientOverride = mutation({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const access = await requireBrokerAdminAccessToClient(ctx, args.clientOrgId);
+    const access = await requireBrokerAdminAccessToClient(
+      ctx,
+      args.clientOrgId,
+    );
     const existing = await ctx.db
       .query("policyDeliverySettings")
       .withIndex("by_brokerOrgId_clientOrgId", (q) =>
-        q.eq("brokerOrgId", access.brokerOrgId).eq("clientOrgId", args.clientOrgId),
+        q
+          .eq("brokerOrgId", access.brokerOrgId)
+          .eq("clientOrgId", args.clientOrgId),
       )
       .first();
     if (existing) await ctx.db.delete(existing._id);
@@ -440,7 +474,9 @@ export const upsertRule = mutation({
     const clientAccess = args.clientOrgId
       ? await requireBrokerAdminAccessToClient(ctx, args.clientOrgId)
       : null;
-    const brokerAccess = args.clientOrgId ? null : await requireBrokerAdmin(ctx);
+    const brokerAccess = args.clientOrgId
+      ? null
+      : await requireBrokerAdmin(ctx);
     const access = clientAccess ?? brokerAccess;
     if (!access) {
       throwUserFacingError(
@@ -467,7 +503,8 @@ export const upsertRule = mutation({
     };
     if (args.id) {
       const existing = await ctx.db.get(args.id);
-      if (!existing || existing.brokerOrgId !== brokerOrgId) throw new Error("Rule not found");
+      if (!existing || existing.brokerOrgId !== brokerOrgId)
+        throw new Error("Rule not found");
       await ctx.db.patch(args.id, patch);
       return args.id;
     }
@@ -486,10 +523,16 @@ export const deleteRule = mutation({
     if (!existing) throw new Error("Rule not found");
     const current = await requireCurrentOrgAccess(ctx);
     if ((current.org.type ?? "client") === "client") {
-      if (current.role !== "admin" || existing.deliveryOwnerOrgId !== current.orgId) {
+      if (
+        current.role !== "admin" ||
+        existing.deliveryOwnerOrgId !== current.orgId
+      ) {
         throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
       }
-    } else if (current.role !== "admin" || existing.brokerOrgId !== current.orgId) {
+    } else if (
+      current.role !== "admin" ||
+      existing.brokerOrgId !== current.orgId
+    ) {
       throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
     }
     await ctx.db.delete(args.id);
@@ -512,13 +555,15 @@ export const listQueue = query({
           )
           .order("desc")
           .take(args.limit ?? 100)
-      : (await ctx.db
-          .query("policyDeliveryJobs")
-          .withIndex("by_brokerOrgId_status_updatedAt", (q) =>
-            q.eq("brokerOrgId", access.orgId),
-          )
-          .order("desc")
-          .take((args.limit ?? 100) * 2)).slice(0, args.limit ?? 100);
+      : (
+          await ctx.db
+            .query("policyDeliveryJobs")
+            .withIndex("by_brokerOrgId_status_updatedAt", (q) =>
+              q.eq("brokerOrgId", access.orgId),
+            )
+            .order("desc")
+            .take((args.limit ?? 100) * 2)
+        ).slice(0, args.limit ?? 100);
 
     const hydrated = await Promise.all(
       rows.map(async (job) => {
@@ -560,7 +605,8 @@ export const sendReviewedJob = mutation({
   handler: async (ctx, args) => {
     const access = await requireCurrentOrgAccess(ctx);
     const job = await ctx.db.get(args.id);
-    if (!job || job.brokerOrgId !== access.orgId) throw new Error("Delivery job not found");
+    if (!job || job.brokerOrgId !== access.orgId)
+      throw new Error("Delivery job not found");
     const policy = await ctx.db.get(job.policyId);
     if (!policy || policy.deletedAt) throw new Error("Policy is archived");
     await ctx.db.patch(args.id, {
@@ -569,9 +615,13 @@ export const sendReviewedJob = mutation({
       updatedAt: dayjs().valueOf(),
       lastError: undefined,
     });
-    await ctx.scheduler.runAfter(0, (internal as any).actions.policyDelivery.processJob, {
-      jobId: args.id,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      (internal as any).actions.policyDelivery.processJob,
+      {
+        jobId: args.id,
+      },
+    );
   },
 });
 
@@ -580,7 +630,8 @@ export const retryJob = mutation({
   handler: async (ctx, args) => {
     const access = await requireCurrentOrgAccess(ctx);
     const job = await ctx.db.get(args.id);
-    if (!job || job.brokerOrgId !== access.orgId) throw new Error("Delivery job not found");
+    if (!job || job.brokerOrgId !== access.orgId)
+      throw new Error("Delivery job not found");
     const policy = await ctx.db.get(job.policyId);
     if (!policy || policy.deletedAt) throw new Error("Policy is archived");
     await ctx.db.patch(args.id, {
@@ -588,9 +639,13 @@ export const retryJob = mutation({
       updatedAt: dayjs().valueOf(),
       lastError: undefined,
     });
-    await ctx.scheduler.runAfter(0, (internal as any).actions.policyDelivery.processJob, {
-      jobId: args.id,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      (internal as any).actions.policyDelivery.processJob,
+      {
+        jobId: args.id,
+      },
+    );
   },
 });
 
@@ -599,7 +654,8 @@ export const suppressJob = mutation({
   handler: async (ctx, args) => {
     const access = await requireCurrentOrgAccess(ctx);
     const job = await ctx.db.get(args.id);
-    if (!job || job.brokerOrgId !== access.orgId) throw new Error("Delivery job not found");
+    if (!job || job.brokerOrgId !== access.orgId)
+      throw new Error("Delivery job not found");
     await ctx.db.patch(args.id, {
       status: "suppressed",
       updatedAt: dayjs().valueOf(),
@@ -627,7 +683,9 @@ export const enqueueInternal = internalMutation({
     ].join(":");
     const existing = await ctx.db
       .query("policyDeliveryJobs")
-      .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", idempotencyKey))
+      .withIndex("by_idempotencyKey", (q) =>
+        q.eq("idempotencyKey", idempotencyKey),
+      )
       .first();
     if (existing) return existing._id;
     const now = dayjs().valueOf();
@@ -645,9 +703,13 @@ export const enqueueInternal = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.scheduler.runAfter(0, (internal as any).actions.policyDelivery.processJob, {
-      jobId,
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      (internal as any).actions.policyDelivery.processJob,
+      {
+        jobId,
+      },
+    );
     return jobId;
   },
 });
@@ -706,17 +768,24 @@ export const getContextInternal = internalQuery({
           )
           .collect()
       : [];
-    const clientRules = allRules.filter((rule) => rule.enabled && rule.clientOrgId === job.clientOrgId);
-    const brokerRules = allRules.filter((rule) => rule.enabled && rule.clientOrgId === undefined);
-    const rules = (ownerRules.length > 0
-      ? ownerRules.filter((rule) => rule.enabled)
-      : [...clientRules, ...brokerRules]
+    const clientRules = allRules.filter(
+      (rule) => rule.enabled && rule.clientOrgId === job.clientOrgId,
+    );
+    const brokerRules = allRules.filter(
+      (rule) => rule.enabled && rule.clientOrgId === undefined,
+    );
+    const rules = (
+      ownerRules.length > 0
+        ? ownerRules.filter((rule) => rule.enabled)
+        : [...clientRules, ...brokerRules]
     ).sort((a, b) => a.priority - b.priority);
     const members = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId", (q) => q.eq("orgId", job.clientOrgId))
       .collect();
-    const users = await Promise.all(members.map((membership) => ctx.db.get(membership.userId)));
+    const users = await Promise.all(
+      members.map((membership) => ctx.db.get(membership.userId)),
+    );
     const primaryInsuranceContact = client?.primaryInsuranceContactId
       ? await ctx.db.get(client.primaryInsuranceContactId)
       : null;
@@ -736,19 +805,32 @@ export const getContextInternal = internalQuery({
         q.eq("clientOrgId", job.clientOrgId).eq("status", "active"),
       )
       .first();
-    const primarySlackChannel = connection
-      ? await ctx.db
+    const healthyConnection = isSlackConnectionHealthy(connection)
+      ? connection
+      : null;
+    const primarySlackChannel = healthyConnection
+      ? ((await ctx.db
           .query("slackChannelBindings")
           .withIndex("by_connectionId_and_status", (q) =>
-            q.eq("connectionId", connection._id).eq("status", "active"),
+            q.eq("connectionId", healthyConnection._id).eq("status", "active"),
           )
-          .first()
+          .first()) ??
+        (await ctx.db
+          .query("slackChannelBindings")
+          .withIndex("by_connectionId_and_status", (q) =>
+            q
+              .eq("connectionId", healthyConnection._id)
+              .eq("status", "unavailable"),
+          )
+          .first()))
       : null;
+    const slackDeliveryAvailable = Boolean(
+      healthyConnection &&
+      (!primarySlackChannel || isSlackBindingReachable(primarySlackChannel)),
+    );
     const agentChannels = await ctx.db
       .query("agentChannelSettings")
-      .withIndex("by_clientOrgId", (q) =>
-        q.eq("clientOrgId", job.clientOrgId),
-      )
+      .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", job.clientOrgId))
       .first();
     return {
       job,
@@ -760,14 +842,21 @@ export const getContextInternal = internalQuery({
       brokerSettings,
       clientSettings,
       rules,
-      members: members.map((membership, index) => ({ ...membership, user: users[index] })),
+      members: members.map((membership, index) => ({
+        ...membership,
+        user: users[index],
+      })),
       primaryInsuranceContact,
       uploadedBy,
-      connection,
-      primarySlackChannel,
+      connection: slackDeliveryAvailable ? healthyConnection : null,
+      primarySlackChannel: isSlackBindingReachable(primarySlackChannel)
+        ? primarySlackChannel
+        : null,
       agentChannels,
       fallbackUserId:
-        policy?.uploadedByUserId ?? members[0]?.userId ?? brokerMembers[0]?.userId,
+        policy?.uploadedByUserId ??
+        members[0]?.userId ??
+        brokerMembers[0]?.userId,
     };
   },
 });
@@ -809,7 +898,11 @@ export const insertAttemptInternal = internalMutation({
     clientOrgId: v.id("organizations"),
     policyId: v.id("policies"),
     channel: channelValidator,
-    status: v.union(v.literal("sent"), v.literal("failed"), v.literal("skipped")),
+    status: v.union(
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
     messageId: v.optional(v.string()),
     error: v.optional(v.string()),
   },

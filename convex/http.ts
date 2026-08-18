@@ -5,12 +5,18 @@ import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
-import { getImessageWorkerUrl, isImessageInboundEnabled } from "./lib/imessageConfig";
+import {
+  getImessageWorkerUrl,
+  isImessageInboundEnabled,
+} from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { getEmailDeliveryMode } from "./lib/resend";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import { canAccessThread } from "./lib/threadAccess";
-import { parseSlackEventPayload } from "./lib/slackPayload";
+import {
+  parseSlackEventPayload,
+  parseSlackLifecyclePayload,
+} from "./lib/slackPayload";
 import { verifySlackRequest } from "./lib/slackSecurity";
 import {
   parseSlackInteraction,
@@ -78,7 +84,8 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const secret = process.env.SLACK_SIGNING_SECRET?.trim();
-    if (!secret) return jsonResponse({ error: "Slack webhook is not configured" }, 503);
+    if (!secret)
+      return jsonResponse({ error: "Slack webhook is not configured" }, 503);
     const rawBody = await request.text();
     const verification = await verifySlackRequest({
       secret,
@@ -107,20 +114,18 @@ http.route({
     if (process.env.SLACK_ENABLED !== "true") {
       return jsonResponse({ error: "Slack is not enabled" }, 404);
     }
-    const slackEvent =
-      envelope.event && typeof envelope.event === "object"
-        ? (envelope.event as Record<string, unknown>)
-        : undefined;
-    if (
-      slackEvent?.type === "app_uninstalled" ||
-      slackEvent?.type === "tokens_revoked"
-    ) {
-      const teamId =
-        typeof envelope.team_id === "string" ? envelope.team_id : undefined;
-      if (teamId) {
-        await ctx.runMutation(internalApi.agentChannels.revokeByTeamId, { teamId });
-      }
-      return jsonResponse({ ok: true });
+    const receivedAt = dayjs().valueOf();
+    const lifecyclePayload = parseSlackLifecyclePayload(
+      rawPayload,
+      await sha256Hex(rawBody),
+      receivedAt,
+    );
+    if (lifecyclePayload) {
+      const claim = await ctx.runMutation(internalApi.slackLifecycle.claim, {
+        source: "slack",
+        ...lifecyclePayload,
+      });
+      return jsonResponse({ ok: true, duplicate: claim.duplicate });
     }
 
     const payload = parseSlackEventPayload(rawPayload);
@@ -130,7 +135,7 @@ http.route({
     const timestamp =
       typeof envelope.event_time === "number"
         ? dayjs.unix(envelope.event_time).valueOf()
-        : dayjs().valueOf();
+        : receivedAt;
     await ctx.runMutation(internalApi.slack.claimInbound, {
       eventKey: payload.eventKey,
       providerEventId: payload.providerEventId,
@@ -145,7 +150,7 @@ http.route({
       eventType: payload.eventType,
       isDirectMessage: payload.isDirectMessage,
       isPrivateChannel: payload.isPrivateChannel,
-      receivedAt: Number.isFinite(timestamp) ? timestamp : dayjs().valueOf(),
+      receivedAt: Number.isFinite(timestamp) ? timestamp : receivedAt,
     });
     return jsonResponse({ ok: true });
   }),
@@ -156,7 +161,8 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const secret = process.env.SLACK_SIGNING_SECRET?.trim();
-    if (!secret) return jsonResponse({ error: "Slack webhook is not configured" }, 503);
+    if (!secret)
+      return jsonResponse({ error: "Slack webhook is not configured" }, 503);
     const rawBody = await request.text();
     const verification = await verifySlackRequest({
       secret,
@@ -164,24 +170,29 @@ http.route({
       signature: request.headers.get("X-Slack-Signature"),
       rawBody,
     });
-    if (!verification.ok) return jsonResponse({ error: verification.reason }, 401);
+    if (!verification.ok)
+      return jsonResponse({ error: verification.reason }, 401);
     if (process.env.SLACK_ENABLED !== "true") {
       return jsonResponse({ error: "Slack is not enabled" }, 404);
     }
     const payload = parseSlackInteraction(rawBody);
-    if (!payload) return jsonResponse({ error: "Unsupported Slack interaction" }, 400);
+    if (!payload)
+      return jsonResponse({ error: "Unsupported Slack interaction" }, 400);
     if (payload.type === "view_submission") {
       if (payload.callbackId !== "glass_negative_feedback") {
         return jsonResponse({ response_action: "clear" });
       }
       try {
-        await ctx.runMutation(internalApi.slackPresentation.submitFeedbackComment, {
-          interactionId: payload.privateMetadata,
-          teamId: payload.teamId,
-          actorTeamId: payload.actorTeamId,
-          slackUserId: payload.userId,
-          comment: payload.comment,
-        });
+        await ctx.runMutation(
+          internalApi.slackPresentation.submitFeedbackComment,
+          {
+            interactionId: payload.privateMetadata,
+            teamId: payload.teamId,
+            actorTeamId: payload.actorTeamId,
+            slackUserId: payload.userId,
+            comment: payload.comment,
+          },
+        );
       } catch (error) {
         console.warn("[slack] Rejected feedback submission", error);
       }
@@ -216,7 +227,10 @@ http.route({
         let feedbackModalOpened = false;
         if (action.value === "negative" && payload.triggerId) {
           try {
-            const workerUrl = process.env.SLACK_WORKER_URL?.trim().replace(/\/$/, "");
+            const workerUrl = process.env.SLACK_WORKER_URL?.trim().replace(
+              /\/$/,
+              "",
+            );
             const workerSecret = process.env.SLACK_WORKER_SECRET?.trim();
             if (workerUrl && workerSecret) {
               const response = await fetch(`${workerUrl}/view/open`, {
@@ -272,8 +286,7 @@ http.route({
     } catch {
       return jsonResponse({ error: "Invalid JSON" }, 400);
     }
-    const teamId =
-      typeof body.teamId === "string" ? body.teamId.trim() : "";
+    const teamId = typeof body.teamId === "string" ? body.teamId.trim() : "";
     if (!teamId) return jsonResponse({ error: "teamId is required" }, 400);
     try {
       return jsonResponse(
@@ -304,19 +317,30 @@ http.route({
             {},
           )
         : null;
+    const slackLifecycleHealth = slackEnabled
+      ? await ctx.runQuery(internalApi.slackLifecycle.getHealthSummary, {})
+      : null;
     const checks = {
       imessageInboundEnabled: isImessageInboundEnabled(),
       imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
-      imessageWorkerSecretConfigured: Boolean(process.env.IMESSAGE_WORKER_SECRET),
-      emailInboundWebhookSecretConfigured: Boolean(process.env.RESEND_WEBHOOK_SECRET),
+      imessageWorkerSecretConfigured: Boolean(
+        process.env.IMESSAGE_WORKER_SECRET,
+      ),
+      emailInboundWebhookSecretConfigured: Boolean(
+        process.env.RESEND_WEBHOOK_SECRET,
+      ),
       emailOutboundConfigured: Boolean(process.env.AUTH_RESEND_KEY),
-      emailScanCronSecretConfigured: Boolean(process.env.EMAIL_SCAN_CRON_SECRET),
+      emailScanCronSecretConfigured: Boolean(
+        process.env.EMAIL_SCAN_CRON_SECRET,
+      ),
       connectedEmailEncryptionConfigured: Boolean(
         process.env.EMAIL_CONNECTIONS_ENCRYPTION_KEY,
       ),
       slackWorkerConfigured:
         !slackEnabled ||
-        Boolean(process.env.SLACK_WORKER_URL && process.env.SLACK_WORKER_SECRET),
+        Boolean(
+          process.env.SLACK_WORKER_URL && process.env.SLACK_WORKER_SECRET,
+        ),
       slackWebhookConfigured:
         !slackEnabled || Boolean(process.env.SLACK_SIGNING_SECRET),
       slackTokenEncryptionConfigured:
@@ -324,9 +348,7 @@ http.route({
         slackMode === "mock" ||
         Boolean(process.env.SLACK_TOKEN_ENCRYPTION_KEY),
       slackHostInstallationConfigured:
-        !slackEnabled ||
-        slackMode === "mock" ||
-        Boolean(slackHostInstallation),
+        !slackEnabled || slackMode === "mock" || Boolean(slackHostInstallation),
       slackOAuthConfigured:
         !slackEnabled ||
         slackMode === "mock" ||
@@ -344,8 +366,10 @@ http.route({
         authSiteUrl: getAuthSiteUrl(),
         extractionWorker: {
           mode: process.env.EXTRACTION_WORKER_MODE ?? "internal",
-          expectedProtocolVersion: process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION ?? null,
-          expectedClSdkVersion: process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION ?? null,
+          expectedProtocolVersion:
+            process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION ?? null,
+          expectedClSdkVersion:
+            process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION ?? null,
         },
         slack: {
           enabled: slackEnabled,
@@ -363,6 +387,7 @@ http.route({
           ),
           clarityTeamConfigured: Boolean(process.env.SLACK_CLARITY_TEAM_ID),
           hostInstallationConfigured: Boolean(slackHostInstallation),
+          lifecycle: slackLifecycleHealth,
         },
         checks,
       }),
@@ -936,14 +961,17 @@ function mcpCanWrite(identity: McpIdentity): boolean {
 
 function normalizeCertificateRequest(body: Record<string, unknown>) {
   const certificateHolder =
-    typeof body.certificate_holder === "string" ? body.certificate_holder.trim() : "";
+    typeof body.certificate_holder === "string"
+      ? body.certificate_holder.trim()
+      : "";
   const certificateHolderAddressLines = certificateHolder
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
     .slice(1)
-    .filter((line) =>
-      !/^(attn|attention|email|e-mail|phone|tel|telephone)\s*:/i.test(line),
+    .filter(
+      (line) =>
+        !/^(attn|attention|email|e-mail|phone|tel|telephone)\s*:/i.test(line),
     );
   const holderName =
     (typeof body.holderName === "string" && body.holderName.trim()) ||
@@ -961,8 +989,10 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
         )
       : undefined;
   const requirementSourceDocumentId =
-    (typeof body.requirementSourceDocumentId === "string" && body.requirementSourceDocumentId) ||
-    (typeof body.requirement_source_document_id === "string" && body.requirement_source_document_id) ||
+    (typeof body.requirementSourceDocumentId === "string" &&
+      body.requirementSourceDocumentId) ||
+    (typeof body.requirement_source_document_id === "string" &&
+      body.requirement_source_document_id) ||
     undefined;
   const requirementId =
     (typeof body.requirementId === "string" && body.requirementId) ||
@@ -972,9 +1002,12 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
   return {
     holderName,
     holderContactName:
-      (typeof body.holderContactName === "string" && body.holderContactName.trim()) ||
-      (typeof body.holder_contact_name === "string" && body.holder_contact_name.trim()) ||
-      (typeof body.certificate_holder_contact_name === "string" && body.certificate_holder_contact_name.trim()) ||
+      (typeof body.holderContactName === "string" &&
+        body.holderContactName.trim()) ||
+      (typeof body.holder_contact_name === "string" &&
+        body.holder_contact_name.trim()) ||
+      (typeof body.certificate_holder_contact_name === "string" &&
+        body.certificate_holder_contact_name.trim()) ||
       undefined,
     holderEmail:
       (typeof body.holderEmail === "string" && body.holderEmail.trim()) ||
@@ -1019,15 +1052,21 @@ function normalizeCertificateRequest(body: Record<string, unknown>) {
       (typeof body.request_text === "string" && body.request_text.trim()) ||
       undefined,
     descriptionOfOperations:
-      (typeof body.descriptionOfOperations === "string" && body.descriptionOfOperations.trim()) ||
-      (typeof body.description_of_operations === "string" && body.description_of_operations.trim()) ||
+      (typeof body.descriptionOfOperations === "string" &&
+        body.descriptionOfOperations.trim()) ||
+      (typeof body.description_of_operations === "string" &&
+        body.description_of_operations.trim()) ||
       undefined,
     requestedEndorsements,
-    requirementSourceDocumentId: requirementSourceDocumentId as Id<"requirementSourceDocuments"> | undefined,
+    requirementSourceDocumentId: requirementSourceDocumentId as
+      | Id<"requirementSourceDocuments">
+      | undefined,
     requirementId: requirementId as Id<"insuranceRequirements"> | undefined,
     additionalInsuredName:
-      (typeof body.additionalInsuredName === "string" && body.additionalInsuredName.trim()) ||
-      (typeof body.additional_insured_name === "string" && body.additional_insured_name.trim()) ||
+      (typeof body.additionalInsuredName === "string" &&
+        body.additionalInsuredName.trim()) ||
+      (typeof body.additional_insured_name === "string" &&
+        body.additional_insured_name.trim()) ||
       undefined,
     forceReissue:
       body.forceReissue === true ||
@@ -1390,24 +1429,27 @@ http.route({
         certificate.requirementSourceDocumentId || certificate.requirementId,
       );
       if (Boolean(policyId) === requirementsMode) {
-        return jsonResponse({ error: "Choose either policyId or a requirement source" }, 400);
+        return jsonResponse(
+          { error: "Choose either policyId or a requirement source" },
+          400,
+        );
       }
       if (!requirementsMode && !certificate.holderName) {
         return jsonResponse({ error: "Missing certificate holder" }, 400);
       }
 
-      const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
-        orgId: identity.orgId as Id<"organizations">,
-        primaryPolicyId: policyId as Id<"policies"> | undefined,
-        ...certificate,
-        source: "mcp",
-        createdByUserId: identity.userId as Id<"users">,
-      });
+      const result = await ctx.runAction(
+        internal.certificates.generateBatchForOrg,
+        {
+          orgId: identity.orgId as Id<"organizations">,
+          primaryPolicyId: policyId as Id<"policies"> | undefined,
+          ...certificate,
+          source: "mcp",
+          createdByUserId: identity.userId as Id<"users">,
+        },
+      );
       return jsonResponse(
-        compatibleCertificateGenerationResponse(
-          result,
-          requirementsMode,
-        ),
+        compatibleCertificateGenerationResponse(result, requirementsMode),
         201,
       );
     } catch (e) {
@@ -1646,15 +1688,41 @@ const MCP_TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        policyId: { type: "string", description: "Policy-mode ID; omit in requirements mode" },
-        requirementSourceDocumentId: { type: "string", description: "Requirements-mode source ID; omit policy and holder inputs" },
-        requirementId: { type: "string", description: "Requirements-mode single requirement ID; Glass uses its connected source" },
+        policyId: {
+          type: "string",
+          description: "Policy-mode ID; omit in requirements mode",
+        },
+        requirementSourceDocumentId: {
+          type: "string",
+          description:
+            "Requirements-mode source ID; omit policy and holder inputs",
+        },
+        requirementId: {
+          type: "string",
+          description:
+            "Requirements-mode single requirement ID; Glass uses its connected source",
+        },
         holderName: { type: "string", description: "Certificate holder name" },
-        holderContactName: { type: "string", description: "Certificate holder contact or attention name" },
-        holderEmail: { type: "string", description: "Certificate holder email for renewal delivery" },
-        holderPhone: { type: "string", description: "Certificate holder phone for renewal delivery" },
-        addressLine1: { type: "string", description: "Certificate holder street address" },
-        addressLine2: { type: "string", description: "Suite, floor, or attention line" },
+        holderContactName: {
+          type: "string",
+          description: "Certificate holder contact or attention name",
+        },
+        holderEmail: {
+          type: "string",
+          description: "Certificate holder email for renewal delivery",
+        },
+        holderPhone: {
+          type: "string",
+          description: "Certificate holder phone for renewal delivery",
+        },
+        addressLine1: {
+          type: "string",
+          description: "Certificate holder street address",
+        },
+        addressLine2: {
+          type: "string",
+          description: "Suite, floor, or attention line",
+        },
         city: { type: "string", description: "Certificate holder city" },
         state: { type: "string", description: "Certificate holder state" },
         postalCode: {
@@ -1981,7 +2049,7 @@ const MCP_TOOLS = [
         limits: {
           type: "array",
           description:
-            "Coverage limits: { kind, amount, label }. amount is a plain number (1000000, not \"$1M\"). Limit kinds include per_occurrence, general_aggregate, combined_single_limit, other.",
+            'Coverage limits: { kind, amount, label }. amount is a plain number (1000000, not "$1M"). Limit kinds include per_occurrence, general_aggregate, combined_single_limit, other.',
         },
         source_document_name: {
           type: "string",
@@ -2276,22 +2344,27 @@ async function handleToolCall(
         throw new Error("Choose either policyId or a requirement source");
       if (!requirementsMode && !certificate.holderName)
         throw new Error("Missing certificate holder");
-      const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
-        orgId,
-        primaryPolicyId: policyId as Id<"policies"> | undefined,
-        ...certificate,
-        source: "mcp",
-        createdByUserId: userId,
-      });
+      const result = await ctx.runAction(
+        internal.certificates.generateBatchForOrg,
+        {
+          orgId,
+          primaryPolicyId: policyId as Id<"policies"> | undefined,
+          ...certificate,
+          source: "mcp",
+          createdByUserId: userId,
+        },
+      );
       return {
-        content: [{
-          type: "text",
-          text: JSON.stringify(
-            compatibleCertificateGenerationResponse(result, requirementsMode),
-            null,
-            2,
-          ),
-        }],
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              compatibleCertificateGenerationResponse(result, requirementsMode),
+              null,
+              2,
+            ),
+          },
+        ],
       };
     }
     case "list_threads": {
@@ -3522,7 +3595,8 @@ async function handlePolicyRestPost(ctx: ActionCtx, request: Request) {
         {
           error: {
             code: "bad_request",
-            message: "Use POST /api/v1/certificates/generate for requirement-source generation",
+            message:
+              "Use POST /api/v1/certificates/generate for requirement-source generation",
           },
         },
         400,
@@ -3540,19 +3614,28 @@ async function handlePolicyRestPost(ctx: ActionCtx, request: Request) {
       );
     }
 
-    const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
-      orgId: identity.orgId,
-      primaryPolicyId: policyId,
-      ...certificate,
-      source: "api",
-      createdByUserId: identity.userId,
-    });
-    return jsonResponse({
-      data: compatibleCertificateGenerationResponse(
-        result,
-        Boolean(certificate.requirementSourceDocumentId || certificate.requirementId),
-      ),
-    }, 201);
+    const result = await ctx.runAction(
+      internal.certificates.generateBatchForOrg,
+      {
+        orgId: identity.orgId,
+        primaryPolicyId: policyId,
+        ...certificate,
+        source: "api",
+        createdByUserId: identity.userId,
+      },
+    );
+    return jsonResponse(
+      {
+        data: compatibleCertificateGenerationResponse(
+          result,
+          Boolean(
+            certificate.requirementSourceDocumentId ||
+            certificate.requirementId,
+          ),
+        ),
+      },
+      201,
+    );
   } catch (e) {
     if (e instanceof Response) return e;
     return jsonResponse(
@@ -3620,15 +3703,23 @@ http.route({
           400,
         );
       }
-      const result = await ctx.runAction(internal.certificates.generateBatchForOrg, {
-        orgId: identity.orgId,
-        primaryPolicyId: policyId as Id<"policies"> | undefined,
-        ...certificate,
-        source: "api",
-        createdByUserId: identity.userId,
-      });
+      const result = await ctx.runAction(
+        internal.certificates.generateBatchForOrg,
+        {
+          orgId: identity.orgId,
+          primaryPolicyId: policyId as Id<"policies"> | undefined,
+          ...certificate,
+          source: "api",
+          createdByUserId: identity.userId,
+        },
+      );
       return jsonResponse(
-        { data: compatibleCertificateGenerationResponse(result, requirementsMode) },
+        {
+          data: compatibleCertificateGenerationResponse(
+            result,
+            requirementsMode,
+          ),
+        },
         201,
       );
     } catch (e) {
@@ -3864,7 +3955,9 @@ http.route({
               : undefined,
           limits: Array.isArray(body.limits) ? body.limits : undefined,
           maxDeductible: body.max_deductible ?? body.maxDeductible,
-          provisions: Array.isArray(body.provisions) ? body.provisions : undefined,
+          provisions: Array.isArray(body.provisions)
+            ? body.provisions
+            : undefined,
           requiredForms: Array.isArray(body.required_forms)
             ? body.required_forms
             : Array.isArray(body.requiredForms)

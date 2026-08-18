@@ -104,11 +104,19 @@ export const create = internalMutation({
       const now = dayjs().valueOf();
       await ctx.db.patch(existing._id, {
         actionTokenHash: await hashToken(actionToken),
-        actionTokenExpiresAt: dayjs(now).add(ACTION_TOKEN_TTL_DAYS, "day").valueOf(),
+        actionTokenExpiresAt: dayjs(now)
+          .add(ACTION_TOKEN_TTL_DAYS, "day")
+          .valueOf(),
         ...(existing.phase === "failed"
-          ? { phase: existing.providerMessageId ? "active" as const : "starting" as const }
+          ? {
+              phase: existing.providerMessageId
+                ? ("active" as const)
+                : ("starting" as const),
+            }
           : {}),
         error: undefined,
+        providerErrorCode: undefined,
+        retryable: undefined,
         updatedAt: now,
       });
       return {
@@ -124,7 +132,9 @@ export const create = internalMutation({
       revision: 0,
       renderVersion: 1,
       actionTokenHash: await hashToken(actionToken),
-      actionTokenExpiresAt: dayjs(now).add(ACTION_TOKEN_TTL_DAYS, "day").valueOf(),
+      actionTokenExpiresAt: dayjs(now)
+        .add(ACTION_TOKEN_TTL_DAYS, "day")
+        .valueOf(),
       createdAt: now,
       updatedAt: now,
     });
@@ -175,6 +185,8 @@ export const markActive = internalMutation({
       revision: row.revision + 1,
       lastPayloadHash: args.lastPayloadHash,
       error: undefined,
+      providerErrorCode: undefined,
+      retryable: undefined,
       updatedAt: dayjs().valueOf(),
     });
     return await ctx.db.get(row._id);
@@ -196,6 +208,8 @@ export const markFinal = internalMutation({
       revision: row.revision + 1,
       lastPayloadHash: args.lastPayloadHash,
       error: undefined,
+      providerErrorCode: undefined,
+      retryable: undefined,
       updatedAt: dayjs().valueOf(),
     });
     await ctx.db.patch(row.threadMessageId, {
@@ -209,13 +223,20 @@ export const markFinal = internalMutation({
 });
 
 export const markFailed = internalMutation({
-  args: { id: v.id("slackMessagePresentations"), error: v.string() },
+  args: {
+    id: v.id("slackMessagePresentations"),
+    error: v.string(),
+    providerErrorCode: v.optional(v.string()),
+    retryable: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row) return;
     await ctx.db.patch(row._id, {
       phase: "failed",
       error: args.error,
+      providerErrorCode: args.providerErrorCode,
+      retryable: args.retryable,
       updatedAt: dayjs().valueOf(),
     });
   },
@@ -236,6 +257,8 @@ export const markPlaintextFallback = internalMutation({
       revision: row.revision + 1,
       actionTokenExpiresAt: now,
       error: undefined,
+      providerErrorCode: undefined,
+      retryable: undefined,
       updatedAt: now,
     });
     await ctx.db.patch(row.threadMessageId, {
@@ -313,7 +336,11 @@ export const claimInteraction = internalMutation({
 export const completeInteraction = internalMutation({
   args: {
     id: v.id("slackInteractionEvents"),
-    status: v.union(v.literal("completed"), v.literal("ignored"), v.literal("failed")),
+    status: v.union(
+      v.literal("completed"),
+      v.literal("ignored"),
+      v.literal("failed"),
+    ),
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

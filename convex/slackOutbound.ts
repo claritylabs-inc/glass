@@ -4,9 +4,16 @@ import {
   internalMutation,
   internalQuery,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { slackRetryDelayMs } from "./lib/slackRetry";
+import {
+  isSlackBindingReachable,
+  isSlackConnectionHealthy,
+  slackBindingUnavailableReason,
+  slackConnectionUnavailableReason,
+} from "./lib/slackAvailability";
 
 const outboundAttachmentValidator = v.object({
   fileId: v.id("_storage"),
@@ -30,7 +37,9 @@ async function syncThreadMessageDelivery(
     )
     .collect();
   const terminalFailure = sends.find(
-    (send) => send.status === "failed" && send.nextAttemptAt === undefined,
+    (send) =>
+      send.status === "blocked" ||
+      (send.status === "failed" && send.nextAttemptAt === undefined),
   );
   const status = terminalFailure
     ? ("failed" as const)
@@ -41,6 +50,72 @@ async function syncThreadMessageDelivery(
     slackDeliveryStatus: status,
     slackDeliveryError: terminalFailure?.error,
   });
+}
+
+async function resolveSendTarget(
+  ctx: QueryCtx | MutationCtx,
+  connectionId: Id<"slackWorkspaceConnections">,
+  channelId: string,
+) {
+  const connection = await ctx.db.get(connectionId);
+  if (!connection) return null;
+  const binding =
+    (await ctx.db
+      .query("slackChannelBindings")
+      .withIndex("by_connectionId_and_status", (q) =>
+        q.eq("connectionId", connection._id).eq("status", "active"),
+      )
+      .first()) ??
+    (await ctx.db
+      .query("slackChannelBindings")
+      .withIndex("by_connectionId_and_status", (q) =>
+        q.eq("connectionId", connection._id).eq("status", "unavailable"),
+      )
+      .first());
+  const hostMatch = Boolean(
+    binding &&
+    (binding.hostChannelId === channelId ||
+      binding.previousHostChannelId === channelId),
+  );
+  const customerMatch = Boolean(
+    binding &&
+    (binding.customerChannelId === channelId ||
+      binding.previousCustomerChannelId === channelId),
+  );
+  const resolvedChannelId = hostMatch
+    ? binding!.hostChannelId
+    : customerMatch
+      ? binding!.customerChannelId!
+      : channelId;
+  const connectionReason = slackConnectionUnavailableReason(connection);
+  const bindingReason = binding
+    ? slackBindingUnavailableReason(binding)
+    : undefined;
+  let membershipReason: string | undefined;
+  if (!hostMatch && !customerMatch && !resolvedChannelId.startsWith("D")) {
+    const membership = await ctx.db
+      .query("slackChannelMemberships")
+      .withIndex("by_connectionId_and_channelId", (q) =>
+        q.eq("connectionId", connection._id).eq("channelId", resolvedChannelId),
+      )
+      .first();
+    if (!membership || membership.status !== "active") {
+      membershipReason = "Slack channel membership is unavailable";
+    }
+  }
+  return {
+    connection,
+    binding,
+    channelId: resolvedChannelId,
+    teamId: hostMatch ? binding!.hostTeamId : connection.teamId,
+    available:
+      isSlackConnectionHealthy(connection) &&
+      !bindingReason &&
+      (!hostMatch && !customerMatch
+        ? !membershipReason
+        : isSlackBindingReachable(binding)),
+    unavailableReason: connectionReason ?? bindingReason ?? membershipReason,
+  };
 }
 
 export const claim = internalMutation({
@@ -59,11 +134,7 @@ export const claim = internalMutation({
   },
   handler: async (ctx, args) => {
     const connection = await ctx.db.get(args.connectionId);
-    if (
-      !connection ||
-      connection.status !== "active" ||
-      connection.clientOrgId !== args.orgId
-    ) {
+    if (!connection || connection.clientOrgId !== args.orgId) {
       throw new Error("Slack connection does not belong to the organization");
     }
     const thread = args.threadId ? await ctx.db.get(args.threadId) : null;
@@ -78,20 +149,20 @@ export const claim = internalMutation({
       throw new Error("Slack thread does not exist");
     }
     if (thread) {
-      const binding = await ctx.db
-        .query("slackChannelBindings")
-        .withIndex("by_connectionId_and_status", (q) =>
-          q.eq("connectionId", args.connectionId).eq("status", "active"),
-        )
-        .first();
+      const target = await resolveSendTarget(
+        ctx,
+        args.connectionId,
+        args.channelId,
+      );
+      const binding = target?.binding;
       const channelMatches =
         thread.slackChannelId === args.channelId ||
         Boolean(
           binding &&
-            ((thread.slackChannelId === binding.customerChannelId &&
-              args.channelId === binding.hostChannelId) ||
-              (thread.slackChannelId === binding.hostChannelId &&
-                args.channelId === binding.customerChannelId)),
+          ((thread.slackChannelId === binding.customerChannelId &&
+            args.channelId === binding.hostChannelId) ||
+            (thread.slackChannelId === binding.hostChannelId &&
+              args.channelId === binding.customerChannelId)),
         );
       if (!channelMatches) {
         throw new Error("Slack send target does not match the thread channel");
@@ -101,7 +172,9 @@ export const claim = internalMutation({
           throw new Error("Slack DM replies must be sent at the top level");
         }
       } else if (thread.slackThreadTs !== args.threadTs) {
-        throw new Error("Slack send target does not match the thread timestamp");
+        throw new Error(
+          "Slack send target does not match the thread timestamp",
+        );
       }
     }
     if (args.threadMessageId) {
@@ -132,9 +205,55 @@ export const claim = internalMutation({
       .first();
     const now = dayjs().valueOf();
     if (existing) {
-      if (existing.status === "sent" || existing.attemptCount >= 3) {
+      if (
+        existing.status === "sent" ||
+        existing.status === "blocked" ||
+        (existing.status === "failed" &&
+          existing.nextAttemptAt === undefined) ||
+        existing.attemptCount >= 3
+      ) {
         return { send: false, row: existing };
       }
+    }
+    const target = await resolveSendTarget(
+      ctx,
+      args.connectionId,
+      args.channelId,
+    );
+    if (!target?.available) {
+      const reason =
+        target?.unavailableReason ?? "Slack delivery target is unavailable";
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          status: "blocked",
+          error: reason,
+          failureReason: "target_unavailable",
+          retryable: false,
+          nextAttemptAt: undefined,
+          updatedAt: now,
+        });
+        await syncThreadMessageDelivery(ctx, existing.threadMessageId);
+        return {
+          send: false,
+          row: { ...existing, status: "blocked" as const, error: reason },
+        };
+      }
+      const id = await ctx.db.insert("slackOutboundSends", {
+        ...args,
+        status: "blocked",
+        error: reason,
+        failureReason: "target_unavailable",
+        retryable: false,
+        attemptCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const row = await ctx.db.get(id);
+      if (!row) throw new Error("Could not create Slack outbound ledger row");
+      await syncThreadMessageDelivery(ctx, row.threadMessageId);
+      return { send: false, row };
+    }
+    if (existing) {
       if (
         existing.status === "sending" &&
         now - existing.updatedAt < STALE_SENDING_MS
@@ -144,6 +263,9 @@ export const claim = internalMutation({
       await ctx.db.patch(existing._id, {
         status: "sending",
         error: undefined,
+        providerErrorCode: undefined,
+        failureReason: undefined,
+        retryable: undefined,
         attemptCount: existing.attemptCount + 1,
         nextAttemptAt: undefined,
         updatedAt: now,
@@ -196,6 +318,8 @@ export const markFailed = internalMutation({
     id: v.id("slackOutboundSends"),
     error: v.string(),
     retry: v.boolean(),
+    providerErrorCode: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
@@ -203,15 +327,15 @@ export const markFailed = internalMutation({
     const retry = args.retry && row.attemptCount < 3;
     const nextAttemptAt = retry
       ? dayjs()
-          .add(
-            slackRetryDelayMs(args.error, row.attemptCount),
-            "millisecond",
-          )
+          .add(slackRetryDelayMs(args.error, row.attemptCount), "millisecond")
           .valueOf()
       : undefined;
     await ctx.db.patch(row._id, {
       status: "failed",
       error: args.error,
+      providerErrorCode: args.providerErrorCode,
+      failureReason: args.failureReason,
+      retryable: retry,
       nextAttemptAt,
       updatedAt: dayjs().valueOf(),
     });
@@ -231,20 +355,6 @@ export const getSendTarget = internalQuery({
     channelId: v.string(),
   },
   handler: async (ctx, args) => {
-    const connection = await ctx.db.get(args.connectionId);
-    if (!connection) return null;
-    const binding = await ctx.db
-      .query("slackChannelBindings")
-      .withIndex("by_connectionId_and_status", (q) =>
-        q.eq("connectionId", connection._id).eq("status", "active"),
-      )
-      .first();
-    return {
-      connection,
-      teamId:
-        binding?.hostChannelId === args.channelId
-          ? binding.hostTeamId
-          : connection.teamId,
-    };
+    return await resolveSendTarget(ctx, args.connectionId, args.channelId);
   },
 });

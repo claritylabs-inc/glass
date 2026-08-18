@@ -8,6 +8,26 @@ describe("Slack setup row status", () => {
         connected: false,
         needsUpdate: false,
         setupStatus: null,
+        enabled: true,
+        healthStatus: "revoked" as const,
+      },
+      expected: { label: "Reinstall required", tone: "danger" },
+    },
+    {
+      input: {
+        connected: true,
+        needsUpdate: false,
+        setupStatus: null,
+        enabled: true,
+        healthStatus: "channel_unavailable" as const,
+      },
+      expected: { label: "Channel unavailable", tone: "danger" },
+    },
+    {
+      input: {
+        connected: false,
+        needsUpdate: false,
+        setupStatus: null,
         enabled: false,
       },
       expected: { label: "Not connected", tone: "neutral" },
@@ -48,7 +68,10 @@ describe("Slack setup row status", () => {
       },
       expected: { label: "Off", tone: "neutral" },
     },
-  ])("returns $expected.label with the required precedence", ({ input, expected }) => {
-    expect(resolveSlackRowStatus(input)).toEqual(expected);
-  });
+  ])(
+    "returns $expected.label with the required precedence",
+    ({ input, expected }) => {
+      expect(resolveSlackRowStatus(input)).toEqual(expected);
+    },
+  );
 });

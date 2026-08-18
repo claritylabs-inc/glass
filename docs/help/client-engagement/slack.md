@@ -39,6 +39,22 @@ channels from the Glass settings page. For a private or Slack Connect channel,
 a Slack member must add the Glass app inside Slack; Glass cannot join it on its
 own.
 
+## Recover a disconnected workspace or channel
+
+Glass shows Slack connection health, the last verification time, and an
+actionable reason in **Settings → Agent → Channels → Slack**. Client admins and
+Glass operators can choose **Reinstall Slack** after an uninstall or bot-token
+revocation. Reinstall into the same retained workspace; Glass preserves the
+canonical support history, channel choices, and automation preferences while
+delivery is paused.
+
+If the primary Slack Connect channel is archived, deleted, or unshared, Glass
+marks it unavailable and stops replies, alerts, and document delivery to that
+destination. A Glass operator must verify the same channel or use **Rebind
+primary channel** for a replacement. Glass never selects a replacement merely
+because its name matches. Ordinary members and operators viewing through
+impersonation can inspect health but cannot run recovery actions.
+
 ## Where to talk to Glass
 
 | Place                      | How to start                                | What happens next                                                                   |

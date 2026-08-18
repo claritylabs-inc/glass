@@ -1,3 +1,5 @@
+import dayjs from "dayjs";
+
 export type SlackInboundAttachment = {
   providerFileId: string;
   filename: string;
@@ -22,6 +24,26 @@ export type SlackInboundPayload = {
   isBotEcho: boolean;
 };
 
+export type SlackLifecyclePayload = {
+  eventKey: string;
+  providerEventId?: string;
+  eventType: string;
+  teamId?: string;
+  authorizationTeamId?: string;
+  apiAppId?: string;
+  botUserIds?: string[];
+  channelId?: string;
+  oldChannelId?: string;
+  newChannelId?: string;
+  channelName?: string;
+  connectedTeamId?: string;
+  previouslyConnectedTeamId?: string;
+  isExtShared?: boolean;
+  payloadHash: string;
+  eventAt: number;
+  receivedAt: number;
+};
+
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -38,6 +60,111 @@ function number(value: unknown): number | undefined {
     : undefined;
 }
 
+function boolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.flatMap((candidate) => string(candidate) ?? []);
+  return values.length ? Array.from(new Set(values)) : undefined;
+}
+
+const SLACK_CHANNEL_LIFECYCLE_TYPES = new Set([
+  "channel_archive",
+  "channel_deleted",
+  "channel_id_changed",
+  "channel_rename",
+  "channel_shared",
+  "channel_unarchive",
+  "channel_unshared",
+  "group_archive",
+  "group_deleted",
+  "group_rename",
+  "group_unarchive",
+]);
+
+export function parseSlackLifecyclePayload(
+  value: unknown,
+  payloadHash: string,
+  receivedAt = dayjs().valueOf(),
+): SlackLifecyclePayload | null {
+  const envelope = record(value);
+  const event = record(envelope?.event);
+  if (envelope?.type !== "event_callback" || !event) return null;
+
+  const outerType = string(event.type)?.toLowerCase();
+  const subtype = string(event.subtype)?.toLowerCase();
+  if (!outerType || outerType === "app_mention") return null;
+  const eventType =
+    outerType === "message" &&
+    subtype &&
+    SLACK_CHANNEL_LIFECYCLE_TYPES.has(subtype)
+      ? subtype
+      : outerType;
+  if (outerType === "message" && eventType === outerType) return null;
+
+  const channel = record(event.channel);
+  const channelId = string(channel?.id ?? event.channel);
+  const channelName = string(channel?.name ?? event.name);
+  const tokens = record(event.tokens);
+  const authorization = Array.isArray(envelope.authorizations)
+    ? record(envelope.authorizations[0])
+    : null;
+  const teamId = string(envelope.team_id);
+  const providerEventId = string(envelope.event_id);
+  const eventAtSeconds = number(envelope.event_time);
+  const eventAt = eventAtSeconds
+    ? dayjs.unix(eventAtSeconds).valueOf()
+    : receivedAt;
+  const oldChannelId = string(event.old_channel_id);
+  const newChannelId = string(event.new_channel_id);
+  const stableParts = [
+    teamId,
+    eventType,
+    string(event.event_ts),
+    channelId,
+    oldChannelId,
+    newChannelId,
+  ].filter(Boolean);
+
+  return {
+    eventKey: providerEventId
+      ? `slack:${providerEventId}`
+      : `slack:${stableParts.join(":")}:${payloadHash}`,
+    ...(providerEventId ? { providerEventId } : {}),
+    eventType,
+    ...(teamId ? { teamId } : {}),
+    ...(string(authorization?.team_id)
+      ? { authorizationTeamId: string(authorization?.team_id) }
+      : {}),
+    ...(string(envelope.api_app_id)
+      ? { apiAppId: string(envelope.api_app_id) }
+      : {}),
+    ...(stringArray(tokens?.bot)
+      ? { botUserIds: stringArray(tokens?.bot) }
+      : {}),
+    ...(channelId ? { channelId } : {}),
+    ...(oldChannelId ? { oldChannelId } : {}),
+    ...(newChannelId ? { newChannelId } : {}),
+    ...(channelName ? { channelName } : {}),
+    ...(string(event.connected_team_id)
+      ? { connectedTeamId: string(event.connected_team_id) }
+      : {}),
+    ...(string(event.previously_connected_team_id)
+      ? {
+          previouslyConnectedTeamId: string(event.previously_connected_team_id),
+        }
+      : {}),
+    ...(boolean(event.is_ext_shared) === undefined
+      ? {}
+      : { isExtShared: boolean(event.is_ext_shared) }),
+    payloadHash,
+    eventAt,
+    receivedAt,
+  };
+}
+
 function slackFiles(value: unknown): SlackInboundAttachment[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const files = value.flatMap((candidate) => {
@@ -45,12 +172,14 @@ function slackFiles(value: unknown): SlackInboundAttachment[] | undefined {
     const id = string(file?.id);
     if (!id) return [];
     const size = number(file?.size);
-    return [{
-      providerFileId: id,
-      filename: string(file?.name ?? file?.title) ?? "Slack attachment",
-      contentType: string(file?.mimetype) ?? "application/octet-stream",
-      ...(size === undefined ? {} : { size }),
-    }];
+    return [
+      {
+        providerFileId: id,
+        filename: string(file?.name ?? file?.title) ?? "Slack attachment",
+        contentType: string(file?.mimetype) ?? "application/octet-stream",
+        ...(size === undefined ? {} : { size }),
+      },
+    ];
   });
   return files.length ? files : undefined;
 }
@@ -85,12 +214,12 @@ export function parseSlackEventPayload(
   const teamId = string(envelope?.team_id ?? outerEvent?.team);
   const channelId = string(outerEvent?.channel ?? message?.channel);
   const messageTs = string(
-    isDelete ? outerEvent?.deleted_ts ?? message?.ts : message?.ts,
+    isDelete ? (outerEvent?.deleted_ts ?? message?.ts) : message?.ts,
   );
   const senderUserId = string(message?.user);
   if (!teamId || !channelId || !messageTs || !senderUserId) return null;
 
-  const content = isDelete ? "" : string(message?.text) ?? "";
+  const content = isDelete ? "" : (string(message?.text) ?? "");
   const attachments = isDelete ? undefined : slackFiles(message?.files);
   if (!isDelete && !content && !attachments?.length) return null;
 
@@ -119,7 +248,7 @@ export function parseSlackEventPayload(
     // as its stable Glass conversation key and send responses at the top level.
     threadTs: isDirectMessage
       ? channelId
-      : string(message?.thread_ts) ?? messageTs,
+      : (string(message?.thread_ts) ?? messageTs),
     messageTs,
     ...(string(message?.user_team ?? outerEvent?.user_team)
       ? { senderTeamId: string(message?.user_team ?? outerEvent?.user_team) }

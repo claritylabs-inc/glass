@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { parseSlackEventPayload } from "./slackPayload";
+import {
+  parseSlackEventPayload,
+  parseSlackLifecyclePayload,
+} from "./slackPayload";
 
 function payload(overrides: Record<string, unknown> = {}) {
   return {
@@ -22,6 +25,55 @@ function payload(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Slack webhook payload narrowing", () => {
+  test("normalizes installation and channel lifecycle identity", () => {
+    expect(
+      parseSlackLifecyclePayload(
+        {
+          type: "event_callback",
+          team_id: "T-CUSTOMER",
+          api_app_id: "A-GLASS",
+          event_id: "Ev-revoked",
+          event_time: 1_800_000_000,
+          authorizations: [{ team_id: "T-CUSTOMER" }],
+          event: {
+            type: "tokens_revoked",
+            tokens: { bot: ["U-GLASS"], oauth: ["U-HUMAN"] },
+          },
+        },
+        "hash",
+        1,
+      ),
+    ).toMatchObject({
+      eventKey: "slack:Ev-revoked",
+      eventType: "tokens_revoked",
+      teamId: "T-CUSTOMER",
+      authorizationTeamId: "T-CUSTOMER",
+      apiAppId: "A-GLASS",
+      botUserIds: ["U-GLASS"],
+      eventAt: 1_800_000_000_000,
+    });
+    expect(
+      parseSlackLifecyclePayload(
+        {
+          type: "event_callback",
+          team_id: "T-CUSTOMER",
+          event: {
+            type: "channel_id_changed",
+            old_channel_id: "C-OLD",
+            new_channel_id: "C-NEW",
+          },
+        },
+        "stable-hash",
+        2,
+      ),
+    ).toMatchObject({
+      eventType: "channel_id_changed",
+      oldChannelId: "C-OLD",
+      newChannelId: "C-NEW",
+      payloadHash: "stable-hash",
+    });
+  });
+
   test("normalizes mentions, threads, and edits", () => {
     expect(parseSlackEventPayload(payload())).toMatchObject({
       eventKey: "T-CUSTOMER:C-SERVICE:1800000000.100:message",
@@ -37,17 +89,19 @@ describe("Slack webhook payload narrowing", () => {
       isBotEcho: false,
     });
     expect(
-      parseSlackEventPayload(payload({
-        type: "message",
-        subtype: "message_changed",
-        message: {
-          ts: "1800000000.100",
-          thread_ts: "1800000000.000",
-          user: "U-CUSTOMER",
-          user_team: "T-CUSTOMER",
-          text: "edited",
-        },
-      })),
+      parseSlackEventPayload(
+        payload({
+          type: "message",
+          subtype: "message_changed",
+          message: {
+            ts: "1800000000.100",
+            thread_ts: "1800000000.000",
+            user: "U-CUSTOMER",
+            user_team: "T-CUSTOMER",
+            text: "edited",
+          },
+        }),
+      ),
     ).toMatchObject({ eventType: "edit" });
 
     const serialized = payload();
@@ -98,8 +152,7 @@ describe("Slack webhook payload narrowing", () => {
         }),
       ),
     ).toMatchObject({
-      eventKey:
-        "T-CUSTOMER:C-SERVICE:1800000000.100:delete:1800000000.100",
+      eventKey: "T-CUSTOMER:C-SERVICE:1800000000.100:delete:1800000000.100",
       eventType: "delete",
       content: "",
       messageTs: "1800000000.100",

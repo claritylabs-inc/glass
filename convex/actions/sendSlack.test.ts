@@ -37,6 +37,18 @@ describe("sendSlack", () => {
         createdAt: 1,
         updatedAt: 1,
       });
+      await ctx.db.insert("slackChannelMemberships", {
+        connectionId,
+        clientOrgId: orgId,
+        channelId: "C-PRIMARY",
+        channelName: "primary",
+        isPrivate: false,
+        isShared: false,
+        status: "active",
+        lastSyncedAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
       return { orgId, connectionId };
     });
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -89,6 +101,18 @@ describe("sendSlack", () => {
         status: "active",
         serviceUserId,
         thirdPartyVisibilityAcknowledged: true,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await ctx.db.insert("slackChannelMemberships", {
+        connectionId,
+        clientOrgId: orgId,
+        channelId: "C-PRIMARY",
+        channelName: "primary",
+        isPrivate: false,
+        isShared: false,
+        status: "active",
+        lastSyncedAt: 1,
         createdAt: 1,
         updatedAt: 1,
       });

@@ -2,12 +2,20 @@ import { readFileSync } from "node:fs";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const CHECK_ATTEMPTS = Number(process.env.AGENT_HEALTH_ATTEMPTS ?? "3");
-const RETRY_DELAY_MS = Number(process.env.AGENT_HEALTH_RETRY_DELAY_MS ?? "10000");
-const DEPLOYMENTS = JSON.parse(readFileSync(new URL("../config/deployments.json", import.meta.url), "utf8"));
-const EXTRACTION_WORKER_PACKAGE = JSON.parse(
-  readFileSync(new URL("../extraction-worker/package.json", import.meta.url), "utf8"),
+const RETRY_DELAY_MS = Number(
+  process.env.AGENT_HEALTH_RETRY_DELAY_MS ?? "10000",
 );
-const EXPECTED_CL_SDK_VERSION = EXTRACTION_WORKER_PACKAGE.dependencies?.["@claritylabs/cl-sdk"];
+const DEPLOYMENTS = JSON.parse(
+  readFileSync(new URL("../config/deployments.json", import.meta.url), "utf8"),
+);
+const EXTRACTION_WORKER_PACKAGE = JSON.parse(
+  readFileSync(
+    new URL("../extraction-worker/package.json", import.meta.url),
+    "utf8",
+  ),
+);
+const EXPECTED_CL_SDK_VERSION =
+  EXTRACTION_WORKER_PACKAGE.dependencies?.["@claritylabs/cl-sdk"];
 
 function argValue(name) {
   const prefix = `--${name}=`;
@@ -35,9 +43,10 @@ if (!deployment) {
 
 function envOrDefault(envName, defaultValue, label) {
   const rawValue = envName ? process.env[envName] : undefined;
-  const value = typeof rawValue === "string" && rawValue.trim() !== ""
-    ? rawValue.trim()
-    : undefined;
+  const value =
+    typeof rawValue === "string" && rawValue.trim() !== ""
+      ? rawValue.trim()
+      : undefined;
   const resolved = value ?? defaultValue;
   if (!resolved) {
     throw new Error(
@@ -113,7 +122,9 @@ function validateGlassEnv(payload) {
 }
 
 function normalizeVersionSpec(value) {
-  return typeof value === "string" ? value.trim().replace(/^[~^=v]+/, "") : undefined;
+  return typeof value === "string"
+    ? value.trim().replace(/^[~^=v]+/, "")
+    : undefined;
 }
 
 function requireString(value, label) {
@@ -126,36 +137,51 @@ function requireString(value, label) {
 function assertSameVersion(label, actual, expected) {
   const normalizedActual = normalizeVersionSpec(actual);
   const normalizedExpected = normalizeVersionSpec(expected);
-  if (!normalizedActual || !normalizedExpected || normalizedActual !== normalizedExpected) {
-    throw new Error(`${label} expected ${String(expected)} got ${String(actual)}`);
+  if (
+    !normalizedActual ||
+    !normalizedExpected ||
+    normalizedActual !== normalizedExpected
+  ) {
+    throw new Error(
+      `${label} expected ${String(expected)} got ${String(actual)}`,
+    );
   }
 }
 
 let convexAgentPayload;
 
 const checks = [
-  ...(urls.clRouterHealth ? [{
-    name: "cl-router",
-    url: urls.clRouterHealth,
-    validate(payload) {
-      if (payload.status !== "ok" || payload.database !== true) {
-        throw new Error(
-          `reported status=${String(payload.status)} database=${String(payload.database)}`,
-        );
-      }
-      if (payload.environment !== deployment.glassEnv) {
-        throw new Error(
-          `environment expected ${deployment.glassEnv} got ${String(payload.environment)}`,
-        );
-      }
-      if (!(typeof payload.policyVersion === "string" || payload.policyVersion === null)) {
-        throw new Error("policyVersion is invalid");
-      }
-      if (typeof payload.frozen !== "boolean") {
-        throw new Error("frozen state is invalid");
-      }
-    },
-  }] : []),
+  ...(urls.clRouterHealth
+    ? [
+        {
+          name: "cl-router",
+          url: urls.clRouterHealth,
+          validate(payload) {
+            if (payload.status !== "ok" || payload.database !== true) {
+              throw new Error(
+                `reported status=${String(payload.status)} database=${String(payload.database)}`,
+              );
+            }
+            if (payload.environment !== deployment.glassEnv) {
+              throw new Error(
+                `environment expected ${deployment.glassEnv} got ${String(payload.environment)}`,
+              );
+            }
+            if (
+              !(
+                typeof payload.policyVersion === "string" ||
+                payload.policyVersion === null
+              )
+            ) {
+              throw new Error("policyVersion is invalid");
+            }
+            if (typeof payload.frozen !== "boolean") {
+              throw new Error("frozen state is invalid");
+            }
+          },
+        },
+      ]
+    : []),
   {
     name: "Convex agent configuration",
     url: urls.convexAgentHealth,
@@ -181,10 +207,15 @@ const checks = [
       }
       const extractionWorker = payload.extractionWorker;
       if (!extractionWorker || typeof extractionWorker !== "object") {
-        throw new Error("extractionWorker compatibility config missing from Convex health");
+        throw new Error(
+          "extractionWorker compatibility config missing from Convex health",
+        );
       }
       if (deployment.workers?.extractionProtocol) {
-        if (extractionWorker.expectedProtocolVersion !== deployment.workers.extractionProtocol) {
+        if (
+          extractionWorker.expectedProtocolVersion !==
+          deployment.workers.extractionProtocol
+        ) {
           throw new Error(
             `extractionWorker.expectedProtocolVersion expected ${deployment.workers.extractionProtocol} got ${String(extractionWorker.expectedProtocolVersion)}`,
           );
@@ -226,13 +257,19 @@ const checks = [
       };
       const failures = Object.entries(expected)
         .filter(([key, value]) => payload[key] !== value)
-        .map(([key, value]) => `${key} expected ${String(value)} got ${String(payload[key])}`);
+        .map(
+          ([key, value]) =>
+            `${key} expected ${String(value)} got ${String(payload[key])}`,
+        );
       if (failures.length > 0) {
         throw new Error(failures.join("; "));
       }
       validateGlassEnv(payload);
       for (const port of deployment.imessage.requiredHttpPorts ?? []) {
-        if (!Array.isArray(payload.httpPorts) || !payload.httpPorts.includes(port)) {
+        if (
+          !Array.isArray(payload.httpPorts) ||
+          !payload.httpPorts.includes(port)
+        ) {
           throw new Error(`worker is not listening on required port ${port}`);
         }
       }
@@ -247,14 +284,22 @@ const checks = [
       }
       validateGlassEnv(payload);
       const expectedProtocol = deployment.workers?.extractionProtocol;
-      if (expectedProtocol && payload.workerProtocolVersion !== expectedProtocol) {
+      if (
+        expectedProtocol &&
+        payload.workerProtocolVersion !== expectedProtocol
+      ) {
         throw new Error(
           `unexpected protocol ${String(payload.workerProtocolVersion)}; expected ${expectedProtocol}`,
         );
       }
       const convexExtractionWorker = convexAgentPayload?.extractionWorker;
-      if (!convexExtractionWorker || typeof convexExtractionWorker !== "object") {
-        throw new Error("Convex extraction worker compatibility config unavailable");
+      if (
+        !convexExtractionWorker ||
+        typeof convexExtractionWorker !== "object"
+      ) {
+        throw new Error(
+          "Convex extraction worker compatibility config unavailable",
+        );
       }
       const convexExpectedProtocol = requireString(
         convexExtractionWorker.expectedProtocolVersion,
@@ -283,36 +328,44 @@ const checks = [
       }
     },
   },
-  ...(urls.slackWorkerHealth ? [{
-    name: "Slack worker",
-    url: urls.slackWorkerHealth,
-    validate(payload) {
-      const expected = {
-        ok: true,
-        service: "glass-slack-worker",
-        mode: deployment.slack.mode,
-        workerSecretConfigured: true,
-        tokenBrokerConfigured: true,
-        clarityTeamConfigured: true,
-        outboundEnabled: true,
-        actorResolutionEnabled: true,
-        connectProvisioningEnabled: true,
-        channelInventoryEnabled: true,
-        publicChannelJoinEnabled: true,
-        blockKitEnabled: true,
-        messageUpdatesEnabled: true,
-        agentStatusEnabled: true,
-        streamingEnabled: true,
-        interactivityResponsesEnabled: true,
-        feedbackModalsEnabled: true,
-      };
-      const failures = Object.entries(expected)
-        .filter(([key, value]) => payload[key] !== value)
-        .map(([key, value]) => `${key} expected ${String(value)} got ${String(payload[key])}`);
-      if (failures.length > 0) throw new Error(failures.join("; "));
-      validateGlassEnv(payload);
-    },
-  }] : []),
+  ...(urls.slackWorkerHealth
+    ? [
+        {
+          name: "Slack worker",
+          url: urls.slackWorkerHealth,
+          validate(payload) {
+            const expected = {
+              ok: true,
+              service: "glass-slack-worker",
+              mode: deployment.slack.mode,
+              workerSecretConfigured: true,
+              tokenBrokerConfigured: true,
+              clarityTeamConfigured: true,
+              outboundEnabled: true,
+              actorResolutionEnabled: true,
+              connectProvisioningEnabled: true,
+              channelInventoryEnabled: true,
+              publicChannelJoinEnabled: true,
+              blockKitEnabled: true,
+              messageUpdatesEnabled: true,
+              agentStatusEnabled: true,
+              streamingEnabled: true,
+              interactivityResponsesEnabled: true,
+              feedbackModalsEnabled: true,
+              reconciliationEnabled: true,
+            };
+            const failures = Object.entries(expected)
+              .filter(([key, value]) => payload[key] !== value)
+              .map(
+                ([key, value]) =>
+                  `${key} expected ${String(value)} got ${String(payload[key])}`,
+              );
+            if (failures.length > 0) throw new Error(failures.join("; "));
+            validateGlassEnv(payload);
+          },
+        },
+      ]
+    : []),
 ];
 
 async function fetchJson(check) {
@@ -339,9 +392,8 @@ function wait(ms) {
 
 async function runCheck(check) {
   let lastError;
-  const attempts = Number.isInteger(CHECK_ATTEMPTS) && CHECK_ATTEMPTS > 0
-    ? CHECK_ATTEMPTS
-    : 1;
+  const attempts =
+    Number.isInteger(CHECK_ATTEMPTS) && CHECK_ATTEMPTS > 0 ? CHECK_ATTEMPTS : 1;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const payload = await fetchJson(check);

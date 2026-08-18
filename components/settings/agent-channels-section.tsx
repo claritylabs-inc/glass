@@ -32,6 +32,10 @@ import { FormSection } from "@/components/ui/form-section";
 import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
 import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+} from "@/components/ui/operational-panel";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -41,8 +45,9 @@ import {
 import { StatusTag, type StatusTagTone } from "@/components/ui/status-tag";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { formatDisplayDate } from "@/lib/date-format";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { openOAuthTab } from "@/lib/oauth-tab";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
@@ -140,7 +145,9 @@ function ChannelCard({
     <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-popover px-4 py-3">
       <div>
         <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
-        <p className={`mt-0.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
+        <p
+          className={`mt-0.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}
+        >
           {description}
         </p>
       </div>
@@ -179,7 +186,9 @@ function ChannelRow({
         <span className={`block text-foreground ${typeStyle("body.medium")}`}>
           {title}
         </span>
-        <span className={`mt-0.5 block text-muted-foreground/60 ${typeStyle("caption.default")}`}>
+        <span
+          className={`mt-0.5 block text-muted-foreground/60 ${typeStyle("caption.default")}`}
+        >
           {description}
         </span>
       </span>
@@ -318,7 +327,9 @@ function AgentEmailAddressField({
               autoCapitalize="off"
               autoCorrect="off"
             />
-            <span className={`flex shrink-0 items-center border-l border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
+            <span
+              className={`flex shrink-0 items-center border-l border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}
+            >
               @{agentDomain}
             </span>
           </div>
@@ -376,8 +387,12 @@ function SetupHeader({ step }: { step: SlackSetupStep }) {
       <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
         Step {stepIndex + 1} of {SLACK_SETUP_STEPS.length}
       </p>
-      <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>{current.title}</h2>
-      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>{current.description}</p>
+      <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+        {current.title}
+      </h2>
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+        {current.description}
+      </p>
     </div>
   );
 }
@@ -520,11 +535,9 @@ export function AgentChannelsSection({
     isOperator ? { operatorClientOrgId: clientOrgId } : "skip",
   );
   const result = isOperator ? operatorResult : customerResult;
-  const canEdit =
-    isOperator ||
-    (currentOrg?.orgId === clientOrgId &&
-      currentOrg.orgType === "client" &&
-      currentOrg.role === "admin");
+  const canEdit = Boolean(result?.permissions.canManage);
+  const canRecoverSlack = Boolean(result?.permissions.canRecover);
+  const canDisconnectSlack = Boolean(result?.permissions.canDisconnect);
 
   const update = useMutation(api.agentChannels.update);
   const updateForOperator = useMutation(api.agentChannels.updateForOperator);
@@ -564,6 +577,7 @@ export function AgentChannelsSection({
   const [manualChannelName, setManualChannelName] = useState("");
 
   const connection = result?.connection;
+  const slackHealth = result?.slackHealth;
   const agentEmailAddress = result?.agentEmailAddress;
   const supportChannel = result?.supportChannel ?? result?.primaryChannel;
   const joinedChannels = result?.joinedChannels ?? [];
@@ -576,8 +590,13 @@ export function AgentChannelsSection({
   const setupInProgress = operatorSetup?.status === "in_progress";
   const slackNeedsReinstall =
     !!connection &&
-    missingSlackCustomerScopes(connection.grantedScopes).length > 0;
-  const slackReady = !!connection && !slackNeedsReinstall;
+    (missingSlackCustomerScopes(connection.grantedScopes).length > 0 ||
+      slackHealth?.status === "revoked" ||
+      slackHealth?.status === "disconnected");
+  const slackReady =
+    connection?.status === "active" &&
+    slackHealth?.status !== "degraded" &&
+    !slackNeedsReinstall;
   const isMockSlack = result?.slackMode === "mock";
   const automaticChannel = connection
     ? resolveSlackAutomaticChannel(connection, supportChannel)
@@ -692,6 +711,40 @@ export function AgentChannelsSection({
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(error, "Slack setup could not start"),
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function recoverSlack() {
+    if (isOperator) {
+      await beginSetup("reinstall");
+      return;
+    }
+    const oauthTab = openOAuthTab();
+    if (!oauthTab) {
+      toast.error("Allow pop-ups for Glass to reinstall Slack in a new tab");
+      return;
+    }
+    setBusy("oauth");
+    try {
+      const response = await beginOAuth({
+        clientOrgId,
+        thirdPartyVisibilityAcknowledged: true,
+      });
+      if (response.url) {
+        if (!oauthTab.navigate(response.url)) {
+          throw new Error("The Slack setup tab was closed. Try again.");
+        }
+      } else {
+        oauthTab.close();
+        toast.success("Slack reinstalled");
+      }
+    } catch (error) {
+      oauthTab.close();
+      toast.error(
+        getUserFacingErrorMessage(error, "Slack could not be reinstalled"),
       );
     } finally {
       setBusy(null);
@@ -850,20 +903,28 @@ export function AgentChannelsSection({
     }
   }
 
-  const supportStatus = supportChannel?.customerChannelId
-    ? { label: "Connected", tone: "success" as const }
-    : operatorSetup?.supportInviteError ||
-        operatorSetup?.supportOperatorInviteError
-      ? { label: "Needs attention", tone: "danger" as const }
-      : setupInProgress && supportChannel && !operatorSetup?.supportInviteSentAt
-        ? { label: "Ready", tone: "neutral" as const }
-        : supportChannel
-          ? { label: "Invitation pending", tone: "warning" as const }
-          : { label: "Not set up", tone: "neutral" as const };
+  const supportStatus =
+    (supportChannel && supportChannel.status !== "active") ||
+    supportChannel?.healthStatus === "degraded"
+      ? { label: "Unavailable", tone: "danger" as const }
+      : supportChannel?.customerChannelId
+        ? { label: "Connected", tone: "success" as const }
+        : operatorSetup?.supportInviteError ||
+            operatorSetup?.supportOperatorInviteError
+          ? { label: "Needs attention", tone: "danger" as const }
+          : setupInProgress &&
+              supportChannel &&
+              !operatorSetup?.supportInviteSentAt
+            ? { label: "Ready", tone: "neutral" as const }
+            : supportChannel
+              ? { label: "Invitation pending", tone: "warning" as const }
+              : { label: "Not set up", tone: "neutral" as const };
 
   const supportRow = supportChannel ? (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
-      <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
+      <p
+        className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}
+      >
         #{supportChannel.channelName}
       </p>
       <StatusTag tone={supportStatus.tone}>{supportStatus.label}</StatusTag>
@@ -915,9 +976,13 @@ export function AgentChannelsSection({
 
   const supportChannelField = (
     <div className="space-y-1.5">
-      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Client support channel</p>
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+        Client support channel
+      </p>
       <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-input bg-popover px-3 py-2">
-        <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
+        <p
+          className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}
+        >
           #{supportChannel?.channelName ?? `glass-${clientSlug}`}
         </p>
         <StatusTag tone={supportStatus.tone}>{supportStatus.label}</StatusTag>
@@ -928,10 +993,14 @@ export function AgentChannelsSection({
   const manualSupportFields =
     isOperator && resolvedManualSetupReason ? (
       <details className="rounded-lg border border-border bg-foreground/[0.02] px-3 py-2.5">
-        <summary className={`cursor-pointer text-foreground ${typeStyle("control.tab")}`}>
+        <summary
+          className={`cursor-pointer text-foreground ${typeStyle("control.tab")}`}
+        >
           Link a channel manually
         </summary>
-        <p className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}>
+        <p
+          className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}
+        >
           {resolvedManualSetupReason}
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1017,10 +1086,14 @@ export function AgentChannelsSection({
             {installComplete && connection ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
                 <div className="min-w-0">
-                  <p className={`truncate text-foreground ${typeStyle("body.default")}`}>
+                  <p
+                    className={`truncate text-foreground ${typeStyle("body.default")}`}
+                  >
                     {connection.teamName}
                   </p>
-                  <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+                  <p
+                    className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                  >
                     Slack workspace
                   </p>
                 </div>
@@ -1033,7 +1106,9 @@ export function AgentChannelsSection({
                 <p className={`text-foreground ${typeStyle("body.default")}`}>
                   Local Slack workspace
                 </p>
-                <p className={`mt-0.5 text-muted-foreground ${typeStyle("caption.default")}`}>
+                <p
+                  className={`mt-0.5 text-muted-foreground ${typeStyle("caption.default")}`}
+                >
                   Ready to connect the local fixture.
                 </p>
               </div>
@@ -1044,10 +1119,14 @@ export function AgentChannelsSection({
                 operatorSetup.inviteRecipientEmail ? (
                   <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
                     <div className="min-w-0">
-                      <p className={`truncate text-foreground ${typeStyle("body.default")}`}>
+                      <p
+                        className={`truncate text-foreground ${typeStyle("body.default")}`}
+                      >
                         {operatorSetup.inviteRecipientEmail}
                       </p>
-                      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+                      <p
+                        className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                      >
                         {operatorSetup.inviteExpiresAt &&
                         dayjs().isAfter(operatorSetup.inviteExpiresAt)
                           ? `Expired ${formatDisplayDate(operatorSetup.inviteExpiresAt)}`
@@ -1069,7 +1148,9 @@ export function AgentChannelsSection({
                     </StatusTag>
                   </div>
                 ) : (
-                  <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+                  <p
+                    className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                  >
                     The one-time link expires in{" "}
                     {SLACK_INSTALL_INVITE_EXPIRATION_DAYS} days.
                   </p>
@@ -1132,7 +1213,9 @@ export function AgentChannelsSection({
               <p className={`text-foreground ${typeStyle("body.medium")}`}>
                 Waiting for the Slack installation
               </p>
-              <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
+              <p
+                className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
+              >
                 Close this drawer for now. Setup resumes here after the client
                 accepts the invitation.
               </p>
@@ -1189,20 +1272,131 @@ export function AgentChannelsSection({
         </TabsList>
 
         <TabsContent value="overview" className="space-y-5">
+          <FormSection
+            title="Connection health"
+            description={slackHealth?.reasonSummary}
+            divided={false}
+          >
+            <OperationalLabelValueList>
+              <OperationalLabelValueRow
+                label="Status"
+                value={
+                  <StatusTag
+                    tone={
+                      slackHealth?.status === "healthy"
+                        ? "success"
+                        : slackHealth?.status === "degraded"
+                          ? "warning"
+                          : "danger"
+                    }
+                  >
+                    {slackHealth?.status === "healthy"
+                      ? "Healthy"
+                      : slackHealth?.status === "degraded"
+                        ? "Degraded"
+                        : slackHealth?.status === "channel_unavailable"
+                          ? "Channel unavailable"
+                          : slackHealth?.status === "revoked"
+                            ? "Reinstall required"
+                            : slackHealth?.status === "disconnected"
+                              ? "Disconnected"
+                              : "Not connected"}
+                  </StatusTag>
+                }
+              />
+              <OperationalLabelValueRow
+                label="Last verified"
+                value={formatDisplayDateTime(
+                  slackHealth?.lastVerifiedAt,
+                  "Not yet verified",
+                )}
+              />
+              <OperationalLabelValueRow
+                label="Last healthy"
+                value={formatDisplayDateTime(
+                  slackHealth?.lastHealthyAt,
+                  "No healthy check recorded",
+                )}
+              />
+              <OperationalLabelValueRow
+                label="Issue"
+                value={
+                  slackHealth?.status === "healthy"
+                    ? undefined
+                    : slackHealth?.reasonSummary
+                }
+              />
+            </OperationalLabelValueList>
+            {slackHealth?.recoveryAction === "rebind" && !isOperator ? (
+              <p
+                className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                Glass support must rebind the primary Slack Connect channel.
+                Your existing Slack history remains available.
+              </p>
+            ) : null}
+          </FormSection>
           <FormSection title="Workspace" divided={false}>
             {connection ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
-                <p className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}>
+                <p
+                  className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}
+                >
                   {connection.teamName}
                 </p>
                 <StatusTag tone={slackNeedsReinstall ? "danger" : "success"}>
-                  {slackNeedsReinstall ? "Update required" : "Installed"}
+                  {slackNeedsReinstall ? "Reinstall required" : "Installed"}
                 </StatusTag>
               </div>
             ) : (
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Not connected.</p>
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                Not connected.
+              </p>
             )}
           </FormSection>
+
+          {isOperator && result.lifecycleEvents.length > 0 ? (
+            <FormSection
+              title="Recent Slack activity"
+              description="Lifecycle and reconciliation outcomes only; credentials and message bodies are never shown."
+              divided={false}
+            >
+              <div className="space-y-2">
+                {result.lifecycleEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    className="rounded-lg border border-border bg-popover px-3 py-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p
+                        className={`text-foreground ${typeStyle("body.medium")}`}
+                      >
+                        {event.summary}
+                      </p>
+                      <StatusTag
+                        tone={
+                          event.status === "failed"
+                            ? "danger"
+                            : event.status === "ignored"
+                              ? "neutral"
+                              : "success"
+                        }
+                      >
+                        {event.status}
+                      </StatusTag>
+                    </div>
+                    <p
+                      className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                    >
+                      {formatDisplayDateTime(event.receivedAt)} · {event.source}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </FormSection>
+          ) : null}
 
           <FormSection
             title="Client support channel"
@@ -1210,7 +1404,11 @@ export function AgentChannelsSection({
             divided={false}
           >
             {supportRow ?? (
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Not set up.</p>
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                Not set up.
+              </p>
             )}
             {isOperator && !supportChannel?.customerChannelId
               ? inviteContactField
@@ -1272,6 +1470,17 @@ export function AgentChannelsSection({
           {clientPendingStatus.label}
         </StatusTag>
       </div>
+      {slackHealth?.recoveryAction === "reinstall" && canRecoverSlack ? (
+        <PillButton
+          onClick={() => void recoverSlack()}
+          disabled={busy !== null}
+        >
+          {busy === "oauth" ? (
+            <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+          ) : null}
+          Reinstall Slack
+        </PillButton>
+      ) : null}
     </FormSection>
   );
 
@@ -1317,7 +1526,8 @@ export function AgentChannelsSection({
   ) : null;
 
   const supportInvitationSent = Boolean(
-    supportChannel?.customerChannelId || operatorSetup?.supportInviteSentAt,
+    (supportChannel?.status === "active" && supportChannel.customerChannelId) ||
+    operatorSetup?.supportInviteSentAt,
   );
 
   const wizardFooter = operatorSetup ? (
@@ -1467,30 +1677,47 @@ export function AgentChannelsSection({
         <RefreshCw className="size-3.5" />
         Refresh channels
       </PillButton>
-    ) : compactSlackTab === "overview" && isOperator && connection ? (
+    ) : compactSlackTab === "overview" && connection ? (
       <>
-        <PillButton
-          variant="destructive"
-          size="compact"
-          iconOnly
-          label="Disconnect Slack"
-          className="sm:mr-auto"
-          onClick={() => setDisconnectDialogOpen(true)}
-          disabled={busy !== null}
-        >
-          <Unplug className="size-3.5" />
-        </PillButton>
-        <PillButton
-          variant="secondary"
-          onClick={() => void beginSetup("reinstall")}
-          disabled={busy !== null}
-        >
-          {busy === "start-setup" ? (
-            <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
-          ) : null}
-          Reinstall
-        </PillButton>
-        {!supportChannel?.customerChannelId ? (
+        {canDisconnectSlack ? (
+          <PillButton
+            variant="destructive"
+            size="compact"
+            iconOnly
+            label="Disconnect Slack"
+            className="sm:mr-auto"
+            onClick={() => setDisconnectDialogOpen(true)}
+            disabled={busy !== null}
+          >
+            <Unplug className="size-3.5" />
+          </PillButton>
+        ) : null}
+        {canRecoverSlack && slackHealth?.recoveryAction !== "rebind" ? (
+          <PillButton
+            variant="secondary"
+            onClick={() => void recoverSlack()}
+            disabled={busy !== null}
+          >
+            {busy === "start-setup" || busy === "oauth" ? (
+              <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            Reinstall
+          </PillButton>
+        ) : null}
+        {isOperator && canEdit && slackHealth?.recoveryAction === "rebind" ? (
+          <PillButton
+            onClick={() => void createPrimary()}
+            disabled={
+              busy !== null || !clientSlug.trim() || !inviteEmail.trim()
+            }
+          >
+            {busy === "provision" ? (
+              <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+            ) : null}
+            Rebind primary channel
+          </PillButton>
+        ) : null}
+        {isOperator && canEdit && !supportChannel?.customerChannelId ? (
           <PillButton
             onClick={() => void createPrimary()}
             disabled={
@@ -1601,22 +1828,27 @@ export function AgentChannelsSection({
       ? { label: "On", tone: "success" as const }
       : { label: "Off", tone: "neutral" as const }
     : { label: "Needs setup", tone: "warning" as const };
-  const slackDescription = slackNeedsReinstall
-    ? `${connection.teamName} needs updated Slack permissions.`
-    : setupStatus === "in_progress"
-      ? isOperator && operatorSetup?.inviteRecipientEmail
-        ? `Installation invitation sent to ${operatorSetup.inviteRecipientEmail}.`
-        : "Glass support is finishing Slack setup."
-      : slackReady
-        ? `${connection.teamName} · ${joinedChannels.length} joined ${joinedChannels.length === 1 ? "channel" : "channels"}`
-        : isOperator
-          ? "Set up the client Slack workspace."
-          : "Slack has not been connected by Glass support.";
+  const slackDescription =
+    slackHealth?.status === "degraded" ||
+    slackHealth?.status === "channel_unavailable"
+      ? slackHealth.reasonSummary
+      : slackNeedsReinstall
+        ? `${connection.teamName} needs updated Slack permissions.`
+        : setupStatus === "in_progress"
+          ? isOperator && operatorSetup?.inviteRecipientEmail
+            ? `Installation invitation sent to ${operatorSetup.inviteRecipientEmail}.`
+            : "Glass support is finishing Slack setup."
+          : slackReady
+            ? `${connection.teamName} · ${joinedChannels.length} joined ${joinedChannels.length === 1 ? "channel" : "channels"}`
+            : isOperator
+              ? "Set up the client Slack workspace."
+              : "Slack has not been connected by Glass support.";
   const slackRowStatus = resolveSlackRowStatus({
     connected: slackReady,
     needsUpdate: slackNeedsReinstall,
     setupStatus,
     enabled: resolvedSettings.slackEnabled,
+    healthStatus: slackHealth?.status,
   });
 
   return (

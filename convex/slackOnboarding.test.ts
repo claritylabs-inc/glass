@@ -178,28 +178,28 @@ describe("Slack Connect onboarding action", () => {
     let requestCount = 0;
     const fetchMock = vi.fn(
       async (_input: string | URL | Request, _init?: RequestInit) => {
-      requestCount += 1;
-      return jsonResponse({
-        channelId: "C-HOST",
-        channelName: "glass-onboarding-client",
-        reusedChannel: requestCount > 1,
-        operatorInvites:
-          requestCount === 1
-            ? {
-                requested: 1,
-                succeeded: false,
-                error: "user_not_found",
-              }
-            : { requested: 1, succeeded: true },
-        supportInvite:
-          requestCount === 1
-            ? {
-                succeeded: false,
-                pending: false,
-                error: "restricted_action",
-              }
-            : { succeeded: true, pending: true },
-      });
+        requestCount += 1;
+        return jsonResponse({
+          channelId: "C-HOST",
+          channelName: "glass-onboarding-client",
+          reusedChannel: requestCount > 1,
+          operatorInvites:
+            requestCount === 1
+              ? {
+                  requested: 1,
+                  succeeded: false,
+                  error: "user_not_found",
+                }
+              : { requested: 1, succeeded: true },
+          supportInvite:
+            requestCount === 1
+              ? {
+                  succeeded: false,
+                  pending: false,
+                  error: "restricted_action",
+                }
+              : { succeeded: true, pending: true },
+        });
       },
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -412,8 +412,10 @@ describe("Slack Connect onboarding action", () => {
       .withIdentity({ subject: `${operatorUserId}|session` })
       .action(listAvailableChannelsFn, { clientOrgId });
     await expect(t.run((ctx) => ctx.db.get(bindingId))).resolves.toMatchObject({
-      customerChannelId: "C-OLD",
+      customerChannelId: "C-NEW",
       channelName: "glass-client",
+      status: "unavailable",
+      unavailableReason: "channel_unshared",
     });
   });
 

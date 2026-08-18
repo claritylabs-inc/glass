@@ -10,8 +10,18 @@ const internalApi = internal as any;
 export const send = internalAction({
   args: { notificationId: v.id("notifications") },
   handler: async (ctx, args) => {
-    const context = await ctx.runQuery(internalApi.notificationSlack.getContext, args);
-    if (!context || context.notification.slackStatus !== "scheduled") return;
+    const context = await ctx.runQuery(
+      internalApi.notificationSlack.getContext,
+      args,
+    );
+    if (!context) {
+      await ctx.runMutation(internalApi.notificationSlack.finish, {
+        notificationId: args.notificationId,
+        status: "failed",
+      });
+      return;
+    }
+    if (context.notification.slackStatus !== "scheduled") return;
 
     const result = await ctx.runAction(internalApi.actions.sendSlack.send, {
       idempotencyKey: `notification:${String(args.notificationId)}:slack`,

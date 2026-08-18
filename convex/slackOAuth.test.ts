@@ -448,6 +448,46 @@ describe("Slack OAuth actions", () => {
     expect(stored?.stateHash).not.toBe(state);
   });
 
+  test("lets a client admin reinstall a retained revoked workspace", async () => {
+    const t = convexTest(schema, modules);
+    const repair = await seedRepairConnection(t);
+    const adminUserId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        name: "Repair Admin",
+        email: "repair-admin@example.test",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId: repair.clientOrgId,
+        userId,
+        role: "admin",
+      });
+      await ctx.db.patch(repair.connectionId, {
+        status: "revoked",
+        healthStatus: "degraded",
+        healthReason: "app_uninstalled",
+      });
+      return userId;
+    });
+    const admin = t.withIdentity({ subject: `${adminUserId}|session` });
+    const { url } = await admin.action(beginFn, {
+      clientOrgId: repair.clientOrgId,
+      thirdPartyVisibilityAcknowledged: true,
+    });
+    expect(new URL(url).origin).toBe("https://slack.com");
+    const state = await t.run((ctx) =>
+      ctx.db
+        .query("slackOAuthStates")
+        .withIndex("by_clientOrgId_and_purpose", (q) =>
+          q
+            .eq("clientOrgId", repair.clientOrgId)
+            .eq("purpose", "customer"),
+        )
+        .order("desc")
+        .first(),
+    );
+    expect(state).toMatchObject({ initiatedByUserId: adminUserId });
+  });
+
   test("connects, disconnects, and refreshes mock Slack without OAuth", async () => {
     vi.stubEnv("SLACK_MODE", "mock");
     const t = convexTest(schema, modules);

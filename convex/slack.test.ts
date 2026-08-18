@@ -158,7 +158,7 @@ async function ingest(
     receivedAt?: number;
   },
 ) {
-  const result = await t.mutation(claimInboundFn, {
+  const result = (await t.mutation(claimInboundFn, {
     eventKey: args.eventKey,
     spectrumMessageId: args.eventKey,
     teamId: "T-CUSTOMER",
@@ -174,9 +174,15 @@ async function ingest(
     isDirectMessage: args.isDirectMessage,
     isPrivateChannel: args.isPrivateChannel,
     receivedAt: args.receivedAt ?? BASE_TIME,
-  }) as { eventId?: Id<"slackInboundEvents">; duplicate: boolean; status: string };
+  })) as {
+    eventId?: Id<"slackInboundEvents">;
+    duplicate: boolean;
+    status: string;
+  };
   if (!result.eventId) return { claim: result, prepared: null };
-  const prepared = await t.mutation(prepareBatchFn, { eventIds: [result.eventId] });
+  const prepared = await t.mutation(prepareBatchFn, {
+    eventIds: [result.eventId],
+  });
   return { claim: result, prepared };
 }
 
@@ -383,7 +389,9 @@ describe("Slack channel state and authorization", () => {
     });
     expect(state.threads).toHaveLength(1);
     expect(state.threads[0].slackState).toBe("resolved");
-    expect(state.messages.filter((message) => message.role === "user")).toHaveLength(7);
+    expect(
+      state.messages.filter((message) => message.role === "user"),
+    ).toHaveLength(7);
   });
 
   test("treats an App Home DM as one private, mention-free conversation", async () => {
@@ -451,7 +459,9 @@ describe("Slack channel state and authorization", () => {
     });
     expect(state.threads[0].archivedAt).toBeUndefined();
     expect(state.actors[0]).toMatchObject({ glassUserId });
-    expect(state.messages.filter((message) => message.role === "user")).toHaveLength(2);
+    expect(
+      state.messages.filter((message) => message.role === "user"),
+    ).toHaveLength(2);
     expect(
       state.messages
         .filter((message) => message.role === "user")
@@ -564,7 +574,9 @@ describe("Slack channel state and authorization", () => {
       };
     });
     expect(state.thread?.title).toBe("#C-POLICIES · U-CUSTOMER");
-    expect(state.messages.filter((message) => message.role === "user")).toHaveLength(2);
+    expect(
+      state.messages.filter((message) => message.role === "user"),
+    ).toHaveLength(2);
   });
 
   test("rejects external invocations and creates content-free off-channel handoffs", async () => {
@@ -600,7 +612,9 @@ describe("Slack channel state and authorization", () => {
       messages: await ctx.db.query("threadMessages").collect(),
     }));
     expect(records.handoffs).toHaveLength(1);
-    expect(records.messages.filter((message) => message.role === "agent")).toHaveLength(0);
+    expect(
+      records.messages.filter((message) => message.role === "agent"),
+    ).toHaveLength(0);
 
     const operatorInvocation = await ingest(t, {
       eventKey: "operator-invocation",
@@ -624,12 +638,14 @@ describe("Slack channel state and authorization", () => {
       senderTeamId: "T-VENDOR",
       senderUserId: "U-VENDOR",
       content: "<@U-GLASS> inspect this",
-      attachments: [{
-        providerFileId: "F-EXTERNAL",
-        filename: "external.pdf",
-        contentType: "application/pdf",
-        size: 1024,
-      }],
+      attachments: [
+        {
+          providerFileId: "F-EXTERNAL",
+          filename: "external.pdf",
+          contentType: "application/pdf",
+          size: 1024,
+        },
+      ],
       eventType: "message",
       receivedAt: BASE_TIME,
     })) as { eventId: Id<"slackInboundEvents"> };
@@ -699,17 +715,20 @@ describe("Slack channel state and authorization", () => {
       return threads.map((thread) => ({
         channelId: thread.slackChannelId,
         userContent: messages.find(
-          (message) => message.threadId === thread._id && message.role === "user",
+          (message) =>
+            message.threadId === thread._id && message.role === "user",
         )?.content,
       }));
     });
-    expect(state).toEqual(expect.arrayContaining([
-      {
-        channelId: "C-ONE",
-        userContent: "<@U-GLASS> corrected channel one",
-      },
-      { channelId: "C-TWO", userContent: "<@U-GLASS> channel two" },
-    ]));
+    expect(state).toEqual(
+      expect.arrayContaining([
+        {
+          channelId: "C-ONE",
+          userContent: "<@U-GLASS> corrected channel one",
+        },
+        { channelId: "C-TWO", userContent: "<@U-GLASS> channel two" },
+      ]),
+    );
   });
 
   test("deduplicates events, debounces bursts, and records edits as revisions", async () => {
@@ -736,7 +755,7 @@ describe("Slack channel state and authorization", () => {
     });
     expect(duplicate).toMatchObject({ duplicate: true });
 
-    const burstOne = await t.mutation(claimInboundFn, {
+    const burstOne = (await t.mutation(claimInboundFn, {
       eventKey: "burst-1",
       spectrumMessageId: "burst-1",
       teamId: "T-CUSTOMER",
@@ -748,8 +767,8 @@ describe("Slack channel state and authorization", () => {
       content: "one more thought",
       eventType: "message",
       receivedAt: BASE_TIME + 400,
-    }) as { eventId: Id<"slackInboundEvents"> };
-    const secondClaim = await t.mutation(claimInboundFn, {
+    })) as { eventId: Id<"slackInboundEvents"> };
+    const secondClaim = (await t.mutation(claimInboundFn, {
       eventKey: "burst-2",
       spectrumMessageId: "burst-2",
       teamId: "T-CUSTOMER",
@@ -761,14 +780,16 @@ describe("Slack channel state and authorization", () => {
       content: "and second",
       eventType: "message",
       receivedAt: BASE_TIME + 500,
-    }) as { eventId: Id<"slackInboundEvents"> };
-    const scheduled = await t.run(async (ctx) =>
-      await ctx.db.query("slackInboundEvents").collect(),
+    })) as { eventId: Id<"slackInboundEvents"> };
+    const scheduled = await t.run(
+      async (ctx) => await ctx.db.query("slackInboundEvents").collect(),
     );
-    const burstEvents = scheduled.filter((event) =>
-      event.eventKey === "burst-1" || event.eventKey === "burst-2",
+    const burstEvents = scheduled.filter(
+      (event) => event.eventKey === "burst-1" || event.eventKey === "burst-2",
     );
-    expect(new Set(burstEvents.map((event) => event.scheduledFor)).size).toBe(1);
+    expect(new Set(burstEvents.map((event) => event.scheduledFor)).size).toBe(
+      1,
+    );
 
     await t.mutation(prepareBatchFn, {
       eventIds: [burstOne.eventId, secondClaim.eventId],
@@ -780,11 +801,14 @@ describe("Slack channel state and authorization", () => {
       eventType: "edit",
     });
     expect(edit.prepared).toBeNull();
-    const revisions = await t.run(async (ctx) =>
-      await ctx.db.query("slackMessageRevisions").collect(),
+    const revisions = await t.run(
+      async (ctx) => await ctx.db.query("slackMessageRevisions").collect(),
     );
     expect(revisions).toMatchObject([
-      { previousContent: "<@U-GLASS> first", revisedContent: "<@U-GLASS> corrected" },
+      {
+        previousContent: "<@U-GLASS> first",
+        revisedContent: "<@U-GLASS> corrected",
+      },
     ]);
     expect(first.claim.status).toBe("queued");
   });
@@ -872,7 +896,7 @@ describe("Slack channel state and authorization", () => {
     });
     expect(bot.prepared).toBeNull();
 
-    const claimed = await t.mutation(claimInboundFn, {
+    const claimed = (await t.mutation(claimInboundFn, {
       eventKey: "retry-event",
       spectrumMessageId: "retry-event",
       teamId: "T-CUSTOMER",
@@ -884,7 +908,7 @@ describe("Slack channel state and authorization", () => {
       content: "<@U-GLASS> retry this",
       eventType: "message",
       receivedAt: BASE_TIME,
-    }) as { eventId: Id<"slackInboundEvents"> };
+    })) as { eventId: Id<"slackInboundEvents"> };
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       await t.run((ctx) => ctx.db.patch(claimed.eventId, { scheduledFor: 0 }));
@@ -943,8 +967,9 @@ describe("Slack channel state and authorization", () => {
     await t.run((ctx) => ctx.db.patch(claim.eventId, { scheduledFor: 0 }));
 
     const batch = await t.mutation(claimBatchFn, { eventId: claim.eventId });
-    expect(batch.map((event: { _id: Id<"slackInboundEvents"> }) => event._id))
-      .toContain(claim.eventId);
+    expect(
+      batch.map((event: { _id: Id<"slackInboundEvents"> }) => event._id),
+    ).toContain(claim.eventId);
   });
 
   test("does not infer a pending primary binding from a customer mention", async () => {
@@ -1021,7 +1046,10 @@ describe("Slack setup and outbound durability", () => {
       actorKind: "operator",
     });
     const claimed = await t.mutation(claimOAuthStateFn, { state });
-    expect(claimed).toMatchObject({ clientOrgId, initiatedByOperatorUserId: operatorUserId });
+    expect(claimed).toMatchObject({
+      clientOrgId,
+      initiatedByOperatorUserId: operatorUserId,
+    });
     await expect(t.mutation(claimOAuthStateFn, { state })).resolves.toBeNull();
 
     const expiredState = await t.mutation(createOAuthStateFn, {
@@ -1038,7 +1066,9 @@ describe("Slack setup and outbound durability", () => {
       if (!row) throw new Error("OAuth state fixture is missing");
       await ctx.db.patch(row._id, { expiresAt: 0 });
     });
-    await expect(t.mutation(claimOAuthStateFn, { state: expiredState })).resolves.toBeNull();
+    await expect(
+      t.mutation(claimOAuthStateFn, { state: expiredState }),
+    ).resolves.toBeNull();
   });
 
   test("enforces one active workspace per client and supports reinstall and disconnect", async () => {
@@ -1068,11 +1098,15 @@ describe("Slack setup and outbound durability", () => {
         updatedAt: 1,
       }),
     );
-    await expect(t.mutation(upsertSlackConnectionFn, { ...args, teamName: "Renamed" })).resolves.toBe(connectionId);
+    await expect(
+      t.mutation(upsertSlackConnectionFn, { ...args, teamName: "Renamed" }),
+    ).resolves.toBe(connectionId);
     await expect(
       t.mutation(upsertSlackConnectionFn, { ...args, teamId: "T-TWO" }),
     ).rejects.toThrow("already has an active Slack workspace");
-    const actorUserId = await t.run((ctx) => ctx.db.insert("users", { name: "Admin" }));
+    const actorUserId = await t.run((ctx) =>
+      ctx.db.insert("users", { name: "Admin" }),
+    );
     await t.mutation(disconnectInternalFn, {
       connectionId,
       actorUserId,
@@ -1085,10 +1119,10 @@ describe("Slack setup and outbound durability", () => {
 
     const reinstalledId = await t.mutation(upsertSlackConnectionFn, args);
     expect(reinstalledId).toBe(connectionId);
-    const reactivatedBinding = await t.run((ctx) =>
+    const retainedBinding = await t.run((ctx) =>
       ctx.db.query("slackChannelBindings").first(),
     );
-    expect(reactivatedBinding?.status).toBe("active");
+    expect(retainedBinding?.status).toBe("archived");
     await t.mutation(revokeByTeamIdFn, { teamId: "T-ONE" });
     const revoked = await t.run((ctx) =>
       ctx.db.get("slackWorkspaceConnections", reinstalledId),
@@ -1107,19 +1141,46 @@ describe("Slack setup and outbound durability", () => {
       content: "Policy attached",
     };
     const first = await t.mutation(claimOutboundFn, args);
-    await t.mutation(markSentFn, { id: first.row._id, providerMessageId: "1800.1" });
+    await t.mutation(markSentFn, {
+      id: first.row._id,
+      providerMessageId: "1800.1",
+    });
     const duplicate = await t.mutation(claimOutboundFn, args);
     expect(duplicate.send).toBe(false);
 
-    const failed = await t.mutation(claimOutboundFn, { ...args, idempotencyKey: "failure" });
-    await t.mutation(markFailedFn, { id: failed.row._id, error: "timeout", retry: true });
-    const retryTwo = await t.mutation(claimOutboundFn, { ...args, idempotencyKey: "failure" });
-    await t.mutation(markFailedFn, { id: retryTwo.row._id, error: "timeout", retry: true });
-    const retryThree = await t.mutation(claimOutboundFn, { ...args, idempotencyKey: "failure" });
+    const failed = await t.mutation(claimOutboundFn, {
+      ...args,
+      idempotencyKey: "failure",
+    });
+    await t.mutation(markFailedFn, {
+      id: failed.row._id,
+      error: "timeout",
+      retry: true,
+    });
+    const retryTwo = await t.mutation(claimOutboundFn, {
+      ...args,
+      idempotencyKey: "failure",
+    });
+    await t.mutation(markFailedFn, {
+      id: retryTwo.row._id,
+      error: "timeout",
+      retry: true,
+    });
+    const retryThree = await t.mutation(claimOutboundFn, {
+      ...args,
+      idempotencyKey: "failure",
+    });
     await expect(
-      t.mutation(markFailedFn, { id: retryThree.row._id, error: "timeout", retry: true }),
+      t.mutation(markFailedFn, {
+        id: retryThree.row._id,
+        error: "timeout",
+        retry: true,
+      }),
     ).resolves.toBeNull();
-    const exhausted = await t.mutation(claimOutboundFn, { ...args, idempotencyKey: "failure" });
+    const exhausted = await t.mutation(claimOutboundFn, {
+      ...args,
+      idempotencyKey: "failure",
+    });
     expect(exhausted.send).toBe(false);
 
     const stalled = await t.mutation(claimOutboundFn, {
@@ -1139,6 +1200,42 @@ describe("Slack setup and outbound durability", () => {
       send: true,
       row: { attemptCount: 2, status: "sending" },
     });
+  });
+
+  test("records a terminal block before transport when Slack health is degraded", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId } = await seedSlack(t);
+    await t.run((ctx) =>
+      ctx.db.patch(connectionId, {
+        healthStatus: "degraded",
+        healthReason: "verification_failed",
+      }),
+    );
+    const claim = await t.mutation(claimOutboundFn, {
+      idempotencyKey: "blocked-health",
+      orgId: clientOrgId,
+      connectionId,
+      channelId: "C-PRIMARY",
+      content: "Do not send",
+    });
+    expect(claim).toMatchObject({
+      send: false,
+      row: {
+        status: "blocked",
+        attemptCount: 0,
+        retryable: false,
+        failureReason: "target_unavailable",
+      },
+    });
+    await expect(
+      t.mutation(claimOutboundFn, {
+        idempotencyKey: "blocked-health",
+        orgId: clientOrgId,
+        connectionId,
+        channelId: "C-PRIMARY",
+        content: "Do not send",
+      }),
+    ).resolves.toMatchObject({ send: false, row: { status: "blocked" } });
   });
 
   test("surfaces terminal Slack delivery failure on the mirrored agent message", async () => {
@@ -1178,9 +1275,9 @@ describe("Slack setup and outbound durability", () => {
     };
 
     let claim = await t.mutation(claimOutboundFn, args);
-    await expect(
-      t.run((ctx) => ctx.db.get(messageId)),
-    ).resolves.toMatchObject({ slackDeliveryStatus: "sending" });
+    await expect(t.run((ctx) => ctx.db.get(messageId))).resolves.toMatchObject({
+      slackDeliveryStatus: "sending",
+    });
     await t.mutation(markFailedFn, {
       id: claim.row._id,
       error: "timeout",
@@ -1199,9 +1296,7 @@ describe("Slack setup and outbound durability", () => {
       retry: true,
     });
 
-    await expect(
-      t.run((ctx) => ctx.db.get(messageId)),
-    ).resolves.toMatchObject({
+    await expect(t.run((ctx) => ctx.db.get(messageId))).resolves.toMatchObject({
       slackDeliveryStatus: "failed",
       slackDeliveryError: "channel_not_found",
     });
@@ -1253,17 +1348,21 @@ describe("Slack setup and outbound durability", () => {
       channelId: "C-PRIMARY",
       content: "Do not cross tenant boundaries",
     };
-    await expect(t.mutation(claimOutboundFn, {
-      ...base,
-      idempotencyKey: "cross-org",
-      orgId: otherOrgId,
-    })).rejects.toThrow("Slack connection does not belong to the organization");
-    await expect(t.mutation(claimOutboundFn, {
-      ...base,
-      idempotencyKey: "cross-thread",
-      orgId: clientOrgId,
-      threadId: otherThreadId,
-    })).rejects.toThrow("Slack thread does not belong to the connection");
+    await expect(
+      t.mutation(claimOutboundFn, {
+        ...base,
+        idempotencyKey: "cross-org",
+        orgId: otherOrgId,
+      }),
+    ).rejects.toThrow("Slack connection does not belong to the organization");
+    await expect(
+      t.mutation(claimOutboundFn, {
+        ...base,
+        idempotencyKey: "cross-thread",
+        orgId: clientOrgId,
+        threadId: otherThreadId,
+      }),
+    ).rejects.toThrow("Slack thread does not belong to the connection");
 
     const validThreadId = await t.run((ctx) =>
       ctx.db.insert("threads", {

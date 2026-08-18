@@ -16,10 +16,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "../lib/userFacingErrors";
-import {
-  getSlackHostConfiguration,
-  isSlackMockMode,
-} from "../lib/slackConfig";
+import { getSlackHostConfiguration, isSlackMockMode } from "../lib/slackConfig";
 import {
   encryptSlackCredential,
   resolveSlackInstallation,
@@ -108,24 +105,27 @@ export const begin = action({
       internalApi.agentChannels.authorizeSetup,
       { clientOrgId: args.clientOrgId, userId },
     );
-    if (permission.kind !== "operator") {
-      throwUserFacingError(
-        userFacingErrorCodes.operatorRequired,
-        "A Glass operator must set up Slack for this client.",
+    const [setup, existing] = await Promise.all([
+      ctx.runQuery(internalApi.agentChannels.getSlackSetupForAction, {
+        clientOrgId: args.clientOrgId,
+      }),
+      ctx.runQuery(internalApi.agentChannels.getSlackConnectionForMockSetup, {
+        clientOrgId: args.clientOrgId,
+      }),
+    ]);
+    if (permission.kind === "operator") {
+      if (!setup || setup.status !== "in_progress") {
+        throw new Error("Start Slack setup before connecting the workspace");
+      }
+    } else if (
+      !existing ||
+      (existing.status === "active" && existing.healthStatus !== "degraded")
+    ) {
+      throw new Error(
+        "A client administrator can reinstall Slack only when the retained connection needs recovery.",
       );
-    }
-    const setup = await ctx.runQuery(
-      internalApi.agentChannels.getSlackSetupForAction,
-      { clientOrgId: args.clientOrgId },
-    );
-    if (!setup || setup.status !== "in_progress") {
-      throw new Error("Start Slack setup before connecting the workspace");
     }
     if (isSlackMockMode()) {
-      const existing = await ctx.runQuery(
-        internalApi.agentChannels.getSlackConnectionForMockSetup,
-        { clientOrgId: args.clientOrgId },
-      );
       await ctx.runMutation(internalApi.agentChannels.upsertSlackConnection, {
         clientOrgId: args.clientOrgId,
         teamId: existing?.teamId ?? `T-MOCK-${args.clientOrgId}`,
@@ -137,10 +137,12 @@ export const begin = action({
           ? { installedByOperatorUserId: userId }
           : { installedByUserId: userId }),
       });
-      await ctx.runMutation(
-        internalApi.agentChannels.markSlackSetupInstallationComplete,
-        { setupStateId: setup._id },
-      );
+      if (setup?.status === "in_progress") {
+        await ctx.runMutation(
+          internalApi.agentChannels.markSlackSetupInstallationComplete,
+          { setupStateId: setup._id },
+        );
+      }
       return { url: null, mockRefreshed: true as const };
     }
     const state = await ctx.runMutation(
@@ -149,7 +151,7 @@ export const begin = action({
         clientOrgId: args.clientOrgId,
         userId,
         actorKind: permission.kind,
-        setupStateId: setup._id,
+        setupStateId: setup?.status === "in_progress" ? setup._id : undefined,
       },
     );
     return { url: customerOAuthUrl(state), mockRefreshed: false as const };
@@ -207,7 +209,9 @@ export const sendInstallInvite = action({
         internalApi.agentChannels.invalidateSlackOAuthState,
         { stateId: oauthState.stateId },
       );
-      throw new Error(`Failed to send Slack install invitation: ${result.error}`);
+      throw new Error(
+        `Failed to send Slack install invitation: ${result.error}`,
+      );
     }
     await ctx.runMutation(
       internalApi.agentChannels.recordSlackInstallInviteSent,
@@ -236,7 +240,9 @@ export const beginHost = action({
       throw new Error("Slack OAuth is unavailable in mock mode");
     }
     if (!configuration.configured) {
-      throw new Error("Slack host setup is not configured for this environment");
+      throw new Error(
+        "Slack host setup is not configured for this environment",
+      );
     }
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
@@ -314,11 +320,19 @@ export const complete = internalAction({
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const token = (await tokenResponse.json()) as SlackOAuthResponse;
-    if (!tokenResponse.ok || !token.ok || !token.access_token || !token.team?.id) {
-      return settingsRedirect({
-        slack: "error",
-        reason: token.error || "oauth_exchange_failed",
-      }, state.clientOrgId);
+    if (
+      !tokenResponse.ok ||
+      !token.ok ||
+      !token.access_token ||
+      !token.team?.id
+    ) {
+      return settingsRedirect(
+        {
+          slack: "error",
+          reason: token.error || "oauth_exchange_failed",
+        },
+        state.clientOrgId,
+      );
     }
 
     const purpose = state.purpose ?? "customer";
@@ -348,9 +362,12 @@ export const complete = internalAction({
         })
       : null;
     const existingConnection = isCustomerInstall
-      ? await ctx.runQuery(internalApi.slack.getActiveConnection, {
-          clientOrgId: clientOrgId!,
-        })
+      ? await ctx.runQuery(
+          internalApi.agentChannels.getSlackConnectionForMockSetup,
+          {
+            clientOrgId: clientOrgId!,
+          },
+        )
       : null;
     const teamConnection = isCustomerInstall
       ? await ctx.runQuery(
@@ -372,45 +389,71 @@ export const complete = internalAction({
         clientOrgId,
       );
     }
-    if (
-      setup?.mode === "reinstall" &&
-      existingConnection?.teamId !== token.team.id
-    ) {
+    if (existingConnection && existingConnection.teamId !== token.team.id) {
       return settingsRedirect(
         { slack: "error", reason: "wrong_workspace" },
         clientOrgId,
       );
     }
-    if (
-      teamConnection &&
-      teamConnection.clientOrgId !== clientOrgId
-    ) {
+    if (teamConnection && teamConnection.clientOrgId !== clientOrgId) {
       return settingsRedirect(
         { slack: "error", reason: "workspace_already_connected" },
         clientOrgId,
       );
     }
+    if (!token.app_id) {
+      return settingsRedirect(
+        { slack: "error", reason: "missing_app_identity" },
+        clientOrgId,
+      );
+    }
+    if (!token.bot_user_id) {
+      return settingsRedirect(
+        { slack: "error", reason: "missing_bot_identity" },
+        clientOrgId,
+      );
+    }
+    if (
+      existingConnection?.appId &&
+      existingConnection.appId !== token.app_id
+    ) {
+      return settingsRedirect(
+        { slack: "error", reason: "wrong_app" },
+        clientOrgId,
+      );
+    }
+    if (
+      existingConnection?.botUserId &&
+      existingConnection.botUserId !== token.bot_user_id
+    ) {
+      return settingsRedirect(
+        { slack: "error", reason: "wrong_bot_identity" },
+        clientOrgId,
+      );
+    }
     const repairingExistingWorkspace = Boolean(
-      setup?.status === "in_progress" &&
-        setup.mode === "reinstall" &&
-        existingConnection?.teamId === token.team.id,
+      existingConnection?.teamId === token.team.id,
     );
     const grantedScopes = (token.scope ?? "")
       .split(",")
       .map((scope) => scope.trim())
       .filter(Boolean);
-    const missingScopes = purpose === "host"
-      ? missingSlackHostScopes(grantedScopes)
-      : missingSlackCustomerScopes(grantedScopes);
+    const missingScopes =
+      purpose === "host"
+        ? missingSlackHostScopes(grantedScopes)
+        : missingSlackCustomerScopes(grantedScopes);
     if (missingScopes.length > 0) {
       if (!repairingExistingWorkspace) {
         await uninstallSlackApp(token.access_token);
       }
-      return settingsRedirect({
-        slack: "error",
-        reason: "missing_scopes",
-        scopes: missingScopes.join(","),
-      }, clientOrgId);
+      return settingsRedirect(
+        {
+          slack: "error",
+          reason: "missing_scopes",
+          scopes: missingScopes.join(","),
+        },
+        clientOrgId,
+      );
     }
 
     try {
@@ -443,15 +486,12 @@ export const complete = internalAction({
           },
         );
       } else {
-        await ctx.runMutation(
-          internalApi.agentChannels.upsertSlackConnection,
-          {
-            ...credentialArgs,
-            clientOrgId,
-            installedByUserId: state.initiatedByUserId,
-            installedByOperatorUserId: state.initiatedByOperatorUserId,
-          },
-        );
+        await ctx.runMutation(internalApi.agentChannels.upsertSlackConnection, {
+          ...credentialArgs,
+          clientOrgId,
+          installedByUserId: state.initiatedByUserId,
+          installedByOperatorUserId: state.initiatedByOperatorUserId,
+        });
         if (state.setupStateId) {
           await ctx.runMutation(
             internalApi.agentChannels.markSlackSetupInstallationComplete,
@@ -468,15 +508,16 @@ export const complete = internalAction({
           })
           .catch(() => undefined);
       }
-      return settingsRedirect({
-        slack: "error",
-        reason: error instanceof Error ? error.message : "connection_failed",
-      }, clientOrgId);
+      return settingsRedirect(
+        {
+          slack: "error",
+          reason: error instanceof Error ? error.message : "connection_failed",
+        },
+        clientOrgId,
+      );
     }
     return settingsRedirect(
-      purpose === "host"
-        ? { slack_host: "connected" }
-        : { slack: "connected" },
+      purpose === "host" ? { slack_host: "connected" } : { slack: "connected" },
       clientOrgId,
     );
   },
@@ -510,9 +551,14 @@ export const disconnect = action({
         }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      const result = (await response.json()) as { ok?: boolean; error?: string };
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
       if (!response.ok || !result.ok) {
-        throw new Error(result.error || `Slack uninstall failed (${response.status})`);
+        throw new Error(
+          result.error || `Slack uninstall failed (${response.status})`,
+        );
       }
     }
     await ctx.runMutation(internalApi.agentChannels.disconnectInternal, {

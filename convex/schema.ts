@@ -785,9 +785,7 @@ export default defineSchema({
     provider: v.optional(modelProviderValidator),
     model: v.optional(v.string()),
     routeSource: v.optional(v.string()),
-    transport: v.optional(
-      v.union(v.literal("direct"), v.literal("cl-router")),
-    ),
+    transport: v.optional(v.union(v.literal("direct"), v.literal("cl-router"))),
     fallbackProvider: v.optional(modelProviderValidator),
     fallbackModel: v.optional(v.string()),
     fallbackReason: v.optional(v.string()),
@@ -1140,6 +1138,26 @@ export default defineSchema({
       v.literal("revoked"),
       v.literal("disconnected"),
     ),
+    healthStatus: v.optional(
+      v.union(v.literal("healthy"), v.literal("degraded")),
+    ),
+    healthReason: v.optional(v.string()),
+    healthSource: v.optional(
+      v.union(
+        v.literal("slack"),
+        v.literal("reconciliation"),
+        v.literal("provider"),
+      ),
+    ),
+    healthSourceEventKey: v.optional(v.string()),
+    providerErrorCode: v.optional(v.string()),
+    providerErrorSummary: v.optional(v.string()),
+    authorizationUpdatedAt: v.optional(v.number()),
+    lastLifecycleEventAt: v.optional(v.number()),
+    lastVerifiedAt: v.optional(v.number()),
+    lastHealthyAt: v.optional(v.number()),
+    reconciliationFailureCount: v.optional(v.number()),
+    nextReconciliationAt: v.optional(v.number()),
     serviceUserId: v.id("users"),
     installedByUserId: v.optional(v.id("users")),
     installedByOperatorUserId: v.optional(v.id("users")),
@@ -1152,7 +1170,11 @@ export default defineSchema({
     disconnectedAt: v.optional(v.number()),
   })
     .index("by_clientOrgId_and_status", ["clientOrgId", "status"])
-    .index("by_teamId_and_status", ["teamId", "status"]),
+    .index("by_teamId_and_status", ["teamId", "status"])
+    .index("by_status_and_nextReconciliationAt", [
+      "status",
+      "nextReconciliationAt",
+    ]),
 
   slackChannelBindings: defineTable({
     connectionId: v.optional(v.id("slackWorkspaceConnections")),
@@ -1162,7 +1184,32 @@ export default defineSchema({
     hostChannelId: v.string(),
     customerChannelId: v.optional(v.string()),
     channelName: v.string(),
-    status: v.union(v.literal("active"), v.literal("archived")),
+    status: v.union(
+      v.literal("active"),
+      v.literal("unavailable"),
+      v.literal("archived"),
+    ),
+    healthStatus: v.optional(
+      v.union(v.literal("healthy"), v.literal("degraded")),
+    ),
+    unavailableReason: v.optional(v.string()),
+    healthSource: v.optional(
+      v.union(
+        v.literal("slack"),
+        v.literal("reconciliation"),
+        v.literal("provider"),
+      ),
+    ),
+    healthSourceEventKey: v.optional(v.string()),
+    providerErrorCode: v.optional(v.string()),
+    providerErrorSummary: v.optional(v.string()),
+    previousHostChannelId: v.optional(v.string()),
+    previousCustomerChannelId: v.optional(v.string()),
+    boundAt: v.optional(v.number()),
+    lastLifecycleEventAt: v.optional(v.number()),
+    lastVerifiedAt: v.optional(v.number()),
+    lastHealthyAt: v.optional(v.number()),
+    reconciliationFailureCount: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -1188,6 +1235,49 @@ export default defineSchema({
   })
     .index("by_connectionId_and_status", ["connectionId", "status"])
     .index("by_connectionId_and_channelId", ["connectionId", "channelId"]),
+
+  slackLifecycleEvents: defineTable({
+    source: v.union(
+      v.literal("slack"),
+      v.literal("reconciliation"),
+      v.literal("provider"),
+    ),
+    eventKey: v.string(),
+    providerEventId: v.optional(v.string()),
+    eventType: v.string(),
+    teamId: v.optional(v.string()),
+    authorizationTeamId: v.optional(v.string()),
+    apiAppId: v.optional(v.string()),
+    botUserIds: v.optional(v.array(v.string())),
+    channelId: v.optional(v.string()),
+    oldChannelId: v.optional(v.string()),
+    newChannelId: v.optional(v.string()),
+    channelName: v.optional(v.string()),
+    connectedTeamId: v.optional(v.string()),
+    previouslyConnectedTeamId: v.optional(v.string()),
+    isExtShared: v.optional(v.boolean()),
+    payloadHash: v.optional(v.string()),
+    connectionId: v.optional(v.id("slackWorkspaceConnections")),
+    bindingId: v.optional(v.id("slackChannelBindings")),
+    clientOrgId: v.optional(v.id("organizations")),
+    status: v.union(
+      v.literal("claimed"),
+      v.literal("processing"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("ignored"),
+    ),
+    attempts: v.number(),
+    resultSummary: v.optional(v.string()),
+    lastError: v.optional(v.string()),
+    eventAt: v.number(),
+    receivedAt: v.number(),
+    processedAt: v.optional(v.number()),
+  })
+    .index("by_eventKey", ["eventKey"])
+    .index("by_connectionId_and_receivedAt", ["connectionId", "receivedAt"])
+    .index("by_clientOrgId_and_receivedAt", ["clientOrgId", "receivedAt"])
+    .index("by_status_and_receivedAt", ["status", "receivedAt"]),
 
   slackActors: defineTable({
     connectionId: v.id("slackWorkspaceConnections"),
@@ -2555,7 +2645,9 @@ export default defineSchema({
     descriptionOfOperations: v.optional(v.string()),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
-    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    requirementSnapshots: v.optional(
+      v.array(certificateRequirementSnapshotValidator),
+    ),
     generationBatchId: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
@@ -2657,7 +2749,9 @@ export default defineSchema({
     descriptionOfOperations: v.optional(v.string()),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
-    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    requirementSnapshots: v.optional(
+      v.array(certificateRequirementSnapshotValidator),
+    ),
     generationBatchId: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
@@ -2677,7 +2771,9 @@ export default defineSchema({
     requestedEndorsements: v.optional(v.array(v.string())),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
-    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    requirementSnapshots: v.optional(
+      v.array(certificateRequirementSnapshotValidator),
+    ),
     generationBatchId: v.optional(v.string()),
     source: v.optional(
       v.union(
@@ -3344,11 +3440,7 @@ export default defineSchema({
     slackEditedAt: v.optional(v.number()),
     slackDeletedAt: v.optional(v.number()),
     slackDeliveryStatus: v.optional(
-      v.union(
-        v.literal("sending"),
-        v.literal("sent"),
-        v.literal("failed"),
-      ),
+      v.union(v.literal("sending"), v.literal("sent"), v.literal("failed")),
     ),
     slackDeliveryError: v.optional(v.string()),
     // Email messages
@@ -3433,10 +3525,7 @@ export default defineSchema({
     .index("by_responseMessageId", ["responseMessageId"])
     .index("by_resendEmailId", ["resendEmailId"])
     .index("by_replyToMessageId", ["replyToMessageId"])
-    .index("by_threadId_and_slackMessageTs", [
-      "threadId",
-      "slackMessageTs",
-    ])
+    .index("by_threadId_and_slackMessageTs", ["threadId", "slackMessageTs"])
     .index("by_slackTeamId_and_slackMessageTs", [
       "slackTeamId",
       "slackMessageTs",
@@ -3561,16 +3650,26 @@ export default defineSchema({
       v.literal("sending"),
       v.literal("sent"),
       v.literal("failed"),
+      v.literal("blocked"),
     ),
     providerMessageId: v.optional(v.string()),
     error: v.optional(v.string()),
+    providerErrorCode: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    retryable: v.optional(v.boolean()),
     attemptCount: v.number(),
     nextAttemptAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_idempotencyKey", ["idempotencyKey"])
-    .index("by_threadMessageId", ["threadMessageId"]),
+    .index("by_threadMessageId", ["threadMessageId"])
+    .index("by_connectionId_and_status", ["connectionId", "status"])
+    .index("by_connectionId_and_status_and_nextAttemptAt", [
+      "connectionId",
+      "status",
+      "nextAttemptAt",
+    ]),
 
   slackMessagePresentations: defineTable({
     orgId: v.id("organizations"),
@@ -3594,6 +3693,8 @@ export default defineSchema({
     actionTokenHash: v.string(),
     actionTokenExpiresAt: v.number(),
     error: v.optional(v.string()),
+    providerErrorCode: v.optional(v.string()),
+    retryable: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

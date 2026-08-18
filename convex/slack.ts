@@ -9,6 +9,10 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { normalizeEmailAddress } from "./lib/emailAddress";
 import { slackRetryDelayMs } from "./lib/slackRetry";
+import {
+  isSlackBindingReachable,
+  isSlackConnectionHealthy,
+} from "./lib/slackAvailability";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -16,13 +20,22 @@ const MAX_BATCH_SIZE = 50;
 
 export const getActiveConnection = internalQuery({
   args: { clientOrgId: v.id("organizations") },
-  handler: async (ctx, args) =>
-    await ctx.db
+  handler: async (ctx, args) => {
+    const connection = await ctx.db
       .query("slackWorkspaceConnections")
       .withIndex("by_clientOrgId_and_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
       )
-      .first(),
+      .first();
+    if (!connection || !isSlackConnectionHealthy(connection)) return null;
+    const unavailableBinding = await ctx.db
+      .query("slackChannelBindings")
+      .withIndex("by_connectionId_and_status", (q) =>
+        q.eq("connectionId", connection._id).eq("status", "unavailable"),
+      )
+      .first();
+    return unavailableBinding ? null : connection;
+  },
 });
 
 const attachmentValidator = v.object({
@@ -75,9 +88,7 @@ async function resolveActor(
   const operator = await ctx.db
     .query("operatorProfiles")
     .withIndex("by_slackTeamId_and_slackUserId", (q) =>
-      q
-        .eq("slackTeamId", senderTeamId)
-        .eq("slackUserId", event.senderUserId),
+      q.eq("slackTeamId", senderTeamId).eq("slackUserId", event.senderUserId),
     )
     .first();
   const classification: SlackClassification =
@@ -88,9 +99,10 @@ async function resolveActor(
         : senderTeamId === connection.teamId
           ? "customer_member"
           : "external";
-  const resolvedGlassUserId = classification === "customer_member"
-    ? await resolveGlassUserId(ctx, connection, event.senderEmail)
-    : undefined;
+  const resolvedGlassUserId =
+    classification === "customer_member"
+      ? await resolveGlassUserId(ctx, connection, event.senderEmail)
+      : undefined;
   let glassUserId = resolvedGlassUserId;
   if (
     classification === "customer_member" &&
@@ -101,9 +113,7 @@ async function resolveActor(
     const membership = await ctx.db
       .query("orgMemberships")
       .withIndex("by_orgId_userId", (q) =>
-        q
-          .eq("orgId", connection.clientOrgId)
-          .eq("userId", existingGlassUserId),
+        q.eq("orgId", connection.clientOrgId).eq("userId", existingGlassUserId),
       )
       .first();
     glassUserId = membership ? existingGlassUserId : undefined;
@@ -165,12 +175,13 @@ async function primaryBinding(
   ctx: MutationCtx,
   connectionId: Id<"slackWorkspaceConnections">,
 ) {
-  return await ctx.db
+  const binding = await ctx.db
     .query("slackChannelBindings")
     .withIndex("by_connectionId_and_status", (q) =>
       q.eq("connectionId", connectionId).eq("status", "active"),
     )
     .first();
+  return isSlackBindingReachable(binding) ? binding : null;
 }
 
 function canonicalEventKey(
@@ -185,11 +196,12 @@ function canonicalEventKey(
   },
 ) {
   const revisionPrefix = `${args.eventPrefix}:${args.messageTs}:${args.eventType}:`;
-  const revisionKey = args.eventType !== "message"
-    ? args.eventKey.startsWith(revisionPrefix)
-      ? args.eventKey.slice(revisionPrefix.length)
-      : args.providerEventId ?? args.eventKey
-    : "";
+  const revisionKey =
+    args.eventType !== "message"
+      ? args.eventKey.startsWith(revisionPrefix)
+        ? args.eventKey.slice(revisionPrefix.length)
+        : (args.providerEventId ?? args.eventKey)
+      : "";
   return `${connectionId}:${args.canonicalChannelKey}:${args.messageTs}:${args.eventType}:${revisionKey}`;
 }
 
@@ -200,19 +212,21 @@ function channelIdentity(
 ) {
   const isPrimaryChannel = Boolean(
     binding &&
-      ((args.teamId === binding.hostTeamId &&
-        args.channelId === binding.hostChannelId) ||
-        (args.teamId === connection.teamId &&
-          binding.customerChannelId === args.channelId)),
+    ((args.teamId === binding.hostTeamId &&
+      args.channelId === binding.hostChannelId) ||
+      (args.teamId === connection.teamId &&
+        binding.customerChannelId === args.channelId)),
   );
   return {
     isPrimaryChannel,
-    canonicalChannelKey: isPrimaryChannel && binding
-      ? `support:${binding._id}`
-      : `channel:${args.teamId}:${args.channelId}`,
-    threadChannelId: isPrimaryChannel && binding
-      ? binding.customerChannelId ?? binding.hostChannelId
-      : args.channelId,
+    canonicalChannelKey:
+      isPrimaryChannel && binding
+        ? `support:${binding._id}`
+        : `channel:${args.teamId}:${args.channelId}`,
+    threadChannelId:
+      isPrimaryChannel && binding
+        ? (binding.customerChannelId ?? binding.hostChannelId)
+        : args.channelId,
   };
 }
 
@@ -356,7 +370,8 @@ export const claimInbound = internalMutation({
         if (boundConnection?.status === "active") connection = boundConnection;
       }
     }
-    if (!connection) return { duplicate: false, status: "unknown_workspace" as const };
+    if (!connection)
+      return { duplicate: false, status: "unknown_workspace" as const };
     const binding = await primaryBinding(ctx, connection._id);
     const identity = channelIdentity(connection, binding, args);
     const logicalEventKey = canonicalEventKey(connection._id, {
@@ -409,22 +424,25 @@ export const claimInbound = internalMutation({
         return { duplicate: false, status: "ignored" as const };
       }
     }
-    const scheduledFor = dayjs(args.receivedAt).add(DEBOUNCE_MS, "millisecond").valueOf();
+    const scheduledFor = dayjs(args.receivedAt)
+      .add(DEBOUNCE_MS, "millisecond")
+      .valueOf();
     const queued = await ctx.db
       .query("slackInboundEvents")
-      .withIndex(
-        "by_connection_channel_thread_status_schedule",
-        (q) =>
-          q
-            .eq("connectionId", connection._id)
-            .eq("channelId", args.channelId)
-            .eq("threadTs", args.threadTs)
-            .eq("status", "queued"),
+      .withIndex("by_connection_channel_thread_status_schedule", (q) =>
+        q
+          .eq("connectionId", connection._id)
+          .eq("channelId", args.channelId)
+          .eq("threadTs", args.threadTs)
+          .eq("status", "queued"),
       )
       .order("asc")
       .take(MAX_BATCH_SIZE);
     for (const event of queued) {
-      await ctx.db.patch(event._id, { scheduledFor, updatedAt: args.receivedAt });
+      await ctx.db.patch(event._id, {
+        scheduledFor,
+        updatedAt: args.receivedAt,
+      });
     }
     const eventId = await ctx.db.insert("slackInboundEvents", {
       ...args,
@@ -463,20 +481,19 @@ export const claimBatch = internalMutation({
     const connectionId = scheduledEvent.connectionId;
     const queued = await ctx.db
       .query("slackInboundEvents")
-      .withIndex(
-        "by_connection_channel_thread_status_schedule",
-        (q) =>
-          q
-            .eq("connectionId", connectionId)
-            .eq("channelId", scheduledEvent.channelId)
-            .eq("threadTs", scheduledEvent.threadTs)
-            .eq("status", "queued")
-            .lte("scheduledFor", now),
+      .withIndex("by_connection_channel_thread_status_schedule", (q) =>
+        q
+          .eq("connectionId", connectionId)
+          .eq("channelId", scheduledEvent.channelId)
+          .eq("threadTs", scheduledEvent.threadTs)
+          .eq("status", "queued")
+          .lte("scheduledFor", now),
       )
       .order("asc")
       .take(MAX_BATCH_SIZE);
-    const batch = queued
-      .sort((left, right) => left.receivedAt - right.receivedAt);
+    const batch = queued.sort(
+      (left, right) => left.receivedAt - right.receivedAt,
+    );
     for (const event of batch) {
       await ctx.db.patch(event._id, {
         status: "processing",
@@ -540,7 +557,7 @@ export const enrichInboundActor = internalMutation({
         event.mentionsGlass ||
         Boolean(
           args.installationBotUserId &&
-            event.content.includes(`<@${args.installationBotUserId}>`),
+          event.content.includes(`<@${args.installationBotUserId}>`),
         ),
       mentionedBotUserId:
         args.installationBotUserId &&
@@ -639,9 +656,10 @@ export const prepareBatch = internalMutation({
         continue;
       }
 
-      const threadChannelId = event.isPrimaryChannel && binding
-        ? binding.customerChannelId ?? binding.hostChannelId
-        : event.channelId;
+      const threadChannelId =
+        event.isPrimaryChannel && binding
+          ? (binding.customerChannelId ?? binding.hostChannelId)
+          : event.channelId;
       const existingThread = await ctx.db
         .query("threads")
         .withIndex(
@@ -729,33 +747,30 @@ export const prepareBatch = internalMutation({
       const privateOwnerId =
         !isDirectMessage && existingThread?.visibility === "user_private"
           ? existingThread.createdBy
-          : actor.glassUserId ?? connection.serviceUserId;
+          : (actor.glassUserId ?? connection.serviceUserId);
 
       let thread = existingThread;
       if (!thread) {
-        const channelLabel = membership?.status === "active"
-          ? membership.channelName
-          : event.isPrimaryChannel && binding
-            ? binding.channelName
-            : threadChannelId;
+        const channelLabel =
+          membership?.status === "active"
+            ? membership.channelName
+            : event.isPrimaryChannel && binding
+              ? binding.channelName
+              : threadChannelId;
         const actorName = actor.displayName ?? event.senderUserId;
         const threadId = await ctx.db.insert("threads", {
           orgId: connection.clientOrgId,
           title: isDirectMessage
             ? `DM · ${actorName}`
             : `#${channelLabel} · ${actorName}`,
-          createdBy: isUserPrivate
-            ? privateOwnerId
-            : connection.serviceUserId,
+          createdBy: isUserPrivate ? privateOwnerId : connection.serviceUserId,
           lastMessageAt: event.receivedAt,
           originChannel: "slack",
           visibility: isUserPrivate ? "user_private" : undefined,
           slackConnectionId: connection._id,
           slackChannelId: threadChannelId,
           slackThreadTs: event.threadTs,
-          slackConversationKind: isDirectMessage
-            ? "direct_message"
-            : "channel",
+          slackConversationKind: isDirectMessage ? "direct_message" : "channel",
           slackState:
             isDirectMessage && authorizedCustomer
               ? "active"
@@ -771,8 +786,7 @@ export const prepareBatch = internalMutation({
         if (
           thread.createdBy !== privateOwnerId ||
           thread.visibility !== "user_private" ||
-          (isDirectMessage &&
-            thread.slackConversationKind !== "direct_message")
+          (isDirectMessage && thread.slackConversationKind !== "direct_message")
         ) {
           await ctx.db.patch(thread._id, {
             createdBy: privateOwnerId,
@@ -784,16 +798,18 @@ export const prepareBatch = internalMutation({
         }
       }
 
-      const inboundAttachments = event.attachments ??
-        (event.attachment ? [event.attachment] : []);
+      const inboundAttachments =
+        event.attachments ?? (event.attachment ? [event.attachment] : []);
       const attachments = inboundAttachments.flatMap((attachment) =>
         attachment.fileId
-          ? [{
-              filename: attachment.filename,
-              contentType: attachment.contentType,
-              size: attachment.size ?? 0,
-              fileId: attachment.fileId,
-            }]
+          ? [
+              {
+                filename: attachment.filename,
+                contentType: attachment.contentType,
+                size: attachment.size ?? 0,
+                fileId: attachment.fileId,
+              },
+            ]
           : [],
       );
       const messageId = await ctx.db.insert("threadMessages", {
@@ -851,7 +867,9 @@ export const prepareBatch = internalMutation({
         }
       } else if (
         (authorizedCustomer || operator) &&
-        (isDirectMessage || event.mentionsGlass || thread.slackState === "active")
+        (isDirectMessage ||
+          event.mentionsGlass ||
+          thread.slackState === "active")
       ) {
         await ctx.db.patch(thread._id, { slackState: "active" });
         if (trigger) await ctx.db.delete(trigger.agentMessageId);
@@ -989,8 +1007,8 @@ export const requestHandoffFromAgent = internalMutation({
     const binding = await primaryBinding(ctx, connection._id);
     const isPrimary = Boolean(
       binding &&
-        (binding.hostChannelId === thread.slackChannelId ||
-          binding.customerChannelId === thread.slackChannelId),
+      (binding.hostChannelId === thread.slackChannelId ||
+        binding.customerChannelId === thread.slackChannelId),
     );
     if (isPrimary) return { status: "paused" as const };
     const handoffId = await createHandoff(ctx, {
@@ -1072,6 +1090,10 @@ export const createDeliveryRecord = internalMutation({
 export const markRevoked = internalMutation({
   args: { teamId: v.string() },
   handler: async (ctx, args) => {
-    await ctx.scheduler.runAfter(0, internalApi.agentChannels.revokeByTeamId, args);
+    await ctx.scheduler.runAfter(
+      0,
+      internalApi.agentChannels.revokeByTeamId,
+      args,
+    );
   },
 });

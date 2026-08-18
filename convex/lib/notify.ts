@@ -14,6 +14,10 @@ import {
 } from "./notificationTypes";
 import { resolveChannelPreference } from "../notificationPreferences";
 import { resolveSlackAutomaticChannelId } from "./slackChannelRouting";
+import {
+  isSlackBindingReachable,
+  isSlackConnectionHealthy,
+} from "./slackAvailability";
 
 export interface NotifyArgs {
   orgId: Id<"organizations">;
@@ -79,7 +83,9 @@ export const notifyInternal = internalMutation({
     type: v.string(),
     title: v.string(),
     body: v.string(),
-    severity: v.optional(v.union(v.literal("info"), v.literal("warning"), v.literal("critical"))),
+    severity: v.optional(
+      v.union(v.literal("info"), v.literal("warning"), v.literal("critical")),
+    ),
     userId: v.optional(v.id("users")),
     relatedOrgId: v.optional(v.id("organizations")),
     actionType: v.optional(v.string()),
@@ -103,7 +109,10 @@ export const notifyInternal = internalMutation({
       const existing = await ctx.db
         .query("notifications")
         .withIndex("by_orgId_coalesceKey_status", (q) =>
-          q.eq("orgId", args.orgId).eq("coalesceKey", coalesceKey!).eq("status", "unread")
+          q
+            .eq("orgId", args.orgId)
+            .eq("coalesceKey", coalesceKey!)
+            .eq("status", "unread"),
         )
         .first();
 
@@ -174,9 +183,13 @@ export const notifyInternal = internalMutation({
 
     if (anyEmailScheduled) {
       await ctx.db.patch(notificationId, { emailStatus: "scheduled" });
-      await ctx.scheduler.runAfter(0, internal.actions.sendNotificationEmail.send, {
-        notificationId,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.sendNotificationEmail.send,
+        {
+          notificationId,
+        },
+      );
     } else {
       // Determine if suppressed by preference or just not applicable
       const hasPrefs = memberships.length > 0;
@@ -187,9 +200,13 @@ export const notifyInternal = internalMutation({
 
     if (anyImessageScheduled) {
       await ctx.db.patch(notificationId, { imessageStatus: "scheduled" });
-      await ctx.scheduler.runAfter(0, internal.actions.sendNotificationImessage.send, {
-        notificationId,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.sendNotificationImessage.send,
+        {
+          notificationId,
+        },
+      );
     } else {
       const hasPrefs = memberships.length > 0;
       await ctx.db.patch(notificationId, {
@@ -204,7 +221,8 @@ export const notifyInternal = internalMutation({
           .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.orgId))
           .first()
       : null;
-    const shouldSendSlack = channelSettings?.slackEnabled === true &&
+    const shouldSendSlack =
+      channelSettings?.slackEnabled === true &&
       (slackCategory === "safe"
         ? channelSettings.slackSafeAlertsEnabled
         : channelSettings.slackVendorAlertsEnabled);
@@ -216,14 +234,28 @@ export const notifyInternal = internalMutation({
         )
         .first();
       const primary = connection
-        ? await ctx.db
+        ? ((await ctx.db
             .query("slackChannelBindings")
             .withIndex("by_connectionId_and_status", (q) =>
               q.eq("connectionId", connection._id).eq("status", "active"),
             )
-            .first()
+            .first()) ??
+          (await ctx.db
+            .query("slackChannelBindings")
+            .withIndex("by_connectionId_and_status", (q) =>
+              q.eq("connectionId", connection._id).eq("status", "unavailable"),
+            )
+            .first()))
         : null;
-      if (connection && resolveSlackAutomaticChannelId(connection, primary)) {
+      if (
+        connection &&
+        isSlackConnectionHealthy(connection) &&
+        (!primary || isSlackBindingReachable(primary)) &&
+        resolveSlackAutomaticChannelId(
+          connection,
+          isSlackBindingReachable(primary) ? primary : null,
+        )
+      ) {
         await ctx.db.patch(notificationId, { slackStatus: "scheduled" });
         await ctx.scheduler.runAfter(
           0,
@@ -251,6 +283,9 @@ export const notifyInternal = internalMutation({
  * Convenience wrapper called from other Convex mutations.
  * Usage: await notify(ctx, { orgId, type, title, body, ... })
  */
-export async function notify(ctx: MutationCtx, args: NotifyArgs): Promise<Id<"notifications">> {
+export async function notify(
+  ctx: MutationCtx,
+  args: NotifyArgs,
+): Promise<Id<"notifications">> {
   return await ctx.runMutation(internal.lib.notify.notifyInternal, args);
 }

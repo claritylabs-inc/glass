@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import {
   internalMutation,
   internalQuery,
@@ -10,13 +11,19 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess, requireCurrentOrgAdminWrite } from "./lib/access";
-import { requireOperator, writeOperatorAudit } from "./lib/operatorIdentity";
+import {
+  getActiveOperatorImpersonation,
+  requireOperator,
+  writeOperatorAudit,
+} from "./lib/operatorIdentity";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
 import { getSlackHostConfiguration } from "./lib/slackConfig";
 import { missingSlackCustomerScopes } from "./lib/slackOAuthPolicy";
+
+const internalApi = internal as any;
 
 export const DEFAULT_AGENT_CHANNEL_SETTINGS = {
   emailEnabled: true,
@@ -124,6 +131,33 @@ async function activeConnection(
     .first();
 }
 
+async function retainedConnection(
+  ctx: QueryCtx | MutationCtx,
+  clientOrgId: Id<"organizations">,
+) {
+  for (const status of ["active", "revoked", "disconnected"] as const) {
+    const connection = await ctx.db
+      .query("slackWorkspaceConnections")
+      .withIndex("by_clientOrgId_and_status", (q) =>
+        q.eq("clientOrgId", clientOrgId).eq("status", status),
+      )
+      .order("desc")
+      .first();
+    if (connection) return connection;
+  }
+  return null;
+}
+
+async function requireWritableOperator(ctx: MutationCtx) {
+  const operator = await requireOperator(ctx);
+  if (await getActiveOperatorImpersonation(ctx)) {
+    throw new Error(
+      "Stop impersonating the client before changing Slack setup",
+    );
+  }
+  return operator;
+}
+
 async function slackSetupState(
   ctx: QueryCtx | MutationCtx,
   clientOrgId: Id<"organizations">,
@@ -157,11 +191,12 @@ async function invalidateSlackSetupOAuthStates(
 async function channelOverview(
   ctx: QueryCtx | MutationCtx,
   clientOrgId: Id<"organizations">,
+  includeLifecycleHistory = false,
 ) {
   const [client, settings, connection] = await Promise.all([
     ctx.db.get(clientOrgId),
     readSettings(ctx, clientOrgId),
-    activeConnection(ctx, clientOrgId),
+    retainedConnection(ctx, clientOrgId),
   ]);
   if (!client || (client.type ?? "client") !== "client") {
     throw new Error("Client organization not found");
@@ -184,14 +219,28 @@ async function channelOverview(
         ownerOrgId: client._id,
         ownerName: client.name,
       };
-  const [supportChannel, setup] = await Promise.all([
-    ctx.db
+  let supportChannel: Doc<"slackChannelBindings"> | null = null;
+  for (const status of ["active", "unavailable", "archived"] as const) {
+    supportChannel = await ctx.db
       .query("slackChannelBindings")
       .withIndex("by_clientOrgId_and_status", (q) =>
-        q.eq("clientOrgId", clientOrgId).eq("status", "active"),
+        q.eq("clientOrgId", clientOrgId).eq("status", status),
       )
-      .first(),
+      .order("desc")
+      .first();
+    if (supportChannel) break;
+  }
+  const [setup, lifecycleEvents] = await Promise.all([
     slackSetupState(ctx, clientOrgId),
+    includeLifecycleHistory
+      ? ctx.db
+          .query("slackLifecycleEvents")
+          .withIndex("by_clientOrgId_and_receivedAt", (q) =>
+            q.eq("clientOrgId", clientOrgId),
+          )
+          .order("desc")
+          .take(10)
+      : [],
   ]);
   const joinedChannels = connection
     ? await ctx.db
@@ -201,6 +250,76 @@ async function channelOverview(
         )
         .collect()
     : [];
+  const slackHealth = (() => {
+    if (!connection) {
+      return {
+        status: "not_connected" as const,
+        reasonSummary: "Slack has not been connected.",
+        recoveryAction: null,
+        lastVerifiedAt: null,
+        lastHealthyAt: null,
+      };
+    }
+    if (connection.status === "revoked") {
+      return {
+        status: "revoked" as const,
+        reasonCode: connection.healthReason ?? "authorization_revoked",
+        reasonSummary:
+          connection.healthReason === "app_uninstalled"
+            ? "The Glass app was uninstalled from this workspace."
+            : "Glass no longer has valid Slack authorization for this workspace.",
+        recoveryAction: "reinstall" as const,
+        lastVerifiedAt: connection.lastVerifiedAt ?? null,
+        lastHealthyAt: connection.lastHealthyAt ?? null,
+      };
+    }
+    if (connection.status === "disconnected") {
+      return {
+        status: "disconnected" as const,
+        reasonCode: "operator_disconnected",
+        reasonSummary: "Slack was disconnected in Glass.",
+        recoveryAction: "reinstall" as const,
+        lastVerifiedAt: connection.lastVerifiedAt ?? null,
+        lastHealthyAt: connection.lastHealthyAt ?? null,
+      };
+    }
+    if (connection.healthStatus === "degraded") {
+      return {
+        status: "degraded" as const,
+        reasonCode: connection.healthReason ?? "verification_failed",
+        reasonSummary:
+          connection.providerErrorSummary ??
+          "Glass could not verify the Slack connection. Delivery is paused while verification retries.",
+        recoveryAction: null,
+        lastVerifiedAt: connection.lastVerifiedAt ?? null,
+        lastHealthyAt: connection.lastHealthyAt ?? null,
+      };
+    }
+    if (
+      (supportChannel && supportChannel.status !== "active") ||
+      supportChannel?.healthStatus === "degraded"
+    ) {
+      return {
+        status: "channel_unavailable" as const,
+        reasonCode:
+          supportChannel?.unavailableReason ?? "channel_verification_failed",
+        reasonSummary:
+          supportChannel?.providerErrorSummary ??
+          `The primary Slack channel #${supportChannel?.channelName ?? "unknown"} is unavailable.`,
+        recoveryAction: "rebind" as const,
+        lastVerifiedAt: supportChannel?.lastVerifiedAt ?? null,
+        lastHealthyAt: supportChannel?.lastHealthyAt ?? null,
+      };
+    }
+    return {
+      status: "healthy" as const,
+      reasonSummary:
+        "Slack authorization and the primary channel are available.",
+      recoveryAction: null,
+      lastVerifiedAt: connection.lastVerifiedAt ?? null,
+      lastHealthyAt: connection.lastHealthyAt ?? null,
+    };
+  })();
   return {
     settings: settingsInput(settings),
     agentEmailAddress,
@@ -210,6 +329,16 @@ async function channelOverview(
     joinedChannels,
     slackMode: getSlackHostConfiguration().mode,
     setup,
+    slackHealth,
+    lifecycleEvents: lifecycleEvents.map((event) => ({
+      id: event._id,
+      source: event.source,
+      eventType: event.eventType,
+      status: event.status,
+      summary: event.resultSummary ?? event.lastError ?? event.eventType,
+      receivedAt: event.receivedAt,
+      processedAt: event.processedAt,
+    })),
   };
 }
 
@@ -253,6 +382,9 @@ async function deactivateConnection(
     updatedByUserId?: Id<"users">;
     updatedByOperatorUserId?: Id<"users">;
   },
+  reason = status === "disconnected"
+    ? "operator_disconnected"
+    : "authorization_revoked",
 ) {
   const now = dayjs().valueOf();
   if (connection.nativeInstallationId) {
@@ -269,37 +401,77 @@ async function deactivateConnection(
   }
   await ctx.db.patch(connection._id, {
     status,
+    healthStatus: "degraded",
+    healthReason: reason,
+    healthSource: status === "revoked" ? "provider" : undefined,
+    lastVerifiedAt: now,
+    nextReconciliationAt: undefined,
     disconnectedAt: now,
     updatedAt: now,
   });
-  const bindings = await ctx.db
-    .query("slackChannelBindings")
-    .withIndex("by_connectionId_and_status", (q) =>
-      q.eq("connectionId", connection._id).eq("status", "active"),
-    )
-    .collect();
-  for (const binding of bindings) {
-    await ctx.db.patch(binding._id, { status: "archived", updatedAt: now });
+  await ctx.scheduler.runAfter(0, internalApi.slackLifecycle.suspendOutbound, {
+    connectionId: connection._id,
+    reason:
+      status === "disconnected"
+        ? "Slack was disconnected in Glass"
+        : "Slack authorization is revoked",
+  });
+  if (status === "disconnected") {
+    const bindings = (
+      await Promise.all(
+        (["active", "unavailable"] as const).map((bindingStatus) =>
+          ctx.db
+            .query("slackChannelBindings")
+            .withIndex("by_connectionId_and_status", (q) =>
+              q.eq("connectionId", connection._id).eq("status", bindingStatus),
+            )
+            .collect(),
+        ),
+      )
+    ).flat();
+    for (const binding of bindings) {
+      await ctx.db.patch(binding._id, {
+        status: "archived",
+        unavailableReason: "operator_disconnected",
+        updatedAt: now,
+      });
+    }
+    const settings = settingsInput(
+      await readSettings(ctx, connection.clientOrgId),
+    );
+    await upsertSettings(
+      ctx,
+      connection.clientOrgId,
+      { ...settings, slackEnabled: false },
+      actor,
+    );
   }
-  const settings = settingsInput(
-    await readSettings(ctx, connection.clientOrgId),
-  );
-  await upsertSettings(
-    ctx,
-    connection.clientOrgId,
-    { ...settings, slackEnabled: false },
-    actor,
-  );
 }
 
 export const get = query({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    await getOrgAccess(ctx, args.clientOrgId);
+    const access = await getOrgAccess(ctx, args.clientOrgId);
+    const impersonation = await getActiveOperatorImpersonation(ctx);
     const { setup, ...overview } = await channelOverview(ctx, args.clientOrgId);
     return {
       ...overview,
       setup: setup ? { status: setup.status } : null,
+      permissions: {
+        canManage:
+          !impersonation &&
+          access.accessType === "member" &&
+          access.role === "admin",
+        canRecover:
+          !impersonation &&
+          access.accessType === "member" &&
+          access.role === "admin",
+        canDisconnect:
+          !impersonation &&
+          access.accessType === "member" &&
+          access.role === "admin",
+        canViewAudit: false,
+      },
     };
   },
 });
@@ -308,7 +480,16 @@ export const getForOperator = query({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
     await requireOperator(ctx);
-    return await channelOverview(ctx, args.clientOrgId);
+    const impersonation = await getActiveOperatorImpersonation(ctx);
+    return {
+      ...(await channelOverview(ctx, args.clientOrgId, true)),
+      permissions: {
+        canManage: !impersonation,
+        canRecover: !impersonation,
+        canDisconnect: !impersonation,
+        canViewAudit: !impersonation,
+      },
+    };
   },
 });
 
@@ -331,7 +512,7 @@ export const update = mutation({
 export const updateForOperator = mutation({
   args: { clientOrgId: v.id("organizations"), ...settingsArgs },
   handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
+    const operator = await requireWritableOperator(ctx);
     const org = await ctx.db.get(args.clientOrgId);
     if (!org || (org.type ?? "client") !== "client") {
       throw new Error("Client organization not found");
@@ -401,16 +582,16 @@ export const startSlackSetup = mutation({
     mode: v.union(v.literal("initial"), v.literal("reinstall")),
   },
   handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
+    const operator = await requireWritableOperator(ctx);
     const org = await ctx.db.get(args.clientOrgId);
     if (!org || (org.type ?? "client") !== "client") {
       throw new Error("Client organization not found");
     }
-    const connection = await activeConnection(ctx, args.clientOrgId);
+    const connection = await retainedConnection(ctx, args.clientOrgId);
     if (args.mode === "reinstall" && !connection) {
       throw new Error("Connect Slack before starting a reinstall");
     }
-    if (args.mode === "initial" && connection) {
+    if (args.mode === "initial" && connection?.status === "active") {
       throw new Error("Slack is already connected for this client");
     }
 
@@ -477,7 +658,7 @@ export const setSlackSetupStep = mutation({
     deferredStep: v.optional(deferrableSlackSetupStepValidator),
   },
   handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
+    const operator = await requireWritableOperator(ctx);
     const setup = await slackSetupState(ctx, args.clientOrgId);
     if (!setup || setup.status !== "in_progress") {
       throw new Error("Slack setup is not in progress");
@@ -506,7 +687,7 @@ export const setSlackSetupStep = mutation({
 export const finishSlackSetup = mutation({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
+    const operator = await requireWritableOperator(ctx);
     const [setup, connection, supportChannel] = await Promise.all([
       slackSetupState(ctx, args.clientOrgId),
       activeConnection(ctx, args.clientOrgId),
@@ -568,7 +749,7 @@ export const finishSlackSetup = mutation({
 export const cancelSlackSetup = mutation({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
+    const operator = await requireWritableOperator(ctx);
     const setup = await slackSetupState(ctx, args.clientOrgId);
     if (!setup || setup.status !== "in_progress") return null;
     if (setup.mode !== "reinstall") {
@@ -595,7 +776,7 @@ export const cancelSlackSetup = mutation({
 export const setOperatorSlackIdentity = mutation({
   args: { teamId: v.string(), userId: v.string() },
   handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
+    const operator = await requireWritableOperator(ctx);
     const teamId = args.teamId.trim();
     const slackUserId = args.userId.trim();
     if (!teamId || !slackUserId)
@@ -710,6 +891,11 @@ export const authorizeSetup = internalQuery({
     }
     const kind = await setupActorKind(ctx, args.clientOrgId, args.userId);
     if (!kind) throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
+    if (kind === "operator" && (await getActiveOperatorImpersonation(ctx))) {
+      throw new Error(
+        "Stop impersonating the client before changing Slack setup",
+      );
+    }
     return { kind, org, userId: args.userId };
   },
 });
@@ -729,7 +915,7 @@ export const authorizeSlackInstallInvite = internalQuery({
       throwUserFacingError(userFacingErrorCodes.operatorRequired);
     }
     const [connection, setup] = await Promise.all([
-      activeConnection(ctx, args.clientOrgId),
+      retainedConnection(ctx, args.clientOrgId),
       slackSetupState(ctx, args.clientOrgId),
     ]);
     if (!setup || setup.status !== "in_progress") {
@@ -738,7 +924,7 @@ export const authorizeSlackInstallInvite = internalQuery({
       );
     }
     if (setup.mode === "reinstall" && !connection) {
-      throw new Error("The existing Slack connection is no longer active");
+      throw new Error("The existing Slack connection could not be found");
     }
     return {
       clientName: org.name,
@@ -1256,6 +1442,17 @@ export const upsertSlackConnection = internalMutation({
         botUserId: args.botUserId,
         grantedScopes: args.grantedScopes,
         status: "active",
+        healthStatus: "healthy",
+        healthReason: undefined,
+        healthSource: undefined,
+        healthSourceEventKey: undefined,
+        providerErrorCode: undefined,
+        providerErrorSummary: undefined,
+        authorizationUpdatedAt: now,
+        lastVerifiedAt: now,
+        lastHealthyAt: now,
+        reconciliationFailureCount: 0,
+        nextReconciliationAt: dayjs(now).add(15, "minute").valueOf(),
         installedByUserId: args.installedByUserId,
         installedByOperatorUserId: args.installedByOperatorUserId,
         thirdPartyVisibilityAcknowledged: true,
@@ -1284,6 +1481,12 @@ export const upsertSlackConnection = internalMutation({
         botUserId: args.botUserId,
         grantedScopes: args.grantedScopes,
         status: "active",
+        healthStatus: "healthy",
+        authorizationUpdatedAt: now,
+        lastVerifiedAt: now,
+        lastHealthyAt: now,
+        reconciliationFailureCount: 0,
+        nextReconciliationAt: dayjs(now).add(15, "minute").valueOf(),
         serviceUserId,
         installedByUserId: args.installedByUserId,
         installedByOperatorUserId: args.installedByOperatorUserId,
@@ -1345,20 +1548,8 @@ export const upsertSlackConnection = internalMutation({
         q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
       )
       .first();
-    const binding =
-      activeBinding ??
-      (await ctx.db
-        .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
-          q.eq("clientOrgId", args.clientOrgId).eq("status", "archived"),
-        )
-        .first());
-    if (binding && connectionId) {
-      await ctx.db.patch(binding._id, {
-        connectionId,
-        status: "active",
-        updatedAt: now,
-      });
+    if (activeBinding && connectionId && !activeBinding.connectionId) {
+      await ctx.db.patch(activeBinding._id, { connectionId, updatedAt: now });
     }
     if (args.installedByOperatorUserId) {
       await writeOperatorAudit(ctx, {
@@ -1416,31 +1607,58 @@ export const bindPrimaryChannelForOperator = mutation({
     channelName: v.string(),
   },
   handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
+    const operator = await requireWritableOperator(ctx);
     const connection = await activeConnection(ctx, args.clientOrgId);
     if (args.customerChannelId && !connection) {
       throw new Error(
         "Connect the customer Slack workspace before linking its support-channel mirror",
       );
     }
-    const existing = await ctx.db
-      .query("slackChannelBindings")
-      .withIndex("by_clientOrgId_and_status", (q) =>
-        q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
-      )
-      .first();
+    const existing =
+      (await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
+        )
+        .first()) ??
+      (await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "unavailable"),
+        )
+        .first());
     const now = dayjs().valueOf();
-    let bindingId = existing?._id;
-    if (existing) {
+    const sameChannel =
+      existing?.hostTeamId === args.hostTeamId &&
+      existing.hostChannelId === args.hostChannelId &&
+      existing.customerChannelId === args.customerChannelId;
+    let bindingId: Id<"slackChannelBindings">;
+    if (existing && sameChannel) {
       await ctx.db.patch(existing._id, {
         connectionId: connection?._id,
-        hostTeamId: args.hostTeamId,
-        hostChannelId: args.hostChannelId,
-        customerChannelId: args.customerChannelId,
         channelName: args.channelName,
+        status: "active",
+        healthStatus: "healthy",
+        unavailableReason: undefined,
+        healthSource: undefined,
+        healthSourceEventKey: undefined,
+        providerErrorCode: undefined,
+        providerErrorSummary: undefined,
+        boundAt: now,
+        lastVerifiedAt: now,
+        lastHealthyAt: now,
+        reconciliationFailureCount: 0,
         updatedAt: now,
       });
+      bindingId = existing._id;
     } else {
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          status: "archived",
+          unavailableReason: "operator_rebound",
+          updatedAt: now,
+        });
+      }
       bindingId = await ctx.db.insert("slackChannelBindings", {
         connectionId: connection?._id,
         clientOrgId: args.clientOrgId,
@@ -1450,6 +1668,11 @@ export const bindPrimaryChannelForOperator = mutation({
         customerChannelId: args.customerChannelId,
         channelName: args.channelName,
         status: "active",
+        healthStatus: "healthy",
+        boundAt: now,
+        lastVerifiedAt: now,
+        lastHealthyAt: now,
+        reconciliationFailureCount: 0,
         createdAt: now,
         updatedAt: now,
       });
@@ -1479,23 +1702,50 @@ export const bindPrimaryChannelInternal = internalMutation({
     channelName: v.string(),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("slackChannelBindings")
-      .withIndex("by_clientOrgId_and_status", (q) =>
-        q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
-      )
-      .first();
+    const existing =
+      (await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
+        )
+        .first()) ??
+      (await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "unavailable"),
+        )
+        .first());
     const now = dayjs().valueOf();
-    let bindingId = existing?._id;
-    if (existing) {
+    const sameChannel =
+      existing?.hostTeamId === args.hostTeamId &&
+      existing.hostChannelId === args.hostChannelId;
+    let bindingId: Id<"slackChannelBindings">;
+    if (existing && sameChannel) {
       await ctx.db.patch(existing._id, {
         connectionId: args.connectionId,
-        hostTeamId: args.hostTeamId,
-        hostChannelId: args.hostChannelId,
         channelName: args.channelName,
+        status: "active",
+        healthStatus: "healthy",
+        unavailableReason: undefined,
+        healthSource: undefined,
+        healthSourceEventKey: undefined,
+        providerErrorCode: undefined,
+        providerErrorSummary: undefined,
+        boundAt: now,
+        lastVerifiedAt: now,
+        lastHealthyAt: now,
+        reconciliationFailureCount: 0,
         updatedAt: now,
       });
+      bindingId = existing._id;
     } else {
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          status: "archived",
+          unavailableReason: "operator_rebound",
+          updatedAt: now,
+        });
+      }
       bindingId = await ctx.db.insert("slackChannelBindings", {
         connectionId: args.connectionId,
         clientOrgId: args.clientOrgId,
@@ -1504,6 +1754,11 @@ export const bindPrimaryChannelInternal = internalMutation({
         hostChannelId: args.hostChannelId,
         channelName: args.channelName,
         status: "active",
+        healthStatus: "healthy",
+        boundAt: now,
+        lastVerifiedAt: now,
+        lastHealthyAt: now,
+        reconciliationFailureCount: 0,
         createdAt: now,
         updatedAt: now,
       });
@@ -1592,57 +1847,59 @@ export const syncSlackChannelMembershipsInternal = internalMutation({
         });
       }
     }
-    if (
-      connection.automaticChannelRoutingConfiguredAt !== undefined &&
-      connection.automaticChannelId &&
-      !activeIds.has(connection.automaticChannelId)
-    ) {
-      await ctx.db.patch(connection._id, {
-        automaticChannelId: undefined,
-        automaticChannelName: undefined,
-        updatedAt: now,
-      });
-    }
-
-    const supportChannel = await ctx.db
-      .query("slackChannelBindings")
-      .withIndex("by_clientOrgId_and_status", (q) =>
-        q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
-      )
-      .first();
-    let supportChannelId = supportChannel?.customerChannelId;
+    const supportChannel =
+      (await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
+        )
+        .first()) ??
+      (await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("by_clientOrgId_and_status", (q) =>
+          q.eq("clientOrgId", args.clientOrgId).eq("status", "unavailable"),
+        )
+        .first());
+    const supportChannelId = supportChannel?.customerChannelId;
+    let supportChannelReachable = supportChannel?.status === "active";
     if (supportChannel && supportChannelId) {
       const mappedChannel = args.channels.find(
         (channel) => channel.id === supportChannelId,
       );
       if (!mappedChannel?.isShared) {
-        supportChannelId = undefined;
+        supportChannelReachable = false;
         await ctx.db.patch(supportChannel._id, {
-          customerChannelId: undefined,
+          status: "unavailable",
+          healthStatus: "degraded",
+          unavailableReason: mappedChannel
+            ? "channel_unshared"
+            : "channel_not_found",
+          healthSource: "reconciliation",
+          providerErrorSummary: mappedChannel
+            ? "The selected customer channel is no longer shared."
+            : "The selected customer channel is no longer visible to Glass.",
+          lastVerifiedAt: now,
+          updatedAt: now,
+        });
+      } else if (supportChannel.status === "unavailable") {
+        supportChannelReachable = true;
+        await ctx.db.patch(supportChannel._id, {
+          status: "active",
+          healthStatus: "healthy",
+          unavailableReason: undefined,
+          healthSource: "reconciliation",
+          providerErrorCode: undefined,
+          providerErrorSummary: undefined,
+          lastVerifiedAt: now,
+          lastHealthyAt: now,
+          reconciliationFailureCount: 0,
           updatedAt: now,
         });
       }
     }
-    if (supportChannel && !supportChannelId) {
-      const normalizedSupportName = supportChannel.channelName
-        .replace(/^#/, "")
-        .trim()
-        .toLowerCase();
-      const matches = args.channels.filter(
-        (channel) =>
-          channel.isShared &&
-          channel.name.trim().toLowerCase() === normalizedSupportName,
-      );
-      if (matches.length === 1) {
-        supportChannelId = matches[0].id;
-        await ctx.db.patch(supportChannel._id, {
-          connectionId: args.connectionId,
-          customerChannelId: supportChannelId,
-          updatedAt: now,
-        });
-      }
-    }
-    return { supportChannelId };
+    return {
+      supportChannelId: supportChannelReachable ? supportChannelId : undefined,
+    };
   },
 });
 
@@ -1733,6 +1990,17 @@ export const recordSlackChannelLeftInternal = internalMutation({
     actorKind: v.union(v.literal("client_admin"), v.literal("operator")),
   },
   handler: async (ctx, args) => {
+    const connection = await ctx.db.get(args.connectionId);
+    if (
+      connection?.automaticChannelId === args.channelId &&
+      connection.clientOrgId === args.clientOrgId
+    ) {
+      await ctx.db.patch(connection._id, {
+        automaticChannelId: undefined,
+        automaticChannelName: undefined,
+        updatedAt: dayjs().valueOf(),
+      });
+    }
     if (args.actorKind !== "operator") return;
     await writeOperatorAudit(ctx, {
       operatorUserId: args.actorUserId,
@@ -1755,7 +2023,7 @@ export const disconnectInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const connection = await ctx.db.get(args.connectionId);
-    if (!connection || connection.status !== "active") return null;
+    if (!connection || connection.status === "disconnected") return null;
     await deactivateConnection(
       ctx,
       connection,
@@ -1948,7 +2216,15 @@ export const authorizeDisconnect = internalQuery({
     const actorKind = await setupActorKind(ctx, args.clientOrgId, args.userId);
     if (!actorKind)
       throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
-    const connection = await activeConnection(ctx, args.clientOrgId);
+    if (
+      actorKind === "operator" &&
+      (await getActiveOperatorImpersonation(ctx))
+    ) {
+      throw new Error(
+        "Stop impersonating the client before disconnecting Slack",
+      );
+    }
+    const connection = await retainedConnection(ctx, args.clientOrgId);
     if (!connection) return null;
     return { actorKind, connection };
   },
