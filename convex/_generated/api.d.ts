@@ -109,6 +109,7 @@ import type * as lib_actorRef from "../lib/actorRef.js";
 import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
 import type * as lib_agentMessageHistory from "../lib/agentMessageHistory.js";
 import type * as lib_agentPolicyFocus from "../lib/agentPolicyFocus.js";
+import type * as lib_agentPolicyPresentation from "../lib/agentPolicyPresentation.js";
 import type * as lib_agentPrompts from "../lib/agentPrompts.js";
 import type * as lib_agentScope from "../lib/agentScope.js";
 import type * as lib_agentSteps from "../lib/agentSteps.js";
@@ -402,6 +403,7 @@ declare const fullApi: ApiFromModules<{
   "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
   "lib/agentMessageHistory": typeof lib_agentMessageHistory;
   "lib/agentPolicyFocus": typeof lib_agentPolicyFocus;
+  "lib/agentPolicyPresentation": typeof lib_agentPolicyPresentation;
   "lib/agentPrompts": typeof lib_agentPrompts;
   "lib/agentScope": typeof lib_agentScope;
   "lib/agentSteps": typeof lib_agentSteps;

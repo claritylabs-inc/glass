@@ -44,7 +44,7 @@ describe("email concision instructions", () => {
     });
 
     expect(instructions).toContain("Broad policy-detail requests are not automatically detail-heavy");
-    expect(instructions).toContain("Default to the basic policy card");
+    expect(instructions).toContain("Default to the basic policy summary");
     expect(instructions).toContain("unless the user asks for full details or a specific section");
   });
 

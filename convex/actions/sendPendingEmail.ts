@@ -156,7 +156,6 @@ async function sendPendingEmailById(
           responseMessageId: sentMessageId,
           resendEmailId: sentMessageId,
           attachments: pending.attachments,
-          referencedPolicyIds: pending.referencedPolicyIds,
           clearStatus: true,
         });
       } else {
@@ -173,7 +172,6 @@ async function sendPendingEmailById(
           responseMessageId: sentMessageId,
           resendEmailId: sentMessageId,
           attachments: pending.attachments,
-          referencedPolicyIds: pending.referencedPolicyIds,
           pendingEmailId: id,
         });
       }

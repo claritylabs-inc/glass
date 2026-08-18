@@ -10,7 +10,7 @@ describe("agent runtime facts", () => {
     });
 
     expect(prompt).toContain("For broad policy-detail or summary requests");
-    expect(prompt).toContain("default to a basic policy card");
+    expect(prompt).toContain("default to a basic policy summary");
     expect(prompt).toContain("Infer answer depth from the whole request and conversation");
     expect(prompt).toContain("do not treat them as a deterministic keyword list");
   });

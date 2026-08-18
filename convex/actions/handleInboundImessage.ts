@@ -531,7 +531,6 @@ export const processInbound = internalAction({
         selectPolicyFocusIds(historyForContext),
       );
       const policyFocusBlock = formatPolicyFocusHints(policyFocusIds);
-      const relevantPolicyIds: Id<"policies">[] = [];
       const emailReferencedPolicyIds: Id<"policies">[] = [];
 
       const currentSpeakerLabel =
@@ -585,9 +584,8 @@ export const processInbound = internalAction({
         buildPolicyToolInstructions(8) +
         (policyFocusBlock ? `\n\n${policyFocusBlock}` : "");
 
-      const runState = createImessageAgentRunState({ relevantPolicyIds });
+      const runState = createImessageAgentRunState();
       const onPolicyReferenced = (policyId: Id<"policies">) => {
-        runState.onPolicyReferenced(policyId);
         if (!emailReferencedPolicyIds.some((id) => id === policyId)) {
           emailReferencedPolicyIds.push(policyId);
         }
@@ -649,6 +647,7 @@ export const processInbound = internalAction({
           writeUnavailableMessage:
             "Only a linked Glass user in this chat can do that.",
           availableFileIds,
+          onPolicyPresented: runState.onPolicyPresented,
           onPolicyReferenced,
           onResponseAttachment: runState.onResponseAttachment,
           onToolArtifact: runState.onToolArtifact,
@@ -837,8 +836,8 @@ export const processInbound = internalAction({
               responseMessageId: `${eventKey}:pending-email`,
               pendingEmailId: emailResult.pendingEmailId,
               referencedPolicyIds:
-                relevantPolicyIds.length > 0
-                  ? relevantPolicyIds
+                runState.presentedPolicyIds.length > 0
+                  ? runState.presentedPolicyIds
                   : undefined,
               usedTools: usedTools.length > 0 ? usedTools : undefined,
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -930,8 +929,8 @@ export const processInbound = internalAction({
           content: responseText,
           responseMessageId: `${eventKey}:response`,
           referencedPolicyIds:
-            relevantPolicyIds.length > 0
-              ? relevantPolicyIds
+            runState.presentedPolicyIds.length > 0
+              ? runState.presentedPolicyIds
               : undefined,
           pendingEmailId: pendingEmailIdForResponse,
           attachments:
@@ -944,15 +943,11 @@ export const processInbound = internalAction({
       }
 
       const appCards = await mintImessageAppCards(ctx, {
-        orgId,
         threadId,
         sourceThreadMessageId: agentResponseMessageId,
         createdByUserId: user._id,
-        messageText: inboundMessageText,
-        responseText,
-        relevantPolicyIds,
+        presentedPolicyIds: runState.presentedPolicyIds,
         artifacts: imessageToolArtifacts,
-        usedTools,
       });
 
       return await finish(

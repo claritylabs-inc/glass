@@ -9,6 +9,7 @@ import { typeStyle } from "@/lib/typography";
 export const TOOL_DISPLAY_NAMES: Record<string, string> = {
   lookup_policy: "Searched policies",
   lookup_policy_section: "Read policy sections",
+  present_policy_card: "Shared a policy",
   compare_coverages: "Compared coverages",
   save_note: "Saved note",
   generate_coi: "Generated COI",

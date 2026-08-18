@@ -1,8 +1,7 @@
-import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Id, TableNames } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { generateObjectForOrg } from "./models";
+import { MAX_POLICY_CARDS_PER_TURN } from "./agentPolicyPresentation";
 
 export type ImessageAppCard = {
   url: string;
@@ -27,30 +26,6 @@ export type ImessageAppCardRequest = {
 };
 
 type ToolArtifact = { type: string; data: unknown };
-
-const POLICY_DETAIL_TOOL_NAMES = new Set([
-  "lookup_policy",
-  "lookup_policy_section",
-  "compare_coverages",
-]);
-
-const POLICY_DETAIL_RESPONSE_FIELD_PATTERNS = [
-  /\bpolicy\s*(?:number)?\s*:/i,
-  /\btype\s*:/i,
-  /\bpolicy period\s*:/i,
-  /\bnamed insured\s*:/i,
-  /\bcarrier\s*:/i,
-  /\beffective(?: date)?\s*:/i,
-  /\bexpiration(?: date)?\s*:/i,
-  /\blimit\s*:/i,
-  /\bdeductible\s*:/i,
-  /\bpremium\s*:/i,
-];
-
-const PolicyAppCardDecisionSchema = z.object({
-  shouldCreate: z.boolean(),
-  confidence: z.number().min(0).max(1),
-});
 
 function objectRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object"
@@ -80,126 +55,6 @@ function policyCardRequest(policyId: Id<"policies">): ImessageAppCardRequest {
       summary: "Here's the policy link in Glass:",
     },
   };
-}
-
-function normalizePolicyCardText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function looksLikePolicyDetailsResponse(text: string): boolean {
-  let matchedFields = 0;
-  for (const pattern of POLICY_DETAIL_RESPONSE_FIELD_PATTERNS) {
-    if (pattern.test(text)) matchedFields++;
-  }
-  return matchedFields >= 2;
-}
-
-function looksLikePolicyInventoryResponse(text: string): boolean {
-  const normalized = normalizePolicyCardText(text);
-  const hasInventoryLanguage =
-    /\b(active\s+)?polic(?:y|ies)\b/.test(normalized) &&
-    /\b(on file|have|found|active|effective|expires?|expiration)\b/.test(
-      normalized,
-    );
-  const hasPolicyIdentifier =
-    /\bpolicy\s+(?:number\s+)?[a-z0-9][a-z0-9-]{5,}\b/i.test(text) ||
-    /\b[A-Z]{2,}[A-Z0-9]*-[A-Z0-9-]{6,}\b/.test(text);
-  const hasPolicyPeriod =
-    /\b\d{1,2}\/\d{1,2}\/\d{2,4}\s+(?:to|-|through)\s+\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(
-      text,
-    );
-  return hasInventoryLanguage && (hasPolicyIdentifier || hasPolicyPeriod);
-}
-
-export function shouldCreatePolicyDetailsAppCard(params: {
-  messageText: string;
-  responseText: string;
-  usedTools: string[];
-}): boolean {
-  if (
-    params.usedTools.some((toolName) => POLICY_DETAIL_TOOL_NAMES.has(toolName))
-  ) {
-    return true;
-  }
-
-  const responseText = params.responseText.trim();
-  if (!responseText) return false;
-
-  const normalizedRequest = normalizePolicyCardText(params.messageText);
-  if (!normalizedRequest) return false;
-
-  const explicitPolicyLinkRequest =
-    /\b(policy|record)\b/.test(normalizedRequest) &&
-    /\b(open|link|url|app|glass|record)\b/.test(normalizedRequest);
-  if (explicitPolicyLinkRequest) return true;
-
-  const policyReference =
-    /\b(policy|policies|coverage|coverages|carrier|insured|limit|limits|deductible|premium|expiration|effective|period)\b/.test(
-      normalizedRequest,
-    ) || /\b(that|this|the)\s+(one|record)\b/.test(normalizedRequest);
-  const detailIntent =
-    /\b(detail|details|summary|summarize|show|record|again|list|what|which|give|tell|remind|send)\b/.test(
-      normalizedRequest,
-    );
-
-  return (
-    policyReference &&
-    detailIntent &&
-    (looksLikePolicyDetailsResponse(responseText) ||
-      looksLikePolicyInventoryResponse(responseText))
-  );
-}
-
-export async function decidePolicyAppCardCreation(
-  ctx: ActionCtx,
-  params: {
-    orgId: Id<"organizations">;
-    messageText: string;
-    responseText: string;
-    usedTools: string[];
-    candidatePolicyCount: number;
-  },
-): Promise<boolean> {
-  if (!params.responseText.trim()) return false;
-
-  const fallback = () =>
-    shouldCreatePolicyDetailsAppCard({
-      messageText: params.messageText,
-      responseText: params.responseText,
-      usedTools: params.usedTools,
-    });
-
-  try {
-    const result = await generateObjectForOrg(ctx, params.orgId, "classification", {
-      schema: PolicyAppCardDecisionSchema,
-      maxOutputTokens: 160,
-      system: `Decide whether this Glass iMessage response should include app-card links to candidate policy records.
-
-Return shouldCreate true when the response discusses real policy records in a way the user would plausibly open: inventories, lists, summaries, details, coverage, dates, carrier, insured, limits, deductibles, premium, or policy lookup/comparison results.
-Return false for command acknowledgements, greetings, errors, clarification questions, email draft status, or unrelated conversation.
-If unsure, set confidence below 0.55. Return only the structured object.`,
-      prompt: JSON.stringify({
-        userMessage: params.messageText.slice(0, 1200),
-        assistantResponse: params.responseText.slice(0, 1800),
-        usedTools: params.usedTools.slice(0, 12),
-        candidatePolicyCount: params.candidatePolicyCount,
-      }),
-    });
-
-    if (result.object.confidence >= 0.55) {
-      return result.object.shouldCreate;
-    }
-    return fallback();
-  } catch (err) {
-    console.warn("[imessage] Policy app-card model decision failed:", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return fallback();
-  }
 }
 
 function certificateCardRequest(
@@ -236,10 +91,9 @@ function certificateCardRequest(
 export function buildImessageAppCardRequests(args: {
   policyIds: Id<"policies">[];
   artifacts: ToolArtifact[];
-  usedTools: string[];
 }): ImessageAppCardRequest[] {
   const requests: ImessageAppCardRequest[] = args.policyIds
-    .slice(0, 3)
+    .slice(0, MAX_POLICY_CARDS_PER_TURN)
     .map(policyCardRequest);
 
   for (const artifact of args.artifacts) {
@@ -272,34 +126,17 @@ export function dedupeImessageAppCardRequests(
 export async function mintImessageAppCards(
   ctx: ActionCtx,
   args: {
-    orgId: Id<"organizations">;
     threadId: Id<"threads">;
     sourceThreadMessageId?: Id<"threadMessages">;
     createdByUserId: Id<"users">;
-    messageText: string;
-    responseText: string;
-    relevantPolicyIds: Id<"policies">[];
+    presentedPolicyIds: Id<"policies">[];
     artifacts: ToolArtifact[];
-    usedTools: string[];
   },
 ): Promise<ImessageAppCard[]> {
-  const shouldCreatePolicyAppCards =
-    args.relevantPolicyIds.length > 0
-      ? await decidePolicyAppCardCreation(ctx, {
-          orgId: args.orgId,
-          messageText: args.messageText,
-          responseText: args.responseText,
-          usedTools: args.usedTools,
-          candidatePolicyCount: args.relevantPolicyIds.length,
-        })
-      : false;
   const requests = dedupeImessageAppCardRequests(
     buildImessageAppCardRequests({
-      policyIds: shouldCreatePolicyAppCards
-        ? args.relevantPolicyIds.slice(0, 3)
-        : [],
+      policyIds: args.presentedPolicyIds,
       artifacts: args.artifacts,
-      usedTools: args.usedTools,
     }),
   );
   const appCards: ImessageAppCard[] = [];

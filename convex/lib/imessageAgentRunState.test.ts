@@ -3,20 +3,20 @@ import type { Id } from "../_generated/dataModel";
 import { createImessageAgentRunState } from "./imessageAgentRunState";
 
 describe("createImessageAgentRunState", () => {
-  test("dedupes policy references against existing relevant policies", () => {
+  test("collects and dedupes intentionally presented policies", () => {
     const policyA = "policy-a" as Id<"policies">;
     const policyB = "policy-b" as Id<"policies">;
-    const relevantPolicyIds = [policyA];
-    const state = createImessageAgentRunState({ relevantPolicyIds });
+    const state = createImessageAgentRunState();
 
-    state.onPolicyReferenced(policyA);
-    state.onPolicyReferenced(policyB);
+    state.onPolicyPresented(policyA);
+    state.onPolicyPresented(policyA);
+    state.onPolicyPresented(policyB);
 
-    expect(relevantPolicyIds).toEqual([policyA, policyB]);
+    expect(state.presentedPolicyIds).toEqual([policyA, policyB]);
   });
 
   test("collects response attachments, artifacts, workflow outcomes, and email result", () => {
-    const state = createImessageAgentRunState({ relevantPolicyIds: [] });
+    const state = createImessageAgentRunState();
     const fileId = "file-1" as Id<"_storage">;
     const emailResult = {
       status: "draft" as const,

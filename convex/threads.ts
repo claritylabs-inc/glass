@@ -752,6 +752,30 @@ export const messagesInternal = internalQuery({
   },
 });
 
+export const wasPolicyCardRecentlyPresentedInternal = internalQuery({
+  args: {
+    threadId: v.id("threads"),
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    const recentMessages = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .order("desc")
+      .take(24);
+    return recentMessages.some(
+      (message) =>
+        message.role === "agent" &&
+        message.status !== "error" &&
+        message.status !== "cancelled" &&
+        message.usedTools?.includes("present_policy_card") === true &&
+        message.referencedPolicyIds?.some(
+          (policyId) => String(policyId) === String(args.policyId),
+        ) === true,
+    );
+  },
+});
+
 export const insertAgentMessage = internalMutation({
   args: {
     threadId: v.id("threads"),

@@ -16,19 +16,19 @@ export type ImessageResponseFileAttachment = {
   filename: string;
 };
 
-export function createImessageAgentRunState(args: {
-  relevantPolicyIds: Id<"policies">[];
-}) {
+export function createImessageAgentRunState() {
   const responseFileAttachments: ImessageResponseFileAttachment[] = [];
   const toolArtifacts: ToolArtifact[] = [];
+  const presentedPolicyIds: Id<"policies">[] = [];
   let emailResult: EmailSubagentResult | null = null;
 
   return {
     responseFileAttachments,
     toolArtifacts,
-    onPolicyReferenced(policyId: Id<"policies">) {
-      if (!args.relevantPolicyIds.some((id) => String(id) === String(policyId))) {
-        args.relevantPolicyIds.push(policyId);
+    presentedPolicyIds,
+    onPolicyPresented(policyId: Id<"policies">) {
+      if (!presentedPolicyIds.some((id) => String(id) === String(policyId))) {
+        presentedPolicyIds.push(policyId);
       }
     },
     onResponseAttachment(attachment: ToolAttachment) {

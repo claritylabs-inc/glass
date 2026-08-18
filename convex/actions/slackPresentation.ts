@@ -13,6 +13,7 @@ import {
   slackProgressTasks,
   type SlackBlock,
 } from "../lib/slackBlocks";
+import { MAX_POLICY_CARDS_PER_TURN } from "../lib/agentPolicyPresentation";
 
 const internalApi = internal as any;
 const WORKER_TIMEOUT_MS = 30_000;
@@ -121,7 +122,7 @@ async function policyCards(
 ): Promise<Doc<"policies">[]> {
   const policies = await Promise.all(
     (message.referencedPolicyIds ?? [])
-      .slice(0, 3)
+      .slice(0, MAX_POLICY_CARDS_PER_TURN)
       .map(
         async (id) =>
           await ctx.runQuery(internalApi.policies.getInternal, { id }),

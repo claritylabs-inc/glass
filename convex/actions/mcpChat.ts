@@ -160,7 +160,6 @@ MCP MODE:
 - Do not create iMessage group chats or send vendor invites unless the caller explicitly asked for that action or confirmed it.
 - Do NOT include email-style sign-offs or greetings.`;
 
-    const referencedPolicySourceIds = new Set<string>();
     const responseAttachments: Array<{
       filename: string;
       contentType: string;
@@ -180,9 +179,6 @@ MCP MODE:
           args.canWrite === false
             ? "This MCP token has read-only scope. Reconnect or authorize with write scope to perform that action."
             : undefined,
-        onPolicyReferenced: (policyId) => {
-          referencedPolicySourceIds.add(String(policyId));
-        },
         onResponseAttachment: (attachment) => {
           responseAttachments.push(attachment);
         },
@@ -378,10 +374,6 @@ MCP MODE:
     await ctx.runMutation(internal.threads.updateAgentMessage, {
       id: agentMsgId,
       content,
-      referencedPolicyIds:
-        referencedPolicySourceIds.size > 0
-          ? ([...referencedPolicySourceIds] as Id<"policies">[])
-          : undefined,
       attachments:
         responseAttachments.length > 0 ? responseAttachments : undefined,
       toolArtifacts:

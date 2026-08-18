@@ -121,7 +121,7 @@ export async function restoreCancelledEmailAsDraft(
       bccAddresses: pending.bccAddresses,
       subject: pending.subject,
       attachments: pending.attachments,
-      referencedPolicyIds: pending.referencedPolicyIds,
+      referencedPolicyIds: undefined,
       pendingEmailId: id,
       responseMessageId: undefined,
       status: "draft_email",

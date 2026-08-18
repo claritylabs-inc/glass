@@ -109,7 +109,6 @@ export async function upsertEmailDraftArtifact(
         subject: params.subject,
         attachments:
           params.attachments.length > 0 ? params.attachments : undefined,
-        referencedPolicyIds: params.referencedPolicyIds,
         pendingEmailId: existing._id,
         status: "draft_email",
       });
@@ -161,7 +160,6 @@ export async function upsertEmailDraftArtifact(
       subject: params.subject,
       attachments:
         params.attachments.length > 0 ? params.attachments : undefined,
-      referencedPolicyIds: params.referencedPolicyIds,
       status: "draft_email",
       pendingEmailId,
     },
