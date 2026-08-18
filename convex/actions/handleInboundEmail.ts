@@ -21,10 +21,10 @@ import {
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import { Webhook } from "svix";
 import {
-  buildScopedDocumentContext,
-  buildScopedOrgMemoryContext,
-  buildScopedRequirementsContext,
-} from "../lib/agentPrompts";
+  formatPolicyFocusHints,
+  selectPolicyFocusIds,
+  validatePolicyFocusIds,
+} from "../lib/agentPolicyFocus";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { AgentScope } from "../lib/agentScope";
 import {
@@ -977,14 +977,6 @@ export const processInbound = internalAction({
         },
       )) as AgentScope;
 
-      const policiesByOrg = new Map<string, any[]>();
-      await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
-        const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, { orgId: readOrgId });
-        policiesByOrg.set(
-          String(readOrgId),
-          docs as any[],
-        );
-      }));
       const siteUrl = getClientPortalUrl();
 
       // Get primary user profile for name reference
@@ -1027,36 +1019,16 @@ export const processInbound = internalAction({
             userName,
             siteUrl,
           });
-      const {
-        context: policyContext,
-        relevantPolicyIds,
-      } = await buildScopedDocumentContext(
-        ctx,
-        scope,
-        policiesByOrg,
-        subject + " " + body,
-      );
-      const referencedPolicySourceIds = new Set<string>([
-        ...relevantPolicyIds.map(String),
-      ]);
-
-      const memoryContext = "";
-      const orgMemoryBlock = await buildScopedOrgMemoryContext(
-        ctx,
-        scope,
-        subject + " " + body,
-        relevantPolicyIds.map((id: string) => id),
-      );
-      const requirementsBlock = await buildScopedRequirementsContext(ctx, scope);
-
       // Build messages — include thread history for context
       const messages: ModelMessage[] = [];
       let threadMessagesForGuards: Array<{
-        role?: string;
+        role: "user" | "agent" | "system";
         content?: string;
         fromEmail?: string;
         toAddresses?: string[];
         ccAddresses?: string[];
+        status?: string;
+        referencedPolicyIds?: Id<"policies">[];
         toolArtifacts?: Array<{ type: string; data: unknown }>;
       }> = [];
 
@@ -1085,6 +1057,15 @@ export const processInbound = internalAction({
           }
         }
       }
+
+      const policyFocusIds = await validatePolicyFocusIds(
+        ctx,
+        scope,
+        selectPolicyFocusIds(threadMessagesForGuards),
+      );
+      const policyFocusBlock = formatPolicyFocusHints(policyFocusIds);
+      const referencedPolicySourceIds = new Set<string>();
+      const emailReferencedPolicyIds: Id<"policies">[] = [];
 
       // Build the current message — include attachments if present
       const emailText = `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${body}`;
@@ -1141,7 +1122,7 @@ export const processInbound = internalAction({
         messages.push({ role: "user", content: emailText });
       }
 
-      // Build system context with optional attachment note and curated memory
+      // Build system context with optional attachment and bounded focus hints.
       let systemContext =
         systemPrompt +
         buildChannelInstructions({
@@ -1149,12 +1130,8 @@ export const processInbound = internalAction({
           autoSendEmails: org.autoSendEmails === true,
           effectiveMode,
         }) +
-        "\n\n" +
-        policyContext +
         buildPolicyToolInstructions(10) +
-        memoryContext +
-        orgMemoryBlock +
-        requirementsBlock;
+        (policyFocusBlock ? `\n\n${policyFocusBlock}` : "");
       if (claudeAttachments.length > 0) {
         const filenames = claudeAttachments.map((a) => a.filename).join(", ");
         systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
@@ -1209,6 +1186,9 @@ export const processInbound = internalAction({
           availableFileIds,
           onPolicyReferenced: (policyId) => {
             referencedPolicySourceIds.add(String(policyId));
+            if (!emailReferencedPolicyIds.some((id) => id === policyId)) {
+              emailReferencedPolicyIds.push(policyId);
+            }
           },
           onResponseAttachment: (attachment) => {
             if (!attachment.fileId) return;
@@ -1279,10 +1259,7 @@ export const processInbound = internalAction({
                   ),
                 ],
                 availableAttachments: availableEmailAttachments,
-                referencedPolicyIds:
-                  referencedPolicySourceIds.size > 0
-                    ? ([...referencedPolicySourceIds] as Id<"policies">[])
-                    : undefined,
+                referencedPolicyIds: emailReferencedPolicyIds,
                 autoSendEmails: brokerDirectedEmailRequest
                   ? false
                   : org.autoSendEmails === true,
@@ -1751,7 +1728,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       });
 
       // Audit: log agent references to policies
-      for (const pId of relevantPolicyIds) {
+      for (const pId of referencedPolicySourceIds) {
         await ctx.runMutation(internal.policyAuditLog.append, {
           policyId: pId as Id<"policies">,
           userId: primaryUserId,

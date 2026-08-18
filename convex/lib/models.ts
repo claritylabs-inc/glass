@@ -209,6 +209,7 @@ type AgentModelRouteTelemetry = {
   transport?: ModelTransport;
   fallback?: AgentModelFallback;
 };
+const INTERACTIVE_AGENT_INITIAL_EXECUTION_BUDGET_MS = 60_000;
 class AgentModelFallbackAttemptError extends Error {
   constructor(
     readonly fallback: AgentModelFallback,
@@ -1443,6 +1444,12 @@ function agentLanguageModel(
       sessionKey: run.sessionKey,
       trace: run.trace,
       directModel: resolved.model,
+      ...(run.trace.channel === "mailbox" || run.trace.channel === "public_demo"
+        ? {}
+        : {
+            initialExecutionBudgetMs:
+              INTERACTIVE_AGENT_INITIAL_EXECUTION_BUDGET_MS,
+          }),
       onResponse: async (response, step) => {
         routerResponses.push(response);
         await run.onResponse?.(response, step);

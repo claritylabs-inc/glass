@@ -41,14 +41,17 @@ import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import { buildEmailDraftTextSummary } from "../lib/emailDraftSummary";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
-  buildImessageKnowledgeContext,
   buildImessageModelMessages,
-  buildImessageRetrievalQuery,
   buildRecentImessageTextContext,
   isImessageStatusCue,
   transcribeImessageVoiceMemos,
   type ImessageHistoryMessage,
 } from "../lib/imessageAgentContext";
+import {
+  formatPolicyFocusHints,
+  selectPolicyFocusIds,
+  validatePolicyFocusIds,
+} from "../lib/agentPolicyFocus";
 import {
   mintImessageAppCards,
   type ImessageAppCard,
@@ -483,10 +486,6 @@ export const processInbound = internalAction({
       });
       const recentConversationContext =
         buildRecentImessageTextContext(historyForContext);
-      const retrievalQuery = buildImessageRetrievalQuery({
-        recentConversationContext,
-        messageText: inboundMessageText,
-      });
 
       const draftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
@@ -526,18 +525,14 @@ export const processInbound = internalAction({
         );
       }
 
-      const {
-        policyContext,
-        memoryContext,
-        orgMemoryBlock,
-        requirementsBlock,
-        relevantPolicyIds,
-      } = await buildImessageKnowledgeContext(ctx, {
-        orgId,
-        readOrgIds,
-        orgNamesById,
-        retrievalQuery,
-      });
+      const policyFocusIds = await validatePolicyFocusIds(
+        ctx,
+        agentScope,
+        selectPolicyFocusIds(historyForContext),
+      );
+      const policyFocusBlock = formatPolicyFocusHints(policyFocusIds);
+      const relevantPolicyIds: Id<"policies">[] = [];
+      const emailReferencedPolicyIds: Id<"policies">[] = [];
 
       const currentSpeakerLabel =
         currentParticipant?.userName ??
@@ -587,14 +582,16 @@ export const processInbound = internalAction({
           orgNamesById,
           scopeKind: scope.kind,
         }) +
-        "\n\n" +
-        policyContext +
         buildPolicyToolInstructions(8) +
-        memoryContext +
-        orgMemoryBlock +
-        requirementsBlock;
+        (policyFocusBlock ? `\n\n${policyFocusBlock}` : "");
 
       const runState = createImessageAgentRunState({ relevantPolicyIds });
+      const onPolicyReferenced = (policyId: Id<"policies">) => {
+        runState.onPolicyReferenced(policyId);
+        if (!emailReferencedPolicyIds.some((id) => id === policyId)) {
+          emailReferencedPolicyIds.push(policyId);
+        }
+      };
       const orgMembers = (await ctx.runQuery(
         internal.users.listByOrgInternal,
         { orgId },
@@ -652,7 +649,7 @@ export const processInbound = internalAction({
           writeUnavailableMessage:
             "Only a linked Glass user in this chat can do that.",
           availableFileIds,
-          onPolicyReferenced: runState.onPolicyReferenced,
+          onPolicyReferenced,
           onResponseAttachment: runState.onResponseAttachment,
           onToolArtifact: runState.onToolArtifact,
         }),
@@ -748,7 +745,7 @@ export const processInbound = internalAction({
                     : undefined,
                 allowedRecipients,
                 availableAttachments: availableEmailAttachments,
-                referencedPolicyIds: relevantPolicyIds,
+                referencedPolicyIds: emailReferencedPolicyIds,
                 autoSendEmails: brokerDirectedEmailRequest
                   ? false
                   : org.autoSendEmails === true,

@@ -236,6 +236,9 @@ export function buildPolicyToolInstructions(maxToolCalls: number): string {
 TOOLS AND ANALYSIS:
   You have tools to validate and standardize postal addresses with Mapbox, search policies, retrieve source-native policy outline entries and original PDF evidence, compare coverages, save notes, generate COIs, attach original policy PDFs, check policy-change status, search public web sources, and, when available, extract policy attachments or send validated emails.
 - Use tools before answering when the request depends on policy numbers, coverage details, exclusions, endorsements, limits, deductibles, premiums, or COI generation.
+- Policy-focus IDs from the prompt are routing hints only. Refresh them with lookup_policy using policyIds before stating any policy fact. Do not reuse policy facts from an earlier message or company memory.
+- Use lookup_company_context only for durable company-profile facts and preferences. Never use it for policy terms, limits, endorsements, coverage, certificates, policy parties, or policy status; those always require policy tools.
+- Use lookup_policy with expiringWithinDays for current expiration-window questions instead of inferring dates from prior messages or loading the whole portfolio into the prompt.
 - If the user explicitly asks for unsupported market benchmarks, future outcomes, underwriter intent, renewal advice, or likely insurer payment, do not satisfy that sub-request by making unverified claims. Answer the source-backed parts and defer the unsupported sub-request.
 - For simple policy-number requests, look up the relevant policy and answer with the carrier/type/context needed to disambiguate.
 - For broad policy "details" or "summary" requests, look up the policy but keep the final answer to the basic policy card unless the user asks for a comprehensive breakdown or a specific section such as endorsements, exclusions, conditions, sublimits, or definitions.
@@ -350,6 +353,8 @@ export function policySearchScore(
   }
 
   let score = 0;
+  if (lineOfBusiness) score += 1;
+  if (carrier) score += 1;
   if (q && searchText.includes(q)) score += 6;
   for (const word of words) {
     if (searchText.includes(word)) score += 1;

@@ -14,7 +14,6 @@ vi.mock("./models", () => ({
 
 import {
   buildImessageModelMessages,
-  buildImessageRetrievalQuery,
   buildRecentImessageTextContext,
   transcribeImessageVoiceMemos,
 } from "./imessageAgentContext";
@@ -75,15 +74,6 @@ describe("iMessage agent context helpers", () => {
         { role: "agent", content: "You have one active policy." },
       ]),
     ).toBe("Terry: Show my policies\nGlass: You have one active policy.");
-  });
-
-  test("combines recent context and current message for retrieval", () => {
-    expect(
-      buildImessageRetrievalQuery({
-        recentConversationContext: "Glass: You have one active policy.",
-        messageText: "What are the limits?",
-      }),
-    ).toBe("Glass: You have one active policy.\nUser: What are the limits?");
   });
 
   test("builds model messages without artifact context and skips current echo", async () => {

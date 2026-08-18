@@ -47,6 +47,7 @@ export type ClRouterLanguageModelOptions = {
   trace?: ClRouterGenerateRequest["trace"];
   directModel: LanguageModelV3;
   client?: ClRouterClientOptions;
+  initialExecutionBudgetMs?: number;
   onResponse?: (
     response: ClRouterResponseMetadata,
     step: ClRouterLanguageModelStep,
@@ -56,6 +57,27 @@ export type ClRouterLanguageModelOptions = {
     step: ClRouterLanguageModelStep,
   ) => void | Promise<void>;
 };
+
+export class ClRouterToolContractError extends ClRouterRequestError {
+  readonly expectedToolName?: string;
+  readonly actualToolNames: string[];
+
+  constructor(expectedToolName: string | undefined, actualToolNames: string[]) {
+    const expectation = expectedToolName
+      ? `tool ${expectedToolName}`
+      : "at least one tool call";
+    const actual = actualToolNames.length > 0
+      ? actualToolNames.join(", ")
+      : "none";
+    super(
+      "invalid_response",
+      `cl-router violated the forced tool contract: expected ${expectation}, received ${actual}`,
+    );
+    this.name = "ClRouterToolContractError";
+    this.expectedToolName = expectedToolName;
+    this.actualToolNames = actualToolNames;
+  }
+}
 
 export class ClRouterVisibleOutputError extends Error {
   constructor(cause: unknown) {
@@ -191,6 +213,7 @@ function requestForCall(
   parentRequestId?: string,
   selectedRoute?: ModelRoute,
   allowFallback = true,
+  executionBudgetMs?: number,
 ): ClRouterGenerateRequest {
   const responseFormat = options.responseFormat;
   const schema =
@@ -212,6 +235,7 @@ function requestForCall(
       }
       : {}),
     ...(options.maxOutputTokens ? { maxTokens: options.maxOutputTokens } : {}),
+    ...(executionBudgetMs ? { executionBudgetMs } : {}),
     sessionKey: adapter.sessionKey,
     ...(tools ? { tools } : {}),
     ...(toolChoice ? { toolChoice } : {}),
@@ -337,6 +361,102 @@ function generatedContent(response: ClRouterGenerateResponse): LanguageModelV3Co
   return [{ type: "text", text: JSON.stringify(response.output) }];
 }
 
+function forcedToolExpectation(
+  choice: LanguageModelV3CallOptions["toolChoice"],
+): string | null | undefined {
+  if (choice?.type === "required") return null;
+  if (choice?.type === "tool") return choice.toolName;
+  return undefined;
+}
+
+function validateForcedToolContract(
+  choice: LanguageModelV3CallOptions["toolChoice"],
+  toolNames: string[],
+): void {
+  const expected = forcedToolExpectation(choice);
+  if (expected === undefined) return;
+  if (
+    expected === null
+      ? toolNames.length > 0
+      : toolNames.length > 0 && toolNames.every((toolName) => toolName === expected)
+  ) return;
+  throw new ClRouterToolContractError(expected ?? undefined, toolNames);
+}
+
+function contentToolNames(content: LanguageModelV3Content[]): string[] {
+  return content
+    .filter((part): part is Extract<LanguageModelV3Content, { type: "tool-call" }> =>
+      part.type === "tool-call")
+    .map((part) => part.toolName);
+}
+
+function isSafeInitialFallbackError(
+  error: unknown,
+  environment: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  hasInitialExecutionBudget: boolean,
+): boolean {
+  const isProduction = environment.GLASS_ENV === "production";
+  return (isProduction && error instanceof ClRouterToolContractError) ||
+    (isProduction && hasInitialExecutionBudget &&
+      error instanceof ClRouterRequestError &&
+      (error.kind === "timeout" || error.routerCode === "router_budget_exhausted")) ||
+    isClRouterDirectFallbackError(error, environment);
+}
+
+async function directGenerateWithContract(
+  model: LanguageModelV3,
+  options: LanguageModelV3CallOptions,
+): Promise<LanguageModelV3GenerateResult> {
+  const result = await model.doGenerate(options);
+  validateForcedToolContract(options.toolChoice, contentToolNames(result.content));
+  return result;
+}
+
+async function directStreamWithContract(
+  model: LanguageModelV3,
+  options: LanguageModelV3CallOptions,
+): Promise<LanguageModelV3StreamResult> {
+  const result = await model.doStream(options);
+  if (forcedToolExpectation(options.toolChoice) === undefined) return result;
+  return {
+    ...result,
+    stream: new ReadableStream<LanguageModelV3StreamPart>({
+      start(controller) {
+        void (async () => {
+          const reader = result.stream.getReader();
+          const toolNames: string[] = [];
+          let validatedAtFinish = false;
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value.type === "tool-call") {
+                const expected = forcedToolExpectation(options.toolChoice);
+                if (typeof expected === "string" && value.toolName !== expected) {
+                  validateForcedToolContract(options.toolChoice, [value.toolName]);
+                }
+                toolNames.push(value.toolName);
+              } else if (value.type === "finish") {
+                validateForcedToolContract(options.toolChoice, toolNames);
+                validatedAtFinish = true;
+              }
+              controller.enqueue(value);
+            }
+            if (!validatedAtFinish) {
+              validateForcedToolContract(options.toolChoice, toolNames);
+            }
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          } finally {
+            reader.releaseLock();
+          }
+        })();
+      },
+    }),
+  };
+}
+
 async function pipeStream(
   stream: ReadableStream<LanguageModelV3StreamPart>,
   controller: ReadableStreamDefaultController<LanguageModelV3StreamPart>,
@@ -362,8 +482,17 @@ export function createClRouterLanguageModel(
   let useDirectForRun = false;
   const clientOptions = (
     abortSignal: AbortSignal | undefined,
+    initialStep: boolean,
   ): ClRouterClientOptions => ({
     ...adapter.client,
+    ...(initialStep && adapter.initialExecutionBudgetMs
+      ? {
+          environment: {
+            ...(adapter.client?.environment ?? process.env),
+            CL_ROUTER_TIMEOUT_MS: String(adapter.initialExecutionBudgetMs + 5_000),
+          },
+        }
+      : {}),
     abortSignal,
   });
   const stepContext = (
@@ -405,7 +534,9 @@ export function createClRouterLanguageModel(
     supportedUrls: {},
 
     async doGenerate(options): Promise<LanguageModelV3GenerateResult> {
-      if (useDirectForRun) return adapter.directModel.doGenerate(options);
+      if (useDirectForRun) {
+        return directGenerateWithContract(adapter.directModel, options);
+      }
       const step = stepContext(options);
       const request = requestForCall(
         adapter,
@@ -413,18 +544,23 @@ export function createClRouterLanguageModel(
         parentRequestId,
         selectedRoute,
         successfulRouterSteps === 0,
+        successfulRouterSteps === 0
+          ? adapter.initialExecutionBudgetMs
+          : undefined,
       );
       try {
         const response = await clRouterGenerate(
           request,
-          clientOptions(options.abortSignal),
+          clientOptions(options.abortSignal, successfulRouterSteps === 0),
         );
+        const content = generatedContent(response);
+        validateForcedToolContract(options.toolChoice, contentToolNames(content));
         parentRequestId = response.requestId;
         selectedRoute = response.model;
         successfulRouterSteps += 1;
         await notifyResponse(response, step);
         return {
-          content: generatedContent(response),
+          content,
           finishReason: finishReason(response.finishReason ?? "stop"),
           usage: languageModelUsage(response.usage),
           providerMetadata: providerMetadata(response),
@@ -437,17 +573,23 @@ export function createClRouterLanguageModel(
       } catch (error) {
         if (
           successfulRouterSteps > 0 ||
-          !isClRouterDirectFallbackError(error, adapter.client?.environment ?? process.env)
+          !isSafeInitialFallbackError(
+            error,
+            adapter.client?.environment ?? process.env,
+            adapter.initialExecutionBudgetMs !== undefined,
+          )
         ) {
           throw error;
         }
         await switchRunToDirect(error, step);
-        return adapter.directModel.doGenerate(options);
+        return directGenerateWithContract(adapter.directModel, options);
       }
     },
 
     async doStream(options): Promise<LanguageModelV3StreamResult> {
-      if (useDirectForRun) return adapter.directModel.doStream(options);
+      if (useDirectForRun) {
+        return directStreamWithContract(adapter.directModel, options);
+      }
       const step = stepContext(options);
       const request = requestForCall(
         adapter,
@@ -455,22 +597,29 @@ export function createClRouterLanguageModel(
         parentRequestId,
         selectedRoute,
         successfulRouterSteps === 0,
+        successfulRouterSteps === 0
+          ? adapter.initialExecutionBudgetMs
+          : undefined,
       );
       let response: Awaited<ReturnType<typeof clRouterGenerateStream>>;
       try {
         response = await clRouterGenerateStream(
           request,
-          clientOptions(options.abortSignal),
+          clientOptions(options.abortSignal, successfulRouterSteps === 0),
         );
       } catch (error) {
         if (
           successfulRouterSteps > 0 ||
-          !isClRouterDirectFallbackError(error, adapter.client?.environment ?? process.env)
+          !isSafeInitialFallbackError(
+            error,
+            adapter.client?.environment ?? process.env,
+            adapter.initialExecutionBudgetMs !== undefined,
+          )
         ) {
           throw error;
         }
         await switchRunToDirect(error, step);
-        return adapter.directModel.doStream(options);
+        return directStreamWithContract(adapter.directModel, options);
       }
 
       return {
@@ -482,6 +631,7 @@ export function createClRouterLanguageModel(
               let started = false;
               const activeTextIds = new Set<string>();
               let receivedDone = false;
+              const routerToolNames: string[] = [];
               const startStream = () => {
                 if (started) return;
                 started = true;
@@ -512,7 +662,17 @@ export function createClRouterLanguageModel(
                       delta: event.delta,
                     });
                   } else if (event.type === "tool-call") {
+                    const expectedToolName = forcedToolExpectation(
+                      options.toolChoice,
+                    );
+                    if (
+                      typeof expectedToolName === "string" &&
+                      event.toolName !== expectedToolName
+                    ) {
+                      validateForcedToolContract(options.toolChoice, [event.toolName]);
+                    }
                     visibleRouterOutput = true;
+                    routerToolNames.push(event.toolName);
                     startStream();
                     controller.enqueue({
                       type: "tool-call",
@@ -537,6 +697,10 @@ export function createClRouterLanguageModel(
                     );
                   } else {
                     receivedDone = true;
+                    validateForcedToolContract(
+                      options.toolChoice,
+                      routerToolNames,
+                    );
                     parentRequestId = event.requestId;
                     selectedRoute = event.model;
                     successfulRouterSteps += 1;
@@ -569,15 +733,16 @@ export function createClRouterLanguageModel(
                 if (
                   !visibleRouterOutput &&
                   successfulRouterSteps === 0 &&
-                  isClRouterDirectFallbackError(
+                  isSafeInitialFallbackError(
                     error,
                     adapter.client?.environment ?? process.env,
+                    adapter.initialExecutionBudgetMs !== undefined,
                   )
                 ) {
                   try {
                     await switchRunToDirect(error, step);
                     const fallback =
-                      await adapter.directModel.doStream(options);
+                      await directStreamWithContract(adapter.directModel, options);
                     await pipeStream(fallback.stream, controller);
                     controller.close();
                   } catch (fallbackError) {
