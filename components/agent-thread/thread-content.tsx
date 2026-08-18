@@ -1399,14 +1399,9 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
         (artifact) => artifact.type === "mailbox_task",
       ) ?? [];
 
-    // Build reference cards — referencedPolicyIds now only contains policies actually cited via lookup_policy_section
+    // Policy references are intentional presentation selections, not retrieval evidence.
     const allRefs: { type: "policy"; id: string; page?: number }[] = [];
-    const referencedPolicyIds = [
-      ...(msg.referencedPolicyIds ?? []),
-      ...relatedEmailMessages.flatMap(
-        (emailMessage) => emailMessage.referencedPolicyIds ?? [],
-      ),
-    ];
+    const referencedPolicyIds = msg.referencedPolicyIds ?? [];
     const seenRefKeys = new Set<string>();
     for (const pid of referencedPolicyIds) {
       const key = `policy:${pid}`;

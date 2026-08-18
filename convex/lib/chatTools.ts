@@ -25,6 +25,28 @@ export const lookupPolicy = tool({
   }),
 });
 
+export const presentPolicyCard = tool({
+  description:
+    "Present one exact policy card in the current response. Use only after another policy tool successfully resolved that policy during this turn and only when the user explicitly asks to open, show, send, or link the policy record. Policy lookup, factual questions, summaries, comparisons, and policy inventories do not by themselves justify a card.",
+  inputSchema: z.object({
+    policyId: z
+      .string()
+      .describe("The exact policy ID returned by a successful policy tool in this turn."),
+    allowMultiple: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set true only when the user explicitly asks for multiple policy cards or links. Otherwise omit it, and the response is limited to one card.",
+      ),
+    repeatRequested: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set true only when the user explicitly asks to receive this same policy card again. Otherwise recent duplicate cards are suppressed.",
+      ),
+  }),
+});
+
 export const compareCoverages = tool({
   description:
     "Compare two policies side by side — lines of business, limits, deductibles, and premium.",

@@ -71,9 +71,24 @@ describe("policy advice guardrails", () => {
     const instructions = buildPolicyToolInstructions(8);
 
     expect(instructions).toContain('For broad policy "details" or "summary" requests');
-    expect(instructions).toContain("keep the final answer to the basic policy card");
+    expect(instructions).toContain("keep the final answer to the basic policy summary");
     expect(instructions).toContain("unless the user asks for a comprehensive breakdown");
     expect(instructions).toContain("specific section such as endorsements");
+  });
+
+  it("separates policy evidence from intentional card presentation", () => {
+    const instructions = buildPolicyToolInstructions(8);
+
+    expect(instructions).toContain(
+      "A policy lookup proves grounding, not presentation intent",
+    );
+    expect(instructions).toContain(
+      "call it only when the user explicitly asks to open, show, send, or link one exact policy record",
+    );
+    expect(instructions).toContain("Default to one policy card");
+    expect(instructions).toContain(
+      'Do not call present_policy_card for renewal, coverage, deductible, limit, premium, summary, comparison, or "what policies do I have" questions',
+    );
   });
 
   it("keeps unsupported market, future, and advisory claims out of policy answers", () => {

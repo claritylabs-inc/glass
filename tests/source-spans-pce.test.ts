@@ -145,7 +145,10 @@ describe("source spans and policy update backend surfaces", () => {
     expect(threadContent).not.toContain("fallbackToolCalls={regularToolCalls}");
     expect(threadContent).not.toContain('"Tool" : "Tools"');
     expect(threadContent).not.toContain("msg.usedTools ?? []");
-    expect(threadContent).toContain("relatedEmailMessages.flatMap");
+    expect(threadContent).not.toContain("relatedEmailMessages.flatMap");
+    expect(threadContent).toContain(
+      "const referencedPolicyIds = msg.referencedPolicyIds ?? [];",
+    );
     expect(referenceCards).toContain("function PolicyCitation");
     expect(referenceCards).toContain("function PolicySourcePill");
     expect(threadContent).not.toContain("showSingleCount");

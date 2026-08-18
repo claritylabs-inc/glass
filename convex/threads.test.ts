@@ -11,6 +11,7 @@ import {
   findOrCreateByImessageChat,
   findOrCreateByPhone,
   recordNotificationImessageInternal,
+  wasPolicyCardRecentlyPresentedInternal,
 } from "./threads";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -30,6 +31,8 @@ const findOrCreateByImessageChatFn = findOrCreateByImessageChat as any;
 const findOrCreateByPhoneFn = findOrCreateByPhone as any;
 const recordNotificationImessageInternalFn =
   recordNotificationImessageInternal as any;
+const wasPolicyCardRecentlyPresentedInternalFn =
+  wasPolicyCardRecentlyPresentedInternal as any;
 
 async function seedThreadWithAttachment() {
   const t = convexTest(schema, modules);
@@ -84,6 +87,78 @@ async function seedThreadWithAttachment() {
 function sessionFor(userId: Id<"users">) {
   return { subject: `${userId}|session` };
 }
+
+describe("threads.wasPolicyCardRecentlyPresentedInternal", () => {
+  test("counts only intentional presentation-tool references", async () => {
+    const t = convexTest(schema, modules);
+    const { threadId, orgId, policyId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Acme",
+        type: "client",
+      });
+      const userId = await ctx.db.insert("users", {
+        email: "policy-cards@example.com",
+      });
+      const threadId = await ctx.db.insert("threads", {
+        orgId,
+        title: "Policy cards",
+        createdBy: userId,
+        lastMessageAt: dayjs().valueOf(),
+        originChannel: "imessage",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Starr",
+        policyNumber: "STARR-1",
+        linesOfBusiness: ["CYBR"],
+        insuredName: "Acme",
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "01/01/2026",
+        expirationDate: "01/01/2027",
+        isRenewal: false,
+        coverages: [],
+      });
+      return { threadId, orgId, policyId };
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("threadMessages", {
+        threadId,
+        orgId,
+        channel: "imessage",
+        role: "agent",
+        content: "The deductible is $5,000.",
+        usedTools: ["lookup_policy"],
+        referencedPolicyIds: [policyId],
+      });
+    });
+    await expect(
+      t.query(wasPolicyCardRecentlyPresentedInternalFn, {
+        threadId,
+        policyId,
+      }),
+    ).resolves.toBe(false);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("threadMessages", {
+        threadId,
+        orgId,
+        channel: "imessage",
+        role: "agent",
+        content: "Here is the Starr policy.",
+        usedTools: ["lookup_policy", "present_policy_card"],
+        referencedPolicyIds: [policyId],
+      });
+    });
+    await expect(
+      t.query(wasPolicyCardRecentlyPresentedInternalFn, {
+        threadId,
+        policyId,
+      }),
+    ).resolves.toBe(true);
+  });
+});
 
 describe("threads.getAttachmentUrl", () => {
   test("returns a URL for a file attached to the requested thread", async () => {

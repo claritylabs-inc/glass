@@ -1736,10 +1736,6 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         toAddresses: [replyTo],
         ccAddresses: replyCc.length > 0 ? replyCc : undefined,
         responseMessageId: sentMessageId,
-        referencedPolicyIds:
-          referencedPolicySourceIds.size > 0
-            ? ([...referencedPolicySourceIds] as Id<"policies">[])
-            : undefined,
         attachments:
           generatedCoiAttachments.length > 0
             ? generatedCoiAttachments

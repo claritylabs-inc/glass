@@ -1156,7 +1156,6 @@ export const run = internalAction({
               subject: draft.subject,
               attachments:
                 attachments && attachments.length > 0 ? attachments : undefined,
-              referencedPolicyIds: draft.referencedPolicyIds,
               pendingEmailId: draft._id,
               status: "draft_email",
             });
@@ -1184,7 +1183,7 @@ export const run = internalAction({
       const citedSections = new Set<string>(); // source/outline titles from lookup_policy_section results
       const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
       const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
-      const citedPolicyIds = new Set<string>(); // policy IDs actually looked up or acted on by tools
+      const presentedPolicyIds = new Set<string>(); // policy cards intentionally selected by present_policy_card
       const usedTools: string[] = [];
       const toolCalls: Array<{
         name: string;
@@ -1217,8 +1216,8 @@ export const run = internalAction({
           operatorInitiatedUserMessageId: scope.operatorInitiated
             ? args.userMessageId
             : undefined,
-          onPolicyReferenced: (policyId) => {
-            citedPolicyIds.add(String(policyId));
+          onPolicyPresented: (policyId) => {
+            presentedPolicyIds.add(String(policyId));
           },
           onResponseAttachment: (attachment) => {
             responseAttachments.push(attachment);
@@ -1592,7 +1591,7 @@ export const run = internalAction({
                 data: (workflowOutput as Record<string, unknown>).workflowOutcome,
               });
             }
-            // Capture cited source/outline titles and policy IDs from lookup_policy_section results
+            // Capture cited source/outline titles from lookup_policy_section results.
             if (
               lastToolName === "lookup_policy_section" &&
               (part as Record<string, unknown>).output
@@ -1780,16 +1779,12 @@ export const run = internalAction({
         content =
           "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
       }
-      const finalReferencedPolicyIds = new Set<string>([
-        ...selectedPolicyIds,
-        ...citedPolicyIds,
-      ]);
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
         referencedPolicyIds:
-          finalReferencedPolicyIds.size > 0
-            ? ([...finalReferencedPolicyIds] as Id<"policies">[])
+          presentedPolicyIds.size > 0
+            ? ([...presentedPolicyIds] as Id<"policies">[])
             : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
         citedCoverageNames:

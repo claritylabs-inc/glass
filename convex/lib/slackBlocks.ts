@@ -12,6 +12,7 @@ const TOOL_LABELS: Record<string, string> = {
   lookup_address: "Validated the address",
   lookup_policy: "Found the policy record",
   lookup_policy_section: "Reviewed policy sources",
+  present_policy_card: "Shared the policy record",
   attach_policy_document: "Attached the policy PDF",
   compare_coverages: "Compared coverages",
   lookup_compliance_requirements: "Checked insurance requirements",

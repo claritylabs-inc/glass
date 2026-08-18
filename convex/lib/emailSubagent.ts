@@ -809,7 +809,6 @@ async function runEmailSubagent(
         subject,
         responseMessageId: sentMessageId,
         attachments: attachments.length > 0 ? attachments : undefined,
-        referencedPolicyIds,
       });
     }
 

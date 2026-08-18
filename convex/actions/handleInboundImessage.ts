@@ -594,7 +594,7 @@ export const processInbound = internalAction({
         orgMemoryBlock +
         requirementsBlock;
 
-      const runState = createImessageAgentRunState({ relevantPolicyIds });
+      const runState = createImessageAgentRunState();
       const orgMembers = (await ctx.runQuery(
         internal.users.listByOrgInternal,
         { orgId },
@@ -652,7 +652,7 @@ export const processInbound = internalAction({
           writeUnavailableMessage:
             "Only a linked Glass user in this chat can do that.",
           availableFileIds,
-          onPolicyReferenced: runState.onPolicyReferenced,
+          onPolicyPresented: runState.onPolicyPresented,
           onResponseAttachment: runState.onResponseAttachment,
           onToolArtifact: runState.onToolArtifact,
         }),
@@ -840,8 +840,8 @@ export const processInbound = internalAction({
               responseMessageId: `${eventKey}:pending-email`,
               pendingEmailId: emailResult.pendingEmailId,
               referencedPolicyIds:
-                relevantPolicyIds.length > 0
-                  ? relevantPolicyIds
+                runState.presentedPolicyIds.length > 0
+                  ? runState.presentedPolicyIds
                   : undefined,
               usedTools: usedTools.length > 0 ? usedTools : undefined,
               toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -933,8 +933,8 @@ export const processInbound = internalAction({
           content: responseText,
           responseMessageId: `${eventKey}:response`,
           referencedPolicyIds:
-            relevantPolicyIds.length > 0
-              ? relevantPolicyIds
+            runState.presentedPolicyIds.length > 0
+              ? runState.presentedPolicyIds
               : undefined,
           pendingEmailId: pendingEmailIdForResponse,
           attachments:
@@ -947,15 +947,11 @@ export const processInbound = internalAction({
       }
 
       const appCards = await mintImessageAppCards(ctx, {
-        orgId,
         threadId,
         sourceThreadMessageId: agentResponseMessageId,
         createdByUserId: user._id,
-        messageText: inboundMessageText,
-        responseText,
-        relevantPolicyIds,
+        presentedPolicyIds: runState.presentedPolicyIds,
         artifacts: imessageToolArtifacts,
-        usedTools,
       });
 
       return await finish(

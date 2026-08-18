@@ -1,5 +1,6 @@
 "use node";
 
+import type { ToolExecutionOptions } from "ai";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -12,6 +13,7 @@ import {
   lookupComplianceRequirements,
   lookupPolicy,
   lookupPolicySection,
+  presentPolicyCard,
   saveNote,
 } from "./chatTools";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
@@ -38,6 +40,7 @@ import {
 } from "./policyPartyContext";
 import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
 import { lookupMapboxAddress } from "./mapboxAddress";
+import { createAgentPolicyPresentationState } from "./agentPolicyPresentation";
 
 type AgentToolSurface = "web" | "email" | "imessage" | "slack" | "mcp";
 
@@ -82,6 +85,7 @@ export type BuildAgentToolExecutorsOptions = {
   writeUnavailableMessage?: string;
   availableFileIds?: Set<string>;
   onPolicyReferenced?: (policyId: Id<"policies">) => void | Promise<void>;
+  onPolicyPresented?: (policyId: Id<"policies">) => void | Promise<void>;
   onResponseAttachment?: (attachment: ToolAttachment) => void | Promise<void>;
   onToolArtifact?: (artifact: ToolArtifact) => void | Promise<void>;
 };
@@ -273,7 +277,6 @@ async function resolveReadablePolicy(
     return { ok: false as const, message: "Policy not found." };
   }
   const org = await ctx.runQuery(internal.orgs.getInternal, { id: policy.orgId });
-  await options.onPolicyReferenced?.(policy._id);
   return {
     ok: true,
     policy: {
@@ -338,6 +341,21 @@ export function buildAgentToolExecutors(
   ctx: ActionCtx,
   options: BuildAgentToolExecutorsOptions,
 ) {
+  const policyPresentation = createAgentPolicyPresentationState();
+  const recordToolPolicyReference = async (
+    policyId: Id<"policies">,
+    toolName: string,
+    executionOptions?: ToolExecutionOptions,
+  ) => {
+    policyPresentation.recordToolPolicyReference({
+      policyId,
+      toolCallId:
+        executionOptions?.toolCallId ?? `direct:${toolName}:${policyId}`,
+      toolName,
+    });
+    await options.onPolicyReferenced?.(policyId);
+  };
+
   return {
     lookup_address: {
       ...lookupAddress,
@@ -363,12 +381,15 @@ export function buildAgentToolExecutors(
     },
     lookup_policy: {
       ...lookupPolicy,
-      execute: async (params: {
-        query: string;
-        lineOfBusiness?: string;
-        policyType?: string;
-        carrier?: string;
-      }) => {
+      execute: async (
+        params: {
+          query: string;
+          lineOfBusiness?: string;
+          policyType?: string;
+          carrier?: string;
+        },
+        executionOptions?: ToolExecutionOptions,
+      ) => {
         const policies = await listPoliciesForReadableOrgs(ctx, options);
         const { policySearchScore } = await import("./aiUtils");
         const scored = policies
@@ -391,7 +412,11 @@ export function buildAgentToolExecutors(
           return "No policies found for this organization.";
         for (const policy of matches.slice(0, 5)) {
           if (policy._id)
-            await options.onPolicyReferenced?.(policy._id as Id<"policies">);
+            await recordToolPolicyReference(
+              policy._id as Id<"policies">,
+              "lookup_policy",
+              executionOptions,
+            );
         }
         return matches
           .slice(0, 5)
@@ -400,9 +425,59 @@ export function buildAgentToolExecutors(
           );
       },
     },
+    ...(options.onPolicyPresented
+      ? {
+          present_policy_card: {
+            ...presentPolicyCard,
+            execute: async (
+              params: {
+                policyId: string;
+                allowMultiple?: boolean;
+                repeatRequested?: boolean;
+              },
+            ) => {
+              const referencedPolicy =
+                policyPresentation.toolPolicyReferences.find(
+                  (reference) =>
+                    String(reference.policyId) === params.policyId,
+                );
+              const wasRecentlyPresented = options.threadId && referencedPolicy
+                ? await ctx.runQuery(
+                    internal.threads.wasPolicyCardRecentlyPresentedInternal,
+                    {
+                      threadId: options.threadId,
+                      policyId: referencedPolicy.policyId,
+                    },
+                  )
+                : false;
+              const selection = policyPresentation.selectPolicyCard({
+                policyId: params.policyId,
+                allowMultiple: params.allowMultiple === true,
+                repeatRequested: params.repeatRequested === true,
+                wasRecentlyPresented,
+              });
+              if (!selection.ok) {
+                return {
+                  status: selection.status,
+                  message: selection.message,
+                };
+              }
+              await options.onPolicyPresented?.(selection.policyId);
+              return {
+                status: "presented" as const,
+                policyId: selection.policyId,
+                message: "Policy card selected for this response.",
+              };
+            },
+          },
+        }
+      : {}),
     compare_coverages: {
       ...compareCoverages,
-      execute: async (params: { policyId1: string; policyId2: string }) => {
+      execute: async (
+        params: { policyId1: string; policyId2: string },
+        executionOptions?: ToolExecutionOptions,
+      ) => {
         const first = await resolveReadablePolicy(
           ctx,
           options,
@@ -415,6 +490,16 @@ export function buildAgentToolExecutors(
           params.policyId2,
         );
         if (!second.ok) return second.message;
+        await recordToolPolicyReference(
+          first.policy._id,
+          "compare_coverages",
+          executionOptions,
+        );
+        await recordToolPolicyReference(
+          second.policy._id,
+          "compare_coverages",
+          executionOptions,
+        );
         return {
           policy1: formatPolicyForTool(first.policy as any, options.scope),
           policy2: formatPolicyForTool(second.policy as any, options.scope),
@@ -455,7 +540,10 @@ export function buildAgentToolExecutors(
     ),
     lookup_policy_section: {
       ...lookupPolicySection,
-      execute: async (params: { policyId: string; query: string }) => {
+      execute: async (
+        params: { policyId: string; query: string },
+        executionOptions?: ToolExecutionOptions,
+      ) => {
         const resolved = await resolveFinalReadablePolicy(
           ctx,
           options,
@@ -463,8 +551,10 @@ export function buildAgentToolExecutors(
           "exact source lookup",
         );
         if (!resolved.ok) return resolved.message;
-        await options.onPolicyReferenced?.(
-          resolved.policy._id as Id<"policies">,
+        await recordToolPolicyReference(
+          resolved.policy._id,
+          "lookup_policy_section",
+          executionOptions,
         );
         return searchPolicyDocumentWithSourceSpans(
           ctx,
@@ -476,11 +566,14 @@ export function buildAgentToolExecutors(
     },
     save_note: {
       ...saveNote,
-      execute: async (params: {
-        content: string;
-        type: string;
-        policyId?: string;
-      }) => {
+      execute: async (
+        params: {
+          content: string;
+          type: string;
+          policyId?: string;
+        },
+        executionOptions?: ToolExecutionOptions,
+      ) => {
         if (options.canWrite === false)
           return writeUnavailable(options, "save durable notes");
         let policyId: Id<"policies"> | undefined;
@@ -495,6 +588,11 @@ export function buildAgentToolExecutors(
           if (!resolved.ok) return resolved.message;
           policyId = resolved.policy._id;
           targetOrgId = resolved.policy.orgId;
+          await recordToolPolicyReference(
+            resolved.policy._id,
+            "save_note",
+            executionOptions,
+          );
         }
         if (policyId) {
           return "Not saved. Memory is limited to stable company context; policy-specific facts must come from policy lookup tools.";
@@ -516,7 +614,10 @@ export function buildAgentToolExecutors(
     },
     attach_policy_document: {
       ...attachPolicyDocument,
-      execute: async (params: { policyId: string }) => {
+      execute: async (
+        params: { policyId: string },
+        executionOptions?: ToolExecutionOptions,
+      ) => {
         const resolved = await resolveFinalReadablePolicy(
           ctx,
           options,
@@ -525,6 +626,11 @@ export function buildAgentToolExecutors(
         );
         if (!resolved.ok) return resolved.message;
         const policy = resolved.policy;
+        await recordToolPolicyReference(
+          policy._id,
+          "attach_policy_document",
+          executionOptions,
+        );
         if (!policy.fileId)
           return "That policy does not have an original PDF file available.";
         const attachment = {
@@ -543,13 +649,16 @@ export function buildAgentToolExecutors(
     },
     confirm_policy_fact: {
       ...confirmPolicyFact,
-      execute: async (params: {
-        policyId: string;
-        requirementIds?: string[];
-        fact: string;
-        sourceSpanIds: string[];
-        fieldUpdates?: Record<string, string | undefined>;
-      }) => {
+      execute: async (
+        params: {
+          policyId: string;
+          requirementIds?: string[];
+          fact: string;
+          sourceSpanIds: string[];
+          fieldUpdates?: Record<string, string | undefined>;
+        },
+        executionOptions?: ToolExecutionOptions,
+      ) => {
         const resolved = await resolveFinalWritablePolicy(
           ctx,
           options,
@@ -557,6 +666,11 @@ export function buildAgentToolExecutors(
           "source-backed fact confirmation",
         );
         if (!resolved.ok) return resolved.message;
+        await recordToolPolicyReference(
+          resolved.policy._id,
+          "confirm_policy_fact",
+          executionOptions,
+        );
         try {
           const result = await ctx.runMutation(
             internal.policies.confirmPolicyFactFromSource,
@@ -585,26 +699,29 @@ export function buildAgentToolExecutors(
     },
     generate_coi: {
       ...generateCoi,
-      execute: async (params: {
-        policyId?: string;
-        requirementSourceDocumentId?: string;
-        requirementId?: string;
-        certificateHolder?: string;
-        holderContactName?: string;
-        holderEmail?: string;
-        holderPhone?: string;
-        addressLine1?: string;
-        addressLine2?: string;
-        city?: string;
-        state?: string;
-        postalCode?: string;
-        country?: string;
-        requestText?: string;
-        descriptionOfOperations?: string;
-        requestedEndorsements?: string[];
-        additionalInsuredName?: string;
-        explicitReissue?: boolean;
-      }) => {
+      execute: async (
+        params: {
+          policyId?: string;
+          requirementSourceDocumentId?: string;
+          requirementId?: string;
+          certificateHolder?: string;
+          holderContactName?: string;
+          holderEmail?: string;
+          holderPhone?: string;
+          addressLine1?: string;
+          addressLine2?: string;
+          city?: string;
+          state?: string;
+          postalCode?: string;
+          country?: string;
+          requestText?: string;
+          descriptionOfOperations?: string;
+          requestedEndorsements?: string[];
+          additionalInsuredName?: string;
+          explicitReissue?: boolean;
+        },
+        executionOptions?: ToolExecutionOptions,
+      ) => {
         try {
           const requirementsMode = Boolean(
             params.requirementSourceDocumentId || params.requirementId,
@@ -624,6 +741,11 @@ export function buildAgentToolExecutors(
             if (!resolved.ok) return resolved.message;
             policy = resolved.policy;
             targetOrgId = policy.orgId;
+            await recordToolPolicyReference(
+              policy._id,
+              "generate_coi",
+              executionOptions,
+            );
           } else {
             const writableOrgIds = options.writableOrgIds ?? options.scope.writableOrgIds;
             const matchingOrgIds: Id<"organizations">[] = [];
@@ -700,7 +822,11 @@ export function buildAgentToolExecutors(
             const attachments: ToolAttachment[] = [];
             for (const item of batchResults) {
               if (item.policyId) {
-                await options.onPolicyReferenced?.(item.policyId as Id<"policies">);
+                await recordToolPolicyReference(
+                  item.policyId as Id<"policies">,
+                  "generate_coi",
+                  executionOptions,
+                );
               }
               if (item.fileId) {
                 const attachment = {
