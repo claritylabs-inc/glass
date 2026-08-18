@@ -6,11 +6,10 @@ import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
 import { generateAgentTextForOrg, generateTextForOrg } from "../lib/models";
 import {
-  buildScopedDocumentContext,
-  buildScopedOrgMemoryContext,
-  buildScopedRequirementsContext,
-  buildScopedVendorComplianceContext,
-} from "../lib/agentPrompts";
+  formatPolicyFocusHints,
+  selectPolicyFocusIds,
+  validatePolicyFocusIds,
+} from "../lib/agentPolicyFocus";
 import {
   buildSystemPromptForContext,
   buildBrokerPortfolioSystemPrompt,
@@ -125,14 +124,14 @@ export const run = internalAction({
     })) as AgentScope;
 
     const allMessages = await ctx.runQuery(internal.threads.messagesInternal, { threadId });
-    const policiesByOrg = new Map<string, any[]>();
-    await Promise.all(scope.readOrgIds.map(async (readOrgId) => {
-      const docs = await ctx.runQuery(internal.policies.listAllPreviewReadableInternal, { orgId: readOrgId });
-      policiesByOrg.set(
-        String(readOrgId),
-        docs as any[],
-      );
-    }));
+    const policyFocusIds = await validatePolicyFocusIds(
+      ctx,
+      scope,
+      selectPolicyFocusIds(
+        allMessages.filter((message) => message._id !== userMessageId),
+      ),
+    );
+    const policyFocusBlock = formatPolicyFocusHints(policyFocusIds);
     const siteUrl = getClientPortalUrl();
 
     // Build system prompt
@@ -150,35 +149,6 @@ export const run = internalAction({
           siteUrl,
         });
 
-    // Document context (vector search with per-org isolation in broker mode)
-    const {
-      context: docContext,
-      relevantPolicyIds,
-    } = await buildScopedDocumentContext(ctx, scope, policiesByOrg, args.message);
-
-    const memoryContext = "";
-
-    // Load curated company context.
-    const orgMemoryBlock = await buildScopedOrgMemoryContext(
-      ctx,
-      scope,
-      args.message,
-      relevantPolicyIds.map((id: unknown) => id as string),
-    );
-    const requirementsBlock = await buildScopedRequirementsContext(ctx, scope);
-
-    const connectedVendors = await ctx
-      .runQuery((internal as any).connectedOrgs.listActiveVendorsInternal, {
-        clientOrgId: args.orgId,
-      })
-      .catch(() => []);
-    const connectedVendorBlock =
-      Array.isArray(connectedVendors) && connectedVendors.length > 0
-        ? `\n\nCONNECTED VENDOR ACCESS:\nThe caller's org has read-only access to these vendor organizations. When the user asks about vendor/client risk, vendor COIs, or vendor policies, tell them to use MCP vendor tools for exact policy lists and use this roster for disambiguation. Do not imply write access.\n${connectedVendors.map((row: any) => `- ${row.vendorOrg?.name ?? row.vendorOrgId} (vendorOrgId: ${row.vendorOrgId}, status: ${row.status})`).join("\n")}`
-        : "";
-
-    const complianceBlock = await buildScopedVendorComplianceContext(ctx, scope);
-
     const mcpAddendum = `
 
 MCP MODE:
@@ -190,9 +160,7 @@ MCP MODE:
 - Do not create iMessage group chats or send vendor invites unless the caller explicitly asked for that action or confirmed it.
 - Do NOT include email-style sign-offs or greetings.`;
 
-    const referencedPolicySourceIds = new Set<string>(
-      relevantPolicyIds.map((id: unknown) => String(id)),
-    );
+    const referencedPolicySourceIds = new Set<string>();
     const responseAttachments: Array<{
       filename: string;
       contentType: string;
@@ -368,14 +336,8 @@ MCP MODE:
     const fullSystemPrompt =
       systemPrompt +
       mcpAddendum +
-      "\n\n" +
-      docContext +
       buildPolicyToolInstructions(10) +
-      memoryContext +
-      orgMemoryBlock +
-      requirementsBlock +
-      connectedVendorBlock +
-      complianceBlock;
+      (policyFocusBlock ? `\n\n${policyFocusBlock}` : "");
 
     // Build message history (skip processing placeholders)
     const messageHistory = buildMessageHistory(allMessages);

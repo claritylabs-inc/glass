@@ -9,11 +9,28 @@ import { z } from "zod";
 
 export const lookupPolicy = tool({
   description:
-    "Search for insurance policies by carrier name, policy number, ACORD line of business, or keywords. Returns matching policy summaries with source-backed client facts and policy-scoped Producer, insurer, carrier, and General Agent parties when available.",
+    "Look up insurance policies on demand by exact policy IDs, expiration window, carrier name, policy number, ACORD line of business, or keywords. Returns fresh policy summaries with source-backed client facts and policy-scoped Producer, insurer, carrier, and General Agent parties when available.",
   inputSchema: z.object({
     query: z
       .string()
+      .optional()
       .describe("Search query — carrier name, policy number, or keywords"),
+    policyIds: z
+      .array(z.string())
+      .max(5)
+      .optional()
+      .describe(
+        "Up to five exact policy IDs supplied by the current request or policy-focus hints. Use this to refresh those policies before answering; IDs are routing hints, not policy facts.",
+      ),
+    expiringWithinDays: z
+      .number()
+      .int()
+      .min(1)
+      .max(365)
+      .optional()
+      .describe(
+        "Return policies expiring between today and this many days from now.",
+      ),
     lineOfBusiness: z
       .string()
       .optional()
@@ -22,6 +39,28 @@ export const lookupPolicy = tool({
       ),
     policyType: z.string().optional().describe("Deprecated alias for lineOfBusiness."),
     carrier: z.string().optional().describe("Filter by carrier/insurer name"),
+  }),
+});
+
+export const lookupCompanyContext = tool({
+  description:
+    "Look up durable company-profile facts and preferences on demand. Use this for company operations, identity, stable preferences, or saved risk context. Never use company memory for policy terms, limits, endorsements, coverage, certificates, or other policy facts; use policy tools for those.",
+  inputSchema: z.object({
+    orgId: z
+      .string()
+      .optional()
+      .describe("Readable organization ID when the request targets a specific company."),
+    query: z
+      .string()
+      .optional()
+      .describe("Company fact, preference, operation, identity, or risk topic to find."),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      .describe("Maximum facts to return across readable organizations. Defaults to 10."),
   }),
 });
 

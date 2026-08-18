@@ -60,17 +60,21 @@ describe("policy preview extraction", () => {
     for (const path of [
       "convex/lib/agentToolExecutors.ts",
       "convex/lib/policyToolResolution.ts",
-      "convex/actions/handleInboundEmail.ts",
-      "convex/lib/imessageAgentContext.ts",
-      "convex/actions/mcpChat.ts",
       "convex/http.ts",
       "convex/lib/vendorComplianceTools.ts",
     ]) {
       expect(read(path)).toContain("listAllPreviewReadableInternal");
     }
-    expect(read("convex/actions/processThreadChat.ts")).toContain(
-      "listPreviewReadableForAgentContextInternal",
-    );
+    for (const path of [
+      "convex/actions/processThreadChat.ts",
+      "convex/actions/handleInboundEmail.ts",
+      "convex/actions/handleInboundImessage.ts",
+      "convex/actions/mcpChat.ts",
+      "convex/lib/imessageAgentContext.ts",
+    ]) {
+      expect(read(path)).not.toContain("listAllPreviewReadableInternal");
+      expect(read(path)).not.toContain("listPreviewReadableForAgentContextInternal");
+    }
     expect(read("convex/policies.ts")).toContain(
       "listPreviewReadableForAgentContextInternal",
     );

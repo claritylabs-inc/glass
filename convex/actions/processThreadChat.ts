@@ -32,13 +32,10 @@ import {
   type AgentStep,
 } from "../lib/agentSteps";
 import {
-  buildScopedDocumentContext,
-  buildScopedOrgMemoryContext,
-  buildScopedRequirementsContext,
-  buildScopedVendorComplianceContext,
-  documentContextOrgIdsForScope,
-  documentContextPolicyLimitForOrg,
-} from "../lib/agentPrompts";
+  formatPolicyFocusHints,
+  selectPolicyFocusIds,
+  validatePolicyFocusIds,
+} from "../lib/agentPolicyFocus";
 import {
   buildSystemPromptForContext,
   buildBrokerPortfolioSystemPrompt,
@@ -720,7 +717,7 @@ export const run = internalAction({
         return;
       }
 
-      const selectedPolicyIds = new Set<string>(
+      const requestedPolicyIds = new Set<string>(
         (userMsgForGuard?.referencedPolicyIds as string[] | undefined) ?? [],
       );
       const selectedRequirementIds = new Set<string>(
@@ -801,24 +798,6 @@ export const run = internalAction({
               siteUrl,
             });
 
-      const policiesByOrg = new Map<string, any[]>();
-      const documentContextOrgIds = documentContextOrgIdsForScope(scope);
-      await Promise.all(
-        documentContextOrgIds.map(async (readOrgId) => {
-          const docs = await ctx.runQuery(
-            internal.policies.listPreviewReadableForAgentContextInternal,
-            {
-              orgId: readOrgId,
-              limit: documentContextPolicyLimitForOrg(scope, readOrgId),
-            },
-          );
-          policiesByOrg.set(
-            String(readOrgId),
-            docs as any[],
-          );
-        }),
-      );
-
       // Load thread messages for history
       const allMessages = await ctx.runQuery(
         internal.threads.messagesInternal,
@@ -830,41 +809,21 @@ export const run = internalAction({
         .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
-      const primaryDocs = policiesByOrg.get(String(args.orgId)) ?? [];
-      const focusedPolicyDocs =
-        selectedPolicyIds.size > 0
-          ? Array.from(policiesByOrg.values())
-              .flat()
-              .filter((policy) => selectedPolicyIds.has(String(policy._id)))
-          : primaryDocs;
-      if (selectedPolicyIds.size > 0) {
-        policiesByOrg.set(String(args.orgId), focusedPolicyDocs);
-      }
-
-      // Build document context (isolated per org in broker portfolio mode)
-      const {
-        context: docContext,
-        relevantPolicyIds,
-      } = await buildScopedDocumentContext(
+      const policyFocusIds = await validatePolicyFocusIds(
         ctx,
         scope,
-        policiesByOrg,
-        latestUserContent,
+        selectPolicyFocusIds(
+          allMessages.filter((message) =>
+            message._id !== agentMsgId && message._id !== args.userMessageId),
+          [...requestedPolicyIds] as Id<"policies">[],
+        ),
       );
-
-      const memoryContext = "";
-
-      // Load curated company context.
-      const orgMemoryBlock = await buildScopedOrgMemoryContext(
-        ctx,
-        scope,
-        latestUserContent,
-        relevantPolicyIds.map((id: string) => id),
+      const explicitSelectedPolicyIds = new Set(
+        policyFocusIds
+          .map(String)
+          .filter((policyId) => requestedPolicyIds.has(policyId)),
       );
-      const requirementsBlock = await buildScopedRequirementsContext(
-        ctx,
-        scope,
-      );
+      const policyFocusBlock = formatPolicyFocusHints(policyFocusIds);
       const selectedRequirements =
         selectedRequirementIds.size > 0
           ? (
@@ -893,18 +852,9 @@ export const run = internalAction({
             ).filter(Boolean) as Array<Record<string, unknown>>)
           : [];
       const selectedSteeringBlock =
-        selectedPolicyIds.size > 0 ||
         selectedRequirements.length > 0 ||
         selectedMailboxes.length > 0
           ? `\n\nUSER-SELECTED CONTEXT TARGETS:\n${[
-              focusedPolicyDocs.length
-                ? `Policies:\n${focusedPolicyDocs
-                    .map(
-                      (policy: any) =>
-                        `- ${policy.carrier || policy.security || "Unknown carrier"} #${policy.policyNumber} (ID:${policy._id})`,
-                    )
-                    .join("\n")}`
-                : "",
               selectedRequirements.length
                 ? `Requirements:\n${selectedRequirements
                     .map((requirement: any) =>
@@ -926,11 +876,6 @@ export const run = internalAction({
                 "\n\n",
               )}\nTreat these as explicit user steering. Prioritize them over generic retrieval. If mailbox work is needed and mailboxes are selected, keep the mailbox coordinator scoped to those accounts unless the user asks to broaden the search.`
           : "";
-
-      const complianceBlock = await buildScopedVendorComplianceContext(
-        ctx,
-        scope,
-      );
 
       const { history: messageHistory, latestAttachmentNames } =
         await buildMessageHistoryWithAttachmentContext(
@@ -994,15 +939,10 @@ export const run = internalAction({
         systemPrompt +
         webChatAddendum +
         pageContextBlock +
-        "\n\n" +
-        docContext +
         toolInstructions +
         operatorInitiatedBlock +
-        memoryContext +
-        orgMemoryBlock +
-        requirementsBlock +
+        (policyFocusBlock ? `\n\n${policyFocusBlock}` : "") +
         selectedSteeringBlock +
-        complianceBlock +
         attachmentNote +
         buildUnsupportedOutputInstructions();
 
@@ -1185,6 +1125,8 @@ export const run = internalAction({
       const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
       const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
       const citedPolicyIds = new Set<string>(); // policy IDs actually looked up or acted on by tools
+      const emailReferencedPolicyIds = policyFocusIds.filter((policyId) =>
+        explicitSelectedPolicyIds.has(String(policyId)));
       const usedTools: string[] = [];
       const toolCalls: Array<{
         name: string;
@@ -1219,6 +1161,9 @@ export const run = internalAction({
             : undefined,
           onPolicyReferenced: (policyId) => {
             citedPolicyIds.add(String(policyId));
+            if (!emailReferencedPolicyIds.some((id) => id === policyId)) {
+              emailReferencedPolicyIds.push(policyId);
+            }
           },
           onResponseAttachment: (attachment) => {
             responseAttachments.push(attachment);
@@ -1368,7 +1313,7 @@ export const run = internalAction({
                     : undefined,
                 allowedRecipients,
                 availableAttachments,
-                referencedPolicyIds: relevantPolicyIds as Id<"policies">[],
+                referencedPolicyIds: emailReferencedPolicyIds,
                 autoSendEmails: brokerDirectedEmailRequest
                   ? false
                   : org.autoSendEmails === true,
@@ -1781,7 +1726,7 @@ export const run = internalAction({
           "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
       }
       const finalReferencedPolicyIds = new Set<string>([
-        ...selectedPolicyIds,
+        ...explicitSelectedPolicyIds,
         ...citedPolicyIds,
       ]);
       await ctx.runMutation(internal.threads.updateAgentMessage, {

@@ -9,6 +9,12 @@ export type OrgMemorySource =
 
 export const COMPANY_CONTEXT_MEMORY_MAX_LENGTH = 280;
 
+type OrgMemoryContextItem = {
+  type?: string;
+  content: string;
+  updatedAt: number;
+};
+
 const ORG_SUFFIXES = new Set([
   "inc",
   "incorporated",
@@ -64,6 +70,37 @@ export function mentionsOrganization(content: string, orgName?: string | null) {
 
 export function normalizeMemoryContent(content: string) {
   return content.trim().replace(/\s+/g, " ");
+}
+
+export function rankOrgMemoryForQuery<T extends OrgMemoryContextItem>(
+  queryText: string,
+  memories: T[],
+  limit: number,
+): T[] {
+  const normalizedQuery = queryText.trim().toLowerCase();
+  const terms = Array.from(new Set(
+    normalizedQuery
+      .split(/[^a-z0-9$.,%-]+/)
+      .map((term) => term.trim())
+      .filter((term) => term.length > 2),
+  ));
+  return memories
+    .map((memory) => {
+      const content = memory.content.toLowerCase();
+      const score =
+        (normalizedQuery && content.includes(normalizedQuery) ? 8 : 0) +
+        terms.reduce(
+          (total, term) => total + (content.includes(term) ? 1 : 0),
+          0,
+        );
+      return { memory, score };
+    })
+    .sort(
+      (a, b) =>
+        b.score - a.score || b.memory.updatedAt - a.memory.updatedAt,
+    )
+    .slice(0, limit)
+    .map(({ memory }) => memory);
 }
 
 export function isCompanyContextMemory(args: {

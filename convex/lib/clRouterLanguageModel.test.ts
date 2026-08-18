@@ -11,6 +11,7 @@ import type {
 } from "@ai-sdk/provider";
 import { z } from "zod";
 import {
+  ClRouterToolContractError,
   ClRouterVisibleOutputError,
   createClRouterLanguageModel,
 } from "./clRouterLanguageModel";
@@ -84,6 +85,25 @@ function directStream(text: string) {
   };
 }
 
+function directToolStream(toolName: string) {
+  return {
+    stream: convertArrayToReadableStream<LanguageModelV3StreamPart>([
+      { type: "stream-start", warnings: [] },
+      {
+        type: "tool-call",
+        toolCallId: "direct-tool-call",
+        toolName,
+        input: "{}",
+      },
+      {
+        type: "finish",
+        usage,
+        finishReason: { unified: "tool-calls", raw: "tool-calls" },
+      },
+    ]),
+  };
+}
+
 function adapterOptions(
   directModel: MockLanguageModelV3,
   fetch: typeof globalThis.fetch,
@@ -112,6 +132,27 @@ function rawCallOptions(): LanguageModelV3CallOptions {
   return {
     prompt: [{ role: "user", content: [{ type: "text", text: "Hello" }] }],
   };
+}
+
+function forcedToolCallOptions(
+  toolName = "report_canary",
+): LanguageModelV3CallOptions {
+  return {
+    ...rawCallOptions(),
+    tools: [{
+      type: "function",
+      name: toolName,
+      inputSchema: { type: "object", properties: {} },
+    }],
+    toolChoice: { type: "tool", toolName },
+  };
+}
+
+function generatedResponse(output: unknown): Response {
+  return Response.json({
+    ...doneEvent("stop"),
+    output,
+  });
 }
 
 describe("cl-router LanguageModelV3 adapter", () => {
@@ -238,6 +279,165 @@ describe("cl-router LanguageModelV3 adapter", () => {
     expect(directModel.doStreamCalls).toHaveLength(1);
   });
 
+  test("accepts the exact forced tool returned by cl-router", async () => {
+    const directModel = new MockLanguageModelV3();
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      generatedResponse({
+        toolCalls: [{
+          toolCallId: "call-1",
+          toolName: "report_canary",
+          input: {},
+        }],
+      }));
+    const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
+
+    const result = await model.doGenerate(forcedToolCallOptions());
+
+    expect(result.content).toContainEqual(expect.objectContaining({
+      type: "tool-call",
+      toolName: "report_canary",
+    }));
+    expect(directModel.doGenerateCalls).toHaveLength(0);
+  });
+
+  test("accepts any returned tool for required and leaves auto unconstrained", async () => {
+    const requiredFetch = vi.fn<typeof globalThis.fetch>(async () =>
+      generatedResponse({
+        toolCalls: [{
+          toolCallId: "call-1",
+          toolName: "report_canary",
+          input: {},
+        }],
+      }));
+    const requiredModel = createClRouterLanguageModel(
+      adapterOptions(new MockLanguageModelV3(), requiredFetch),
+    );
+    await expect(requiredModel.doGenerate({
+      ...forcedToolCallOptions(),
+      toolChoice: { type: "required" },
+    })).resolves.toMatchObject({
+      content: [expect.objectContaining({ type: "tool-call" })],
+    });
+
+    const autoModel = createClRouterLanguageModel(adapterOptions(
+      new MockLanguageModelV3(),
+      vi.fn<typeof globalThis.fetch>(async () => generatedResponse("No tool needed.")),
+    ));
+    await expect(autoModel.doGenerate({
+      ...forcedToolCallOptions(),
+      toolChoice: { type: "auto" },
+    })).resolves.toMatchObject({
+      content: [{ type: "text", text: "No tool needed." }],
+    });
+  });
+
+  test.each([
+    ["missing", "No tool was returned.", []],
+    ["wrong", "Wrong tool was returned.", [{
+      toolCallId: "call-wrong",
+      toolName: "lookup_policy",
+      input: {},
+    }]],
+    ["mixed", "An extra tool was returned.", [{
+      toolCallId: "call-expected",
+      toolName: "report_canary",
+      input: {},
+    }, {
+      toolCallId: "call-extra",
+      toolName: "lookup_policy",
+      input: {},
+    }]],
+  ])("falls back before execution for a %s forced tool", async (_case, text, toolCalls) => {
+    const directModel = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{
+          type: "tool-call",
+          toolCallId: "direct-call",
+          toolName: "report_canary",
+          input: "{}",
+        }],
+        finishReason: { unified: "tool-calls", raw: "tool-calls" },
+        usage,
+        warnings: [],
+      }),
+    });
+    const onDirectFallback = vi.fn();
+    const model = createClRouterLanguageModel({
+      ...adapterOptions(
+        directModel,
+        vi.fn<typeof globalThis.fetch>(async () => generatedResponse({ text, toolCalls })),
+      ),
+      onDirectFallback,
+    });
+
+    const result = await model.doGenerate(forcedToolCallOptions());
+
+    expect(result.content).toContainEqual(expect.objectContaining({
+      type: "tool-call",
+      toolName: "report_canary",
+    }));
+    expect(directModel.doGenerateCalls).toHaveLength(1);
+    expect(onDirectFallback).toHaveBeenCalledWith(
+      expect.any(ClRouterToolContractError),
+      expect.objectContaining({ step: 1 }),
+    );
+  });
+
+  test("fails when the direct fallback also violates the forced tool contract", async () => {
+    const directModel = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "text", text: "Still no tool." }],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage,
+        warnings: [],
+      }),
+    });
+    const model = createClRouterLanguageModel(adapterOptions(
+      directModel,
+      vi.fn<typeof globalThis.fetch>(async () => generatedResponse("No tool.")),
+    ));
+
+    await expect(model.doGenerate(forcedToolCallOptions())).rejects.toBeInstanceOf(
+      ClRouterToolContractError,
+    );
+    expect(directModel.doGenerateCalls).toHaveLength(1);
+  });
+
+  test("rejects a wrong streamed tool before exposing it and safely falls back", async () => {
+    const directModel = new MockLanguageModelV3({
+      doStream: directToolStream("report_canary"),
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => sseResponse([
+      {
+        type: "tool-call",
+        toolCallId: "wrong-router-call",
+        toolName: "lookup_policy",
+        input: {},
+      },
+      doneEvent("tool-calls"),
+    ]));
+    const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
+
+    const result = await model.doStream(forcedToolCallOptions());
+    const parts: LanguageModelV3StreamPart[] = [];
+    const reader = result.stream.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+    }
+
+    expect(parts).toContainEqual(expect.objectContaining({
+      type: "tool-call",
+      toolName: "report_canary",
+    }));
+    expect(parts).not.toContainEqual(expect.objectContaining({
+      type: "tool-call",
+      toolName: "lookup_policy",
+    }));
+    expect(directModel.doStreamCalls).toHaveLength(1);
+  });
+
   test("keeps the entire run on the direct model after initial router fallback", async () => {
     const directModel = new MockLanguageModelV3({
       doGenerate: async () => ({
@@ -259,6 +459,52 @@ describe("cl-router LanguageModelV3 adapter", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(directModel.doGenerateCalls).toHaveLength(2);
+  });
+
+  test("applies the interactive budget only to the first router step", async () => {
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      generatedResponse("Router answer."));
+    const directModel = new MockLanguageModelV3();
+    const model = createClRouterLanguageModel({
+      ...adapterOptions(directModel, fetchMock),
+      initialExecutionBudgetMs: 60_000,
+    });
+
+    await model.doGenerate(rawCallOptions());
+    await model.doGenerate(rawCallOptions());
+
+    const firstRequest = JSON.parse(
+      String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
+    );
+    const secondRequest = JSON.parse(
+      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
+    );
+    expect(firstRequest.executionBudgetMs).toBe(60_000);
+    expect(secondRequest.executionBudgetMs).toBe(179_000);
+  });
+
+  test("falls back when the initial router budget expires before visible output", async () => {
+    const directModel = new MockLanguageModelV3({
+      doStream: directStream("Direct answer."),
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => sseResponse([{
+      type: "error",
+      error: {
+        code: "router_budget_exhausted",
+        message: "Initial model execution exceeded its budget.",
+        retryable: false,
+        executionStarted: true,
+        requestId: "budget-request",
+      },
+    }]));
+    const model = createClRouterLanguageModel({
+      ...adapterOptions(directModel, fetchMock),
+      initialExecutionBudgetMs: 60_000,
+    });
+
+    const result = streamText({ model, prompt: "Hello" });
+    await expect(result.text).resolves.toBe("Direct answer.");
+    expect(directModel.doStreamCalls).toHaveLength(1);
   });
 
   test("fails closed instead of changing transport after a successful router step", async () => {

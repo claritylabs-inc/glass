@@ -39,6 +39,7 @@ describe("centralized agent tool execution", () => {
     );
     for (const toolName of [
       "lookup_policy",
+      "lookup_company_context",
       "lookup_address",
       "compare_coverages",
       "lookup_policy_section",
@@ -85,6 +86,26 @@ describe("centralized agent tool execution", () => {
       expect(source).not.toContain("searchPolicyDocumentWithSourceSpans");
       expect(source).not.toContain("buildVendorComplianceTools");
     }
+  });
+
+  it("loads authenticated domain context only through on-demand tools", () => {
+    for (const path of surfaces) {
+      const source = read(path);
+      expect(source).not.toMatch(
+        /buildScoped(?:Document|OrgMemory|Requirements|VendorCompliance)Context/,
+      );
+      expect(source).not.toContain("listAllPreviewReadableInternal");
+      expect(source).not.toContain("listPreviewReadableForAgentContextInternal");
+    }
+
+    const imessageContext = read("convex/lib/imessageAgentContext.ts");
+    const scope = read("convex/lib/agentScope.ts");
+    const executors = read("convex/lib/agentToolExecutors.ts");
+    expect(imessageContext).not.toContain("buildImessageKnowledgeContext");
+    expect(scope).not.toContain('.query("policies")');
+    expect(scope).not.toContain('.query("complianceChecks")');
+    expect(executors).toContain("lookup_company_context");
+    expect(executors).toContain("expiringWithinDays");
   });
 
   it("keeps email-specific attachment selection out of COI generation", () => {

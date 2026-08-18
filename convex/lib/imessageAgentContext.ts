@@ -1,14 +1,8 @@
 "use node";
 
 import type { ModelMessage } from "ai";
-import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import {
-  buildComplianceRequirementsContext,
-  buildDocumentContext,
-  buildIntelligenceContext,
-} from "./agentPrompts";
 import { buildAssistantMessageContentWithArtifacts } from "./agentMessageHistory";
 import {
   MAX_IMESSAGE_AUDIO_BYTES,
@@ -25,13 +19,14 @@ import {
 
 export type ImessageHistoryMessage = {
   status?: string;
-  role: string;
+  role: "user" | "agent" | "system";
   content: string;
   userName?: string;
   responseMessageId?: string;
   toolArtifacts?: Array<{ type: string; data: unknown }>;
   usedTools?: string[];
   attachments?: Array<{ filename: string }>;
+  referencedPolicyIds?: Id<"policies">[];
 };
 
 type ImessageContentPart =
@@ -157,93 +152,6 @@ export function buildRecentImessageTextContext(
       return `${speaker}: ${msg.content}`;
     })
     .join("\n");
-}
-
-export function buildImessageRetrievalQuery(args: {
-  recentConversationContext: string;
-  messageText: string;
-}): string {
-  return [args.recentConversationContext, `User: ${args.messageText}`]
-    .filter((part) => part.trim().length > 0)
-    .join("\n");
-}
-
-export async function buildImessageKnowledgeContext(
-  ctx: ActionCtx,
-  args: {
-    orgId: Id<"organizations">;
-    readOrgIds: Id<"organizations">[];
-    orgNamesById: Record<string, string>;
-    retrievalQuery: string;
-  },
-): Promise<{
-  policyContext: string;
-  memoryContext: string;
-  orgMemoryBlock: string;
-  requirementsBlock: string;
-  relevantPolicyIds: Id<"policies">[];
-}> {
-  const scopedPolicySets = await Promise.all(
-    args.readOrgIds.map(async (orgId) => ({
-      orgId,
-      policies: await ctx.runQuery(
-        internal.policies.listAllPreviewReadableInternal,
-        { orgId },
-      ),
-    })),
-  );
-  const policyContextParts: string[] = [];
-  const relevantPolicyIds: Id<"policies">[] = [];
-
-  for (const entry of scopedPolicySets) {
-    const built = await buildDocumentContext(
-      ctx,
-      entry.orgId,
-      entry.policies,
-      args.retrievalQuery,
-    );
-    if (built.context.trim().length > 0) {
-      const orgName =
-        args.orgNamesById[String(entry.orgId)] ?? "Linked organization";
-      policyContextParts.push(
-        `\n\nPOLICY CONTEXT FOR ${orgName}\n${built.context}`,
-      );
-    }
-    relevantPolicyIds.push(...(built.relevantPolicyIds as Id<"policies">[]));
-  }
-
-  const memoryContext = "";
-  const orgMemoryBlocks = await Promise.all(
-    args.readOrgIds.map(async (orgId) => {
-      const orgName = args.orgNamesById[String(orgId)] ?? "Linked organization";
-      const block = await buildIntelligenceContext(
-        ctx,
-        orgId,
-        args.retrievalQuery,
-        relevantPolicyIds.map(String),
-      );
-      return block.trim().length > 0
-        ? `\n\nORG MEMORY FOR ${orgName}\n${block}`
-        : "";
-    }),
-  );
-  const requirementBlocks = await Promise.all(
-    args.readOrgIds.map(async (orgId) => {
-      const orgName = args.orgNamesById[String(orgId)] ?? "Linked organization";
-      const block = await buildComplianceRequirementsContext(ctx, orgId);
-      return block.trim().length > 0
-        ? `\n\nCOMPLIANCE REQUIREMENTS FOR ${orgName}\n${block}`
-        : "";
-    }),
-  );
-
-  return {
-    policyContext: policyContextParts.join(""),
-    memoryContext,
-    orgMemoryBlock: orgMemoryBlocks.join(""),
-    requirementsBlock: requirementBlocks.join(""),
-    relevantPolicyIds,
-  };
 }
 
 export async function buildImessageModelMessages(
