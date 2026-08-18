@@ -11,6 +11,7 @@ type SlackToolStep = Extract<SlackAgentStep, { type: "tool" }>;
 const TOOL_LABELS: Record<string, string> = {
   lookup_address: "Validated the address",
   lookup_policy: "Found the policy record",
+  lookup_company_context: "Reviewed company context",
   lookup_policy_section: "Reviewed policy sources",
   present_policy_card: "Shared the policy record",
   attach_policy_document: "Attached the policy PDF",

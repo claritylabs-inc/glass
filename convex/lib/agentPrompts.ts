@@ -35,6 +35,8 @@ import { formatDocumentStructureForPrompt } from "./policyDocumentStructure";
 import { formatCoverageBreakdownForPrompt } from "./coverageBreakdown";
 import type { AgentScope } from "./agentScope";
 import { formatAgentScopePortfolioIndex, orgLabelForScope } from "./agentScope";
+import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
+export { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 
 export const MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES = 120;
 export const MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS = 8;
@@ -165,38 +167,6 @@ export async function buildIntelligenceContext(
   } catch {
     return "";
   }
-}
-
-type OrgMemoryContextItem = {
-  type?: string;
-  content: string;
-  updatedAt: number;
-};
-
-export function rankOrgMemoryForQuery<T extends OrgMemoryContextItem>(
-  queryText: string,
-  memories: T[],
-  limit: number,
-): T[] {
-  const normalizedQuery = queryText.trim().toLowerCase();
-  const terms = sourceQueryTerms(queryText);
-  return memories
-    .map((memory) => {
-      const content = memory.content.toLowerCase();
-      const score =
-        (normalizedQuery && content.includes(normalizedQuery) ? 8 : 0) +
-        terms.reduce(
-          (total, term) => total + (content.includes(term) ? 1 : 0),
-          0,
-        );
-      return { memory, score };
-    })
-    .sort(
-      (a, b) =>
-        b.score - a.score || b.memory.updatedAt - a.memory.updatedAt,
-    )
-    .slice(0, limit)
-    .map(({ memory }) => memory);
 }
 
 export async function buildComplianceRequirementsContext(

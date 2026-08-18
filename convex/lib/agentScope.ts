@@ -1,4 +1,3 @@
-import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalQuery } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -22,11 +21,6 @@ export type AgentScopeOrg = {
   type: "broker" | "client";
   isPrimary: boolean;
   canWrite: boolean;
-  policyCount: number;
-  expiringPolicyCount: number;
-  expiredPolicyCount: number;
-  openVendorComplianceItems: number;
-  recentActivityCount: number;
 };
 
 export type AgentScope = {
@@ -106,59 +100,16 @@ async function validateOperatorInitiatedMessage(
   return operatorInitiated;
 }
 
-async function summarizeOrg(ctx: any, org: Doc<"organizations">, args: {
+async function summarizeOrg(_ctx: any, org: Doc<"organizations">, args: {
   primaryOrgId: Id<"organizations">;
   canWrite: boolean;
 }): Promise<AgentScopeOrg> {
-  const now = dayjs().valueOf();
-  const soon = dayjs().add(60, "day").valueOf();
-  const policies = await ctx.db
-    .query("policies")
-    .withIndex("by_orgId", (q: any) => q.eq("orgId", org._id))
-    .collect();
-  const policyDocs = policies.filter(
-    (policy: Doc<"policies">) => !policy.deletedAt,
-  );
-  const policyExpiry = policyDocs
-    .map((policy: Doc<"policies">) => {
-      const raw = policy.expirationDate;
-      const parsed = raw ? dayjs(raw).valueOf() : Number.NaN;
-      return Number.isFinite(parsed) ? parsed : undefined;
-    })
-    .filter((value: number | undefined): value is number => typeof value === "number");
-  const expiredPolicyCount = policyExpiry.filter((value: number) => value < now).length;
-  const expiringPolicyCount = policyExpiry.filter((value: number) => value >= now && value <= soon).length;
-
-  const vendorRows = await ctx.db
-    .query("complianceChecks")
-    .withIndex("by_orgId_subjectOrgId", (q: any) => q.eq("orgId", org._id))
-    .collect()
-    .catch(() => []);
-  const openVendorComplianceItems = vendorRows.filter(
-    (row: Doc<"complianceChecks">) =>
-      row.status === "not_met" ||
-      row.status === "expired" ||
-      row.status === "expiring_soon",
-  ).length;
-
-  const recentSince = dayjs().subtract(30, "day").valueOf();
-  const recentActivity = await ctx.db
-    .query("brokerActivity")
-    .withIndex("by_clientOrgId_createdAt", (q: any) => q.eq("clientOrgId", org._id).gte("createdAt", recentSince))
-    .collect()
-    .catch(() => []);
-
   return {
     orgId: org._id,
     name: orgName(org),
     type: (org.type as "broker" | "client") ?? "client",
     isPrimary: org._id === args.primaryOrgId,
     canWrite: args.canWrite,
-    policyCount: policyDocs.length,
-    expiringPolicyCount,
-    expiredPolicyCount,
-    openVendorComplianceItems,
-    recentActivityCount: recentActivity.length,
   };
 }
 
@@ -335,7 +286,7 @@ export function formatAgentScopePortfolioIndex(scope: AgentScope): string {
   if (scope.mode !== "broker_portfolio") return "";
   const lines = scope.orgs.map((org) => {
     const focus = scope.focusedOrgId === org.orgId ? " [focused]" : "";
-    return `- ${org.name}${focus} (${org.type}, orgId: ${org.orgId}): ${org.policyCount} policies, ${org.expiringPolicyCount} expiring within 60 days, ${org.expiredPolicyCount} expired, ${org.openVendorComplianceItems} open vendor compliance item(s), ${org.recentActivityCount} recent broker activity item(s)`;
+    return `- ${org.name}${focus} (${org.type}, orgId: ${org.orgId})`;
   });
   return `\n\nBROKER PORTFOLIO INDEX:\n${lines.join("\n")}`;
 }

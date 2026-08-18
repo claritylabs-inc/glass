@@ -97,6 +97,7 @@ describe("source spans and policy update backend surfaces", () => {
     const queryAgent = read("convex/lib/queryAgent.ts");
     const sourceRetriever = read("convex/lib/convexSourceRetriever.ts");
     const threadChat = read("convex/actions/processThreadChat.ts");
+    const agentTools = read("convex/lib/agentToolExecutors.ts");
     const policies = read("convex/policies.ts");
 
     expect(prompts).toContain("SOURCE-TREE EVIDENCE");
@@ -108,8 +109,11 @@ describe("source spans and policy update backend surfaces", () => {
     expect(prompts).toContain("sourceNodes.listByPolicyCandidatesInternal");
     expect(prompts).toContain("sourceNodes.listContextByPolicyAndNodeIdsInternal");
     expect(prompts).not.toContain("sourceNodes.listByPolicyInternal");
-    expect(threadChat).toContain("documentContextOrgIdsForScope");
-    expect(threadChat).toContain("listPreviewReadableForAgentContextInternal");
+    expect(threadChat).not.toContain("documentContextOrgIdsForScope");
+    expect(threadChat).not.toContain("listPreviewReadableForAgentContextInternal");
+    expect(agentTools).toContain("lookup_policy_section");
+    expect(agentTools).toContain("searchPolicyDocumentWithSourceSpans");
+    expect(agentTools).toContain("agent_policy_section_lookup");
     expect(policies).toContain("listPreviewReadableForAgentContextInternal");
     expect(sourceRetriever).toContain("createConvexSourceRetriever");
     expect(sourceRetriever).toContain("searchSourceNodes");

@@ -1,6 +1,7 @@
 "use node";
 
 import type { ToolExecutionOptions } from "ai";
+import dayjs from "dayjs";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -10,6 +11,7 @@ import {
   confirmPolicyFact,
   generateCoi,
   lookupAddress,
+  lookupCompanyContext,
   lookupComplianceRequirements,
   lookupPolicy,
   lookupPolicySection,
@@ -41,8 +43,18 @@ import {
 import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
 import { lookupMapboxAddress } from "./mapboxAddress";
 import { createAgentPolicyPresentationState } from "./agentPolicyPresentation";
+import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 
 type AgentToolSurface = "web" | "email" | "imessage" | "slack" | "mcp";
+
+const COMPANY_CONTEXT_QUERY_STOP_WORDS = new Set([
+  "about",
+  "company",
+  "context",
+  "does",
+  "tell",
+  "what",
+]);
 
 type ToolAttachment = {
   filename: string;
@@ -383,7 +395,9 @@ export function buildAgentToolExecutors(
       ...lookupPolicy,
       execute: async (
         params: {
-          query: string;
+          query?: string;
+          policyIds?: string[];
+          expiringWithinDays?: number;
           lineOfBusiness?: string;
           policyType?: string;
           carrier?: string;
@@ -392,24 +406,67 @@ export function buildAgentToolExecutors(
       ) => {
         const policies = await listPoliciesForReadableOrgs(ctx, options);
         const { policySearchScore } = await import("./aiUtils");
-        const scored = policies
+        const exactPolicyIds = new Set((params.policyIds ?? []).slice(0, 5));
+        let candidates = exactPolicyIds.size > 0
+          ? policies.filter((policy) =>
+              policy._id && exactPolicyIds.has(String(policy._id)))
+          : policies;
+        if (params.expiringWithinDays !== undefined) {
+          const today = dayjs().startOf("day");
+          const end = today.add(params.expiringWithinDays, "day").endOf("day");
+          candidates = candidates.filter((policy) => {
+            if (!policy.expirationDate || policy.policyTermType === "continuous") {
+              return false;
+            }
+            const expiration = dayjs(policy.expirationDate);
+            return expiration.isValid() &&
+              !expiration.isBefore(today) &&
+              !expiration.isAfter(end);
+          });
+        }
+        const scored = candidates
           .map((policy) => ({
             policy,
             score: policySearchScore(
               policy,
-              params.query,
+              params.query ?? "",
               params.lineOfBusiness ?? params.policyType,
               params.carrier,
             ),
           }))
           .filter((match) => match.score > 0)
           .sort((left, right) => right.score - left.score);
-        const matches =
-          scored.length > 0
-            ? scored.map((match) => match.policy)
-            : policies.slice(0, 5);
+        const hasStructuredFilter = Boolean(
+          params.lineOfBusiness ?? params.policyType ?? params.carrier,
+        );
+        let matches: ListedPolicyForTool[];
+        if (exactPolicyIds.size > 0) {
+          matches = candidates;
+        } else if (scored.length > 0) {
+          matches = scored.map((match) => match.policy);
+        } else if (params.expiringWithinDays !== undefined) {
+          matches = candidates;
+        } else if (hasStructuredFilter) {
+          matches = [];
+        } else {
+          matches = policies.slice(0, 5);
+        }
+        if (exactPolicyIds.size > 0) {
+          const order = new Map(
+            [...exactPolicyIds].map((policyId, index) => [policyId, index]),
+          );
+          matches = [...matches].sort(
+            (left, right) =>
+              (order.get(String(left._id)) ?? Number.MAX_SAFE_INTEGER) -
+              (order.get(String(right._id)) ?? Number.MAX_SAFE_INTEGER),
+          );
+        } else if (params.expiringWithinDays !== undefined && scored.length === 0) {
+          matches = [...matches].sort((left, right) =>
+            dayjs(left.expirationDate).valueOf() -
+            dayjs(right.expirationDate).valueOf());
+        }
         if (matches.length === 0)
-          return "No policies found for this organization.";
+          return "No policies matched the requested IDs or filters in the readable organization scope.";
         for (const policy of matches.slice(0, 5)) {
           if (policy._id)
             await recordToolPolicyReference(
@@ -472,6 +529,86 @@ export function buildAgentToolExecutors(
           },
         }
       : {}),
+    lookup_company_context: {
+      ...lookupCompanyContext,
+      execute: async (params: {
+        orgId?: string;
+        query?: string;
+        limit?: number;
+      }) => {
+        const requestedLimit = params.limit ?? 10;
+        const readableOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
+        let targetOrgIds = readableOrgIds;
+        let matchedOrgByName = false;
+        if (params.orgId) {
+          targetOrgIds = readableOrgIds.filter((orgId) =>
+            String(orgId) === params.orgId);
+          if (targetOrgIds.length === 0) {
+            return "That organization is not in the readable scope.";
+          }
+        } else if (params.query?.trim()) {
+          const query = params.query.trim().toLowerCase();
+          const nameMatches = options.scope.orgs
+            .filter((org) => {
+              const name = org.name.toLowerCase();
+              return name.includes(query) || query.includes(name);
+            })
+            .map((org) => org.orgId);
+          if (nameMatches.length > 0) {
+            targetOrgIds = nameMatches;
+            matchedOrgByName = true;
+          }
+        } else if (options.scope.focusedOrgId) {
+          targetOrgIds = [options.scope.focusedOrgId];
+        }
+
+        const boundedOrgIds = targetOrgIds.slice(0, 25);
+        const memories = (
+          await Promise.all(
+            boundedOrgIds.map(async (orgId) => {
+              const rows = await ctx.runQuery(internal.orgMemory.listByOrg, {
+                orgId,
+                limit: 100,
+              });
+              return rows.map((memory) => ({
+                ...memory,
+                orgId,
+                orgName: orgLabelForScope(options.scope, orgId),
+              }));
+            }),
+          )
+        ).flat();
+        const queryTerms = (params.query?.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+          .filter((term) => term.length >= 3)
+          .filter((term) => !COMPANY_CONTEXT_QUERY_STOP_WORDS.has(term));
+        const relevantMemories =
+          params.query?.trim() && targetOrgIds.length > 1 && !matchedOrgByName
+            ? memories.filter((memory) => {
+                const content = memory.content.toLowerCase();
+                return queryTerms.some((term) => content.includes(term));
+              })
+            : memories;
+        const facts = rankOrgMemoryForQuery(
+          params.query ?? "",
+          relevantMemories,
+          requestedLimit,
+        ).map((memory) => ({
+          orgId: memory.orgId,
+          orgName: memory.orgName,
+          type: memory.type,
+          content: memory.content,
+          updatedAt: memory.updatedAt,
+        }));
+        return {
+          facts,
+          searchedOrganizations: boundedOrgIds.length,
+          bounded: targetOrgIds.length > boundedOrgIds.length,
+          note: facts.length > 0
+            ? "These are durable company-profile facts only. Use policy tools for every policy fact."
+            : "No matching durable company-profile facts were found. Do not infer policy facts from memory.",
+        };
+      },
+    },
     compare_coverages: {
       ...compareCoverages,
       execute: async (
@@ -556,6 +693,21 @@ export function buildAgentToolExecutors(
           "lookup_policy_section",
           executionOptions,
         );
+        if (
+          resolved.policy.fileId &&
+          resolved.policy.sourceTreeStatus !== "ready" &&
+          resolved.policy.sourceTreeStatus !== "queued" &&
+          resolved.policy.sourceTreeStatus !== "running"
+        ) {
+          await ctx.scheduler.runAfter(
+            0,
+            (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree,
+            {
+              policyId: resolved.policy._id,
+              reason: "agent_policy_section_lookup",
+            },
+          ).catch(() => undefined);
+        }
         return searchPolicyDocumentWithSourceSpans(
           ctx,
           resolved.policy,

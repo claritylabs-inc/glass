@@ -103,8 +103,9 @@ describe("task control intent", () => {
     );
     expect(imessageControlCall).toBeGreaterThan(-1);
     expect(imessageControlCall).toBeLessThan(
-      imessage.indexOf("buildImessageKnowledgeContext(ctx"),
+      imessage.indexOf("validatePolicyFocusIds("),
     );
+    expect(imessage).not.toContain("buildImessageKnowledgeContext");
     expect(webChatControls).toContain("resolveTaskControlIntent");
     const webTaskControlCall = webChat.indexOf("await runWebChatTaskControl(ctx");
     expect(webTaskControlCall).toBeGreaterThan(-1);
