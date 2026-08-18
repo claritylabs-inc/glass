@@ -276,7 +276,7 @@ before(async () => {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      GLASS_ENV: "staging",
+      GLASS_ENV: "production",
       SLACK_WORKER_MODE: "slack",
       SLACK_WORKER_SECRET: "test-secret",
       CONVEX_SITE_URL: providerOrigin,

@@ -228,8 +228,7 @@ export function logLocalEmailCapture(details: LocalEmailCaptureLog): boolean {
 
 function getSubjectPrefix(): string {
   const configured = process.env.EMAIL_SUBJECT_PREFIX;
-  if (configured !== undefined) return configured.trim();
-  return process.env.GLASS_ENV === "staging" ? "[STAGING]" : "";
+  return configured?.trim() ?? "";
 }
 
 function prefixSubject(subject: string): string {
@@ -320,7 +319,7 @@ function preparePayloadForDelivery(
   const redirectTo = splitCsv(process.env.EMAIL_REDIRECT_TO);
   if (redirectTo.length === 0) {
     return {
-      error: `restricted email delivery blocked ${disallowed.length} recipient(s); set EMAIL_REDIRECT_TO to capture staging mail`,
+      error: `restricted email delivery blocked ${disallowed.length} recipient(s); set EMAIL_REDIRECT_TO to redirect restricted mail`,
     };
   }
 

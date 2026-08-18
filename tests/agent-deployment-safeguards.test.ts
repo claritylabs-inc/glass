@@ -26,8 +26,8 @@ function writeJson(res: ServerResponse, payload: unknown) {
 function convexHealth(expectedClSdkVersion: string) {
   return {
     ok: true,
-    glassEnv: "staging",
-    emailDeliveryMode: "restricted",
+    glassEnv: "production",
+    emailDeliveryMode: "live",
     checks: {
       extractionWorkerModeExternal: true,
       extractionWorkerSecretConfigured: true,
@@ -51,20 +51,20 @@ function imessageHealth() {
   return {
     ok: true,
     service: "glass-imessage-worker",
-    glassEnv: "staging",
-    transport: "terminal",
-    imessageEnabled: false,
+    glassEnv: "production",
+    transport: "imessage",
+    imessageEnabled: true,
     convexSiteConfigured: true,
     workerSecretConfigured: true,
-    photonConfigured: false,
-    httpPorts: [],
+    photonConfigured: true,
+    httpPorts: [3001],
   };
 }
 
 function extractionWorkerHealth(clSdkVersion: string) {
   return {
     ok: true,
-    glassEnv: "staging",
+    glassEnv: "production",
     workerProtocolVersion: "source-tree-v1",
     clSdkVersion,
   };
@@ -73,7 +73,7 @@ function extractionWorkerHealth(clSdkVersion: string) {
 function clRouterHealth() {
   return {
     status: "ok",
-    environment: "staging",
+    environment: "production",
     database: true,
     frozen: true,
     policyVersion: "policy-v1",
@@ -84,7 +84,7 @@ function slackWorkerHealth() {
   return {
     ok: true,
     service: "glass-slack-worker",
-    glassEnv: "staging",
+    glassEnv: "production",
     mode: "slack",
     workerSecretConfigured: true,
     tokenBrokerConfigured: true,
@@ -107,7 +107,7 @@ function slackWorkerHealth() {
 async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
   return execFileAsync(
     process.execPath,
-    ["scripts/check-agent-deployment-health.mjs", "--env=staging"],
+    ["scripts/check-agent-deployment-health.mjs", "--env=production"],
     {
       cwd: root,
       env: {
@@ -117,8 +117,8 @@ async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
         GLASS_CONVEX_AGENT_HEALTH_URL: `${healthBaseUrl}${convexPath}`,
         GLASS_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/imessage`,
         GLASS_EXTRACTION_WORKER_HEALTH_URL: `${healthBaseUrl}/extraction-worker`,
-        GLASS_STAGING_SLACK_WORKER_HEALTH_URL: `${healthBaseUrl}/slack-worker`,
-        GLASS_STAGING_CL_ROUTER_HEALTH_URL: `${healthBaseUrl}${clRouterPath}`,
+        GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: `${healthBaseUrl}/slack-worker`,
+        GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: `${healthBaseUrl}${clRouterPath}`,
       },
       timeout: 10_000,
     },
@@ -157,7 +157,7 @@ afterAll(async () => {
 
 describe("agent deployment safeguards", () => {
   it("builds every mission-critical worker before deploys can pass", () => {
-    const workflow = read(".github/workflows/agent-safeguards.yml");
+    const workflow = read(".github/workflows/deploy-convex.yml");
     const healthScript = read("scripts/check-agent-deployment-health.mjs");
     const packageJson = read("package.json");
 
@@ -207,8 +207,8 @@ describe("agent deployment safeguards", () => {
       deploy.match(
         /npx convex env set EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION/g,
       ),
-    ).toHaveLength(2);
-    expect(deploy.match(/extraction-worker\/package\.json/g)).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(deploy.match(/extraction-worker\/package\.json/g)).toHaveLength(1);
     const publishCli = deploy.slice(
       deploy.indexOf("publish-cli:"),
       deploy.indexOf("publish-operator-cli:"),
@@ -220,35 +220,49 @@ describe("agent deployment safeguards", () => {
     expect(publishOperatorCli).toContain("needs: deploy");
   });
 
-  it("smoke-checks production agent health on a schedule", () => {
-    const workflow = read(".github/workflows/agent-safeguards.yml");
+  it("checks production health and the chat canary at release and on demand", () => {
+    const manualAudit = read(".github/workflows/agent-safeguards.yml");
+    const release = read(".github/workflows/deploy-convex.yml");
     const script = read("scripts/check-agent-deployment-health.mjs");
     const deployments = read("config/deployments.json");
     const http = read("convex/http.ts");
 
-    expect(workflow).toContain('cron: "*/15 * * * *"');
-    expect(workflow).toContain(
+    expect(manualAudit).not.toContain("schedule:");
+    expect(manualAudit).not.toContain("pull_request:");
+    expect(manualAudit).not.toContain("push:");
+    expect(manualAudit).not.toContain("staging");
+    expect(manualAudit).toContain(
       "node scripts/check-agent-deployment-health.mjs",
     );
-    expect(workflow).toContain("AGENT_HEALTH_ATTEMPTS: 30");
-    expect(workflow).toContain(
+    expect(manualAudit).toContain("AGENT_HEALTH_ATTEMPTS: 30");
+    expect(manualAudit).toContain(
       "GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL }}",
     );
-    expect(workflow).toContain(
-      "GLASS_STAGING_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_STAGING_CL_ROUTER_HEALTH_URL }}",
-    );
-    expect(workflow).toContain(
+    expect(manualAudit).toContain(
       "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}",
     );
+    expect(manualAudit).toContain(
+      "npx convex run actions/agentCanary:run '{}' --prod",
+    );
+    const compatibilityIndex = release.indexOf(
+      "Check deployed service compatibility",
+    );
+    const canaryIndex = release.indexOf("Run production chat canary");
+    const staleHeadIndex = release.indexOf(
+      "Verify release is still the branch head",
+    );
+    expect(compatibilityIndex).toBeGreaterThan(-1);
+    expect(canaryIndex).toBeGreaterThan(compatibilityIndex);
+    expect(staleHeadIndex).toBeGreaterThan(canaryIndex);
+    expect(release).not.toContain("release-ready-staging");
+    expect(release).not.toContain("CONVEX_DEPLOY_KEY_STAGING");
     expect(deployments).toContain(
       "https://merry-platypus-82.convex.site/agent-health",
     );
     expect(deployments).toContain(
       "https://glass-production-4618.up.railway.app/health",
     );
-    expect(deployments).toContain("GLASS_STAGING_CONVEX_AGENT_HEALTH_URL");
-    expect(deployments).toContain("GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL");
-    expect(deployments).toContain("GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL");
+    expect(deployments).not.toContain('"staging"');
     expect(script).toContain("config/deployments.json");
     expect(script).toContain("AGENT_HEALTH_RETRY_DELAY_MS");
     expect(script).toContain('typeof payload.frozen !== "boolean"');
@@ -282,7 +296,7 @@ describe("agent deployment safeguards", () => {
     );
 
     expect(result.stdout).toContain(
-      "[agent-health] staging deployment health passed",
+      "[agent-health] production deployment health passed",
     );
   });
 
@@ -290,7 +304,7 @@ describe("agent deployment safeguards", () => {
     const result = await runAgentHealth("/convex-aligned");
 
     expect(result.stdout).toContain(
-      "[agent-health] staging deployment health passed",
+      "[agent-health] production deployment health passed",
     );
   });
 });

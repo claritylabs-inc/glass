@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { repoRoot } from "./lib/conductor-workspace.mjs";
 
-const environments = ["staging", "production"];
+const environments = ["production"];
 const cliArgs = process.argv.slice(2);
 const bootstrap = cliArgs.includes("--bootstrap");
 const requested = cliArgs.filter((arg) => arg !== "--bootstrap");

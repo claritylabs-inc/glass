@@ -1,71 +1,13 @@
 name: Agent Safeguards
 
 on:
-  pull_request:
-    paths:
-      - "convex/**"
-      - "extraction-worker/**"
-      - "imessage-worker/**"
-      - "slack-worker/**"
-      - "mailbox-scan-worker/**"
-      - "scripts/check-agent-deployment-health.mjs"
-      - ".github/workflows/agent-safeguards.yml"
-  push:
-    branches: [main, staging]
-    paths:
-      - "convex/**"
-      - "extraction-worker/**"
-      - "imessage-worker/**"
-      - "slack-worker/**"
-      - "mailbox-scan-worker/**"
-      - "scripts/check-agent-deployment-health.mjs"
-      - ".github/workflows/agent-safeguards.yml"
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Deployment environment to check"
-        required: true
-        default: production
-        type: choice
-        options:
-          - production
-          - staging
-          - all
 
 permissions:
   contents: read
 
 jobs:
-  worker-builds:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          package-manager-cache: false
-
-      - name: Build iMessage worker
-        working-directory: imessage-worker
-        run: npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build
-
-      - name: Build and test Slack worker
-        working-directory: slack-worker
-        run: npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build && npm test
-
-      - name: Build extraction worker
-        working-directory: extraction-worker
-        run: npm ci --include=dev --no-audit --no-fund --loglevel=error && npm run build
-
-      - name: Syntax-check mailbox scan worker
-        run: node --check mailbox-scan-worker/src/index.js
-
-  production-agent-health:
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'production' || github.event.inputs.environment == 'all'))
+  production-agent-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -90,25 +32,3 @@ jobs:
         run: npx convex run actions/agentCanary:run '{}' --prod
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-
-  staging-agent-health:
-    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'staging' || github.event.inputs.environment == 'all')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          package-manager-cache: false
-
-      - name: Check staging agent health
-        run: node scripts/check-agent-deployment-health.mjs --env staging
-        env:
-          AGENT_HEALTH_ATTEMPTS: 30
-          AGENT_HEALTH_RETRY_DELAY_MS: 10000
-          GLASS_STAGING_CONVEX_AGENT_HEALTH_URL: ${{ vars.GLASS_STAGING_CONVEX_AGENT_HEALTH_URL }}
-          GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL }}
-          GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL }}
-          GLASS_STAGING_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_STAGING_SLACK_WORKER_HEALTH_URL }}
-          GLASS_STAGING_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_STAGING_CL_ROUTER_HEALTH_URL }}

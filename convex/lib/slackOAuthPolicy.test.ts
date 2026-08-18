@@ -22,17 +22,12 @@ describe("Slack OAuth scope policy", () => {
   });
 
   test("keeps deployed manifests in sync with the host scope policy", () => {
-    for (const environment of ["staging", "production"]) {
-      const manifest = JSON.parse(
-        readFileSync(
-          `slack-worker/manifests/${environment}.json`,
-          "utf8",
-        ),
-      ) as { oauth_config: { scopes: { bot: string[] } } };
-      expect(manifest.oauth_config.scopes.bot).toEqual(
-        expect.arrayContaining([...SLACK_HOST_SCOPES]),
-      );
-    }
+    const manifest = JSON.parse(
+      readFileSync("slack-worker/manifests/production.json", "utf8"),
+    ) as { oauth_config: { scopes: { bot: string[] } } };
+    expect(manifest.oauth_config.scopes.bot).toEqual(
+      expect.arrayContaining([...SLACK_HOST_SCOPES]),
+    );
   });
 
   test("reports every missing required scope", () => {

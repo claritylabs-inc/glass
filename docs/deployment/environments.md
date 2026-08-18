@@ -1,22 +1,22 @@
 # Deployment environments
 
 `config/deployments.json` is the machine-readable environment map. `main` is
-production, `staging` is the shared integration lane, and each Conductor
-worktree uses native local Convex plus local workers.
+production, shared cloud dev is the deployed integration lane, and each
+Conductor worktree uses native local Convex plus local workers.
 
 ## Coordinated release readiness
 
 `.github/workflows/deploy-convex.yml` owns readiness for every commit pushed to
-`main` or `staging`; it is not path-filtered. After validation, the workflow:
+`main`; it is not path-filtered. After validation, the workflow:
 
-1. deploys the commit's Convex functions to the matching lane;
+1. deploys the commit's Convex functions to production;
 2. waits for the exact commit's four Railway contexts (`glass-extraction-worker`,
    `imessage-worker`, `slack-worker`, and `glass-mailbox-scan-worker`) to report
    success, including explicit `No deployment needed` watch-path results;
 3. runs the deployed Convex, extraction, iMessage, Slack, and cl-router
-   compatibility audit; and
+   compatibility audit followed by the production chat canary; and
 4. verifies the commit is still the branch head before emitting
-   `release-ready-production` or `release-ready-staging`.
+   `release-ready-production`.
 
 Vercel may build the production candidate in parallel, but the Glass Vercel
 project must keep automatic production domain assignment enabled and configure
@@ -24,7 +24,7 @@ the GitHub `release-ready-production` check as a required Deployment Check.
 Vercel then assigns `app.glass.insure` only after the release job succeeds.
 Changing the job name requires updating the Vercel project setting in the same
 rollout. A failed or timed-out Convex deploy, Railway status, compatibility
-audit, or stale-head check leaves the candidate unpromoted; use Vercel's
+audit, chat canary, or stale-head check leaves the candidate unpromoted; use Vercel's
 explicit force-promotion control only for an incident-approved bypass.
 
 Railway Git autodeploy and all four service-local watch paths must remain
@@ -33,21 +33,20 @@ the mailbox cron's Railway deployment status is its release signal because it
 has no persistent HTTP process. Do not enable Railway **Wait for CI** for these
 services: the release job itself waits for Railway and that setting would create
 a cycle. Push-time health checks do not prove release readiness because they can
-observe the previous healthy processes; release health therefore runs only
-after Convex and Railway are ready, while `agent-safeguards.yml` retains its
-scheduled production monitoring and manual environment audits.
+observe the previous healthy processes; release health and the chat canary
+therefore run only after Convex and Railway are ready.
+`agent-safeguards.yml` exposes the same production audit only as a manual
+diagnostic; it has no recurring, push, or pull-request trigger.
 
 Promotion-last removes the new-frontend/old-backend window, but distributed
 runtimes are not atomic. Keep expand/contract compatibility for destructive
 query-shape changes and version worker protocol changes so the old frontend and
 workers remain compatible while the new backend rolls out.
 
-Slack environment/app setup, the client-owned policy-delivery migration, and
-the staged release gates are documented in [Slack privileged service
-channel](./slack.md). Staging and production own separate native Slack apps and
-workers; enable each lane in `config/deployments.json` only after its direct
-Slack credentials, signed Events API route, and worker are validated. Photon is
-not part of the Slack deployment path.
+Slack environment/app setup and the client-owned policy-delivery migration are
+documented in [Slack privileged service channel](./slack.md). Production owns
+the native Slack app and live worker; shared dev and local development use the
+mock path. Photon is not part of the Slack deployment path.
 
 ## cl-router
 
@@ -64,7 +63,7 @@ Every deployed lane needs matching values:
 | cl-router         | `GLASS_ENV`, `DATABASE_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_ADMIN_SECRET`, `CL_ROUTER_SESSION_HMAC_SECRET`, optional emergency `CL_ROUTER_FROZEN`, optional diagnostic `CL_ROUTER_SHADOW`, optional `CL_ROUTER_POLICY_REFRESH_MS`, `CL_ROUTER_SCORING_INTERVAL_MS`, and provider keys |
 
 The inference, admin, and session-HMAC secrets must be distinct within each
-lane as well as different between staging and production. The admin secret may
+lane and different between shared dev and production. The admin secret may
 be copied only to Convex for the operator-authenticated, server-side
 `clRouterOperations.getDashboard` and `setGlobalFreeze` actions. They call the
 read-only policy and rollup endpoints and the versioned `/admin/freeze`
@@ -89,7 +88,7 @@ model only for a typed `router_unavailable` response with
 `executionStarted: false`, or a proven pre-connection refusal/DNS failure.
 Generic text/object helpers still fail closed when passed tool-loop-only options.
 
-Staging and production may append `chat`, `chat_vision`, `email_draft`,
+Production may append `chat`, `chat_vision`, `email_draft`,
 `email_reply`, and `mailbox_coordinator` to `CL_ROUTER_TASKS`. This routes web,
 iMessage, MCP, public-demo, inbound-email, email-draft, and mailbox-coordinator
 steps through the pinned adapter. Do not enable `*`: task gates remain an
@@ -113,8 +112,8 @@ the freeze toggle.
 During the guarded rollout, Glass uses direct break-glass only in production
 for proven pre-execution outages. Timeouts, generic 5xx responses,
 authentication/validation failures, other 4xx responses, malformed responses,
-and every failure after a successful step fail closed. Enabled tasks in local,
-shared development, and staging also fail closed so analytics cannot be
+and every failure after a successful step fail closed. Enabled tasks in local
+and shared development also fail closed so analytics cannot be
 silently bypassed. Chat never switches routes after visible streamed output or
 a tool result.
 
@@ -127,19 +126,19 @@ secret remains server-side. Workflow feedback is submitted only when tool
 results contain concrete workflow outcomes; an HTTP 200 by itself is never
 scored as success.
 
-Health URLs are configured through
-`GLASS_STAGING_CL_ROUTER_HEALTH_URL` and
+The production router health URL is configured through
 `GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL`. The normal deployment audit includes
 the router:
 
 ```bash
-AGENT_HEALTH_ATTEMPTS=1 npm run check:agent-health -- --env=staging
+AGENT_HEALTH_ATTEMPTS=1 npm run check:agent-health -- --env=production
 ```
 
 The router must report the matching environment, a live database, and an
-active or bootstrap-ready policy store. Before increasing traffic, exercise the
-operator global freeze toggle in both directions, inspect `/admin/policy` and
-`/admin/rollups`, then run `/admin/score` in the staging lane.
+active or bootstrap-ready policy store. Before increasing production traffic,
+exercise the operator global freeze toggle in both directions, inspect
+`/admin/policy` and `/admin/rollups`, then run `/admin/score` against shared dev
+or during an explicitly controlled production rollout.
 
 Local health checks skip cl-router unless `GLASS_CL_ROUTER_HEALTH_URL` is set,
 because the default Conductor template does not start the separate repository.
@@ -157,9 +156,10 @@ deliberately running a local router.
    flag in a caller.
 3. Configure the same bearer secret in the caller and router for that lane.
 4. Confirm `GET /health` and the Glass deployment health audit.
-5. Enable one task family in staging and compare route, error, latency, token,
-   cost, tool completion, and workflow-failure telemetry with the direct
-   baseline in `/operator/routing`.
+5. Validate the task family in shared dev, then enable it through an explicitly
+   controlled production rollout. Compare route, error, latency, token, cost,
+   tool completion, and workflow-failure telemetry with the direct baseline in
+   `/operator/routing`.
 6. Keep the router environment panic and diagnostic overrides off. Use the
    `/operator/routing` global freeze toggle when autonomous route changes should
    pause or resume, then verify the new posture in the same dashboard.

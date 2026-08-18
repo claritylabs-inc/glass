@@ -1,6 +1,5 @@
 const ACTIVE_RAILWAY_ENVIRONMENTS = new Set([
   "dev",
-  "staging",
   "production",
 ]);
 

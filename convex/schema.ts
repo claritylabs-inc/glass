@@ -879,7 +879,7 @@ export default defineSchema({
         extraction_quality: v.optional(modelRouteValidator),
         extraction_form_inventory: v.optional(modelRouteValidator),
         extraction_coverage_cleanup: v.optional(modelRouteValidator),
-        // Staging has this deprecated key persisted. Runtime code no longer reads or writes it.
+        // Legacy deployments may have this deprecated key persisted. Runtime code no longer reads or writes it.
         extraction_visual_table_repair: v.optional(modelRouteValidator),
         fallback: v.optional(modelRouteValidator),
       }),
@@ -1533,7 +1533,7 @@ export default defineSchema({
 
   insuranceRequirements: defineTable({
     orgId: v.id("organizations"),
-    // Legacy staging/prod rows from the pre-redesign requirement model do not
+    // Legacy deployed rows from the pre-redesign requirement model do not
     // have kind/scope yet. Keep these optional until all environments have run
     // the compliance requirement shape backfill.
     kind: v.optional(

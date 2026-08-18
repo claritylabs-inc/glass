@@ -142,8 +142,8 @@ files and unique local worker secrets stay under gitignored `.context/` and
 Native local Convex has no public URL. Real Resend inbound webhooks and real
 Photon/iMessage callbacks cannot reach it directly. The default local workflow
 therefore uses Convex email capture and Spectrum's terminal transport. Use the
-shared cloud dev or staging lane when testing an integration that requires a
-stable public callback URL. The mailbox cron image is built for parity but is
+shared cloud dev when testing an integration that requires a stable public
+callback URL. The mailbox cron image is built for parity but is
 not started by default, because running it would scan connected mailboxes.
 Automatic Convex AI-file refresh is also disabled so initial provisioning does
 not rewrite committed agent skills and guidance; refresh those explicitly with
@@ -170,7 +170,7 @@ not rewrite committed agent skills and guidance; refresh those explicitly with
 
 Production Railway worker services are Dockerfile-backed. Local worker image tests should use the same Dockerfiles through Apple's `container` CLI on Apple silicon Macs so local builds exercise the production container path.
 
-Deployment environment policy is documented in [docs/deployment/environments.md](docs/deployment/environments.md). `main` is production, `staging` is shared deployed integration, and local worktrees use local containers instead of shared Railway workers.
+Deployment environment policy is documented in [docs/deployment/environments.md](docs/deployment/environments.md). `main` is production, shared cloud dev is the deployed integration lane, and local worktrees use local containers instead of shared Railway workers.
 
 Prerequisites:
 
@@ -219,11 +219,11 @@ Common variables used across major workflows:
 - `DEEPSEEK_API_KEY`
 - `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email; not required for local capture with `GLASS_ENV=local` and `EMAIL_DELIVERY_MODE=capture`)
 - `RESEND_WEBHOOK_SECRET`
-- `GLASS_ENV` — runtime lane: `production`, `staging`, or `local`
+- `GLASS_ENV` — runtime lane: `production`, `dev`, or `local`
 - `EMAIL_DELIVERY_MODE` — outbound email policy: `live`, `restricted`, or `capture`. Use `capture` with `GLASS_ENV=local` to print full local email text/HTML and six-digit code candidates in the Convex terminal while skipping Resend. Non-local `capture` logs metadata only.
-- `EMAIL_ALLOWED_RECIPIENT_DOMAINS` / `EMAIL_ALLOWED_RECIPIENTS` — allowlist for restricted staging delivery
-- `EMAIL_REDIRECT_TO` — internal capture address for restricted staging delivery; local capture does not use a redirect address
-- `EMAIL_SUBJECT_PREFIX` — optional prefix for restricted delivery subjects; staging defaults to `[STAGING]`
+- `EMAIL_ALLOWED_RECIPIENT_DOMAINS` / `EMAIL_ALLOWED_RECIPIENTS` — allowlist for restricted delivery
+- `EMAIL_REDIRECT_TO` — internal redirect address for restricted delivery; local capture does not use a redirect address
+- `EMAIL_SUBJECT_PREFIX` — optional prefix for restricted delivery subjects
 - `AGENT_DOMAIN` — verified Resend sending domain for agent mail. Defaults to `glass.insure`. Legacy inbound addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized.
 - `NOTIFICATION_EMAIL_DOMAIN` — verified Resend sending domain for system notifications. Defaults to `notifications.glass.insure`.
 - `AUTH_EMAIL_DOMAIN` — verified Resend sending domain for OTP, auth, and invite mail. Defaults to `auth.glass.insure`.
