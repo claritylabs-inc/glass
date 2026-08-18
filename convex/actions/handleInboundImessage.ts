@@ -56,6 +56,7 @@ import {
 import { runImessageDeterministicControls } from "../lib/imessageDeterministicControls";
 import { postProcessImessageResponseText } from "../lib/imessageResponsePostProcessing";
 import { collectToolAudit } from "../lib/agentToolAudit";
+import { stripInternalAgentActivity } from "../lib/agentMessageHistory";
 import { createImessageAgentRunState } from "../lib/imessageAgentRunState";
 import { runChannelAgent } from "../lib/channelAgentRunner";
 import {
@@ -801,7 +802,10 @@ export const processInbound = internalAction({
       let pendingEmailIdForResponse: Id<"pendingEmails"> | undefined;
       const emailResult = runState.getEmailResult();
       if (emailResult) {
-        responseText = emailResult.responseBody;
+        const visibleEmailResponseBody = stripInternalAgentActivity(
+          emailResult.responseBody,
+        );
+        responseText = visibleEmailResponseBody;
         pendingEmailIdForResponse = emailResult.pendingEmailId;
         if (
           emailResult.status === "draft" ||
@@ -824,7 +828,7 @@ export const processInbound = internalAction({
           const sent = await sendImmediateImessage({
             toPhone: fromPhone,
             chatGuid,
-            message: emailResult.responseBody,
+            message: visibleEmailResponseBody,
           });
           if (sent) {
             responseAlreadySent = true;
@@ -832,7 +836,7 @@ export const processInbound = internalAction({
               threadId,
               orgId,
               role: "agent",
-              content: emailResult.responseBody,
+              content: visibleEmailResponseBody,
               responseMessageId: `${eventKey}:pending-email`,
               pendingEmailId: emailResult.pendingEmailId,
               referencedPolicyIds:
@@ -846,6 +850,7 @@ export const processInbound = internalAction({
         }
       }
 
+      responseText = stripInternalAgentActivity(responseText);
       responseText = postProcessImessageResponseText({
         messageText: inboundMessageText,
         recentConversationContext,

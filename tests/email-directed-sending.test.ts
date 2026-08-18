@@ -206,7 +206,10 @@ describe("directed email sending", () => {
     expect(webSource).toContain("if (emailResult) {");
     expect(webSource).toContain("Review it in the email draft card");
     expect(smsSource).toContain("if (emailResult) {");
-    expect(smsSource).toContain("responseText = emailResult.responseBody;");
+    expect(smsSource).toContain(
+      "const visibleEmailResponseBody = stripInternalAgentActivity(",
+    );
+    expect(smsSource).toContain("responseText = visibleEmailResponseBody;");
   });
 
   it("uses a durable web email draft artifact with UI send fallback", () => {

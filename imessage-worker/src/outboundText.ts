@@ -4,8 +4,18 @@ const markdownLexer = new Marked();
 const BLOCK_SEPARATOR = "\n\n";
 const LIST_INDENT = "  ";
 const TABLE_CELL_SEPARATOR = " | ";
+const INTERNAL_TOOL_ACTIVITY_PATTERN = /\[tool activity:[^\r\n]*\]/gi;
+
+function stripInternalAgentActivity(value: string) {
+  return value
+    .replace(INTERNAL_TOOL_ACTIVITY_PATTERN, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 function normalizeGlassMarkdown(value: string) {
+  value = stripInternalAgentActivity(value);
   let result = "";
   let openMarkers = 0;
   let markdownBracketDepth = 0;

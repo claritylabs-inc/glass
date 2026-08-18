@@ -6,7 +6,8 @@ describe("Slack Block Kit renderers", () => {
     const blocks = buildSlackFinalBlocks({
       message: {
         _id: "message-1" as any,
-        content: "[[g:The policy is active]]. **Review the limits below.**",
+        content:
+          "[[g:The policy is active]]. **Review the limits below.**\n\n[tool activity: tools: lookup_policy]",
         status: undefined,
         attachments: [{
           filename: "Cove certificate.pdf",
@@ -45,6 +46,7 @@ describe("Slack Block Kit renderers", () => {
     expect(JSON.stringify(blocks)).toContain("The policy is active");
     expect(JSON.stringify(blocks)).not.toContain("private reasoning");
     expect(JSON.stringify(blocks)).not.toContain("secret");
+    expect(JSON.stringify(blocks)).not.toContain("tool activity");
     expect(JSON.stringify(blocks)).toContain("glass_response_feedback");
     expect(JSON.stringify(blocks)).toContain("glass_request_human");
     expect(JSON.stringify(blocks)).toContain("Certificate ready");

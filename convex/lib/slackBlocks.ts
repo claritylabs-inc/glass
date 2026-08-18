@@ -1,4 +1,5 @@
 import type { Doc, Id } from "../_generated/dataModel";
+import { stripInternalAgentActivity } from "./agentMessageHistory";
 import { getClientPortalUrl } from "./domains";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import { resolvePolicyCarrierDisplay } from "./policyPartyContext";
@@ -45,7 +46,7 @@ function escapeMrkdwn(value: string): string {
 }
 
 function slackAnswerText(value: string): string {
-  return value
+  return stripInternalAgentActivity(value)
     .replace(/\[\[(g|i|u)\]:/g, "[[$1:")
     .replace(/\[\[(?:g|i|u):([\s\S]+?)\]\]/g, "$1")
     .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")

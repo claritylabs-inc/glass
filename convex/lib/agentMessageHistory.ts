@@ -35,6 +35,21 @@ export function buildAssistantMessageContentWithArtifacts(args: {
   return `${content}\n\n[tool activity: ${trailerParts.join("; ")}]`;
 }
 
+const INTERNAL_TOOL_ACTIVITY_PATTERN = /\[tool activity:[^\r\n]*\]/gi;
+
+/**
+ * Tool activity trailers are private model-history context. A model may echo
+ * that plain-text context into a later answer, so every customer-facing
+ * channel removes it again before persistence or delivery.
+ */
+export function stripInternalAgentActivity(content: string): string {
+  return content
+    .replace(INTERNAL_TOOL_ACTIVITY_PATTERN, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function dedupeStrings(values: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];

@@ -56,7 +56,10 @@ import {
 } from "../lib/emailSubagent";
 import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
-import { buildAssistantMessageContentWithArtifacts } from "../lib/agentMessageHistory";
+import {
+  buildAssistantMessageContentWithArtifacts,
+  stripInternalAgentActivity,
+} from "../lib/agentMessageHistory";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
   buildEmailDraftTextSummary,
@@ -1566,6 +1569,12 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           });
         }
         responseBody = result.text;
+      }
+
+      responseBody = stripInternalAgentActivity(responseBody);
+      if (!responseBody) {
+        responseBody =
+          "I couldn't format that response. Please try again in a moment.";
       }
 
       const sentByTool = toolSentEmail as ToolSentEmail | null;

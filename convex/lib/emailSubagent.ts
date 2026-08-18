@@ -10,6 +10,7 @@ import { generateAgentTextForOrg } from "./models";
 import { buildAgentToolExecutors } from "./agentToolExecutors";
 import type { AgentScope } from "./agentScope";
 import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
+import { stripInternalAgentActivity } from "./agentMessageHistory";
 import {
   queueEmailDraftArtifact,
   upsertEmailDraftArtifact,
@@ -548,7 +549,7 @@ async function runEmailSubagent(
       context.subjectHint ??
       ""
     ).trim();
-    const body = (params.body ?? input.body ?? "").trim();
+    const body = stripInternalAgentActivity(params.body ?? input.body ?? "");
     const cc = [
       ...new Set(
         [...(params.cc ?? []), ...defaultCc]
@@ -1008,7 +1009,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
   return {
     status: "draft",
     responseBody:
-      subagentResult.text ||
+      stripInternalAgentActivity(subagentResult.text) ||
       "I drafted the email, but need confirmation before sending.",
   };
 }

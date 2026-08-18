@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { buildAssistantMessageContentWithArtifacts } from "./agentMessageHistory";
+import {
+  buildAssistantMessageContentWithArtifacts,
+  stripInternalAgentActivity,
+} from "./agentMessageHistory";
 
 describe("buildAssistantMessageContentWithArtifacts", () => {
   test("does not append raw tool artifact data when no tool metadata exists", () => {
@@ -67,5 +70,28 @@ describe("buildAssistantMessageContentWithArtifacts", () => {
         toolArtifacts: [{ type: "other", data: {} }],
       }),
     ).toBe("No pending choices.");
+  });
+});
+
+describe("stripInternalAgentActivity", () => {
+  test("removes an echoed private tool trailer from customer-visible text", () => {
+    expect(
+      stripInternalAgentActivity(
+        "That's the full book.\n\n[tool activity: tools: lookup_policy]",
+      ),
+    ).toBe("That's the full book.");
+  });
+
+  test("removes echoed activity without collapsing surrounding paragraphs", () => {
+    expect(
+      stripInternalAgentActivity(
+        "First paragraph.\n\n[TOOL ACTIVITY: tools: lookup_policy]\n\nSecond paragraph.",
+      ),
+    ).toBe("First paragraph.\n\nSecond paragraph.");
+  });
+
+  test("preserves ordinary customer-facing discussion of tool activity", () => {
+    expect(stripInternalAgentActivity("The tool activity audit is available."))
+      .toBe("The tool activity audit is available.");
   });
 });

@@ -76,7 +76,10 @@ import {
   enforceInputLimits,
 } from "../lib/security";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
-import { buildAssistantMessageContentWithArtifacts } from "../lib/agentMessageHistory";
+import {
+  buildAssistantMessageContentWithArtifacts,
+  stripInternalAgentActivity,
+} from "../lib/agentMessageHistory";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import { modelSupportsImageInput } from "../lib/modelCatalog";
 import {
@@ -1736,8 +1739,14 @@ export const run = internalAction({
 
       // Publish one complete reply after the run finishes. Web chat observes
       // only the processing state before this atomic final update.
-      content = restoreSentenceBoundarySpacing(content);
+      content = stripInternalAgentActivity(
+        restoreSentenceBoundarySpacing(content),
+      );
       const emailResult = emailToolResult.current;
+      if (!content && !emailResult) {
+        content =
+          "I couldn't format that response. Please try again in a moment.";
+      }
       const completedEmailSend =
         emailResult?.status === "sent" || emailResult?.status === "pending";
       const completedCoiEmailSideEffect =
@@ -1822,14 +1831,17 @@ export const run = internalAction({
           });
           content = nextContent;
         } else {
+          const visibleEmailResponseBody = stripInternalAgentActivity(
+            emailResult.responseBody,
+          );
           await ctx.runMutation(internal.threads.updateAgentMessage, {
             id: agentMsgId,
-            content: emailResult.responseBody,
+            content: visibleEmailResponseBody,
             pendingEmailId: emailResult.pendingEmailId,
             status:
               emailResult.status === "pending" ? "pending_send" : undefined,
           });
-          content = emailResult.responseBody;
+          content = visibleEmailResponseBody;
         }
       }
 
