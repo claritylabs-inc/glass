@@ -28,6 +28,10 @@ import {
   imessageMarkdownSource,
   imessagePlainText,
 } from "./outboundText.js";
+import {
+  deliverImessageResponse,
+  splitImessageResponse,
+} from "./responseDelivery.js";
 import { readInboundAttachment } from "./voiceAttachment.js";
 
 function imessageMarkdown(value: string) {
@@ -137,7 +141,6 @@ const TERMINAL_IDENTITIES = {
 };
 const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const TYPING_REFRESH_MS = 4_000;
-const RESPONSE_SEGMENT_MAX_CHARS = 520;
 const CONTACT_CARD_NAME = "Glass from Clarity Labs";
 const CONTACT_CARD_EMAIL = process.env.GLASS_AGENT_EMAIL ?? "agent@glass.insure";
 const CONTACT_CARD_PHONE =
@@ -428,82 +431,37 @@ async function buildSpectrumMiniApp(
   };
 }
 
-async function sendReplyOrFallback(
-  space: Space,
-  message: Message,
-  text: string,
-) {
-  try {
-    const replied = await message.reply(imessageMarkdown(text));
-    if (replied) return;
-  } catch (err) {
-    console.warn("[glass-imessage] Failed to send threaded reply:", err);
-  }
-  await space.send(imessageMarkdown(text));
-}
-
-function splitLongTextLine(line: string): string[] {
-  if (line.length <= RESPONSE_SEGMENT_MAX_CHARS) return [line];
-
-  const chunks: string[] = [];
-  let current = "";
-  for (const word of line.split(/\s+/).filter(Boolean)) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length <= RESPONSE_SEGMENT_MAX_CHARS) {
-      current = next;
-      continue;
-    }
-    if (current) chunks.push(current);
-    current = word;
-  }
-  if (current) chunks.push(current);
-  return chunks;
-}
-
-function splitBlock(block: string): string[] {
-  const chunks: string[] = [];
-  let current = "";
-
-  for (const rawLine of block.split("\n")) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    for (const part of splitLongTextLine(line)) {
-      const next = current ? `${current}\n${part}` : part;
-      if (next.length <= RESPONSE_SEGMENT_MAX_CHARS) {
-        current = next;
-        continue;
-      }
-      if (current) chunks.push(current);
-      current = part;
-    }
-  }
-
-  if (current) chunks.push(current);
-  return chunks;
-}
-
-function splitImessageResponse(text: string): string[] {
-  return text
-    .replace(/\r/g, "")
-    .trim()
-    .split(/\n{2,}/)
-    .flatMap((block) => splitBlock(block))
-    .filter(Boolean);
-}
-
 async function sendResponseText(
   space: Space,
   message: Message,
   responseText: string,
 ) {
   const segments = splitImessageResponse(responseText);
-  for (const [index, segment] of segments.entries()) {
-    if (index === 0) {
-      await sendReplyOrFallback(space, message, segment);
-    } else {
+  const delivery = await deliverImessageResponse({
+    segments,
+    replyAll: async (replySegments) => {
+      const contents = replySegments.map(imessageMarkdown);
+      if (contents.length === 0) return 0;
+      if (contents.length === 1) {
+        return (await message.reply(contents[0])) ? 1 : 0;
+      }
+      const replies = await message.reply(
+        contents[0],
+        contents[1],
+        ...contents.slice(2),
+      );
+      return replies.length;
+    },
+    sendChat: async (segment) => {
       await space.send(imessageMarkdown(segment));
-    }
+    },
+  });
+  if (!delivery.complete) {
+    console.warn("[glass-imessage] Threaded response delivery was incomplete", {
+      deliveredSegments: delivery.deliveredSegments,
+      expectedSegments: delivery.expectedSegments,
+      error: delivery.error,
+    });
   }
 }
 

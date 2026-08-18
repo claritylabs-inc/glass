@@ -1,0 +1,115 @@
+const RESPONSE_SEGMENT_MAX_CHARS = 520;
+
+function splitLongTextLine(line: string): string[] {
+  if (line.length <= RESPONSE_SEGMENT_MAX_CHARS) return [line];
+
+  const chunks: string[] = [];
+  let current = "";
+  for (const word of line.split(/\s+/).filter(Boolean)) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= RESPONSE_SEGMENT_MAX_CHARS) {
+      current = next;
+      continue;
+    }
+    if (current) chunks.push(current);
+    current = word;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function splitBlock(block: string): string[] {
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const rawLine of block.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    for (const part of splitLongTextLine(line)) {
+      const next = current ? `${current}\n${part}` : part;
+      if (next.length <= RESPONSE_SEGMENT_MAX_CHARS) {
+        current = next;
+        continue;
+      }
+      if (current) chunks.push(current);
+      current = part;
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+export function splitImessageResponse(text: string): string[] {
+  return text
+    .replace(/\r/g, "")
+    .trim()
+    .split(/\n{2,}/)
+    .flatMap((block) => splitBlock(block))
+    .filter(Boolean);
+}
+
+export type ImessageResponseDeliveryResult = {
+  mode: "none" | "thread" | "chat";
+  deliveredSegments: number;
+  expectedSegments: number;
+  complete: boolean;
+  error?: unknown;
+};
+
+/**
+ * Attempts every response bubble in one reply operation so the provider
+ * binds them all to the same source message. Ordinary chat delivery is used
+ * only when the reply operation reports that it sent zero bubbles.
+ */
+export async function deliverImessageResponse(args: {
+  segments: string[];
+  replyAll: (segments: string[]) => Promise<number>;
+  sendChat: (segment: string) => Promise<void>;
+}): Promise<ImessageResponseDeliveryResult> {
+  const expectedSegments = args.segments.length;
+  if (expectedSegments === 0) {
+    return {
+      mode: "none",
+      deliveredSegments: 0,
+      expectedSegments,
+      complete: true,
+    };
+  }
+
+  let deliveredSegments: number;
+  try {
+    deliveredSegments = Math.max(
+      0,
+      Math.min(expectedSegments, await args.replyAll(args.segments)),
+    );
+  } catch (error) {
+    return {
+      mode: "thread",
+      deliveredSegments: 0,
+      expectedSegments,
+      complete: false,
+      error,
+    };
+  }
+
+  if (deliveredSegments > 0) {
+    return {
+      mode: "thread",
+      deliveredSegments,
+      expectedSegments,
+      complete: deliveredSegments === expectedSegments,
+    };
+  }
+
+  for (const segment of args.segments) {
+    await args.sendChat(segment);
+  }
+  return {
+    mode: "chat",
+    deliveredSegments: expectedSegments,
+    expectedSegments,
+    complete: true,
+  };
+}

@@ -63,6 +63,14 @@ describe("iMessage outbound text", () => {
     );
   });
 
+  it("removes private tool activity trailers before either outbound format", () => {
+    const source =
+      "That's the full book.\n\n[tool activity: tools: lookup_policy]";
+
+    expect(imessageMarkdownSource(source)).toBe("That's the full book.");
+    expect(imessagePlainText(source)).toBe("That's the full book.");
+  });
+
   it("preserves nested double brackets inside confidence spans", () => {
     const source = "[[g:Use `[[1, 2]]` in the formula]]";
 
