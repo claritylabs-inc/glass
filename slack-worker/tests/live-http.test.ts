@@ -304,6 +304,7 @@ describe("native Slack worker HTTP adapter", () => {
     );
     assert.equal(health.mode, "slack");
     assert.equal(health.tokenBrokerConfigured, true);
+    assert.equal(health.reconciliationEnabled, true);
     assert.equal(health.clarityTeamConfigured, true);
 
     const send = await workerRequest("/send", {
@@ -384,9 +385,8 @@ describe("native Slack worker HTTP adapter", () => {
       { file: "F-POLICY" },
     );
     assert.deepEqual(
-      apiCalls.find(
-        (call) => call.path === "/api/files.getUploadURLExternal",
-      )?.body,
+      apiCalls.find((call) => call.path === "/api/files.getUploadURLExternal")
+        ?.body,
       { filename: "policy.pdf", length: "6" },
     );
   });
@@ -461,16 +461,19 @@ describe("native Slack worker HTTP adapter", () => {
         channel: channelId,
         ts: "1800000000.300",
         markdown_text: "Policy found",
-        chunks: [{
-          type: "task_update",
-          id: "lookup",
-          title: "Found the policy",
-          status: "complete",
-        }],
+        chunks: [
+          {
+            type: "task_update",
+            id: "lookup",
+            title: "Found the policy",
+            status: "complete",
+          },
+        ],
       },
     );
     assert.equal(
-      apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body.markdown_text,
+      apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body
+        .markdown_text,
       "Policy found",
     );
     assert.equal(
@@ -519,15 +522,13 @@ describe("native Slack worker HTTP adapter", () => {
       supportInvite: { succeeded: true, pending: true },
     });
     assert.equal(
-      apiCalls.filter(
-        (call) => call.path === "/api/conversations.create",
-      ).length,
+      apiCalls.filter((call) => call.path === "/api/conversations.create")
+        .length,
       1,
     );
     assert.equal(
-      apiCalls.filter(
-        (call) => call.path === "/api/conversations.invite",
-      ).length,
+      apiCalls.filter((call) => call.path === "/api/conversations.invite")
+        .length,
       1,
     );
   });
@@ -621,8 +622,7 @@ describe("native Slack worker HTTP adapter", () => {
       });
     }
     assert.equal(
-      apiCalls.filter((call) => call.path === "/api/conversations.join")
-        .length,
+      apiCalls.filter((call) => call.path === "/api/conversations.join").length,
       joinCallsBefore,
     );
   });

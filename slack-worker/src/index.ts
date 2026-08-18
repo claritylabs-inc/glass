@@ -80,6 +80,7 @@ type ListChannelsRequest = {
 };
 type JoinChannelRequest = { teamId: string; channelId: string };
 type LeaveChannelRequest = { teamId: string; channelId: string };
+type ReconcileRequest = { teamId: string; channelIds?: string[] };
 type SlackChannel = {
   id: string;
   name: string;
@@ -116,13 +117,17 @@ type SlackResponse = {
   error?: string;
   not_in_channel?: boolean;
 };
+type SlackAuthTestResponse = SlackResponse & {
+  team_id?: string;
+  user_id?: string;
+  bot_id?: string;
+};
 type SlackFile = {
   id?: string;
   shares?: Record<string, Record<string, Array<{ ts?: string }>>>;
 };
 
 const REQUEST_TIMEOUT_MS = 20_000;
-const INSTALLATION_CACHE_MS = 5 * 60 * 1_000;
 const mode = process.env.SLACK_WORKER_MODE === "mock" ? "mock" : "slack";
 const glassEnv =
   process.env.GLASS_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
@@ -133,10 +138,6 @@ const slackApiBaseUrl =
   "https://slack.com/api";
 const clarityTeamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
 const idempotency = new SendIdempotency();
-const installationCache = new Map<
-  string,
-  { installation: SlackInstallation; expiresAt: number }
->();
 const installationInFlight = new Map<string, Promise<SlackInstallation>>();
 const actorCache = new Map<
   string,
@@ -182,7 +183,11 @@ function validateSend(input: SendRequest) {
   if (!input.clientMessageId || !input.teamId || !input.channelId) {
     throw new Error("clientMessageId, teamId, and channelId are required");
   }
-  if (!input.text.trim() && !input.blocks?.length && !input.attachments?.length) {
+  if (
+    !input.text.trim() &&
+    !input.blocks?.length &&
+    !input.attachments?.length
+  ) {
     throw new Error("A message or attachment is required");
   }
 }
@@ -203,7 +208,16 @@ async function fetchCustomerInstallation(
     error?: string;
   };
   if (!response.ok || !payload.botToken || payload.teamId !== teamId) {
-    throw new Error(payload.error ?? "Slack installation lookup failed");
+    const code = !response.ok
+      ? "installation_unavailable"
+      : payload.teamId !== teamId
+        ? "workspace_mismatch"
+        : "installation_invalid";
+    throw new SlackProviderError(
+      payload.error ?? "Slack installation lookup failed",
+      code,
+      response.status >= 500,
+    );
   }
   return {
     teamId,
@@ -217,26 +231,39 @@ async function slackInstallation(teamId: string): Promise<SlackInstallation> {
   if (mode === "mock") {
     return { teamId, botToken: "mock", botUserId: "U-GLASS" };
   }
-  const cached = installationCache.get(teamId);
-  if (cached && cached.expiresAt > dayjs().valueOf()) {
-    return cached.installation;
-  }
   const pending = installationInFlight.get(teamId);
   if (pending) return await pending;
   const request = fetchCustomerInstallation(teamId);
   installationInFlight.set(teamId, request);
   try {
-    const installation = await request;
-    const cacheUntil = Math.min(
-      dayjs().add(INSTALLATION_CACHE_MS, "millisecond").valueOf(),
-      installation.expiresAt
-        ? dayjs(installation.expiresAt).subtract(1, "minute").valueOf()
-        : Number.POSITIVE_INFINITY,
-    );
-    installationCache.set(teamId, { installation, expiresAt: cacheUntil });
-    return installation;
+    return await request;
   } finally {
     installationInFlight.delete(teamId);
+  }
+}
+
+const DEFINITIVE_SLACK_ERRORS = new Set([
+  "account_inactive",
+  "channel_not_found",
+  "invalid_auth",
+  "is_archived",
+  "missing_scope",
+  "not_allowed_token_type",
+  "not_authed",
+  "org_login_required",
+  "not_in_channel",
+  "token_expired",
+  "token_revoked",
+]);
+
+class SlackProviderError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "SlackProviderError";
   }
 }
 
@@ -250,11 +277,92 @@ async function readSlackApiResponse<T extends SlackResponse>(
   }
   if (!response.ok || !payload.ok) {
     const retryAfter = response.headers.get("retry-after");
-    throw new Error(
-      `${payload.error ?? `${method} failed (${response.status})`}${retryAfter ? `; retry after ${retryAfter}s` : ""}`,
+    const code = payload.error ?? `http_${response.status}`;
+    throw new SlackProviderError(
+      `${code}${retryAfter ? `; retry after ${retryAfter}s` : ""}`,
+      code,
+      response.status >= 500 || !DEFINITIVE_SLACK_ERRORS.has(code),
     );
   }
   return payload;
+}
+
+async function reconcileSlack(input: ReconcileRequest) {
+  if (!input.teamId?.trim()) throw new Error("teamId is required");
+  const channelIds = Array.from(
+    new Set((input.channelIds ?? []).map((id) => id.trim()).filter(Boolean)),
+  ).slice(0, 25);
+  if (mode === "mock") {
+    return {
+      teamId: input.teamId,
+      botUserId: "U-GLASS",
+      channels: channelIds.map((id) => ({
+        id,
+        ok: true,
+        name:
+          mockCurrentChannelsByTeam.get(input.teamId)?.id === id
+            ? mockCurrentChannelsByTeam.get(input.teamId)?.name
+            : id.toLowerCase(),
+        isArchived: false,
+        isMember: !mockLeftChannelIds.has(id),
+        isPrivate: true,
+        isShared: true,
+        isExtShared: true,
+        isOrgShared: false,
+      })),
+    };
+  }
+
+  const installation = await slackInstallation(input.teamId);
+  const authorization = await slackApi<SlackAuthTestResponse>(
+    "auth.test",
+    installation.botToken,
+    {},
+  );
+  if (authorization.team_id && authorization.team_id !== input.teamId) {
+    throw new SlackProviderError(
+      "auth.test returned a different workspace",
+      "workspace_mismatch",
+      false,
+    );
+  }
+  const channels = await Promise.all(
+    channelIds.map(async (channelId) => {
+      try {
+        const result = await slackApi<
+          SlackResponse & { channel?: SlackChannelPayload }
+        >("conversations.info", installation.botToken, {
+          channel: channelId,
+          include_num_members: false,
+        });
+        const channel = result.channel;
+        return {
+          id: channelId,
+          ok: true as const,
+          name: channel?.name,
+          isArchived: Boolean(channel?.is_archived),
+          isMember: Boolean(channel?.is_member),
+          isPrivate: Boolean(channel?.is_private),
+          isShared: Boolean(channel?.is_shared),
+          isExtShared: Boolean(channel?.is_ext_shared),
+          isOrgShared: Boolean(channel?.is_org_shared),
+        };
+      } catch (error) {
+        if (!(error instanceof SlackProviderError)) throw error;
+        return {
+          id: channelId,
+          ok: false as const,
+          errorCode: error.code,
+          retryable: error.retryable,
+        };
+      }
+    }),
+  );
+  return {
+    teamId: input.teamId,
+    botUserId: authorization.user_id ?? installation.botUserId,
+    channels,
+  };
 }
 
 async function slackApi<T extends SlackResponse>(
@@ -500,7 +608,8 @@ async function startSlackStream(input: StreamStartRequest) {
       task_display_mode: "timeline",
     },
   );
-  if (!started.ts) throw new Error("Slack did not return a streaming message timestamp");
+  if (!started.ts)
+    throw new Error("Slack did not return a streaming message timestamp");
   return { messageId: started.ts };
 }
 
@@ -532,7 +641,9 @@ async function stopSlackStream(input: StreamStopRequest) {
     {
       channel: input.channelId,
       ts: input.messageTs,
-      ...(input.text.trim() ? { markdown_text: toSlackMrkdwn(input.text) } : {}),
+      ...(input.text.trim()
+        ? { markdown_text: toSlackMrkdwn(input.text) }
+        : {}),
       ...(input.blocks?.length ? { blocks: input.blocks } : {}),
       ...(taskChunks.length ? { chunks: taskChunks } : {}),
     },
@@ -559,37 +670,39 @@ async function postEphemeral(input: EphemeralRequest) {
 async function openFeedbackView(input: OpenViewRequest) {
   if (mode === "mock") return { viewId: `mock-view-${input.triggerId}` };
   const installation = await slackInstallation(input.teamId);
-  const opened = await slackApi<
-    SlackResponse & { view?: { id?: string } }
-  >("views.open", installation.botToken, {
-    trigger_id: input.triggerId,
-    view: {
-      type: "modal",
-      callback_id: "glass_negative_feedback",
-      private_metadata: input.privateMetadata,
-      title: { type: "plain_text", text: "Help Glass improve" },
-      submit: { type: "plain_text", text: "Send feedback" },
-      close: { type: "plain_text", text: "Cancel" },
-      blocks: [
-        {
-          type: "input",
-          block_id: "glass_feedback_comment_block",
-          optional: true,
-          label: { type: "plain_text", text: "What could be better?" },
-          element: {
-            type: "plain_text_input",
-            action_id: "glass_feedback_comment",
-            multiline: true,
-            max_length: 2000,
-            placeholder: {
-              type: "plain_text",
-              text: "Missing context, incorrect details, or anything else",
+  const opened = await slackApi<SlackResponse & { view?: { id?: string } }>(
+    "views.open",
+    installation.botToken,
+    {
+      trigger_id: input.triggerId,
+      view: {
+        type: "modal",
+        callback_id: "glass_negative_feedback",
+        private_metadata: input.privateMetadata,
+        title: { type: "plain_text", text: "Help Glass improve" },
+        submit: { type: "plain_text", text: "Send feedback" },
+        close: { type: "plain_text", text: "Cancel" },
+        blocks: [
+          {
+            type: "input",
+            block_id: "glass_feedback_comment_block",
+            optional: true,
+            label: { type: "plain_text", text: "What could be better?" },
+            element: {
+              type: "plain_text_input",
+              action_id: "glass_feedback_comment",
+              multiline: true,
+              max_length: 2000,
+              placeholder: {
+                type: "plain_text",
+                text: "Missing context, incorrect details, or anything else",
+              },
             },
           },
-        },
-      ],
+        ],
+      },
     },
-  });
+  );
   return { viewId: opened.view?.id };
 }
 
@@ -759,18 +872,23 @@ async function createConnectChannel(input: ConnectChannelRequest) {
       channelId = created.channel?.id;
       resolvedName = created.channel?.name ?? desiredName;
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.startsWith("name_taken")) {
+      if (
+        !(error instanceof Error) ||
+        !error.message.startsWith("name_taken")
+      ) {
         throw error;
       }
-      const existing = (await listSlackChannels({ teamId: clarityTeamId }))
-        .channels.find((channel) => channel.name === desiredName);
+      const existing = (
+        await listSlackChannels({ teamId: clarityTeamId })
+      ).channels.find((channel) => channel.name === desiredName);
       if (!existing) throw error;
       channelId = existing.id;
       resolvedName = existing.name;
       reusedChannel = true;
     }
   }
-  if (!channelId) throw new Error("Slack did not return the created channel ID");
+  if (!channelId)
+    throw new Error("Slack did not return the created channel ID");
 
   let operatorInviteError: string | undefined;
   if (operatorUserIds.length > 0) {
@@ -1012,6 +1130,7 @@ const server = http.createServer(async (request, response) => {
       streamingEnabled: tokenBrokerConfigured,
       interactivityResponsesEnabled: tokenBrokerConfigured,
       feedbackModalsEnabled: tokenBrokerConfigured,
+      reconciliationEnabled: tokenBrokerConfigured,
     });
   }
   if (!authorized(request))
@@ -1037,6 +1156,13 @@ const server = http.createServer(async (request, response) => {
         idempotency.release(input.clientMessageId);
         throw error;
       }
+    }
+    if (request.method === "POST" && request.url === "/reconcile") {
+      return json(
+        response,
+        200,
+        await reconcileSlack(await readJson<ReconcileRequest>(request)),
+      );
     }
     if (request.method === "POST" && request.url === "/message/update") {
       return json(
@@ -1129,9 +1255,19 @@ const server = http.createServer(async (request, response) => {
     }
     return json(response, 404, { error: "Not found" });
   } catch (error) {
-    return json(response, 500, {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const providerError =
+      error instanceof SlackProviderError ? error : undefined;
+    return json(
+      response,
+      providerError ? (providerError.retryable ? 503 : 409) : 500,
+      providerError
+        ? {
+            error: providerError.message,
+            providerErrorCode: providerError.code,
+            retryable: providerError.retryable,
+          }
+        : { error: error instanceof Error ? error.message : String(error) },
+    );
   }
 });
 

@@ -1,5 +1,6 @@
 "use node";
 
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -13,6 +14,17 @@ const attachmentValidator = v.object({
 const slackBlocksValidator = v.array(v.any());
 const WORKER_TIMEOUT_MS = 30_000;
 const internalApi = internal as any;
+
+class SlackDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly providerErrorCode: string | undefined,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "SlackDeliveryError";
+  }
+}
 
 type SlackAttachment = {
   fileId: Id<"_storage">;
@@ -72,8 +84,12 @@ async function performSend(
     connectionId: args.connectionId,
     channelId: args.channelId,
   });
-  if (!target || target.connection.status !== "active") {
-    throw new Error("Slack connection is not active");
+  if (!target?.available) {
+    throw new SlackDeliveryError(
+      target?.unavailableReason ?? "Slack delivery target is unavailable",
+      undefined,
+      false,
+    );
   }
   const attachments = await Promise.all(
     (args.attachments ?? []).map(async (attachment) => ({
@@ -94,7 +110,7 @@ async function performSend(
     body: JSON.stringify({
       clientMessageId: args.idempotencyKey,
       teamId: target.teamId,
-      channelId: args.channelId,
+      channelId: target.channelId,
       threadTs: args.threadTs,
       text: args.content,
       blocks: args.blocks,
@@ -109,11 +125,17 @@ async function performSend(
   const result = (await response.json().catch(() => ({}))) as {
     messageId?: string;
     error?: string;
+    providerErrorCode?: string;
+    retryable?: boolean;
     sending?: boolean;
     attachmentFailures?: Array<{ filename: string; error: string }>;
   };
   if (!response.ok) {
-    throw new Error(result.error || `Slack worker returned ${response.status}`);
+    throw new SlackDeliveryError(
+      result.error || `Slack worker returned ${response.status}`,
+      result.providerErrorCode,
+      result.retryable ?? response.status >= 500,
+    );
   }
   if (result.attachmentFailures?.length) {
     throw new Error(
@@ -146,18 +168,40 @@ async function sendSingle(ctx: ActionCtx, args: SlackSendArgs) {
       attachments: claim.row.attachments,
     });
   } catch (error) {
+    const deliveryError =
+      error instanceof SlackDeliveryError ? error : undefined;
     const nextAttemptAt = await ctx.runMutation(
       internalApi.slackOutbound.markFailed,
       {
         id: claim.row._id,
         error: error instanceof Error ? error.message : String(error),
-        retry: true,
+        retry: deliveryError?.retryable ?? true,
+        providerErrorCode: deliveryError?.providerErrorCode,
+        failureReason:
+          deliveryError?.retryable === false
+            ? "provider_rejected_target"
+            : "provider_transient_error",
       },
     );
-    if (nextAttemptAt) {
-      await ctx.scheduler.runAt(nextAttemptAt, internalApi.actions.sendSlack.retry, {
+    if (deliveryError?.providerErrorCode) {
+      await ctx.runMutation(internalApi.slackLifecycle.recordProviderFailure, {
+        connectionId: claim.row.connectionId,
+        channelId: claim.row.channelId,
         ledgerId: claim.row._id,
+        providerErrorCode: deliveryError.providerErrorCode,
+        errorSummary: deliveryError.message,
+        retryable: deliveryError.retryable,
+        occurredAt: dayjs().valueOf(),
       });
+    }
+    if (nextAttemptAt) {
+      await ctx.scheduler.runAt(
+        nextAttemptAt,
+        internalApi.actions.sendSlack.retry,
+        {
+          ledgerId: claim.row._id,
+        },
+      );
     }
   }
   return await ctx.runQuery(internalApi.slackOutbound.get, {
@@ -200,7 +244,7 @@ export const send = internalAction({
     }
     const failed = parts.find((part) => part?.status !== "sent");
     return {
-      status: failed ? "failed" as const : "sent" as const,
+      status: failed ? ("failed" as const) : ("sent" as const),
       providerMessageId: parts[0]?.providerMessageId,
       error: failed?.error,
       parts: parts.map((part) => part?._id),

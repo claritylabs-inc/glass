@@ -88,6 +88,7 @@ describe("Slack worker HTTP adapter", () => {
       streamingEnabled: true,
       interactivityResponsesEnabled: true,
       feedbackModalsEnabled: true,
+      reconciliationEnabled: true,
     });
     assert.equal((await send({}, "wrong-secret")).status, 401);
 
@@ -108,6 +109,40 @@ describe("Slack worker HTTP adapter", () => {
     });
   });
 
+  test("reconciles authorization and channel identity without exposing credentials", async () => {
+    const response = await fetch(`${origin}/reconcile`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-secret",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        teamId: "T-CUSTOMER",
+        channelIds: ["C-PRIMARY", "C-PRIMARY"],
+      }),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      teamId: "T-CUSTOMER",
+      botUserId: "U-GLASS",
+      channels: [
+        {
+          id: "C-PRIMARY",
+          ok: true,
+          name: "c-primary",
+          isArchived: false,
+          isMember: true,
+          isPrivate: true,
+          isShared: true,
+          isExtShared: true,
+          isOrgShared: false,
+        },
+      ],
+    });
+    assert.equal("botToken" in payload, false);
+  });
+
   test("accepts rich messages, updates, streams, status, and interaction responses", async () => {
     const rich = await send({
       clientMessageId: "rich-answer",
@@ -115,7 +150,9 @@ describe("Slack worker HTTP adapter", () => {
       channelId: "C-PRIMARY",
       threadTs: "1800000000.100",
       text: "Policy details",
-      blocks: [{ type: "section", text: { type: "mrkdwn", text: "*Policy details*" } }],
+      blocks: [
+        { type: "section", text: { type: "mrkdwn", text: "*Policy details*" } },
+      ],
     });
     assert.equal(rich.status, 200);
     assert.equal((await rich.json()).messageId, "mock-rich-answer");
@@ -132,12 +169,15 @@ describe("Slack worker HTTP adapter", () => {
       assert.equal(response.status, 200);
       return await response.json();
     };
-    assert.deepEqual(await call("/thread/status", {
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      threadTs: "1800000000.100",
-      status: "Searching policies…",
-    }), { ok: true });
+    assert.deepEqual(
+      await call("/thread/status", {
+        teamId: "T-CUSTOMER",
+        channelId: "C-PRIMARY",
+        threadTs: "1800000000.100",
+        status: "Searching policies…",
+      }),
+      { ok: true },
+    );
     const stream = await call("/stream/start", {
       teamId: "T-CUSTOMER",
       channelId: "C-PRIMARY",
@@ -146,12 +186,19 @@ describe("Slack worker HTTP adapter", () => {
       recipientTeamId: "T-CUSTOMER",
     });
     assert.equal(stream.messageId, "mock-stream-1800000000.100");
-    assert.equal((await call("/stream/append", {
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      messageTs: stream.messageId,
-      tasks: [{ id: "lookup", title: "Found the policy", status: "complete" }],
-    })).messageId, stream.messageId);
+    assert.equal(
+      (
+        await call("/stream/append", {
+          teamId: "T-CUSTOMER",
+          channelId: "C-PRIMARY",
+          messageTs: stream.messageId,
+          tasks: [
+            { id: "lookup", title: "Found the policy", status: "complete" },
+          ],
+        })
+      ).messageId,
+      stream.messageId,
+    );
     const emptyAppend = await fetch(`${origin}/stream/append`, {
       method: "POST",
       headers: {
@@ -165,31 +212,51 @@ describe("Slack worker HTTP adapter", () => {
       }),
     });
     assert.equal(emptyAppend.status, 500);
-    assert.equal((await call("/stream/stop", {
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      messageTs: stream.messageId,
-      text: "Done",
-      blocks: [],
-    })).messageId, stream.messageId);
-    assert.equal((await call("/message/update", {
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      messageTs: "1800000000.200",
-      text: "Done",
-      blocks: [],
-    })).messageId, "1800000000.200");
-    assert.equal((await call("/ephemeral", {
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      userId: "U-CUSTOMER",
-      text: "Thanks",
-    })).messageId, "mock-ephemeral-U-CUSTOMER");
-    assert.equal((await call("/view/open", {
-      teamId: "T-CUSTOMER",
-      triggerId: "trigger-1",
-      privateMetadata: "interaction-1",
-    })).viewId, "mock-view-trigger-1");
+    assert.equal(
+      (
+        await call("/stream/stop", {
+          teamId: "T-CUSTOMER",
+          channelId: "C-PRIMARY",
+          messageTs: stream.messageId,
+          text: "Done",
+          blocks: [],
+        })
+      ).messageId,
+      stream.messageId,
+    );
+    assert.equal(
+      (
+        await call("/message/update", {
+          teamId: "T-CUSTOMER",
+          channelId: "C-PRIMARY",
+          messageTs: "1800000000.200",
+          text: "Done",
+          blocks: [],
+        })
+      ).messageId,
+      "1800000000.200",
+    );
+    assert.equal(
+      (
+        await call("/ephemeral", {
+          teamId: "T-CUSTOMER",
+          channelId: "C-PRIMARY",
+          userId: "U-CUSTOMER",
+          text: "Thanks",
+        })
+      ).messageId,
+      "mock-ephemeral-U-CUSTOMER",
+    );
+    assert.equal(
+      (
+        await call("/view/open", {
+          teamId: "T-CUSTOMER",
+          triggerId: "trigger-1",
+          privateMetadata: "interaction-1",
+        })
+      ).viewId,
+      "mock-view-trigger-1",
+    );
   });
 
   test("deduplicates successful file sends and releases failed file claims", async () => {

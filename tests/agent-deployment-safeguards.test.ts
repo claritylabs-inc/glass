@@ -12,7 +12,8 @@ const execFileAsync = promisify(execFile);
 
 const workerPackage = JSON.parse(read("extraction-worker/package.json"));
 const expectedClSdkSpec = workerPackage.dependencies?.["@claritylabs/cl-sdk"];
-if (!expectedClSdkSpec) throw new Error("extraction-worker package is missing @claritylabs/cl-sdk");
+if (!expectedClSdkSpec)
+  throw new Error("extraction-worker package is missing @claritylabs/cl-sdk");
 
 let healthServer: Server;
 let healthBaseUrl: string;
@@ -99,6 +100,7 @@ function slackWorkerHealth() {
     streamingEnabled: true,
     interactivityResponsesEnabled: true,
     feedbackModalsEnabled: true,
+    reconciliationEnabled: true,
   };
 }
 
@@ -125,10 +127,13 @@ async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
 
 beforeAll(async () => {
   healthServer = createServer((req, res) => {
-    if (req.url === "/convex-aligned") return writeJson(res, convexHealth(expectedClSdkSpec));
-    if (req.url === "/convex-stale-sdk") return writeJson(res, convexHealth("^0.0.0"));
+    if (req.url === "/convex-aligned")
+      return writeJson(res, convexHealth(expectedClSdkSpec));
+    if (req.url === "/convex-stale-sdk")
+      return writeJson(res, convexHealth("^0.0.0"));
     if (req.url === "/imessage") return writeJson(res, imessageHealth());
-    if (req.url === "/extraction-worker") return writeJson(res, extractionWorkerHealth(expectedClSdkSpec));
+    if (req.url === "/extraction-worker")
+      return writeJson(res, extractionWorkerHealth(expectedClSdkSpec));
     if (req.url === "/slack-worker") return writeJson(res, slackWorkerHealth());
     if (req.url === "/cl-router") return writeJson(res, clRouterHealth());
     if (req.url === "/cl-router-unfrozen") {
@@ -137,7 +142,9 @@ beforeAll(async () => {
     res.writeHead(404);
     res.end();
   });
-  await new Promise<void>((resolve) => healthServer.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) =>
+    healthServer.listen(0, "127.0.0.1", resolve),
+  );
   const address = healthServer.address() as AddressInfo;
   healthBaseUrl = `http://127.0.0.1:${address.port}`;
 });
@@ -191,18 +198,24 @@ describe("agent deployment safeguards", () => {
     expect(deploy).toContain("validate-root:");
     expect(deploy).toContain("validate-workers:");
     expect(deploy).toContain("validate-packages:");
-    expect(deploy).toContain("needs:\n      - validate-root\n      - validate-workers\n      - validate-packages");
+    expect(deploy).toContain(
+      "needs:\n      - validate-root\n      - validate-workers\n      - validate-packages",
+    );
     expect(deploy).toContain("publish-cli:");
     expect(deploy).toContain("publish-operator-cli:");
     expect(
-      deploy.match(/npx convex env set EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION/g),
+      deploy.match(
+        /npx convex env set EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION/g,
+      ),
     ).toHaveLength(2);
     expect(deploy.match(/extraction-worker\/package\.json/g)).toHaveLength(2);
     const publishCli = deploy.slice(
       deploy.indexOf("publish-cli:"),
       deploy.indexOf("publish-operator-cli:"),
     );
-    const publishOperatorCli = deploy.slice(deploy.indexOf("publish-operator-cli:"));
+    const publishOperatorCli = deploy.slice(
+      deploy.indexOf("publish-operator-cli:"),
+    );
     expect(publishCli).toContain("needs: deploy");
     expect(publishOperatorCli).toContain("needs: deploy");
   });
@@ -214,7 +227,9 @@ describe("agent deployment safeguards", () => {
     const http = read("convex/http.ts");
 
     expect(workflow).toContain('cron: "*/15 * * * *"');
-    expect(workflow).toContain("node scripts/check-agent-deployment-health.mjs");
+    expect(workflow).toContain(
+      "node scripts/check-agent-deployment-health.mjs",
+    );
     expect(workflow).toContain("AGENT_HEALTH_ATTEMPTS: 30");
     expect(workflow).toContain(
       "GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL }}",
@@ -225,8 +240,12 @@ describe("agent deployment safeguards", () => {
     expect(workflow).toContain(
       "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}",
     );
-    expect(deployments).toContain("https://merry-platypus-82.convex.site/agent-health");
-    expect(deployments).toContain("https://glass-production-4618.up.railway.app/health");
+    expect(deployments).toContain(
+      "https://merry-platypus-82.convex.site/agent-health",
+    );
+    expect(deployments).toContain(
+      "https://glass-production-4618.up.railway.app/health",
+    );
     expect(deployments).toContain("GLASS_STAGING_CONVEX_AGENT_HEALTH_URL");
     expect(deployments).toContain("GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL");
     expect(deployments).toContain("GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL");
@@ -270,6 +289,8 @@ describe("agent deployment safeguards", () => {
   it("accepts deployment health only when Convex, worker health, and package spec agree", async () => {
     const result = await runAgentHealth("/convex-aligned");
 
-    expect(result.stdout).toContain("[agent-health] staging deployment health passed");
+    expect(result.stdout).toContain(
+      "[agent-health] staging deployment health passed",
+    );
   });
 });

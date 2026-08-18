@@ -107,6 +107,43 @@ calls `apps.uninstall`, then clears encrypted local credentials and disables the
 connection. Native `app_uninstalled` and `tokens_revoked` events also revoke the
 matching installation.
 
+The encrypted Convex installation store is the current native-app credential
+custody boundary. This replaces the older Photon-custody assumption; Photon is
+an iMessage provider and is not in the Slack data path.
+
+## Authoritative lifecycle and reconciliation
+
+The native Events API request URL receives messages and lifecycle events in one
+signed stream. Both app manifests subscribe to installation revocation and the
+supported channel archive, delete, rename, ID-change, share, and unshare events.
+`/slack/events` verifies the exact raw request, durably deduplicates lifecycle
+events by Slack `event_id`, and acknowledges before scheduled processing.
+
+`slackWorkspaceConnections` and `slackChannelBindings` retain canonical identity
+and history while health changes. An uninstall or matching bot-user entry in
+`tokens_revoked` clears encrypted credentials and marks the connection revoked;
+unrelated identities are recorded and ignored. Channel events apply only to the
+host or customer identity that produced them. Renames update display metadata,
+`channel_id_changed` preserves the previous ID, and archive, delete, or unshare
+makes the selected binding unavailable without deleting threads, preferences,
+or delivery evidence. Rebinding is an explicit, audited operator action.
+
+Every 15 minutes Convex asks the worker to run `auth.test` and bounded
+`conversations.info` checks for due active installations and selected channel
+IDs. The worker obtains a fresh installation through the token broker for every
+operation and returns only normalized health fields—never tokens or raw Slack
+payloads. Definitive authorization failures revoke immediately; transient
+provider failures degrade health and retry with bounded exponential backoff.
+Reconciliation covers event-delivery gaps, but it cannot infer an unknown
+replacement channel ID.
+
+Every outbound path checks current connection, binding, and membership health
+before contacting the worker. Provider authorization and channel errors become
+structured lifecycle evidence, stop retry leasing, and leave terminal delivery
+rows visible. Reinstall must target the retained workspace and reverify scopes
+and bot identity. A channel is restored only by verification of the same ID or
+an audited rebind; canonical threads and automation preferences are preserved.
+
 ## Direct Web API transport
 
 `slack-worker/` calls Slack Web API directly. It owns:
@@ -132,6 +169,7 @@ must add the app from Slack, after which the next channel inventory sync reports
 the membership. The worker exposes channel, Block Kit, message-update,
 assistant-status, streaming, and interaction-response capabilities in health
 output so deploy checks can distinguish them from basic outbound messaging.
+`reconciliationEnabled` confirms that token-safe verification is live.
 
 Never infer that a sender belongs to the installation workspace when native
 event data omits `user_team`. Actor resolution must succeed before
@@ -187,10 +225,10 @@ cannot prove that OAuth installation exists.
    workspace channel or remove it from one. For private and Slack Connect
    channels, a Slack member manages the app in Slack and Glass discovers the
    joined channel on sync.
-6. A channel sync links the customer-side support mirror only when exactly one
-   joined Slack Connect channel matches the configured support-channel name.
-   Ambiguous or renamed mirrors require audited manual binding; mentions never
-   infer or replace the support binding.
+6. A channel sync verifies the selected customer-side support mirror by its
+   persisted ID. Missing, unshared, ambiguous, or renamed channels never cause
+   name-based reassociation; an operator must make an audited rebind when Slack
+   cannot authoritatively update the ID.
 7. Designate the automatic alerts-and-delivery channel and confirm its health.
    Glass still responds in every joined channel; this selection affects only
    automatic alerts and document delivery. Safe customer alerts and policy
@@ -279,6 +317,24 @@ feedback, human handoff, multiple inbound files, outbound certificate/PDF
 upload, proactive alerts, and policy delivery. No new scopes are required by the
 rich-response APIs, so existing installations do not require reauthorization
 for this change.
+
+For lifecycle promotion, use the separate staging app, a disposable customer
+workspace, and a real private Slack Connect channel. Record the Slack event ID,
+the corresponding `slackLifecycleEvents` row, connection/binding health, and a
+blocked outbound ledger row for each destructive case. Exercise these cases in
+order: rename the channel; archive/unarchive where the workspace exposes that
+operation; unshare and re-share or explicitly rebind; revoke the staging bot
+authorization and confirm the revoked bot user ID matches; reinstall into the
+same workspace; then uninstall the app and reinstall again. Verify both host and
+customer channel IDs, confirm stale/duplicate events do not change the newest
+state, and confirm no reply, file, alert, handoff, or policy delivery reaches
+Slack while health is degraded. Finish by waiting for a scheduled reconciliation
+cycle and confirming both `auth.test` and channel checks return healthy.
+
+Do not mark lifecycle support production-ready from signed fixtures alone. The
+release evidence must include real staging Events API delivery for every event
+Slack can produce and explicit reconciliation evidence for lifecycle states
+whose event delivery is unavailable or asymmetric.
 
 Before progression run Slack-focused tests, worker build/tests, root and Convex
 typechecks, lint, build, worker checks, deployment health, and

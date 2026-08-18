@@ -2,6 +2,7 @@ import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
 
 const crons = cronJobs();
+const internalApi = internal as any;
 
 // Sweep stale info-level notifications every Sunday at 03:00 UTC
 crons.cron(
@@ -30,6 +31,13 @@ crons.interval(
   "sweep stale policy extractions",
   { minutes: 5 },
   internal.actions.policyExtraction.sweepStale,
+  {},
+);
+
+crons.interval(
+  "reconcile Slack installation and channel health",
+  { minutes: 15 },
+  internalApi.actions.slackReconciliation.runDue,
   {},
 );
 
