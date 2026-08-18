@@ -120,7 +120,7 @@ describe("email delivery modes", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubGlobal("fetch", mockFetch);
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "staging");
+    vi.stubEnv("GLASS_ENV", "dev");
 
     const result = await sendResendEmail({
       from: "Glass <noreply@example.com>",
@@ -159,7 +159,7 @@ describe("email delivery modes", () => {
     expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("to: invitee@example.com");
     expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("codeCandidates: 112233");
 
-    vi.stubEnv("GLASS_ENV", "staging");
+    vi.stubEnv("GLASS_ENV", "dev");
     expect(
       logLocalEmailCapture({
         kind: "suppressed-invite-otp",
@@ -179,7 +179,8 @@ describe("email delivery modes", () => {
     vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
     vi.stubEnv("EMAIL_DELIVERY_MODE", "restricted");
     vi.stubEnv("EMAIL_REDIRECT_TO", "capture@claritylabs.inc");
-    vi.stubEnv("GLASS_ENV", "staging");
+    vi.stubEnv("GLASS_ENV", "dev");
+    vi.stubEnv("EMAIL_SUBJECT_PREFIX", "[DEV]");
 
     const result = await sendResendEmail({
       from: "Glass <noreply@example.com>",
@@ -195,9 +196,9 @@ describe("email delivery modes", () => {
     expect(callBody.to).toBe("capture@claritylabs.inc");
     expect(callBody.cc).toBeUndefined();
     expect(callBody.bcc).toBeUndefined();
-    expect(callBody.subject).toBe("[STAGING] Policy update");
+    expect(callBody.subject).toBe("[DEV] Policy update");
     expect(callBody.headers["X-Glass-Original-To"]).toContain("person@example.com");
-    expect(callBody.headers["X-Glass-Environment"]).toBe("staging");
+    expect(callBody.headers["X-Glass-Environment"]).toBe("dev");
   });
 
   test("allows restricted email to allowlisted domains", async () => {
@@ -209,7 +210,8 @@ describe("email delivery modes", () => {
     vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
     vi.stubEnv("EMAIL_DELIVERY_MODE", "restricted");
     vi.stubEnv("EMAIL_ALLOWED_RECIPIENT_DOMAINS", "claritylabs.inc");
-    vi.stubEnv("GLASS_ENV", "staging");
+    vi.stubEnv("GLASS_ENV", "dev");
+    vi.stubEnv("EMAIL_SUBJECT_PREFIX", "[DEV]");
 
     const result = await sendResendEmail({
       from: "Glass <noreply@example.com>",
@@ -221,6 +223,6 @@ describe("email delivery modes", () => {
     expect(result).toEqual({ ok: true, id: "resend-msg-allowed" });
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(callBody.to).toBe("terry@claritylabs.inc");
-    expect(callBody.subject).toBe("[STAGING] Allowed");
+    expect(callBody.subject).toBe("[DEV] Allowed");
   });
 });

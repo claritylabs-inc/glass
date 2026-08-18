@@ -3,11 +3,11 @@
 /**
  * One-time migration for the compliance requirements redesign.
  *
- * Dry run:
- * npx convex run actions/backfillComplianceRequirementShape:backfill --deployment staging --args '{"dryRun":true}'
+ * Dry run on the explicitly approved deployment before applying writes:
+ * npx convex run actions/backfillComplianceRequirementShape:backfill --args '{"dryRun":true}'
  *
  * Live run:
- * npx convex run actions/backfillComplianceRequirementShape:backfill --deployment staging --args '{"dryRun":false}'
+ * npx convex run actions/backfillComplianceRequirementShape:backfill --args '{"dryRun":false}'
  */
 
 import { v } from "convex/values";

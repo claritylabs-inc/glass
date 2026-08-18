@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { resolveWorkerRuntimeAccess } from "../src/railwayRuntime.js";
 
 test("keeps local and persistent Railway workers active", () => {
-  for (const railwayEnvironment of [undefined, "dev", "staging", "production"]) {
+  for (const railwayEnvironment of [undefined, "dev", "production"]) {
     const access = resolveWorkerRuntimeAccess({
       RAILWAY_ENVIRONMENT_NAME: railwayEnvironment,
     });
@@ -14,8 +14,13 @@ test("keeps local and persistent Railway workers active", () => {
   }
 });
 
-test("makes PR and unknown Railway environments health-only", () => {
-  for (const railwayEnvironment of ["glass-pr-186", "preview", "qa"]) {
+test("makes retired, PR, and unknown Railway environments health-only", () => {
+  for (const railwayEnvironment of [
+    "staging",
+    "glass-pr-186",
+    "preview",
+    "qa",
+  ]) {
     const access = resolveWorkerRuntimeAccess({
       RAILWAY_ENVIRONMENT_NAME: railwayEnvironment,
     });

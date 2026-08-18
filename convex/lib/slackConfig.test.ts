@@ -17,7 +17,7 @@ describe("Slack environment mode", () => {
     expect(isSlackMockMode()).toBe(false);
   });
 
-  test("keeps staging mock mode explicit", () => {
+  test("keeps mock mode explicit", () => {
     vi.stubEnv("SLACK_MODE", "mock");
     vi.stubEnv("SLACK_ENABLED", "true");
     vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-FIXTURE");

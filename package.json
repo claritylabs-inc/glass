@@ -25,7 +25,6 @@
     "fireworks:parity": "node scripts/fireworks-parity-harness.mjs",
     "check:agent-health": "node scripts/check-agent-deployment-health.mjs --env production",
     "check:agent-health:prod": "node scripts/check-agent-deployment-health.mjs --env production",
-    "check:agent-health:staging": "node scripts/check-agent-deployment-health.mjs --env staging",
     "check:agent-health:local": "node scripts/check-agent-deployment-health.mjs --env local",
     "container:doctor": "node scripts/check-container-cli.mjs",
     "container:system:start": "container system start",

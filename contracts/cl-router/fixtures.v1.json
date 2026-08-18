@@ -481,7 +481,7 @@
       "schema": "HealthResponse",
       "value": {
         "status": "ok",
-        "environment": "staging",
+        "environment": "dev",
         "database": true,
         "frozen": true,
         "policyVersion": "policy_fixture_v1"
@@ -494,7 +494,7 @@
         "tenantId": "glass",
         "taskFamily": "extraction_operational_profile",
         "frozen": true,
-        "reason": "staging freeze drill"
+        "reason": "dev freeze drill"
       }
     },
     {
@@ -516,7 +516,7 @@
           "provider": "fireworks",
           "model": "accounts/fireworks/models/glm-5p2"
         },
-        "reason": "staging rollback drill"
+        "reason": "dev rollback drill"
       }
     },
     {

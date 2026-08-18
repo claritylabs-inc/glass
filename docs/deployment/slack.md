@@ -8,17 +8,14 @@ Connect support channel hosted by `claritylabsinc.slack.com`. Glass operators
 answer there with their normal Slack identities. Convex stores the canonical
 conversation, agent actions, delivery evidence, retries, and failures.
 
-Glass owns two native Slack apps:
+Glass owns one native Slack app:
 
 - `slack-worker/manifests/production.json` configures production app
   `A0BMW4TG7JB` against `merry-platypus-82`.
-- `slack-worker/manifests/staging.json` configures test app `A0BNBFDE25Q`
-  against `flexible-greyhound-425`.
 
 Do not route Slack through Photon or Spectrum. Photon remains the production
-iMessage provider only. Local development keeps the signed native-event fixture
-and mock worker; staging uses the test app when exercising real Slack and may be
-returned to mock mode for isolated regression testing.
+iMessage provider only. Shared dev and local development use the signed
+native-event fixture and mock worker; only production uses the native app.
 
 ## Native app provisioning
 
@@ -36,20 +33,20 @@ The provisioning script calls `apps.manifest.create` (or
 `apps.manifest.update` when `config/deployments.json` already records an app ID)
 through `slack api`. It never prints returned credentials and writes create
 responses to gitignored permission-0600 files under `.context/slack-apps/`.
-Transfer the credentials immediately to the matching Convex deployment, record
-each non-secret app ID in deployment config, then delete the local response
+Transfer the credentials immediately to the production Convex deployment,
+record the non-secret app ID in deployment config, then delete the local response
 files and unset the temporary token.
 
-If the native `/slack/events` route has not reached a lane yet, create the app
+If the native `/slack/events` route has not reached production yet, create the app
 without Events API subscriptions using
-`npm run slack:provision-apps -- --bootstrap <environment>`. This is only a
+`npm run slack:provision-apps -- --bootstrap production`. This is only a
 bootstrap and also omits interactivity: after both routes and the signing secret
-are deployed, rerun the normal command for that environment so
+are deployed, rerun the normal production command so
 `apps.manifest.update` applies and verifies the complete manifest before
 enabling Slack.
 
-The app manifests enable token rotation and subscribe the Events API to the
-environment's `<CONVEX_SITE_URL>/slack/events` route. They request these bot
+The app manifest enables token rotation and subscribes the Events API to the
+production `<CONVEX_SITE_URL>/slack/events` route. It requests these bot
 scopes:
 
 - `app_mentions:read`
@@ -61,10 +58,10 @@ scopes:
 - `users:read`, `users:read.email`
 - `conversations.connect:write`
 
-The same manifests enable interactive components at
-`<CONVEX_SITE_URL>/slack/interactivity`. Apply the complete manifest in both
-live environments; rich responses are not controlled by a separate feature
-flag or cohort.
+The same manifest enables interactive components at
+`<CONVEX_SITE_URL>/slack/interactivity`. Apply the complete manifest in
+production; rich responses are not controlled by a separate feature flag or
+cohort.
 
 Customer OAuth requests the narrower set in
 `convex/lib/slackOAuthPolicy.ts`; the Clarity-host installation also needs
@@ -182,17 +179,17 @@ the customer's encrypted installation.
 
 Convex requires:
 
-| Variable | Purpose |
-| --- | --- |
-| `SLACK_ENABLED` | Global Slack service switch; `true` in configured staging and production lanes |
-| `SLACK_MODE` | `slack` for native live testing; `mock` for the isolated fixture |
-| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Credentials for that lane's native app |
-| `SLACK_SIGNING_SECRET` | Verify native Slack requests |
-| `SLACK_TOKEN_ENCRYPTION_KEY` | Encrypt customer bot and refresh tokens |
-| `SLACK_OAUTH_REDIRECT_URI` | Optional callback override |
-| `SLACK_CLARITY_TEAM_ID` | Clarity host workspace ID |
-| `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret |
-| `NEXT_PUBLIC_APP_URL` or `APP_URL` | Post-OAuth settings redirect |
+| Variable                                  | Purpose                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| `SLACK_ENABLED`                           | Global Slack service switch; `true` in production                |
+| `SLACK_MODE`                              | `slack` for native live testing; `mock` for the isolated fixture |
+| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`  | Credentials for that lane's native app                           |
+| `SLACK_SIGNING_SECRET`                    | Verify native Slack requests                                     |
+| `SLACK_TOKEN_ENCRYPTION_KEY`              | Encrypt customer bot and refresh tokens                          |
+| `SLACK_OAUTH_REDIRECT_URI`                | Optional callback override                                       |
+| `SLACK_CLARITY_TEAM_ID`                   | Clarity host workspace ID                                        |
+| `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret                              |
+| `NEXT_PUBLIC_APP_URL` or `APP_URL`        | Post-OAuth settings redirect                                     |
 
 The Railway worker requires `GLASS_ENV`, `SLACK_WORKER_MODE`,
 `SLACK_WORKER_SECRET`, and `PORT`. Native live mode additionally requires
@@ -200,8 +197,7 @@ The Railway worker requires `GLASS_ENV`, `SLACK_WORKER_MODE`,
 and customer installations through the token broker. The worker and Convex must
 use the same mode and worker secret.
 
-Use `GLASS_STAGING_SLACK_WORKER_HEALTH_URL` and
-`GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
+Use `GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
 health must report `tokenBrokerConfigured`, `outboundEnabled`,
 `actorResolutionEnabled`, `clarityTeamConfigured`, `channelInventoryEnabled`,
 `publicChannelJoinEnabled`, `blockKitEnabled`, `messageUpdatesEnabled`,
@@ -310,7 +306,7 @@ The verifier must return zero missing owners before a later narrowing release.
 
 ## Validation and rollback
 
-For each live lane apply the complete manifest and verify OAuth, native signature
+In production, apply the complete manifest and verify OAuth, native signature
 rejection/acceptance, uninstall and reinstall, Connect actor identity, App Home
 DMs, mentions, thread replies, edits, progress streaming, policy cards,
 feedback, human handoff, multiple inbound files, outbound certificate/PDF
@@ -318,12 +314,14 @@ upload, proactive alerts, and policy delivery. No new scopes are required by the
 rich-response APIs, so existing installations do not require reauthorization
 for this change.
 
-For lifecycle promotion, use the separate staging app, a disposable customer
-workspace, and a real private Slack Connect channel. Record the Slack event ID,
+For lifecycle changes, first exercise signed fixtures and worker integration
+tests, then use a designated disposable customer workspace and a real private
+Slack Connect channel during an explicitly controlled production smoke test.
+Record the Slack event ID,
 the corresponding `slackLifecycleEvents` row, connection/binding health, and a
 blocked outbound ledger row for each destructive case. Exercise these cases in
 order: rename the channel; archive/unarchive where the workspace exposes that
-operation; unshare and re-share or explicitly rebind; revoke the staging bot
+operation; unshare and re-share or explicitly rebind; revoke the test workspace's bot
 authorization and confirm the revoked bot user ID matches; reinstall into the
 same workspace; then uninstall the app and reinstall again. Verify both host and
 customer channel IDs, confirm stale/duplicate events do not change the newest
@@ -331,10 +329,10 @@ state, and confirm no reply, file, alert, handoff, or policy delivery reaches
 Slack while health is degraded. Finish by waiting for a scheduled reconciliation
 cycle and confirming both `auth.test` and channel checks return healthy.
 
-Do not mark lifecycle support production-ready from signed fixtures alone. The
-release evidence must include real staging Events API delivery for every event
-Slack can produce and explicit reconciliation evidence for lifecycle states
-whose event delivery is unavailable or asymmetric.
+Do not broaden lifecycle support from signed fixtures alone. The controlled
+production evidence must include real Events API delivery for every event Slack
+can produce and explicit reconciliation evidence for lifecycle states whose
+event delivery is unavailable or asymmetric.
 
 Before progression run Slack-focused tests, worker build/tests, root and Convex
 typechecks, lint, build, worker checks, deployment health, and

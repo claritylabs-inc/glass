@@ -30,40 +30,6 @@
       "extractionProtocol": "source-tree-v1"
     }
   },
-  "staging": {
-    "branch": "staging",
-    "glassEnv": "staging",
-    "convexAgentHealthUrlEnv": "GLASS_STAGING_CONVEX_AGENT_HEALTH_URL",
-    "convexAgentHealthUrl": "https://flexible-greyhound-425.convex.site/agent-health",
-    "clientPortalUrl": "https://staging.glass.insure",
-    "clRouterHealthUrlEnv": "GLASS_STAGING_CL_ROUTER_HEALTH_URL",
-    "extractionWorkerHealthUrlEnv": "GLASS_STAGING_EXTRACTION_WORKER_HEALTH_URL",
-    "extractionWorkerHealthUrl": "https://glass-extraction-worker-staging.up.railway.app/health",
-    "imessageWorkerHealthUrlEnv": "GLASS_STAGING_IMESSAGE_WORKER_HEALTH_URL",
-    "imessageWorkerHealthUrl": "https://imessage-worker-staging.up.railway.app/health",
-    "slackWorkerHealthUrlEnv": "GLASS_STAGING_SLACK_WORKER_HEALTH_URL",
-    "slack": {
-      "appId": "A0BNBFDE25Q",
-      "enabled": true,
-      "mode": "slack",
-      "required": true
-    },
-    "imessage": {
-      "transport": "terminal",
-      "imessageEnabled": false,
-      "photonConfigured": false,
-      "requiredHttpPorts": []
-    },
-    "email": {
-      "deliveryMode": "restricted",
-      "agentDomain": "agent.staging.glass.insure",
-      "notificationDomain": "notifications.staging.glass.insure",
-      "authDomain": "auth.staging.glass.insure"
-    },
-    "workers": {
-      "extractionProtocol": "source-tree-v1"
-    }
-  },
   "local": {
     "branch": "*",
     "glassEnv": "local",
