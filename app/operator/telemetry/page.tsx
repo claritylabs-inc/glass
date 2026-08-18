@@ -7,17 +7,13 @@ import { AppShell } from "@/components/app-shell";
 import {
   OperationalPanel,
   OperationalPanelBody,
-  OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
-import { Input } from "@/components/ui/input";
-import { PillButton } from "@/components/ui/pill-button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
+import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
 import {
   Table,
@@ -39,21 +35,6 @@ import {
 } from "../routing/routing-tab";
 import { OperatorSidebar } from "../operator-sidebar";
 
-type OutcomeFilter = "all" | "error" | "fallback" | "complete";
-
-function matchesOutcome(event: RoutingEvent, filter: OutcomeFilter) {
-  if (filter === "all") return true;
-  if (filter === "error") return event.status === "error";
-  if (filter === "fallback") {
-    return event.kind === "direct_fallback" || Boolean(event.fallbackModel);
-  }
-  return (
-    event.status !== "error" &&
-    event.kind !== "direct_fallback" &&
-    !event.fallbackModel
-  );
-}
-
 export default function OperatorTelemetryPage() {
   const { results, status, loadMore } = usePaginatedQuery(
     api.modelRoutingEvents.listPaginated,
@@ -62,24 +43,18 @@ export default function OperatorTelemetryPage() {
   );
   const events = results;
   const [query, setQuery] = useState("");
-  const [channel, setChannel] = useState("all");
-  const [outcome, setOutcome] = useState<OutcomeFilter>("all");
   const [selectedEvent, setSelectedEvent] = useState<RoutingEvent | null>(null);
 
-  const channels = useMemo(
-    () => [...new Set(events.map((event) => event.channel))].sort(),
-    [events],
-  );
   const filteredEvents = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return events.filter((event) => {
-      if (channel !== "all" && event.channel !== channel) return false;
-      if (!matchesOutcome(event, outcome)) return false;
       if (!needle) return true;
       return [
         event.task,
         event.taskKind,
         event.channel,
+        event.kind,
+        event.status,
         event.label,
         event.phase,
         event.provider,
@@ -95,7 +70,7 @@ export default function OperatorTelemetryPage() {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
-  }, [channel, events, outcome, query]);
+  }, [events, query]);
 
   return (
     <AppShell
@@ -110,6 +85,19 @@ export default function OperatorTelemetryPage() {
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
+      actions={
+        <InputGroup className="w-44 sm:w-72">
+          <InputGroupAddon>
+            <Search className="size-4" />
+          </InputGroupAddon>
+          <InputGroupInput
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search telemetry"
+            aria-label="Search telemetry"
+          />
+        </InputGroup>
+      }
       rightPanel={
         selectedEvent ? (
           <RoutingEventDrawer
@@ -119,63 +107,8 @@ export default function OperatorTelemetryPage() {
         ) : undefined
       }
     >
-      <main className="flex w-full flex-col gap-4">
+      <main className="w-full">
         <OperationalPanel>
-          <OperationalPanelHeader
-            title="Agent telemetry"
-            description="A live, cross-channel log of direct and routed model runs, fallbacks, tool workflows, and errors. Events are retained for 30 days."
-          />
-          <OperationalPanelBody className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <label className="relative min-w-0 flex-1">
-              <span className="sr-only">Search telemetry</span>
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search task, route, error, request, run, or organization"
-                className="pl-9"
-              />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <Select
-                value={outcome}
-                onValueChange={(value) => setOutcome(value as OutcomeFilter)}
-              >
-                <SelectTrigger aria-label="Filter by outcome">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All outcomes</SelectItem>
-                  <SelectItem value="error">Errors</SelectItem>
-                  <SelectItem value="fallback">Fallbacks</SelectItem>
-                  <SelectItem value="complete">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={channel}
-                onValueChange={(value) => value && setChannel(value)}
-              >
-                <SelectTrigger aria-label="Filter by channel">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All channels</SelectItem>
-                  {channels.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </OperationalPanelBody>
-        </OperationalPanel>
-
-        <OperationalPanel>
-          <OperationalPanelHeader
-            title="Global log"
-            description={`Showing ${filteredEvents.length.toLocaleString()} of ${events.length.toLocaleString()} loaded events.`}
-          />
           {status === "LoadingFirstPage" ? (
             <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
               <Loader2 className="size-5 animate-spin" />
@@ -184,7 +117,9 @@ export default function OperatorTelemetryPage() {
             <OperationalPanelBody
               className={`text-muted-foreground ${typeStyle("body.default")}`}
             >
-              No telemetry matches these filters.
+              {query.trim()
+                ? "No telemetry matches this search."
+                : "No telemetry events yet."}
             </OperationalPanelBody>
           ) : (
             <Table>
