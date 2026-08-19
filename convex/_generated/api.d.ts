@@ -229,6 +229,7 @@ import type * as lib_policyTypes from "../lib/policyTypes.js";
 import type * as lib_policyVersioning from "../lib/policyVersioning.js";
 import type * as lib_publicDemoAgent from "../lib/publicDemoAgent.js";
 import type * as lib_queryAgent from "../lib/queryAgent.js";
+import type * as lib_requirementAttachmentIntent from "../lib/requirementAttachmentIntent.js";
 import type * as lib_resend from "../lib/resend.js";
 import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
@@ -523,6 +524,7 @@ declare const fullApi: ApiFromModules<{
   "lib/policyVersioning": typeof lib_policyVersioning;
   "lib/publicDemoAgent": typeof lib_publicDemoAgent;
   "lib/queryAgent": typeof lib_queryAgent;
+  "lib/requirementAttachmentIntent": typeof lib_requirementAttachmentIntent;
   "lib/resend": typeof lib_resend;
   "lib/sdkCallbacks": typeof lib_sdkCallbacks;
   "lib/security": typeof lib_security;
