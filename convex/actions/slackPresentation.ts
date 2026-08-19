@@ -206,11 +206,12 @@ export const start = internalAction({
       connectionId: args.connectionId,
       channelId: args.channelId,
     });
-    if (
-      !target?.available ||
-      !target.connection ||
-      target.connection.clientOrgId !== args.orgId
-    ) {
+    if (!target?.available) {
+      throw new Error(
+        target?.unavailableReason ?? "Slack presentation target is unavailable",
+      );
+    }
+    if (!target.connection || target.connection.clientOrgId !== args.orgId) {
       throw new Error("Slack presentation target is unavailable");
     }
     let mode: "stream" | "message" = args.threadTs ? "stream" : "message";

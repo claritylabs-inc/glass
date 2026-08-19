@@ -182,6 +182,42 @@ before(async () => {
         },
       });
     }
+    if (request.url === "/api/auth.test") {
+      if (
+        !request.headers["content-type"]?.startsWith(
+          "application/x-www-form-urlencoded",
+        )
+      ) {
+        return respond(response, { ok: false, error: "invalid_arguments" });
+      }
+      return respond(response, {
+        ok: true,
+        team_id: String(body.team_id ?? "T-CUSTOMER"),
+        user_id: "U-GLASS",
+      });
+    }
+    if (request.url === "/api/conversations.info") {
+      if (
+        !request.headers["content-type"]?.startsWith(
+          "application/x-www-form-urlencoded",
+        )
+      ) {
+        return respond(response, { ok: false, error: "invalid_arguments" });
+      }
+      return respond(response, {
+        ok: true,
+        channel: {
+          id: String(body.channel),
+          name: "client-service",
+          is_member: true,
+          is_archived: false,
+          is_private: true,
+          is_shared: true,
+          is_ext_shared: true,
+          is_org_shared: false,
+        },
+      });
+    }
     if (request.url === "/api/conversations.create") {
       return respond(response, {
         ok: true,
@@ -391,6 +427,48 @@ describe("native Slack worker HTTP adapter", () => {
     );
   });
 
+  test("uses form encoding for Slack reconciliation reads", async () => {
+    const response = await workerRequest("/reconcile", {
+      teamId: "T-CUSTOMER",
+      channelIds: ["C-CUSTOMER"],
+    });
+    assert.deepEqual(await response.json(), {
+      teamId: "T-CUSTOMER",
+      botUserId: "U-GLASS",
+      channels: [
+        {
+          id: "C-CUSTOMER",
+          ok: true,
+          name: "client-service",
+          isArchived: false,
+          isMember: true,
+          isPrivate: true,
+          isShared: true,
+          isExtShared: true,
+          isOrgShared: false,
+        },
+      ],
+    });
+    assert.deepEqual(
+      apiCalls.filter((call) => call.path === "/api/auth.test").at(-1),
+      {
+        path: "/api/auth.test",
+        authorization: "Bearer xoxb-customer",
+        body: {},
+      },
+    );
+    assert.deepEqual(
+      apiCalls
+        .filter((call) => call.path === "/api/conversations.info")
+        .at(-1),
+      {
+        path: "/api/conversations.info",
+        authorization: "Bearer xoxb-customer",
+        body: { channel: "C-CUSTOMER", include_num_members: "false" },
+      },
+    );
+  });
+
   test("updates, streams, reports status, and opens feedback through native APIs", async () => {
     const teamId = "T-CUSTOMER";
     const channelId = "C-CUSTOMER";
@@ -496,8 +574,10 @@ describe("native Slack worker HTTP adapter", () => {
       operatorInvites: { requested: 2, succeeded: true },
       supportInvite: { succeeded: true, pending: true },
     });
-    const calls = apiCalls.filter((call) =>
-      call.path.startsWith("/api/conversations."),
+    const calls = apiCalls.filter(
+      (call) =>
+        call.path.startsWith("/api/conversations.") &&
+        call.authorization === "Bearer xoxb-clarity",
     );
     assert.equal(calls.length, 4);
     assert(calls.every((call) => call.authorization === "Bearer xoxb-clarity"));

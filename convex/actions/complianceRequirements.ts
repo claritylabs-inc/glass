@@ -373,13 +373,7 @@ async function runRequirementImport(
   if (!sourceText) {
     throw new Error("Paste text or upload a requirement document first");
   }
-  const sourceType =
-    args.sourceType ??
-    (args.fileName?.toLowerCase().includes("lease")
-      ? "lease_agreement"
-      : args.fileName?.toLowerCase().includes("contract")
-        ? "client_contract"
-      : "vendor_requirements");
+  const sourceType = args.sourceType ?? inferRequirementSourceType(args.fileName);
   const scope = scopeFromArgs(args);
   const sourceDocumentName =
     args.sourceName?.trim() ||
@@ -451,6 +445,16 @@ async function runRequirementImport(
   );
 
   return { createdCount: requirementIds.length, requirementIds, sourceDocumentId };
+}
+
+export function inferRequirementSourceType(fileName?: string) {
+  if (fileName?.toLowerCase().includes("lease")) {
+    return "lease_agreement" as const;
+  }
+  if (/(?:contract|agreement)/i.test(fileName ?? "")) {
+    return "client_contract" as const;
+  }
+  return "vendor_requirements" as const;
 }
 
 export const importRequirements = action({

@@ -1238,6 +1238,43 @@ describe("Slack setup and outbound durability", () => {
     ).resolves.toMatchObject({ send: false, row: { status: "blocked" } });
   });
 
+  test("does not let degraded support-channel health block a customer DM", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId } = await seedSlack(t);
+    await t.run(async (ctx) => {
+      const binding = await ctx.db.query("slackChannelBindings").first();
+      if (!binding) throw new Error("Slack binding fixture is missing");
+      await ctx.db.patch(binding._id, {
+        healthStatus: "degraded",
+        providerErrorCode: "invalid_arguments",
+        providerErrorSummary: "Slack could not verify the host primary channel.",
+      });
+    });
+
+    await expect(
+      t.query(getSendTargetFn, {
+        connectionId,
+        channelId: "D-CUSTOMER-DM",
+      }),
+    ).resolves.toMatchObject({
+      available: true,
+      teamId: "T-CUSTOMER",
+      channelId: "D-CUSTOMER-DM",
+    });
+    await expect(
+      t.mutation(claimOutboundFn, {
+        idempotencyKey: "dm-with-degraded-support-binding",
+        orgId: clientOrgId,
+        connectionId,
+        channelId: "D-CUSTOMER-DM",
+        content: "Reply in the DM",
+      }),
+    ).resolves.toMatchObject({
+      send: true,
+      row: { status: "sending", attemptCount: 1 },
+    });
+  });
+
   test("surfaces terminal Slack delivery failure on the mirrored agent message", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, connectionId, serviceUserId } = await seedSlack(t);
