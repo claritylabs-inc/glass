@@ -314,7 +314,7 @@ async function reconcileSlack(input: ReconcileRequest) {
   }
 
   const installation = await slackInstallation(input.teamId);
-  const authorization = await slackApi<SlackAuthTestResponse>(
+  const authorization = await slackFormApi<SlackAuthTestResponse>(
     "auth.test",
     installation.botToken,
     {},
@@ -329,7 +329,7 @@ async function reconcileSlack(input: ReconcileRequest) {
   const channels = await Promise.all(
     channelIds.map(async (channelId) => {
       try {
-        const result = await slackApi<
+        const result = await slackFormApi<
           SlackResponse & { channel?: SlackChannelPayload }
         >("conversations.info", installation.botToken, {
           channel: channelId,

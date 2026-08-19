@@ -66,6 +66,11 @@ import {
 } from "../lib/emailDraftSummary";
 import { collectToolAudit } from "../lib/agentToolAudit";
 import { runInboundEmailDeterministicControls } from "../lib/inboundEmailDeterministicControls";
+import {
+  inferRequirementImportScope,
+  requiredRequirementImportStep,
+  selectRequirementImportAttachments,
+} from "../lib/requirementAttachmentIntent";
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
 const GLASS_PENDING_MESSAGE_ID_RE = /<?glass-pending-([^@\s>]+)@[^>\s]+>?/gi;
@@ -1166,6 +1171,14 @@ export const processInbound = internalAction({
       const availableFileIds = new Set(
         availableEmailAttachments.map((attachment) => String(attachment.fileId)),
       );
+      const requirementImportText = [subject ?? "", body].join("\n\n");
+      const requirementImportAttachments = selectRequirementImportAttachments(
+        requirementImportText,
+        availableEmailAttachments,
+      );
+      const requirementImportDefaultScope = inferRequirementImportScope(
+        requirementImportText,
+      );
       const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
         [subject ?? "", body].join("\n\n"),
       );
@@ -1184,6 +1197,8 @@ export const processInbound = internalAction({
           scope,
           threadId: unifiedThreadId,
           availableFileIds,
+          requirementImportAttachments,
+          requirementImportDefaultScope,
           onPolicyReferenced: (policyId) => {
             referencedPolicySourceIds.add(String(policyId));
             if (!emailReferencedPolicyIds.some((id) => id === policyId)) {
@@ -1525,6 +1540,11 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             messages,
             tools: emailTools,
             stopWhen: stepCountIs(10),
+            prepareStep: ({ stepNumber }) =>
+              requiredRequirementImportStep(
+                stepNumber,
+                requirementImportAttachments.length > 0,
+              ),
           },
           {
             taskKind: "inbound_email_reply",

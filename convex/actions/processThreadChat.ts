@@ -90,6 +90,11 @@ import {
   isXlsxSpreadsheetAttachment,
   spreadsheetBufferToText,
 } from "../lib/spreadsheetText";
+import {
+  inferRequirementImportScope,
+  requiredRequirementImportStep,
+  selectRequirementImportAttachments,
+} from "../lib/requirementAttachmentIntent";
 
 function restoreSentenceBoundarySpacing(text: string): string {
   return text
@@ -809,6 +814,27 @@ export const run = internalAction({
         .filter((m: Record<string, unknown>) => m.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
+      const latestUserAttachments = (
+        (latestUserMsg?.attachments as
+          | Array<{
+              filename: string;
+              contentType: string;
+              size: number;
+              fileId?: Id<"_storage">;
+            }>
+          | undefined) ?? []
+      ).filter(
+        (attachment): attachment is typeof attachment & {
+          fileId: Id<"_storage">;
+        } => Boolean(attachment.fileId),
+      );
+      const requirementImportAttachments = selectRequirementImportAttachments(
+        String(latestUserContent),
+        latestUserAttachments,
+      );
+      const requirementImportDefaultScope = inferRequirementImportScope(
+        String(latestUserContent),
+      );
       const policyFocusIds = await validatePolicyFocusIds(
         ctx,
         scope,
@@ -1155,6 +1181,8 @@ export const run = internalAction({
           userId: args.userId,
           scope,
           threadId: args.threadId,
+          requirementImportAttachments,
+          requirementImportDefaultScope,
           operatorInitiatedUserMessageId: scope.operatorInitiated
             ? args.userMessageId
             : undefined,
@@ -1401,6 +1429,11 @@ export const run = internalAction({
           messages: messageHistory,
           tools,
           stopWhen: stepCountIs(25),
+          prepareStep: ({ stepNumber }) =>
+            requiredRequirementImportStep(
+              stepNumber,
+              requirementImportAttachments.length > 0,
+            ),
         });
 
       const resetStreamStateForRetry = () => {

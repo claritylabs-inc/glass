@@ -69,6 +69,11 @@ import {
   normalizeInboundImessageSender,
   storeImessageAttachments,
 } from "../lib/imessageIngress";
+import {
+  inferRequirementImportScope,
+  requiredRequirementImportStep,
+  selectRequirementImportAttachments,
+} from "../lib/requirementAttachmentIntent";
 
 export { buildFallbackImessageChatGuid } from "../lib/imessageIngress";
 
@@ -627,6 +632,13 @@ export const processInbound = internalAction({
       const availableFileIds = new Set(
         availableEmailAttachments.map((attachment) => String(attachment.fileId)),
       );
+      const requirementImportAttachments = selectRequirementImportAttachments(
+        inboundMessageText,
+        availableEmailAttachments,
+      );
+      const requirementImportDefaultScope = inferRequirementImportScope(
+        inboundMessageText,
+      );
       const imessageWritableOrgIds =
         agentScope.mode === "broker_portfolio"
           ? agentScope.writableOrgIds
@@ -647,6 +659,8 @@ export const processInbound = internalAction({
           writeUnavailableMessage:
             "Only a linked Glass user in this chat can do that.",
           availableFileIds,
+          requirementImportAttachments,
+          requirementImportDefaultScope,
           onPolicyPresented: runState.onPolicyPresented,
           onPolicyReferenced,
           onResponseAttachment: runState.onResponseAttachment,
@@ -774,6 +788,11 @@ export const processInbound = internalAction({
           messages: modelMessages,
           tools: imessageTools,
           stopWhen: stepCountIs(8),
+          prepareStep: ({ stepNumber }) =>
+            requiredRequirementImportStep(
+              stepNumber,
+              requirementImportAttachments.length > 0,
+            ),
         },
         run: {
           taskKind: "query_reason",

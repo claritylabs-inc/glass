@@ -88,9 +88,10 @@ async function resolveSendTarget(
       ? binding!.customerChannelId!
       : channelId;
   const connectionReason = slackConnectionUnavailableReason(connection);
-  const bindingReason = binding
-    ? slackBindingUnavailableReason(binding)
-    : undefined;
+  const bindingReason =
+    binding && (hostMatch || customerMatch)
+      ? slackBindingUnavailableReason(binding)
+      : undefined;
   let membershipReason: string | undefined;
   if (!hostMatch && !customerMatch && !resolvedChannelId.startsWith("D")) {
     const membership = await ctx.db

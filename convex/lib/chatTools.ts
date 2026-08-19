@@ -114,6 +114,12 @@ export const lookupComplianceRequirements = tool({
   }),
 });
 
+export const importRequirementAttachments = tool({
+  description:
+    "Persist the new requirement documents identified by the server in the current message as canonical compliance sources and run structured requirement extraction. Use this before answering from a newly supplied agreement, contract, lease, insurance schedule, or requirement packet. The server owns file selection, source classification, and requirement scope.",
+  inputSchema: z.object({}),
+});
+
 export const lookupConnectedVendors = tool({
   description:
     "Look up connected vendor organizations and their compliance status. Use this when the user asks which vendors are non-compliant, compliant, waiting on policies, invited, or asks for vendor status.",

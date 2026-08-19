@@ -1,9 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { extractDocxText } from "./complianceRequirements";
+import {
+  extractDocxText,
+  inferRequirementSourceType,
+} from "./complianceRequirements";
 
 describe("requirement document parsing", () => {
+  it("classifies agreements as client contract sources", () => {
+    expect(
+      inferRequirementSourceType("Program Manager Agreement v2.pdf"),
+    ).toBe("client_contract");
+  });
+
   it("extracts text from the DOCX fixture with Mammoth's Node buffer API", async () => {
     const fixturePath = fileURLToPath(
       new URL(

@@ -13,6 +13,7 @@ import {
   lookupAddress,
   lookupCompanyContext,
   lookupComplianceRequirements,
+  importRequirementAttachments,
   lookupPolicy,
   lookupPolicySection,
   presentPolicyCard,
@@ -96,6 +97,10 @@ export type BuildAgentToolExecutorsOptions = {
   canWrite?: boolean;
   writeUnavailableMessage?: string;
   availableFileIds?: Set<string>;
+  requirementImportAttachments?: Array<
+    ToolAttachment & { fileId: Id<"_storage"> }
+  >;
+  requirementImportDefaultScope?: RequirementScope;
   onPolicyReferenced?: (policyId: Id<"policies">) => void | Promise<void>;
   onPolicyPresented?: (policyId: Id<"policies">) => void | Promise<void>;
   onResponseAttachment?: (attachment: ToolAttachment) => void | Promise<void>;
@@ -669,6 +674,54 @@ export function buildAgentToolExecutors(
           : "No matching compliance requirements found. Vendor/contractor requirements and internal requirements are stored separately.";
       },
     },
+    ...(options.requirementImportAttachments?.length
+      ? {
+          import_requirement_attachments: {
+            ...importRequirementAttachments,
+            execute: async () => {
+              if (!canWriteOrg(options, options.orgId)) {
+                return writeUnavailable(
+                  options,
+                  "import compliance requirements",
+                );
+              }
+              const imports = [];
+              for (const attachment of
+                options.requirementImportAttachments ?? []) {
+                const imported = await ctx.runAction(
+                  internal.actions.complianceRequirements
+                    .importRequirementsInternal,
+                  {
+                    orgId: options.orgId,
+                    userId: options.userId,
+                    fileId: attachment.fileId,
+                    fileName: attachment.filename,
+                    contentType: attachment.contentType,
+                    sourceName: attachment.filename,
+                    scope: options.requirementImportDefaultScope,
+                  },
+                );
+                imports.push({
+                  filename: attachment.filename,
+                  sourceDocumentId: imported.sourceDocumentId,
+                  requirementIds: imported.requirementIds,
+                  createdCount: imported.createdCount,
+                });
+              }
+              const createdCount = imports.reduce(
+                (total, imported) => total + imported.createdCount,
+                0,
+              );
+              return {
+                status: "imported" as const,
+                message: `${imports.length} requirement source${imports.length === 1 ? " was" : "s were"} saved and ${createdCount} new insurance requirement${createdCount === 1 ? " was" : "s were"} extracted. Use lookup_compliance_requirements before answering the compliance question.`,
+                imports,
+                createdCount,
+              };
+            },
+          },
+        }
+      : {}),
     ...buildVendorComplianceTools(
       ctx,
       (options.readOrgIds ?? options.scope.readOrgIds).map((orgId) =>
