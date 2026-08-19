@@ -171,22 +171,43 @@ export const getInteractionContext = internalQuery({
 export const markActive = internalMutation({
   args: {
     id: v.id("slackMessagePresentations"),
-    providerMessageId: v.string(),
+    providerMessageId: v.optional(v.string()),
     mode: v.optional(v.union(v.literal("message"), v.literal("stream"))),
     lastPayloadHash: v.optional(v.string()),
+    processingReaction: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row || row.phase === "final") return row;
     await ctx.db.patch(row._id, {
-      providerMessageId: args.providerMessageId,
+      ...(args.providerMessageId
+        ? { providerMessageId: args.providerMessageId }
+        : {}),
       mode: args.mode ?? row.mode,
       phase: "active",
       revision: row.revision + 1,
       lastPayloadHash: args.lastPayloadHash,
+      processingReaction:
+        args.processingReaction ?? row.processingReaction,
       error: undefined,
       providerErrorCode: undefined,
       retryable: undefined,
+      updatedAt: dayjs().valueOf(),
+    });
+    return await ctx.db.get(row._id);
+  },
+});
+
+export const setProcessingReaction = internalMutation({
+  args: {
+    id: v.id("slackMessagePresentations"),
+    processingReaction: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row || row.phase === "final") return row;
+    await ctx.db.patch(row._id, {
+      processingReaction: args.processingReaction,
       updatedAt: dayjs().valueOf(),
     });
     return await ctx.db.get(row._id);

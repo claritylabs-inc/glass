@@ -10,6 +10,7 @@ export const SLACK_CUSTOMER_SCOPES = [
   "im:history",
   "files:read",
   "files:write",
+  "reactions:write",
   "users:read",
   "users:read.email",
 ] as const;

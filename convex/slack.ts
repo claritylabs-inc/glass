@@ -900,8 +900,6 @@ export const prepareBatch = internalMutation({
           connectionId: connection._id,
           channelId: first.channelId,
           threadTs: first.isDirectMessage ? undefined : first.threadTs,
-          recipientUserId: first.senderUserId,
-          recipientTeamId: first.senderTeamId,
         }
       : null;
   },

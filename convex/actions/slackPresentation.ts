@@ -9,8 +9,9 @@ import type { Doc, Id } from "../_generated/dataModel";
 import {
   buildSlackClassicFinalBlocks,
   buildSlackFinalBlocks,
-  buildSlackProgressBlocks,
-  slackProgressTasks,
+  formatSlackAnswerText,
+  SLACK_DEFAULT_PROCESSING_REACTION,
+  SLACK_PROCESSING_REACTIONS,
   type SlackBlock,
 } from "../lib/slackBlocks";
 import { MAX_POLICY_CARDS_PER_TURN } from "../lib/agentPolicyPresentation";
@@ -97,23 +98,56 @@ function fallbackEligible(error: unknown): boolean {
   );
 }
 
-async function bestEffortStatus(args: {
+async function bestEffortReaction(args: {
+  operation: "add" | "remove";
   teamId: string;
   channelId: string;
-  threadTs?: string;
-  status: string;
+  messageTs?: string;
+  name: string;
 }) {
-  if (!args.threadTs) return;
+  if (!args.messageTs) return false;
   try {
-    await workerRequest("/thread/status", {
+    await workerRequest(`/reaction/${args.operation}`, {
       teamId: args.teamId,
       channelId: args.channelId,
-      threadTs: args.threadTs,
-      status: args.status,
+      messageTs: args.messageTs,
+      name: args.name,
     });
+    return true;
   } catch (error) {
-    console.warn("[slack] Could not update assistant status", error);
+    console.warn(
+      `[slack] Could not ${args.operation} processing reaction`,
+      error,
+    );
+    return false;
   }
+}
+
+function processingReactionName(value: string) {
+  return (SLACK_PROCESSING_REACTIONS as readonly string[]).includes(value)
+    ? value
+    : SLACK_DEFAULT_PROCESSING_REACTION;
+}
+
+async function sourceMessageTimestamp(
+  ctx: ActionCtx,
+  threadMessageId: Id<"threadMessages">,
+) {
+  const response = await ctx.runQuery(internalApi.slack.getMessage, {
+    messageId: threadMessageId,
+  });
+  if (!response?.replyToMessageId) return undefined;
+  const source = await ctx.runQuery(internalApi.slack.getMessage, {
+    messageId: response.replyToMessageId,
+  });
+  if (
+    !source ||
+    source.threadId !== response.threadId ||
+    source.channel !== "slack"
+  ) {
+    return undefined;
+  }
+  return source.slackMessageTs;
 }
 
 async function policyCards(
@@ -198,8 +232,6 @@ export const start = internalAction({
     connectionId: v.id("slackWorkspaceConnections"),
     channelId: v.string(),
     threadTs: v.optional(v.string()),
-    recipientUserId: v.string(),
-    recipientTeamId: v.string(),
   },
   handler: async (ctx, args) => {
     const target = await ctx.runQuery(internalApi.slackOutbound.getSendTarget, {
@@ -214,7 +246,7 @@ export const start = internalAction({
     if (!target.connection || target.connection.clientOrgId !== args.orgId) {
       throw new Error("Slack presentation target is unavailable");
     }
-    let mode: "stream" | "message" = args.threadTs ? "stream" : "message";
+    const mode = "message" as const;
     const created = await ctx.runMutation(
       internalApi.slackPresentation.create,
       {
@@ -230,173 +262,66 @@ export const start = internalAction({
     );
     const presentation =
       created.presentation as Doc<"slackMessagePresentations">;
-    if (presentation.providerMessageId) {
+    if (presentation.phase === "active" || presentation.providerMessageId) {
       return { ...presentation, actionToken: created.actionToken };
     }
-
-    try {
-      let messageId: string;
-      if (mode === "stream") {
-        await bestEffortStatus({
-          teamId: target.teamId,
-          channelId: target.channelId,
-          threadTs: args.threadTs,
-          status: "is reviewing your request…",
-        });
-        try {
-          const started = await workerRequest<{ messageId: string }>(
-            "/stream/start",
-            {
-              teamId: target.teamId,
-              channelId: target.channelId,
-              threadTs: args.threadTs,
-              recipientUserId: args.recipientUserId,
-              recipientTeamId: args.recipientTeamId,
-              status: "Reviewing your request…",
-            },
-          );
-          messageId = started.messageId;
-        } catch (error) {
-          // Streaming can be unavailable in a Slack surface even when Block Kit
-          // messaging is supported. Degrade this response in place, never by a
-          // cohort or feature flag.
-          console.warn(
-            "[slack] Stream unavailable; using a mutable message",
-            error,
-          );
-          mode = "message";
-          const sent = await workerRequest<{ messageId: string }>("/send", {
-            clientMessageId: `agent:${args.threadMessageId}:activity`,
-            teamId: target.teamId,
-            channelId: target.channelId,
-            threadTs: args.threadTs,
-            text: "Glass is reviewing your request.",
-            blocks: buildSlackProgressBlocks({
-              threadMessageId: args.threadMessageId,
-              revision: 1,
-            }),
-          });
-          messageId = sent.messageId;
-        }
-      } else {
-        const blocks = buildSlackProgressBlocks({
-          threadMessageId: args.threadMessageId,
-          revision: 1,
-        });
-        const sent = await workerRequest<{ messageId: string }>("/send", {
-          clientMessageId: `agent:${args.threadMessageId}:activity`,
-          teamId: target.teamId,
-          channelId: target.channelId,
-          text: "Glass is reviewing your request.",
-          blocks,
-        });
-        messageId = sent.messageId;
-      }
-      await ctx.runMutation(internalApi.slackPresentation.markActive, {
-        id: presentation._id,
-        providerMessageId: messageId,
-        mode,
-      });
-      return {
-        ...(await currentPresentation(ctx, args.threadMessageId)),
-        actionToken: created.actionToken,
-      };
-    } catch (error) {
-      await recordProviderFailure(
-        ctx,
-        presentation,
-        target.channelId,
-        `start:${presentation.revision}`,
-        error,
-      );
-      const providerError =
-        error instanceof SlackPresentationError ? error : undefined;
-      await ctx.runMutation(internalApi.slackPresentation.markFailed, {
-        id: presentation._id,
-        error: error instanceof Error ? error.message : String(error),
-        providerErrorCode: providerError?.providerErrorCode,
-        retryable: providerError?.retryable,
-      });
-      throw error;
-    }
+    await bestEffortReaction({
+      operation: "add",
+      teamId: target.teamId,
+      channelId: target.channelId,
+      messageTs: await sourceMessageTimestamp(ctx, args.threadMessageId),
+      name: SLACK_DEFAULT_PROCESSING_REACTION,
+    });
+    await ctx.runMutation(internalApi.slackPresentation.markActive, {
+      id: presentation._id,
+      mode,
+      processingReaction: SLACK_DEFAULT_PROCESSING_REACTION,
+    });
+    return {
+      ...(await currentPresentation(ctx, args.threadMessageId)),
+      actionToken: created.actionToken,
+    };
   },
 });
 
-export const projectProgress = internalAction({
-  args: { threadMessageId: v.id("threadMessages") },
+export const setReaction = internalAction({
+  args: {
+    threadMessageId: v.id("threadMessages"),
+    name: v.string(),
+  },
   handler: async (ctx, args) => {
-    const [presentation, message] = await Promise.all([
-      currentPresentation(ctx, args.threadMessageId),
-      ctx.runQuery(internalApi.slack.getMessage, {
-        messageId: args.threadMessageId,
-      }),
-    ]);
-    if (
-      !presentation?.providerMessageId ||
-      presentation.phase !== "active" ||
-      !message
-    )
-      return;
-    const tools = (message.agentSteps ?? []).filter(
-      (step: { type: string }) => step.type === "tool",
-    ) as Array<{ type: "tool"; name: string; completed?: boolean }>;
-    const progressTasks = slackProgressTasks(message.agentSteps);
-    const payload =
-      presentation.mode === "stream"
-        ? progressTasks
-        : buildSlackProgressBlocks({
-            threadMessageId: message._id,
-            revision: presentation.revision + 1,
-            tools,
-          });
-    const payloadHash = hashPayload(payload);
-    if (payloadHash === presentation.lastPayloadHash) return;
-    const target = await presentationTarget(ctx, presentation);
-    const activeTask = [...progressTasks]
-      .reverse()
-      .find((task) => task.status === "in_progress");
-    await bestEffortStatus({
-      teamId: target.teamId,
-      channelId: target.channelId,
-      threadTs: presentation.threadTs,
-      status: activeTask
-        ? `is working: ${activeTask.title}`
-        : "is finalizing your answer…",
-    });
-    try {
-      if (presentation.mode === "stream") {
-        await workerRequest("/stream/append", {
-          teamId: target.teamId,
-          channelId: target.channelId,
-          messageTs: presentation.providerMessageId,
-          tasks: payload,
-        });
-      } else {
-        await workerRequest("/message/update", {
-          teamId: target.teamId,
-          channelId: target.channelId,
-          messageTs: presentation.providerMessageId,
-          text: "Glass is reviewing your request.",
-          blocks: payload,
-        });
-      }
-      await ctx.runMutation(internalApi.slackPresentation.markActive, {
-        id: presentation._id,
-        providerMessageId: presentation.providerMessageId,
-        lastPayloadHash: payloadHash,
-      });
-    } catch (error) {
-      // Progress is advisory. A failed intermediate update must not fail the
-      // agent run or make finalization abandon an otherwise valid message.
-      await recordProviderFailure(
-        ctx,
-        presentation,
-        target.channelId,
-        `progress:${presentation.revision + 1}`,
-        error,
-      );
-      console.warn("[slack] Could not project this progress revision", error);
+    const presentation = await currentPresentation(ctx, args.threadMessageId);
+    if (!presentation || presentation.phase === "final") {
+      return { applied: false, name: SLACK_DEFAULT_PROCESSING_REACTION };
     }
+    const name = processingReactionName(args.name);
+    const previousName =
+      presentation.processingReaction ?? SLACK_DEFAULT_PROCESSING_REACTION;
+    const messageTs = await sourceMessageTimestamp(
+      ctx,
+      args.threadMessageId,
+    );
+    const added = await bestEffortReaction({
+      operation: "add",
+      teamId: presentation.teamId,
+      channelId: presentation.channelId,
+      messageTs,
+      name,
+    });
+    if (!added) return { applied: false, name: previousName };
+    if (name === previousName) return { applied: true, name };
+    await bestEffortReaction({
+      operation: "remove",
+      teamId: presentation.teamId,
+      channelId: presentation.channelId,
+      messageTs,
+      name: previousName,
+    });
+    await ctx.runMutation(
+      internalApi.slackPresentation.setProcessingReaction,
+      { id: presentation._id, processingReaction: name },
+    );
+    return { applied: true, name };
   },
 });
 
@@ -417,7 +342,8 @@ export const finish = internalAction({
     const policies = await policyCards(ctx, message);
     const token = args.actionToken;
     const revision = presentation.revision + 1;
-    const includeAnswer = presentation.mode !== "stream";
+    const includeAnswer =
+      presentation.mode !== "stream" || !presentation.providerMessageId;
     const richBlocks = token
       ? buildSlackFinalBlocks({
           message,
@@ -432,7 +358,10 @@ export const finish = internalAction({
             {
               type: "section",
               block_id: `glass-answer-${message._id}-${revision}`,
-              text: { type: "mrkdwn", text: message.content.slice(0, 3000) },
+              text: {
+                type: "mrkdwn",
+                text: formatSlackAnswerText(message.content).slice(0, 3000),
+              },
             },
           ]
         : ([] satisfies SlackBlock[]);
@@ -459,13 +388,6 @@ export const finish = internalAction({
           messageTs: providerMessageId,
           text: message.content,
           blocks,
-          tasks: [
-            {
-              id: "glass-review",
-              title: "Reviewed your request",
-              status: "complete",
-            },
-          ],
         });
       } else if (providerMessageId) {
         await workerRequest("/message/update", {
@@ -541,6 +463,23 @@ export const finish = internalAction({
       });
       throw error;
     }
+  },
+});
+
+export const clearReaction = internalAction({
+  args: { threadMessageId: v.id("threadMessages") },
+  handler: async (ctx, args) => {
+    const presentation = await currentPresentation(ctx, args.threadMessageId);
+    if (!presentation) return;
+    await bestEffortReaction({
+      operation: "remove",
+      teamId: presentation.teamId,
+      channelId: presentation.channelId,
+      messageTs: await sourceMessageTimestamp(ctx, args.threadMessageId),
+      name:
+        presentation.processingReaction ??
+        SLACK_DEFAULT_PROCESSING_REACTION,
+    });
   },
 });
 

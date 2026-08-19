@@ -104,6 +104,12 @@ before(async () => {
     if (request.url === "/api/assistant.threads.setStatus") {
       return respond(response, { ok: true });
     }
+    if (
+      request.url === "/api/reactions.add" ||
+      request.url === "/api/reactions.remove"
+    ) {
+      return respond(response, { ok: true });
+    }
     if (request.url === "/api/chat.startStream") {
       return respond(response, { ok: true, ts: "1800000000.300" });
     }
@@ -469,7 +475,7 @@ describe("native Slack worker HTTP adapter", () => {
     );
   });
 
-  test("updates, streams, reports status, and opens feedback through native APIs", async () => {
+  test("reacts, updates, streams, reports status, and opens feedback through native APIs", async () => {
     const teamId = "T-CUSTOMER";
     const channelId = "C-CUSTOMER";
     const threadTs = "1800000000.050";
@@ -486,14 +492,14 @@ describe("native Slack worker HTTP adapter", () => {
       teamId,
       channelId,
       messageTs: "1800000000.300",
-      markdownText: "[[g:Policy found]]",
+      markdownText: "[[g:**Policy found**]]",
       tasks: [{ id: "lookup", title: "Found the policy", status: "complete" }],
     });
     await workerRequest("/stream/stop", {
       teamId,
       channelId,
       messageTs: "1800000000.300",
-      text: "[[g:Policy found]]",
+      text: "[[g:**Policy found**]]",
       blocks: [{ type: "section", text: { type: "mrkdwn", text: "Policy" } }],
     });
     await workerRequest("/message/update", {
@@ -508,6 +514,18 @@ describe("native Slack worker HTTP adapter", () => {
       channelId,
       threadTs,
       status: "is checking coverages…",
+    });
+    await workerRequest("/reaction/add", {
+      teamId,
+      channelId,
+      messageTs: threadTs,
+      name: "eyes",
+    });
+    await workerRequest("/reaction/remove", {
+      teamId,
+      channelId,
+      messageTs: threadTs,
+      name: "eyes",
     });
     await workerRequest("/ephemeral", {
       teamId,
@@ -529,6 +547,8 @@ describe("native Slack worker HTTP adapter", () => {
       "/api/chat.stopStream",
       "/api/chat.update",
       "/api/assistant.threads.setStatus",
+      "/api/reactions.add",
+      "/api/reactions.remove",
       "/api/chat.postEphemeral",
       "/api/views.open",
     ];
@@ -538,7 +558,7 @@ describe("native Slack worker HTTP adapter", () => {
       {
         channel: channelId,
         ts: "1800000000.300",
-        markdown_text: "Policy found",
+        markdown_text: "**Policy found**",
         chunks: [
           {
             type: "task_update",
@@ -552,7 +572,11 @@ describe("native Slack worker HTTP adapter", () => {
     assert.equal(
       apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body
         .markdown_text,
-      "Policy found",
+      "**Policy found**",
+    );
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/reactions.add")?.body,
+      { channel: channelId, timestamp: threadTs, name: "eyes" },
     );
     assert.equal(
       apiCalls.find((call) => call.path === "/api/views.open")?.body.trigger_id,

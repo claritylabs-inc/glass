@@ -55,6 +55,7 @@ scopes:
 - `groups:read`, `groups:history`, `groups:write`
 - `im:history`
 - `files:read`, `files:write`
+- `reactions:write`
 - `users:read`, `users:read.email`
 - `conversations.connect:write`
 
@@ -146,8 +147,12 @@ an audited rebind; canonical threads and automation preferences are preserved.
 `slack-worker/` calls Slack Web API directly. It owns:
 
 - `chat.postMessage` and `chat.update` with Slack-mrkdwn and Block Kit;
+- `reactions.add` and `reactions.remove` for the temporary model-selected
+  processing acknowledgement on the triggering user message, with `eyes` as
+  the immediate default;
 - `assistant.threads.setStatus`, `chat.startStream`, `chat.appendStream`, and
-  `chat.stopStream` for live agent status and task progress;
+  `chat.stopStream` only for compatibility with presentations started before
+  the reaction-first delivery change;
 - `chat.postEphemeral` for interaction confirmations;
 - `views.open` for optional negative-feedback detail;
 - `files.getUploadURLExternal` plus `files.completeUploadExternal` for outbound
@@ -201,8 +206,8 @@ Use `GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
 health must report `tokenBrokerConfigured`, `outboundEnabled`,
 `actorResolutionEnabled`, `clarityTeamConfigured`, `channelInventoryEnabled`,
 `publicChannelJoinEnabled`, `blockKitEnabled`, `messageUpdatesEnabled`,
-`agentStatusEnabled`, `streamingEnabled`, `interactivityResponsesEnabled`, and
-`feedbackModalsEnabled`.
+`reactionsEnabled`, `agentStatusEnabled`, `streamingEnabled`,
+`interactivityResponsesEnabled`, and `feedbackModalsEnabled`.
 The Convex agent health endpoint separately verifies that the Clarity host
 workspace has an active encrypted installation; worker configuration alone
 cannot prove that OAuth installation exists.
@@ -262,13 +267,15 @@ an undelivered answer as successful.
 ## Rich responses and interactions
 
 Every Slack agent run creates one durable `slackMessagePresentations` row before
-delivery. Thread replies use Slack streaming with a timeline of sanitized tool
-milestones; App Home DMs use one mutable Block Kit message. Finalization keeps
-the canonical answer in the same Slack message and adds policy cards, linked
-policy details, native certificate-file delivery, an optional human-service
-action in shared threads, and per-response feedback. Only curated activity
-labels are rendered; model reasoning and raw tool input or output are never
-projected into Slack.
+delivery. Glass immediately adds the default `eyes` reaction to the triggering
+user message, then requires the Slack model to choose one context-appropriate
+built-in reaction through `choose_slack_reaction` before its other tools. The
+selected reaction is removed on both success and failure and is not included in
+the visible completed-work trace. Finalization posts one completed emoji-free
+Block Kit answer and adds policy cards, linked policy details, native
+certificate-file delivery, an optional human-service action in shared threads,
+and per-response feedback. Progress narration, model reasoning, and raw tool
+input or output are never projected into Slack.
 
 The final renderer uses current Slack `card`, `context_actions`, and
 `feedback_buttons` primitives. If Slack rejects a newer block type for a
@@ -308,11 +315,13 @@ The verifier must return zero missing owners before a later narrowing release.
 
 In production, apply the complete manifest and verify OAuth, native signature
 rejection/acceptance, uninstall and reinstall, Connect actor identity, App Home
-DMs, mentions, thread replies, edits, progress streaming, policy cards,
+DMs, mentions, thread replies, edits, processing-reaction cleanup, Markdown
+rendering, policy cards,
 feedback, human handoff, multiple inbound files, outbound certificate/PDF
-upload, proactive alerts, and policy delivery. No new scopes are required by the
-rich-response APIs, so existing installations do not require reauthorization
-for this change.
+upload, proactive alerts, and policy delivery. The processing reaction requires
+`reactions:write`; apply the manifest and reauthorize both the Clarity host and
+existing customer installations. Until an installation is reauthorized,
+reaction failures remain advisory and completed answers still deliver.
 
 For lifecycle changes, first exercise signed fixtures and worker integration
 tests, then use a designated disposable customer workspace and a real private

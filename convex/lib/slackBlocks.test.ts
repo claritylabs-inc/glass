@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildSlackFinalBlocks, buildSlackProgressBlocks } from "./slackBlocks";
+import { buildSlackFinalBlocks, formatSlackAnswerText } from "./slackBlocks";
 
 describe("Slack Block Kit renderers", () => {
   test("renders an accessible final answer with trace, policy action, handoff, and feedback", () => {
@@ -53,16 +53,13 @@ describe("Slack Block Kit renderers", () => {
     expect(JSON.stringify(blocks)).toContain("tab=certificates");
   });
 
-  test("renders only sanitized tool labels for progress", () => {
-    const blocks = buildSlackProgressBlocks({
-      threadMessageId: "message-1" as any,
-      revision: 1,
-      tools: [
-        { name: "lookup_policy", completed: true },
-        { name: "generate_coi", completed: false },
-      ],
-    });
-    expect(JSON.stringify(blocks)).toContain("Found the policy record");
-    expect(JSON.stringify(blocks)).toContain("Generated the certificate");
+  test("removes progress narration and emoji while converting CommonMark", () => {
+    expect(
+      formatSlackAnswerText(
+        "I'll check the policy now.\n\n✅ :white_check_mark: **Policy:** [Open](https://example.test/policy) with *review notes*",
+      ),
+    ).toBe(
+      "*Policy:* <https://example.test/policy|Open> with _review notes_",
+    );
   });
 });

@@ -291,6 +291,7 @@ export const seed = action({
           "groups:history",
           "files:read",
           "files:write",
+          "reactions:write",
           "users:read",
         ],
         installedByOperatorUserId: fixture.operatorUserId,
