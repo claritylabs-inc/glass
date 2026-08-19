@@ -33,7 +33,11 @@ describe("sidebar menu items", () => {
 
   it("renders the main sidebar actions through the shared menu item", () => {
     const appSidebar = read("components/app-sidebar.tsx");
+    const clientSidebar = read(
+      "components/app-sidebar/client-detail-sidebar-content.tsx",
+    );
     const mainSidebar = read("components/app-sidebar/main-sidebar-content.tsx");
+    const navItem = read("components/app-sidebar/nav-item.tsx");
 
     for (const label of ["New Chat", "Notifications", "Sign out"]) {
       expect(mainSidebar).toContain(`label="${label}"`);
@@ -52,7 +56,15 @@ describe("sidebar menu items", () => {
     expect(mainSidebar).toContain("archivedThreadCount > 0");
     expect(mainSidebar).toContain('shortcut={commandShortcut("k")}');
     expect(mainSidebar).toContain('variant="icon"');
+    expect(mainSidebar).toContain('href="/agent/threads"');
+    expect(mainSidebar).toContain('label="All threads"');
     expect(mainSidebar).toContain('<Plus className="size-3.5" />');
+    expect(mainSidebar).toContain("icon={List}");
+    expect(mainSidebar).not.toContain('<span>All threads</span>');
+    expect(clientSidebar).toContain("<SidebarHeaderLink");
+    expect(clientSidebar).not.toContain('<span>All threads</span>');
+    expect(navItem).toContain("export function SidebarHeaderLink");
+    expect(navItem).toContain('aria-current={active ? "page" : undefined}');
     expect(mainSidebar).toContain("icon={Plus}");
     expect(appSidebar).toContain(
       "archivedThreadCount={archivedThreads?.length ?? 0}",
