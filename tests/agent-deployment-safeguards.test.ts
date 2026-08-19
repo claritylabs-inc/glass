@@ -96,6 +96,7 @@ function slackWorkerHealth() {
     publicChannelJoinEnabled: true,
     blockKitEnabled: true,
     messageUpdatesEnabled: true,
+    reactionsEnabled: true,
     agentStatusEnabled: true,
     streamingEnabled: true,
     interactivityResponsesEnabled: true,
