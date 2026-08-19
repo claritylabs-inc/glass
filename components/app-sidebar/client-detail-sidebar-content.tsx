@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Mail, MessageCircle, MessageSquare, Pin } from "lucide-react";
+import { List, Mail, MessageCircle, MessageSquare, Pin } from "lucide-react";
 import { SiSlack } from "react-icons/si";
 import {
   CLIENT_DETAIL_NAV,
@@ -9,9 +9,8 @@ import {
   MENU_ITEM_ACTIVE,
   MENU_ITEM_BASE,
   MENU_ITEM_INACTIVE,
-  MENU_ITEM_INACTIVE_SUBTLE,
 } from "./nav-config";
-import { SidebarMenuItem } from "./nav-item";
+import { SidebarHeaderLink, SidebarMenuItem } from "./nav-item";
 import { SidebarHeader } from "./sidebar-header";
 import type { ClientThreadItem } from "./types";
 import { splitThreadConversations } from "@/lib/thread-display";
@@ -93,6 +92,12 @@ export function ClientDetailSidebarContent({
               <span className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
                 Threads
               </span>
+              <SidebarHeaderLink
+                href={`/clients/${clientDetailId}/threads`}
+                label="All threads"
+                icon={List}
+                active={pathname === `/clients/${clientDetailId}/threads`}
+              />
             </div>
             {clientThreads === undefined && (
               <div className="min-h-7" aria-hidden="true" />
@@ -145,13 +150,6 @@ export function ClientDetailSidebarContent({
                 </Link>
               );
             })}
-            <Link
-              href={`/clients/${clientDetailId}/threads`}
-              className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} ${typeStyle("control.buttonCompact")} ${MENU_ITEM_INACTIVE_SUBTLE}`}
-            >
-              <MessageSquare className="w-3 h-3 shrink-0" />
-              <span>All threads</span>
-            </Link>
           </>
         )}
       </nav>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   Archive,
   Bell,
+  List,
   LogOut,
   Mail,
   LockKeyhole,
@@ -35,6 +36,7 @@ import {
 } from "./nav-config";
 import {
   SidebarMenuItem,
+  SidebarHeaderLink,
   SectionHeader,
   ShortcutTooltipContent,
   stableSidebarTooltipId,
@@ -263,35 +265,43 @@ function ExpandedThreadList({
         <span className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
           Threads
         </span>
-        {onAskGlass ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <PillButton
-                  type="button"
-                  size="compact"
-                  variant="icon"
-                  label="New Chat"
-                  title=""
-                  onClick={onAskGlass}
-                >
-                  <Plus className="size-3.5" />
-                </PillButton>
-              }
-            />
-            <TooltipContent
-              side="right"
-              align="center"
-              sideOffset={SIDEBAR_TOOLTIP_SIDE_OFFSET}
-              className={SIDEBAR_TOOLTIP_CLASS}
-            >
-              <ShortcutTooltipContent
-                label="New Chat"
-                shortcut={commandShortcut("k")}
+        <div className="flex items-center gap-1">
+          <SidebarHeaderLink
+            href="/agent/threads"
+            label="All threads"
+            icon={List}
+            active={pathname === "/agent/threads"}
+          />
+          {onAskGlass ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <PillButton
+                    type="button"
+                    size="compact"
+                    variant="icon"
+                    label="New Chat"
+                    title=""
+                    onClick={onAskGlass}
+                  >
+                    <Plus className="size-3.5" />
+                  </PillButton>
+                }
               />
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
+              <TooltipContent
+                side="right"
+                align="center"
+                sideOffset={SIDEBAR_TOOLTIP_SIDE_OFFSET}
+                className={SIDEBAR_TOOLTIP_CLASS}
+              >
+                <ShortcutTooltipContent
+                  label="New Chat"
+                  shortcut={commandShortcut("k")}
+                />
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+        </div>
       </div>
       {pinnedConversations.map((item, idx) => (
         <SidebarThreadRow
@@ -317,15 +327,6 @@ function ExpandedThreadList({
           onArchiveThread={onArchiveThread}
         />
       ))}
-      <Link
-        href="/agent/threads"
-        className={`mt-0.5 flex items-center gap-2 px-3 py-1 ${MENU_ITEM_BASE} ${typeStyle("control.buttonCompact")} ${
-          pathname === "/agent/threads" ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE_SUBTLE
-        }`}
-      >
-        <MessageSquare className="w-3 h-3 shrink-0" />
-        <span>All threads</span>
-      </Link>
       {archivedThreadCount > 0 ? (
         <SidebarMenuItem
           href="/agent/archive"
