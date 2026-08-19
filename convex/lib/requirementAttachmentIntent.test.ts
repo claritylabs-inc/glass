@@ -64,6 +64,7 @@ describe("requirement attachment intent", () => {
       },
     });
     expect(requiredRequirementImportStep(2, true)).toBeUndefined();
+    expect(requiredRequirementImportStep(-1, true)).toBeUndefined();
     expect(requiredRequirementImportStep(0, false)).toBeUndefined();
   });
 });

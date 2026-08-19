@@ -84,6 +84,7 @@ describe("Slack worker HTTP adapter", () => {
       publicChannelJoinEnabled: true,
       blockKitEnabled: true,
       messageUpdatesEnabled: true,
+      reactionsEnabled: true,
       agentStatusEnabled: true,
       streamingEnabled: true,
       interactivityResponsesEnabled: true,
@@ -143,7 +144,7 @@ describe("Slack worker HTTP adapter", () => {
     assert.equal("botToken" in payload, false);
   });
 
-  test("accepts rich messages, updates, streams, status, and interaction responses", async () => {
+  test("accepts rich messages, reactions, updates, streams, status, and interaction responses", async () => {
     const rich = await send({
       clientMessageId: "rich-answer",
       teamId: "T-CUSTOMER",
@@ -175,6 +176,24 @@ describe("Slack worker HTTP adapter", () => {
         channelId: "C-PRIMARY",
         threadTs: "1800000000.100",
         status: "Searching policies…",
+      }),
+      { ok: true },
+    );
+    assert.deepEqual(
+      await call("/reaction/add", {
+        teamId: "T-CUSTOMER",
+        channelId: "C-PRIMARY",
+        messageTs: "1800000000.100",
+        name: "eyes",
+      }),
+      { ok: true },
+    );
+    assert.deepEqual(
+      await call("/reaction/remove", {
+        teamId: "T-CUSTOMER",
+        channelId: "C-PRIMARY",
+        messageTs: "1800000000.100",
+        name: "eyes",
       }),
       { ok: true },
     );

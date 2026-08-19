@@ -3690,6 +3690,7 @@ export default defineSchema({
     revision: v.number(),
     renderVersion: v.number(),
     lastPayloadHash: v.optional(v.string()),
+    processingReaction: v.optional(v.string()),
     actionTokenHash: v.string(),
     actionTokenExpiresAt: v.number(),
     error: v.optional(v.string()),

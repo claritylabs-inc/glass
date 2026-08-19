@@ -48,6 +48,18 @@ describe("email concision instructions", () => {
     expect(instructions).toContain("unless the user asks for full details or a specific section");
   });
 
+  it("makes the Slack model choose a private reaction while keeping answer text emoji-free", () => {
+    const instructions = buildChannelInstructions({
+      platform: "slack",
+      canSendEmail: false,
+    });
+
+    expect(instructions).toContain("call choose_slack_reaction exactly once");
+    expect(instructions).toContain("use eyes when no other option is clearly better");
+    expect(instructions).toContain("Do not use emoji in the answer text");
+    expect(instructions).toContain("must not be mentioned in the answer");
+  });
+
   it("routes inbound email through the email_reply model route", () => {
     const source = readFileSync(
       join(__dirname, "..", "convex/actions/handleInboundEmail.ts"),

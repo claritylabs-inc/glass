@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { runChannelAgent } from "../lib/channelAgentRunner";
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -141,6 +141,7 @@ export const processDebounced = internalAction({
     )) as Array<Doc<"slackInboundEvents">>;
     if (batch.length === 0) return;
     const eventIds = batch.map((event: Doc<"slackInboundEvents">) => event._id);
+    let presentationMessageId: Id<"threadMessages"> | undefined;
     try {
       await Promise.all(
         batch.map((event: Doc<"slackInboundEvents">) => enrichActor(ctx, event)),
@@ -157,6 +158,7 @@ export const processDebounced = internalAction({
         eventIds: authorized.map((event) => event._id),
       });
       if (!prepared) return;
+      presentationMessageId = prepared.agentMessageId;
 
       let actionToken: string | undefined;
       try {
@@ -169,8 +171,6 @@ export const processDebounced = internalAction({
             connectionId: prepared.connectionId,
             channelId: prepared.channelId,
             threadTs: prepared.threadTs,
-            recipientUserId: prepared.recipientUserId,
-            recipientTeamId: prepared.recipientTeamId,
           },
         );
         actionToken = presentation?.actionToken;
@@ -221,22 +221,12 @@ export const processDebounced = internalAction({
               connectionId: prepared.connectionId,
               channelId: prepared.channelId,
               threadTs: prepared.threadTs,
-              recipientUserId: prepared.recipientUserId,
-              recipientTeamId: prepared.recipientTeamId,
             },
           );
           actionToken = presentation?.actionToken;
         } catch (error) {
           console.warn("[slack] Could not recover rich response presentation", error);
         }
-      }
-      try {
-        await ctx.runAction(
-          internalApi.actions.slackPresentation.projectProgress,
-          { threadMessageId: response._id },
-        );
-      } catch (error) {
-        console.warn("[slack] Could not project agent progress", error);
       }
       let deliveredRichResponse = false;
       try {
@@ -284,6 +274,17 @@ export const processDebounced = internalAction({
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
+    } finally {
+      if (presentationMessageId) {
+        try {
+          await ctx.runAction(
+            internalApi.actions.slackPresentation.clearReaction,
+            { threadMessageId: presentationMessageId },
+          );
+        } catch (error) {
+          console.warn("[slack] Could not clear processing reaction", error);
+        }
+      }
     }
   },
 });

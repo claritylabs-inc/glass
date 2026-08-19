@@ -8,6 +8,23 @@ export type SlackBlock = Record<string, unknown>;
 type SlackAgentStep = NonNullable<Doc<"threadMessages">["agentSteps"]>[number];
 type SlackToolStep = Extract<SlackAgentStep, { type: "tool" }>;
 
+export const SLACK_DEFAULT_PROCESSING_REACTION = "eyes";
+export const SLACK_PROCESSING_REACTIONS = [
+  SLACK_DEFAULT_PROCESSING_REACTION,
+  "mag",
+  "thinking_face",
+  "page_facing_up",
+  "memo",
+  "shield",
+  "umbrella",
+  "email",
+  "speech_balloon",
+  "wrench",
+  "bar_chart",
+  "sparkles",
+] as const;
+export const SLACK_REACTION_TOOL_NAME = "choose_slack_reaction";
+
 const TOOL_LABELS: Record<string, string> = {
   lookup_address: "Validated the address",
   lookup_policy: "Found the policy record",
@@ -30,6 +47,9 @@ const TOOL_LABELS: Record<string, string> = {
   web_research: "Researched the web",
   render_email_preview: "Rendered the email preview",
 };
+const EMOJI_SEQUENCE = /(?:[#*0-9]\uFE0F?\u20E3|\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
+const SLACK_EMOJI_SHORTCODE = /(?<![\w]):[a-z0-9_+-]+:/gi;
+const PROGRESS_PREAMBLE = /^(?:(?:I(?:['’]ll| will|['’]m)|Let me)\s+(?:check|review|look(?:\s+(?:at|into|up))?|analy[sz]e|compare|find|verify)\b[^\n]*(?:\n{2,}|$))/i;
 
 function blockId(...parts: Array<string | number>): string {
   return parts
@@ -47,12 +67,19 @@ function escapeMrkdwn(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function slackAnswerText(value: string): string {
+export function formatSlackAnswerText(value: string): string {
   return stripInternalAgentActivity(value)
     .replace(/\[\[(g|i|u)\]:/g, "[[$1:")
     .replace(/\[\[(?:g|i|u):([\s\S]+?)\]\]/g, "$1")
+    .replace(EMOJI_SEQUENCE, "")
+    .replace(SLACK_EMOJI_SHORTCODE, "")
+    .replace(/^[ \t]+/gm, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(PROGRESS_PREAMBLE, "")
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "_$1_")
     .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
     .replace(/\*\*([^*\n]+)\*\*/g, "*$1*")
+    .replace(/__([^_\n]+)__/g, "*$1*")
     .replace(/~~([^~\n]+)~~/g, "~$1~")
     .replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, "<$2|$1>");
 }
@@ -136,37 +163,6 @@ function feedbackBlock(args: {
   };
 }
 
-export function buildSlackProgressBlocks(args: {
-  threadMessageId: Id<"threadMessages">;
-  revision: number;
-  tools?: Array<{ name: string; completed?: boolean }>;
-}): SlackBlock[] {
-  const tools = (args.tools ?? []).slice(-4);
-  return [
-    {
-      type: "header",
-      block_id: blockId("glass-progress", args.threadMessageId, args.revision),
-      text: { type: "plain_text", text: "Glass is working", emoji: true },
-    },
-    ...(tools.length
-      ? tools.map((tool, index) => ({
-          type: "section",
-          block_id: blockId("glass-progress-task", args.revision, index),
-          text: {
-            type: "mrkdwn",
-            text: `${tool.completed ? "✓" : "◌"} ${escapeMrkdwn(TOOL_LABELS[tool.name] ?? "Working on your request")}`,
-          },
-        }))
-      : [
-          {
-            type: "section",
-            block_id: blockId("glass-progress-thinking", args.revision),
-            text: { type: "mrkdwn", text: "Reviewing your request…" },
-          },
-        ]),
-  ];
-}
-
 export function buildSlackFinalBlocks(args: {
   message: Pick<
     Doc<"threadMessages">,
@@ -181,7 +177,9 @@ export function buildSlackFinalBlocks(args: {
   const completedTools = (args.message.agentSteps ?? [])
     .filter(
       (step): step is SlackToolStep =>
-        step.type === "tool" && step.completed === true,
+        step.type === "tool" &&
+        step.completed === true &&
+        step.name !== SLACK_REACTION_TOOL_NAME,
     )
     .slice(-4);
   const blocks: SlackBlock[] = [];
@@ -192,7 +190,7 @@ export function buildSlackFinalBlocks(args: {
       text: {
         type: "mrkdwn",
         text: truncate(
-          slackAnswerText(args.message.content.trim()) || "I couldn't complete that request.",
+          formatSlackAnswerText(args.message.content.trim()) || "I couldn't complete that request.",
           3000,
         ),
       },
@@ -315,7 +313,7 @@ export function buildSlackClassicFinalBlocks(args: {
       text: {
         type: "mrkdwn",
         text: truncate(
-          slackAnswerText(args.message.content.trim()) || "I couldn't complete that request.",
+          formatSlackAnswerText(args.message.content.trim()) || "I couldn't complete that request.",
           3000,
         ),
       },
@@ -401,20 +399,4 @@ export function buildSlackClassicFinalBlocks(args: {
     elements: finalActions,
   });
   return blocks.slice(0, 50);
-}
-
-export function slackProgressTasks(
-  steps: Doc<"threadMessages">["agentSteps"],
-): Array<{ id: string; title: string; status: "in_progress" | "complete" }> {
-  return (steps ?? [])
-    .filter(
-      (step): step is SlackToolStep =>
-        step.type === "tool",
-    )
-    .slice(-6)
-    .map((step, index) => ({
-      id: `${step.name}-${index}`,
-      title: TOOL_LABELS[step.name] ?? "Working on your request",
-      status: step.completed ? "complete" : "in_progress",
-    }));
 }

@@ -15,6 +15,7 @@ describe("Slack OAuth scope policy", () => {
         "channels:join",
         "channels:write",
         "im:history",
+        "reactions:write",
         "users:read",
         "users:read.email",
       ]),

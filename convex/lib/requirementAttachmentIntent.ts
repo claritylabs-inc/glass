@@ -92,7 +92,13 @@ export function requiredRequirementImportStep(
   stepNumber: number,
   hasRequirementAttachments: boolean,
 ) {
-  if (!hasRequirementAttachments || stepNumber > 1) return undefined;
+  if (
+    !hasRequirementAttachments ||
+    stepNumber < 0 ||
+    stepNumber > 1
+  ) {
+    return undefined;
+  }
   return {
     toolChoice: {
       type: "tool" as const,

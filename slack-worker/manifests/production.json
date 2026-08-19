@@ -37,6 +37,7 @@
         "groups:read",
         "groups:write",
         "im:history",
+        "reactions:write",
         "users:read",
         "users:read.email"
       ]

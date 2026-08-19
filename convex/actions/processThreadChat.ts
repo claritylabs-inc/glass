@@ -95,6 +95,10 @@ import {
   requiredRequirementImportStep,
   selectRequirementImportAttachments,
 } from "../lib/requirementAttachmentIntent";
+import {
+  SLACK_PROCESSING_REACTIONS,
+  SLACK_REACTION_TOOL_NAME,
+} from "../lib/slackBlocks";
 
 function restoreSentenceBoundarySpacing(text: string): string {
   return text
@@ -1201,6 +1205,31 @@ export const run = internalAction({
             toolArtifacts.push(artifact);
           },
         }),
+        ...(surface === "slack"
+          ? {
+              [SLACK_REACTION_TOOL_NAME]: {
+                description:
+                  "Choose the temporary Slack reaction shown on the user's message while you work. Pick the built-in emoji name that best matches the request; use eyes when no option is clearly better. This reaction is removed when the answer is ready.",
+                inputSchema: z.object({
+                  name: z
+                    .enum(SLACK_PROCESSING_REACTIONS)
+                    .describe(
+                      "A built-in Slack emoji name without surrounding colons.",
+                    ),
+                }),
+                execute: async (input: {
+                  name: (typeof SLACK_PROCESSING_REACTIONS)[number];
+                }) =>
+                  await ctx.runAction(
+                    internal.actions.slackPresentation.setReaction,
+                    {
+                      threadMessageId: agentMsgId,
+                      name: input.name,
+                    },
+                  ),
+              },
+            }
+          : {}),
         ...(surface === "web" ? { create_imessage_group_chat: {
           ...createImessageGroupChat,
           execute: async (input: {
@@ -1429,11 +1458,20 @@ export const run = internalAction({
           messages: messageHistory,
           tools,
           stopWhen: stepCountIs(25),
-          prepareStep: ({ stepNumber }) =>
-            requiredRequirementImportStep(
-              stepNumber,
+          prepareStep: ({ stepNumber }) => {
+            if (surface === "slack" && stepNumber === 0) {
+              return {
+                toolChoice: {
+                  type: "tool" as const,
+                  toolName: SLACK_REACTION_TOOL_NAME,
+                },
+              };
+            }
+            return requiredRequirementImportStep(
+              stepNumber - (surface === "slack" ? 1 : 0),
               requirementImportAttachments.length > 0,
-            ),
+            );
+          },
         });
 
       const resetStreamStateForRetry = () => {
@@ -1448,23 +1486,6 @@ export const run = internalAction({
           return JSON.stringify(output, null, 2).slice(0, 4000);
         } catch {
           return String(output).slice(0, 4000);
-        }
-      };
-
-      const projectSlackProgress = async () => {
-        if (surface !== "slack") return;
-        try {
-          await ctx.runMutation(internal.threads.streamReasoning, {
-            id: agentMsgId,
-            reasoning: "",
-            agentSteps: agentStepsSnapshot(),
-          });
-          await ctx.runAction(
-            internal.actions.slackPresentation.projectProgress,
-            { threadMessageId: agentMsgId },
-          );
-        } catch (error) {
-          console.warn("[slack] Could not project agent progress", error);
         }
       };
 
@@ -1486,19 +1507,20 @@ export const run = internalAction({
               ((part as Record<string, unknown>).input as
                 | Record<string, unknown>
                 | undefined) ?? undefined;
-            usedTools.push(part.toolName);
-            const serializedInput = input
-              ? JSON.stringify(input).slice(0, 500)
-              : undefined;
-            toolCalls.push({
-              name: part.toolName,
-              input: serializedInput,
-            });
-            addToolStep(agentSteps, {
-              name: part.toolName,
-              input: serializedInput,
-            });
-            await projectSlackProgress();
+            if (part.toolName !== SLACK_REACTION_TOOL_NAME) {
+              usedTools.push(part.toolName);
+              const serializedInput = input
+                ? JSON.stringify(input).slice(0, 500)
+                : undefined;
+              toolCalls.push({
+                name: part.toolName,
+                input: serializedInput,
+              });
+              addToolStep(agentSteps, {
+                name: part.toolName,
+                input: serializedInput,
+              });
+            }
           } else if (part.type === "tool-result") {
             modelExecutionStarted = true;
             const output = (part as Record<string, unknown>).output;
@@ -1601,7 +1623,6 @@ export const run = internalAction({
                 }
               }
             }
-            await projectSlackProgress();
           }
         }
         return true;

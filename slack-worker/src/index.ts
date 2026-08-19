@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { SendIdempotency, type SendResult } from "./idempotency.js";
-import { toSlackMrkdwn } from "./mrkdwn.js";
+import { toSlackMarkdown, toSlackMrkdwn } from "./mrkdwn.js";
 
 type SendRequest = {
   clientMessageId: string;
@@ -27,6 +27,12 @@ type StatusRequest = {
   channelId: string;
   threadTs: string;
   status: string;
+};
+type ReactionRequest = {
+  teamId: string;
+  channelId: string;
+  messageTs: string;
+  name: string;
 };
 type StreamStartRequest = {
   teamId: string;
@@ -586,6 +592,40 @@ async function setSlackStatus(input: StatusRequest) {
   return { ok: true };
 }
 
+async function addSlackReaction(input: ReactionRequest) {
+  if (mode === "mock") return { ok: true };
+  const installation = await slackInstallation(input.teamId);
+  try {
+    await slackApi<SlackResponse>("reactions.add", installation.botToken, {
+      channel: input.channelId,
+      timestamp: input.messageTs,
+      name: input.name,
+    });
+  } catch (error) {
+    if (!(error instanceof SlackProviderError) || error.code !== "already_reacted") {
+      throw error;
+    }
+  }
+  return { ok: true };
+}
+
+async function removeSlackReaction(input: ReactionRequest) {
+  if (mode === "mock") return { ok: true };
+  const installation = await slackInstallation(input.teamId);
+  try {
+    await slackApi<SlackResponse>("reactions.remove", installation.botToken, {
+      channel: input.channelId,
+      timestamp: input.messageTs,
+      name: input.name,
+    });
+  } catch (error) {
+    if (!(error instanceof SlackProviderError) || error.code !== "no_reaction") {
+      throw error;
+    }
+  }
+  return { ok: true };
+}
+
 async function startSlackStream(input: StreamStartRequest) {
   if (mode === "mock") return { messageId: `mock-stream-${input.threadTs}` };
   const installation = await slackInstallation(input.teamId);
@@ -624,7 +664,7 @@ async function appendSlackStream(input: StreamAppendRequest) {
     channel: input.channelId,
     ts: input.messageTs,
     ...(input.markdownText?.trim()
-      ? { markdown_text: toSlackMrkdwn(input.markdownText) }
+      ? { markdown_text: toSlackMarkdown(input.markdownText) }
       : {}),
     ...(taskChunks.length ? { chunks: taskChunks } : {}),
   });
@@ -642,7 +682,7 @@ async function stopSlackStream(input: StreamStopRequest) {
       channel: input.channelId,
       ts: input.messageTs,
       ...(input.text.trim()
-        ? { markdown_text: toSlackMrkdwn(input.text) }
+        ? { markdown_text: toSlackMarkdown(input.text) }
         : {}),
       ...(input.blocks?.length ? { blocks: input.blocks } : {}),
       ...(taskChunks.length ? { chunks: taskChunks } : {}),
@@ -1126,6 +1166,7 @@ const server = http.createServer(async (request, response) => {
       publicChannelJoinEnabled: mode === "mock" || tokenBrokerConfigured,
       blockKitEnabled: tokenBrokerConfigured,
       messageUpdatesEnabled: tokenBrokerConfigured,
+      reactionsEnabled: tokenBrokerConfigured,
       agentStatusEnabled: tokenBrokerConfigured,
       streamingEnabled: tokenBrokerConfigured,
       interactivityResponsesEnabled: tokenBrokerConfigured,
@@ -1176,6 +1217,20 @@ const server = http.createServer(async (request, response) => {
         response,
         200,
         await setSlackStatus(await readJson<StatusRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/reaction/add") {
+      return json(
+        response,
+        200,
+        await addSlackReaction(await readJson<ReactionRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/reaction/remove") {
+      return json(
+        response,
+        200,
+        await removeSlackReaction(await readJson<ReactionRequest>(request)),
       );
     }
     if (request.method === "POST" && request.url === "/stream/start") {
