@@ -5,19 +5,10 @@ import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import { stepCountIs, type ModelMessage } from "ai";
 import { z } from "zod";
 import mammoth from "mammoth";
 import JSZip from "jszip";
-import {
-  fallbackRouteForCall,
-  getAgentLanguageModelForOrg,
-  getModelForRoute,
-  getProviderOptionsForRoute,
-  isPreExecutionFallbackEligibleError,
-  recordAgentRoutingFallback,
-  recordAgentRoutingRun,
-} from "../lib/models";
 import {
   createImessageGroupChat,
   coordinateMailboxTask,
@@ -25,12 +16,8 @@ import {
   renderEmailPreview,
 } from "../lib/chatTools";
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
-import {
-  addToolStep,
-  completeToolStep,
-  serializeAgentSteps,
-  type AgentStep,
-} from "../lib/agentSteps";
+import { agentToolStepsFromAudit } from "../lib/agentSteps";
+import { runAgentTurn } from "../lib/channelAgentRunner";
 import {
   formatPolicyFocusHints,
   selectPolicyFocusIds,
@@ -78,7 +65,6 @@ import {
   stripInternalAgentActivity,
 } from "../lib/agentMessageHistory";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
-import { modelSupportsImageInput } from "../lib/modelCatalog";
 import {
   loadWebChatDeterministicControlState,
   runWebChatEmailControls,
@@ -124,17 +110,6 @@ type DraftEmailForBatchRevision = {
   referencedPolicyIds?: Id<"policies">[];
   threadMessageId?: Id<"threadMessages">;
 };
-
-function errorText(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
 
 function normalizeDraftMatchText(value: string | undefined): string {
   return (value ?? "")
@@ -1150,23 +1125,12 @@ export const run = internalAction({
         current: null,
       };
       let content = "";
-      const citedSections = new Set<string>(); // source/outline titles from lookup_policy_section results
-      const citedCoverageNames = new Set<string>(); // structured coverage names surfaced by tool results
-      const citedSourceSpanIds = new Set<string>(); // stable raw evidence IDs surfaced by tool results
-      const presentedPolicyIds = new Set<string>(); // policy cards intentionally selected by present_policy_card
+      const citedSections = new Set<string>();
+      const citedCoverageNames = new Set<string>();
+      const citedSourceSpanIds = new Set<string>();
+      const presentedPolicyIds = new Set<string>();
       const emailReferencedPolicyIds = policyFocusIds.filter((policyId) =>
         explicitSelectedPolicyIds.has(String(policyId)));
-      const usedTools: string[] = [];
-      const toolCalls: Array<{
-        name: string;
-        input?: string;
-        output?: string;
-      }> = [];
-      // Tool steps remain durable audit/channel-presentation data. Web chat
-      // intentionally does not persist or expose model reasoning.
-      const agentSteps: AgentStep[] = [];
-      const agentStepsSnapshot = () =>
-        serializeAgentSteps(agentSteps, restoreSentenceBoundarySpacing);
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
@@ -1174,9 +1138,20 @@ export const run = internalAction({
         size: number;
         fileId?: Id<"_storage">;
       }> = [];
-      let lastToolName = "";
+      const recentConversationContext = allMessages
+        .filter(
+          (message: Record<string, unknown>) =>
+            message.status !== "processing" &&
+            message.status !== "cancelled" &&
+            String(message._id) !== String(args.userMessageId),
+        )
+        .slice(-12)
+        .map(
+          (message: Record<string, unknown>) =>
+            `${message.role}: ${stripConfidenceMarkers(String(message.content ?? ""))}`,
+        )
+        .join("\n");
 
-      // streamText with tools — supports both streaming Q&A and tool calls
       const slackActorId = args.slackActorId;
       const tools = {
         ...buildAgentToolExecutors(ctx, {
@@ -1196,6 +1171,26 @@ export const run = internalAction({
           onPolicyReferenced: (policyId) => {
             if (!emailReferencedPolicyIds.some((id) => id === policyId)) {
               emailReferencedPolicyIds.push(policyId);
+            }
+          },
+          onPolicySourceEvidence: (evidence) => {
+            for (const result of Array.isArray(evidence)
+              ? evidence
+              : [evidence]) {
+              if (!result || typeof result !== "object") continue;
+              const record = result as Record<string, unknown>;
+              if (!record.title) continue;
+              const collection =
+                record.type === "coverage"
+                  ? citedCoverageNames
+                  : citedSections;
+              collection.add(String(record.title));
+              if (Array.isArray(record.sourceSpanIds)) {
+                for (const id of record.sourceSpanIds) {
+                  if (typeof id === "string" && id)
+                    citedSourceSpanIds.add(id);
+                }
+              }
             }
           },
           onResponseAttachment: (attachment) => {
@@ -1280,7 +1275,7 @@ export const run = internalAction({
         coordinate_mailbox_task: {
           ...coordinateMailboxTask,
           execute: async (input: { task: string }) => {
-            return await ctx.runAction(
+            const result = await ctx.runAction(
               internal.actions.mailboxCoordinator.runInternal,
               {
                 orgId: args.orgId,
@@ -1292,6 +1287,8 @@ export const run = internalAction({
                 routingParentId: String(agentMsgId),
               },
             );
+            toolArtifacts.push({ type: "mailbox_task", data: result });
+            return result;
           },
         },
         web_research: {
@@ -1320,7 +1317,7 @@ export const run = internalAction({
             draftId?: string;
             format?: "png" | "pdf";
           }) => {
-            return await ctx.runAction(
+            const result = await ctx.runAction(
               internal.actions.renderEmailPreview.run,
               {
                 orgId: args.orgId,
@@ -1330,6 +1327,10 @@ export const run = internalAction({
                 format: input.format,
               },
             );
+            if ("attachment" in result && result.attachment) {
+              responseAttachments.push(result.attachment);
+            }
+            return result;
           },
         },
         ...(emailIdentity.canSend &&
@@ -1377,17 +1378,7 @@ export const run = internalAction({
                   : org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 conversationContext:
-                  allMessages
-                    .filter(
-                      (m: Record<string, unknown>) =>
-                        m.status !== "processing" && m.status !== "cancelled",
-                    )
-                    .slice(-12)
-                    .map(
-                      (m: Record<string, unknown>) =>
-                        `${m.role}: ${stripConfidenceMarkers(String(m.content ?? ""))}`,
-                    )
-                    .join("\n") +
+                  recentConversationContext +
                   (currentDraftContext ? `\n\n${currentDraftContext}` : ""),
                 onResult: (result) => {
                   emailToolResult.current = result;
@@ -1402,57 +1393,18 @@ export const run = internalAction({
         "email_expert",
         "coordinate_mailbox_task",
       ]);
-
       const chatTask = hasImageInput ? "chat_vision" : "chat";
-      const chatRun = {
-        taskKind: "query_reason",
-        sessionKey: String(args.threadId),
-        trace: {
-          traceId: String(agentMsgId),
-          parentRequestId: String(args.userMessageId),
-          label: "convex.processThreadChat",
-          phase: "query_reason",
-          channel: surface,
-        },
-      } as const;
-      let chatModel: Awaited<ReturnType<typeof getAgentLanguageModelForOrg>>;
-      try {
-        chatModel = await getAgentLanguageModelForOrg(
-          ctx,
-          args.orgId,
-          chatTask,
-          chatRun,
-        );
-      } catch (error) {
-        await recordAgentRoutingRun(
-          ctx,
-          args.orgId,
-          chatTask,
-          chatRun,
-          { usedTools: [], toolCalls: [], workflowOutcomes: [] },
-          undefined,
-          error,
-        );
-        throw error;
-      }
-      let completedRoute = chatModel.route;
-      let completedRouteSource = chatModel.routeSource;
-      let completedTransport = chatModel.transport;
-      let completedFallback:
-        | {
-            from: typeof chatModel.route;
-            to: typeof chatModel.route;
-            reason: string;
-          }
-        | undefined;
-      let modelExecutionStarted = false;
-      const startChatStream = (
-        model: typeof chatModel.model,
-        route: typeof chatModel.route,
-      ) =>
-        streamText({
-          model,
-          providerOptions: getProviderOptionsForRoute(route),
+      const turn = await runAgentTurn(ctx, {
+        orgId: args.orgId,
+        task: chatTask,
+        messageText: text,
+        recentConversationContext,
+        currentAttachmentNames: latestAttachmentNames,
+        auditExcludedTools:
+          surface === "slack"
+            ? new Set([SLACK_REACTION_TOOL_NAME])
+            : undefined,
+        options: {
           maxOutputTokens: 4096,
           system: fullSystemPrompt,
           messages: messageHistory,
@@ -1472,268 +1424,33 @@ export const run = internalAction({
               requirementImportAttachments.length > 0,
             );
           },
-        });
-
-      const resetStreamStateForRetry = () => {
-        content = "";
-        agentSteps.length = 0;
-        modelExecutionStarted = false;
-      };
-
-      const serializeToolOutput = (output: unknown) => {
-        if (typeof output === "string") return output.slice(0, 4000);
-        try {
-          return JSON.stringify(output, null, 2).slice(0, 4000);
-        } catch {
-          return String(output).slice(0, 4000);
-        }
-      };
-
-      const consumeChatStream = async (fullStream: AsyncIterable<any>) => {
-        for await (const part of fullStream) {
-          if (await isAgentResponseCancelled()) return false;
-          if (part.type === "error") {
-            throw part;
-          } else if (part.type === "reasoning-delta") {
-            modelExecutionStarted = true;
-            // Model reasoning stays private and is intentionally discarded.
-          } else if (part.type === "text-delta") {
-            if (part.text) modelExecutionStarted = true;
-            content += part.text;
-          } else if (part.type === "tool-call") {
-            modelExecutionStarted = true;
-            lastToolName = part.toolName;
-            const input =
-              ((part as Record<string, unknown>).input as
-                | Record<string, unknown>
-                | undefined) ?? undefined;
-            if (part.toolName !== SLACK_REACTION_TOOL_NAME) {
-              usedTools.push(part.toolName);
-              const serializedInput = input
-                ? JSON.stringify(input).slice(0, 500)
-                : undefined;
-              toolCalls.push({
-                name: part.toolName,
-                input: serializedInput,
-              });
-              addToolStep(agentSteps, {
-                name: part.toolName,
-                input: serializedInput,
-              });
-            }
-          } else if (part.type === "tool-result") {
-            modelExecutionStarted = true;
-            const output = (part as Record<string, unknown>).output;
-            let lastToolCall:
-              | { name: string; input?: string; output?: string }
-              | undefined;
-            for (let i = toolCalls.length - 1; i >= 0; i -= 1) {
-              const candidate = toolCalls[i];
-              if (candidate.name === lastToolName && !candidate.output) {
-                lastToolCall = candidate;
-                break;
-              }
-            }
-            if (lastToolCall && SUBAGENT_TOOL_NAMES.has(lastToolName)) {
-              lastToolCall.output = serializeToolOutput(output);
-            }
-            completeToolStep(
-              agentSteps,
-              lastToolName,
-              SUBAGENT_TOOL_NAMES.has(lastToolName)
-                ? serializeToolOutput(output)
-                : undefined,
-            );
-            if (lastToolName === "render_email_preview" && output) {
-              if (
-                output &&
-                typeof output === "object" &&
-                "attachment" in output
-              ) {
-                const attachment = (output as Record<string, unknown>)
-                  .attachment;
-                if (attachment && typeof attachment === "object") {
-                  responseAttachments.push(
-                    attachment as {
-                      filename: string;
-                      contentType: string;
-                      size: number;
-                      fileId?: Id<"_storage">;
-                    },
-                  );
-                }
-              }
-            }
-            if (
-              lastToolName === "lookup_vendor_compliance" &&
-              (part as Record<string, unknown>).output
-            ) {
-              toolArtifacts.push({
-                type: "vendor_compliance",
-                data: (part as Record<string, unknown>).output,
-              });
-            }
-            if (
-              lastToolName === "coordinate_mailbox_task" &&
-              (part as Record<string, unknown>).output
-            ) {
-              toolArtifacts.push({
-                type: "mailbox_task",
-                data: (part as Record<string, unknown>).output,
-              });
-            }
-            const workflowOutput = (part as Record<string, unknown>).output;
-            if (
-              workflowOutput &&
-              typeof workflowOutput === "object" &&
-              "workflowOutcome" in workflowOutput
-            ) {
-              toolArtifacts.push({
-                type: "workflow_outcome",
-                data: (workflowOutput as Record<string, unknown>).workflowOutcome,
-              });
-            }
-            // Capture cited source/outline titles from lookup_policy_section results.
-            if (
-              lastToolName === "lookup_policy_section" &&
-              (part as Record<string, unknown>).output
-            ) {
-              const output = (part as Record<string, unknown>).output;
-              const results = Array.isArray(output) ? output : [output];
-              for (const r of results) {
-                if (r && typeof r === "object" && r.title) {
-                  const resultType = (r as Record<string, unknown>).type;
-                  if (resultType === "coverage") {
-                    citedCoverageNames.add(
-                      String((r as Record<string, unknown>).title),
-                    );
-                  } else {
-                    citedSections.add(
-                      String((r as Record<string, unknown>).title),
-                    );
-                  }
-                  const sourceSpanIds = (r as Record<string, unknown>)
-                    .sourceSpanIds;
-                  if (Array.isArray(sourceSpanIds)) {
-                    for (const id of sourceSpanIds) {
-                      if (typeof id === "string" && id)
-                        citedSourceSpanIds.add(id);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        return true;
-      };
-
-      const routingAudit = () => ({
-        usedTools: [...new Set(usedTools)],
-        toolCalls,
-        workflowOutcomes: toolArtifacts
-          .filter((artifact) => artifact.type === "workflow_outcome")
-          .map((artifact) => artifact.data),
+        },
+        run: {
+          taskKind: "query_reason",
+          sessionKey: String(args.threadId),
+          trace: {
+            traceId: String(agentMsgId),
+            parentRequestId: String(args.userMessageId),
+            label: "convex.processThreadChat",
+            phase: "query_reason",
+            channel: surface,
+          },
+        },
       });
-      try {
-        try {
-          const completed = await consumeChatStream(
-            startChatStream(chatModel.model, chatModel.route).fullStream,
-          );
-          if (!completed) return;
-        } catch (streamError) {
-          const hasStartedSideEffectfulWork =
-            modelExecutionStarted ||
-            usedTools.length > 0 ||
-            toolCalls.length > 0 ||
-            toolArtifacts.length > 0 ||
-            responseAttachments.length > 0;
-          if (
-            !isPreExecutionFallbackEligibleError(streamError) ||
-            hasStartedSideEffectfulWork
-          ) {
-            throw streamError;
-          }
-
-          const fallbackRoute = fallbackRouteForCall({
-            task: chatTask,
-            taskKind: "query_reason",
-            primaryRoute: chatModel.route,
-            fallbackRoute: chatModel.fallbackRoute,
-          });
-          const compatibleFallbackRoute =
-            fallbackRoute &&
-            (!hasImageInput || modelSupportsImageInput(fallbackRoute))
-              ? fallbackRoute
-              : null;
-          if (!compatibleFallbackRoute) throw streamError;
-          const fallback = {
-            from: chatModel.route,
-            to: compatibleFallbackRoute,
-            reason: errorText(streamError).slice(0, 1_000),
-          };
-          await recordAgentRoutingFallback(
-            ctx,
-            args.orgId,
-            chatTask,
-            chatRun,
-            chatModel,
-            fallback,
-            Object.keys(tools).length > 0,
-          );
-          console.warn(
-            `[processThreadChat] Pre-execution provider failure on ${chatModel.route.provider}:${chatModel.route.model}; using ${compatibleFallbackRoute.provider}:${compatibleFallbackRoute.model}. ${errorText(streamError)}`,
-          );
-          resetStreamStateForRetry();
-          completedRoute = compatibleFallbackRoute;
-          completedRouteSource = "fallback";
-          completedTransport = "direct";
-          completedFallback = fallback;
-          const completed = await consumeChatStream(
-            startChatStream(
-              getModelForRoute(compatibleFallbackRoute),
-              compatibleFallbackRoute,
-            ).fullStream,
-          );
-          if (!completed) return;
-        }
-        await recordAgentRoutingRun(
-          ctx,
-          args.orgId,
-          chatTask,
-          chatRun,
-          routingAudit(),
-          completedTransport === "cl-router"
-            ? chatModel.routerResponses.at(-1)
-            : undefined,
-          undefined,
-          {
-            route: completedRoute,
-            routeSource: completedRouteSource,
-            transport: completedTransport,
-            fallback: completedFallback,
-          },
-        );
-      } catch (streamError) {
-        await recordAgentRoutingRun(
-          ctx,
-          args.orgId,
-          chatTask,
-          chatRun,
-          routingAudit(),
-          completedTransport === "cl-router"
-            ? chatModel.routerResponses.at(-1)
-            : undefined,
-          streamError,
-          {
-            route: completedRoute,
-            routeSource: completedRouteSource,
-            transport: completedTransport,
-            fallback: completedFallback,
-          },
-        );
-        throw streamError;
+      const { usedTools } = turn.audit;
+      const toolCalls = turn.audit.toolCalls.map((call) =>
+        SUBAGENT_TOOL_NAMES.has(call.name)
+          ? call
+          : { name: call.name, input: call.input },
+      );
+      const agentSteps = agentToolStepsFromAudit(
+        turn.audit,
+        SUBAGENT_TOOL_NAMES,
+      );
+      for (const workflowOutcome of turn.audit.workflowOutcomes) {
+        toolArtifacts.push({ type: "workflow_outcome", data: workflowOutcome });
       }
+      content = turn.text;
 
       if (await isAgentResponseCancelled(true)) return;
 
@@ -1794,8 +1511,7 @@ export const run = internalAction({
           citedSourceSpanIds.size > 0 ? [...citedSourceSpanIds] : undefined,
         usedTools: usedTools.length > 0 ? usedTools : undefined,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        agentSteps:
-          agentSteps.length > 0 ? agentStepsSnapshot() : undefined,
+        agentSteps: agentSteps.length > 0 ? agentSteps : undefined,
         toolArtifacts: toolArtifacts.length > 0 ? toolArtifacts : undefined,
         attachments:
           responseAttachments.length > 0 ? responseAttachments : undefined,

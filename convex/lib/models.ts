@@ -1566,6 +1566,7 @@ async function recordAgentRun(
       ? collectToolAudit(result)
       : {
           usedTools: [],
+          completedTools: [],
           toolCalls: [],
           workflowOutcomes: [],
   });

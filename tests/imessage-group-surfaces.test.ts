@@ -119,7 +119,7 @@ describe("iMessage group chat surfaces", () => {
   it("treats first-contact card delivery as best-effort after the response", () => {
     const worker = read("imessage-worker/src/index.ts");
     const inboundDeliveryBlock = worker.slice(
-      worker.indexOf("const result = await sendToConvex"),
+      worker.indexOf("const result = await withTypingIndicator"),
       worker.indexOf("await sendOutboundAppCards(space, result.appCards)"),
     );
 

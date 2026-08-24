@@ -5,7 +5,7 @@ import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs, type ModelMessage } from "ai";
-import { generateAgentTextForOrg } from "../lib/models";
+import { runAgentTurn } from "../lib/channelAgentRunner";
 import {
   extractPolicyAttachment,
   createImessageGroupChat,
@@ -64,7 +64,6 @@ import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
   buildEmailDraftTextSummary,
 } from "../lib/emailDraftSummary";
-import { collectToolAudit } from "../lib/agentToolAudit";
 import { runInboundEmailDeterministicControls } from "../lib/inboundEmailDeterministicControls";
 import {
   inferRequirementImportScope,
@@ -1530,11 +1529,18 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       if (deterministicControlResult) {
         responseBody = deterministicControlResult.responseBody;
       } else {
-        const result = await generateAgentTextForOrg(
-          ctx,
+        const turn = await runAgentTurn(ctx, {
           orgId,
-          "email_reply",
-          {
+          task: "email_reply",
+          messageText: `Subject: ${subject}\n\n${stripQuotedText(body)}`,
+          currentAttachmentNames: claudeAttachments.map(
+            (attachment) => attachment.filename,
+          ),
+          recentConversationContext: threadMessagesForGuards
+            .slice(-12)
+            .map((message) => `${message.role}: ${message.content ?? ""}`)
+            .join("\n"),
+          options: {
             maxOutputTokens: 2048,
             system: systemContext,
             messages,
@@ -1546,7 +1552,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
                 requirementImportAttachments.length > 0,
               ),
           },
-          {
+          run: {
             taskKind: "inbound_email_reply",
             sessionKey: String(unifiedThreadId),
             trace: {
@@ -1557,15 +1563,14 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               channel: "email",
             },
           },
-        );
-        for (const workflowOutcome of collectToolAudit(result)
-          .workflowOutcomes) {
+        });
+        for (const workflowOutcome of turn.audit.workflowOutcomes) {
           emailToolArtifacts.push({
             type: "workflow_outcome",
             data: workflowOutcome,
           });
         }
-        responseBody = result.text;
+        responseBody = turn.text;
       }
 
       responseBody = stripInternalAgentActivity(responseBody);

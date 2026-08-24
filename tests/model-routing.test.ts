@@ -157,7 +157,6 @@ describe("model task routing", () => {
     expect(source).toContain(
       'const chatTask = hasImageInput ? "chat_vision" : "chat"',
     );
-    expect(source).toContain("modelSupportsImageInput(fallbackRoute)");
     expect(modelSettings).toContain(
       "chat_vision: v.optional(routeUpdateValidator)",
     );
@@ -368,7 +367,7 @@ describe("model task routing", () => {
   });
 });
 
-describe("thread chat streaming reliability", () => {
+describe("thread chat model reliability", () => {
   test("normalizes generated text from root and step-level results", () => {
     expect(generatedTextFromResult({ text: "direct answer" })).toBe(
       "direct answer",
@@ -383,22 +382,6 @@ describe("thread chat streaming reliability", () => {
     ).toBe("final step");
     expect(generatedTextFromResult({ steps: [{ toolCalls: [] }] })).toBe("");
     expect(generatedTextFromResult(undefined)).toBe("");
-  });
-
-  test("uses the shared pre-execution fallback policy before tool side effects", () => {
-    const source = readFileSync(
-      join(__dirname, "../convex/actions/processThreadChat.ts"),
-      "utf-8",
-    );
-
-    expect(source).toContain("isPreExecutionFallbackEligibleError");
-    expect(source).toContain('part.type === "error"');
-    expect(source).toContain("hasStartedSideEffectfulWork");
-    expect(source).toContain("resetStreamStateForRetry");
-    expect(source).toContain("fallbackRouteForCall({");
-    expect(source).toContain("fallbackRoute: chatModel.fallbackRoute");
-    expect(source).toContain("Pre-execution provider failure");
-    expect(source).not.toContain("via Vercel AI Gateway");
   });
 
   test("keeps heavy mailbox tools behind the coordinator in web chat", () => {
@@ -708,8 +691,6 @@ describe("model fallback policy", () => {
 
   test("uses the routed agent-loop primitives across every tool-bearing surface", () => {
     const orgAgentFiles = [
-      "../convex/actions/mcpChat.ts",
-      "../convex/actions/handleInboundEmail.ts",
       "../convex/actions/mailboxCoordinator.ts",
       "../convex/lib/emailSubagent.ts",
     ];
@@ -720,25 +701,22 @@ describe("model fallback policy", () => {
       expect(source).toContain("traceId:");
     }
 
-    const imessageAgent = readFileSync(
-      join(__dirname, "../convex/actions/handleInboundImessage.ts"),
-      "utf-8",
-    );
-    const channelRunner = readFileSync(
+    for (const file of [
+      "../convex/actions/processThreadChat.ts",
+      "../convex/actions/handleInboundImessage.ts",
+      "../convex/actions/handleInboundEmail.ts",
+      "../convex/actions/mcpChat.ts",
+    ]) {
+      const source = readFileSync(join(__dirname, file), "utf-8");
+      expect(source).toContain("runAgentTurn(ctx");
+      expect(source).toContain("sessionKey:");
+      expect(source).toContain("traceId:");
+    }
+    const channelAgentRunner = readFileSync(
       join(__dirname, "../convex/lib/channelAgentRunner.ts"),
       "utf-8",
     );
-    expect(imessageAgent).toContain("runChannelAgent(ctx");
-    expect(imessageAgent).toContain("sessionKey:");
-    expect(imessageAgent).toContain("traceId:");
-    expect(channelRunner).toContain("generateAgentTextForOrg(");
-
-    const webChat = readFileSync(
-      join(__dirname, "../convex/actions/processThreadChat.ts"),
-      "utf-8",
-    );
-    expect(webChat).toContain("getAgentLanguageModelForOrg(");
-    expect(webChat).toContain("recordAgentRoutingRun(");
+    expect(channelAgentRunner).toContain("generateAgentTextForOrg(");
 
     const publicDemo = readFileSync(
       join(__dirname, "../convex/actions/publicDemoAgent.ts"),
