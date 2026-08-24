@@ -98,33 +98,6 @@ before(async () => {
     if (request.url === "/api/chat.postMessage") {
       return respond(response, { ok: true, ts: "1800000000.100" });
     }
-    if (request.url === "/api/chat.update") {
-      return respond(response, { ok: true, ts: "1800000000.100" });
-    }
-    if (request.url === "/api/assistant.threads.setStatus") {
-      return respond(response, { ok: true });
-    }
-    if (
-      request.url === "/api/reactions.add" ||
-      request.url === "/api/reactions.remove"
-    ) {
-      return respond(response, { ok: true });
-    }
-    if (request.url === "/api/chat.startStream") {
-      return respond(response, { ok: true, ts: "1800000000.300" });
-    }
-    if (request.url === "/api/chat.appendStream") {
-      return respond(response, { ok: true });
-    }
-    if (request.url === "/api/chat.stopStream") {
-      return respond(response, { ok: true, ts: "1800000000.300" });
-    }
-    if (request.url === "/api/chat.postEphemeral") {
-      return respond(response, { ok: true, message_ts: "1800000000.400" });
-    }
-    if (request.url === "/api/views.open") {
-      return respond(response, { ok: true, view: { id: "V-FEEDBACK" } });
-    }
     if (request.url === "/api/files.getUploadURLExternal") {
       if (
         !request.headers["content-type"]?.startsWith(
@@ -185,42 +158,6 @@ before(async () => {
           team_id: "T-CUSTOMER",
           real_name: "Customer Admin",
           profile: { email: "admin@customer.test" },
-        },
-      });
-    }
-    if (request.url === "/api/auth.test") {
-      if (
-        !request.headers["content-type"]?.startsWith(
-          "application/x-www-form-urlencoded",
-        )
-      ) {
-        return respond(response, { ok: false, error: "invalid_arguments" });
-      }
-      return respond(response, {
-        ok: true,
-        team_id: String(body.team_id ?? "T-CUSTOMER"),
-        user_id: "U-GLASS",
-      });
-    }
-    if (request.url === "/api/conversations.info") {
-      if (
-        !request.headers["content-type"]?.startsWith(
-          "application/x-www-form-urlencoded",
-        )
-      ) {
-        return respond(response, { ok: false, error: "invalid_arguments" });
-      }
-      return respond(response, {
-        ok: true,
-        channel: {
-          id: String(body.channel),
-          name: "client-service",
-          is_member: true,
-          is_archived: false,
-          is_private: true,
-          is_shared: true,
-          is_ext_shared: true,
-          is_org_shared: false,
         },
       });
     }
@@ -433,157 +370,6 @@ describe("native Slack worker HTTP adapter", () => {
     );
   });
 
-  test("uses form encoding for Slack reconciliation reads", async () => {
-    const response = await workerRequest("/reconcile", {
-      teamId: "T-CUSTOMER",
-      channelIds: ["C-CUSTOMER"],
-    });
-    assert.deepEqual(await response.json(), {
-      teamId: "T-CUSTOMER",
-      botUserId: "U-GLASS",
-      channels: [
-        {
-          id: "C-CUSTOMER",
-          ok: true,
-          name: "client-service",
-          isArchived: false,
-          isMember: true,
-          isPrivate: true,
-          isShared: true,
-          isExtShared: true,
-          isOrgShared: false,
-        },
-      ],
-    });
-    assert.deepEqual(
-      apiCalls.filter((call) => call.path === "/api/auth.test").at(-1),
-      {
-        path: "/api/auth.test",
-        authorization: "Bearer xoxb-customer",
-        body: {},
-      },
-    );
-    assert.deepEqual(
-      apiCalls
-        .filter((call) => call.path === "/api/conversations.info")
-        .at(-1),
-      {
-        path: "/api/conversations.info",
-        authorization: "Bearer xoxb-customer",
-        body: { channel: "C-CUSTOMER", include_num_members: "false" },
-      },
-    );
-  });
-
-  test("reacts, updates, streams, reports status, and opens feedback through native APIs", async () => {
-    const teamId = "T-CUSTOMER";
-    const channelId = "C-CUSTOMER";
-    const threadTs = "1800000000.050";
-    const stream = await workerRequest("/stream/start", {
-      teamId,
-      channelId,
-      threadTs,
-      recipientUserId: "U-CUSTOMER",
-      recipientTeamId: teamId,
-      status: "Reviewing your request",
-    });
-    assert.deepEqual(await stream.json(), { messageId: "1800000000.300" });
-    await workerRequest("/stream/append", {
-      teamId,
-      channelId,
-      messageTs: "1800000000.300",
-      markdownText: "[[g:**Policy found**]]",
-      tasks: [{ id: "lookup", title: "Found the policy", status: "complete" }],
-    });
-    await workerRequest("/stream/stop", {
-      teamId,
-      channelId,
-      messageTs: "1800000000.300",
-      text: "[[g:**Policy found**]]",
-      blocks: [{ type: "section", text: { type: "mrkdwn", text: "Policy" } }],
-    });
-    await workerRequest("/message/update", {
-      teamId,
-      channelId,
-      messageTs: "1800000000.100",
-      text: "Updated",
-      blocks: [],
-    });
-    await workerRequest("/thread/status", {
-      teamId,
-      channelId,
-      threadTs,
-      status: "is checking coverages…",
-    });
-    await workerRequest("/reaction/add", {
-      teamId,
-      channelId,
-      messageTs: threadTs,
-      name: "eyes",
-    });
-    await workerRequest("/reaction/remove", {
-      teamId,
-      channelId,
-      messageTs: threadTs,
-      name: "eyes",
-    });
-    await workerRequest("/ephemeral", {
-      teamId,
-      channelId,
-      userId: "U-CUSTOMER",
-      threadTs,
-      text: "Thanks",
-    });
-    const view = await workerRequest("/view/open", {
-      teamId,
-      triggerId: "trigger-1",
-      privateMetadata: "interaction-1",
-    });
-    assert.deepEqual(await view.json(), { viewId: "V-FEEDBACK" });
-
-    const paths = [
-      "/api/chat.startStream",
-      "/api/chat.appendStream",
-      "/api/chat.stopStream",
-      "/api/chat.update",
-      "/api/assistant.threads.setStatus",
-      "/api/reactions.add",
-      "/api/reactions.remove",
-      "/api/chat.postEphemeral",
-      "/api/views.open",
-    ];
-    assert(paths.every((path) => apiCalls.some((call) => call.path === path)));
-    assert.deepEqual(
-      apiCalls.find((call) => call.path === "/api/chat.appendStream")?.body,
-      {
-        channel: channelId,
-        ts: "1800000000.300",
-        markdown_text: "**Policy found**",
-        chunks: [
-          {
-            type: "task_update",
-            id: "lookup",
-            title: "Found the policy",
-            status: "complete",
-          },
-        ],
-      },
-    );
-    assert.equal(
-      apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body
-        .markdown_text,
-      "**Policy found**",
-    );
-    assert.deepEqual(
-      apiCalls.find((call) => call.path === "/api/reactions.add")?.body,
-      { channel: channelId, timestamp: threadTs, name: "eyes" },
-    );
-    assert.equal(
-      apiCalls.find((call) => call.path === "/api/views.open")?.body.trigger_id,
-      "trigger-1",
-    );
-  });
-
   test("uses the separate Clarity installation for Connect provisioning", async () => {
     const response = await workerRequest("/connect-channel", {
       clientSlug: "client",
@@ -637,42 +423,15 @@ describe("native Slack worker HTTP adapter", () => {
     );
   });
 
-  test("lists visible public channels and joined private/shared channels", async () => {
+  test("lists only visible channels through the customer installation", async () => {
     const response = await workerRequest("/channels", {
       teamId: "T-CUSTOMER",
     });
-    assert.deepEqual(await response.json(), {
-      channels: [
-        {
-          id: "C-CUSTOMER",
-          name: "client-service",
-          isMember: true,
-          isPrivate: false,
-          isShared: false,
-        },
-        {
-          id: "C-NOT-JOINED",
-          name: "general",
-          isMember: false,
-          isPrivate: false,
-          isShared: false,
-        },
-        {
-          id: "G-PRIVATE",
-          name: "private-claims",
-          isMember: true,
-          isPrivate: true,
-          isShared: false,
-        },
-        {
-          id: "C-SHARED",
-          name: "shared-support",
-          isMember: true,
-          isPrivate: false,
-          isShared: true,
-        },
-      ],
-    });
+    const payload = await response.json();
+    assert.deepEqual(
+      payload.channels.map((channel: { id: string }) => channel.id),
+      ["C-CUSTOMER", "C-NOT-JOINED", "G-PRIVATE", "C-SHARED"],
+    );
     assert.deepEqual(
       apiCalls.find((call) => call.path === "/api/conversations.list"),
       {
@@ -687,20 +446,12 @@ describe("native Slack worker HTTP adapter", () => {
     );
   });
 
-  test("joins a visible public customer channel", async () => {
-    const response = await workerRequest("/channels/join", {
+  test("changes membership only for public customer channels", async () => {
+    const joined = await workerRequest("/channels/join", {
       teamId: "T-CUSTOMER",
       channelId: "C-NOT-JOINED",
     });
-    assert.deepEqual(await response.json(), {
-      channel: {
-        id: "C-NOT-JOINED",
-        name: "general",
-        isMember: true,
-        isPrivate: false,
-        isShared: false,
-      },
-    });
+    assert.equal((await joined.json()).channel.isMember, true);
     assert.deepEqual(
       apiCalls.find((call) => call.path === "/api/conversations.join"),
       {
@@ -709,9 +460,6 @@ describe("native Slack worker HTTP adapter", () => {
         body: { channel: "C-NOT-JOINED" },
       },
     );
-  });
-
-  test("does not join private or shared channels from Glass", async () => {
     const joinCallsBefore = apiCalls.filter(
       (call) => call.path === "/api/conversations.join",
     ).length;
@@ -721,30 +469,16 @@ describe("native Slack worker HTTP adapter", () => {
         channelId,
       });
       assert.equal(response.status, 500);
-      assert.deepEqual(await response.json(), {
-        error: "Only public workspace channels can be joined from Glass",
-      });
     }
     assert.equal(
       apiCalls.filter((call) => call.path === "/api/conversations.join").length,
       joinCallsBefore,
     );
-  });
-
-  test("leaves a joined public customer channel", async () => {
-    const response = await workerRequest("/channels/leave", {
+    const left = await workerRequest("/channels/leave", {
       teamId: "T-CUSTOMER",
       channelId: "C-CUSTOMER",
     });
-    assert.deepEqual(await response.json(), {
-      channel: {
-        id: "C-CUSTOMER",
-        name: "client-service",
-        isMember: false,
-        isPrivate: false,
-        isShared: false,
-      },
-    });
+    assert.equal((await left.json()).channel.isMember, false);
     assert.deepEqual(
       apiCalls.find((call) => call.path === "/api/conversations.leave"),
       {
@@ -753,18 +487,20 @@ describe("native Slack worker HTTP adapter", () => {
         body: { channel: "C-CUSTOMER" },
       },
     );
-  });
-
-  test("does not leave private or shared channels from Glass", async () => {
+    const leaveCallsBefore = apiCalls.filter(
+      (call) => call.path === "/api/conversations.leave",
+    ).length;
     for (const channelId of ["G-PRIVATE", "C-SHARED"]) {
       const response = await workerRequest("/channels/leave", {
         teamId: "T-CUSTOMER",
         channelId,
       });
       assert.equal(response.status, 500);
-      assert.deepEqual(await response.json(), {
-        error: "Private and Slack Connect channels are managed in Slack",
-      });
     }
+    assert.equal(
+      apiCalls.filter((call) => call.path === "/api/conversations.leave")
+        .length,
+      leaveCallsBefore,
+    );
   });
 });

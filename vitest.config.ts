@@ -14,7 +14,6 @@ export default defineConfig({
       ".context/**",
       "extraction-worker/tests/**",
       "slack-worker/**",
-      "convex/tests/applicationReturnFlow.test.ts",
     ],
   },
 });

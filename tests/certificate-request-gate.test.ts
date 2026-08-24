@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { resolveCertificateRequestMetadata } from "../convex/certificates";
 import {
   evaluateCertificateRequestGate,
   inferCertificateEndorsements,
@@ -104,5 +105,63 @@ describe("certificate request gate", () => {
       "waiver_of_subrogation",
     ]);
     expect(verdict.evidence).toHaveLength(2);
+  });
+});
+
+describe("certificate request metadata", () => {
+  it("treats holder-only requests as reusable certificates", () => {
+    expect(
+      resolveCertificateRequestMetadata({
+        holderName: "Acme Property Management",
+      }),
+    ).toMatchObject({
+      requiredChanges: [],
+      hasEndorsementRequest: false,
+      requestKind: "holder",
+      requestSignature: "holder:acme property management",
+    });
+  });
+
+  it("includes source-backed operations wording in holder reuse identity", () => {
+    const metadata = resolveCertificateRequestMetadata({
+      holderName: "Acme Property Management",
+      descriptionOfOperations:
+        "Acme provides technology services including software development and SaaS offerings.",
+    });
+
+    expect(metadata.requestKind).toBe("holder");
+    expect(metadata.requestSignature).toContain(
+      "holder:acme property management|operations:",
+    );
+  });
+
+  it("recognizes pure additional-insured requests as evidence-gated", () => {
+    expect(
+      resolveCertificateRequestMetadata({
+        holderName: "Acme Property Management",
+        additionalInsuredName: "Acme Owner LLC",
+      }),
+    ).toMatchObject({
+      requiredChanges: ["additional_insured"],
+      additionalInsuredOnly: true,
+      evidenceGatedOnly: true,
+      requestKind: "additional_insured",
+      requestSignature: "additional_insured:acme owner llc",
+    });
+  });
+
+  it("distinguishes evidence review from true policy changes", () => {
+    expect(
+      resolveCertificateRequestMetadata({
+        holderName: "Acme Property Management",
+        requestedEndorsements: ["waiver_of_subrogation"],
+      }).evidenceGatedOnly,
+    ).toBe(true);
+    expect(
+      resolveCertificateRequestMetadata({
+        holderName: "Acme Property Management",
+        requestedEndorsements: ["named_insured"],
+      }).evidenceGatedOnly,
+    ).toBe(false);
   });
 });

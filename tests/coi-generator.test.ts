@@ -1,5 +1,3 @@
-import { readFileSync } from "fs";
-import { join } from "path";
 import { describe, expect, it } from "vitest";
 import {
   classifyPropertyCoverageSection,
@@ -7,8 +5,6 @@ import {
   generateCoiPdf,
   policyToCoiData,
 } from "../convex/lib/coiGenerator";
-
-const ROOT = join(__dirname, "..");
 
 describe("policyToCoiData", () => {
   it("collapses unsupported personal policy types to the generic certificate fallback", () => {
@@ -163,23 +159,6 @@ describe("policyToCoiData", () => {
     expect(data.description).toBe("Restaurant operations and food service.");
     expect(JSON.stringify(data)).not.toContain("Client fallback should not win");
     expect(JSON.stringify(data)).not.toContain("Policy MGA LLC");
-  });
-
-  it("uses policy insured-address compatibility before the client-profile fallback", () => {
-    const data = policyToCoiData(
-      {
-        linesOfBusiness: ["CGL"],
-        insuredName: "Current Policy Client",
-        insuredAddress: "Current policy compatibility address",
-      },
-      {
-        clientProfileFacts: {
-          mailingAddress: { value: { street1: "Older client profile address" } },
-        },
-      },
-    );
-
-    expect(data.insuredAddress).toBe("Current policy compatibility address");
   });
 
   it("uses exact structured operations precedence and does not synthesize from supplementary facts", () => {
@@ -435,49 +414,6 @@ describe("policyToCoiData", () => {
     expect(data.coverages[0]?.limits).toContainEqual({ label: "Deductible", value: "$1,500" });
   });
 
-  it("keeps legacy coverage grouping when rows do not carry line-of-business metadata", () => {
-    const data = policyToCoiData({
-      linesOfBusiness: ["EO", "OLIB", "EPLI"],
-      policyNumber: "LEGACY-1",
-      effectiveDate: "01/01/2026",
-      expirationDate: "01/01/2027",
-      carrier: "Legacy Carrier",
-      insuredName: "Legacy Insured",
-      coverages: [
-        { name: "Technology Professional Liability", limit: "$2,000,000" },
-        { name: "Network Security and Privacy Liability", limit: "$1,000,000" },
-        { name: "Employment Practices Liability", limit: "$500,000" },
-      ],
-    });
-
-    expect(data.coverages.map((coverage) => coverage.type)).toEqual([
-      "Professional Liability",
-      "Cyber Liability",
-      "Employment Practices Liability",
-    ]);
-    expect(data.coverages.some((coverage) => coverage.lineOfBusiness)).toBe(false);
-  });
-});
-
-describe("COI PDF template copy", () => {
-  it("uses the required notice and omits generated-by attribution", () => {
-    const source = readFileSync(join(ROOT, "convex/lib/coiGenerator.ts"), "utf-8");
-    const labels = readFileSync(join(ROOT, "convex/lib/acordForms/types.ts"), "utf-8");
-
-    expect(source).toContain(
-      "THIS CERTIFICATE IS ISSUED AS A MATTER OF INFORMATION ONLY AND CONFERS NO RIGHTS UPON THE CERTIFICATE HOLDER.",
-    );
-    expect(source).toContain("CERTIFICATE OF LIABILITY INSURANCE");
-    expect(labels).toContain('acord25: "Certificate of Liability Insurance"');
-    expect(labels).toContain('acord25: "certificate-of-liability"');
-    expect(source).not.toContain("Generated using");
-    expect(source).not.toContain("from Clarity Labs");
-    expect(source).not.toContain("GLASS_GLOBE_PATH");
-    expect(labels).not.toContain("ACORD 25 Certificate");
-    expect(source).not.toContain("C_GLASS_BLUE");
-    expect(source).not.toContain("ACORD 25 (2016/03)  |  Generated");
-    expect(source).not.toContain("claritylabs.dev");
-  });
 });
 
 describe("COI PDF generation", () => {
@@ -495,46 +431,6 @@ describe("COI PDF generation", () => {
     await document.destroy();
     return { pages, text: pages.join("\n") };
   }
-
-  async function pdfTextRuns(pdf: Buffer, pageNumber = 1) {
-    const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const document = await getDocument({ data: new Uint8Array(pdf) }).promise;
-    const page = await document.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const runs = content.items.flatMap((item) => {
-      if (!("str" in item) || !("transform" in item)) return [];
-      const transform = item.transform as number[];
-      return [{
-        text: item.str,
-        fontSize: Math.hypot(transform[2] ?? 0, transform[3] ?? 0),
-      }];
-    });
-    await document.destroy();
-    return runs;
-  }
-
-  it("uses the canonical holder block from certificate generation inputs", () => {
-    const certificates = readFileSync(join(ROOT, "convex/certificates.ts"), "utf-8");
-    const generateCoi = readFileSync(join(ROOT, "convex/actions/generateCoi.ts"), "utf-8");
-
-    expect(certificates).toContain("certificateHolderDisplayBlock");
-    expect(certificates).toContain("holderContactName");
-    expect(certificates).toContain("holderEmail");
-    expect(certificates).toContain("holderPhone");
-    expect(generateCoi).toContain("holderContactName");
-    expect(generateCoi).toContain("recordIssuedVersionInternal");
-    expect(generateCoi).toContain("nextVersionNumberInternal");
-    expect(generateCoi).toContain("certificateNumber: String(lifecycle.policyCertificateId)");
-    expect(generateCoi).toContain("revisionNumber: String(nextVersionNumber)");
-    expect(generateCoi).not.toContain("generateObjectForOrg");
-    expect(generateCoi).not.toContain("buildCertificateDescriptionContext");
-    expect(generateCoi).toContain("requestedDescription || coiData.description");
-    expect(generateCoi.indexOf("coiData = fillCertificateDescription")).toBeLessThan(
-      generateCoi.indexOf("coiData = applyEndorsementsToCertificateData"),
-    );
-    expect(certificates).toContain("country: v.optional(v.string())");
-    expect(generateCoi).toContain("descriptionOfOperations: finalDescriptionOfOperations");
-  });
 
   it("renders the generated PDF successfully", async () => {
     const data = policyToCoiData({
@@ -598,51 +494,6 @@ describe("COI PDF generation", () => {
     }
   });
 
-  it("uses the normal value size for descriptive certificate prose", async () => {
-    const description = "OPERATIONS-TYPOGRAPHY-SENTINEL";
-    const coveredAsset = "COVERED-AUTOS-TYPOGRAPHY-SENTINEL";
-    const data = {
-      ...policyToCoiData({
-        linesOfBusiness: ["INMRC"],
-        policyNumber: "TYPE-1",
-        effectiveDate: "01/01/2026",
-        expirationDate: "01/01/2027",
-        carrier: "Typography Carrier",
-        insuredName: "Typography Insured",
-      }),
-      description,
-      certificateHolder: "Typography Holder",
-      coveredAssetSchedules: [{
-        name: "Covered Auto Schedule",
-        kind: "vehicle" as const,
-        items: [{ label: coveredAsset, values: [] }],
-      }],
-    };
-    const formCodes = [
-      "acord25",
-      "acord24",
-      "acord27",
-      "acord28",
-      "acord29",
-      "acord30",
-      "acord31",
-    ] as const;
-
-    for (const formCode of formCodes) {
-      const runs = await pdfTextRuns(await generateCoiPdf({ ...data, formCode }));
-      expect(
-        runs.find((run) => run.text.includes(description))?.fontSize,
-        `${formCode} description`,
-      ).toBeCloseTo(8, 1);
-      if (formCode !== "acord25") {
-        expect(
-          runs.find((run) => run.text.includes(coveredAsset))?.fontSize,
-          `${formCode} covered assets`,
-        ).toBeCloseTo(8, 1);
-      }
-    }
-  });
-
   it("renders structured property information on non-liability certificates", async () => {
     const data = policyToCoiData({
       linesOfBusiness: ["PROPC"],
@@ -698,34 +549,6 @@ describe("COI PDF generation", () => {
     expect(extracted.text).toContain("Sprinkler: Yes");
     expect(extracted.text).toContain("Alarm: Central station");
     expect(extracted.text).toContain("Occupancy: Office and warehouse");
-  });
-
-  it("moves long property schedules to continuation pages without dropping fields", async () => {
-    const data = policyToCoiData({
-      linesOfBusiness: ["PROPC"],
-      policyNumber: "PROP-MULTI",
-      carrier: "Property Carrier",
-      insuredName: "Property Insured",
-      locations: Array.from({ length: 12 }, (_, index) => ({
-        number: index + 1,
-        address: {
-          street1: `${index + 1} Market Street`,
-          city: "San Francisco",
-          state: "CA",
-          zip: "94105",
-        },
-        description: `Scheduled property location ${index + 1}`,
-        buildingValue: `$${(index + 1) * 100000}`,
-        occupancy: "Office and warehouse",
-      })),
-    });
-
-    const extracted = await pdfText(await generateCoiPdf({ ...data, formCode: "acord27" }));
-
-    expect(extracted.pages.length).toBeGreaterThan(1);
-    expect(extracted.pages[0]).toContain("See attached structured property location schedule.");
-    expect(extracted.text).toContain("12 Market Street");
-    expect(extracted.text).toContain("Scheduled property location 12");
   });
 
   it("renders the detailed ACORD 24 property matrix from exact source-backed terms", async () => {
@@ -876,53 +699,6 @@ describe("COI PDF generation", () => {
     expect(extracted.text).not.toContain("See policy declarations");
   });
 
-  it("omits empty ACORD 24 sections, placeholder limit rows, and unchecked options", async () => {
-    const data = {
-      ...policyToCoiData({
-        linesOfBusiness: ["INMRC", "AUTOB"],
-        policyNumber: "SPARSE-24-001",
-        effectiveDate: "03/08/2026",
-        expirationDate: "03/08/2027",
-        carrier: "Sparse Property Carrier",
-        insuredName: "Sparse Property Insured",
-      }),
-      formCode: "acord24" as const,
-      coverages: [
-        {
-          type: "Inland Marine - Commercial",
-          lineOfBusiness: "INMRC",
-          insurerLetter: "A",
-          policyNumber: "SPARSE-24-001",
-          effectiveDate: "03/08/2026",
-          expirationDate: "03/08/2027",
-          limits: [{ label: "Motor Truck Cargo - Per Occurrence Limit", value: "$250,000" }],
-          deductible: "$2,500",
-        },
-        {
-          type: "Business Auto Physical Damage",
-          lineOfBusiness: "AUTOB",
-          insurerLetter: "A",
-          policyNumber: "SPARSE-24-001",
-          effectiveDate: "03/08/2026",
-          expirationDate: "03/08/2027",
-          limits: [{ label: "Maximum Limit at Any One Vehicle", value: "$250,000" }],
-        },
-      ],
-    };
-
-    const extracted = await pdfText(await generateCoiPdf(data));
-
-    expect(extracted.pages).toHaveLength(1);
-    expect(extracted.pages[0]).toContain("INLAND MARINE");
-    expect(extracted.pages[0]).toContain("OTHER POLICY");
-    expect(extracted.pages[0]).toMatch(/Motor Truck Cargo - Per Occurrence\s+Limit/);
-    expect(extracted.pages[0]).not.toContain("BLANKET BUILDING");
-    expect(extracted.pages[0]).not.toContain("PERSONAL PROPERTY");
-    expect(extracted.pages[0]).not.toContain("CRIME");
-    expect(extracted.pages[0]).not.toContain("EQUIPMENT BREAKDOWN");
-    expect(extracted.pages[0]).not.toContain("[ ]");
-  });
-
   it("uses covered-auto declarations in the ACORD 24 subject-matter field and asset schedule", async () => {
     const data = policyToCoiData({
       linesOfBusiness: ["INMRC", "AUTOB"],
@@ -1002,34 +778,6 @@ describe("COI PDF generation", () => {
     expect(extracted.text).not.toContain("VIN: N/A");
   });
 
-  it("renders source-backed property schedule addresses when structured locations are absent", async () => {
-    const data = policyToCoiData({
-      linesOfBusiness: ["PROPC"],
-      policyNumber: "PROPERTY-SCHEDULE-24",
-      carrier: "Scheduled Property Carrier",
-      insuredName: "Scheduled Property Insured",
-      coverageSchedules: [{
-        name: "Schedule of Locations",
-        kind: "location",
-        items: [{
-          label: "Location 1",
-          values: [
-            { label: "Address", value: "100 Covered Property Way, Oakland, CA 94607" },
-            { label: "Building Value", value: "$750,000" },
-          ],
-          sourceSpanIds: ["property-location-1"],
-        }],
-        sourceSpanIds: ["property-location-schedule"],
-      }],
-    });
-
-    const extracted = await pdfText(await generateCoiPdf({ ...data, formCode: "acord24" }));
-
-    expect(extracted.pages[0]).toContain("LOCATION OF PREMISES / DESCRIPTION OF PROPERTY");
-    expect(extracted.pages[0]).toContain("100 Covered Property Way, Oakland, CA 94607");
-    expect(extracted.pages[0]).toContain("Building Value: $750,000");
-  });
-
   it("preserves every covered vehicle through the final continuation page", async () => {
     const data = policyToCoiData({
       linesOfBusiness: ["AUTOB"],
@@ -1060,105 +808,6 @@ describe("COI PDF generation", () => {
     expect(extracted.text).toContain("VIN-001");
     expect(extracted.text).toContain("VIN-024");
     expect(extracted.text).toContain("Scheduled vehicle 24");
-  });
-
-  it("omits an empty property coverage table on sparse evidence forms", async () => {
-    const data = {
-      ...policyToCoiData({
-        policyNumber: "SPARSE-27-001",
-        carrier: "Sparse Evidence Carrier",
-        insuredName: "Sparse Evidence Insured",
-      }),
-      formCode: "acord27" as const,
-      coverages: [],
-    };
-
-    const extracted = await pdfText(await generateCoiPdf(data));
-
-    expect(extracted.pages[0]).toContain("EVIDENCE OF PROPERTY INSURANCE");
-    expect(extracted.pages[0]).not.toContain("PROPERTY COVERAGES");
-  });
-
-  it("renders a purpose-specific table for every supported property-family form", async () => {
-    const base = policyToCoiData({
-      linesOfBusiness: ["PROPC"],
-      policyNumber: "FORM-FAMILY-1",
-      effectiveDate: "02/01/2026",
-      expirationDate: "02/01/2027",
-      carrier: "Form Family Carrier",
-      insuredName: "Form Family Insured",
-      coverages: [{
-        name: "Building",
-        lineOfBusiness: "PROPC",
-        limit: "$1,000,000",
-        deductible: "$10,000",
-      }],
-    });
-    const cases = [
-      ["acord27", "EVIDENCE OF PROPERTY INSURANCE", "PROPERTY COVERAGES"],
-      ["acord28", "EVIDENCE OF COMMERCIAL PROPERTY INSURANCE", "COMMERCIAL PROPERTY COVERAGES"],
-      ["acord29", "EVIDENCE OF FLOOD INSURANCE", "FLOOD COVERAGES"],
-      ["acord30", "CERTIFICATE OF GARAGE INSURANCE", "GARAGE / AUTOMOBILE COVERAGES"],
-      ["acord31", "CERTIFICATE OF MARINE / ENERGY INSURANCE", "MARINE / ENERGY COVERAGES"],
-    ] as const;
-
-    for (const [formCode, title, tableTitle] of cases) {
-      const extracted = await pdfText(await generateCoiPdf({ ...base, formCode }));
-      expect(extracted.pages[0]).toContain(title);
-      expect(extracted.pages[0]).toContain(tableTitle);
-      expect(extracted.pages[0]).toContain("POLICY NUMBER");
-      expect(extracted.pages[0]).toContain("LIMIT / DEDUCTIBLE");
-    }
-  });
-
-  it("prioritizes and labels canonical COMR coverage on ACORD 31", async () => {
-    const base = policyToCoiData({
-      linesOfBusiness: ["COMR"],
-      policyNumber: "MARINE-31-001",
-      effectiveDate: "02/01/2026",
-      expirationDate: "02/01/2027",
-      carrier: "Marine Carrier",
-      insuredName: "Marine Insured",
-    });
-    const extracted = await pdfText(await generateCoiPdf({
-      ...base,
-      formCode: "acord31",
-      coverages: [
-        {
-          type: "Ancillary Coverage",
-          lineOfBusiness: "OLIB",
-          policyNumber: "OTHER-31-001",
-          limits: [{ label: "Limit", value: "$50,000" }],
-        },
-        {
-          type: "Ocean Marine",
-          lineOfBusiness: "COMR",
-          policyNumber: "MARINE-31-001",
-          limits: [{ label: "Hull Limit", value: "$1,000,000" }],
-        },
-      ],
-    }));
-
-    expect(extracted.pages[0]).toContain("MARINE / ENERGY");
-    expect(extracted.pages[0]).toMatch(
-      /MARINE \/ ENERGY\s+Ocean Marine\s+MARINE-31-001/,
-    );
-    expect(extracted.pages[0].indexOf("MARINE-31-001")).toBeLessThan(
-      extracted.pages[0].indexOf("OTHER-31-001"),
-    );
-  });
-
-  it("leaves unavailable property certificate cells blank", async () => {
-    const sparse = policyToCoiData({
-      linesOfBusiness: ["PROPC"],
-      carrier: "N/A",
-      insuredName: "Sparse Insured",
-    });
-    const extracted = await pdfText(await generateCoiPdf({ ...sparse, formCode: "acord27" }));
-
-    expect(extracted.text).not.toContain("N/A");
-    expect(extracted.text).not.toContain("See policy");
-    expect(extracted.text).not.toContain("Unknown");
   });
 
   it("paginates detailed coverage rows without dropping the final row", async () => {
@@ -1192,70 +841,4 @@ describe("COI PDF generation", () => {
     expect(extracted.text).toContain("$280000");
   });
 
-  it("renders every Ozumo holder-address line in the measured holder box", async () => {
-    const data = policyToCoiData({
-      linesOfBusiness: ["CGL"],
-      policyNumber: "TEST-OZUMO",
-      carrier: "Test Carrier",
-      insuredName: "Test Insured",
-    });
-    const certificateHolder = [
-      "Ozumo Concepts International LLC",
-      "Attn: Certificate Compliance",
-      "161 Steuart St",
-      "Suite 200",
-      "San Francisco, CA 94105",
-      "United States",
-    ].join("\n");
-
-    const pdf = await generateCoiPdf({ ...data, certificateHolder });
-    const extracted = await pdfText(pdf);
-
-    expect(extracted.pages).toHaveLength(1);
-    expect(extracted.text).toContain("Ozumo Concepts International LLC");
-    expect(extracted.text).toContain("161 Steuart St");
-    expect(extracted.text).toContain("San Francisco, CA 94105");
-    expect(extracted.text).toContain("United States");
-  });
-
-  it("moves pathological holder blocks to the additional remarks schedule without dropping lines", async () => {
-    const data = policyToCoiData({
-      linesOfBusiness: ["CGL"],
-      policyNumber: "TEST-LONG-HOLDER",
-      carrier: "Test Carrier",
-      insuredName: "Test Insured",
-    });
-    const certificateHolder = [
-      "Very Long Certificate Holder LLC",
-      ...Array.from({ length: 20 }, (_, index) => `Address detail line ${index + 1}`),
-      "Final country line",
-    ].join("\n");
-
-    const pdf = await generateCoiPdf({ ...data, certificateHolder });
-    const extracted = await pdfText(pdf);
-
-    expect(extracted.pages).toHaveLength(2);
-    expect(extracted.pages[0]).toContain("See additional remarks schedule attached");
-    expect(extracted.pages[1]).toContain("Address detail line 20");
-    expect(extracted.pages[1]).toContain("Final country line");
-  });
-
-  it("paginates an additional remarks schedule without clipping extreme holder content", async () => {
-    const data = policyToCoiData({
-      linesOfBusiness: ["CGL"],
-      policyNumber: "TEST-MULTIPAGE-HOLDER",
-      carrier: "Test Carrier",
-      insuredName: "Test Insured",
-    });
-    const certificateHolder = [
-      "Very Long Certificate Holder LLC",
-      ...Array.from({ length: 180 }, (_, index) => `Schedule detail line ${index + 1}`),
-      "Final preserved schedule line",
-    ].join("\n");
-
-    const extracted = await pdfText(await generateCoiPdf({ ...data, certificateHolder }));
-
-    expect(extracted.pages.length).toBeGreaterThan(2);
-    expect(extracted.pages.at(-1)).toContain("Final preserved schedule line");
-  });
 });

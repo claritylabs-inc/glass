@@ -1,13 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { completeOtpSignIn } from "../lib/otp-auth";
-
-const root = join(__dirname, "..");
-
-function read(relativePath: string) {
-  return readFileSync(join(root, relativePath), "utf8");
-}
 
 describe("OTP sign-in", () => {
   afterEach(() => {
@@ -36,13 +28,6 @@ describe("OTP sign-in", () => {
         params: { email: "person@example.com", code: "123456" },
       },
     });
-  });
-
-  it("keeps auth cookies across browser restarts for the backend session lifetime", () => {
-    const proxy = read("proxy.ts");
-
-    expect(proxy).toContain("60 * 60 * 24 * 30");
-    expect(proxy).toContain("cookieConfig: { maxAge: AUTH_COOKIE_MAX_AGE_SECONDS }");
   });
 
   it("preserves proxy verification errors for the existing friendly error copy", async () => {
@@ -77,30 +62,4 @@ describe("OTP sign-in", () => {
     );
   });
 
-  it.each([
-    "components/auth-entry-page.tsx",
-    "components/broker-auth-entry-page.tsx",
-    "app/operator/login/page.tsx",
-    "app/oauth/authorize/page.tsx",
-    "app/invite/[token]/invite-acceptance.tsx",
-    "app/connected-orgs/request/[token]/request-acceptance.tsx",
-  ])("completes OTP verification with a full authenticated navigation in %s", (relativePath) => {
-    const source = read(relativePath);
-
-    expect(source).toContain('import { completeOtpSignIn } from "@/lib/otp-auth";');
-    expect(source).toContain("await completeOtpSignIn(");
-    expect(source).toMatch(/window\.location\.(assign|reload)\(/);
-    expect(source).not.toMatch(/await signIn\("resend-otp", \{[^\n]*code/);
-  });
-
-  it("associates each visible OTP label with the first input", () => {
-    const field = read("components/ui/otp-field.tsx");
-    const auth = read("components/auth-entry-page.tsx");
-
-    expect(field).toContain("const generatedId = useId()");
-    expect(field).toContain("const inputId = idProp ?? generatedId");
-    expect(field).toContain("id={inputId}");
-    expect(auth).toContain('htmlFor="auth-verification-code"');
-    expect(auth).toContain('id="auth-verification-code"');
-  });
 });

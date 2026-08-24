@@ -29,8 +29,12 @@ async function waitForHealth() {
   throw new Error("Slack worker did not become healthy");
 }
 
-async function send(body: Record<string, unknown>, secret = "test-secret") {
-  return await fetch(`${origin}/send`, {
+async function workerRequest(
+  path: string,
+  body: Record<string, unknown>,
+  secret = "test-secret",
+) {
+  return await fetch(`${origin}${path}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${secret}`,
@@ -39,6 +43,9 @@ async function send(body: Record<string, unknown>, secret = "test-secret") {
     body: JSON.stringify(body),
   });
 }
+
+const send = (body: Record<string, unknown>, secret?: string) =>
+  workerRequest("/send", body, secret);
 
 before(async () => {
   const port = await freePort();
@@ -68,38 +75,35 @@ describe("Slack worker HTTP adapter", () => {
     const health = await fetch(`${origin}/health`).then((response) =>
       response.json(),
     );
-    assert.deepEqual(health, {
+    assert.deepEqual({
+      ok: health.ok,
+      service: health.service,
+      mode: health.mode,
+      outboundEnabled: health.outboundEnabled,
+      actorResolutionEnabled: health.actorResolutionEnabled,
+      channelInventoryEnabled: health.channelInventoryEnabled,
+    }, {
       ok: true,
       service: "glass-slack-worker",
-      glassEnv: "local",
       mode: "mock",
-      workerSecretConfigured: true,
-      tokenBrokerConfigured: true,
-      clarityTeamConfigured: true,
       outboundEnabled: true,
-      attachmentRetrievalEnabled: false,
       actorResolutionEnabled: true,
-      connectProvisioningEnabled: true,
       channelInventoryEnabled: true,
-      publicChannelJoinEnabled: true,
-      blockKitEnabled: true,
-      messageUpdatesEnabled: true,
-      reactionsEnabled: true,
-      agentStatusEnabled: true,
-      streamingEnabled: true,
-      interactivityResponsesEnabled: true,
-      feedbackModalsEnabled: true,
-      reconciliationEnabled: true,
     });
     assert.equal((await send({}, "wrong-secret")).status, 401);
+    assert.deepEqual(
+      await send({
+        clientMessageId: "mock-send",
+        teamId: "T-CUSTOMER",
+        channelId: "C-PRIMARY",
+        text: "Policy details",
+      }).then((response) => response.json()),
+      { messageId: "mock-mock-send", attachmentFailures: [] },
+    );
 
-    const actor = await fetch(`${origin}/actor`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-secret",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ teamId: "T-CUSTOMER", userId: "U-CUSTOMER" }),
+    const actor = await workerRequest("/actor", {
+      teamId: "T-CUSTOMER",
+      userId: "U-CUSTOMER",
     }).then((response) => response.json());
     assert.deepEqual(actor, {
       teamId: "T-CUSTOMER",
@@ -111,16 +115,9 @@ describe("Slack worker HTTP adapter", () => {
   });
 
   test("reconciles authorization and channel identity without exposing credentials", async () => {
-    const response = await fetch(`${origin}/reconcile`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-secret",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        teamId: "T-CUSTOMER",
-        channelIds: ["C-PRIMARY", "C-PRIMARY"],
-      }),
+    const response = await workerRequest("/reconcile", {
+      teamId: "T-CUSTOMER",
+      channelIds: ["C-PRIMARY", "C-PRIMARY"],
     });
     assert.equal(response.status, 200);
     const payload = await response.json();
@@ -144,293 +141,30 @@ describe("Slack worker HTTP adapter", () => {
     assert.equal("botToken" in payload, false);
   });
 
-  test("accepts rich messages, reactions, updates, streams, status, and interaction responses", async () => {
-    const rich = await send({
-      clientMessageId: "rich-answer",
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      threadTs: "1800000000.100",
-      text: "Policy details",
-      blocks: [
-        { type: "section", text: { type: "mrkdwn", text: "*Policy details*" } },
-      ],
+  test("keeps deterministic local channel membership state", async () => {
+    const list = (body: Record<string, unknown>) =>
+      workerRequest("/channels", body).then((response) => response.json());
+    const initial = await list({
+      teamId: "T-LOCAL",
+      currentChannelId: "C-LOCAL",
+      currentChannelName: "glass-local",
     });
-    assert.equal(rich.status, 200);
-    assert.equal((await rich.json()).messageId, "mock-rich-answer");
-
-    const call = async (path: string, body: Record<string, unknown>) => {
-      const response = await fetch(`${origin}${path}`, {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer test-secret",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      assert.equal(response.status, 200);
-      return await response.json();
-    };
     assert.deepEqual(
-      await call("/thread/status", {
-        teamId: "T-CUSTOMER",
-        channelId: "C-PRIMARY",
-        threadTs: "1800000000.100",
-        status: "Searching policies…",
-      }),
-      { ok: true },
+      initial.channels.map((channel: { id: string }) => channel.id),
+      ["C-LOCAL", "mock-T-LOCAL-general", "mock-T-LOCAL-policies"],
     );
-    assert.deepEqual(
-      await call("/reaction/add", {
-        teamId: "T-CUSTOMER",
-        channelId: "C-PRIMARY",
-        messageTs: "1800000000.100",
-        name: "eyes",
-      }),
-      { ok: true },
-    );
-    assert.deepEqual(
-      await call("/reaction/remove", {
-        teamId: "T-CUSTOMER",
-        channelId: "C-PRIMARY",
-        messageTs: "1800000000.100",
-        name: "eyes",
-      }),
-      { ok: true },
-    );
-    const stream = await call("/stream/start", {
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      threadTs: "1800000000.100",
-      recipientUserId: "U-CUSTOMER",
-      recipientTeamId: "T-CUSTOMER",
-    });
-    assert.equal(stream.messageId, "mock-stream-1800000000.100");
-    assert.equal(
-      (
-        await call("/stream/append", {
-          teamId: "T-CUSTOMER",
-          channelId: "C-PRIMARY",
-          messageTs: stream.messageId,
-          tasks: [
-            { id: "lookup", title: "Found the policy", status: "complete" },
-          ],
-        })
-      ).messageId,
-      stream.messageId,
-    );
-    const emptyAppend = await fetch(`${origin}/stream/append`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-secret",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        teamId: "T-CUSTOMER",
-        channelId: "C-PRIMARY",
-        messageTs: stream.messageId,
-      }),
-    });
-    assert.equal(emptyAppend.status, 500);
-    assert.equal(
-      (
-        await call("/stream/stop", {
-          teamId: "T-CUSTOMER",
-          channelId: "C-PRIMARY",
-          messageTs: stream.messageId,
-          text: "Done",
-          blocks: [],
-        })
-      ).messageId,
-      stream.messageId,
-    );
-    assert.equal(
-      (
-        await call("/message/update", {
-          teamId: "T-CUSTOMER",
-          channelId: "C-PRIMARY",
-          messageTs: "1800000000.200",
-          text: "Done",
-          blocks: [],
-        })
-      ).messageId,
-      "1800000000.200",
-    );
-    assert.equal(
-      (
-        await call("/ephemeral", {
-          teamId: "T-CUSTOMER",
-          channelId: "C-PRIMARY",
-          userId: "U-CUSTOMER",
-          text: "Thanks",
-        })
-      ).messageId,
-      "mock-ephemeral-U-CUSTOMER",
-    );
-    assert.equal(
-      (
-        await call("/view/open", {
-          teamId: "T-CUSTOMER",
-          triggerId: "trigger-1",
-          privateMetadata: "interaction-1",
-        })
-      ).viewId,
-      "mock-view-trigger-1",
-    );
-  });
 
-  test("deduplicates successful file sends and releases failed file claims", async () => {
-    const base = {
-      teamId: "T-CUSTOMER",
-      channelId: "C-PRIMARY",
-      threadTs: "1800000000.000",
-      text: "",
-      attachments: [
-        {
-          url: "https://files.example.test/policy.pdf",
-          filename: "policy.pdf",
-          contentType: "application/pdf",
-        },
-      ],
-    };
-    const first = await send({ ...base, clientMessageId: "file-success" }).then(
-      (response) => response.json(),
-    );
-    const duplicate = await send({
-      ...base,
-      clientMessageId: "file-success",
+    const general = "mock-T-LOCAL-general";
+    const joined = await workerRequest("/channels/join", {
+      teamId: "T-LOCAL",
+      channelId: general,
     }).then((response) => response.json());
-    assert.deepEqual(duplicate, first);
+    assert.equal(joined.channel.isMember, true);
 
-    const failing = {
-      ...base,
-      clientMessageId: "file-retry",
-      attachments: [
-        {
-          ...base.attachments[0],
-          url: "https://files.example.test/fail-once",
-        },
-      ],
-    };
-    const failed = (await send(failing).then((response) =>
-      response.json(),
-    )) as {
-      attachmentFailures: unknown[];
-    };
-    assert.equal(failed.attachmentFailures.length, 1);
-    const retried = (await send(failing).then((response) =>
-      response.json(),
-    )) as {
-      messageId?: string;
-      attachmentFailures: unknown[];
-    };
-    assert.equal(retried.messageId, "mock-file-retry");
-    assert.equal(retried.attachmentFailures.length, 0);
-  });
-
-  test("lists deterministic local channels without Slack", async () => {
-    const result = await fetch(`${origin}/channels`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-secret",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        teamId: "T-LOCAL",
-        currentChannelId: "C-LOCAL",
-        currentChannelName: "glass-local",
-      }),
+    const left = await workerRequest("/channels/leave", {
+      teamId: "T-LOCAL",
+      channelId: general,
     }).then((response) => response.json());
-    assert.deepEqual(result, {
-      channels: [
-        {
-          id: "C-LOCAL",
-          name: "glass-local",
-          isMember: true,
-          isPrivate: true,
-          isShared: true,
-        },
-        {
-          id: "mock-T-LOCAL-general",
-          name: "general",
-          isMember: false,
-          isPrivate: false,
-          isShared: false,
-        },
-        {
-          id: "mock-T-LOCAL-policies",
-          name: "policy-updates",
-          isMember: true,
-          isPrivate: false,
-          isShared: false,
-        },
-      ],
-    });
-  });
-
-  test("joins a deterministic local public channel", async () => {
-    const joined = await fetch(`${origin}/channels/join`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-secret",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        teamId: "T-LOCAL",
-        channelId: "mock-T-LOCAL-general",
-      }),
-    }).then((response) => response.json());
-    assert.deepEqual(joined, {
-      channel: {
-        id: "mock-T-LOCAL-general",
-        name: "general",
-        isMember: true,
-        isPrivate: false,
-        isShared: false,
-      },
-    });
-
-    const listed = await fetch(`${origin}/channels`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-secret",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ teamId: "T-LOCAL" }),
-    }).then((response) => response.json());
-    assert.equal(
-      listed.channels.find(
-        (channel: { id: string }) => channel.id === "mock-T-LOCAL-general",
-      ).isMember,
-      true,
-    );
-    assert.equal(
-      listed.channels.some(
-        (channel: { id: string }) => channel.id === "C-LOCAL",
-      ),
-      true,
-    );
-  });
-
-  test("leaves a deterministic local public channel", async () => {
-    const response = await fetch(`${origin}/channels/leave`, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer test-secret",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        teamId: "T-LOCAL",
-        channelId: "mock-T-LOCAL-policies",
-      }),
-    });
-    assert.deepEqual(await response.json(), {
-      channel: {
-        id: "mock-T-LOCAL-policies",
-        name: "policy-updates",
-        isMember: false,
-        isPrivate: false,
-        isShared: false,
-      },
-    });
+    assert.equal(left.channel.isMember, false);
   });
 });

@@ -46,40 +46,31 @@ test("selects Poppler page text when it contains visible labeled values omitted 
   assert.equal(supplements.length, 1);
 });
 
-test("does not duplicate a page when Poppler only reformats primary-parser text", () => {
-  const supplements = selectPdfTextSupplements(
+test("ignores formatting-only and immaterial page differences", () => {
+  const cases = [
     [
-      {
-        pageStart: 1,
-        text: "Coverage Limit 5,000 Monthly Premium 20.00",
-      },
+      "Coverage Limit 5,000 Monthly Premium 20.00",
+      "Coverage Limit $5,000 / Monthly Premium $20.00",
     ],
-    [candidate("Coverage Limit $5,000 / Monthly Premium $20.00")],
-  );
-
-  assert.equal(supplements.length, 0);
-});
-
-test("does not treat split or joined words as omitted page content", () => {
-  const supplements = selectPdfTextSupplements(
-    [{ pageStart: 1, text: "The policyholder accepts these conditions" }],
-    [candidate("The policy holder accepts these conditions")],
-  );
-
-  assert.equal(supplements.length, 0);
-});
-
-test("requires a material difference for an unlabeled page", () => {
-  const supplements = selectPdfTextSupplements(
-    [{ pageStart: 1, text: "Commercial Property Coverage Terms Conditions" }],
     [
-      candidate(
-        "Commercial Property Coverage Terms Conditions standard wording",
-      ),
+      "The policyholder accepts these conditions",
+      "The policy holder accepts these conditions",
     ],
-  );
+    [
+      "Commercial Property Coverage Terms Conditions",
+      "Commercial Property Coverage Terms Conditions standard wording",
+    ],
+  ];
 
-  assert.equal(supplements.length, 0);
+  for (const [primary, candidateText] of cases) {
+    assert.equal(
+      selectPdfTextSupplements(
+        [{ pageStart: 1, text: primary }],
+        [candidate(candidateText)],
+      ).length,
+      0,
+    );
+  }
 });
 
 test("keeps a novel numeric value on a labeled page", () => {

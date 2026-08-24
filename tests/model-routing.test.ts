@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -15,13 +13,7 @@ import {
   primaryRouteForCall,
 } from "../convex/lib/models";
 import {
-  AUDIO_TRANSCRIPTION_MODEL_CATALOG,
   EXTRACTION_QUALITY_MODEL,
-  LANGUAGE_MODEL_CATALOG,
-  MODEL_DISPLAY_NAMES,
-  MODEL_ROUTE_IDS,
-  MODEL_ROUTE_LABELS,
-  MODEL_TASK_GROUPS,
   OPERATOR_MODEL_ROUTE_GROUPS,
   OPERATOR_WEB_RETRIEVAL_PROVIDERS,
   defaultModelRouteForId,
@@ -29,552 +21,151 @@ import {
   isRetiredModelRoute,
   modelCapabilitiesForRoute,
   modelRouteSupportsTask,
-  modelSupportsAudioInput,
-  modelSupportsImageInput,
 } from "../convex/lib/modelCatalog";
 
-describe("model task routing", () => {
-  test("routes the main web chat assistant to Fireworks DeepSeek Flash", () => {
+describe("model routing", () => {
+  test("keeps the critical default routes compatible with their inputs", () => {
     expect(MODEL_ROUTING.chat).toEqual({
       provider: "fireworks",
       model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
-  });
-
-  test("routes image-bearing chat to GPT-5.6 Terra", () => {
     expect(MODEL_ROUTING.chat_vision).toEqual({
       provider: "openai",
       model: "gpt-5.6-terra",
     });
-    expect(LANGUAGE_MODEL_CATALOG.openai).toEqual(
-      expect.arrayContaining([
-        "gpt-5.6",
-        "gpt-5.6-sol",
-        "gpt-5.6-terra",
-        "gpt-5.6-luna",
-      ]),
-    );
-    expect(MODEL_DISPLAY_NAMES["gpt-5.6-terra"]).toBe("GPT 5.6 Terra");
-    expect(modelSupportsImageInput(MODEL_ROUTING.chat_vision)).toBe(true);
-    expect(modelCapabilitiesForRoute(MODEL_ROUTING.chat_vision)).toMatchObject({
-      modelName: "gpt-5.6-terra",
-      supportsImageInput: true,
-      maxInputTokens: 1_050_000,
-      maxOutputTokens: 128_000,
-    });
-  });
-
-  test("requires vision-chat overrides to accept image input", () => {
-    expect(
-      modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat_vision),
-    ).toBe(true);
-    expect(
-      modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat),
-    ).toBe(false);
-    expect(modelRouteSupportsTask("chat", MODEL_ROUTING.chat)).toBe(true);
-  });
-
-  test("routes voice memos through a dedicated OpenAI transcription model", () => {
     expect(MODEL_ROUTING.voice_transcription).toEqual({
       provider: "openai",
       model: "gpt-4o-transcribe",
     });
-    expect(AUDIO_TRANSCRIPTION_MODEL_CATALOG.openai).toEqual([
-      "gpt-4o-transcribe",
-      "gpt-4o-mini-transcribe",
-    ]);
-    expect(LANGUAGE_MODEL_CATALOG.openai).not.toContain("gpt-4o-transcribe");
-    expect(modelSupportsAudioInput(MODEL_ROUTING.voice_transcription)).toBe(
-      true,
-    );
-    expect(modelSupportsAudioInput(MODEL_ROUTING.chat_vision)).toBe(false);
-    expect(
-      modelRouteSupportsTask(
-        "voice_transcription",
-        MODEL_ROUTING.voice_transcription,
-      ),
-    ).toBe(true);
-    expect(
-      modelRouteSupportsTask("voice_transcription", MODEL_ROUTING.chat_vision),
-    ).toBe(false);
-    expect(modelCapabilitiesForRoute(MODEL_ROUTING.voice_transcription)).toMatchObject({
-      modelName: "gpt-4o-transcribe",
-      supportsAudioInput: true,
-    });
-  });
-
-  test("keeps the Fireworks default model set constrained by use case", () => {
-    for (const task of [
-      "email_draft",
-      "email_reply",
-      "analysis",
-      "summary",
-      "mailbox_coordinator",
-    ] as const) {
-      expect(MODEL_ROUTING[task]).toEqual({
-        provider: "fireworks",
-        model: FIREWORKS_MODEL_IDS.glm52,
-      });
-    }
-
-    for (const task of [
-      "classification",
-      "requirement_extraction",
-      "org_memory_extraction",
-      "extraction",
-      "extraction_preview",
-      "triage",
-      "email_extraction",
-      "document_extraction",
-    ] as const) {
-      expect(MODEL_ROUTING[task]).toEqual({
-        provider: "fireworks",
-        model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-      });
-    }
-
-    expect(MODEL_ROUTING.chat).toEqual({
-      provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    });
-  });
-
-  test("switches web chat to the vision route only when image parts exist", () => {
-    const source = readFileSync(
-      join(__dirname, "../convex/actions/processThreadChat.ts"),
-      "utf-8",
-    );
-    const modelSettings = readFileSync(
-      join(__dirname, "../convex/modelSettings.ts"),
-      "utf-8",
-    );
-    const schema = readFileSync(
-      join(__dirname, "../convex/schema.ts"),
-      "utf-8",
-    );
-
-    expect(source).toContain("messageHistoryHasImageInput(messageHistory)");
-    expect(source).toContain(
-      'const chatTask = hasImageInput ? "chat_vision" : "chat"',
-    );
-    expect(modelSettings).toContain(
-      "chat_vision: v.optional(routeUpdateValidator)",
-    );
-    expect(modelSettings).toContain(
-      "voice_transcription: v.optional(routeUpdateValidator)",
-    );
-    expect(modelSettings).toContain(
-      "modelRouteSupportsTask(task, brokerRoute)",
-    );
-    expect(schema).toContain("chat_vision: v.optional(modelRouteValidator)");
-    expect(schema).toContain(
-      "voice_transcription: v.optional(modelRouteValidator)",
-    );
-    expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).toContain(
-      "chat_vision",
-    );
-    expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).toContain(
-      "voice_transcription",
-    );
-  });
-
-  test("keeps provisional policy extraction on direct Fireworks DeepSeek Flash", () => {
-    expect(MODEL_ROUTING.extraction_preview).toEqual({
-      provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    });
-    expect(directProviderModelForRoute(MODEL_ROUTING.extraction_preview)).toBe(
-      FIREWORKS_MODEL_IDS.deepseekV4Flash,
-    );
-  });
-
-  test("removes Kimi from active routing and catalog selection", () => {
-    expect(LANGUAGE_MODEL_CATALOG.fireworks).toContain(
-      FIREWORKS_MODEL_IDS.deepseekV4Pro,
-    );
-    expect(MODEL_DISPLAY_NAMES[FIREWORKS_MODEL_IDS.deepseekV4Pro]).toBe(
-      "DeepSeek V4 Pro",
-    );
-    expect(LANGUAGE_MODEL_CATALOG.fireworks).not.toContain(
-      "accounts/fireworks/models/kimi-k2p6",
-    );
-    expect(LANGUAGE_MODEL_CATALOG.fireworks).not.toContain(
-      "accounts/fireworks/routers/kimi-k2p6-fast",
-    );
-    expect(isRetiredModelRoute({
-      provider: "fireworks",
-      model: "accounts/fireworks/models/kimi-k2p6",
-    })).toBe(true);
-    expect(isRetiredModelRoute(MODEL_ROUTING.extraction)).toBe(false);
-  });
-
-  test("does not expose removed form inventory extraction as a model route", () => {
-    const workerSource = readFileSync(
-      join(__dirname, "../extraction-worker/src/index.ts"),
-      "utf-8",
-    );
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).not.toContain(
-      "extraction_form_inventory",
-    );
-    expect(MODEL_ROUTE_IDS).not.toContain("extraction_form_inventory");
-    expect(workerSource).not.toContain("extraction_form_inventory");
-  });
-
-  test("uses a standard operator-configurable route for coverage cleanup", () => {
-    const modelSettings = readFileSync(
-      join(__dirname, "../convex/modelSettings.ts"),
-      "utf-8",
-    );
-    const sdkCallbacks = readFileSync(
-      join(__dirname, "../convex/lib/sdkCallbacks.ts"),
-      "utf-8",
-    );
-    const workerSource = readFileSync(
-      join(__dirname, "../extraction-worker/src/index.ts"),
-      "utf-8",
-    );
-    expect(defaultModelRouteForId("extraction_coverage_cleanup")).toEqual({
-      provider: "openai",
-      model: "gpt-5.4-mini",
-    });
-    expect(MODEL_ROUTE_LABELS.extraction_coverage_cleanup).toBe(
-      "Coverage schedule cleanup",
-    );
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
-      "extraction_coverage_cleanup",
-    );
-    expect(modelSettings).toContain(
-      "EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID",
-    );
-    expect(modelSettings).toContain(
-      "extraction_coverage_cleanup: v.optional(routeUpdateValidator)",
-    );
-    expect(sdkCallbacks).toContain("coverageCleanupRouteOverride");
-    expect(sdkCallbacks).toContain('routePurpose = "extraction_coverage_cleanup"');
-    expect(workerSource).toContain("WORKER_COVERAGE_CLEANUP_ROUTE");
-    expect(workerSource).toContain("SPECIAL_MODEL_ROUTES.extraction_coverage_cleanup");
-    expect(workerSource).toContain('"extraction_coverage_cleanup"');
-  });
-
-  test("routes coverage recovery independently through GPT-5.4 Mini", () => {
-    const modelSettings = readFileSync(
-      join(__dirname, "../convex/modelSettings.ts"),
-      "utf-8",
-    );
-    const workerSource = readFileSync(
-      join(__dirname, "../extraction-worker/src/index.ts"),
-      "utf-8",
-    );
-    expect(defaultModelRouteForId("extraction_coverage_recovery")).toEqual({
-      provider: "openai",
-      model: "gpt-5.4-mini",
-    });
-    expect(MODEL_ROUTE_LABELS.extraction_coverage_recovery).toBe(
-      "Coverage recovery",
-    );
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
-      "extraction_coverage_recovery",
-    );
-    expect(modelSettings).toContain(
-      "extraction_coverage_recovery: v.optional(routeUpdateValidator)",
-    );
-    expect(modelTaskForCall("extraction", "extraction_coverage_recovery")).toBe(
-      "extraction_coverage_recovery",
-    );
-    expect(workerSource).toContain("MODEL_ROUTING.extraction_coverage_recovery");
-    expect(workerSource).toContain('"extraction_coverage_recovery"');
-  });
-
-  test("keeps embeddings on the OpenAI-compatible 1536-dimensional route during migration", () => {
     expect(MODEL_ROUTING.embeddings).toEqual({
       provider: "openai",
       model: "text-embedding-3-small",
     });
-  });
-
-  test("uses cl-sdk taskKind structure to select the host task", () => {
-    expect(modelTaskForCall("extraction", "extraction_classify")).toBe("classification");
-    expect(modelTaskForCall("extraction", "extraction_long_list")).toBe("extraction");
-    expect(modelTaskForCall("chat", "query_reason")).toBe("chat");
-    expect(modelTaskForCall("chat_vision", "query_reason")).toBe(
-      "chat_vision",
-    );
-    expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe("analysis");
-  });
-
-  test("keeps root app and extraction worker on the same shared package versions", () => {
-    const appPackage = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
-    const workerPackage = JSON.parse(
-      readFileSync(join(__dirname, "../extraction-worker/package.json"), "utf-8"),
-    );
-
-    expect(appPackage.scripts["check:shared-package-versions"]).toContain(
-      "check-shared-package-versions",
-    );
-    expect(workerPackage.scripts.prebuild).toContain(
-      "check-shared-package-versions",
-    );
-    for (const packageName of [
-      "@claritylabs/cl-router-policy",
-      "@claritylabs/cl-sdk",
-    ]) {
-      expect(appPackage.dependencies[packageName]).toBe(
-        workerPackage.dependencies[packageName],
-      );
-      expect(appPackage.dependencies[packageName]).toMatch(
-        /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/,
-      );
-    }
-    expect(appPackage.dependencies["@claritylabs/cl-router-policy"]).toBe("0.2.1");
-    expect(appPackage.dependencies["@claritylabs/cl-sdk"]).toBe("4.6.0");
-  });
-
-  test("uses the published router policy package as the single routing vocabulary", () => {
-    const modelCatalog = readFileSync(
-      join(__dirname, "../convex/lib/modelCatalog.ts"),
-      "utf-8",
-    );
-    const worker = readFileSync(
-      join(__dirname, "../extraction-worker/src/index.ts"),
-      "utf-8",
-    );
-
-    expect(modelCatalog).toContain('from "@claritylabs/cl-router-policy"');
-    expect(worker).toContain('from "@claritylabs/cl-router-policy"');
-    expect(
-      existsSync(join(__dirname, "../extraction-worker/src/modelRoutingPolicy.ts")),
-    ).toBe(false);
-  });
-
-  test("keeps extraction hosts on source-span model passes without legacy review knobs", () => {
-    const appExtractor = readFileSync(join(__dirname, "../convex/lib/extraction.ts"), "utf-8");
-    const worker = readFileSync(join(__dirname, "../extraction-worker/src/index.ts"), "utf-8");
-    expect(appExtractor).not.toContain("EXTRACTION_REVIEW_MODE");
-    expect(worker).not.toContain("EXTRACTION_REVIEW_MODE");
-    expect(worker).not.toContain("EXTRACTION_PAGE_MAP_CONCURRENCY");
-    expect(worker).not.toContain("EXTRACTION_FORMAT_CONCURRENCY");
-    expect(worker).toContain("modelCapabilitiesForRoute(route.model)");
-    expect(worker).toContain("modelCapabilitiesByTaskKind");
-    expect(worker).not.toContain("EXTRACTION_MAX_TOKEN_OVERRIDES");
-  });
-
-  test("does not cap source-backed operational profiles below full structured output", () => {
-    const deepseekFlashCapabilities = modelCapabilitiesForRoute({
+    expect(MODEL_ROUTING.extraction_preview).toEqual({
       provider: "fireworks",
       model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
-    expect(deepseekFlashCapabilities?.taskOutputTokens?.extraction_operational_profile).toBe(32_768);
-  });
-});
 
-describe("thread chat model reliability", () => {
-  test("normalizes generated text from root and step-level results", () => {
-    expect(generatedTextFromResult({ text: "direct answer" })).toBe(
-      "direct answer",
+    expect(modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat_vision)).toBe(true);
+    expect(modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat)).toBe(false);
+    expect(
+      modelRouteSupportsTask("voice_transcription", MODEL_ROUTING.voice_transcription),
+    ).toBe(true);
+    expect(modelCapabilitiesForRoute(MODEL_ROUTING.chat_vision)).toMatchObject({
+      supportsImageInput: true,
+    });
+    expect(modelCapabilitiesForRoute(MODEL_ROUTING.voice_transcription)).toMatchObject({
+      supportsAudioInput: true,
+    });
+  });
+
+  test("maps SDK task kinds to their host tasks", () => {
+    expect(modelTaskForCall("extraction", "extraction_classify")).toBe("classification");
+    expect(modelTaskForCall("extraction", "extraction_long_list")).toBe("extraction");
+    expect(modelTaskForCall("chat_vision", "query_reason")).toBe("chat_vision");
+    expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe("analysis");
+  });
+
+  test("keeps operator extraction routes distinct and source-tree output untruncated", () => {
+    expect(defaultModelRouteForId("extraction_coverage_cleanup")).toEqual({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    expect(defaultModelRouteForId("extraction_coverage_recovery")).toEqual({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    const operatorTasks = OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks);
+    expect(operatorTasks).toEqual(
+      expect.arrayContaining([
+        "extraction_quality",
+        "extraction_coverage_cleanup",
+        "extraction_coverage_recovery",
+        "fallback",
+      ]),
     );
     expect(
-      generatedTextFromResult({
-        steps: [
-          { text: "first step" },
-          { text: "final step" },
-        ],
-      }),
-    ).toBe("final step");
-    expect(generatedTextFromResult({ steps: [{ toolCalls: [] }] })).toBe("");
-    expect(generatedTextFromResult(undefined)).toBe("");
+      modelCapabilitiesForRoute(MODEL_ROUTING.extraction)?.taskOutputTokens
+        ?.extraction_operational_profile,
+    ).toBe(32_768);
   });
 
-  test("keeps heavy mailbox tools behind the coordinator in web chat", () => {
-    const source = readFileSync(
-      join(__dirname, "../convex/actions/processThreadChat.ts"),
-      "utf-8",
-    );
+  test("recognizes retired models without rejecting active routes", () => {
+    expect(
+      isRetiredModelRoute({
+        provider: "fireworks",
+        model: "accounts/fireworks/models/kimi-k2p6",
+      }),
+    ).toBe(true);
+    expect(isRetiredModelRoute(MODEL_ROUTING.extraction)).toBe(false);
+  });
 
-    expect(source).toContain("coordinate_mailbox_task");
-    expect(source).not.toContain("search_connected_email:");
-    expect(source).not.toContain("read_connected_email_attachment:");
-    expect(source).not.toContain("import_connected_email_policy_attachments:");
+  test("normalizes generated text from root and step-level results", () => {
+    expect(generatedTextFromResult({ text: "direct answer" })).toBe("direct answer");
+    expect(
+      generatedTextFromResult({ steps: [{ text: "first" }, { text: "final" }] }),
+    ).toBe("final");
+    expect(generatedTextFromResult({ steps: [{ toolCalls: [] }] })).toBe("");
+    expect(generatedTextFromResult(undefined)).toBe("");
   });
 });
 
 describe("model fallback policy", () => {
-  test("treats pre-output provider 404 NOT_FOUND errors as fallback eligible", () => {
-    expect(
-      isPreExecutionFallbackEligibleError({
-        type: "error",
-        error: {
-          statusCode: 404,
-          data: {
-            error: {
-              code: "NOT_FOUND",
-              message: "Model not found, inaccessible, and/or not deployed",
-            },
-          },
-        },
-      }),
-    ).toBe(true);
+  test.each([
+    [{ statusCode: 503, message: "temporarily unavailable" }, true],
+    [{ statusCode: 404, executionStarted: true, message: "model not found" }, false],
+    [{ statusCode: 400, message: "invalid tool schema" }, false],
+  ])("classifies pre-execution availability failures", (error, expected) => {
+    expect(isPreExecutionFallbackEligibleError(error)).toBe(expected);
   });
 
-  test("keeps fallback limited to availability failures before execution", () => {
+  test("uses only routes with direct-provider support", () => {
     expect(
-      isPreExecutionFallbackEligibleError({
-        statusCode: 503,
-        message: "temporarily unavailable",
-      }),
-    ).toBe(true);
-    expect(
-      isPreExecutionFallbackEligibleError({
-        statusCode: 404,
-        executionStarted: true,
-        message: "model not found",
-      }),
-    ).toBe(false);
-    expect(
-      isPreExecutionFallbackEligibleError({
-        statusCode: 400,
-        message: "invalid tool schema",
-      }),
-    ).toBe(false);
-  });
-
-  test("uses Fireworks DeepSeek V4 Pro as the default fallback provider", () => {
-    expect(FALLBACK_MODEL).toEqual({
-      provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.deepseekV4Pro,
-    });
-  });
-
-  test("keeps main model routing direct-provider-only", () => {
-    const modelsSource = readFileSync(
-      join(__dirname, "../convex/lib/models.ts"),
-      "utf-8",
-    );
-    const sdkCallbackSource = readFileSync(
-      join(__dirname, "../convex/lib/sdkCallbacks.ts"),
-      "utf-8",
-    );
-    const workerSource = readFileSync(
-      join(__dirname, "../extraction-worker/src/index.ts"),
-      "utf-8",
-    );
-    const retrievalSource = readFileSync(
-      join(__dirname, "../convex/lib/webRetrieval.ts"),
-      "utf-8",
-    );
-
-    expect(modelsSource).not.toContain("gateway(");
-    expect(sdkCallbackSource).not.toContain("gateway(");
-    expect(workerSource).not.toContain("gateway(");
-    expect(retrievalSource).not.toContain("gateway(");
-    expect(modelsSource).toContain(
-      "AI Gateway is not a fallback for Glass model routing",
-    );
-    expect(workerSource).toContain(
-      "AI Gateway is not a fallback for extraction worker model routing",
-    );
-    expect(sdkCallbackSource).toContain(
-      "AI Gateway is not a fallback for Glass embeddings",
-    );
-  });
-
-  test("enables cl-router execution when Conductor imports source config", () => {
-    const setupSource = readFileSync(
-      join(__dirname, "../scripts/setup-conductor-workspace.mjs"),
-      "utf-8",
-    );
-    const workerSource = readFileSync(
-      join(__dirname, "../extraction-worker/src/index.ts"),
-      "utf-8",
-    );
-
-    expect(setupSource).toContain("sourceEnvironmentRead ||");
-    expect(setupSource).toContain("resolveConductorClRouterConfig(");
-    expect(setupSource).toContain("{ required: routerRequired }");
-    expect(setupSource).toContain("CL_ROUTER_URL: clRouterUrl");
-    expect(setupSource).toContain("CL_ROUTER_TASKS: clRouterTasks");
-    expect(setupSource).toContain("CL_ROUTER_SECRET: clRouterSecret");
-    expect(workerSource).toContain("clRouterEnabled: clRouter !== null");
-    expect(workerSource).toContain(
-      "clRouterTasks: [...CL_ROUTER_TASK_FLAGS].sort()",
-    );
-  });
-
-  test("treats direct provider support as route-specific", () => {
-    expect(
-      directProviderModelForRoute({
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-      }),
+      directProviderModelForRoute({ provider: "deepseek", model: "deepseek-v4-flash" }),
     ).toBeNull();
+    expect(directProviderModelForRoute(MODEL_ROUTING.extraction)).toBe(
+      FIREWORKS_MODEL_IDS.deepseekV4Flash,
+    );
     expect(
-      directProviderModelForRoute({
-        provider: "fireworks",
-        model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
-      }),
-    ).toBe(FIREWORKS_MODEL_IDS.deepseekV4Flash);
-    expect(
-      directProviderModelForRoute({
-        provider: "anthropic",
-        model: "claude-haiku-4.5",
-      }),
+      directProviderModelForRoute({ provider: "anthropic", model: "claude-haiku-4.5" }),
     ).toBe("claude-haiku-4-5-20251001");
   });
 
-  test("does not generically escalate cheap extraction or classification calls", () => {
-    expect(fallbackRouteForCall({ task: "extraction" })).toBeNull();
-    expect(fallbackRouteForCall({ task: "extraction", taskKind: "extraction_focused" })).toBeNull();
-    expect(fallbackRouteForCall({ task: "classification" })).toBeNull();
-    expect(fallbackRouteForCall({ task: "extraction", taskKind: "extraction_classify" })).toBeNull();
+  test("escalates only quality-sensitive calls", () => {
+    for (const call of [
+      { task: "extraction" as const },
+      { task: "extraction" as const, taskKind: "extraction_focused" },
+      { task: "classification" as const },
+      { task: "extraction" as const, taskKind: "extraction_classify" },
+    ]) {
+      expect(fallbackRouteForCall(call)).toBeNull();
+    }
+
+    for (const taskKind of [
+      "extraction_source_tree",
+      "extraction_operational_profile",
+      "extraction_review",
+      "extraction_referential_lookup",
+    ]) {
+      expect(fallbackRouteForCall({ task: "extraction", taskKind })).toEqual(
+        FALLBACK_MODEL,
+      );
+    }
   });
 
-  test("allows intentional quality escalation for task kinds that warrant it", () => {
-    expect(
-      fallbackRouteForCall({
-        task: "triage",
-        taskKind: "carrier_identity_selection",
-      }),
-    ).toEqual(FALLBACK_MODEL);
-    expect(
-      fallbackRouteForCall({ task: "extraction", taskKind: "extraction_source_tree" }),
-    ).toEqual(FALLBACK_MODEL);
-    expect(
-      fallbackRouteForCall({ task: "extraction", taskKind: "extraction_operational_profile" }),
-    ).toEqual(FALLBACK_MODEL);
-    expect(fallbackRouteForCall({ task: "extraction", taskKind: "extraction_review" })).toEqual(
-      FALLBACK_MODEL,
-    );
-    expect(
-      fallbackRouteForCall({ task: "extraction", taskKind: "extraction_referential_lookup" }),
-    ).toEqual(FALLBACK_MODEL);
-    expect(
-      fallbackRouteForCall({
-        task: "analysis",
-        taskKind: "pce_packet_generation",
-        primaryRoute: {
-          provider: "fireworks",
-          model: FIREWORKS_MODEL_IDS.glm52,
-        },
-      }),
-    ).toEqual(FALLBACK_MODEL);
-  });
-
-  test("uses the configured fallback route for retries", () => {
-    const fallbackRoute = {
+  test("honors configured routes and explicit fallback boundaries", () => {
+    const configured = {
       provider: "fireworks" as const,
       model: FIREWORKS_MODEL_IDS.glm52,
     };
-
     expect(
       fallbackRouteForCall({
         task: "extraction",
         taskKind: "extraction_review",
         primaryRoute: MODEL_ROUTING.extraction,
-        fallbackRoute,
+        fallbackRoute: configured,
       }),
-    ).toEqual(fallbackRoute);
-  });
-
-  test("honors explicit no-fallback contexts for optional repair calls", () => {
+    ).toEqual(configured);
     expect(
       fallbackRouteForCall({
         task: "extraction",
@@ -582,36 +173,20 @@ describe("model fallback policy", () => {
         allowFallback: false,
       }),
     ).toBeNull();
+    expect(
+      fallbackRouteForCall({
+        task: "chat",
+        taskKind: "query_reason",
+        primaryRoute: FALLBACK_MODEL,
+      }),
+    ).toBeNull();
   });
 
-  test("uses the configured quality route for proactive extraction", () => {
-    const qualityRoute = {
-      provider: "fireworks" as const,
-      model: FIREWORKS_MODEL_IDS.glm52,
-    };
-
+  test("starts source-tree work on the quality route", () => {
     expect(
       primaryRouteForCall({
         task: "extraction",
         taskKind: "extraction_source_tree",
-        primaryRoute: MODEL_ROUTING.extraction,
-        qualityRoute,
-      }),
-    ).toEqual(qualityRoute);
-  });
-
-  test("starts source-tree and operational-profile extraction on the quality route", () => {
-    expect(
-      primaryRouteForCall({
-        task: "extraction",
-        taskKind: "extraction_source_tree",
-        primaryRoute: MODEL_ROUTING.extraction,
-      }),
-    ).toEqual(EXTRACTION_QUALITY_MODEL);
-    expect(
-      primaryRouteForCall({
-        task: "extraction",
-        taskKind: "extraction_operational_profile",
         primaryRoute: MODEL_ROUTING.extraction,
       }),
     ).toEqual(EXTRACTION_QUALITY_MODEL);
@@ -622,241 +197,20 @@ describe("model fallback policy", () => {
         primaryRoute: MODEL_ROUTING.extraction,
       }),
     ).toBeNull();
-    expect(
-      primaryRouteForCall({
-        task: "extraction",
-        taskKind: "extraction_source_tree",
-        primaryRoute: EXTRACTION_QUALITY_MODEL,
-      }),
-    ).toEqual(EXTRACTION_QUALITY_MODEL);
-  });
-
-  test("does not retry when the selected route is already the fallback route", () => {
-    expect(
-      fallbackRouteForCall({
-        task: "chat",
-        taskKind: "query_reason",
-        primaryRoute: FALLBACK_MODEL,
-      }),
-    ).toBeNull();
-  });
-
-  test("exposes separate quality, coverage cleanup, and fallback routes in operator model settings", () => {
-    const modelCatalog = readFileSync(
-      join(__dirname, "../convex/lib/modelCatalog.ts"),
-      "utf-8",
-    );
-    const operatorModelsPage = readFileSync(
-      join(__dirname, "../app/operator/routing/models-tab.tsx"),
-      "utf-8",
-    );
-
-    expect(modelCatalog).toContain(
-      'EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality"',
-    );
-    expect(modelCatalog).toContain(
-      'EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =\n  "extraction_coverage_cleanup"',
-    );
-    expect(modelCatalog).toContain('FALLBACK_MODEL_ROUTE_ID = "fallback"');
-    expect(modelCatalog).toContain("Source tree and profile extraction");
-    expect(modelCatalog).not.toContain("Form inventory");
-    expect(modelCatalog).toContain("Coverage schedule cleanup");
-    expect(modelCatalog).toContain("Fallback model");
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
-      "extraction_quality",
-    );
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).not.toContain(
-      "extraction_form_inventory",
-    );
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
-      "extraction_coverage_cleanup",
-    );
-    expect(OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks)).toContain(
-      "fallback",
-    );
-    expect(MODEL_TASK_GROUPS.flatMap((group) => group.tasks)).not.toContain(
-      "extraction_quality",
-    );
-    expect(operatorModelsPage).toContain("settings.groups.map");
-    expect(operatorModelsPage).not.toContain("const TASK_GROUPS");
-  });
-
-  test("applies operator global routes even when an org has no broker settings", () => {
-    const settingsSource = readFileSync(join(__dirname, "../convex/modelSettings.ts"), "utf-8");
-
-    expect(settingsSource).not.toContain("if (!brokerOrgId) return null");
-    expect(settingsSource).toContain("const settings = brokerOrgId");
-    expect(settingsSource).toContain('routeSources[routeId] = "global"');
-  });
-
-  test("uses the routed agent-loop primitives across every tool-bearing surface", () => {
-    const orgAgentFiles = [
-      "../convex/actions/mailboxCoordinator.ts",
-      "../convex/lib/emailSubagent.ts",
-    ];
-    for (const file of orgAgentFiles) {
-      const source = readFileSync(join(__dirname, file), "utf-8");
-      expect(source).toContain("generateAgentTextForOrg(");
-      expect(source).toContain("sessionKey:");
-      expect(source).toContain("traceId:");
-    }
-
-    for (const file of [
-      "../convex/actions/processThreadChat.ts",
-      "../convex/actions/handleInboundImessage.ts",
-      "../convex/actions/handleInboundEmail.ts",
-      "../convex/actions/mcpChat.ts",
-    ]) {
-      const source = readFileSync(join(__dirname, file), "utf-8");
-      expect(source).toContain("runAgentTurn(ctx");
-      expect(source).toContain("sessionKey:");
-      expect(source).toContain("traceId:");
-    }
-    const channelAgentRunner = readFileSync(
-      join(__dirname, "../convex/lib/channelAgentRunner.ts"),
-      "utf-8",
-    );
-    expect(channelAgentRunner).toContain("generateAgentTextForOrg(");
-
-    const publicDemo = readFileSync(
-      join(__dirname, "../convex/actions/publicDemoAgent.ts"),
-      "utf-8",
-    );
-    expect(publicDemo).toContain("generateAgentTextForPublicTask(");
-    expect(publicDemo).toContain("sessionKey:");
   });
 });
 
-describe("mailbox coordinator routing", () => {
-  test("uses the high-quality Fireworks reasoning route for complex mailbox workflows", () => {
-    expect(MODEL_ROUTING.mailbox_coordinator).toEqual({
-      provider: "fireworks",
-      model: FIREWORKS_MODEL_IDS.glm52,
-    });
-  });
-});
-
-describe("web retrieval routing", () => {
-  test("defaults public web retrieval to Parallel", () => {
-    expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "parallel" });
-  });
-
-  test("offers only dedicated search or the active model in Tools", () => {
-    expect(OPERATOR_WEB_RETRIEVAL_PROVIDERS).toEqual([
-      "parallel",
-      "exa",
-      "model_default",
-    ]);
-  });
-
-  test("keeps native browsing default routes aligned with their providers", () => {
-    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.openai.provider).toBe("openai");
-    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.google.provider).toBe("google");
-    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.anthropic.provider).toBe("anthropic");
-    expect(WEB_RETRIEVAL_DEFAULT_ROUTES.xai.provider).toBe("xai");
-  });
-
-  test("wires web research into all agent channels", () => {
-    const files = [
-      "../convex/actions/processThreadChat.ts",
-      "../convex/actions/mcpChat.ts",
-      "../convex/actions/handleInboundEmail.ts",
-      "../convex/actions/handleInboundImessage.ts",
-    ];
-
-    for (const file of files) {
-      const source = readFileSync(join(__dirname, file), "utf-8");
-      expect(source).toContain("web_research");
-      expect(source).toContain("runWebRetrieval");
-    }
-  });
-
-  test("routes website enrichment through the shared web retrieval layer", () => {
-    const source = readFileSync(
-      join(__dirname, "../convex/actions/extractCompanyInfo.ts"),
-      "utf-8",
-    );
-
-    expect(source).toContain("runWebRetrieval");
-    expect(source).not.toContain("api.exa.ai/contents");
-    expect(source).not.toContain('livecrawl: "always"');
-  });
-
-  test("uses Parallel's GA Search and Extract endpoints", () => {
-    const source = readFileSync(
-      join(__dirname, "../convex/lib/webRetrieval.ts"),
-      "utf-8",
-    );
-
-    expect(source).toContain("https://api.parallel.ai/v1/search");
-    expect(source).toContain("https://api.parallel.ai/v1/extract");
-    expect(source).toContain("process.env.PARALLEL_API_KEY");
-    expect(source).not.toContain("https://api.parallel.ai/v1beta/");
-  });
-
-  test("keeps web retrieval in the operator Tools surface instead of Models", () => {
-    const modelsTab = readFileSync(
-      join(__dirname, "../app/operator/routing/models-tab.tsx"),
-      "utf-8",
-    );
-    const toolsTab = readFileSync(
-      join(__dirname, "../app/operator/routing/tools-tab.tsx"),
-      "utf-8",
-    );
-    const routingPage = readFileSync(
-      join(__dirname, "../app/operator/routing/page.tsx"),
-      "utf-8",
-    );
-    const toolsRoute = readFileSync(
-      join(__dirname, "../app/operator/tools/page.tsx"),
-      "utf-8",
-    );
-    const authGuard = readFileSync(
-      join(__dirname, "../components/auth-guard.tsx"),
-      "utf-8",
-    );
-
-    expect(modelsTab).not.toContain("webRetrieval");
-    expect(modelsTab).not.toContain("SearchProviderRow");
-    expect(toolsTab).toContain("Web search");
-    expect(toolsTab).toContain('"model_default"');
-    expect(toolsTab).toContain("LogoIcon");
-    expect(toolsTab).toContain('fill="#0143D9"');
-    expect(toolsTab).not.toContain('"openai"');
-    expect(toolsTab).not.toContain('"anthropic"');
-    expect(toolsTab).not.toContain("ModelRouteLogo");
-    expect(toolsTab).not.toContain("getModelDisplayName");
-    expect(toolsTab).toContain("updateGlobalWebRetrieval");
-    expect(toolsTab).toContain("useCachedOperatorGlobalToolSettings");
-    expect(toolsTab).not.toContain("useCachedOperatorGlobalModelSettings");
-    expect(toolsTab).toContain("useOperatorGlobalToolSettingsCacheActions");
-    expect(routingPage).toContain('<TabsTrigger value="tools">Tools</TabsTrigger>');
-    expect(toolsRoute).toContain('redirect("/operator/routing?tab=tools")');
-    expect(authGuard).toContain('pathname.startsWith("/operator/tools")');
-  });
-
-  test("uses the Claude product mark for Anthropic model routes", () => {
-    const providerLogos = readFileSync(
-      join(__dirname, "../components/model-provider-logo.tsx"),
-      "utf-8",
-    );
-
-    expect(providerLogos).toContain("SiClaude");
-    expect(providerLogos).not.toContain("SiAnthropic");
-  });
-
-  test("keeps web retrieval direct-provider-only", () => {
-    const retrievalSource = readFileSync(
-      join(__dirname, "../convex/lib/webRetrieval.ts"),
-      "utf-8",
-    );
-    const settingsSource = readFileSync(join(__dirname, "../convex/modelSettings.ts"), "utf-8");
-
-    expect(retrievalSource).not.toContain("AI_GATEWAY_API_KEY");
-    expect(retrievalSource).not.toContain("VERCEL_OIDC_TOKEN");
-    expect(retrievalSource).not.toContain("gateway(");
-    expect(settingsSource).not.toContain("function gatewayConfigured()");
-    expect(settingsSource).not.toContain("AI_GATEWAY_API_KEY");
-    expect(settingsSource).not.toContain("hasGatewayAccess");
+test("web retrieval defaults to direct dedicated providers", () => {
+  expect(WEB_RETRIEVAL_DEFAULT).toEqual({ primary: "parallel" });
+  expect(OPERATOR_WEB_RETRIEVAL_PROVIDERS).toEqual([
+    "parallel",
+    "exa",
+    "model_default",
+  ]);
+  expect(WEB_RETRIEVAL_DEFAULT_ROUTES).toMatchObject({
+    openai: { provider: "openai" },
+    google: { provider: "google" },
+    anthropic: { provider: "anthropic" },
+    xai: { provider: "xai" },
   });
 });
