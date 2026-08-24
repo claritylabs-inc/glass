@@ -41,7 +41,6 @@ describe("buildNotificationEmail", () => {
     expect(result.fromName).toBe("Glass Notifications");
     expect(result.html).toContain("Policy update");
     expect(result.html).toContain("Glass");
-    expect(result.html).toContain('src="https://app.glass.insure/glass-icon.jpg"');
     expect(result.text).toContain("Review");
   });
 

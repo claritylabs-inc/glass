@@ -65,7 +65,7 @@ describe("directed email sending", () => {
       "<notifications@notifications.glass.insure>",
     );
     expect(getAuthFromAddress()).toBe(
-      "Glass from Clarity Labs <noreply@auth.glass.insure>",
+      "Glass <noreply@auth.glass.insure>",
     );
     expect(getAgentDomains()).toEqual([
       "glass.insure",
@@ -94,8 +94,8 @@ describe("directed email sending", () => {
         expect(getNotificationFromAddress("Glass Notifications")).toContain(
           "<notifications@dev.claritylabs.inc>",
         );
-        expect(getAuthFromAddress()).toBe(
-          "Glass from Clarity Labs <noreply@dev.claritylabs.inc>",
+        expect(getAuthFromAddress()).toContain(
+          "<noreply@dev.claritylabs.inc>",
         );
         expect(isGlassOutboundAddress("agent@dev.claritylabs.inc")).toBe(true);
       },

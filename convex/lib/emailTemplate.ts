@@ -9,6 +9,12 @@ import { SLACK_INSTALL_INVITE_EXPIRATION_DAYS } from "./slackOAuthPolicy";
 
 const SITE_URL = getClientPortalUrl();
 const EMAIL_ASSET_BASE_URL = getEmailAssetBaseUrl();
+const CLARITY_LABS_SITE_URL = "https://www.claritylabs.inc";
+const CLARITY_LABS_BRAND_ASSET_BASE_URL = `${CLARITY_LABS_SITE_URL}/brand`;
+const GLASS_LOCKUP_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/glass-lockup@2x.png`;
+const GLASS_LOCKUP_DARK_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/glass-lockup-light@2x.png`;
+const CLARITY_LABS_LOCKUP_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/clarity-labs-lockup@2x.png`;
+const CLARITY_LABS_LOCKUP_DARK_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/clarity-labs-lockup-light@2x.png`;
 const SLACK_ADD_TO_BUTTON_URL =
   "https://platform.slack-edge.com/img/add_to_slack.png";
 const SLACK_ADD_TO_BUTTON_2X_URL =
@@ -18,6 +24,12 @@ const EMAIL_COLOR_SCHEME_STYLES = `
 :root {
   color-scheme: light dark;
   supported-color-schemes: light dark;
+}
+
+.glass-email-lockup-on-dark {
+  display: none !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -53,6 +65,16 @@ const EMAIL_COLOR_SCHEME_STYLES = `
     background-color: #f5f5f5 !important;
     color: #111111 !important;
   }
+
+  .glass-email-lockup-on-light {
+    display: none !important;
+  }
+
+  .glass-email-lockup-on-dark {
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
 }
 
 [data-ogsc] .glass-email-body,
@@ -72,6 +94,16 @@ const EMAIL_COLOR_SCHEME_STYLES = `
 [data-ogsc] .glass-email-button {
   background-color: #f5f5f5 !important;
   color: #111111 !important;
+}
+
+[data-ogsc] .glass-email-lockup-on-light {
+  display: none !important;
+}
+
+[data-ogsc] .glass-email-lockup-on-dark {
+  display: block !important;
+  max-height: none !important;
+  overflow: visible !important;
 }
 
 [data-ogsb] .glass-email-page,
@@ -122,41 +154,76 @@ export function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Brand name + mark lockup for the email header. Big squircle logo mirrors the in-app sidebar brand. */
+function buildThemeAwareEmailLockup({
+  lightBackgroundUrl,
+  darkBackgroundUrl,
+  alt,
+  width,
+  height,
+}: {
+  lightBackgroundUrl: string;
+  darkBackgroundUrl: string;
+  alt: string;
+  width: number;
+  height: number;
+}): string {
+  const sharedStyle = `width:${width}px;height:auto;border:0;outline:none;text-decoration:none;`;
+  return `<img src="${lightBackgroundUrl}" alt="${alt}" width="${width}" height="${height}" class="glass-email-lockup-on-light" style="display:block;${sharedStyle}" /><img src="${darkBackgroundUrl}" alt="${alt}" width="${width}" height="${height}" class="glass-email-lockup-on-dark" style="display:none;max-height:0;overflow:hidden;${sharedStyle}" />`;
+}
+
+/** Official Glass lockup by default; organization mark and name when white-labeled. */
 export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBranding(), _siteUrl: string = SITE_URL): string {
   const name = branding.brandName;
   const isDefaultBrand = name === "Glass";
+  if (isDefaultBrand) {
+    return `
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+  <tr>
+    <td align="center">
+      ${buildThemeAwareEmailLockup({
+        lightBackgroundUrl: GLASS_LOCKUP_URL,
+        darkBackgroundUrl: GLASS_LOCKUP_DARK_URL,
+        alt: "Glass",
+        width: 72,
+        height: 23,
+      })}
+    </td>
+  </tr>
+</table>`;
+  }
+
   const src = /^https?:\/\//i.test(branding.logoUrl)
     ? branding.logoUrl
     : absoluteEmailAssetUrl(branding.logoUrl);
-  const mark = isDefaultBrand
-    ? buildGlassEmailIconHtml({ size: 28, borderRadius: 7, margin: "0 10px 0 0" })
-    : `<img src="${src}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />`;
-  const suffix = isDefaultBrand
-    ? `<span class="glass-email-text-muted" style="font-weight:400;color:#6b7280;vertical-align:middle;margin-left:6px;">from Clarity Labs</span>`
-    : "";
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
     <td align="center" class="glass-email-text-primary" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:16px;line-height:1;color:#000000;">
-      ${mark}
+      <img src="${src}" alt="" width="28" height="28" style="display:inline-block;vertical-align:middle;width:28px;height:28px;border-radius:7px;margin-right:10px;object-fit:cover;border:0;" />
       <span style="font-weight:600;vertical-align:middle;">${name}</span>
-      ${suffix}
     </td>
   </tr>
 </table>`;
 }
 
-/** "Powered by {icon} Glass from Clarity Labs" platform attribution. */
-export function buildPlatformFooterHtml(siteUrl: string = SITE_URL): string {
+/** Canonical Clarity Labs attribution for fixed transactional emails. */
+export function buildPlatformFooterHtml(_siteUrl: string = SITE_URL): string {
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center" class="glass-email-text-muted" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1;">
-      <span style="vertical-align:middle;">Powered by</span>
-      ${buildGlassEmailIconHtml({ size: 14, borderRadius: 3, margin: "0 6px 0 8px" })}
-      <a href="${siteUrl}" class="glass-email-text-primary" style="color:#000000;font-weight:600;text-decoration:none;vertical-align:middle;">Glass</a>
-      <span style="vertical-align:middle;margin-left:4px;">from Clarity Labs</span>
+    <td align="center" valign="middle" class="glass-email-text-muted" style="padding-right:6px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1;">
+      from
+    </td>
+    <td align="center" valign="middle">
+      <a href="${CLARITY_LABS_SITE_URL}" style="display:block;text-decoration:none;">
+        ${buildThemeAwareEmailLockup({
+          lightBackgroundUrl: CLARITY_LABS_LOCKUP_URL,
+          darkBackgroundUrl: CLARITY_LABS_LOCKUP_DARK_URL,
+          alt: "Clarity Labs",
+          width: 72,
+          height: 14,
+        })}
+      </a>
     </td>
   </tr>
 </table>`;
@@ -211,18 +278,12 @@ ${bodyHtml}
 </html>`;
 }
 
-function buildCodeCells(token: string) {
-  return token
-    .split("")
-    .map(
-      (d) =>
-        `<td class="glass-email-text-primary glass-email-surface" style="width:36px;height:44px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;font-weight:600;color:#000000;background-color:#f5f5f5;border-radius:8px;">${d}</td>`,
-    )
-    .join('<td style="width:6px;"></td>');
+function buildCodeDisplay(token: string) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td nowrap="nowrap" class="glass-email-text-primary glass-email-surface" style="padding:10px 14px 10px 20px;white-space:nowrap;word-break:keep-all;overflow-wrap:normal;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:22px;font-weight:600;letter-spacing:6px;color:#000000;background-color:#f5f5f5;border-radius:8px;">${escapeHtml(token)}</td></tr></table>`;
 }
 
 export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
-  const digitCells = buildCodeCells(token);
+  const codeDisplay = buildCodeDisplay(token);
 
   const bodyHtml = `
 <tr><td align="center" style="padding:28px 40px 0 40px;">
@@ -231,7 +292,7 @@ export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, brandin
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>${digitCells}</tr></table>
+  ${codeDisplay}
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
   <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.5;">
@@ -253,7 +314,7 @@ export function buildOtpEmail(token: string, siteUrl: string = SITE_URL, brandin
 }
 
 export function buildEmailChangeOtpEmail(token: string, siteUrl: string = SITE_URL, branding: BrandingContext = getDefaultBranding()): { html: string; text: string } {
-  const digitCells = buildCodeCells(token);
+  const codeDisplay = buildCodeDisplay(token);
   const bodyHtml = `
 <tr><td align="center" style="padding:28px 40px 0 40px;">
   <p class="glass-email-text-primary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:500;color:#000000;line-height:1.5;">
@@ -261,7 +322,7 @@ export function buildEmailChangeOtpEmail(token: string, siteUrl: string = SITE_U
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>${digitCells}</tr></table>
+  ${codeDisplay}
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
   <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#4b5563;line-height:1.5;">
