@@ -71,7 +71,7 @@ export const typographyRoles = {
   "brand.display":
     "font-brand text-3xl font-normal leading-[1.1] tracking-tight normal-case not-italic normal-nums sm:text-4xl",
   "brand.wordmark":
-    "font-brand text-base font-medium leading-none tracking-tight normal-case not-italic normal-nums",
+    "font-brand text-base font-normal leading-none tracking-tight normal-case not-italic normal-nums",
 
   "prose.default":
     "font-sans text-base font-normal leading-relaxed tracking-normal normal-case not-italic normal-nums [&_strong]:font-semibold [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_h4]:text-base [&_h4]:font-semibold [&_h5]:text-base [&_h5]:font-semibold [&_h6]:text-base [&_h6]:font-semibold [&_code]:font-mono [&_code]:text-label [&_table]:text-label [&_th]:text-label [&_th]:font-semibold",
@@ -107,6 +107,34 @@ export function redactionTypeStyle(
 ): string {
   return typographyRoles[role].replace("font-brand", redactionFamilyClasses[level]);
 }
+
+/** The canonical Glass lockup preserves normal tracking on its leading glyph. */
+export const glassWordmarkLeadingGlyphTypographyStyle = Object.freeze({
+  letterSpacing: "normal",
+} satisfies CSSProperties);
+
+/** Typography contract for the Glass social card rendered through next/og. */
+export const glassSocialAsciiTypographyStyle = Object.freeze({
+  fontFamily: "monospace",
+  fontSize: 10,
+  fontWeight: 500,
+  letterSpacing: "0.085em",
+  lineHeight: 0.96,
+} satisfies CSSProperties);
+
+export const glassSocialWordmarkTypographyStyle = Object.freeze({
+  fontFamily: "Redaction",
+  fontSize: 136,
+  fontWeight: 400,
+  letterSpacing: "-0.025em",
+  lineHeight: 1,
+} satisfies CSSProperties);
+
+export const glassSocialUrlTypographyStyle = Object.freeze({
+  fontFamily: "Geist",
+  fontSize: 32,
+  fontWeight: 400,
+} satisfies CSSProperties);
 
 /** Typography mirrored by the hidden sizer and editable control. */
 export const editableMirrorTypographyStyle = Object.freeze({
