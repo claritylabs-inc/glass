@@ -729,56 +729,61 @@ export const resolveForOrg = internalQuery({
   },
 });
 
+export async function resolvePublicModelDefaults(ctx: QueryCtx) {
+  const globalSettings = await ctx.db
+    .query("globalModelSettings")
+    .withIndex("by_key", (q) => q.eq("key", "default"))
+    .first();
+  const globalRoutes = explicitGlobalRoutes(globalSettings);
+  const routes = {} as Record<ModelRouteId, ModelRoute>;
+  const routeSources = {} as Record<
+    ModelRouteId,
+    Extract<RouteSource, "global" | "static">
+  >;
+  for (const task of MODEL_TASKS) {
+    const globalRoute = globalRoutes?.[task];
+    if (
+      globalRoute &&
+      globalRoute.provider !== "moonshot" &&
+      !isRetiredModelRoute(globalRoute) &&
+      modelRouteSupportsTask(task, globalRoute) &&
+      routeDirectlyConfigured(globalRoute)
+    ) {
+      routes[task] = globalRoute;
+      routeSources[task] = "global";
+    } else {
+      routes[task] = MODEL_ROUTING[task];
+      routeSources[task] = "static";
+    }
+  }
+  for (const routeId of [
+    EXTRACTION_QUALITY_MODEL_ROUTE_ID,
+    EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
+    FALLBACK_MODEL_ROUTE_ID,
+  ]) {
+    const globalRoute = globalRoutes?.[routeId];
+    if (
+      globalRoute &&
+      globalRoute.provider !== "moonshot" &&
+      !isRetiredModelRoute(globalRoute) &&
+      routeDirectlyConfigured(globalRoute)
+    ) {
+      routes[routeId] = globalRoute;
+      routeSources[routeId] = "global";
+    } else {
+      routes[routeId] = defaultModelRouteForId(routeId);
+      routeSources[routeId] = "static";
+    }
+  }
+
+  return {
+    routes,
+    routeSources,
+    webRetrieval: normalizeWebRetrieval(globalSettings?.webRetrieval),
+  };
+}
+
 export const resolvePublicDefaults = internalQuery({
   args: {},
-  handler: async (ctx) => {
-    const globalSettings = await ctx.db
-      .query("globalModelSettings")
-      .withIndex("by_key", (q) => q.eq("key", "default"))
-      .first();
-    const globalRoutes = explicitGlobalRoutes(globalSettings);
-    const routes = {} as Record<ModelRouteId, ModelRoute>;
-    const routeSources = {} as Record<ModelRouteId, Extract<RouteSource, "global" | "static">>;
-    for (const task of MODEL_TASKS) {
-      const globalRoute = globalRoutes?.[task];
-      if (
-        globalRoute &&
-        globalRoute.provider !== "moonshot" &&
-        !isRetiredModelRoute(globalRoute) &&
-        modelRouteSupportsTask(task, globalRoute) &&
-        routeDirectlyConfigured(globalRoute)
-      ) {
-        routes[task] = globalRoute;
-        routeSources[task] = "global";
-      } else {
-        routes[task] = MODEL_ROUTING[task];
-        routeSources[task] = "static";
-      }
-    }
-    for (const routeId of [
-      EXTRACTION_QUALITY_MODEL_ROUTE_ID,
-      EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
-      FALLBACK_MODEL_ROUTE_ID,
-    ]) {
-      const globalRoute = globalRoutes?.[routeId];
-      if (
-        globalRoute &&
-        globalRoute.provider !== "moonshot" &&
-        !isRetiredModelRoute(globalRoute) &&
-        routeDirectlyConfigured(globalRoute)
-      ) {
-        routes[routeId] = globalRoute;
-        routeSources[routeId] = "global";
-      } else {
-        routes[routeId] = defaultModelRouteForId(routeId);
-        routeSources[routeId] = "static";
-      }
-    }
-
-    return {
-      routes,
-      routeSources,
-      webRetrieval: normalizeWebRetrieval(globalSettings?.webRetrieval),
-    };
-  },
+  handler: resolvePublicModelDefaults,
 });
