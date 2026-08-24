@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import { FileText } from "lucide-react";
 import { BrandIcon } from "@/components/ui/brand-icon";
+import { GlassWordmark } from "@/components/ui/glass-wordmark";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
@@ -58,15 +58,6 @@ export async function generateMetadata({
       images: [image],
     },
   };
-}
-
-function GlassWordmark() {
-  return (
-    <div className={`flex items-center gap-2.5 text-foreground ${typeStyle("body.medium")}`}>
-      <Image src="/glass-icon.svg" alt="" width={16} height={16} />
-      <span>Glass</span>
-    </div>
-  );
 }
 
 function BrandedPolicyIdentity({ policy }: { policy: Policy }) {

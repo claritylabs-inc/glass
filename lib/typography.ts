@@ -71,7 +71,7 @@ export const typographyRoles = {
   "brand.display":
     "font-brand text-3xl font-normal leading-[1.1] tracking-tight normal-case not-italic normal-nums sm:text-4xl",
   "brand.wordmark":
-    "font-brand text-base font-normal leading-none tracking-tight normal-case not-italic normal-nums",
+    "font-brand text-xl font-normal leading-none tracking-tight normal-case not-italic normal-nums",
 
   "prose.default":
     "font-sans text-base font-normal leading-relaxed tracking-normal normal-case not-italic normal-nums [&_strong]:font-semibold [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-base [&_h3]:font-semibold [&_h4]:text-base [&_h4]:font-semibold [&_h5]:text-base [&_h5]:font-semibold [&_h6]:text-base [&_h6]:font-semibold [&_code]:font-mono [&_code]:text-label [&_table]:text-label [&_th]:text-label [&_th]:font-semibold",

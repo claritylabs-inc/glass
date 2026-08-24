@@ -13,12 +13,12 @@ export function GlassWordmark({ className }: { className?: string }) {
       role="img"
       aria-label="Glass"
       className={cn(
-        "inline-flex items-center gap-1 text-foreground",
+        "inline-flex items-center gap-[0.25em] text-foreground",
         redactionTypeStyle("brand.wordmark"),
         className,
       )}
     >
-      <LogoIcon className="shrink-0" size={16} color={GLASS_BLUE} static />
+      <LogoIcon className="shrink-0" size="1em" color={GLASS_BLUE} static />
       <span aria-hidden>
         <span style={glassWordmarkLeadingGlyphTypographyStyle}>g</span>lass
       </span>
