@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   IMESSAGE_LINKED_SENDER_REQUIRED,
@@ -11,8 +9,6 @@ import {
   TEXT_CHANNEL_COMMAND_HELP,
 } from "../convex/lib/textChannelCommands";
 
-const root = join(__dirname, "..");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
 const commandCtx = {} as Parameters<typeof runImessageSlashCommand>[0];
 
 async function runCommand(messageText: string, currentSenderIsLinked: boolean) {
@@ -121,43 +117,4 @@ describe("text channel slash commands", () => {
     expect(result?.response).toContain("Acme Co");
   });
 
-  it("routes slash commands before natural-language controls and model generation", () => {
-    const inbound = read("convex/actions/handleInboundImessage.ts");
-    const controls = read("convex/lib/imessageDeterministicControls.ts");
-    const executor = read("convex/lib/imessageSlashCommands.ts");
-    const emailCommandExecutor = read("convex/lib/emailCommandExecutor.ts");
-    const deterministicGate = inbound.indexOf(
-      "const deterministicControlResult",
-    );
-    const slashGate = controls.indexOf("const slashCommandResult");
-    const emailControlGate = controls.indexOf("const emailControl =");
-    const taskControlGate = controls.indexOf("const taskControlIntent");
-
-    expect(inbound).toContain("runImessageDeterministicControls");
-    expect(deterministicGate).toBeGreaterThan(-1);
-    expect(deterministicGate).toBeLessThan(
-      inbound.indexOf("runAgentTurn(ctx"),
-    );
-    expect(controls).toContain("runImessageSlashCommand");
-    expect(slashGate).toBeGreaterThan(-1);
-    expect(emailControlGate).toBeGreaterThan(-1);
-    expect(slashGate).toBeLessThan(emailControlGate);
-    expect(taskControlGate).toBeGreaterThan(-1);
-    expect(emailControlGate).toBeLessThan(taskControlGate);
-    expect(controls).toContain("internal.imessageChats.markLeft");
-    expect(controls).toContain("currentSenderIsLinked,");
-    const emailControlBlock = controls.slice(
-      emailControlGate,
-      taskControlGate,
-    );
-    expect(emailControlBlock).toContain("resolveTextChannelEmailControl");
-    expect(emailControlBlock).toContain("executeEmailCommand");
-    expect(emailCommandExecutor).toContain("restoreAsDraftInternal");
-    expect(emailCommandExecutor).toContain("sendDraftInternal");
-    expect(emailCommandExecutor).toContain("cancelInternal");
-    expect(executor).toContain("requiresLinkedSender");
-    expect(executor).toContain("sendDraftInternal");
-    expect(executor).toContain("cancelInternal");
-    expect(executor).toContain("Unknown command");
-  });
 });

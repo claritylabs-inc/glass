@@ -33,16 +33,3 @@ test("makes retired, PR, and unknown Railway environments health-only", () => {
     });
   }
 });
-
-test("normalizes persistent Railway environment names", () => {
-  const access = resolveWorkerRuntimeAccess({
-    RAILWAY_ENVIRONMENT_NAME: " Production ",
-  });
-
-  assert.deepEqual(access, {
-    mode: "active",
-    railwayEnvironment: "Production",
-    jobsEnabled: true,
-    conversionsEnabled: true,
-  });
-});

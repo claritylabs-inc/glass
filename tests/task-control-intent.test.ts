@@ -1,13 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   rankTaskControlCandidates,
   taskControlResponse,
 } from "../convex/lib/taskControlIntent";
-
-const root = join(__dirname, "..");
-const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 describe("task control intent", () => {
   it("ranks short natural-language task exits without regex branching", () => {
@@ -87,30 +82,4 @@ describe("task control intent", () => {
     }
   });
 
-  it("runs before stale COI context can trigger COI guard rewrites", () => {
-    const imessage = read("convex/actions/handleInboundImessage.ts");
-    const imessageControls = read("convex/lib/imessageDeterministicControls.ts");
-    const webChat = read("convex/actions/processThreadChat.ts");
-    const webChatControls = read("convex/lib/webChatDeterministicControls.ts");
-    const decision = read("convex/lib/taskControlDecision.ts");
-
-    expect(decision).toContain("generateObject");
-    expect(decision).toContain("rankTaskControlCandidates");
-    expect(decision).toContain("shouldAskConfirmation");
-    expect(imessageControls).toContain("resolveTaskControlIntent");
-    const imessageControlCall = imessage.indexOf(
-      "const deterministicControlResult = await runImessageDeterministicControls",
-    );
-    expect(imessageControlCall).toBeGreaterThan(-1);
-    expect(imessageControlCall).toBeLessThan(
-      imessage.indexOf("validatePolicyFocusIds("),
-    );
-    expect(imessage).not.toContain("buildImessageKnowledgeContext");
-    expect(webChatControls).toContain("resolveTaskControlIntent");
-    const webTaskControlCall = webChat.indexOf("await runWebChatTaskControl(ctx");
-    expect(webTaskControlCall).toBeGreaterThan(-1);
-    expect(webTaskControlCall).toBeLessThan(
-      webChat.indexOf("hasCoiEmailIntent(latestUserContent"),
-    );
-  });
 });

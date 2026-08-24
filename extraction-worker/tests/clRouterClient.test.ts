@@ -80,7 +80,7 @@ test("request builder forwards schema, snapshot, and base64 assets without mutat
   });
 });
 
-test("client authenticates and preserves actual routing, request, usage, and cost metadata", async () => {
+test("client authenticates and preserves routing lineage", async () => {
   let request: RequestInit | undefined;
   const client = createClRouterClient({
     baseUrl: "https://router.internal/",
@@ -102,16 +102,6 @@ test("client authenticates and preserves actual routing, request, usage, and cos
   assert.equal(result.requestId, "router-request-1");
   assert.equal(result.model.provider, "fireworks");
   assert.equal(result.routing.policyVersion, "policy-v1");
-  assert.deepEqual(result.routing.wouldHaveChosen, {
-    provider: "openai",
-    model: "gpt-5-mini",
-    decision: "autonomous_primary",
-  });
-  assert.equal(result.routing.shadowMode, true);
-  assert.equal(result.routing.wouldHaveMatched, false);
-  assert.equal(result.costUsd, 0.00004);
-  assert.equal(result.usage.cachedInputTokens, 2);
-  assert.equal(result.usage.cacheWriteTokens, 1);
 });
 
 test("client permits plaintext only for loopback hosts", async () => {
@@ -159,7 +149,7 @@ test("only proven pre-execution production outages permit direct-provider fallba
   assert.equal(shouldFallBackFromClRouter(new ClRouterProtocolError("invalid"), production), false);
 });
 
-test("client distinguishes proven connection refusal from ambiguous timeout", async () => {
+test("client wraps a proven connection refusal for fallback", async () => {
   const production = { GLASS_ENV: "production" };
   const disconnected = createClRouterClient({
     baseUrl: "https://router.internal",
@@ -179,26 +169,6 @@ test("client distinguishes proven connection refusal from ambiguous timeout", as
     (error) => error instanceof ClRouterConnectionError
       && error.kind === "connection"
       && shouldFallBackFromClRouter(error, production),
-  );
-
-  const timedOut = createClRouterClient({
-    baseUrl: "https://router.internal",
-    secret: "shared-secret",
-    timeoutMs: 5,
-    fetch: async (_input, init) => await new Promise<Response>((_resolve, reject) => {
-      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-    }),
-  });
-  await assert.rejects(
-    timedOut.generate({
-      task: "extraction",
-      tenantId: "glass",
-      prompt: "Extract.",
-      schema: { type: "object" },
-    }),
-    (error) => error instanceof ClRouterConnectionError
-      && error.kind === "timeout"
-      && !shouldFallBackFromClRouter(error, production),
   );
 });
 

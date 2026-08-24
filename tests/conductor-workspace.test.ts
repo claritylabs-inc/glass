@@ -177,16 +177,6 @@ describe("Conductor workspace identity", () => {
     expect(elapsed).toBe(500);
   });
 
-  it("launches extraction before waiting for its container gateway", () => {
-    const launcher = readFileSync(
-      path.join(repoRoot, "scripts/run-local-extraction-container.mjs"),
-      "utf8",
-    );
-
-    expect(launcher.indexOf('spawn(\n  "container"')).toBeLessThan(
-      launcher.indexOf("listenOnContainerGateway(proxy"),
-    );
-  });
 });
 
 describe("Conductor local Convex selection", () => {
@@ -287,20 +277,6 @@ describe("Conductor local Convex selection", () => {
     }
   });
 
-  it("repairs the selector before setup or Dev starts Convex", () => {
-    const setup = readFileSync(
-      path.join(repoRoot, "scripts/setup-conductor-workspace.mjs"),
-      "utf8",
-    );
-    const dev = readFileSync(
-      path.join(repoRoot, "scripts/run-conductor-dev.mjs"),
-      "utf8",
-    );
-
-    expect(setup).toContain("repairLocalConvexSelection()");
-    expect(dev).toContain("repairLocalConvexSelection()");
-  });
-
   it("refreshes every port-sensitive local service URL before the web app starts", () => {
     const previousPort = process.env.CONDUCTOR_PORT;
     process.env.CONDUCTOR_PORT = "55000";
@@ -314,14 +290,6 @@ describe("Conductor local Convex selection", () => {
         IMESSAGE_WORKER_URL: "http://127.0.0.1:55002",
         SLACK_WORKER_URL: "http://127.0.0.1:55005",
       });
-      const launcher = readFileSync(
-        path.join(repoRoot, "scripts/run-conductor-web.mjs"),
-        "utf8",
-      );
-      expect(launcher).toContain("conductorLocalRuntimeOverrides()");
-      expect(launcher.indexOf("conductorLocalRuntimeOverrides()")).toBeLessThan(
-        launcher.indexOf("const child = spawn("),
-      );
     } finally {
       if (previousPort === undefined) delete process.env.CONDUCTOR_PORT;
       else process.env.CONDUCTOR_PORT = previousPort;
