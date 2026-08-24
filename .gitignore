@@ -48,6 +48,7 @@
 !/docs/deployment/slack.md
 !/docs/testing/
 /docs/testing/*
+!/docs/testing/README.md
 !/docs/testing/requirements-fixtures/
 !/docs/testing/requirements-fixtures/**
 

@@ -11,6 +11,7 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 - Use `dayjs` for date parsing, formatting, comparisons, and timestamps in new or touched code instead of raw `Date.now()`, `Date.parse()`, or `new Date(...)`.
 - Use the shared `PillButton` primitive for pill-shaped action buttons across app surfaces, including primary, secondary, destructive, footer, and app-shell actions. Every destructive action button uses `variant="destructive"`; icon-only destructive actions add `iconOnly` and a nonempty `label` instead of switching to `Button`, a raw button, or custom red classes. When an action needs native link or download behavior, render `PillButton` with `href`, `target`, `rel`, or `download` instead of hand-rolling rounded anchor/button classes. Raw `<button>` elements are for non-pill structural controls such as row targets, tabs, menu triggers, and non-destructive navigation controls.
 - Follow `docs/design/interface-style.md` for browser colors, border strength, spacing, surface choice, card use, shape, elevation, and responsive layout. Follow `docs/design/typography.md` for browser text roles.
+- Follow `docs/testing/README.md` when deciding whether a change needs automated coverage. Prefer a small number of durable, risk-focused tests over broad implementation or UI coverage.
 
 ## Commands
 
