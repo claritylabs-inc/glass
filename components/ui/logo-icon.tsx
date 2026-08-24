@@ -11,7 +11,7 @@ import {
 
 interface LogoIconProps {
   className?: string;
-  size?: number;
+  size?: number | "1em";
   /** Override the fill/stroke color (default: currentColor) */
   color?: string;
   /** When true, disables all scroll/load animations */
@@ -60,7 +60,7 @@ function AnimatedLogoIcon({
   color,
 }: {
   className: string;
-  size: number;
+  size: number | "1em";
   color: string;
 }) {
   const { scrollYProgress } = useScroll();
