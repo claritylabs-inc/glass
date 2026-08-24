@@ -54,12 +54,12 @@ const PUBLIC_PATHS = [
   "/signup",
   "/operator/login",
   "/oauth/authorize",
-  "/weather",
   "/invite",
   "/share/imessage",
   "/connect/request",
   "/connected-orgs/request",
 ];
+const AUTH_AGNOSTIC_PATHS = ["/weather"];
 const ONBOARDING_PATH = "/onboarding";
 const ADMIN_PATHS = ["/settings"];
 const OPERATOR_PATH = "/operator";
@@ -205,7 +205,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     getServerBootStateSnapshot,
   );
 
-  const isPublic = PUBLIC_PATHS.some(
+  const isAuthAgnostic = AUTH_AGNOSTIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
+  const isPublic = isAuthAgnostic || PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
   const isOnboarding =
@@ -304,6 +307,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [clearOnboardingCache, clearScope, isAuthenticated, isLoading]);
 
   useEffect(() => {
+    if (isAuthAgnostic) return;
     if (!isAuthenticated || !pendingInvitation || inviteAcceptError) return;
     const invitationId = String(pendingInvitation.invitationId);
     if (handledInvitationIdRef.current === invitationId) return;
@@ -324,6 +328,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [
     acceptInvitation,
     inviteAcceptError,
+    isAuthAgnostic,
     isAuthenticated,
     pendingInvitation,
     router,
@@ -331,7 +336,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   ]);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || isAuthAgnostic) return;
 
     if (!isAuthenticated && !isPublic) {
       router.replace("/login");
@@ -406,6 +411,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [
     inviteAcceptError,
+    isAuthAgnostic,
     isLoading,
     isAuthenticated,
     isPublic,
@@ -438,6 +444,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       (isAuthenticated &&
         viewer === undefined &&
         cachedAccountKind !== "customer"));
+
+  // Auth-agnostic pages stay visible while auth initializes and never inherit
+  // account, onboarding, invitation, or impersonation redirects.
+  if (isAuthAgnostic) return <>{children}</>;
 
   // Loading state - cached boot state can choose the correct skeleton, but
   // protected children wait for the current Convex viewer/org checks.
