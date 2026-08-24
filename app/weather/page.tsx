@@ -2,11 +2,9 @@
 
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
-import { LogoIcon } from "@/components/ui/logo-icon";
+import { GlassWordmark } from "@/components/ui/glass-wordmark";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { typeStyle } from "@/lib/typography";
-
-const BRAND_BLUE = "#A0D2FA";
 
 const TASK_LABELS: Record<string, string> = {
   chat: "Chat",
@@ -40,13 +38,7 @@ export default function WeatherPage() {
             rel="noopener noreferrer"
             className={`inline-flex items-center gap-2 text-foreground/60 transition-colors hover:text-foreground ${typeStyle("control.buttonCompact")}`}
           >
-            <LogoIcon size={16} color={BRAND_BLUE} static />
-            <span className={`text-foreground ${typeStyle("body.medium")}`}>
-              Glass
-            </span>
-            <span className={`text-foreground/50 ${typeStyle("body.default")}`}>
-              from Clarity Labs
-            </span>
+            <GlassWordmark />
           </Link>
           <h1 className={`mt-4 ${typeStyle("heading.page")}`}>
             AI Weather Report

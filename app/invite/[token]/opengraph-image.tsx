@@ -1,15 +1,14 @@
 import { ImageResponse } from "next/og";
 import { fetchAction } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-import { BrandLockup, ogFonts } from "../../opengraph-image";
+import { createGlassSocialImage } from "@/lib/glass-social-image";
+import { GlassWordmark, ogFonts } from "../../opengraph-image";
 
 export const alt = "Glass from Clarity Labs";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default async function Image({ params }: { params: { token: string } }) {
-  const fonts = await ogFonts();
-
   type BrokerData = {
     brokerName?: string;
     whiteLabelingEnabled?: boolean;
@@ -23,25 +22,11 @@ export default async function Image({ params }: { params: { token: string } }) {
     data = null;
   }
 
-  const Fallback = (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#ffffff",
-        fontFamily: "Geist",
-      }}
-    >
-      <BrandLockup />
-    </div>
-  );
-
   if (!data?.brokerName || data.whiteLabelingEnabled === false) {
-    return new ImageResponse(Fallback, { ...size, ...(fonts ? { fonts } : {}) });
+    return createGlassSocialImage();
   }
+
+  const fonts = await ogFonts();
 
   return new ImageResponse(
     (
@@ -94,7 +79,7 @@ export default async function Image({ params }: { params: { token: string } }) {
           }}
         >
           <span>Powered by</span>
-          <BrandLockup textSize={18} gap={5} />
+          <GlassWordmark size={18} />
         </div>
       </div>
     ),

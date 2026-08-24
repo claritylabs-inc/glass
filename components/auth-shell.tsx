@@ -1,20 +1,10 @@
 import { type ReactNode } from "react";
-import { LogoIcon } from "@/components/ui/logo-icon";
+import { GlassWordmark } from "@/components/ui/glass-wordmark";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { typeStyle } from "@/lib/typography";
 
-const BRAND_BLUE = "#A0D2FA";
-
 export function BrandWordmark() {
-  return (
-    <div className="flex items-center gap-2.5 text-foreground">
-      <LogoIcon size={16} color={BRAND_BLUE} static />
-      <div className="flex items-baseline gap-1.5">
-        <span className={`${typeStyle("body.medium")}`}>Glass</span>
-        <span className={`text-muted-foreground ${typeStyle("body.default")}`}>from Clarity Labs</span>
-      </div>
-    </div>
-  );
+  return <GlassWordmark />;
 }
 
 export function PartnerWordmark({
@@ -26,17 +16,23 @@ export function PartnerWordmark({
   iconUrl?: string | null;
   website?: string | null;
 }) {
+  const normalizedName = name?.trim();
+
+  if (!normalizedName) {
+    return <GlassWordmark />;
+  }
+
   return (
     <div className="flex items-center gap-2.5 text-foreground">
       <div className="h-6 w-6 overflow-hidden rounded-md">
         <OrgBrandIcon
-          name={name}
+          name={normalizedName}
           iconUrl={iconUrl}
           website={website}
           size="sm"
         />
       </div>
-      <span className={`${typeStyle("body.medium")}`}>{name?.trim() || "Glass from Clarity Labs"}</span>
+      <span className={`${typeStyle("body.medium")}`}>{normalizedName}</span>
     </div>
   );
 }
@@ -45,11 +41,7 @@ export function PoweredByGlassWordmark() {
   return (
     <div className={`flex items-center justify-center gap-2 text-muted-foreground ${typeStyle("caption.default")}`}>
       <span>Powered by</span>
-      <div className={`flex items-center gap-1.5 ${typeStyle("body.default")}`}>
-        <LogoIcon size={12} color={BRAND_BLUE} static />
-        <span className={`text-foreground ${typeStyle("body.medium")}`}>Glass</span>
-        <span>from Clarity Labs</span>
-      </div>
+      <GlassWordmark />
     </div>
   );
 }
