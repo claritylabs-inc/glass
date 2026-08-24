@@ -2,7 +2,7 @@ const RESEND_API = "https://api.resend.com/emails";
 const DEFAULT_AGENT_DOMAIN = "glass.insure";
 const DEFAULT_NOTIFICATION_EMAIL_DOMAIN = "notifications.glass.insure";
 const DEFAULT_AUTH_EMAIL_DOMAIN = "auth.glass.insure";
-const DEFAULT_AUTH_EMAIL_FROM_NAME = "Glass from Clarity Labs";
+const DEFAULT_AUTH_EMAIL_FROM_NAME = "Glass";
 const DEFAULT_LEGACY_AGENT_DOMAINS = ["glass.claritylabs.inc", "dev.claritylabs.inc"];
 
 function normalizeDomain(domain: string): string {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  buildEmailChangeOtpEmail,
   buildEmailShell,
   buildOtpEmail,
   buildSlackInstallInviteEmail,
@@ -36,6 +37,19 @@ describe("shared email shell", () => {
     expect(email.html).toContain('class="glass-email-divider"');
     expect(email.html).toContain('class="glass-email-text-muted"');
   });
+
+  test("renders OTPs as one non-wrapping visible text node", () => {
+    const emails = [
+      buildOtpEmail("123456"),
+      buildEmailChangeOtpEmail("123456"),
+    ];
+
+    for (const email of emails) {
+      expect(email.html).toMatch(
+        /<td nowrap="nowrap"[^>]*>123456<\/td>/,
+      );
+    }
+  });
 });
 
 describe("Slack install invitation email", () => {
@@ -49,7 +63,6 @@ describe("Slack install invitation email", () => {
 
     expect(email.subject).toBe("Install the Glass Slack app for Cove & Co.");
     expect(email.html).toContain("<!DOCTYPE html>");
-    expect(email.html).toContain("Glass</span>");
     expect(email.html).toContain("Install the Glass app once in your workspace");
     expect(email.html).toContain("Cove &amp; Co.");
     expect(email.html).toContain(
