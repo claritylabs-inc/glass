@@ -57,7 +57,10 @@ import { runImessageDeterministicControls } from "../lib/imessageDeterministicCo
 import { postProcessImessageResponseText } from "../lib/imessageResponsePostProcessing";
 import { stripInternalAgentActivity } from "../lib/agentMessageHistory";
 import { createImessageAgentRunState } from "../lib/imessageAgentRunState";
-import { runAgentTurn } from "../lib/channelAgentRunner";
+import {
+  AGENT_MAX_OUTPUT_TOKENS,
+  runAgentTurn,
+} from "../lib/channelAgentRunner";
 import {
   buildFallbackImessageChatGuid,
   buildImessageParticipantInputs,
@@ -782,7 +785,7 @@ export const processInbound = internalAction({
           (attachment) => attachment.filename,
         ),
         options: {
-          maxOutputTokens: 512,
+          maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
           system: systemPrompt,
           messages: modelMessages,
           tools: imessageTools,

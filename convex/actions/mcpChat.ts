@@ -5,7 +5,10 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
 import { generateTextForOrg } from "../lib/models";
-import { runAgentTurn } from "../lib/channelAgentRunner";
+import {
+  AGENT_MAX_OUTPUT_TOKENS,
+  runAgentTurn,
+} from "../lib/channelAgentRunner";
 import {
   formatPolicyFocusHints,
   selectPolicyFocusIds,
@@ -357,7 +360,7 @@ MCP MODE:
         )
         .join("\n"),
       options: {
-        maxOutputTokens: 2048,
+        maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
         system: fullSystemPrompt,
         messages: messageHistory,
         tools,

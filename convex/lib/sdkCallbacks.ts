@@ -798,6 +798,9 @@ export function makeGenerateText(
                   routing?.tracePolicyId ? String(routing.tracePolicyId) : undefined
                 ),
                 routing: {
+                  ...(plan.routeSource === "global"
+                    ? { pin: plan.primaryRoute }
+                    : {}),
                   allowFallback: true,
                 },
                 trace: clRouterTrace(routing, label, taskKind, trace),
@@ -1026,6 +1029,9 @@ export function makeGenerateObject(
                   routing?.tracePolicyId ? String(routing.tracePolicyId) : undefined
                 ),
                 routing: {
+                  ...(plan.routeSource === "global"
+                    ? { pin: plan.primaryRoute }
+                    : {}),
                   allowFallback: true,
                 },
                 trace: clRouterTrace(routing, label, taskKind, trace),

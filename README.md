@@ -276,13 +276,18 @@ service. Glass resolves the broker/global/code settings snapshot and sends it
 with each enabled request; the router owns direct-provider selection,
 failover, cost telemetry, calibration, and autonomous policy.
 
-- `CL_ROUTER_TASKS` enables task families incrementally; clearing it restores
-  the retained direct path.
+- `CL_ROUTER_TASKS` enables task families incrementally. Authenticated
+  `query_reason` uses the router whenever its URL and inference secret are
+  configured; other unlisted task families retain the direct path.
 - Broker routes and keys remain org-scoped overrides. Operator global choices
-  seed new autonomous policies rather than pinning active routes.
+  are explicit overrides; leaving a task on Automated routing gives the active
+  policy control. The global fallback remains a separate safety route.
 - `convex/lib/clRouterClient.ts` owns the API contract and safe pre-response
   fallback. `convex/lib/clRouterLanguageModel.ts` preserves the Glass-side chat
   tool loop with one router stream per model step.
+- Tool-bearing successes and incomplete responses feed generic quality signals
+  back to the routed request so autonomous `query_reason` policies can learn
+  which candidates reliably complete tool workflows.
 - Defaults remain broker-configurable in `/settings?section=models`; see
   `AGENTS.md` and `docs/deployment/environments.md` for rollout and controls.
 

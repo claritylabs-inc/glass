@@ -5,7 +5,10 @@ import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs, type ModelMessage } from "ai";
-import { runAgentTurn } from "../lib/channelAgentRunner";
+import {
+  AGENT_MAX_OUTPUT_TOKENS,
+  runAgentTurn,
+} from "../lib/channelAgentRunner";
 import {
   extractPolicyAttachment,
   createImessageGroupChat,
@@ -1541,7 +1544,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             .map((message) => `${message.role}: ${message.content ?? ""}`)
             .join("\n"),
           options: {
-            maxOutputTokens: 2048,
+            maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
             system: systemContext,
             messages,
             tools: emailTools,

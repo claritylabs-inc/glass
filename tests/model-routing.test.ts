@@ -7,6 +7,7 @@ import {
   WEB_RETRIEVAL_DEFAULT,
   WEB_RETRIEVAL_DEFAULT_ROUTES,
   fallbackRouteForCall,
+  agentRunCompletionTelemetry,
   generatedTextFromResult,
   isPreExecutionFallbackEligibleError,
   modelTaskForCall,
@@ -107,6 +108,49 @@ describe("model routing", () => {
     ).toBe("final");
     expect(generatedTextFromResult({ steps: [{ toolCalls: [] }] })).toBe("");
     expect(generatedTextFromResult(undefined)).toBe("");
+  });
+
+  test("marks empty and output-limited customer responses incomplete", () => {
+    const audit = {
+      usedTools: [],
+      completedTools: [],
+      toolCalls: [],
+      workflowOutcomes: [],
+    };
+
+    expect(agentRunCompletionTelemetry({ text: "", finishReason: "stop" }, audit))
+      .toMatchObject({ status: "incomplete", completionIssue: "empty_response" });
+    expect(
+      agentRunCompletionTelemetry(
+        { text: "Partial answer", finishReason: "length" },
+        audit,
+      ),
+    ).toMatchObject({
+      status: "incomplete",
+      completionIssue: "output_limit",
+      visibleTextLength: 14,
+    });
+    expect(
+      agentRunCompletionTelemetry(
+        { text: "Complete answer", finishReason: "stop" },
+        audit,
+      ),
+    ).toMatchObject({ status: "complete", completionIssue: undefined });
+
+    expect(
+      agentRunCompletionTelemetry(
+        { text: "", finishReason: "stop" },
+        {
+          usedTools: ["import_requirement_attachments"],
+          completedTools: ["import_requirement_attachments"],
+          toolCalls: [{ name: "import_requirement_attachments" }],
+          workflowOutcomes: [{ status: "completed" }],
+        },
+      ),
+    ).toMatchObject({
+      status: "incomplete",
+      completionIssue: "empty_response",
+    });
   });
 });
 

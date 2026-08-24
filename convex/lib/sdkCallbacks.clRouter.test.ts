@@ -297,7 +297,7 @@ describe("cl-router generation callbacks", () => {
     });
   });
 
-  test("maps classification task kinds for text generation without pinning", async () => {
+  test("maps classification task kinds and preserves the operator override", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "query_classify");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
@@ -321,9 +321,14 @@ describe("cl-router generation callbacks", () => {
     expect(JSON.parse(init.body as string)).toMatchObject({
       task: "classification",
       taskKind: "query_classify",
-      routing: { allowFallback: true },
+      routing: {
+        pin: {
+          provider: "fireworks",
+          model: "accounts/fireworks/models/deepseek-v4-flash",
+        },
+        allowFallback: true,
+      },
     });
-    expect(JSON.parse(init.body as string).routing).not.toHaveProperty("pin");
   });
 
   test.each([
@@ -332,59 +337,81 @@ describe("cl-router generation callbacks", () => {
       baseTask: "extraction",
       taskKind: "extraction_focused",
       expectedTask: "extraction",
+      expectedPin: {
+        provider: "fireworks",
+        model: "accounts/fireworks/models/deepseek-v4-flash",
+      },
     },
     {
       name: "quality-primary extraction",
       baseTask: "extraction",
       taskKind: "extraction_operational_profile",
       expectedTask: "extraction",
+      expectedPin: null,
     },
     {
       name: "coverage cleanup",
       baseTask: "extraction",
       taskKind: "extraction_coverage_cleanup",
       expectedTask: "extraction",
+      expectedPin: null,
     },
     {
       name: "extraction classification",
       baseTask: "extraction",
       taskKind: "extraction_classify",
       expectedTask: "classification",
+      expectedPin: {
+        provider: "fireworks",
+        model: "accounts/fireworks/models/deepseek-v4-flash",
+      },
     },
     {
       name: "coverage recovery",
       baseTask: "extraction_coverage_recovery",
       taskKind: undefined,
       expectedTask: "extraction_coverage_recovery",
+      expectedPin: { provider: "openai", model: "gpt-5.4-mini" },
     },
     {
       name: "query reasoning",
       baseTask: "chat",
       taskKind: "query_reason",
       expectedTask: "chat",
+      expectedPin: null,
     },
     {
       name: "vision query attachment",
       baseTask: "chat_vision",
       taskKind: "query_attachment",
       expectedTask: "chat_vision",
+      expectedPin: null,
     },
     {
       name: "policy-change analysis",
       baseTask: "analysis",
       taskKind: "pce_impact_analysis",
       expectedTask: "analysis",
+      expectedPin: {
+        provider: "fireworks",
+        model: "accounts/fireworks/models/glm-5p2",
+      },
     },
     {
       name: "general classification",
       baseTask: "classification",
       taskKind: undefined,
       expectedTask: "classification",
+      expectedPin: {
+        provider: "fireworks",
+        model: "accounts/fireworks/models/deepseek-v4-flash",
+      },
     },
   ] as const)("routes $name callbacks with the expected task family", async ({
     baseTask,
     taskKind,
     expectedTask,
+    expectedPin,
   }) => {
     vi.stubEnv("CL_ROUTER_TASKS", taskKind ?? baseTask);
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
@@ -412,6 +439,7 @@ describe("cl-router generation callbacks", () => {
     });
     if (taskKind) expect(request.taskKind).toBe(taskKind);
     else expect(request).not.toHaveProperty("taskKind");
-    expect(request.routing).not.toHaveProperty("pin");
+    if (expectedPin) expect(request.routing.pin).toEqual(expectedPin);
+    else expect(request.routing).not.toHaveProperty("pin");
   });
 });

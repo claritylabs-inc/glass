@@ -17,7 +17,10 @@ import {
 } from "../lib/chatTools";
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import { agentToolStepsFromAudit } from "../lib/agentSteps";
-import { runAgentTurn } from "../lib/channelAgentRunner";
+import {
+  AGENT_MAX_OUTPUT_TOKENS,
+  runAgentTurn,
+} from "../lib/channelAgentRunner";
 import {
   formatPolicyFocusHints,
   selectPolicyFocusIds,
@@ -1405,7 +1408,7 @@ export const run = internalAction({
             ? new Set([SLACK_REACTION_TOOL_NAME])
             : undefined,
         options: {
-          maxOutputTokens: 4096,
+          maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
           system: fullSystemPrompt,
           messages: messageHistory,
           tools,

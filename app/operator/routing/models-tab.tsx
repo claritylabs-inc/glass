@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Shuffle } from "lucide-react";
 import {
   getModelDisplayName,
   ModelProviderLogo,
@@ -66,6 +66,7 @@ type TaskConfig = {
   description: string;
   isEmbedding: boolean;
   isAudio: boolean;
+  automatedRouting: boolean;
   defaultRoute: Route;
 };
 type TaskGroupConfig = {
@@ -83,7 +84,8 @@ type Settings = {
   updatedAt: number | null;
 };
 
-const DEFAULT_VALUE = "__default__";
+const AUTOMATED_VALUE = "__automated__";
+const DEFAULT_ROUTE_VALUE = "__default_route__";
 const PROVIDER_SELECT_WIDTH_CLASS = "w-full xl:w-44";
 const MODEL_SELECT_WIDTH_CLASS = "w-full xl:w-[30rem]";
 const PROVIDER_PRIORITY: ProviderId[] = [
@@ -104,12 +106,6 @@ function ProviderLogo({
   size?: number;
 }) {
   return <ModelProviderLogo provider={provider} size={size} />;
-}
-
-function sameRoute(left: Route | null, right: Route) {
-  return (
-    !!left && left.provider === right.provider && left.model === right.model
-  );
 }
 
 function formatTokens(value: number | undefined) {
@@ -147,10 +143,6 @@ function capabilitySummary(
   return parts.join(" / ");
 }
 
-function routeIsDefaultOverride(route: Route, task: TaskConfig) {
-  return sameRoute(route, task.defaultRoute) ? null : route;
-}
-
 function providerSortIndex(provider: ProviderId) {
   const index = PROVIDER_PRIORITY.indexOf(provider);
   return index === -1 ? PROVIDER_PRIORITY.length : index;
@@ -176,10 +168,16 @@ export function ModelsTab() {
     try {
       await updateRoutes({ routes: { [taskId]: route } });
       await patchRoute(taskId, route);
-      toast.success(route ? "Router seed updated" : "Router seed reset");
+      toast.success(
+        route
+          ? "Model override updated"
+          : taskId === "fallback"
+            ? "Fallback reset"
+            : "Automated routing restored",
+      );
     } catch (error) {
       toast.error(
-        getUserFacingErrorMessage(error, "Failed to update router seed"),
+        getUserFacingErrorMessage(error, "Failed to update model override"),
       );
     } finally {
       setSavingTask(null);
@@ -256,14 +254,10 @@ export function ModelsTab() {
             <div className="divide-y divide-border px-4">
               {tasks.map((task) => {
                 const route = settings.routes[task.id] ?? null;
-                const routeIsDefault = sameRoute(
-                  route,
-                  task.defaultRoute,
-                );
-                const displayRoute = routeIsDefault ? null : route;
+                const automated = task.automatedRouting && route === null;
                 const saving = savingTask === task.id;
 
-                const selectedRoute = displayRoute ?? task.defaultRoute;
+                const selectedRoute = route ?? task.defaultRoute;
                 const selectedProvider =
                   providersById[selectedRoute.provider];
                 const providerOptions = providersForTask(
@@ -276,10 +270,7 @@ export function ModelsTab() {
                 );
 
                 function commitSelectedRoute(nextRoute: Route) {
-                  void commitRoute(
-                    task.id,
-                    routeIsDefaultOverride(nextRoute, task),
-                  );
+                  void commitRoute(task.id, nextRoute);
                 }
 
                 return (
@@ -292,9 +283,9 @@ export function ModelsTab() {
                         <p className={`text-foreground ${typeStyle("body.medium")}`}>
                           {task.label}
                         </p>
-                        {displayRoute ? (
+                        {route ? (
                           <span className={`rounded-full bg-muted/55 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}>
-                            Custom seed
+                            Override
                           </span>
                         ) : null}
                       </div>
@@ -304,9 +295,16 @@ export function ModelsTab() {
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground xl:self-center" />
                       ) : null}
                       <Select
-                        value={selectedRoute.provider}
+                        value={automated ? AUTOMATED_VALUE : selectedRoute.provider}
                         onValueChange={(nextProvider) => {
                           if (!nextProvider) return;
+                          if (
+                            nextProvider === AUTOMATED_VALUE ||
+                            nextProvider === DEFAULT_ROUTE_VALUE
+                          ) {
+                            void commitRoute(task.id, null);
+                            return;
+                          }
                           const provider = nextProvider as ProviderId;
                           const models = modelsForProvider(
                             provider,
@@ -323,19 +321,48 @@ export function ModelsTab() {
                       >
                         <SelectTrigger className={PROVIDER_SELECT_WIDTH_CLASS}>
                           <SelectValue>
-                            <span className="flex min-w-0 items-center gap-2">
-                              <ProviderLogo
-                                provider={selectedRoute.provider}
-                                size={15}
-                              />
-                              <span className={`truncate ${typeStyle("body.large")}`}>
-                                {selectedProvider?.label ??
-                                  selectedRoute.provider}
+                            {automated ? (
+                              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                                <Shuffle className="size-4 shrink-0" />
+                                <span className={`truncate ${typeStyle("body.large")}`}>
+                                  Automated routing
+                                </span>
                               </span>
-                            </span>
+                            ) : (
+                              <span className="flex min-w-0 items-center gap-2">
+                                <ProviderLogo
+                                  provider={selectedRoute.provider}
+                                  size={15}
+                                />
+                                <span className={`truncate ${typeStyle("body.large")}`}>
+                                  {selectedProvider?.label ??
+                                    selectedRoute.provider}
+                                </span>
+                              </span>
+                            )}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="min-w-56">
+                          {task.automatedRouting ? (
+                            <>
+                              <SelectItem value={AUTOMATED_VALUE}>
+                                <span className="flex items-center gap-2 text-muted-foreground">
+                                  <Shuffle className="size-4" />
+                                  Automated routing
+                                </span>
+                              </SelectItem>
+                              <SelectSeparator />
+                            </>
+                          ) : route ? (
+                            <>
+                              <SelectItem value={DEFAULT_ROUTE_VALUE}>
+                                <span className="text-muted-foreground">
+                                  Reset to default fallback
+                                </span>
+                              </SelectItem>
+                              <SelectSeparator />
+                            </>
+                          ) : null}
                           {providerOptions.map((provider) => (
                             <SelectItem
                               key={provider.id}
@@ -359,48 +386,42 @@ export function ModelsTab() {
                         </SelectContent>
                       </Select>
                       <Select
-                        value={selectedRoute.model}
+                        value={automated ? AUTOMATED_VALUE : selectedRoute.model}
                         onValueChange={(model) => {
                           if (!model) return;
-                          if (model === DEFAULT_VALUE) {
-                            void commitRoute(task.id, null);
-                            return;
-                          }
                           commitSelectedRoute({
                             provider: selectedRoute.provider,
                             model,
                           });
                         }}
-                        disabled={saving}
+                        disabled={saving || automated}
                       >
                         <SelectTrigger className={MODEL_SELECT_WIDTH_CLASS}>
                           <SelectValue>
-                            <span className="flex min-w-0 items-center gap-2">
-                              <ModelRouteLogo
-                                route={selectedRoute}
-                                size={16}
-                              />
-                              <span
-                                className={`min-w-0 truncate ${typeStyle("body.default")}`}
-                                title={selectedRoute.model}
-                              >
-                                {getModelDisplayName(selectedRoute)}
+                            {automated ? (
+                              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                                <Shuffle className="size-4 shrink-0" />
+                                <span className={`min-w-0 truncate ${typeStyle("body.default")}`}>
+                                  Router selects the model
+                                </span>
                               </span>
-                            </span>
+                            ) : (
+                              <span className="flex min-w-0 items-center gap-2">
+                                <ModelRouteLogo
+                                  route={selectedRoute}
+                                  size={16}
+                                />
+                                <span
+                                  className={`min-w-0 truncate ${typeStyle("body.default")}`}
+                                  title={selectedRoute.model}
+                                >
+                                  {getModelDisplayName(selectedRoute)}
+                                </span>
+                              </span>
+                            )}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="min-w-[min(42rem,calc(100vw-2rem))]">
-                          {displayRoute ? (
-                            <>
-                              <SelectItem value={DEFAULT_VALUE}>
-                                <span className="text-muted-foreground">
-                                  Reset to{" "}
-                                  {getModelDisplayName(task.defaultRoute)}
-                                </span>
-                              </SelectItem>
-                              <SelectSeparator />
-                            </>
-                          ) : null}
                           {modelOptions.map((model) => {
                             const optionRoute = {
                               provider: selectedRoute.provider,

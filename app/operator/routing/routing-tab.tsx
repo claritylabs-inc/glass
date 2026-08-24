@@ -113,6 +113,20 @@ function formatTokenCount(value: number | undefined) {
   return value === undefined ? "—" : value.toLocaleString();
 }
 
+function hasUsageTelemetry(event: RoutingEvent) {
+  return [
+    event.inputTokens,
+    event.outputTokens,
+    event.reasoningTokens,
+    event.cachedInputTokens,
+    event.cacheWriteTokens,
+    event.maxOutputTokens,
+    event.finishReason,
+    event.visibleTextLength,
+    event.toolCallCount,
+  ].some((value) => value !== undefined);
+}
+
 export function routingEventOutcome(event: RoutingEvent) {
   if (event.kind === "direct_fallback") {
     return {
@@ -127,6 +141,15 @@ export function routingEventOutcome(event: RoutingEvent) {
       label: "Failed",
       tone: "danger" as const,
       description: "The model workflow did not complete.",
+    };
+  }
+  if (event.status === "incomplete") {
+    return {
+      label: "Incomplete",
+      tone: "warning" as const,
+      description: event.hitOutputLimit
+        ? "The model reached its output limit before completing a usable response."
+        : "The model call ended without a usable customer response.",
     };
   }
   if (event.fallbackModel) {
@@ -149,7 +172,7 @@ export function routingEventSummary(event: RoutingEvent) {
     return event.error ?? "Glass used its direct route.";
   }
   if (event.kind === "run") {
-    return event.error ?? formatIdentifier(event.status);
+    return event.error ?? formatIdentifier(event.completionIssue ?? event.status);
   }
   return formatIdentifier(event.routing?.decision);
 }
@@ -249,6 +272,12 @@ export function RoutingEventDrawer({
               value={<span className="text-destructive">{event.error}</span>}
             />
           ) : null}
+          {event.completionIssue ? (
+            <OperationalLabelValueRow
+              label="Completion issue"
+              value={formatIdentifier(event.completionIssue)}
+            />
+          ) : null}
           {event.fallbackReason && !event.error ? (
             <OperationalLabelValueRow
               label="Fallback reason"
@@ -292,7 +321,7 @@ export function RoutingEventDrawer({
           </OperationalLabelValueList>
         ) : null}
 
-        {event.inputTokens !== undefined || event.outputTokens !== undefined ? (
+        {hasUsageTelemetry(event) ? (
           <OperationalLabelValueList title="Usage">
             <OperationalLabelValueRow
               label="Input tokens"
@@ -301,6 +330,36 @@ export function RoutingEventDrawer({
             <OperationalLabelValueRow
               label="Output tokens"
               value={formatTokenCount(event.outputTokens)}
+            />
+            <OperationalLabelValueRow
+              label="Reasoning tokens"
+              value={formatTokenCount(event.reasoningTokens)}
+            />
+            <OperationalLabelValueRow
+              label="Output limit"
+              value={formatTokenCount(event.maxOutputTokens)}
+            />
+            <OperationalLabelValueRow
+              label="Finish reason"
+              value={formatIdentifier(event.finishReason)}
+            />
+            <OperationalLabelValueRow
+              label="Hit output limit"
+              value={
+                event.hitOutputLimit === undefined
+                  ? "—"
+                  : event.hitOutputLimit
+                    ? "Yes"
+                    : "No"
+              }
+            />
+            <OperationalLabelValueRow
+              label="Visible response"
+              value={
+                event.visibleTextLength === undefined
+                  ? "—"
+                  : `${event.visibleTextLength.toLocaleString()} characters`
+              }
             />
             <OperationalLabelValueRow
               label="Cached input"
@@ -328,6 +387,18 @@ export function RoutingEventDrawer({
                       : "Available"
                     : "None"
                 }
+              />
+            ) : null}
+            {event.toolCallCount !== undefined ? (
+              <OperationalLabelValueRow
+                label="Tool calls"
+                value={`${event.toolCallCount.toLocaleString()} called · ${event.completedToolCount === undefined ? "completion unknown" : `${event.completedToolCount.toLocaleString()} completed`}`}
+              />
+            ) : null}
+            {event.toolNames?.length ? (
+              <OperationalLabelValueRow
+                label="Tool names"
+                value={event.toolNames.join(", ")}
               />
             ) : null}
           </OperationalLabelValueList>
@@ -644,7 +715,12 @@ export function RoutingTab({
   const recentEvents = useMemo(
     () =>
       (events ?? [])
-        .filter((event) => event.kind !== "run" || event.status === "error")
+        .filter(
+          (event) =>
+            event.kind !== "run" ||
+            event.status === "error" ||
+            event.status === "incomplete",
+        )
         .slice(0, 50),
     [events],
   );
@@ -762,7 +838,9 @@ export function RoutingTab({
       };
     });
   }, [last24HourRollups]);
-  const failedRuns = recentRuns.filter((run) => run.status === "error").length;
+  const failedRuns = recentRuns.filter(
+    (run) => run.status === "error" || run.status === "incomplete",
+  ).length;
   const workflowRuns = recentRuns.filter(
     (run) => (run.workflowOutcomeCount ?? 0) > 0,
   );
@@ -809,10 +887,10 @@ export function RoutingTab({
         "Runs with a failed workflow outcome / runs with outcomes, from the latest 200 events.",
     },
     {
-      label: "Run errors",
+      label: "Incomplete runs",
       value: failedRuns.toLocaleString(),
       description:
-        "Whole agent runs that ended before completion, from the latest 200 events.",
+        "Whole agent runs that failed or ended without a usable response, from the latest 200 events.",
     },
   ];
 
@@ -1103,7 +1181,7 @@ export function RoutingTab({
       <OperationalPanel>
         <OperationalPanelHeader
           title="Recent model activity"
-          description="Succeeded calls, direct fallbacks, and run errors. Select a call to inspect its routing and usage."
+          description="Succeeded calls, incomplete responses, direct fallbacks, and run errors. Select a call to inspect its routing and usage."
         />
         {events === undefined ? (
           <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">

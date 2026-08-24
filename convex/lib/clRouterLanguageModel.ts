@@ -36,6 +36,11 @@ export type ClRouterLanguageModelStep = {
   step: number;
   hasTools: boolean;
   hasToolResults: boolean;
+  maxOutputTokens?: number;
+  finishReason?: string;
+  hitOutputLimit?: boolean;
+  visibleTextLength?: number;
+  toolNames?: string[];
 };
 
 export type ClRouterLanguageModelOptions = {
@@ -46,6 +51,7 @@ export type ClRouterLanguageModelOptions = {
   sessionKey: string;
   trace?: ClRouterGenerateRequest["trace"];
   directModel: LanguageModelV3;
+  initialRoutePin?: ModelRoute;
   client?: ClRouterClientOptions;
   initialExecutionBudgetMs?: number;
   onResponse?: (
@@ -390,6 +396,31 @@ function contentToolNames(content: LanguageModelV3Content[]): string[] {
     .map((part) => part.toolName);
 }
 
+function contentTextLength(content: LanguageModelV3Content[]): number {
+  return content.reduce(
+    (length, part) => length + (part.type === "text" ? part.text.length : 0),
+    0,
+  );
+}
+
+function completedStepTelemetry(
+  step: ClRouterLanguageModelStep,
+  options: LanguageModelV3CallOptions,
+  rawFinishReason: string,
+  content: LanguageModelV3Content[],
+): ClRouterLanguageModelStep {
+  return {
+    ...step,
+    ...(options.maxOutputTokens === undefined
+      ? {}
+      : { maxOutputTokens: options.maxOutputTokens }),
+    finishReason: rawFinishReason,
+    hitOutputLimit: finishReason(rawFinishReason).unified === "length",
+    visibleTextLength: contentTextLength(content),
+    toolNames: contentToolNames(content),
+  };
+}
+
 function isSafeInitialFallbackError(
   error: unknown,
   environment: NodeJS.ProcessEnv | Record<string, string | undefined>,
@@ -477,7 +508,7 @@ export function createClRouterLanguageModel(
   adapter: ClRouterLanguageModelOptions,
 ): LanguageModelV3 {
   let parentRequestId = adapter.trace?.parentRequestId;
-  let selectedRoute: ModelRoute | undefined;
+  let selectedRoute: ModelRoute | undefined = adapter.initialRoutePin;
   let successfulRouterSteps = 0;
   let useDirectForRun = false;
   const clientOptions = (
@@ -558,10 +589,14 @@ export function createClRouterLanguageModel(
         parentRequestId = response.requestId;
         selectedRoute = response.model;
         successfulRouterSteps += 1;
-        await notifyResponse(response, step);
+        const rawFinishReason = response.finishReason ?? "stop";
+        await notifyResponse(
+          response,
+          completedStepTelemetry(step, options, rawFinishReason, content),
+        );
         return {
           content,
-          finishReason: finishReason(response.finishReason ?? "stop"),
+          finishReason: finishReason(rawFinishReason),
           usage: languageModelUsage(response.usage),
           providerMetadata: providerMetadata(response),
           response: {
@@ -632,6 +667,7 @@ export function createClRouterLanguageModel(
               const activeTextIds = new Set<string>();
               let receivedDone = false;
               const routerToolNames: string[] = [];
+              let visibleTextLength = 0;
               const startStream = () => {
                 if (started) return;
                 started = true;
@@ -650,6 +686,7 @@ export function createClRouterLanguageModel(
                   }
                   if (event.type === "text-delta") {
                     if (!event.delta) continue;
+                    visibleTextLength += event.delta.length;
                     visibleRouterOutput = true;
                     startStream();
                     if (!activeTextIds.has(event.id)) {
@@ -704,7 +741,17 @@ export function createClRouterLanguageModel(
                     parentRequestId = event.requestId;
                     selectedRoute = event.model;
                     successfulRouterSteps += 1;
-                    await notifyResponse(event, step);
+                    await notifyResponse(event, {
+                      ...step,
+                      ...(options.maxOutputTokens === undefined
+                        ? {}
+                        : { maxOutputTokens: options.maxOutputTokens }),
+                      finishReason: event.finishReason,
+                      hitOutputLimit:
+                        finishReason(event.finishReason).unified === "length",
+                      visibleTextLength,
+                      toolNames: routerToolNames,
+                    });
                     startStream();
                     for (const id of activeTextIds) {
                       controller.enqueue({ type: "text-end", id });

@@ -251,6 +251,14 @@ function configuredTasks(environment: ClRouterEnvironment): Set<string> {
   );
 }
 
+export function isClRouterConfigured(
+  environment: ClRouterEnvironment = process.env,
+): boolean {
+  return Boolean(
+    clean(environment.CL_ROUTER_URL) && clean(environment.CL_ROUTER_SECRET),
+  );
+}
+
 export function isClRouterTaskFlagged(
   task: ModelTask,
   environment: ClRouterEnvironment = process.env,
@@ -272,6 +280,9 @@ export function shouldUseClRouterForCall(
   environment: ClRouterEnvironment = process.env,
 ): boolean {
   if (!SUPPORTED_TASK_SET.has(task)) return false;
+  if (taskKind === "query_reason" && isClRouterConfigured(environment)) {
+    return true;
+  }
   const tasks = configuredTasks(environment);
   if (tasks.has("*") || tasks.has(task) || (taskKind && tasks.has(taskKind))) {
     return true;

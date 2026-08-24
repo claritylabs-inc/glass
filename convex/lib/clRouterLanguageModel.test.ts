@@ -279,6 +279,28 @@ describe("cl-router LanguageModelV3 adapter", () => {
     expect(directModel.doStreamCalls).toHaveLength(1);
   });
 
+  test("sends an operator model override as the initial router pin", async () => {
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
+      generatedResponse("Pinned answer."),
+    );
+    const directModel = new MockLanguageModelV3();
+    const model = createClRouterLanguageModel({
+      ...adapterOptions(directModel, fetchMock),
+      initialRoutePin: { provider: "openai", model: "gpt-5.6-terra" },
+    });
+
+    await expect(model.doGenerate(rawCallOptions())).resolves.toMatchObject({
+      content: [{ type: "text", text: "Pinned answer." }],
+    });
+    const request = JSON.parse(
+      String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
+    );
+    expect(request.routing).toEqual({
+      pin: { provider: "openai", model: "gpt-5.6-terra" },
+      allowFallback: true,
+    });
+  });
+
   test("accepts the exact forced tool returned by cl-router", async () => {
     const directModel = new MockLanguageModelV3();
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
