@@ -237,8 +237,7 @@ export type AgentModelRunOptions = {
       | "mcp"
       | "email"
       | "mailbox"
-      | "public_demo"
-      | "canary";
+      | "public_demo";
   };
   onResponse?: ClRouterLanguageModelOptions["onResponse"];
   onDirectFallback?: ClRouterLanguageModelOptions["onDirectFallback"];

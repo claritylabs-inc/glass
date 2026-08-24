@@ -9,7 +9,6 @@
  */
 
 import type * as acordTaxonomyBackfillBatches from "../acordTaxonomyBackfillBatches.js";
-import type * as actions_agentCanary from "../actions/agentCanary.js";
 import type * as actions_archiveNonCoverageRequirements from "../actions/archiveNonCoverageRequirements.js";
 import type * as actions_backfillAcordTaxonomy from "../actions/backfillAcordTaxonomy.js";
 import type * as actions_backfillCarrierIdentity from "../actions/backfillCarrierIdentity.js";
@@ -304,7 +303,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   acordTaxonomyBackfillBatches: typeof acordTaxonomyBackfillBatches;
-  "actions/agentCanary": typeof actions_agentCanary;
   "actions/archiveNonCoverageRequirements": typeof actions_archiveNonCoverageRequirements;
   "actions/backfillAcordTaxonomy": typeof actions_backfillAcordTaxonomy;
   "actions/backfillCarrierIdentity": typeof actions_backfillCarrierIdentity;

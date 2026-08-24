@@ -135,7 +135,7 @@ function rawCallOptions(): LanguageModelV3CallOptions {
 }
 
 function forcedToolCallOptions(
-  toolName = "report_canary",
+  toolName = "expected_tool",
 ): LanguageModelV3CallOptions {
   return {
     ...rawCallOptions(),
@@ -285,7 +285,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
       generatedResponse({
         toolCalls: [{
           toolCallId: "call-1",
-          toolName: "report_canary",
+          toolName: "expected_tool",
           input: {},
         }],
       }));
@@ -295,7 +295,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
 
     expect(result.content).toContainEqual(expect.objectContaining({
       type: "tool-call",
-      toolName: "report_canary",
+      toolName: "expected_tool",
     }));
     expect(directModel.doGenerateCalls).toHaveLength(0);
   });
@@ -305,7 +305,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
       generatedResponse({
         toolCalls: [{
           toolCallId: "call-1",
-          toolName: "report_canary",
+          toolName: "expected_tool",
           input: {},
         }],
       }));
@@ -340,7 +340,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
     }]],
     ["mixed", "An extra tool was returned.", [{
       toolCallId: "call-expected",
-      toolName: "report_canary",
+      toolName: "expected_tool",
       input: {},
     }, {
       toolCallId: "call-extra",
@@ -353,7 +353,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
         content: [{
           type: "tool-call",
           toolCallId: "direct-call",
-          toolName: "report_canary",
+          toolName: "expected_tool",
           input: "{}",
         }],
         finishReason: { unified: "tool-calls", raw: "tool-calls" },
@@ -374,7 +374,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
 
     expect(result.content).toContainEqual(expect.objectContaining({
       type: "tool-call",
-      toolName: "report_canary",
+      toolName: "expected_tool",
     }));
     expect(directModel.doGenerateCalls).toHaveLength(1);
     expect(onDirectFallback).toHaveBeenCalledWith(
@@ -405,7 +405,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
 
   test("rejects a wrong streamed tool before exposing it and safely falls back", async () => {
     const directModel = new MockLanguageModelV3({
-      doStream: directToolStream("report_canary"),
+      doStream: directToolStream("expected_tool"),
     });
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () => sseResponse([
       {
@@ -429,7 +429,7 @@ describe("cl-router LanguageModelV3 adapter", () => {
 
     expect(parts).toContainEqual(expect.objectContaining({
       type: "tool-call",
-      toolName: "report_canary",
+      toolName: "expected_tool",
     }));
     expect(parts).not.toContainEqual(expect.objectContaining({
       type: "tool-call",

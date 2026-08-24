@@ -14,7 +14,7 @@ Conductor worktree uses native local Convex plus local workers.
    `imessage-worker`, `slack-worker`, and `glass-mailbox-scan-worker`) to report
    success, including explicit `No deployment needed` watch-path results;
 3. runs the deployed Convex, extraction, iMessage, Slack, and cl-router
-   compatibility audit followed by the production chat canary; and
+   compatibility audit; and
 4. verifies the commit is still the branch head before emitting
    `release-ready-production`.
 
@@ -24,8 +24,8 @@ the GitHub `release-ready-production` check as a required Deployment Check.
 Vercel then assigns `app.glass.insure` only after the release job succeeds.
 Changing the job name requires updating the Vercel project setting in the same
 rollout. A failed or timed-out Convex deploy, Railway status, compatibility
-audit, chat canary, or stale-head check leaves the candidate unpromoted; use Vercel's
-explicit force-promotion control only for an incident-approved bypass.
+audit, or stale-head check leaves the candidate unpromoted; use Vercel's explicit
+force-promotion control only for an incident-approved bypass.
 
 Railway Git autodeploy and all four service-local watch paths must remain
 enabled. Unchanged workers satisfy the barrier with Railway's no-op status, and
@@ -33,8 +33,8 @@ the mailbox cron's Railway deployment status is its release signal because it
 has no persistent HTTP process. Do not enable Railway **Wait for CI** for these
 services: the release job itself waits for Railway and that setting would create
 a cycle. Push-time health checks do not prove release readiness because they can
-observe the previous healthy processes; release health and the chat canary
-therefore run only after Convex and Railway are ready.
+observe the previous healthy processes; the compatibility audit therefore runs
+only after Convex and Railway are ready.
 `agent-safeguards.yml` exposes the same production audit only as a manual
 diagnostic; it has no recurring, push, or pull-request trigger.
 
