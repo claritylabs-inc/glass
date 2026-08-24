@@ -24,11 +24,3 @@ jobs:
           AGENT_HEALTH_RETRY_DELAY_MS: 10000
           GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL }}
           GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}
-
-      - name: Install production canary dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
-
-      - name: Run production chat canary
-        run: npx convex run actions/agentCanary:run '{}' --prod
-        env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

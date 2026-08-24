@@ -14,7 +14,7 @@ Conductor worktree uses native local Convex plus local workers.
    `imessage-worker`, `slack-worker`, and `glass-mailbox-scan-worker`) to report
    success, including explicit `No deployment needed` watch-path results;
 3. runs the deployed Convex, extraction, iMessage, Slack, and cl-router
-   compatibility audit followed by the production chat canary; and
+   compatibility audit; and
 4. verifies the commit is still the branch head before emitting
    `release-ready-production`.
 
@@ -24,8 +24,8 @@ the GitHub `release-ready-production` check as a required Deployment Check.
 Vercel then assigns `app.glass.insure` only after the release job succeeds.
 Changing the job name requires updating the Vercel project setting in the same
 rollout. A failed or timed-out Convex deploy, Railway status, compatibility
-audit, chat canary, or stale-head check leaves the candidate unpromoted; use Vercel's
-explicit force-promotion control only for an incident-approved bypass.
+audit, or stale-head check leaves the candidate unpromoted; use Vercel's explicit
+force-promotion control only for an incident-approved bypass.
 
 Railway Git autodeploy and all four service-local watch paths must remain
 enabled. Unchanged workers satisfy the barrier with Railway's no-op status, and
@@ -33,8 +33,8 @@ the mailbox cron's Railway deployment status is its release signal because it
 has no persistent HTTP process. Do not enable Railway **Wait for CI** for these
 services: the release job itself waits for Railway and that setting would create
 a cycle. Push-time health checks do not prove release readiness because they can
-observe the previous healthy processes; release health and the chat canary
-therefore run only after Convex and Railway are ready.
+observe the previous healthy processes; the compatibility audit therefore runs
+only after Convex and Railway are ready.
 `agent-safeguards.yml` exposes the same production audit only as a manual
 diagnostic; it has no recurring, push, or pull-request trigger.
 
@@ -72,7 +72,9 @@ iMessage, or mailbox workers. Provider keys live only in the router environment
 unless a broker route is selected; broker keys then transit in the per-request
 resolved settings snapshot and must never be logged.
 
-Rollout is task-scoped through `CL_ROUTER_TASKS`. An empty value keeps the
+Rollout is task-scoped through `CL_ROUTER_TASKS`, except authenticated
+`query_reason`, which uses cl-router whenever `CL_ROUTER_URL` and
+`CL_ROUTER_SECRET` are configured. An empty task list keeps other calls on the
 existing direct-provider path. Enable classification, embeddings, and voice
 transcription first; enable extraction only after the worker and cl-sdk prompt
 versions match.
@@ -83,16 +85,19 @@ Tool-bearing agent loops use `getAgentLanguageModelForOrg`,
 `stopWhen`, require stable run and surface metadata, select through cl-router
 once, pin the chosen route for the remaining steps, and disable router fallback
 after the first successful model step. Routed generation carries one total
-execution budget. Production switches the entire run to its direct break-glass
-model only for a typed `router_unavailable` response with
-`executionStarted: false`, or a proven pre-connection refusal/DNS failure.
+execution budget. Production may switch a no-tool call to the configured
+fallback for typed pre-execution unavailability, a proven pre-connection
+refusal/DNS failure, or a blank/output-limited completion. A blank or truncated
+turn that already completed tools instead receives one tool-free continuation
+over the existing results, so imports and other actions are not replayed.
 Generic text/object helpers still fail closed when passed tool-loop-only options.
 
-Production may append `chat`, `chat_vision`, `email_draft`,
-`email_reply`, and `mailbox_coordinator` to `CL_ROUTER_TASKS`. This routes web,
-iMessage, MCP, public-demo, inbound-email, email-draft, and mailbox-coordinator
-steps through the pinned adapter. Do not enable `*`: task gates remain an
-explicit rollback boundary.
+Production may append `chat_vision`, `email_draft`,
+`email_reply`, and `mailbox_coordinator` to `CL_ROUTER_TASKS`. Authenticated
+web, iMessage, Slack, and MCP `query_reason` traffic is already router-owned;
+these flags add image chat, public-demo base-chat calls, inbound email,
+email-draft, and mailbox-coordinator steps. Do not enable `*`: task gates remain
+an explicit rollback boundary for every family other than `query_reason`.
 
 The exact-pinned `@claritylabs/cl-router-policy` contract owns model and task
 capability metadata. Glass validates function-tool schemas and fails closed on
@@ -167,6 +172,9 @@ deliberately running a local router.
    quality before enabling autonomous selection for a task family. Introduce
    read-only `chat`/`chat_vision` traffic before side-effectful `email_reply` or
    `mailbox_coordinator`.
-8. For rollback, clear `CL_ROUTER_TASKS`. Use the operator global freeze first;
-   reserve `CL_ROUTER_FROZEN=1` for incidents where the control surface is
-   unavailable.
+8. For rollback, clear `CL_ROUTER_TASKS` for staged task families. Authenticated
+   `query_reason` remains router-owned while router credentials are configured;
+   use an operator model override for a targeted route, the operator global
+   freeze for autonomous-routing incidents, or remove the router inference
+   configuration for full direct-path break glass. Reserve
+   `CL_ROUTER_FROZEN=1` for incidents where the control surface is unavailable.

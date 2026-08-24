@@ -42,11 +42,21 @@ export const recordResponseInternal = internalMutation({
     step: v.number(),
     hasTools: v.boolean(),
     hasToolResults: v.boolean(),
+    maxOutputTokens: v.optional(v.number()),
+    finishReason: v.optional(v.string()),
+    hitOutputLimit: v.optional(v.boolean()),
+    visibleTextLength: v.optional(v.number()),
+    toolNames: v.optional(v.array(v.string())),
     response: v.any(),
   },
   handler: async (ctx, args) => {
     const response = args.response as ClRouterResponseMetadata;
     const timestamp = dayjs().valueOf();
+    const completionIssue = args.hitOutputLimit
+      ? "output_limit" as const
+      : args.visibleTextLength === 0 && (args.toolNames?.length ?? 0) === 0
+        ? "empty_response" as const
+        : undefined;
     await ctx.db.insert("modelRoutingEvents", {
       kind: "model_step",
       ...args.run,
@@ -61,10 +71,33 @@ export const recordResponseInternal = internalMutation({
       routing: response.routing,
       inputTokens: response.usage.inputTokens,
       outputTokens: response.usage.outputTokens,
+      ...(response.usage.reasoningTokens === undefined
+        ? {}
+        : { reasoningTokens: response.usage.reasoningTokens }),
       cachedInputTokens: response.usage.cachedInputTokens,
       cacheWriteTokens: response.usage.cacheWriteTokens,
+      ...(args.maxOutputTokens === undefined
+        ? {}
+        : { maxOutputTokens: args.maxOutputTokens }),
+      ...(args.finishReason === undefined
+        ? {}
+        : { finishReason: args.finishReason }),
+      ...(args.hitOutputLimit === undefined
+        ? {}
+        : { hitOutputLimit: args.hitOutputLimit }),
+      ...(args.visibleTextLength === undefined
+        ? {}
+        : { visibleTextLength: args.visibleTextLength }),
+      ...(args.toolNames === undefined
+        ? {}
+        : {
+            toolCallCount: args.toolNames.length,
+            toolNames: args.toolNames,
+          }),
       costUsd: response.costUsd,
       costStatus: response.costStatus,
+      status: completionIssue ? "incomplete" : "complete",
+      ...(completionIssue ? { completionIssue } : {}),
       timestamp,
       expiresAt: expiresAt(timestamp),
     });
@@ -110,7 +143,11 @@ export const recordFallbackInternal = internalMutation({
 export const recordRunInternal = internalMutation({
   args: {
     run: runValidator,
-    status: v.union(v.literal("complete"), v.literal("error")),
+    status: v.union(
+      v.literal("complete"),
+      v.literal("incomplete"),
+      v.literal("error"),
+    ),
     requestId: v.optional(v.string()),
     provider: v.optional(modelProviderValidator),
     model: v.optional(v.string()),
@@ -121,11 +158,25 @@ export const recordRunInternal = internalMutation({
     fallbackReason: v.optional(v.string()),
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
+    reasoningTokens: v.optional(v.number()),
     cachedInputTokens: v.optional(v.number()),
     cacheWriteTokens: v.optional(v.number()),
+    maxOutputTokens: v.optional(v.number()),
+    finishReason: v.optional(v.string()),
+    hitOutputLimit: v.optional(v.boolean()),
+    visibleTextLength: v.optional(v.number()),
     toolCallCount: v.number(),
+    completedToolCount: v.number(),
+    toolNames: v.array(v.string()),
     workflowOutcomeCount: v.number(),
     workflowFailureCount: v.number(),
+    completionIssue: v.optional(
+      v.union(
+        v.literal("empty_response"),
+        v.literal("output_limit"),
+        v.literal("workflow_failure"),
+      ),
+    ),
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -144,11 +195,31 @@ export const recordRunInternal = internalMutation({
       fallbackReason: args.fallbackReason,
       inputTokens: args.inputTokens,
       outputTokens: args.outputTokens,
+      ...(args.reasoningTokens === undefined
+        ? {}
+        : { reasoningTokens: args.reasoningTokens }),
       cachedInputTokens: args.cachedInputTokens,
       cacheWriteTokens: args.cacheWriteTokens,
+      ...(args.maxOutputTokens === undefined
+        ? {}
+        : { maxOutputTokens: args.maxOutputTokens }),
+      ...(args.finishReason === undefined
+        ? {}
+        : { finishReason: args.finishReason }),
+      ...(args.hitOutputLimit === undefined
+        ? {}
+        : { hitOutputLimit: args.hitOutputLimit }),
+      ...(args.visibleTextLength === undefined
+        ? {}
+        : { visibleTextLength: args.visibleTextLength }),
       toolCallCount: args.toolCallCount,
+      completedToolCount: args.completedToolCount,
+      toolNames: args.toolNames,
       workflowOutcomeCount: args.workflowOutcomeCount,
       workflowFailureCount: args.workflowFailureCount,
+      ...(args.completionIssue === undefined
+        ? {}
+        : { completionIssue: args.completionIssue }),
       error: args.error,
       timestamp,
       expiresAt: expiresAt(timestamp),

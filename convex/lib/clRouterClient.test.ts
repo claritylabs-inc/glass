@@ -72,6 +72,13 @@ describe("cl-router feature gating", () => {
       { CL_ROUTER_TASKS: "extraction" },
     )).toBe(true);
   });
+
+  test("routes query reasoning whenever the router is configured", () => {
+    expect(shouldUseClRouterForCall("chat", "query_reason", environment)).toBe(
+      true,
+    );
+    expect(shouldUseClRouterForCall("chat", "query_reason", {})).toBe(false);
+  });
 });
 
 describe("cl-router requests", () => {

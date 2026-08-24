@@ -43,6 +43,11 @@ const REPLAY_SAFE_TOOLS = new Set([
 const POLICY_EVIDENCE_UNAVAILABLE_MESSAGE =
   "I couldn't retrieve the policy evidence needed to answer that reliably. Please try again in a moment.";
 
+export const AGENT_MAX_OUTPUT_TOKENS = 8_192;
+
+const COMPLETED_TOOL_SYNTHESIS_INSTRUCTION =
+  "Continue from the completed tool results above and give the user the final answer. Do not repeat any completed action. No tools are available in this continuation.";
+
 type AgentOptions = Parameters<typeof generateAgentTextForOrg>[3];
 type AgentTools = NonNullable<AgentOptions["tools"]>;
 
@@ -81,6 +86,51 @@ function filterAudit(
 
 function hasCompletedPolicyEvidence(audit: AgentToolAudit) {
   return audit.completedTools.some((name) => POLICY_EVIDENCE_TOOLS.has(name));
+}
+
+async function synthesizeCompletedToolResults(
+  ctx: ActionCtx,
+  args: RunAgentTurnArgs,
+  result: Awaited<ReturnType<typeof generateAgentTextForOrg>>,
+): Promise<string> {
+  if (!Array.isArray(args.options.messages)) return "";
+  const responseMessages = result.response?.messages;
+  if (!Array.isArray(responseMessages) || responseMessages.length === 0) {
+    return "";
+  }
+
+  try {
+    const synthesis = await generateAgentTextForOrg(
+      ctx,
+      args.orgId,
+      args.task,
+      {
+        maxOutputTokens:
+          args.options.maxOutputTokens ?? AGENT_MAX_OUTPUT_TOKENS,
+        system: `${args.options.system}\n\nFINAL RESPONSE CONTINUATION:\n${COMPLETED_TOOL_SYNTHESIS_INSTRUCTION}`,
+        messages: [
+          ...args.options.messages,
+          ...responseMessages,
+          { role: "user", content: COMPLETED_TOOL_SYNTHESIS_INSTRUCTION },
+        ],
+        ...(args.options.abortSignal
+          ? { abortSignal: args.options.abortSignal }
+          : {}),
+      },
+      {
+        ...args.run,
+        trace: {
+          ...args.run.trace,
+          traceId: `${args.run.trace.traceId}:tool-synthesis`,
+          label: `${args.run.trace.label}.toolSynthesis`,
+        },
+      },
+    );
+    return generatedTextFromResult(synthesis);
+  } catch (error) {
+    console.warn("[agent-turn] Completed-tool synthesis failed", error);
+    return "";
+  }
 }
 
 async function requiresPolicyEvidence(
@@ -132,9 +182,17 @@ export async function runAgentTurn(
     args.run,
   );
   const audit = filterAudit(collectToolAudit(result), args.auditExcludedTools);
+  let text = generatedTextFromResult(result);
+
+  if (
+    audit.completedTools.length > 0 &&
+    (!text.trim() || result.finishReason === "length")
+  ) {
+    text = await synthesizeCompletedToolResults(ctx, args, result);
+  }
 
   if (!(await evidenceDecision) || hasCompletedPolicyEvidence(audit)) {
-    return { audit, text: generatedTextFromResult(result) };
+    return { audit, text };
   }
 
   const canRetry = audit.usedTools.every((name) => REPLAY_SAFE_TOOLS.has(name));

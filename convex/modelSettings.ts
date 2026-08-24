@@ -283,6 +283,40 @@ function nullableGlobalRoutes(routes: GlobalRoutes | undefined) {
   ) as Record<ModelRouteId, ModelRoute | null>;
 }
 
+function sameRoute(left: ModelRoute | undefined, right: ModelRoute) {
+  return left?.provider === right.provider && left.model === right.model;
+}
+
+export function isExplicitGlobalRouteOverride(
+  id: ModelRouteId,
+  route: ModelRoute | undefined,
+  explicitRouteOverrides: readonly string[],
+) {
+  if (!route) return false;
+  return (
+    explicitRouteOverrides.includes(id) ||
+    !sameRoute(route, defaultModelRouteForId(id))
+  );
+}
+
+function explicitGlobalRoutes(
+  settings: Doc<"globalModelSettings"> | null,
+): GlobalRoutes {
+  const storedRoutes = settings?.routes as GlobalRoutes | undefined;
+  return Object.fromEntries(
+    MODEL_ROUTE_IDS.flatMap((id) => {
+      const route = storedRoutes?.[id];
+      return isExplicitGlobalRouteOverride(
+        id,
+        route,
+        settings?.explicitRouteOverrides ?? [],
+      )
+        ? [[id, route]]
+        : [];
+    }),
+  ) as GlobalRoutes;
+}
+
 function availableLanguageModels(provider: ModelProvider) {
   return (LANGUAGE_MODEL_CATALOG[provider] ?? []).filter((model) =>
     directProviderModelForRoute({ provider, model }),
@@ -507,10 +541,11 @@ export const getGlobal = query({
         description: MODEL_ROUTE_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
         isAudio: id === "voice_transcription",
+        automatedRouting: id !== FALLBACK_MODEL_ROUTE_ID,
         defaultRoute: defaultModelRouteForId(id),
       })),
       groups: OPERATOR_MODEL_ROUTE_GROUPS,
-      routes: nullableGlobalRoutes(settings?.routes as GlobalRoutes | undefined),
+      routes: nullableGlobalRoutes(explicitGlobalRoutes(settings)),
       webRetrieval: normalizeWebRetrieval(settings?.webRetrieval),
       webRetrievalProviders: OPERATOR_WEB_RETRIEVAL_PROVIDERS.map((id) => ({
         id,
@@ -545,21 +580,38 @@ export const updateGlobalRoutes = mutation({
 
     const now = dayjs().valueOf();
     const routes = { ...(existing?.routes ?? {}) } as GlobalRoutes;
+    const explicitRouteOverrides = new Set(
+      MODEL_ROUTE_IDS.filter((id) =>
+        isExplicitGlobalRouteOverride(
+          id,
+          routes[id],
+          existing?.explicitRouteOverrides ?? [],
+        ),
+      ),
+    );
     for (const [task, route] of Object.entries(args.routes)) {
       if (!isModelRouteId(task)) continue;
       if (route === null) {
         delete routes[task];
+        explicitRouteOverrides.delete(task);
       } else if (route) {
         routes[task] = route;
+        explicitRouteOverrides.add(task);
       }
     }
 
     if (existing) {
-      await ctx.db.patch(existing._id, { routes, updatedBy: operator.userId, updatedAt: now });
+      await ctx.db.patch(existing._id, {
+        routes,
+        explicitRouteOverrides: [...explicitRouteOverrides],
+        updatedBy: operator.userId,
+        updatedAt: now,
+      });
     } else {
       await ctx.db.insert("globalModelSettings", {
         key: "default",
         routes,
+        explicitRouteOverrides: [...explicitRouteOverrides],
         updatedBy: operator.userId,
         updatedAt: now,
       });
@@ -616,7 +668,7 @@ export const resolveForOrg = internalQuery({
       : null;
 
     const providerKeys = configurableProviderKeys(settings?.providerKeys);
-    const globalRoutes = globalSettings?.routes as GlobalRoutes | undefined;
+    const globalRoutes = explicitGlobalRoutes(globalSettings);
     const routes = {} as Record<ModelRouteId, ModelRoute>;
     const routeSources = {} as Record<ModelRouteId, RouteSource>;
     for (const task of MODEL_TASKS) {
@@ -684,7 +736,7 @@ export const resolvePublicDefaults = internalQuery({
       .query("globalModelSettings")
       .withIndex("by_key", (q) => q.eq("key", "default"))
       .first();
-    const globalRoutes = globalSettings?.routes as GlobalRoutes | undefined;
+    const globalRoutes = explicitGlobalRoutes(globalSettings);
     const routes = {} as Record<ModelRouteId, ModelRoute>;
     const routeSources = {} as Record<ModelRouteId, Extract<RouteSource, "global" | "static">>;
     for (const task of MODEL_TASKS) {

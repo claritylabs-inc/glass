@@ -792,16 +792,35 @@ export default defineSchema({
     routing: v.optional(extractionTraceRoutingValidator),
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
+    reasoningTokens: v.optional(v.number()),
     cachedInputTokens: v.optional(v.number()),
     cacheWriteTokens: v.optional(v.number()),
+    maxOutputTokens: v.optional(v.number()),
+    finishReason: v.optional(v.string()),
+    hitOutputLimit: v.optional(v.boolean()),
+    visibleTextLength: v.optional(v.number()),
     costUsd: v.optional(v.union(v.number(), v.null())),
     costStatus: v.optional(v.union(v.literal("priced"), v.literal("unpriced"))),
     status: v.optional(
-      v.union(v.literal("complete"), v.literal("error"), v.literal("fallback")),
+      v.union(
+        v.literal("complete"),
+        v.literal("incomplete"),
+        v.literal("error"),
+        v.literal("fallback"),
+      ),
     ),
     toolCallCount: v.optional(v.number()),
+    completedToolCount: v.optional(v.number()),
+    toolNames: v.optional(v.array(v.string())),
     workflowOutcomeCount: v.optional(v.number()),
     workflowFailureCount: v.optional(v.number()),
+    completionIssue: v.optional(
+      v.union(
+        v.literal("empty_response"),
+        v.literal("output_limit"),
+        v.literal("workflow_failure"),
+      ),
+    ),
     error: v.optional(v.string()),
     timestamp: v.number(),
     expiresAt: v.number(),
@@ -855,6 +874,7 @@ export default defineSchema({
 
   globalModelSettings: defineTable({
     key: v.literal("default"),
+    explicitRouteOverrides: v.optional(v.array(v.string())),
     routes: v.optional(
       v.object({
         chat: v.optional(modelRouteValidator),

@@ -195,6 +195,40 @@ describe("Convex cl-router generation integration", () => {
     });
   });
 
+  test("sends an operator model selection as a router override", async () => {
+    vi.stubEnv("CL_ROUTER_TASKS", "classification");
+    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
+    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
+    vi.stubEnv("OPENAI_API_KEY", "operator-openai-key");
+    const fetchMock = vi.fn(async () => Response.json(routerResponse("deliver")));
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        routes: {
+          classification: { provider: "openai", model: "gpt-5-mini" },
+        },
+        routeSources: { classification: "global" },
+      })),
+      runMutation: vi.fn(async () => null),
+    };
+
+    await generateTextForOrg(
+      ctx as never,
+      "org-1" as Id<"organizations">,
+      "classification",
+      { prompt: "Classify this delivery.", maxOutputTokens: 16 },
+    );
+
+    const [, requestInit] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    const request = JSON.parse(String(requestInit.body));
+    expect(request.routing).toEqual({
+      pin: { provider: "openai", model: "gpt-5-mini" },
+    });
+  });
+
   test("routes org tool loops through the shared agent adapter and pins later steps", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "chat");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
@@ -221,6 +255,9 @@ describe("Convex cl-router generation integration", () => {
           ...routerResponse("Acme policy found."),
           requestId: "request-2",
         }),
+      )
+      .mockImplementationOnce(async () =>
+        Response.json({ accepted: true, duplicate: false }),
       );
     vi.stubGlobal("fetch", fetchMock);
     const execute = vi.fn(async () => ({ carrier: "Acme" }));
@@ -254,7 +291,7 @@ describe("Convex cl-router generation integration", () => {
 
     expect(result.text).toBe("Acme policy found.");
     expect(execute).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const firstRequest = JSON.parse(
       String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
     );
@@ -267,6 +304,13 @@ describe("Convex cl-router generation integration", () => {
       allowFallback: false,
     });
     expect(secondRequest.trace.parentRequestId).toBe("request-1");
+    const feedbackRequest = JSON.parse(
+      String((fetchMock.mock.calls[2]?.[1] as RequestInit).body),
+    );
+    expect(feedbackRequest.signals).toMatchObject({
+      qualityScore: 1,
+      escalationCount: 0,
+    });
   });
 
   test("fails closed instead of silently bypassing an enabled router task with tools", async () => {

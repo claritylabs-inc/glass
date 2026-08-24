@@ -222,6 +222,17 @@ class AgentModelFallbackAttemptError extends Error {
     this.name = "AgentModelFallbackAttemptError";
   }
 }
+
+class AgentIncompleteOutputError extends Error {
+  constructor(readonly finishReason: string | undefined) {
+    super(
+      finishReason === "length"
+        ? "Model reached its output limit before producing a usable response"
+        : "Model completed without producing a usable response",
+    );
+    this.name = "AgentIncompleteOutputError";
+  }
+}
 export type AgentModelRunOptions = {
   sessionKey: string;
   taskKind: ModelCallTaskKind;
@@ -237,8 +248,7 @@ export type AgentModelRunOptions = {
       | "mcp"
       | "email"
       | "mailbox"
-      | "public_demo"
-      | "canary";
+      | "public_demo";
   };
   onResponse?: ClRouterLanguageModelOptions["onResponse"];
   onDirectFallback?: ClRouterLanguageModelOptions["onDirectFallback"];
@@ -1375,12 +1385,39 @@ function routedObjectResultFromClRouter<T>(
   } as unknown as RoutedGenerateObjectResult<T>;
 }
 
-function clRouterRoutingForFallbackContext(
+function modelSettingsRouteIdForCall(
+  task: ModelTask,
+  taskKind?: ModelCallTaskKind,
+) {
+  if (taskKind === "extraction_coverage_cleanup") {
+    return "extraction_coverage_cleanup";
+  }
+  if (
+    taskKind === "extraction_source_tree" ||
+    taskKind === "extraction_operational_profile"
+  ) {
+    return "extraction_quality";
+  }
+  return modelTaskForCall(task, taskKind);
+}
+
+function clRouterRoutingForCall(
+  settings: ClRouterSettingsSnapshot | null,
+  task: ModelTask,
+  taskKind?: ModelCallTaskKind,
   fallbackContext?: Omit<ModelFallbackContext, "task" | "primaryRoute" | "fallbackRoute">,
 ): ClRouterGenerateRequest["routing"] {
-  return fallbackContext?.allowFallback === undefined
-    ? undefined
-    : { allowFallback: fallbackContext.allowFallback };
+  const routeId = modelSettingsRouteIdForCall(task, taskKind);
+  const globalOverride =
+    settings?.routeSources?.[routeId] === "global"
+      ? settings.routes?.[routeId]
+      : undefined;
+  const allowFallback = fallbackContext?.allowFallback;
+  if (!globalOverride && allowFallback === undefined) return undefined;
+  return {
+    ...(globalOverride ? { pin: globalOverride } : {}),
+    ...(allowFallback === undefined ? {} : { allowFallback }),
+  };
 }
 
 export async function resolveClRouterSettingsForOrg(
@@ -1444,6 +1481,9 @@ function agentLanguageModel(
       sessionKey: run.sessionKey,
       trace: run.trace,
       directModel: resolved.model,
+      ...(resolved.routeSource === "global"
+        ? { initialRoutePin: resolved.route }
+        : {}),
       ...(run.trace.channel === "mailbox" || run.trace.channel === "public_demo"
         ? {}
         : {
@@ -1549,6 +1589,46 @@ function workflowFailureCount(outcomes: unknown[]) {
   }).length;
 }
 
+export function agentRunCompletionTelemetry(
+  result: unknown,
+  audit: AgentToolAudit,
+  error?: unknown,
+) {
+  const record =
+    result && typeof result === "object"
+      ? (result as Record<string, unknown>)
+      : undefined;
+  const finishReason =
+    typeof record?.finishReason === "string"
+      ? record.finishReason
+      : undefined;
+  const visibleTextLength = generatedTextFromResult(result).trim().length;
+  const hitOutputLimit = finishReason === "length";
+  const failures = workflowFailureCount(audit.workflowOutcomes);
+  const completionIssue = error
+    ? undefined
+    : hitOutputLimit
+      ? "output_limit" as const
+      : failures > 0 && visibleTextLength === 0
+        ? "workflow_failure" as const
+        : visibleTextLength === 0
+          ? "empty_response" as const
+          : undefined;
+
+  return {
+    status: error
+      ? "error" as const
+      : completionIssue
+        ? "incomplete" as const
+        : "complete" as const,
+    finishReason,
+    hitOutputLimit,
+    visibleTextLength,
+    completionIssue,
+    workflowFailureCount: failures,
+  };
+}
+
 async function recordAgentRun(
   ctx: ActionCtx,
   orgId: Id<"organizations"> | undefined,
@@ -1559,6 +1639,7 @@ async function recordAgentRun(
   auditOverride?: AgentToolAudit,
   routerResponseOverride?: ClRouterResponseMetadata,
   routeOverride?: AgentModelRouteTelemetry,
+  maxOutputTokens?: number,
 ) {
   const audit =
     auditOverride ??
@@ -1569,8 +1650,8 @@ async function recordAgentRun(
           completedTools: [],
           toolCalls: [],
           workflowOutcomes: [],
-  });
-  const failures = workflowFailureCount(audit.workflowOutcomes);
+        });
+  const completion = agentRunCompletionTelemetry(result, audit, error);
   const requestId =
     routerResponseOverride?.requestId ?? result?.clRouter?.requestId;
   const route = result?.route ?? routeOverride?.route;
@@ -1581,7 +1662,7 @@ async function recordAgentRun(
   try {
     await ctx.runMutation(internal.modelRoutingEvents.recordRunInternal, {
       run: routingEventRun(orgId, task, run),
-      status: error ? "error" : "complete",
+      status: completion.status,
       ...(requestId ? { requestId } : {}),
       ...(route
         ? { provider: route.provider, model: route.model }
@@ -1601,15 +1682,29 @@ async function recordAgentRun(
       ...(usage?.outputTokens === undefined
         ? {}
         : { outputTokens: usage.outputTokens }),
+      ...(usage?.outputTokenDetails?.reasoningTokens === undefined
+        ? {}
+        : { reasoningTokens: usage.outputTokenDetails.reasoningTokens }),
       ...(usage?.inputTokenDetails?.cacheReadTokens === undefined
         ? {}
         : { cachedInputTokens: usage.inputTokenDetails.cacheReadTokens }),
       ...(usage?.inputTokenDetails?.cacheWriteTokens === undefined
         ? {}
         : { cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens }),
+      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+      ...(completion.finishReason
+        ? { finishReason: completion.finishReason }
+        : {}),
+      hitOutputLimit: completion.hitOutputLimit,
+      visibleTextLength: completion.visibleTextLength,
       toolCallCount: audit.toolCalls.length,
+      completedToolCount: audit.completedTools.length,
+      toolNames: [...new Set(audit.usedTools)],
       workflowOutcomeCount: audit.workflowOutcomes.length,
-      workflowFailureCount: failures,
+      workflowFailureCount: completion.workflowFailureCount,
+      ...(completion.completionIssue
+        ? { completionIssue: completion.completionIssue }
+        : {}),
       ...(error ? { error: errorText(error) } : {}),
     });
   } catch (telemetryError) {
@@ -1619,8 +1714,14 @@ async function recordAgentRun(
     );
   }
 
-  if (!requestId || audit.workflowOutcomes.length === 0) return;
-  const qualityScore = error ? 0 : workflowQualityScore(audit.workflowOutcomes);
+  if (!requestId) return;
+  const qualityScore =
+    error || completion.completionIssue || fallback
+      ? 0
+      : workflowQualityScore(audit.workflowOutcomes) ??
+        (audit.completedTools.length > 0 && completion.visibleTextLength > 0
+          ? 1
+          : undefined);
   if (qualityScore === undefined) return;
   try {
     await sendClRouterFeedback({
@@ -1628,7 +1729,9 @@ async function recordAgentRun(
       idempotencyKey: `agent-workflow:${run.trace.traceId}:${requestId}`,
       signals: {
         qualityScore,
-        escalationCount: failures + (error ? 1 : 0),
+        escalationCount:
+          completion.workflowFailureCount +
+          (error || completion.completionIssue || fallback ? 1 : 0),
       },
       trace: {
         ...run.trace,
@@ -1664,6 +1767,7 @@ export async function recordAgentRoutingRun(
     audit,
     routerResponse,
     routeOverride,
+    undefined,
   );
 }
 
@@ -1770,8 +1874,8 @@ async function generateAgentTextForResolvedModel(
     model: LanguageModel,
     route: ModelRoute,
     runOptions: RoutedGenerateTextOptions,
-  ) =>
-    withGeneratedText(
+  ) => {
+    const result = withGeneratedText(
       await generateText(
         withModelTimeout({
           ...runOptions,
@@ -1783,6 +1887,15 @@ async function generateAgentTextForResolvedModel(
         } as AiGenerateTextOptions),
       ),
     );
+    const audit = collectToolAudit(result);
+    if (
+      audit.usedTools.length === 0 &&
+      (!generatedTextFromResult(result).trim() || result.finishReason === "length")
+    ) {
+      throw new AgentIncompleteOutputError(result.finishReason);
+    }
+    return result;
+  };
 
   try {
     const result = await run(resolved.model, resolved.route, primaryOptions);
@@ -1796,7 +1909,11 @@ async function generateAgentTextForResolvedModel(
         : {}),
     };
   } catch (error) {
-    if (executionStarted || !isPreExecutionFallbackEligibleError(error)) {
+    const incompleteOutput = error instanceof AgentIncompleteOutputError;
+    if (
+      (executionStarted && !incompleteOutput) ||
+      (!incompleteOutput && !isPreExecutionFallbackEligibleError(error))
+    ) {
       throw error;
     }
     const fallbackRoute = fallbackRouteForCall({
@@ -1876,7 +1993,18 @@ export async function generateAgentTextForOrg(
           Boolean(options.tools && Object.keys(options.tools).length > 0),
         ),
     );
-    await recordAgentRun(ctx, orgId, task, run, result);
+    await recordAgentRun(
+      ctx,
+      orgId,
+      task,
+      run,
+      result,
+      undefined,
+      undefined,
+      resolvedModel.routerResponses.at(-1),
+      undefined,
+      options.maxOutputTokens,
+    );
     return result;
   } catch (error) {
     const failedFallback =
@@ -1900,6 +2028,7 @@ export async function generateAgentTextForOrg(
             fallback: failedFallback,
           }
         : undefined,
+      options.maxOutputTokens,
     );
     throw error;
   }
@@ -1935,7 +2064,18 @@ export async function generateAgentTextForPublicTask(
           Boolean(options.tools && Object.keys(options.tools).length > 0),
         ),
     );
-    await recordAgentRun(ctx, undefined, task, run, result);
+    await recordAgentRun(
+      ctx,
+      undefined,
+      task,
+      run,
+      result,
+      undefined,
+      undefined,
+      resolvedModel.routerResponses.at(-1),
+      undefined,
+      options.maxOutputTokens,
+    );
     return result;
   } catch (error) {
     const failedFallback =
@@ -1959,6 +2099,7 @@ export async function generateAgentTextForPublicTask(
             fallback: failedFallback,
           }
         : undefined,
+      options.maxOutputTokens,
     );
     throw error;
   }
@@ -1987,7 +2128,12 @@ export async function generateTextForOrg(
       orgId,
       settings,
       ...input,
-      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      routing: clRouterRoutingForCall(
+        settings,
+        task,
+        fallbackContext?.taskKind,
+        fallbackContext,
+      ),
       trace: {
         label: "convex.models.generateTextForOrg",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
@@ -2028,7 +2174,12 @@ export async function generateObjectForOrg<T>(
       ...input,
       schema: z.toJSONSchema(schema) as Record<string, unknown>,
       schemaDialect: "https://json-schema.org/draft/2020-12/schema",
-      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      routing: clRouterRoutingForCall(
+        settings,
+        task,
+        fallbackContext?.taskKind,
+        fallbackContext,
+      ),
       trace: {
         label: "convex.models.generateObjectForOrg",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
@@ -2060,7 +2211,12 @@ export async function generateTextForPublicTask(
       taskKind: fallbackContext?.taskKind,
       settings,
       ...input,
-      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      routing: clRouterRoutingForCall(
+        settings,
+        task,
+        fallbackContext?.taskKind,
+        fallbackContext,
+      ),
       trace: {
         label: "convex.models.generateTextForPublicTask",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
@@ -2099,7 +2255,12 @@ export async function generateObjectForPublicTask<T>(
       ...input,
       schema: z.toJSONSchema(schema) as Record<string, unknown>,
       schemaDialect: "https://json-schema.org/draft/2020-12/schema",
-      routing: clRouterRoutingForFallbackContext(fallbackContext),
+      routing: clRouterRoutingForCall(
+        settings,
+        task,
+        fallbackContext?.taskKind,
+        fallbackContext,
+      ),
       trace: {
         label: "convex.models.generateObjectForPublicTask",
         ...(fallbackContext?.taskKind ? { taskKind: fallbackContext.taskKind } : {}),
