@@ -103,6 +103,7 @@ export type BuildAgentToolExecutorsOptions = {
   requirementImportDefaultScope?: RequirementScope;
   onPolicyReferenced?: (policyId: Id<"policies">) => void | Promise<void>;
   onPolicyPresented?: (policyId: Id<"policies">) => void | Promise<void>;
+  onPolicySourceEvidence?: (evidence: unknown) => void | Promise<void>;
   onResponseAttachment?: (attachment: ToolAttachment) => void | Promise<void>;
   onToolArtifact?: (artifact: ToolArtifact) => void | Promise<void>;
 };
@@ -727,6 +728,8 @@ export function buildAgentToolExecutors(
       (options.readOrgIds ?? options.scope.readOrgIds).map((orgId) =>
         String(orgId),
       ),
+      (result) =>
+        options.onToolArtifact?.({ type: "vendor_compliance", data: result }),
     ),
     lookup_policy_section: {
       ...lookupPolicySection,
@@ -761,12 +764,14 @@ export function buildAgentToolExecutors(
             },
           ).catch(() => undefined);
         }
-        return searchPolicyDocumentWithSourceSpans(
+        const evidence = await searchPolicyDocumentWithSourceSpans(
           ctx,
           resolved.policy,
           params.query,
           8,
         );
+        await options.onPolicySourceEvidence?.(evidence);
+        return evidence;
       },
     },
     save_note: {

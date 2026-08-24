@@ -35,10 +35,8 @@ describe("reasoning formatting", () => {
   it("keeps model reasoning private in web chat", () => {
     const processThreadChat = read("convex/actions/processThreadChat.ts");
 
-    expect(processThreadChat).toContain(
-      "Model reasoning stays private and is intentionally discarded.",
-    );
-    expect(processThreadChat).not.toContain("reasoning +=");
+    expect(processThreadChat).toContain("agentToolStepsFromAudit");
+    expect(processThreadChat).not.toContain('part.type === "reasoning-delta"');
     expect(processThreadChat).not.toContain("normalizeReasoningText");
   });
 });

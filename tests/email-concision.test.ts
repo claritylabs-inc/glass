@@ -66,8 +66,8 @@ describe("email concision instructions", () => {
       "utf-8",
     );
 
-    expect(source).toContain("generateAgentTextForOrg(");
-    expect(source).toContain('"email_reply"');
+    expect(source).toContain("runAgentTurn(ctx");
+    expect(source).toContain('task: "email_reply"');
     expect(source).not.toContain('getProviderOptionsForTask("email_reply")');
   });
 });

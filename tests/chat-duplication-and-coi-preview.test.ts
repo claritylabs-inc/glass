@@ -61,8 +61,8 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(threads).toContain('content: "Response cancelled."');
     expect(processThreadChat).toContain("latestUserMessage");
     expect(processThreadChat).toContain("isAgentResponseCancelled");
-    expect(processThreadChat).toContain('m.status !== "processing"');
-    expect(processThreadChat).toContain('m.status !== "cancelled"');
+    expect(processThreadChat).toContain('message.status !== "processing"');
+    expect(processThreadChat).toContain('message.status !== "cancelled"');
     expect(aiUtils).toContain('msg.status === "processing" || msg.status === "cancelled"');
     expect(promptInput).toContain("submittingRef");
     expect(promptInput).toContain("if (submittingRef.current)");
@@ -196,7 +196,7 @@ describe("chat duplicate prevention and COI preview UI", () => {
     expect(chatTools).toContain("screenshot, print, preview, inspect formatting");
     expect(processThreadChat).toContain("render_email_preview");
     expect(processThreadChat).toContain("internal.actions.renderEmailPreview.run");
-    expect(processThreadChat).toContain('lastToolName === "render_email_preview"');
+    expect(processThreadChat).toContain("responseAttachments.push(result.attachment)");
     expect(renderer).toContain('loadPlaywright("playwright")');
     expect(renderer).toContain("ctx.storage.store");
     expect(pkg).toContain('"playwright"');

@@ -103,6 +103,7 @@ function findVendorRows(
 export function buildVendorComplianceTools(
   ctx: RunQueryCtx,
   clientOrgIds: string[],
+  onComplianceResult?: (result: unknown) => void | Promise<void>,
 ) {
   return {
     lookup_connected_vendors: {
@@ -187,7 +188,7 @@ export function buildVendorComplianceTools(
         if (matches.length === 0) return "Connected vendor not found.";
         const includeCompliant =
           params.includeCompliant ?? Boolean(params.vendorOrgId || params.vendorName);
-        return matches.map((row) => {
+        const result = matches.map((row) => {
           const checks = Array.isArray(row.checks) ? row.checks : [];
           return {
             vendorOrgId: vendorOrgId(row),
@@ -223,6 +224,8 @@ export function buildVendorComplianceTools(
               }),
           };
         });
+        await onComplianceResult?.(result);
+        return result;
       },
     },
   };

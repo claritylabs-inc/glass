@@ -5,9 +5,6 @@ import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
 import {
-  generatedTextFromResult,
-} from "../lib/models";
-import {
   createImessageGroupChat,
   coordinateMailboxTask,
   webResearch,
@@ -58,10 +55,9 @@ import {
 } from "../lib/imessageAppCards";
 import { runImessageDeterministicControls } from "../lib/imessageDeterministicControls";
 import { postProcessImessageResponseText } from "../lib/imessageResponsePostProcessing";
-import { collectToolAudit } from "../lib/agentToolAudit";
 import { stripInternalAgentActivity } from "../lib/agentMessageHistory";
 import { createImessageAgentRunState } from "../lib/imessageAgentRunState";
-import { runChannelAgent } from "../lib/channelAgentRunner";
+import { runAgentTurn } from "../lib/channelAgentRunner";
 import {
   buildFallbackImessageChatGuid,
   buildImessageParticipantInputs,
@@ -777,11 +773,14 @@ export const processInbound = internalAction({
           : {}),
       };
 
-      const result = await runChannelAgent(ctx, {
-        execution: "direct",
-        surface: "imessage",
+      const turn = await runAgentTurn(ctx, {
         orgId,
         task: "chat",
+        messageText: inboundMessageText,
+        recentConversationContext,
+        currentAttachmentNames: attachmentRecords.map(
+          (attachment) => attachment.filename,
+        ),
         options: {
           maxOutputTokens: 512,
           system: systemPrompt,
@@ -807,12 +806,11 @@ export const processInbound = internalAction({
         },
       });
 
-      const { usedTools, toolCalls, workflowOutcomes } =
-        collectToolAudit(result);
+      const { usedTools, toolCalls, workflowOutcomes } = turn.audit;
       runState.appendWorkflowOutcomes(workflowOutcomes);
       const responseFileAttachments = runState.responseFileAttachments;
       const imessageToolArtifacts = runState.toolArtifacts;
-      let responseText = generatedTextFromResult(result);
+      let responseText = turn.text;
       let responseAlreadySent = false;
       let pendingEmailIdForResponse: Id<"pendingEmails"> | undefined;
       const emailResult = runState.getEmailResult();

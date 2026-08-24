@@ -94,8 +94,7 @@ async function seedPresentation(t: ReturnType<typeof convexTest>) {
       orgId,
       channel: "slack",
       role: "agent",
-      content:
-        "I'll check the policy now.\n\n✅ **The policy is active.**",
+      content: "✅ **The policy is active.**",
       replyToMessageId: userMessageId,
       agentSteps: [
         { type: "tool", name: "choose_slack_reaction", completed: true },
@@ -238,7 +237,6 @@ describe("Slack presentation lifecycle", () => {
     expect(classic.some((block) => block.type === "actions")).toBe(true);
     const rendered = JSON.stringify(classic);
     expect(rendered).toContain("*The policy is active.*");
-    expect(rendered).not.toContain("I'll check");
     expect(rendered).not.toContain("✅");
     expect(rendered).not.toContain("**The policy");
     expect(rendered).not.toContain("Completed a task");

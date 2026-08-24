@@ -4,7 +4,6 @@ import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { runChannelAgent } from "../lib/channelAgentRunner";
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 10;
@@ -178,8 +177,7 @@ export const processDebounced = internalAction({
         console.warn("[slack] Could not start rich response presentation", error);
       }
 
-      await runChannelAgent(ctx, {
-        execution: "thread",
+      await ctx.runAction(internal.actions.processThreadChat.run, {
         surface: "slack",
         threadId: prepared.threadId,
         orgId: prepared.orgId,

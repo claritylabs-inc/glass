@@ -497,17 +497,32 @@ async function withTypingIndicator<T>(
   space: Space,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const pulse = () => {
-    void Promise.resolve(space.startTyping()).catch((err) => {
+  let stopped = false;
+  let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let activeRefresh: Promise<void> | undefined;
+
+  const refresh = async (): Promise<void> => {
+    if (stopped) return;
+    try {
+      await Promise.resolve(space.startTyping());
+    } catch (err) {
       console.warn("[glass-imessage] Failed to refresh typing indicator:", err);
-    });
+    } finally {
+      if (!stopped) {
+        refreshTimer = setTimeout(() => {
+          activeRefresh = refresh();
+        }, TYPING_REFRESH_MS);
+      }
+    }
   };
-  pulse();
-  const interval = setInterval(pulse, TYPING_REFRESH_MS);
+
+  activeRefresh = refresh();
   try {
     return await fn();
   } finally {
-    clearInterval(interval);
+    stopped = true;
+    if (refreshTimer) clearTimeout(refreshTimer);
+    await activeRefresh;
     await Promise.resolve(space.stopTyping()).catch((err) => {
       console.warn("[glass-imessage] Failed to stop typing indicator:", err);
     });
@@ -1172,14 +1187,14 @@ async function main() {
           }
         }
 
-        await withTypingIndicator(space, async () => {
+        const result = await withTypingIndicator(space, async () => {
           // Collect attachment if present
           const attachments: ImessageAttachment[] = [];
           if (message.content.type === "attachment") {
             attachments.push(await readInboundAttachment(message.content));
           }
 
-          const result = await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {
+          return await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {
             fromPhone,
             messageText: messageText || "(attachment)",
             chatGuid: chatSnapshot.chatGuid,
@@ -1196,51 +1211,51 @@ async function main() {
             receivedAt,
             attachments: attachments.length > 0 ? attachments : undefined,
           });
-
-          // Send the text response
-          if (result.response) {
-            await sendResponseText(space, message, result.response);
-          }
-
-          if (result.sendContactCard) {
-            try {
-              await sendGlassContactCard(space);
-            } catch (err) {
-              console.warn(
-                "[glass-imessage] Contact card delivery failed; continuing with response:",
-                err,
-              );
-            }
-          }
-
-          await sendOutboundAppCards(space, result.appCards);
-
-          // Send any file attachments (e.g. COI PDFs)
-          const attachmentFailures = await sendOutboundAttachments(
-            space,
-            result.attachments,
-          );
-          if (
-            attachmentFailures.length > 0 &&
-            result.threadMessageId &&
-            CONVEX_SITE_URL
-          ) {
-            await reportImessageDeliveryEvent(CONVEX_SITE_URL, WORKER_SECRET, {
-              threadMessageId: result.threadMessageId,
-              attachmentFailures,
-            });
-          }
-
-          if (result.leaveGroup && result.chatGuid && TRANSPORT === "imessage") {
-            try {
-              const client = getAdvancedImessageClient(app, space);
-              await client?.groups?.leave(result.chatGuid);
-              activeSpacesByChatGuid.delete(result.chatGuid);
-            } catch (err) {
-              console.warn(`[glass-imessage] Failed to leave group ${result.chatGuid}:`, err);
-            }
-          }
         });
+
+        // Send the text response after the typing indicator is fully stopped.
+        if (result.response) {
+          await sendResponseText(space, message, result.response);
+        }
+
+        if (result.sendContactCard) {
+          try {
+            await sendGlassContactCard(space);
+          } catch (err) {
+            console.warn(
+              "[glass-imessage] Contact card delivery failed; continuing with response:",
+              err,
+            );
+          }
+        }
+
+        await sendOutboundAppCards(space, result.appCards);
+
+        // Send any file attachments (e.g. COI PDFs)
+        const attachmentFailures = await sendOutboundAttachments(
+          space,
+          result.attachments,
+        );
+        if (
+          attachmentFailures.length > 0 &&
+          result.threadMessageId &&
+          CONVEX_SITE_URL
+        ) {
+          await reportImessageDeliveryEvent(CONVEX_SITE_URL, WORKER_SECRET, {
+            threadMessageId: result.threadMessageId,
+            attachmentFailures,
+          });
+        }
+
+        if (result.leaveGroup && result.chatGuid && TRANSPORT === "imessage") {
+          try {
+            const client = getAdvancedImessageClient(app, space);
+            await client?.groups?.leave(result.chatGuid);
+            activeSpacesByChatGuid.delete(result.chatGuid);
+          } catch (err) {
+            console.warn(`[glass-imessage] Failed to leave group ${result.chatGuid}:`, err);
+          }
+        }
       } catch (err) {
         console.error("[glass-imessage] Error processing message:", err);
         // Attempt to send a fallback message

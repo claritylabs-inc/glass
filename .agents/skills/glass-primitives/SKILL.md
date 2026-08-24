@@ -19,6 +19,8 @@ Prefer extending the existing primitive when the meaning matches. Add a new prim
 
 ## Catalog
 
+- `convex/lib/channelAgentRunner.ts` owns shared authenticated conversational turn execution, tool-outcome auditing, and the policy-evidence contract. Web, Slack, email, iMessage, and MCP keep ingress, authorization, persistence, typing, reactions, and delivery channel-local. Policy-dependent informational answers must complete a current-turn policy lookup; the runner may retry once with read-only policy tools only when every earlier tool is replay-safe, never after an unknown or side-effectful tool.
+
 Certificate holder edits in the shared detail drawer target the selected certificate explicitly, regenerate its PDF, and commit holder changes only while recording the next immutable version. Do not route changed holder identity through ordinary reuse matching or mutate an issued PDF in place.
 
 - Browser typography: `lib/typography.ts` is the only browser typography owner. React surfaces select closed semantic roles with `typeStyle`; Redaction cuts use `redactionTypeStyle`, and external/inline exceptions use the owner's named adapters. Raw typography utilities and inline font properties are prohibited under `app/` and `components/`. Keep heading semantics independent from visual roles and follow `docs/design/typography.md`; generated social images, transactional email HTML, and PDF output keep separate contracts.

@@ -19,10 +19,10 @@ describe("Slack mrkdwn formatting", () => {
     );
   });
 
-  test("removes progress narration and emoji from agent answers", () => {
+  test("removes emoji from agent answers", () => {
     assert.equal(
       toSlackMrkdwn(
-        "I'll check the policy now.\n\n✅ :white_check_mark: **Policy:** active through renewal.",
+        "✅ :white_check_mark: **Policy:** active through renewal.",
       ),
       "*Policy:* active through renewal.",
     );

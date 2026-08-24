@@ -1,5 +1,6 @@
 export type AgentToolAudit = {
   usedTools: string[];
+  completedTools: string[];
   toolCalls: Array<{ name: string; input?: string; output?: string }>;
   workflowOutcomes: unknown[];
 };
@@ -15,13 +16,15 @@ function serializeToolAuditValue(value: unknown): string | undefined {
 
 export function collectToolAudit(result: unknown): AgentToolAudit {
   const usedTools: string[] = [];
+  const completedTools: string[] = [];
   const toolCalls: AgentToolAudit["toolCalls"] = [];
   const workflowOutcomes: unknown[] = [];
-  const seen = new Set<string>();
+  const seenTools = new Set<string>();
+  const seenCompletedTools = new Set<string>();
 
   const addUsedTool = (name: string) => {
-    if (seen.has(name)) return;
-    seen.add(name);
+    if (seenTools.has(name)) return;
+    seenTools.add(name);
     usedTools.push(name);
   };
 
@@ -40,6 +43,10 @@ export function collectToolAudit(result: unknown): AgentToolAudit {
     const name = resultPart.toolName ?? resultPart.name;
     if (typeof name !== "string" || !name) return;
     addUsedTool(name);
+    if (!seenCompletedTools.has(name)) {
+      seenCompletedTools.add(name);
+      completedTools.push(name);
+    }
     const output =
       resultPart.output ?? resultPart.result ?? resultPart.value ?? undefined;
     if (output && typeof output === "object" && "workflowOutcome" in output) {
@@ -75,12 +82,29 @@ export function collectToolAudit(result: unknown): AgentToolAudit {
   };
 
   const root = result as Record<string, unknown>;
-  addStepAudit(root);
-
   const steps = Array.isArray(root.steps) ? root.steps : [];
-  for (const step of steps) {
-    addStepAudit(step);
+  if (steps.length > 0) {
+    for (const step of steps) addStepAudit(step);
+  } else {
+    addStepAudit(root);
   }
 
-  return { usedTools, toolCalls, workflowOutcomes };
+  return { usedTools, completedTools, toolCalls, workflowOutcomes };
+}
+
+export function mergeToolAudits(
+  first: AgentToolAudit,
+  second: AgentToolAudit,
+): AgentToolAudit {
+  return {
+    usedTools: [...new Set([...first.usedTools, ...second.usedTools])],
+    completedTools: [
+      ...new Set([...first.completedTools, ...second.completedTools]),
+    ],
+    toolCalls: [...first.toolCalls, ...second.toolCalls],
+    workflowOutcomes: [
+      ...first.workflowOutcomes,
+      ...second.workflowOutcomes,
+    ],
+  };
 }

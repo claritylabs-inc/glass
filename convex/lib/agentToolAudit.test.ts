@@ -10,6 +10,7 @@ describe("collectToolAudit", () => {
       }),
     ).toEqual({
       usedTools: ["lookup_policy"],
+      completedTools: ["lookup_policy"],
       toolCalls: [
         {
           name: "lookup_policy",
@@ -40,6 +41,7 @@ describe("collectToolAudit", () => {
       }),
     ).toMatchObject({
       usedTools: ["generate_coi"],
+      completedTools: ["generate_coi"],
       workflowOutcomes: [{ kind: "certificate_generated" }],
     });
   });

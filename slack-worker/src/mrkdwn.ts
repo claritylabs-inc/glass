@@ -1,7 +1,6 @@
 const MARKDOWN_LINK = /\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g;
 const EMOJI_SEQUENCE = /(?:[#*0-9]\uFE0F?\u20E3|\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
 const SLACK_EMOJI_SHORTCODE = /(?<![\w]):[a-z0-9_+-]+:/gi;
-const PROGRESS_PREAMBLE = /^(?:(?:I(?:['’]ll| will|['’]m)|Let me)\s+(?:check|review|look(?:\s+(?:at|into|up))?|analy[sz]e|compare|find|verify)\b[^\n]*(?:\n{2,}|$))/i;
 
 function cleanSlackAgentText(value: string): string {
   return value
@@ -10,8 +9,7 @@ function cleanSlackAgentText(value: string): string {
     .replace(EMOJI_SEQUENCE, "")
     .replace(SLACK_EMOJI_SHORTCODE, "")
     .replace(/^[ \t]+/gm, "")
-    .replace(/[ \t]+$/gm, "")
-    .replace(PROGRESS_PREAMBLE, "");
+    .replace(/[ \t]+$/gm, "");
 }
 
 export function toSlackMrkdwn(value: string): string {

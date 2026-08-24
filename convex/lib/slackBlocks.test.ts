@@ -53,10 +53,10 @@ describe("Slack Block Kit renderers", () => {
     expect(JSON.stringify(blocks)).toContain("tab=certificates");
   });
 
-  test("removes progress narration and emoji while converting CommonMark", () => {
+  test("removes emoji while converting CommonMark", () => {
     expect(
       formatSlackAnswerText(
-        "I'll check the policy now.\n\n✅ :white_check_mark: **Policy:** [Open](https://example.test/policy) with *review notes*",
+        "✅ :white_check_mark: **Policy:** [Open](https://example.test/policy) with *review notes*",
       ),
     ).toBe(
       "*Policy:* <https://example.test/policy|Open> with _review notes_",

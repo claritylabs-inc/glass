@@ -4,7 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { stepCountIs } from "ai";
-import { generateAgentTextForOrg, generateTextForOrg } from "../lib/models";
+import { generateTextForOrg } from "../lib/models";
+import { runAgentTurn } from "../lib/channelAgentRunner";
 import {
   formatPolicyFocusHints,
   selectPolicyFocusIds,
@@ -338,19 +339,31 @@ MCP MODE:
     // Build message history (skip processing placeholders)
     const messageHistory = buildMessageHistory(allMessages);
 
-    // Generate response (non-streaming)
-    const { text: content } = await generateAgentTextForOrg(
-      ctx,
-      args.orgId,
-      "chat",
-      {
+    const turn = await runAgentTurn(ctx, {
+      orgId: args.orgId,
+      task: "chat",
+      messageText: args.message,
+      recentConversationContext: allMessages
+        .filter(
+          (message: { _id: Id<"threadMessages">; status?: string }) =>
+            message._id !== userMessageId &&
+            message.status !== "processing" &&
+            message.status !== "cancelled",
+        )
+        .slice(-12)
+        .map(
+          (message: { role?: string; content?: string }) =>
+            `${message.role}: ${message.content ?? ""}`,
+        )
+        .join("\n"),
+      options: {
         maxOutputTokens: 2048,
         system: fullSystemPrompt,
         messages: messageHistory,
         tools,
         stopWhen: stepCountIs(10),
       },
-      {
+      run: {
         taskKind: "query_reason",
         sessionKey: String(threadId),
         trace: {
@@ -361,7 +374,14 @@ MCP MODE:
           channel: "mcp",
         },
       },
-    );
+    });
+    const content = turn.text;
+    for (const workflowOutcome of turn.audit.workflowOutcomes) {
+      mcpToolArtifacts.push({
+        type: "workflow_outcome",
+        data: workflowOutcome,
+      });
+    }
 
     // Insert agent message
     const agentMsgId = await ctx.runMutation(
@@ -374,6 +394,10 @@ MCP MODE:
     await ctx.runMutation(internal.threads.updateAgentMessage, {
       id: agentMsgId,
       content,
+      usedTools:
+        turn.audit.usedTools.length > 0 ? turn.audit.usedTools : undefined,
+      toolCalls:
+        turn.audit.toolCalls.length > 0 ? turn.audit.toolCalls : undefined,
       attachments:
         responseAttachments.length > 0 ? responseAttachments : undefined,
       toolArtifacts:
