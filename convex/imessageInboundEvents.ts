@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import dayjs from "dayjs";
 import { internalMutation } from "./_generated/server";
 
 export const claim = internalMutation({
@@ -10,6 +11,15 @@ export const claim = internalMutation({
     messageText: v.string(),
     sourceMessageId: v.optional(v.string()),
     receivedAt: v.optional(v.number()),
+    recoveryFailure: v.optional(
+      v.object({
+        stage: v.union(
+          v.literal("raw_message"),
+          v.literal("attachment_download"),
+        ),
+        error: v.string(),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -25,7 +35,7 @@ export const claim = internalMutation({
       };
     }
 
-    const now = Date.now();
+    const now = dayjs().valueOf();
     await ctx.db.insert("imessageInboundEvents", {
       eventKey: args.eventKey,
       fromPhone: args.fromPhone,
@@ -34,12 +44,35 @@ export const claim = internalMutation({
       messageText: args.messageText,
       sourceMessageId: args.sourceMessageId,
       receivedAt: args.receivedAt,
+      recoveryFailure: args.recoveryFailure,
+      privacyContextPending: args.isGroup === true ? undefined : true,
       status: "processing",
       createdAt: now,
       updatedAt: now,
     });
 
     return { duplicate: false, status: "processing" as const };
+  },
+});
+
+export const attachPrivacyContext = internalMutation({
+  args: {
+    eventKey: v.string(),
+    threadId: v.id("threads"),
+    historyGeneration: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("imessageInboundEvents")
+      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
+      .unique();
+    if (!existing) return;
+    await ctx.db.patch(existing._id, {
+      threadId: args.threadId,
+      historyGeneration: args.historyGeneration,
+      privacyContextPending: false,
+      updatedAt: dayjs().valueOf(),
+    });
   },
 });
 
@@ -59,7 +92,8 @@ export const complete = internalMutation({
       status: "completed",
       response: args.response,
       error: undefined,
-      updatedAt: Date.now(),
+      privacyContextPending: undefined,
+      updatedAt: dayjs().valueOf(),
     });
   },
 });
@@ -79,7 +113,8 @@ export const fail = internalMutation({
     await ctx.db.patch(existing._id, {
       status: "error",
       error: args.error,
-      updatedAt: Date.now(),
+      privacyContextPending: undefined,
+      updatedAt: dayjs().valueOf(),
     });
   },
 });

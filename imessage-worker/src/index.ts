@@ -14,7 +14,6 @@ import { terminal } from "@spectrum-ts/terminal";
 import {
   reportImessageDeliveryEvent,
   sendToConvex,
-  type ImessageAttachment,
   type ImessageAppCard,
   type ImessageDeliveryFailure,
   type ImessageResponseAttachment,
@@ -24,15 +23,16 @@ import {
   parseTerminalIdentityCommand,
   terminalIdentityLabel,
 } from "./terminalIdentity.js";
-import {
-  imessageMarkdownSource,
-  imessagePlainText,
-} from "./outboundText.js";
+import { imessageMarkdownSource, imessagePlainText } from "./outboundText.js";
 import {
   deliverImessageResponse,
   splitImessageResponse,
 } from "./responseDelivery.js";
 import { readInboundAttachment } from "./voiceAttachment.js";
+import {
+  normalizeInboundTurn,
+  type InboundRecoveryClient,
+} from "./inboundNormalization.js";
 
 function imessageMarkdown(value: string) {
   return markdown(imessageMarkdownSource(value));
@@ -64,6 +64,13 @@ type AdvancedImessageClient = {
       data: Buffer;
       fileName: string;
     }): Promise<{ attachment: { guid: string } }>;
+    downloadStream(
+      attachmentGuid: string,
+    ): AsyncIterable<
+      | { type: "header" }
+      | { type: "primaryChunk"; data: Uint8Array }
+      | { type: "companionChunk"; data: Uint8Array }
+    >;
   };
   chats?: {
     get(chatGuid: string): Promise<{
@@ -71,10 +78,13 @@ type AdvancedImessageClient = {
       isGroup?: boolean;
       participants?: readonly { address: string }[];
     }>;
-    create(addresses: string[], options?: {
-      message?: string;
-      clientMessageId?: string;
-    }): Promise<{
+    create(
+      addresses: string[],
+      options?: {
+        message?: string;
+        clientMessageId?: string;
+      },
+    ): Promise<{
       chat: {
         guid: string;
         displayName?: string;
@@ -85,11 +95,27 @@ type AdvancedImessageClient = {
   };
   groups?: {
     leave(chatGuid: string): Promise<void>;
-    setDisplayName(chatGuid: string, displayName: string, options?: {
-      clientMessageId?: string;
-    }): Promise<unknown>;
+    setDisplayName(
+      chatGuid: string,
+      displayName: string,
+      options?: {
+        clientMessageId?: string;
+      },
+    ): Promise<unknown>;
   };
   messages?: {
+    get(messageGuid: string): Promise<{
+      guid: string;
+      content: {
+        text?: string;
+        attachments: readonly {
+          guid: string;
+          fileName: string;
+          mimeType: string;
+          totalBytes?: number;
+        }[];
+      };
+    }>;
     sendAttachment(
       chatGuid: string,
       attachmentGuid: string,
@@ -119,9 +145,7 @@ const PROJECT_SECRET = process.env.PHOTON_PROJECT_SECRET;
 const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
 const WORKER_SECRET = process.env.IMESSAGE_WORKER_SECRET ?? "";
 const GLASS_ENV =
-  process.env.GLASS_ENV ??
-  process.env.RAILWAY_ENVIRONMENT_NAME ??
-  "local";
+  process.env.GLASS_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
 const IMESSAGE_ENABLED = process.env.IMESSAGE_ENABLED === "true";
 const SPECTRUM_PROVIDER = process.env.SPECTRUM_PROVIDER;
 const USE_TERMINAL =
@@ -134,15 +158,15 @@ const TERMINAL_FROM_PHONE =
   "";
 const TERMINAL_SPACE_ID = process.env.IMESSAGE_TERMINAL_SPACE_ID ?? "chat-1";
 const TERMINAL_IDENTITIES = {
-  broker:
-    process.env.IMESSAGE_TERMINAL_BROKER_PHONE ?? TERMINAL_FROM_PHONE,
+  broker: process.env.IMESSAGE_TERMINAL_BROKER_PHONE ?? TERMINAL_FROM_PHONE,
   client: process.env.IMESSAGE_TERMINAL_CLIENT_PHONE ?? "+12025550102",
   public: process.env.IMESSAGE_TERMINAL_PUBLIC_PHONE ?? "+12025550199",
 };
 const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const TYPING_REFRESH_MS = 4_000;
 const CONTACT_CARD_NAME = "Glass from Clarity Labs";
-const CONTACT_CARD_EMAIL = process.env.GLASS_AGENT_EMAIL ?? "agent@glass.insure";
+const CONTACT_CARD_EMAIL =
+  process.env.GLASS_AGENT_EMAIL ?? "agent@glass.insure";
 const CONTACT_CARD_PHONE =
   process.env.GLASS_IMESSAGE_CONTACT_PHONE ??
   process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ??
@@ -162,7 +186,9 @@ const sendIdempotencyKeys = new Map<
 >();
 
 if (TRANSPORT === "imessage" && !IMESSAGE_ENABLED) {
-  console.error("IMESSAGE_ENABLED must be true before connecting to Photon iMessage");
+  console.error(
+    "IMESSAGE_ENABLED must be true before connecting to Photon iMessage",
+  );
   process.exit(1);
 }
 if (TRANSPORT === "imessage" && (!PROJECT_ID || !PROJECT_SECRET)) {
@@ -183,13 +209,19 @@ if (
   TRANSPORT === "terminal" &&
   Object.values(TERMINAL_IDENTITIES).some((phone) => !isE164Phone(phone))
 ) {
-  console.error("Spectrum terminal identities must use valid E.164 phone numbers");
+  console.error(
+    "Spectrum terminal identities must use valid E.164 phone numbers",
+  );
   process.exit(1);
 }
 
 export function imessageProcessingFallbackMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  if (/Convex responded 408|Client disconnected|timed?\s*out|timeout/i.test(message)) {
+  if (
+    /Convex responded 408|Client disconnected|timed?\s*out|timeout/i.test(
+      message,
+    )
+  ) {
     return "I'm still working on that. If I don't follow up here, check Glass for the draft.";
   }
   return "Sorry, something went wrong. Please try again.";
@@ -246,11 +278,16 @@ function getHttpPorts(): number[] {
   );
   if (!process.env.RAILWAY_ENVIRONMENT) return [primaryPort];
 
-  const publicDomainPort = parseHttpPort(process.env.WORKER_HTTP_PORT ?? "3001");
+  const publicDomainPort = parseHttpPort(
+    process.env.WORKER_HTTP_PORT ?? "3001",
+  );
   return [...new Set([primaryPort, publicDomainPort])];
 }
 
-function readStringField(value: unknown, fieldNames: string[]): string | undefined {
+function readStringField(
+  value: unknown,
+  fieldNames: string[],
+): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   for (const fieldName of fieldNames) {
@@ -265,7 +302,10 @@ function readStringField(value: unknown, fieldNames: string[]): string | undefin
   return undefined;
 }
 
-function readTimestamp(value: unknown, fieldNames: string[]): number | undefined {
+function readTimestamp(
+  value: unknown,
+  fieldNames: string[],
+): number | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   for (const fieldName of fieldNames) {
@@ -302,9 +342,7 @@ function withAttachmentFailures<T extends Record<string, unknown>>(
   body: T,
   failures: ImessageDeliveryFailure[],
 ): T & { attachmentFailures?: ImessageDeliveryFailure[] } {
-  return failures.length > 0
-    ? { ...body, attachmentFailures: failures }
-    : body;
+  return failures.length > 0 ? { ...body, attachmentFailures: failures } : body;
 }
 
 function sendJson(
@@ -378,7 +416,10 @@ async function sendOutboundAttachments(
         }),
       );
     } catch (err) {
-      console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
+      console.warn(
+        `[glass-imessage] Failed to send attachment ${att.filename}:`,
+        err,
+      );
       failures.push({
         filename: att.filename,
         error: errorMessage(err),
@@ -392,7 +433,10 @@ function appCardFallbackText(card: ImessageAppCard) {
   const intro =
     card.summary ?? [card.title, card.subtitle].filter(Boolean).join(" - ");
   return [intro, card.url]
-    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .filter(
+      (part): part is string =>
+        typeof part === "string" && part.trim().length > 0,
+    )
     .join("\n");
 }
 
@@ -539,7 +583,10 @@ async function sendOutboundAppCards(
     try {
       await space.send(content);
     } catch (err) {
-      console.warn(`[glass-imessage] Failed to send app card ${card.url}:`, err);
+      console.warn(
+        `[glass-imessage] Failed to send app card ${card.url}:`,
+        err,
+      );
       await space.send(imessageMarkdown(appCardFallbackText(card)));
     }
   }
@@ -554,7 +601,9 @@ async function sendAttachmentsThroughClient(
   const failures: ImessageDeliveryFailure[] = [];
   if (!attachments?.length) return failures;
   if (!client.attachments?.upload || !client.messages?.sendAttachment) {
-    console.warn("[glass-imessage] Attachment send by chat GUID is not available");
+    console.warn(
+      "[glass-imessage] Attachment send by chat GUID is not available",
+    );
     return allAttachmentsFailed(
       attachments,
       "Attachment send by chat GUID is not available",
@@ -579,7 +628,10 @@ async function sendAttachmentsThroughClient(
           : undefined,
       });
     } catch (err) {
-      console.warn(`[glass-imessage] Failed to send attachment ${att.filename}:`, err);
+      console.warn(
+        `[glass-imessage] Failed to send attachment ${att.filename}:`,
+        err,
+      );
       failures.push({
         filename: att.filename,
         error: errorMessage(err),
@@ -597,7 +649,9 @@ async function sendAppCardsThroughClient(
 ) {
   if (!appCards?.length) return;
   if (!client.messages?.sendCustomizedMiniApp) {
-    console.warn("[glass-imessage] Mini app send by chat GUID is not available");
+    console.warn(
+      "[glass-imessage] Mini app send by chat GUID is not available",
+    );
     if (!client.messages?.sendText) return;
     for (const [index, card] of appCards.entries()) {
       if (!card.url) continue;
@@ -709,7 +763,10 @@ function deterministicTerminalGroupGuid(participants: string[]): string {
   return `terminal-group-${Math.abs(hash)}`;
 }
 
-function getAdvancedImessageClient(app: SpectrumInstance, space?: Space): AdvancedImessageClient | undefined {
+function getAdvancedImessageClient(
+  app: SpectrumInstance,
+  space?: Space,
+): AdvancedImessageClient | undefined {
   const runtime = app.__internal.platforms.get("iMessage");
   const client = runtime?.client;
   if (!client) return undefined;
@@ -757,10 +814,14 @@ async function getChatSnapshot(app: SpectrumInstance, space: Space) {
       isGroup: chat.isGroup === true,
       chatTitle: chat.displayName,
       participants,
-      participantsUnavailable: chat.isGroup === true && participants.length === 0,
+      participantsUnavailable:
+        chat.isGroup === true && participants.length === 0,
     };
   } catch (err) {
-    console.warn(`[glass-imessage] Failed to fetch chat snapshot for ${chatGuid}:`, err);
+    console.warn(
+      `[glass-imessage] Failed to fetch chat snapshot for ${chatGuid}:`,
+      err,
+    );
     return {
       chatGuid,
       isGroup: fallbackIsGroup,
@@ -779,7 +840,8 @@ async function startSpectrum(): Promise<SpectrumInstance> {
             { name: "/whoami", description: "Show the configured test phone" },
             {
               name: "/as",
-              description: "Switch sender: /as broker, /as client, or /as public",
+              description:
+                "Switch sender: /as broker, /as client, or /as public",
             },
           ],
         }),
@@ -797,7 +859,9 @@ async function startSpectrum(): Promise<SpectrumInstance> {
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`[glass-imessage] Connecting to Spectrum ${TRANSPORT} provider...`);
+  console.log(
+    `[glass-imessage] Connecting to Spectrum ${TRANSPORT} provider...`,
+  );
 
   const app = await startSpectrum();
   let terminalFromPhone = TERMINAL_FROM_PHONE;
@@ -813,8 +877,14 @@ async function main() {
   // final responses and attachments. Otherwise it falls back to a proactive send.
   // Protected by the same IMESSAGE_WORKER_SECRET used for inbound verification.
   const httpPorts = getHttpPorts();
-  const handleHttpRequest = async (req: http.IncomingMessage, res: http.ServerResponse) => {
-    const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  const handleHttpRequest = async (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ) => {
+    const requestUrl = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`,
+    );
 
     if (req.method === "GET" && requestUrl.pathname === "/health") {
       sendJson(res, 200, {
@@ -847,7 +917,9 @@ async function main() {
 
     const body = await new Promise<string>((resolve, reject) => {
       let data = "";
-      req.on("data", (chunk: Buffer | string) => { data += chunk.toString(); });
+      req.on("data", (chunk: Buffer | string) => {
+        data += chunk.toString();
+      });
       req.on("end", () => resolve(data));
       req.on("error", reject);
     });
@@ -869,15 +941,22 @@ async function main() {
       return;
     }
 
-    const messageText = payload.message?.trim() ||
+    const messageText =
+      payload.message?.trim() ||
       (payload.appCards?.length
         ? "Glass shared a link."
         : payload.attachments?.length
           ? "Glass shared attachment(s)."
           : "");
-    if ((!payload.toPhone && !payload.chatGuid && !payload.participants?.length) || !messageText) {
+    if (
+      (!payload.toPhone &&
+        !payload.chatGuid &&
+        !payload.participants?.length) ||
+      !messageText
+    ) {
       sendJson(res, 400, {
-        error: "toPhone, chatGuid, or participants and message/appCards/attachments are required",
+        error:
+          "toPhone, chatGuid, or participants and message/appCards/attachments are required",
       });
       return;
     }
@@ -889,7 +968,9 @@ async function main() {
 
     try {
       if (payload.participants?.length) {
-        const participants = [...new Set(payload.participants.map(normalizePhone).filter(Boolean))];
+        const participants = [
+          ...new Set(payload.participants.map(normalizePhone).filter(Boolean)),
+        ];
         if (participants.length < 2) {
           releaseSendIdempotencyKey(payload.clientMessageId);
           sendJson(res, 400, {
@@ -940,10 +1021,14 @@ async function main() {
           clientMessageId: payload.clientMessageId,
         });
         if (payload.appCards?.length) {
-          console.warn("[glass-imessage] App cards are not available during new group creation");
+          console.warn(
+            "[glass-imessage] App cards are not available during new group creation",
+          );
         }
         if (payload.attachments?.length) {
-          console.warn("[glass-imessage] Attachment send is not available during new group creation");
+          console.warn(
+            "[glass-imessage] Attachment send is not available during new group creation",
+          );
         }
         const attachmentFailures = allAttachmentsFailed(
           payload.attachments,
@@ -951,11 +1036,15 @@ async function main() {
         );
         const chatGuid = created.chat.guid;
         if (payload.title?.trim() && imessageClient.groups?.setDisplayName) {
-          await imessageClient.groups.setDisplayName(chatGuid, payload.title.trim(), {
-            clientMessageId: payload.clientMessageId
-              ? `${payload.clientMessageId}:title`
-              : undefined,
-          });
+          await imessageClient.groups.setDisplayName(
+            chatGuid,
+            payload.title.trim(),
+            {
+              clientMessageId: payload.clientMessageId
+                ? `${payload.clientMessageId}:title`
+                : undefined,
+            },
+          );
         }
         const returnedParticipants = created.chat.participants?.length
           ? created.chat.participants.map((participant) => ({
@@ -1085,7 +1174,9 @@ async function main() {
   }));
   for (const { port, server } of httpServers) {
     server.listen(port, () => {
-      console.log(`[glass-imessage] Outbound HTTP server listening on port ${port}`);
+      console.log(
+        `[glass-imessage] Outbound HTTP server listening on port ${port}`,
+      );
     });
   }
 
@@ -1111,9 +1202,7 @@ async function main() {
       continue;
     }
     const senderId =
-      TRANSPORT === "terminal"
-        ? (terminalFromPhone || rawSenderId)
-        : rawSenderId;
+      TRANSPORT === "terminal" ? terminalFromPhone || rawSenderId : rawSenderId;
     const fromPhone = normalizePhone(senderId);
     activeSpacesByPhone.set(fromPhone, space);
     const chatSnapshot = await getChatSnapshot(app, space);
@@ -1134,31 +1223,52 @@ async function main() {
       "externalId",
       "eventId",
     ]);
-    const receivedAt = readTimestamp(message, [
-      "timestamp",
-      "createdAt",
-      "sentAt",
-      "receivedAt",
-      "date",
-    ]) ?? Date.now();
+    const receivedAt =
+      readTimestamp(message, [
+        "timestamp",
+        "createdAt",
+        "sentAt",
+        "receivedAt",
+        "date",
+      ]) ?? Date.now();
 
-    // Ignore non-text/attachment messages
-    if (message.content.type !== "text" && message.content.type !== "attachment") {
+    // Ignore events that cannot contribute to one logical user turn.
+    if (
+      message.content.type !== "text" &&
+      message.content.type !== "attachment" &&
+      message.content.type !== "group"
+    ) {
       continue;
     }
-
-    // Extract text (may be empty if attachment-only)
-    const messageText =
-      message.content.type === "text"
-        ? message.content.text
-        : "";
-
-    // Skip empty messages with no text
-    if (!messageText && message.content.type !== "attachment") continue;
 
     // Process asynchronously so the typing indicator runs while we wait
     void (async () => {
       try {
+        const normalizedTurn = await normalizeInboundTurn({
+          message,
+          recoverFromPhoton: TRANSPORT === "imessage",
+          client: getAdvancedImessageClient(app, space) as
+            | InboundRecoveryClient
+            | undefined,
+          readAttachment: readInboundAttachment,
+        });
+        const messageText = normalizedTurn.messageText;
+        const logicalSourceMessageId =
+          normalizedTurn.sourceMessageId ?? sourceMessageId;
+        if (normalizedTurn.recoveryFailure) {
+          console.warn("[glass-imessage] Inbound recovery degraded", {
+            sourceMessageId: logicalSourceMessageId,
+            stage: normalizedTurn.recoveryFailure.stage,
+            error: normalizedTurn.recoveryFailure.error,
+            fallbackAttachmentCount: normalizedTurn.attachments.length,
+          });
+        }
+        console.log("[glass-imessage] Inbound turn normalized", {
+          sourceMessageId: logicalSourceMessageId,
+          hasText: messageText !== "(attachment)",
+          attachmentCount: normalizedTurn.attachments.length,
+          recoveryFailed: Boolean(normalizedTurn.recoveryFailure),
+        });
         if (TRANSPORT === "terminal") {
           const identityCommand = parseTerminalIdentityCommand(
             messageText,
@@ -1188,28 +1298,33 @@ async function main() {
         }
 
         const result = await withTypingIndicator(space, async () => {
-          // Collect attachment if present
-          const attachments: ImessageAttachment[] = [];
-          if (message.content.type === "attachment") {
-            attachments.push(await readInboundAttachment(message.content));
-          }
-
           return await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {
             fromPhone,
-            messageText: messageText || "(attachment)",
+            messageText,
             chatGuid: chatSnapshot.chatGuid,
             isGroup: chatSnapshot.isGroup,
             chatTitle: chatSnapshot.chatTitle,
             participantsUnavailable: chatSnapshot.participantsUnavailable,
             participants: [
               ...chatSnapshot.participants,
-              ...(chatSnapshot.participants.some((p) => normalizePhone(p.address) === fromPhone)
+              ...(chatSnapshot.participants.some(
+                (p) => normalizePhone(p.address) === fromPhone,
+              )
                 ? []
                 : [{ address: fromPhone }]),
             ],
-            sourceMessageId,
+            sourceMessageId: logicalSourceMessageId,
             receivedAt,
-            attachments: attachments.length > 0 ? attachments : undefined,
+            recoveryFailure: normalizedTurn.recoveryFailure
+              ? {
+                  stage: normalizedTurn.recoveryFailure.stage,
+                  error: normalizedTurn.recoveryFailure.error,
+                }
+              : undefined,
+            attachments:
+              normalizedTurn.attachments.length > 0
+                ? normalizedTurn.attachments
+                : undefined,
           });
         });
 
@@ -1253,7 +1368,10 @@ async function main() {
             await client?.groups?.leave(result.chatGuid);
             activeSpacesByChatGuid.delete(result.chatGuid);
           } catch (err) {
-            console.warn(`[glass-imessage] Failed to leave group ${result.chatGuid}:`, err);
+            console.warn(
+              `[glass-imessage] Failed to leave group ${result.chatGuid}:`,
+              err,
+            );
           }
         }
       } catch (err) {

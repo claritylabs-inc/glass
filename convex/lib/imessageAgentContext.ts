@@ -12,12 +12,11 @@ import {
   type StoredImessageAttachmentRecord,
 } from "./imessageIngress";
 import { tryBuildParsedPdfText } from "./liteparsePreprocessor";
-import {
-  transcribeAudioForOrg,
-  transcribeAudioForPublicTask,
-} from "./models";
+import { transcribeAudioForOrg, transcribeAudioForPublicTask } from "./models";
 
 export type ImessageHistoryMessage = {
+  _id: string;
+  _creationTime: number;
   status?: string;
   role: "user" | "agent" | "system";
   content: string;
@@ -57,9 +56,7 @@ export async function transcribeImessageVoiceMemos(
     attachments?: RawImessageAttachment[];
   },
 ): Promise<ImessageVoiceMemoInput> {
-  const voiceMemos = (args.attachments ?? []).filter(
-    isImessageAudioAttachment,
-  );
+  const voiceMemos = (args.attachments ?? []).filter(isImessageAudioAttachment);
   if (voiceMemos.length === 0) {
     return {
       messageText: args.messageText,
@@ -154,25 +151,26 @@ export function buildRecentImessageTextContext(
     .join("\n");
 }
 
-export async function buildImessageModelMessages(
-  args: {
-    history: ImessageHistoryMessage[];
-    messageText: string;
-    currentSpeakerLabel: string;
-    attachmentRecords: StoredImessageAttachmentRecord[];
-  },
-): Promise<ModelMessage[]> {
+export async function buildImessageModelMessages(args: {
+  history: ImessageHistoryMessage[];
+  messageText: string;
+  currentSpeakerLabel: string;
+  attachmentRecords: StoredImessageAttachmentRecord[];
+  currentMessageId: Id<"threadMessages">;
+}): Promise<ModelMessage[]> {
   const modelMessages: ModelMessage[] = [];
 
   for (const msg of args.history) {
     if (msg.status === "processing") continue;
-    if (msg.role === "user" && msg.content === args.messageText) continue;
+    if (msg._id === args.currentMessageId) continue;
     if (isImessageStatusCue(msg)) continue;
 
     if (msg.role === "user") {
       modelMessages.push({
         role: "user",
-        content: msg.userName ? `[${msg.userName}]: ${msg.content}` : msg.content,
+        content: msg.userName
+          ? `[${msg.userName}]: ${msg.content}`
+          : msg.content,
       });
     } else if (msg.role === "agent" && msg.content) {
       modelMessages.push({

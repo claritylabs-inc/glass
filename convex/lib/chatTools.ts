@@ -37,8 +37,49 @@ export const lookupPolicy = tool({
       .describe(
         "Filter by ACORD LOB code or label (e.g., CGL, AUTOB, WORK, Commercial General Liability)",
       ),
-    policyType: z.string().optional().describe("Deprecated alias for lineOfBusiness."),
+    policyType: z
+      .string()
+      .optional()
+      .describe("Deprecated alias for lineOfBusiness."),
     carrier: z.string().optional().describe("Filter by carrier/insurer name"),
+  }),
+});
+
+export const searchThreadHistory = tool({
+  description:
+    "Search older messages in this exact conversation. Use only when the user explicitly refers to earlier wording, a prior decision, or context that is not present in the supplied recent history. Results are conversational context, not authoritative policy evidence.",
+  inputSchema: z.object({
+    query: z
+      .string()
+      .min(2)
+      .max(500)
+      .describe(
+        "Specific words, decision, person, or topic to find in this thread.",
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(8)
+      .optional()
+      .describe(
+        "Maximum excerpts to return. Defaults to 5 and never exceeds 8.",
+      ),
+  }),
+});
+
+export const readThreadAttachment = tool({
+  description:
+    "Reopen one attachment from an older message in this exact conversation after search_thread_history identifies it. Use the exact message ID and filename returned by that search. Do not use attachment content as authoritative policy evidence.",
+  inputSchema: z.object({
+    messageId: z
+      .string()
+      .describe("Exact thread message ID returned by search_thread_history."),
+    filename: z
+      .string()
+      .min(1)
+      .max(500)
+      .describe("Exact attachment filename returned by search_thread_history."),
   }),
 });
 
@@ -48,7 +89,9 @@ export const presentPolicyCard = tool({
   inputSchema: z.object({
     policyId: z
       .string()
-      .describe("The exact policy ID returned by a successful policy tool in this turn."),
+      .describe(
+        "The exact policy ID returned by a successful policy tool in this turn.",
+      ),
     allowMultiple: z
       .boolean()
       .optional()
@@ -71,18 +114,24 @@ export const lookupCompanyContext = tool({
     orgId: z
       .string()
       .optional()
-      .describe("Readable organization ID when the request targets a specific company."),
+      .describe(
+        "Readable organization ID when the request targets a specific company.",
+      ),
     query: z
       .string()
       .optional()
-      .describe("Company fact, preference, operation, identity, or risk topic to find."),
+      .describe(
+        "Company fact, preference, operation, identity, or risk topic to find.",
+      ),
     limit: z
       .number()
       .int()
       .min(1)
       .max(20)
       .optional()
-      .describe("Maximum facts to return across readable organizations. Defaults to 10."),
+      .describe(
+        "Maximum facts to return across readable organizations. Defaults to 10.",
+      ),
   }),
 });
 
@@ -90,8 +139,12 @@ export const compareCoverages = tool({
   description:
     "Compare two policies side by side — lines of business, limits, deductibles, and premium.",
   inputSchema: z.object({
-    policyId1: z.string().describe("Policy reference for the first policy to compare"),
-    policyId2: z.string().describe("Policy reference for the second policy to compare"),
+    policyId1: z
+      .string()
+      .describe("Policy reference for the first policy to compare"),
+    policyId2: z
+      .string()
+      .describe("Policy reference for the second policy to compare"),
   }),
 });
 
@@ -127,9 +180,17 @@ export const lookupConnectedVendors = tool({
     query: z
       .string()
       .optional()
-      .describe("Vendor name, website, email, or relationship label to filter by."),
+      .describe(
+        "Vendor name, website, email, or relationship label to filter by.",
+      ),
     status: z
-      .enum(["all", "compliant", "non_compliant", "attention", "waiting_on_policies"])
+      .enum([
+        "all",
+        "compliant",
+        "non_compliant",
+        "attention",
+        "waiting_on_policies",
+      ])
       .optional()
       .describe("Optional compliance/status filter."),
   }),
@@ -139,12 +200,20 @@ export const lookupVendorPolicies = tool({
   description:
     "List policies for a specific connected vendor. Use this before answering questions about a vendor's current insurance, carriers, policy numbers, limits, named insured, or expiration dates.",
   inputSchema: z.object({
-    vendorOrgId: z.string().optional().describe("Connected vendor organization ID."),
-    vendorName: z.string().optional().describe("Vendor name if the ID is not known."),
+    vendorOrgId: z
+      .string()
+      .optional()
+      .describe("Connected vendor organization ID."),
+    vendorName: z
+      .string()
+      .optional()
+      .describe("Vendor name if the ID is not known."),
     query: z
       .string()
       .optional()
-      .describe("Optional carrier, policy number, coverage, or line-of-business filter."),
+      .describe(
+        "Optional carrier, policy number, coverage, or line-of-business filter.",
+      ),
   }),
 });
 
@@ -152,12 +221,20 @@ export const lookupVendorCompliance = tool({
   description:
     "Return the requirement-by-requirement compliance checklist for connected vendors, including matched policy details, expiration dates, limits, named insured, and the reason each requirement is met or not met. Use this for non-compliant vendor questions and vendor compliance diffs.",
   inputSchema: z.object({
-    vendorOrgId: z.string().optional().describe("Connected vendor organization ID."),
-    vendorName: z.string().optional().describe("Vendor name if the ID is not known."),
+    vendorOrgId: z
+      .string()
+      .optional()
+      .describe("Connected vendor organization ID."),
+    vendorName: z
+      .string()
+      .optional()
+      .describe("Vendor name if the ID is not known."),
     includeCompliant: z
       .boolean()
       .optional()
-      .describe("Include met requirements as well as open issues. Defaults to true for specific vendors and false for all vendors."),
+      .describe(
+        "Include met requirements as well as open issues. Defaults to true for specific vendors and false for all vendors.",
+      ),
   }),
 });
 
@@ -179,8 +256,15 @@ export const saveNote = tool({
     content: z.string().describe("The observation or note to save"),
     type: z
       .enum(["fact", "preference", "risk_note", "observation"])
-      .describe("Type of note. Use fact; other types are rejected by memory policy."),
-    policyId: z.string().optional().describe("Deprecated. Policy-specific notes are rejected by memory policy."),
+      .describe(
+        "Type of note. Use fact; other types are rejected by memory policy.",
+      ),
+    policyId: z
+      .string()
+      .optional()
+      .describe(
+        "Deprecated. Policy-specific notes are rejected by memory policy.",
+      ),
   }),
 });
 
@@ -188,7 +272,9 @@ export const confirmPolicyFact = tool({
   description:
     "Confirm a policy fact from original PDF source evidence and optionally update a small set of top-level extracted policy fields. Use only after lookup_policy_section returns original-PDF sourceSpanIds that directly support the fact. This does not save policy details to long-term org memory.",
   inputSchema: z.object({
-    policyId: z.string().describe("Policy reference for the fact being confirmed"),
+    policyId: z
+      .string()
+      .describe("Policy reference for the fact being confirmed"),
     fact: z
       .string()
       .describe("Concise policy fact confirmed from the original PDF"),
@@ -223,7 +309,11 @@ export const lookupPolicySection = tool({
   description:
     "Search within a specific policy's source-native document outline and original PDF evidence for detailed content about a topic. Use this for coverage wording, declarations, forms, endorsements, exclusions, conditions, definitions, certificate wording, or any exact policy language that is not answered by summary data. Returns matching outline entries, source evidence, and sourceSpanIds for original-PDF evidence when available.",
   inputSchema: z.object({
-    policyId: z.string().describe("The policy reference to search within. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
+    policyId: z
+      .string()
+      .describe(
+        "The policy reference to search within. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy.",
+      ),
     query: z
       .string()
       .describe(
@@ -257,7 +347,11 @@ export const attachPolicyDocument = tool({
   description:
     "Attach or send the original full policy PDF document for a specific policy. Use this when the user asks for a copy of the policy, policy PDF, full policy, declarations PDF, wording, or original policy document in chat/iMessage/SMS. For email delivery, prefer the email_expert tool so it can attach the original policy PDF to the email.",
   inputSchema: z.object({
-    policyId: z.string().describe("The policy reference whose original PDF should be attached. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy."),
+    policyId: z
+      .string()
+      .describe(
+        "The policy reference whose original PDF should be attached. This may be a policy number, exact policy ID, filename, carrier, or other policy reference returned by lookup_policy.",
+      ),
   }),
 });
 
@@ -265,63 +359,104 @@ export const generateCoi = tool({
   description:
     "Generate certificate PDFs in exactly one of two modes. Policy mode uses policyId plus a holder and includes all available policy coverages; when the user provides an address, call lookup_address first. Requirements mode uses requirementSourceDocumentId or one requirementId; the saved source supplies the holder and Glass creates the necessary certificates from matching policies with only the relevant coverages. Do not combine these modes. Additional-insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
-    policyId: z.string().optional().describe("Policy-mode reference. Omit in requirements mode."),
+    policyId: z
+      .string()
+      .optional()
+      .describe("Policy-mode reference. Omit in requirements mode."),
     requirementSourceDocumentId: z
       .string()
       .optional()
-      .describe("Requirements-mode source ID returned by lookup_compliance_requirements. The source provides the holder and all active requirements."),
+      .describe(
+        "Requirements-mode source ID returned by lookup_compliance_requirements. The source provides the holder and all active requirements.",
+      ),
     requirementId: z
       .string()
       .optional()
-      .describe("Requirements-mode exact requirement ID. Glass uses its connected source and generates only for this requirement."),
+      .describe(
+        "Requirements-mode exact requirement ID. Glass uses its connected source and generates only for this requirement.",
+      ),
     certificateHolder: z
       .string()
       .optional()
-      .describe("Certificate holder name. Include the address in this block only when the user already provided it."),
+      .describe(
+        "Certificate holder name. Include the address in this block only when the user already provided it.",
+      ),
     holderContactName: z
       .string()
       .optional()
-      .describe("Specific certificate holder contact name or attention line when the user provides one"),
+      .describe(
+        "Specific certificate holder contact name or attention line when the user provides one",
+      ),
     holderEmail: z
       .string()
       .optional()
-      .describe("Certificate holder email address only when the user explicitly asks Glass to email/send the certificate or already provides the email. Do not ask for this for ordinary certificate generation."),
+      .describe(
+        "Certificate holder email address only when the user explicitly asks Glass to email/send the certificate or already provides the email. Do not ask for this for ordinary certificate generation.",
+      ),
     holderPhone: z
       .string()
       .optional()
-      .describe("Certificate holder phone number only when the user provides one"),
+      .describe(
+        "Certificate holder phone number only when the user provides one",
+      ),
     addressLine1: z
       .string()
       .optional()
-      .describe("Certificate holder street address line 1 when the user provides it."),
+      .describe(
+        "Certificate holder street address line 1 when the user provides it.",
+      ),
     addressLine2: z
       .string()
       .optional()
-      .describe("Certificate holder street address line 2 when the user provides it."),
-    city: z.string().optional().describe("Certificate holder city when provided."),
-    state: z.string().optional().describe("Certificate holder state/province when provided."),
-    postalCode: z.string().optional().describe("Certificate holder postal code when provided."),
-    country: z.string().optional().describe("Certificate holder country when provided."),
+      .describe(
+        "Certificate holder street address line 2 when the user provides it.",
+      ),
+    city: z
+      .string()
+      .optional()
+      .describe("Certificate holder city when provided."),
+    state: z
+      .string()
+      .optional()
+      .describe("Certificate holder state/province when provided."),
+    postalCode: z
+      .string()
+      .optional()
+      .describe("Certificate holder postal code when provided."),
+    country: z
+      .string()
+      .optional()
+      .describe("Certificate holder country when provided."),
     requestText: z
       .string()
       .optional()
-      .describe("The user's full certificate request. Include explicit endorsement-bearing wording only if the user asked for it."),
+      .describe(
+        "The user's full certificate request. Include explicit endorsement-bearing wording only if the user asked for it.",
+      ),
     descriptionOfOperations: z
       .string()
       .optional()
-      .describe("Source-backed description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not invent this wording. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status."),
+      .describe(
+        "Source-backed description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not invent this wording. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status.",
+      ),
     requestedEndorsements: z
       .array(z.string())
       .optional()
-      .describe("Specific endorsement requests only when the user explicitly asks for them, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee. Do not invent extra wording."),
+      .describe(
+        "Specific endorsement requests only when the user explicitly asks for them, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee. Do not invent extra wording.",
+      ),
     additionalInsuredName: z
       .string()
       .optional()
-      .describe("Name of the requested additional insured when the user asks to add or show one on the certificate."),
+      .describe(
+        "Name of the requested additional insured when the user asks to add or show one on the certificate.",
+      ),
     explicitReissue: z
       .boolean()
       .optional()
-      .describe("Set true only when the user explicitly asks to reissue/regenerate a new certificate version even if one already exists for this holder and current policy version"),
+      .describe(
+        "Set true only when the user explicitly asks to reissue/regenerate a new certificate version even if one already exists for this holder and current policy version",
+      ),
   }),
 });
 
@@ -332,7 +467,9 @@ export const createImessageGroupChat = tool({
     recipients: z
       .array(z.string())
       .min(1)
-      .describe("People or phone numbers to include besides the current user, such as Adyan, my broker, or +12025550123."),
+      .describe(
+        "People or phone numbers to include besides the current user, such as Adyan, my broker, or +12025550123.",
+      ),
     openingMessage: z
       .string()
       .min(1)
@@ -340,10 +477,14 @@ export const createImessageGroupChat = tool({
     title: z
       .string()
       .optional()
-      .describe("Optional concise group title. Leave unset unless the user requested a title."),
+      .describe(
+        "Optional concise group title. Leave unset unless the user requested a title.",
+      ),
     confirmed: z
       .boolean()
-      .describe("True only when the user has explicitly asked to create the group or has approved a prior suggestion."),
+      .describe(
+        "True only when the user has explicitly asked to create the group or has approved a prior suggestion.",
+      ),
   }),
 });
 
@@ -351,12 +492,44 @@ export const searchConnectedEmail = tool({
   description:
     "Search connected IMAP email accounts live without persisting mailbox contents. Use this iteratively with targeted search terms and date windows when the user asks to find emails, policies, leases, vendor messages, requirements, receipts, or attachments in connected mailboxes.",
   inputSchema: z.object({
-    query: z.string().optional().describe("Text to search for in subject, sender, recipients, or message body."),
-    mailbox: z.string().optional().describe("Mailbox/folder name. Defaults to INBOX."),
-    sinceDays: z.number().int().min(1).max(90).optional().describe("Fallback rolling lookback when dateFrom/dateTo are not known. Defaults to 14."),
-    dateFrom: z.string().optional().describe("Inclusive start date for a targeted search window in YYYY-MM-DD format."),
-    dateTo: z.string().optional().describe("Inclusive end date for a targeted search window in YYYY-MM-DD format."),
-    limit: z.number().int().min(1).max(25).optional().describe("Maximum matching emails to return."),
+    query: z
+      .string()
+      .optional()
+      .describe(
+        "Text to search for in subject, sender, recipients, or message body.",
+      ),
+    mailbox: z
+      .string()
+      .optional()
+      .describe("Mailbox/folder name. Defaults to INBOX."),
+    sinceDays: z
+      .number()
+      .int()
+      .min(1)
+      .max(90)
+      .optional()
+      .describe(
+        "Fallback rolling lookback when dateFrom/dateTo are not known. Defaults to 14.",
+      ),
+    dateFrom: z
+      .string()
+      .optional()
+      .describe(
+        "Inclusive start date for a targeted search window in YYYY-MM-DD format.",
+      ),
+    dateTo: z
+      .string()
+      .optional()
+      .describe(
+        "Inclusive end date for a targeted search window in YYYY-MM-DD format.",
+      ),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(25)
+      .optional()
+      .describe("Maximum matching emails to return."),
   }),
 });
 
@@ -364,7 +537,9 @@ export const readConnectedEmail = tool({
   description:
     "Read one connected-email message returned by search_connected_email, including bounded body text and attachment metadata.",
   inputSchema: z.object({
-    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
+    emailRef: z
+      .string()
+      .describe("Opaque emailRef returned by search_connected_email."),
   }),
 });
 
@@ -372,8 +547,12 @@ export const readConnectedEmailAttachment = tool({
   description:
     "Read text from a specific PDF, DOCX, TXT, Markdown, CSV, or JSON attachment on a connected-email message without persisting the mailbox message. Use after read_connected_email returns attachment metadata and the user needs the attachment contents inspected before deciding whether to import it.",
   inputSchema: z.object({
-    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
-    filename: z.string().describe("Exact attachment filename returned by read_connected_email."),
+    emailRef: z
+      .string()
+      .describe("Opaque emailRef returned by search_connected_email."),
+    filename: z
+      .string()
+      .describe("Exact attachment filename returned by read_connected_email."),
   }),
 });
 
@@ -381,8 +560,15 @@ export const importConnectedEmailPolicyAttachments = tool({
   description:
     "Import PDF attachments from a connected-email message into the Glass policy library. Use after search/read confirms the attachments are bound policies, declarations, binders, endorsements, COIs, or other post-binding insurance documents.",
   inputSchema: z.object({
-    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
-    filenames: z.array(z.string()).optional().describe("Specific PDF filenames to import. Omit to import all PDF attachments on the email as one policy package."),
+    emailRef: z
+      .string()
+      .describe("Opaque emailRef returned by search_connected_email."),
+    filenames: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Specific PDF filenames to import. Omit to import all PDF attachments on the email as one policy package.",
+      ),
   }),
 });
 
@@ -390,17 +576,38 @@ export const importConnectedEmailRequirementAttachments = tool({
   description:
     "Import PDF/DOCX/TXT/CSV/JSON attachments and optionally the email body from a connected-email message as source-backed insurance compliance requirements. Use after search/read confirms the email or attachments contain leases, contracts, vendor requirement packets, or other insurance requirement language.",
   inputSchema: z.object({
-    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
-    filenames: z.array(z.string()).optional().describe("Specific attachment filenames to import. Omit to import all requirement-like attachments on the email."),
-    includeEmailBody: z.boolean().optional().describe("Set true when the email body itself contains requirement language that should be imported."),
-    sourceType: z
-      .enum(["lease_agreement", "client_contract", "vendor_requirements", "other"])
+    emailRef: z
+      .string()
+      .describe("Opaque emailRef returned by search_connected_email."),
+    filenames: z
+      .array(z.string())
       .optional()
-      .describe("Source document type. Infer lease_agreement for leases and client_contract for customer/client contracts."),
+      .describe(
+        "Specific attachment filenames to import. Omit to import all requirement-like attachments on the email.",
+      ),
+    includeEmailBody: z
+      .boolean()
+      .optional()
+      .describe(
+        "Set true when the email body itself contains requirement language that should be imported.",
+      ),
+    sourceType: z
+      .enum([
+        "lease_agreement",
+        "client_contract",
+        "vendor_requirements",
+        "other",
+      ])
+      .optional()
+      .describe(
+        "Source document type. Infer lease_agreement for leases and client_contract for customer/client contracts.",
+      ),
     scope: z
       .enum(["vendors", "own_org"])
       .optional()
-      .describe("Requirement scope. Use own_org for the org's lease/client obligations or vendors for vendor/customer standards."),
+      .describe(
+        "Requirement scope. Use own_org for the org's lease/client obligations or vendors for vendor/customer standards.",
+      ),
   }),
 });
 
@@ -408,8 +615,15 @@ export const saveConnectedEmailAttachmentsToThread = tool({
   description:
     "Save attachments from a connected-email message into the current Glass thread so they can be reused later and attached to outbound email drafts without searching the mailbox again. Use after search/read identifies documents that are relevant to the user's task.",
   inputSchema: z.object({
-    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email."),
-    filenames: z.array(z.string()).optional().describe("Specific attachment filenames to save. Omit to save all attachments on the email that fit size limits."),
+    emailRef: z
+      .string()
+      .describe("Opaque emailRef returned by search_connected_email."),
+    filenames: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Specific attachment filenames to save. Omit to save all attachments on the email that fit size limits.",
+      ),
   }),
 });
 
@@ -417,11 +631,17 @@ export const saveConnectedEmailMessageToThread = tool({
   description:
     "Export the connected-email message itself into the current Glass thread as an attachable .eml proof document. Use this when the user asks to attach, forward, preserve, or provide proof of an email whose relevant content is in the email body rather than an attachment, such as a cancellation email, receipt, confirmation, notice, or correspondence.",
   inputSchema: z.object({
-    emailRef: z.string().describe("Opaque emailRef returned by search_connected_email or read_connected_email."),
+    emailRef: z
+      .string()
+      .describe(
+        "Opaque emailRef returned by search_connected_email or read_connected_email.",
+      ),
     filename: z
       .string()
       .optional()
-      .describe("Optional filename for the saved email export. Defaults to a subject-based .eml name."),
+      .describe(
+        "Optional filename for the saved email export. Defaults to a subject-based .eml name.",
+      ),
   }),
 });
 
@@ -429,9 +649,20 @@ export const sendConnectedVendorInvite = tool({
   description:
     "Send a connected-vendor access invitation to a vendor email address so the org can monitor that vendor's insurance records. Use only when the user asks to invite or connect a vendor, or explicitly approves doing so.",
   inputSchema: z.object({
-    vendorEmail: z.string().email().describe("Vendor contact email address to invite."),
-    relationshipLabel: z.string().optional().describe("Optional vendor/company label for the connected-org relationship."),
-    note: z.string().optional().describe("Optional note to include in the vendor invitation email."),
+    vendorEmail: z
+      .string()
+      .email()
+      .describe("Vendor contact email address to invite."),
+    relationshipLabel: z
+      .string()
+      .optional()
+      .describe(
+        "Optional vendor/company label for the connected-org relationship.",
+      ),
+    note: z
+      .string()
+      .optional()
+      .describe("Optional note to include in the vendor invitation email."),
   }),
 });
 
@@ -439,7 +670,12 @@ export const coordinateMailboxTask = tool({
   description:
     "Delegate a complex connected-mailbox workflow to the Glass mailbox coordinator. Use this for multi-step requests like finding policies and importing them, finding a lease and extracting insurance requirements, or investigating vendor email history.",
   inputSchema: z.object({
-    task: z.string().min(1).describe("The full mailbox task to complete, including any target vendor, address, policy, lease, or date details."),
+    task: z
+      .string()
+      .min(1)
+      .describe(
+        "The full mailbox task to complete, including any target vendor, address, policy, lease, or date details.",
+      ),
   }),
 });
 
@@ -451,16 +687,22 @@ export const webResearch = tool({
       .string()
       .max(500)
       .optional()
-      .describe("Public web search query. Omit when retrieving a specific URL."),
+      .describe(
+        "Public web search query. Omit when retrieving a specific URL.",
+      ),
     url: z
       .string()
       .optional()
-      .describe("Specific public http(s) URL to retrieve. Use this for known public pages."),
+      .describe(
+        "Specific public http(s) URL to retrieve. Use this for known public pages.",
+      ),
     goal: z
       .string()
       .max(500)
       .optional()
-      .describe("Short public research goal, such as verifying company services or recent public news."),
+      .describe(
+        "Short public research goal, such as verifying company services or recent public news.",
+      ),
     allowedDomains: z
       .array(z.string())
       .max(5)
@@ -483,11 +725,15 @@ export const renderEmailPreview = tool({
     draftId: z
       .string()
       .optional()
-      .describe("Specific pending email draft ID. Omit to render the current draft in this thread."),
+      .describe(
+        "Specific pending email draft ID. Omit to render the current draft in this thread.",
+      ),
     format: z
       .enum(["png", "pdf"])
       .optional()
-      .describe("Render format. Use png for screenshots and pdf for printouts. Defaults to png."),
+      .describe(
+        "Render format. Use png for screenshots and pdf for printouts. Defaults to png.",
+      ),
   }),
 });
 

@@ -65,8 +65,15 @@ import {
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import {
   buildAssistantMessageContentWithArtifacts,
+  buildRecentAgentConversationContext,
+  buildThreadContinuityPrompt,
+  buildThreadHistoryToolInstructions,
   stripInternalAgentActivity,
 } from "../lib/agentMessageHistory";
+import {
+  loadBoundedAgentHistory,
+  scheduleThreadHistoryCompaction,
+} from "../lib/agentHistoryLoader";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
   loadWebChatDeterministicControlState,
@@ -611,13 +618,10 @@ export const run = internalAction({
   },
   handler: async (ctx, args) => {
     const surface = args.surface ?? "web";
-    const startingMessages = await ctx.runQuery(
-      internal.threads.messagesInternal,
+    const latestUserMessage = await ctx.runQuery(
+      internal.agentHistory.getLatestUserMessage,
       { threadId: args.threadId },
     );
-    const latestUserMessage = startingMessages
-      .filter((message: Record<string, unknown>) => message.role === "user")
-      .at(-1);
     if (String(latestUserMessage?._id ?? "") !== String(args.userMessageId))
       return;
 
@@ -646,6 +650,11 @@ export const run = internalAction({
     };
 
     try {
+      const boundedHistory = await loadBoundedAgentHistory(ctx, {
+        threadId: args.threadId,
+        currentMessageId: args.userMessageId,
+        surface,
+      });
       const controlState = await loadWebChatDeterministicControlState(ctx, {
         threadId: args.threadId,
         orgId: args.orgId,
@@ -659,6 +668,7 @@ export const run = internalAction({
           userMessageId: args.userMessageId,
         })
       ) {
+        await scheduleThreadHistoryCompaction(ctx, args.threadId);
         return;
       }
 
@@ -677,7 +687,11 @@ export const run = internalAction({
       );
       if (userMsgForGuard?.content) {
         const sanitizedContent = enforceInputLimits(userMsgForGuard.content);
-        const injectionCheck = await classifyPromptInjection(ctx, sanitizedContent, args.orgId);
+        const injectionCheck = await classifyPromptInjection(
+          ctx,
+          sanitizedContent,
+          args.orgId,
+        );
         if (!injectionCheck.safe) {
           await ctx.runMutation(internal.threads.updateAgentMessage, {
             id: agentMsgId,
@@ -688,6 +702,7 @@ export const run = internalAction({
             threadId: args.threadId,
             reason: injectionCheck.reason,
           });
+          await scheduleThreadHistoryCompaction(ctx, args.threadId);
           return;
         }
       }
@@ -701,6 +716,7 @@ export const run = internalAction({
           threadMessages: controlState.threadMessages,
         })
       ) {
+        await scheduleThreadHistoryCompaction(ctx, args.threadId);
         return;
       }
 
@@ -785,11 +801,7 @@ export const run = internalAction({
               siteUrl,
             });
 
-      // Load thread messages for history
-      const allMessages = await ctx.runQuery(
-        internal.threads.messagesInternal,
-        { threadId: args.threadId },
-      );
+      const allMessages = boundedHistory.messages;
 
       // Find the latest user message for context
       const latestUserMsg = allMessages
@@ -806,7 +818,9 @@ export const run = internalAction({
             }>
           | undefined) ?? []
       ).filter(
-        (attachment): attachment is typeof attachment & {
+        (
+          attachment,
+        ): attachment is typeof attachment & {
           fileId: Id<"_storage">;
         } => Boolean(attachment.fileId),
       );
@@ -821,8 +835,10 @@ export const run = internalAction({
         ctx,
         scope,
         selectPolicyFocusIds(
-          allMessages.filter((message) =>
-            message._id !== agentMsgId && message._id !== args.userMessageId),
+          allMessages.filter(
+            (message) =>
+              message._id !== agentMsgId && message._id !== args.userMessageId,
+          ),
           [...requestedPolicyIds] as Id<"policies">[],
         ),
       );
@@ -860,13 +876,13 @@ export const run = internalAction({
             ).filter(Boolean) as Array<Record<string, unknown>>)
           : [];
       const selectedSteeringBlock =
-        selectedRequirements.length > 0 ||
-        selectedMailboxes.length > 0
+        selectedRequirements.length > 0 || selectedMailboxes.length > 0
           ? `\n\nUSER-SELECTED CONTEXT TARGETS:\n${[
               selectedRequirements.length
                 ? `Requirements:\n${selectedRequirements
-                    .map((requirement: any) =>
-                      `- ${requirement.title} (scope:${requirement.scope ?? "vendors"}, kind:${requirement.kind ?? "coverage"}${requirement.lineOfBusiness ? `, line:${requirement.lineOfBusiness} ${lobLabel(requirement.lineOfBusiness)}` : ""}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`,
+                    .map(
+                      (requirement: any) =>
+                        `- ${requirement.title} (scope:${requirement.scope ?? "vendors"}, kind:${requirement.kind ?? "coverage"}${requirement.lineOfBusiness ? `, line:${requirement.lineOfBusiness} ${lobLabel(requirement.lineOfBusiness)}` : ""}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`,
                     )
                     .join("\n")}`
                 : "",
@@ -952,12 +968,13 @@ export const run = internalAction({
         (policyFocusBlock ? `\n\n${policyFocusBlock}` : "") +
         selectedSteeringBlock +
         attachmentNote +
-        buildUnsupportedOutputInstructions();
+        buildUnsupportedOutputInstructions() +
+        buildThreadHistoryToolInstructions() +
+        buildThreadContinuityPrompt(boundedHistory.summary);
 
-      const orgMembers = (await ctx.runQuery(
-        internal.users.listByOrgInternal,
-        { orgId: args.orgId },
-      )) as Array<Doc<"users">>;
+      const orgMembers = (await ctx.runQuery(internal.users.listByOrgInternal, {
+        orgId: args.orgId,
+      })) as Array<Doc<"users">>;
       const orgMemberEmails = orgMembers
         .map((member) => member.email)
         .filter((email): email is string => Boolean(email));
@@ -1089,7 +1106,7 @@ export const run = internalAction({
             subject: draft.subject,
             emailBody: body,
             attachments:
-            attachments && attachments.length > 0 ? attachments : undefined,
+              attachments && attachments.length > 0 ? attachments : undefined,
             referencedPolicyIds: draft.referencedPolicyIds,
             chatMessageId: agentMsgId,
           });
@@ -1122,6 +1139,7 @@ export const run = internalAction({
             .filter(Boolean)
             .join("\n\n"),
         });
+        await scheduleThreadHistoryCompaction(ctx, args.threadId);
         return;
       }
       const emailToolResult: { current: EmailSubagentResult | null } = {
@@ -1133,7 +1151,8 @@ export const run = internalAction({
       const citedSourceSpanIds = new Set<string>();
       const presentedPolicyIds = new Set<string>();
       const emailReferencedPolicyIds = policyFocusIds.filter((policyId) =>
-        explicitSelectedPolicyIds.has(String(policyId)));
+        explicitSelectedPolicyIds.has(String(policyId)),
+      );
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
         filename: string;
@@ -1141,19 +1160,10 @@ export const run = internalAction({
         size: number;
         fileId?: Id<"_storage">;
       }> = [];
-      const recentConversationContext = allMessages
-        .filter(
-          (message: Record<string, unknown>) =>
-            message.status !== "processing" &&
-            message.status !== "cancelled" &&
-            String(message._id) !== String(args.userMessageId),
-        )
-        .slice(-12)
-        .map(
-          (message: Record<string, unknown>) =>
-            `${message.role}: ${stripConfidenceMarkers(String(message.content ?? ""))}`,
-        )
-        .join("\n");
+      const recentConversationContext = buildRecentAgentConversationContext(
+        boundedHistory.messages,
+        String(args.userMessageId),
+      );
 
       const slackActorId = args.slackActorId;
       const tools = {
@@ -1184,14 +1194,11 @@ export const run = internalAction({
               const record = result as Record<string, unknown>;
               if (!record.title) continue;
               const collection =
-                record.type === "coverage"
-                  ? citedCoverageNames
-                  : citedSections;
+                record.type === "coverage" ? citedCoverageNames : citedSections;
               collection.add(String(record.title));
               if (Array.isArray(record.sourceSpanIds)) {
                 for (const id of record.sourceSpanIds) {
-                  if (typeof id === "string" && id)
-                    citedSourceSpanIds.add(id);
+                  if (typeof id === "string" && id) citedSourceSpanIds.add(id);
                 }
               }
             }
@@ -1228,30 +1235,34 @@ export const run = internalAction({
               },
             }
           : {}),
-        ...(surface === "web" ? { create_imessage_group_chat: {
-          ...createImessageGroupChat,
-          execute: async (input: {
-            recipients: string[];
-            openingMessage: string;
-            title?: string;
-            confirmed: boolean;
-          }) => {
-            if (!input.confirmed) {
-              return "Ask the user to confirm before creating a new iMessage group chat.";
-            }
-            return await ctx.runAction(
-              internal.actions.createOutboundImessageGroup
-                .createOutboundImessageGroupInternal,
-              {
-                orgId: args.orgId,
-                userId: args.userId,
-                recipients: input.recipients,
-                openingMessage: input.openingMessage,
-                title: input.title,
+        ...(surface === "web"
+          ? {
+              create_imessage_group_chat: {
+                ...createImessageGroupChat,
+                execute: async (input: {
+                  recipients: string[];
+                  openingMessage: string;
+                  title?: string;
+                  confirmed: boolean;
+                }) => {
+                  if (!input.confirmed) {
+                    return "Ask the user to confirm before creating a new iMessage group chat.";
+                  }
+                  return await ctx.runAction(
+                    internal.actions.createOutboundImessageGroup
+                      .createOutboundImessageGroupInternal,
+                    {
+                      orgId: args.orgId,
+                      userId: args.userId,
+                      recipients: input.recipients,
+                      openingMessage: input.openingMessage,
+                      title: input.title,
+                    },
+                  );
+                },
               },
-            );
-          },
-        } } : {}),
+            }
+          : {}),
         ...(surface === "slack" && slackActorId
           ? {
               request_human_service: {
@@ -1404,9 +1415,7 @@ export const run = internalAction({
         recentConversationContext,
         currentAttachmentNames: latestAttachmentNames,
         auditExcludedTools:
-          surface === "slack"
-            ? new Set([SLACK_REACTION_TOOL_NAME])
-            : undefined,
+          surface === "slack" ? new Set([SLACK_REACTION_TOOL_NAME]) : undefined,
         options: {
           maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
           system: fullSystemPrompt,
@@ -1559,6 +1568,8 @@ export const run = internalAction({
           content = visibleEmailResponseBody;
         }
       }
+
+      await scheduleThreadHistoryCompaction(ctx, args.threadId);
 
       if (
         thread?.originChannel === "imessage" &&

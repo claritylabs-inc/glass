@@ -56,7 +56,7 @@ export async function loadWebChatDeterministicControlState(
     id: args.userMessageId,
   });
   const threadMessages = (await ctx.runQuery(
-    internal.threads.messagesInternal,
+    internal.agentHistory.getRecentControlMessages,
     { threadId: args.threadId },
   )) as WebChatControlMessage[];
 

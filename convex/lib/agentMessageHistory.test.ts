@@ -1,8 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
+  AGENT_CHANNEL_HISTORY_POLICY,
   buildAssistantMessageContentWithArtifacts,
+  buildThreadContinuityPrompt,
+  selectBoundedAgentHistory,
+  shouldStartNewImessageTask,
   stripInternalAgentActivity,
 } from "./agentMessageHistory";
+import { rankTaskControlCandidates } from "./taskControlIntent";
 
 describe("buildAssistantMessageContentWithArtifacts", () => {
   test("does not append raw tool artifact data when no tool metadata exists", () => {
@@ -28,9 +33,7 @@ describe("buildAssistantMessageContentWithArtifacts", () => {
       buildAssistantMessageContentWithArtifacts({
         content: "COI generated.",
         usedTools: ["lookup_policy", "generate_coi"],
-        attachments: [
-          { filename: "COI - Polychain Capital Fund IV.pdf" },
-        ],
+        attachments: [{ filename: "COI - Polychain Capital Fund IV.pdf" }],
       }),
     ).toBe(
       'COI generated.\n\n[tool activity: tools: lookup_policy, generate_coi; attached: "COI - Polychain Capital Fund IV.pdf"]',
@@ -91,7 +94,85 @@ describe("stripInternalAgentActivity", () => {
   });
 
   test("preserves ordinary customer-facing discussion of tool activity", () => {
-    expect(stripInternalAgentActivity("The tool activity audit is available."))
-      .toBe("The tool activity audit is available.");
+    expect(
+      stripInternalAgentActivity("The tool activity audit is available."),
+    ).toBe("The tool activity audit is available.");
+  });
+});
+
+describe("bounded agent conversation history", () => {
+  const message = (
+    id: string,
+    creationTime: number,
+    role: "user" | "agent",
+    content = id,
+  ) => ({
+    _id: id,
+    _creationTime: creationTime,
+    role,
+    content,
+  });
+
+  test("requires every agent surface to declare its continuity policy", () => {
+    expect(AGENT_CHANNEL_HISTORY_POLICY).toEqual({
+      web: { continuityMode: "thread_long" },
+      email: { continuityMode: "thread_long" },
+      imessage: {
+        continuityMode: "task_scoped",
+        inactivityMs: 7 * 24 * 60 * 60 * 1000,
+      },
+      slack: { continuityMode: "thread_long" },
+      mcp: { continuityMode: "thread_long" },
+    });
+  });
+
+  test("keeps at most 24 complete user turns with their replies", () => {
+    const messages = Array.from({ length: 30 }, (_, index) => [
+      message(`u${index}`, index * 2, "user"),
+      message(`a${index}`, index * 2 + 1, "agent"),
+    ]).flat();
+    const selected = selectBoundedAgentHistory(messages, {
+      currentMessageId: "u29",
+    });
+    expect(selected.userTurnCount).toBe(24);
+    expect(selected.messages[0]._id).toBe("u6");
+    expect(selected.messages.at(-1)?._id).toBe("a29");
+  });
+
+  test("clips only on complete prior turns and never drops the active request", () => {
+    const selected = selectBoundedAgentHistory(
+      [
+        message("u1", 1, "user", "x".repeat(600)),
+        message("a1", 2, "agent", "y".repeat(600)),
+        message("u2", 3, "user", "active request"),
+      ],
+      { currentMessageId: "u2", maxEstimatedTokens: 10 },
+    );
+    expect(selected.messages.map((item) => item._id)).toEqual(["u2"]);
+    expect(selected.estimatedTokenCount).toBe(0);
+  });
+
+  test("injects an internal summary without treating it as policy evidence", () => {
+    expect(buildThreadContinuityPrompt("User chose option B.")).toContain(
+      "User chose option B.",
+    );
+    expect(buildThreadContinuityPrompt("User chose option B.")).toContain(
+      "not authoritative policy evidence",
+    );
+  });
+
+  test("starts a new iMessage task at the seven-day inactivity boundary", () => {
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    expect(shouldStartNewImessageTask(1_000, 1_000 + sevenDays - 1)).toBe(
+      false,
+    );
+    expect(shouldStartNewImessageTask(1_000, 1_000 + sevenDays)).toBe(true);
+    expect(shouldStartNewImessageTask(undefined, sevenDays)).toBe(false);
+  });
+
+  test("classifies explicit start-over language as an iMessage task reset", () => {
+    const ranking = rankTaskControlCandidates("start over");
+    expect(ranking.highConfidence).toBe(true);
+    expect(ranking.topCandidate?.intent).toBe("reset_task");
   });
 });

@@ -37,6 +37,8 @@ const REPLAY_SAFE_TOOLS = new Set([
   "search_connected_email",
   "read_connected_email",
   "read_connected_email_attachment",
+  "search_thread_history",
+  "read_thread_attachment",
   "web_research",
 ]);
 
@@ -77,9 +79,7 @@ function filterAudit(
     completedTools: audit.completedTools.filter(
       (name) => !excludedTools.has(name),
     ),
-    toolCalls: audit.toolCalls.filter(
-      (call) => !excludedTools.has(call.name),
-    ),
+    toolCalls: audit.toolCalls.filter((call) => !excludedTools.has(call.name)),
     workflowOutcomes: audit.workflowOutcomes,
   };
 }
@@ -133,10 +133,7 @@ async function synthesizeCompletedToolResults(
   }
 }
 
-async function requiresPolicyEvidence(
-  ctx: ActionCtx,
-  args: RunAgentTurnArgs,
-) {
+async function requiresPolicyEvidence(ctx: ActionCtx, args: RunAgentTurnArgs) {
   try {
     const result = await generateObjectForOrg(
       ctx,
@@ -169,10 +166,7 @@ Use recent conversation only to resolve contextual follow-ups. If the message co
   }
 }
 
-export async function runAgentTurn(
-  ctx: ActionCtx,
-  args: RunAgentTurnArgs,
-) {
+export async function runAgentTurn(ctx: ActionCtx, args: RunAgentTurnArgs) {
   const evidenceDecision = requiresPolicyEvidence(ctx, args);
   const result = await generateAgentTextForOrg(
     ctx,

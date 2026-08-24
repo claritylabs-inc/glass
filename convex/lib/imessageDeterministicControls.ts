@@ -36,6 +36,7 @@ export async function runImessageDeterministicControls(
     latestCancelledEmail?: Doc<"pendingEmails"> | null;
     recentConversationContext: string;
     history: ImessageHistoryMessage[];
+    currentMessageId: Id<"threadMessages">;
   },
 ): Promise<ImessageDeterministicControlResult | null> {
   const reply = async (
@@ -84,7 +85,9 @@ export async function runImessageDeterministicControls(
         isCancelConfirmationContext,
         latestCancelledEmailId: args.latestCancelledEmail?._id,
         draftEmailIds: args.draftEmails.map((draftEmail) => draftEmail._id),
-        pendingEmailIds: args.pendingEmails.map((pendingEmail) => pendingEmail._id),
+        pendingEmailIds: args.pendingEmails.map(
+          (pendingEmail) => pendingEmail._id,
+        ),
         allowDraftList: true,
         allowDraftSendAll: true,
       })
@@ -97,15 +100,22 @@ export async function runImessageDeterministicControls(
     return await reply(result.responseBody);
   }
 
-  const taskControlIntent = args.messageText.trim().length < 100
-    ? await resolveTaskControlIntent(ctx, {
-        orgId: args.orgId,
-        messageText: args.messageText,
-        recentContext: args.recentConversationContext,
-        channel: "imessage",
-      })
-    : null;
+  const taskControlIntent =
+    args.messageText.trim().length < 100
+      ? await resolveTaskControlIntent(ctx, {
+          orgId: args.orgId,
+          messageText: args.messageText,
+          recentContext: args.recentConversationContext,
+          channel: "imessage",
+        })
+      : null;
   if (taskControlIntent) {
+    if (taskControlIntent === "reset_task") {
+      await ctx.runMutation(internal.agentHistory.resetTask, {
+        threadId: args.threadId,
+        currentMessageId: args.currentMessageId,
+      });
+    }
     return await reply(taskControlResponse(taskControlIntent));
   }
 

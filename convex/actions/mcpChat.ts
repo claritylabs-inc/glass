@@ -17,9 +17,18 @@ import {
 import {
   buildSystemPromptForContext,
   buildBrokerPortfolioSystemPrompt,
-  buildMessageHistory,
   buildPolicyToolInstructions,
 } from "../lib/aiUtils";
+import {
+  buildRecentAgentConversationContext,
+  buildTextModelHistory,
+  buildThreadContinuityPrompt,
+  buildThreadHistoryToolInstructions,
+} from "../lib/agentMessageHistory";
+import {
+  loadBoundedAgentHistory,
+  scheduleThreadHistoryCompaction,
+} from "../lib/agentHistoryLoader";
 import {
   createImessageGroupChat,
   searchConnectedEmail,
@@ -80,7 +89,11 @@ export const run = internalAction({
 
     // ── Prompt injection guard ──
     const sanitizedMessage = enforceInputLimits(args.message);
-    const injectionCheck = await classifyPromptInjection(ctx, sanitizedMessage, args.orgId);
+    const injectionCheck = await classifyPromptInjection(
+      ctx,
+      sanitizedMessage,
+      args.orgId,
+    );
     if (!injectionCheck.safe) {
       console.warn("[security] Prompt injection blocked in MCP chat", {
         orgId: args.orgId,
@@ -121,13 +134,21 @@ export const run = internalAction({
       },
     );
 
-    const scope = (await ctx.runQuery((internal as any).lib.agentScope.resolveForAction, {
-      orgId: args.orgId,
-      userId: args.userId,
-      surface: "mcp",
-    })) as AgentScope;
+    const scope = (await ctx.runQuery(
+      (internal as any).lib.agentScope.resolveForAction,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        surface: "mcp",
+      },
+    )) as AgentScope;
 
-    const allMessages = await ctx.runQuery(internal.threads.messagesInternal, { threadId });
+    const history = await loadBoundedAgentHistory(ctx, {
+      threadId,
+      currentMessageId: userMessageId,
+      surface: "mcp",
+    });
+    const allMessages = history.messages;
     const policyFocusIds = await validatePolicyFocusIds(
       ctx,
       scope,
@@ -139,19 +160,21 @@ export const run = internalAction({
     const siteUrl = getClientPortalUrl();
 
     // Build system prompt
-    const systemPrompt = scope.mode === "broker_portfolio"
-      ? buildBrokerPortfolioSystemPrompt({
-          brokerName: typeof org.name === "string" ? org.name : undefined,
-          brokerContext: typeof org.context === "string" ? org.context : undefined,
-          userName,
-          siteUrl,
-        })
-      : buildSystemPromptForContext({
-          org,
-          mode: "direct",
-          userName,
-          siteUrl,
-        });
+    const systemPrompt =
+      scope.mode === "broker_portfolio"
+        ? buildBrokerPortfolioSystemPrompt({
+            brokerName: typeof org.name === "string" ? org.name : undefined,
+            brokerContext:
+              typeof org.context === "string" ? org.context : undefined,
+            userName,
+            siteUrl,
+          })
+        : buildSystemPromptForContext({
+            org,
+            mode: "direct",
+            userName,
+            siteUrl,
+          });
 
     const mcpAddendum = `
 
@@ -202,7 +225,8 @@ MCP MODE:
             return "Ask the caller to confirm before creating a new iMessage group chat.";
           }
           return await ctx.runAction(
-            internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+            internal.actions.createOutboundImessageGroup
+              .createOutboundImessageGroupInternal,
             {
               orgId: args.orgId,
               userId: args.userId,
@@ -246,12 +270,15 @@ MCP MODE:
       read_connected_email_attachment: {
         ...readConnectedEmailAttachment,
         execute: async (params: { emailRef: string; filename: string }) =>
-          await ctx.runAction(internal.actions.connectedEmail.readAttachmentInternal, {
-            orgId: args.orgId,
-            userId: args.userId,
-            emailRef: params.emailRef,
-            filename: params.filename,
-          }),
+          await ctx.runAction(
+            internal.actions.connectedEmail.readAttachmentInternal,
+            {
+              orgId: args.orgId,
+              userId: args.userId,
+              emailRef: params.emailRef,
+              filename: params.filename,
+            },
+          ),
       },
       import_connected_email_policy_attachments: {
         ...importConnectedEmailPolicyAttachments,
@@ -271,11 +298,16 @@ MCP MODE:
         execute: async (params: {
           emailRef: string;
           filenames?: string[];
-          sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
+          sourceType?:
+            | "lease_agreement"
+            | "client_contract"
+            | "vendor_requirements"
+            | "other";
           scope?: "vendors" | "own_org";
         }) =>
           await ctx.runAction(
-            internal.actions.connectedEmail.importRequirementAttachmentsInternal,
+            internal.actions.connectedEmail
+              .importRequirementAttachmentsInternal,
             {
               orgId: args.orgId,
               userId: args.userId,
@@ -293,13 +325,16 @@ MCP MODE:
           relationshipLabel?: string;
           note?: string;
         }) =>
-          await ctx.runAction(internal.connectedOrgs.requestVendorAccessByEmailInternal, {
-            clientOrgId: args.orgId,
-            requestedByUserId: args.userId,
-            vendorEmail: params.vendorEmail,
-            relationshipLabel: params.relationshipLabel,
-            note: params.note,
-          }),
+          await ctx.runAction(
+            internal.connectedOrgs.requestVendorAccessByEmailInternal,
+            {
+              clientOrgId: args.orgId,
+              requestedByUserId: args.userId,
+              vendorEmail: params.vendorEmail,
+              relationshipLabel: params.relationshipLabel,
+              note: params.note,
+            },
+          ),
       },
       coordinate_mailbox_task: {
         ...coordinateMailboxTask,
@@ -337,28 +372,20 @@ MCP MODE:
       systemPrompt +
       mcpAddendum +
       buildPolicyToolInstructions(10) +
+      buildThreadHistoryToolInstructions() +
+      buildThreadContinuityPrompt(history.summary) +
       (policyFocusBlock ? `\n\n${policyFocusBlock}` : "");
 
-    // Build message history (skip processing placeholders)
-    const messageHistory = buildMessageHistory(allMessages);
+    const messageHistory = buildTextModelHistory(allMessages);
 
     const turn = await runAgentTurn(ctx, {
       orgId: args.orgId,
       task: "chat",
       messageText: args.message,
-      recentConversationContext: allMessages
-        .filter(
-          (message: { _id: Id<"threadMessages">; status?: string }) =>
-            message._id !== userMessageId &&
-            message.status !== "processing" &&
-            message.status !== "cancelled",
-        )
-        .slice(-12)
-        .map(
-          (message: { role?: string; content?: string }) =>
-            `${message.role}: ${message.content ?? ""}`,
-        )
-        .join("\n"),
+      recentConversationContext: buildRecentAgentConversationContext(
+        allMessages,
+        String(userMessageId),
+      ),
       options: {
         maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
         system: fullSystemPrompt,
@@ -403,10 +430,10 @@ MCP MODE:
         turn.audit.toolCalls.length > 0 ? turn.audit.toolCalls : undefined,
       attachments:
         responseAttachments.length > 0 ? responseAttachments : undefined,
-      toolArtifacts:
-        mcpToolArtifacts.length > 0 ? mcpToolArtifacts : undefined,
+      toolArtifacts: mcpToolArtifacts.length > 0 ? mcpToolArtifacts : undefined,
     });
     await ctx.runMutation(internal.threads.touchThread, { threadId });
+    await scheduleThreadHistoryCompaction(ctx, threadId);
 
     // Auto-title if this is a new thread (only 1 user message)
     const userMessages = allMessages.filter(
@@ -449,14 +476,17 @@ MCP MODE:
       }
     }
 
-    const attachments = responseAttachments.length > 0
-      ? await Promise.all(responseAttachments.map(async (attachment) => ({
-          ...attachment,
-          url: attachment.fileId
-            ? await ctx.storage.getUrl(attachment.fileId)
-            : null,
-        })))
-      : undefined;
+    const attachments =
+      responseAttachments.length > 0
+        ? await Promise.all(
+            responseAttachments.map(async (attachment) => ({
+              ...attachment,
+              url: attachment.fileId
+                ? await ctx.storage.getUrl(attachment.fileId)
+                : null,
+            })),
+          )
+        : undefined;
     return { threadId: threadId as string, response: content, attachments };
   },
 });

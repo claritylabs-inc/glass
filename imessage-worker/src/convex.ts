@@ -1,7 +1,7 @@
 /** Typed client for the Glass Convex /imessage-inbound HTTP endpoint. */
 
 export interface ImessageAttachment {
-  data: string;      // base64-encoded bytes
+  data: string; // base64-encoded bytes
   mimeType: string;
   name: string;
 }
@@ -16,6 +16,10 @@ export interface ImessageRequest {
   participants?: Array<{ address: string; displayName?: string }>;
   sourceMessageId?: string;
   receivedAt?: number;
+  recoveryFailure?: {
+    stage: "raw_message" | "attachment_download";
+    error: string;
+  };
   attachments?: ImessageAttachment[];
 }
 

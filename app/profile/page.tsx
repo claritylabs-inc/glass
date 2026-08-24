@@ -39,11 +39,16 @@ import {
   useCachedQuery,
 } from "@/lib/sync/use-cached-query";
 import { typeStyle } from "@/lib/typography";
+import {
+  ImessagePrivacyDrawer,
+  ImessagePrivacyPanel,
+  ProfileSectionTabs,
+  useImessagePrivacy,
+  useImessagePrivacyActions,
+} from "@/components/profile/imessage-history-privacy";
 
-const inputClass =
-  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
-const labelClass =
-  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
+const inputClass = `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
+const labelClass = `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 type ProfileValues = {
   name: string;
@@ -108,8 +113,19 @@ export default function ProfilePage() {
   const [proactiveDraft, setProactiveDraft] =
     useState<ProactiveChannelChoice>("email");
   const [savingProactiveChannels, setSavingProactiveChannels] = useState(false);
+  const [profileSection, setProfileSection] = useState<"profile" | "privacy">(
+    "profile",
+  );
+  const [privacyDrawerOpen, setPrivacyDrawerOpen] = useState(false);
+  const [privacyBusy, setPrivacyBusy] = useState(false);
   const [persistedValues, setPersistedValues] = useState<ProfileValues | null>(
     null,
+  );
+  const imessagePrivacy = useImessagePrivacy();
+  const privacyActions = useImessagePrivacyActions(
+    imessagePrivacy,
+    setPrivacyBusy,
+    setPrivacyDrawerOpen,
   );
 
   useEffect(() => {
@@ -221,7 +237,8 @@ export default function ProfilePage() {
   }
 
   function openProactiveDrawer() {
-    const currentChoice = proactiveChannelChoice(proactivePreferences) ?? "email";
+    const currentChoice =
+      proactiveChannelChoice(proactivePreferences) ?? "email";
     setProactiveDraft(
       !viewer?.phone && currentChoice !== "email" ? "email" : currentChoice,
     );
@@ -358,147 +375,190 @@ export default function ProfilePage() {
                   </SelectContent>
                 </Select>
               </div>
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
                 Glass uses this for proactive mailbox findings and compliance
                 conversations. In-app notifications still appear in Glass.
               </p>
               {!viewer?.phone ? (
-                <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+                <p
+                  className={`text-muted-foreground ${typeStyle("body.default")}`}
+                >
                   Add a mobile number to use iMessage.
                 </p>
               ) : null}
             </div>
           </SettingsDrawer>
+          <ImessagePrivacyDrawer
+            open={privacyDrawerOpen}
+            onOpenChange={setPrivacyDrawerOpen}
+            state={imessagePrivacy.state}
+            busy={privacyBusy}
+            onPrepare={() => void privacyActions.prepare()}
+            onConfirm={() => void privacyActions.confirm()}
+          />
         </>
       }
     >
-      <FadeIn when={true} staggerIndex={1} duration={0.6}>
-        <form onSubmit={handleSubmit}>
-          <OperationalPanel className="mb-4">
-            <OperationalPanelHeader title="Account" className="px-5 py-3.5" />
-            <OperationalPanelBody className="space-y-4 px-5 py-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={labelClass}>Name</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Your name"
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Email</label>
-                  <input
-                    type="email"
-                    value={viewer?.email ?? ""}
-                    disabled
-                    className={`h-9 w-full rounded-lg border border-input bg-foreground/[0.02] px-3 text-muted-foreground/60 cursor-not-allowed ${typeStyle("control.input")}`}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className={labelClass}>Title</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Risk Manager, CFO"
-                  className={inputClass}
+      <ProfileSectionTabs
+        active={profileSection}
+        onChange={setProfileSection}
+      />
+      {profileSection === "profile" ? (
+        <>
+          <FadeIn when={true} staggerIndex={1} duration={0.6}>
+            <form onSubmit={handleSubmit}>
+              <OperationalPanel className="mb-4">
+                <OperationalPanelHeader
+                  title="Account"
+                  className="px-5 py-3.5"
                 />
-              </div>
-              <div>
-                <label className={labelClass}>Mobile number</label>
-                <PhoneInput
-                  value={phone || undefined}
-                  onChange={(value) => setPhone(value ?? "")}
-                  defaultCountry="US"
-                  placeholder="Enter phone number"
-                />
-                <p className={`text-muted-foreground/60 mt-1.5 flex items-center gap-1.5 ${typeStyle("caption.default")}`}>
-                  {phoneInvalid ? (
-                    <span className="text-red-500/80">
-                      Enter a valid phone number with country code.
-                    </span>
-                  ) : phoneChecking ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      Checking phone number
-                    </>
-                  ) : phoneUnavailable ? (
-                    <span className="text-red-500/80">
-                      This phone number is already used by another user.
-                    </span>
-                  ) : shouldCheckPhone && phoneAvailability?.available ? (
-                    "Phone number is available"
-                  ) : (
-                    "Used for iMessage access to your Glass agent."
-                  )}
-                </p>
-              </div>
-            </OperationalPanelBody>
-          </OperationalPanel>
+                <OperationalPanelBody className="space-y-4 px-5 py-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>Name</label>
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Your name"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Email</label>
+                      <input
+                        type="email"
+                        value={viewer?.email ?? ""}
+                        disabled
+                        className={`h-9 w-full rounded-lg border border-input bg-foreground/[0.02] px-3 text-muted-foreground/60 cursor-not-allowed ${typeStyle("control.input")}`}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Title</label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Risk Manager, CFO"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Mobile number</label>
+                    <PhoneInput
+                      value={phone || undefined}
+                      onChange={(value) => setPhone(value ?? "")}
+                      defaultCountry="US"
+                      placeholder="Enter phone number"
+                    />
+                    <p
+                      className={`text-muted-foreground/60 mt-1.5 flex items-center gap-1.5 ${typeStyle("caption.default")}`}
+                    >
+                      {phoneInvalid ? (
+                        <span className="text-red-500/80">
+                          Enter a valid phone number with country code.
+                        </span>
+                      ) : phoneChecking ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Checking phone number
+                        </>
+                      ) : phoneUnavailable ? (
+                        <span className="text-red-500/80">
+                          This phone number is already used by another user.
+                        </span>
+                      ) : shouldCheckPhone && phoneAvailability?.available ? (
+                        "Phone number is available"
+                      ) : (
+                        "Used for iMessage access to your Glass agent."
+                      )}
+                    </p>
+                  </div>
+                </OperationalPanelBody>
+              </OperationalPanel>
 
-          <p className={`text-muted-foreground/50 mt-2 ${typeStyle("caption.default")}`}>
-            Company settings, broker info, and team management are in{" "}
-            <a
-              href="/settings"
-              className="text-foreground/60 hover:text-foreground underline"
-            >
-              Organization Settings
-            </a>
-            .
-          </p>
-        </form>
-      </FadeIn>
-
-      <FadeIn when={true} staggerIndex={2} duration={0.6}>
-        <OperationalPanel className="mt-4">
-          <OperationalPanelHeader
-            title="Proactive conversations"
-            className="px-5 py-3.5"
-            action={
-              <PillButton
-                size="compact"
-                variant="secondary"
-                onClick={openProactiveDrawer}
+              <p
+                className={`text-muted-foreground/50 mt-2 ${typeStyle("caption.default")}`}
               >
-                Edit
-              </PillButton>
-            }
-          />
-          <OperationalPanelBody className="px-5 py-4">
-            <div className="flex items-center gap-3">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
-                <MessageSquareText className="size-4" />
-              </span>
-              <div className="min-w-0">
-                <p className={`text-foreground ${typeStyle("body.medium")}`}>
-                  {proactivePreferences === undefined
-                    ? "Loading contact method"
-                    : effectiveProactiveChoice
-                      ? PROACTIVE_CHANNEL_LABELS[effectiveProactiveChoice]
-                      : "In-app only"}
-                </p>
-                <p className={`mt-0.5 text-muted-foreground ${typeStyle("body.default")}`}>
-                  Where Glass contacts you when it finds something that needs
-                  attention.
-                </p>
-              </div>
-            </div>
-          </OperationalPanelBody>
-        </OperationalPanel>
-      </FadeIn>
+                Company settings, broker info, and team management are in{" "}
+                <a
+                  href="/settings"
+                  className="text-foreground/60 hover:text-foreground underline"
+                >
+                  Organization Settings
+                </a>
+                .
+              </p>
+            </form>
+          </FadeIn>
 
-      <FadeIn when={true} staggerIndex={3} duration={0.6}>
-        <OperationalPanel className="mt-4">
-          <OperationalPanelHeader title="Appearance" className="px-5 py-3.5" />
-          <OperationalPanelBody className="px-5 py-5">
-            <ThemeModeSelector className="max-w-lg" />
-          </OperationalPanelBody>
-        </OperationalPanel>
-      </FadeIn>
+          <FadeIn when={true} staggerIndex={2} duration={0.6}>
+            <OperationalPanel className="mt-4">
+              <OperationalPanelHeader
+                title="Proactive conversations"
+                className="px-5 py-3.5"
+                action={
+                  <PillButton
+                    size="compact"
+                    variant="secondary"
+                    onClick={openProactiveDrawer}
+                  >
+                    Edit
+                  </PillButton>
+                }
+              />
+              <OperationalPanelBody className="px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
+                    <MessageSquareText className="size-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p
+                      className={`text-foreground ${typeStyle("body.medium")}`}
+                    >
+                      {proactivePreferences === undefined
+                        ? "Loading contact method"
+                        : effectiveProactiveChoice
+                          ? PROACTIVE_CHANNEL_LABELS[effectiveProactiveChoice]
+                          : "In-app only"}
+                    </p>
+                    <p
+                      className={`mt-0.5 text-muted-foreground ${typeStyle("body.default")}`}
+                    >
+                      Where Glass contacts you when it finds something that
+                      needs attention.
+                    </p>
+                  </div>
+                </div>
+              </OperationalPanelBody>
+            </OperationalPanel>
+          </FadeIn>
+
+          <FadeIn when={true} staggerIndex={3} duration={0.6}>
+            <OperationalPanel className="mt-4">
+              <OperationalPanelHeader
+                title="Appearance"
+                className="px-5 py-3.5"
+              />
+              <OperationalPanelBody className="px-5 py-5">
+                <ThemeModeSelector className="max-w-lg" />
+              </OperationalPanelBody>
+            </OperationalPanel>
+          </FadeIn>
+        </>
+      ) : (
+        <FadeIn when={true} staggerIndex={1} duration={0.4}>
+          <ImessagePrivacyPanel
+            state={imessagePrivacy.state}
+            busy={privacyBusy}
+            onPrepare={() => void privacyActions.prepare()}
+            onReview={() => setPrivacyDrawerOpen(true)}
+          />
+        </FadeIn>
+      )}
     </AppShell>
   );
 }

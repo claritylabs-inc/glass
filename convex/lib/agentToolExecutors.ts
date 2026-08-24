@@ -17,7 +17,9 @@ import {
   lookupPolicy,
   lookupPolicySection,
   presentPolicyCard,
+  readThreadAttachment,
   saveNote,
+  searchThreadHistory,
 } from "./chatTools";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
 import {
@@ -45,8 +47,8 @@ import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
 import { lookupMapboxAddress } from "./mapboxAddress";
 import { createAgentPolicyPresentationState } from "./agentPolicyPresentation";
 import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
-
-type AgentToolSurface = "web" | "email" | "imessage" | "slack" | "mcp";
+import type { AgentToolSurface } from "./agentMessageHistory";
+import { readStoredThreadAttachment } from "./agentThreadAttachment";
 
 const COMPANY_CONTEXT_QUERY_STOP_WORDS = new Set([
   "about",
@@ -115,11 +117,7 @@ function certificateSourceForSurface(surface: AgentToolSurface) {
 }
 
 function orgMemorySourceForSurface(surface: AgentToolSurface) {
-  if (
-    surface === "email" ||
-    surface === "imessage" ||
-    surface === "slack"
-  ) {
+  if (surface === "email" || surface === "imessage" || surface === "slack") {
     return surface;
   }
   return "chat" as const;
@@ -136,10 +134,13 @@ function typeMap(
 function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
   const extractionDataStage = effectivePolicyDataStage(policy);
   const provisional = extractionDataStage === "preview";
-  const clientProfileFacts = policy._clientProfileFacts && typeof policy._clientProfileFacts === "object"
-    ? policy._clientProfileFacts as Record<string, any>
-    : {};
-  const partyContext = resolvePolicyPartyContext(policy, { clientProfileFacts });
+  const clientProfileFacts =
+    policy._clientProfileFacts && typeof policy._clientProfileFacts === "object"
+      ? (policy._clientProfileFacts as Record<string, any>)
+      : {};
+  const partyContext = resolvePolicyPartyContext(policy, {
+    clientProfileFacts,
+  });
   const carrierDisplay = resolvePolicyCarrierDisplay(policy);
   return {
     id: policy._id,
@@ -162,17 +163,25 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
       taxId: clientProfileFacts.taxId?.value,
       fein: clientProfileFacts.fein?.value ?? clientProfileFacts.taxId?.value,
       businessNumber: clientProfileFacts.businessNumber?.value,
-      additionalNamedInsureds: Array.isArray(clientProfileFacts.additionalNamedInsureds)
-        ? clientProfileFacts.additionalNamedInsureds.map((fact: Record<string, any>) => fact?.value).filter(Boolean)
+      additionalNamedInsureds: Array.isArray(
+        clientProfileFacts.additionalNamedInsureds,
+      )
+        ? clientProfileFacts.additionalNamedInsureds
+            .map((fact: Record<string, any>) => fact?.value)
+            .filter(Boolean)
         : undefined,
     },
-    carrier: carrierDisplay.carrierDisplayName ??
+    carrier:
+      carrierDisplay.carrierDisplayName ??
       partyContext.carrierDisplayName ??
       partyContext.insurerName ??
       policy.security,
     carrierIdentity: carrierDisplay.carrierIdentity,
     linesOfBusiness: policyLobCodes(policy),
-    type: policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
+    type: policyLobCodes(policy)
+      .filter((code) => code !== "UN")
+      .map(lobLabel)
+      .join(", "),
     number: policy.policyNumber,
     effective: policy.effectiveDate,
     expiration: policy.expirationDate,
@@ -261,10 +270,9 @@ async function listPoliciesForReadableOrgs(
   const rows = await Promise.all(
     readOrgIds.map(async (orgId) => {
       const [policies, org] = await Promise.all([
-        ctx.runQuery(
-          internal.policies.listAllPreviewReadableInternal,
-          { orgId },
-        ),
+        ctx.runQuery(internal.policies.listAllPreviewReadableInternal, {
+          orgId,
+        }),
         ctx.runQuery(internal.orgs.getInternal, { id: orgId }),
       ]);
       return (policies as Array<Record<string, unknown>>).map((policy) => ({
@@ -294,7 +302,9 @@ async function resolveReadablePolicy(
   if (!policy.orgId || !canReadOrg(options, policy.orgId)) {
     return { ok: false as const, message: "Policy not found." };
   }
-  const org = await ctx.runQuery(internal.orgs.getInternal, { id: policy.orgId });
+  const org = await ctx.runQuery(internal.orgs.getInternal, {
+    id: policy.orgId,
+  });
   return {
     ok: true,
     policy: {
@@ -375,6 +385,87 @@ export function buildAgentToolExecutors(
   };
 
   return {
+    search_thread_history: {
+      ...searchThreadHistory,
+      execute: async (params: { query: string; limit?: number }) => {
+        if (!options.threadId) {
+          return {
+            status: "unavailable" as const,
+            message:
+              "This agent surface does not have a conversation thread to search.",
+          };
+        }
+        const matches = await ctx.runQuery(
+          internal.agentHistory.searchThreadHistory,
+          {
+            threadId: options.threadId,
+            userId: options.userId,
+            readOrgIds: options.readOrgIds ?? options.scope.readOrgIds,
+            query: params.query,
+            limit: params.limit ?? 5,
+          },
+        );
+        console.log("[agent-history] Retrieval tool used", {
+          tool: "search_thread_history",
+          surface: options.surface,
+          threadId: options.threadId,
+          resultCount: matches.length,
+        });
+        return {
+          status: "ok" as const,
+          matches,
+          message:
+            matches.length > 0
+              ? undefined
+              : "No matching older messages were found in this conversation.",
+        };
+      },
+    },
+    read_thread_attachment: {
+      ...readThreadAttachment,
+      execute: async (params: { messageId: string; filename: string }) => {
+        if (!options.threadId) {
+          return {
+            status: "unavailable" as const,
+            message:
+              "This agent surface does not have a conversation thread attachment to reopen.",
+          };
+        }
+        const attachment = await ctx.runQuery(
+          internal.agentHistory.getThreadAttachment,
+          {
+            threadId: options.threadId,
+            messageId: params.messageId,
+            filename: params.filename,
+            userId: options.userId,
+            readOrgIds: options.readOrgIds ?? options.scope.readOrgIds,
+          },
+        );
+        if (!attachment) {
+          return {
+            status: "unavailable" as const,
+            message:
+              "That attachment was not found in this conversation or is no longer available.",
+          };
+        }
+        console.log("[agent-history] Retrieval tool used", {
+          tool: "read_thread_attachment",
+          surface: options.surface,
+          threadId: options.threadId,
+          contentType: attachment.contentType,
+          size: attachment.size,
+        });
+        return await readStoredThreadAttachment(ctx, {
+          orgId: options.orgId,
+          threadId: options.threadId,
+          messageId: attachment.messageId,
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.size,
+          url: attachment.url,
+        });
+      },
+    },
     lookup_address: {
       ...lookupAddress,
       execute: async (params: { query: string; countryCode?: string }) => {
@@ -413,21 +504,29 @@ export function buildAgentToolExecutors(
         const policies = await listPoliciesForReadableOrgs(ctx, options);
         const { policySearchScore } = await import("./aiUtils");
         const exactPolicyIds = new Set((params.policyIds ?? []).slice(0, 5));
-        let candidates = exactPolicyIds.size > 0
-          ? policies.filter((policy) =>
-              policy._id && exactPolicyIds.has(String(policy._id)))
-          : policies;
+        let candidates =
+          exactPolicyIds.size > 0
+            ? policies.filter(
+                (policy) =>
+                  policy._id && exactPolicyIds.has(String(policy._id)),
+              )
+            : policies;
         if (params.expiringWithinDays !== undefined) {
           const today = dayjs().startOf("day");
           const end = today.add(params.expiringWithinDays, "day").endOf("day");
           candidates = candidates.filter((policy) => {
-            if (!policy.expirationDate || policy.policyTermType === "continuous") {
+            if (
+              !policy.expirationDate ||
+              policy.policyTermType === "continuous"
+            ) {
               return false;
             }
             const expiration = dayjs(policy.expirationDate);
-            return expiration.isValid() &&
+            return (
+              expiration.isValid() &&
               !expiration.isBefore(today) &&
-              !expiration.isAfter(end);
+              !expiration.isAfter(end)
+            );
           });
         }
         const scored = candidates
@@ -466,10 +565,15 @@ export function buildAgentToolExecutors(
               (order.get(String(left._id)) ?? Number.MAX_SAFE_INTEGER) -
               (order.get(String(right._id)) ?? Number.MAX_SAFE_INTEGER),
           );
-        } else if (params.expiringWithinDays !== undefined && scored.length === 0) {
-          matches = [...matches].sort((left, right) =>
-            dayjs(left.expirationDate).valueOf() -
-            dayjs(right.expirationDate).valueOf());
+        } else if (
+          params.expiringWithinDays !== undefined &&
+          scored.length === 0
+        ) {
+          matches = [...matches].sort(
+            (left, right) =>
+              dayjs(left.expirationDate).valueOf() -
+              dayjs(right.expirationDate).valueOf(),
+          );
         }
         if (matches.length === 0)
           return "No policies matched the requested IDs or filters in the readable organization scope.";
@@ -492,27 +596,25 @@ export function buildAgentToolExecutors(
       ? {
           present_policy_card: {
             ...presentPolicyCard,
-            execute: async (
-              params: {
-                policyId: string;
-                allowMultiple?: boolean;
-                repeatRequested?: boolean;
-              },
-            ) => {
+            execute: async (params: {
+              policyId: string;
+              allowMultiple?: boolean;
+              repeatRequested?: boolean;
+            }) => {
               const referencedPolicy =
                 policyPresentation.toolPolicyReferences.find(
-                  (reference) =>
-                    String(reference.policyId) === params.policyId,
+                  (reference) => String(reference.policyId) === params.policyId,
                 );
-              const wasRecentlyPresented = options.threadId && referencedPolicy
-                ? await ctx.runQuery(
-                    internal.threads.wasPolicyCardRecentlyPresentedInternal,
-                    {
-                      threadId: options.threadId,
-                      policyId: referencedPolicy.policyId,
-                    },
-                  )
-                : false;
+              const wasRecentlyPresented =
+                options.threadId && referencedPolicy
+                  ? await ctx.runQuery(
+                      internal.threads.wasPolicyCardRecentlyPresentedInternal,
+                      {
+                        threadId: options.threadId,
+                        policyId: referencedPolicy.policyId,
+                      },
+                    )
+                  : false;
               const selection = policyPresentation.selectPolicyCard({
                 policyId: params.policyId,
                 allowMultiple: params.allowMultiple === true,
@@ -547,8 +649,9 @@ export function buildAgentToolExecutors(
         let targetOrgIds = readableOrgIds;
         let matchedOrgByName = false;
         if (params.orgId) {
-          targetOrgIds = readableOrgIds.filter((orgId) =>
-            String(orgId) === params.orgId);
+          targetOrgIds = readableOrgIds.filter(
+            (orgId) => String(orgId) === params.orgId,
+          );
           if (targetOrgIds.length === 0) {
             return "That organization is not in the readable scope.";
           }
@@ -584,7 +687,9 @@ export function buildAgentToolExecutors(
             }),
           )
         ).flat();
-        const queryTerms = (params.query?.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+        const queryTerms = (
+          params.query?.toLowerCase().match(/[a-z0-9]+/g) ?? []
+        )
           .filter((term) => term.length >= 3)
           .filter((term) => !COMPANY_CONTEXT_QUERY_STOP_WORDS.has(term));
         const relevantMemories =
@@ -609,9 +714,10 @@ export function buildAgentToolExecutors(
           facts,
           searchedOrganizations: boundedOrgIds.length,
           bounded: targetOrgIds.length > boundedOrgIds.length,
-          note: facts.length > 0
-            ? "These are durable company-profile facts only. Use policy tools for every policy fact."
-            : "No matching durable company-profile facts were found. Do not infer policy facts from memory.",
+          note:
+            facts.length > 0
+              ? "These are durable company-profile facts only. Use policy tools for every policy fact."
+              : "No matching durable company-profile facts were found. Do not infer policy facts from memory.",
         };
       },
     },
@@ -687,8 +793,8 @@ export function buildAgentToolExecutors(
                 );
               }
               const imports = [];
-              for (const attachment of
-                options.requirementImportAttachments ?? []) {
+              for (const attachment of options.requirementImportAttachments ??
+                []) {
                 const imported = await ctx.runAction(
                   internal.actions.complianceRequirements
                     .importRequirementsInternal,
@@ -755,14 +861,17 @@ export function buildAgentToolExecutors(
           resolved.policy.sourceTreeStatus !== "queued" &&
           resolved.policy.sourceTreeStatus !== "running"
         ) {
-          await ctx.scheduler.runAfter(
-            0,
-            (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree,
-            {
-              policyId: resolved.policy._id,
-              reason: "agent_policy_section_lookup",
-            },
-          ).catch(() => undefined);
+          await ctx.scheduler
+            .runAfter(
+              0,
+              (internal as any).actions.policyExtraction
+                .ensurePolicyV3SourceTree,
+              {
+                policyId: resolved.policy._id,
+                reason: "agent_policy_section_lookup",
+              },
+            )
+            .catch(() => undefined);
         }
         const evidence = await searchPolicyDocumentWithSourceSpans(
           ctx,
@@ -957,17 +1066,25 @@ export function buildAgentToolExecutors(
               executionOptions,
             );
           } else {
-            const writableOrgIds = options.writableOrgIds ?? options.scope.writableOrgIds;
+            const writableOrgIds =
+              options.writableOrgIds ?? options.scope.writableOrgIds;
             const matchingOrgIds: Id<"organizations">[] = [];
             for (const orgId of writableOrgIds) {
-              const plan = await ctx.runQuery(
-                internal.compliance.getCertificateRequirementSourcePlanInternal,
-                {
-                  orgId,
-                  sourceDocumentId: params.requirementSourceDocumentId as Id<"requirementSourceDocuments"> | undefined,
-                  requirementId: params.requirementId as Id<"insuranceRequirements"> | undefined,
-                },
-              ).catch(() => null);
+              const plan = await ctx
+                .runQuery(
+                  internal.compliance
+                    .getCertificateRequirementSourcePlanInternal,
+                  {
+                    orgId,
+                    sourceDocumentId: params.requirementSourceDocumentId as
+                      | Id<"requirementSourceDocuments">
+                      | undefined,
+                    requirementId: params.requirementId as
+                      | Id<"insuranceRequirements">
+                      | undefined,
+                  },
+                )
+                .catch(() => null);
               if (plan) matchingOrgIds.push(orgId);
             }
             if (matchingOrgIds.length !== 1) {
@@ -979,7 +1096,9 @@ export function buildAgentToolExecutors(
           }
           const holderName =
             params.certificateHolder?.split(/\r?\n/)[0]?.trim() ||
-            (requirementsMode ? "Requirements source holder" : "Certificate holder");
+            (requirementsMode
+              ? "Requirements source holder"
+              : "Certificate holder");
           const workflowParams: CertificateRequestWorkflowParams = {
             policyId: policy ? String(policy._id) : undefined,
             requirementSourceDocumentId: params.requirementSourceDocumentId,
@@ -1003,8 +1122,13 @@ export function buildAgentToolExecutors(
             internal.certificates.generateBatchForOrg,
             {
               primaryPolicyId: policy?._id,
-              requirementSourceDocumentId: params.requirementSourceDocumentId as Id<"requirementSourceDocuments"> | undefined,
-              requirementId: params.requirementId as Id<"insuranceRequirements"> | undefined,
+              requirementSourceDocumentId:
+                params.requirementSourceDocumentId as
+                  | Id<"requirementSourceDocuments">
+                  | undefined,
+              requirementId: params.requirementId as
+                | Id<"insuranceRequirements">
+                | undefined,
               orgId: targetOrgId,
               holderName: requirementsMode ? undefined : holderName,
               certificateHolder: params.certificateHolder,
@@ -1026,9 +1150,15 @@ export function buildAgentToolExecutors(
               createdByUserId: options.userId,
             },
           );
-          const batchResults = (batch?.results ?? []) as Array<Record<string, any>>;
+          const batchResults = (batch?.results ?? []) as Array<
+            Record<string, any>
+          >;
           const batchGaps = (batch?.gaps ?? []) as Array<Record<string, any>>;
-          if (requirementsMode || batchResults.length > 1 || batchGaps.length > 0) {
+          if (
+            requirementsMode ||
+            batchResults.length > 1 ||
+            batchGaps.length > 0
+          ) {
             const attachments: ToolAttachment[] = [];
             for (const item of batchResults) {
               if (item.policyId) {
@@ -1049,9 +1179,10 @@ export function buildAgentToolExecutors(
                 await options.onResponseAttachment?.(attachment);
               }
               await options.onToolArtifact?.({
-                type: item.status === "held_policy_change_required"
-                  ? "certificate_hold"
-                  : "certificate_result",
+                type:
+                  item.status === "held_policy_change_required"
+                    ? "certificate_hold"
+                    : "certificate_result",
                 data: item,
               });
             }

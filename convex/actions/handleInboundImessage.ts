@@ -55,7 +55,15 @@ import {
 } from "../lib/imessageAppCards";
 import { runImessageDeterministicControls } from "../lib/imessageDeterministicControls";
 import { postProcessImessageResponseText } from "../lib/imessageResponsePostProcessing";
-import { stripInternalAgentActivity } from "../lib/agentMessageHistory";
+import {
+  buildThreadContinuityPrompt,
+  buildThreadHistoryToolInstructions,
+  stripInternalAgentActivity,
+} from "../lib/agentMessageHistory";
+import {
+  loadBoundedAgentHistory,
+  scheduleThreadHistoryCompaction,
+} from "../lib/agentHistoryLoader";
 import { createImessageAgentRunState } from "../lib/imessageAgentRunState";
 import {
   AGENT_MAX_OUTPUT_TOKENS,
@@ -105,7 +113,7 @@ function errorText(error: unknown): string {
 
 function appendAttachmentFailureNotice(responseText: string): string {
   const notice =
-    "Heads up: the PDF did not attach. Say \"resend\" and I'll attach it again.";
+    'Heads up: the PDF did not attach. Say "resend" and I\'ll attach it again.';
   const trimmed = responseText.trim();
   if (!trimmed) return notice;
   if (trimmed.includes(notice)) return trimmed;
@@ -133,6 +141,15 @@ export const processInbound = internalAction({
     ),
     sourceMessageId: v.optional(v.string()),
     receivedAt: v.optional(v.number()),
+    recoveryFailure: v.optional(
+      v.object({
+        stage: v.union(
+          v.literal("raw_message"),
+          v.literal("attachment_download"),
+        ),
+        error: v.string(),
+      }),
+    ),
     attachments: v.optional(
       v.array(
         v.object({
@@ -180,6 +197,7 @@ export const processInbound = internalAction({
       messageText: args.messageText,
       sourceMessageId: args.sourceMessageId,
       receivedAt: args.receivedAt,
+      recoveryFailure: args.recoveryFailure,
     });
     if (claim.duplicate) {
       console.log("[imessage] Duplicate inbound event ignored", {
@@ -217,6 +235,7 @@ export const processInbound = internalAction({
           (options?.sendContactCard ?? shouldSendContactCard) || undefined,
       };
     };
+    let privacyLeaseId: Id<"imessageAgentRunLeases"> | undefined;
 
     try {
       if (isGroup && args.participantsUnavailable) {
@@ -233,9 +252,9 @@ export const processInbound = internalAction({
       const phones = [...participantInputs.keys()].filter(
         (address) => !address.includes("@"),
       );
-      const linkedUsers = await ctx.runQuery(internal.users.findManyByPhones, {
+      const linkedUsers = (await ctx.runQuery(internal.users.findManyByPhones, {
         phones,
-      }) as Array<Doc<"users"> | null>;
+      })) as Array<Doc<"users"> | null>;
       const linkedUserRecords = linkedUsers.filter(
         (linkedUser): linkedUser is Doc<"users"> => Boolean(linkedUser),
       );
@@ -247,9 +266,12 @@ export const processInbound = internalAction({
             linkedUser,
           ]),
       );
-      const memberships = await ctx.runQuery(internal.orgs.getUserMemberships, {
-        userIds: linkedUserRecords.map((linkedUser) => linkedUser._id),
-      }) as Array<Doc<"orgMemberships"> | null>;
+      const memberships = (await ctx.runQuery(
+        internal.orgs.getUserMemberships,
+        {
+          userIds: linkedUserRecords.map((linkedUser) => linkedUser._id),
+        },
+      )) as Array<Doc<"orgMemberships"> | null>;
       const membershipByUserId = new Map(
         memberships
           .filter((membership): membership is Doc<"orgMemberships"> =>
@@ -315,7 +337,9 @@ export const processInbound = internalAction({
           voiceMemoInput.transcripts.length === 0
         ) {
           if (isGroup) {
-            await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
+            await ctx.runMutation(internal.imessageChats.markLeft, {
+              chatGuid,
+            });
           }
           return await finish(
             VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
@@ -339,11 +363,10 @@ export const processInbound = internalAction({
         if (isGroup) {
           await ctx.runMutation(internal.imessageChats.markLeft, { chatGuid });
         }
-        return await finish(
-          demo.text,
-          undefined,
-          { leaveGroup: isGroup, sendContactCard: chatSync.shouldSendContactCard },
-        );
+        return await finish(demo.text, undefined, {
+          leaveGroup: isGroup,
+          sendContactCard: chatSync.shouldSendContactCard,
+        });
       }
 
       const orgId = scope.primaryOrgId;
@@ -385,6 +408,14 @@ export const processInbound = internalAction({
         return await finish("I can't process that request.");
       }
 
+      const privacyRun = !isGroup
+        ? await ctx.runMutation(internal.imessagePrivacy.claimAgentRun, {
+            userId: user._id,
+            leaseKey: eventKey,
+          })
+        : null;
+      privacyLeaseId = privacyRun?.leaseId;
+
       const threadId = await ctx.runMutation(
         internal.threads.findOrCreateByImessageChat,
         {
@@ -396,8 +427,23 @@ export const processInbound = internalAction({
           title: groupMemberTitle ?? args.chatTitle,
           fallbackPhone: fromPhone.includes("@") ? undefined : fromPhone,
           userName: user.name,
+          historyGeneration: privacyRun?.generation,
         },
       );
+      if (privacyLeaseId) {
+        await ctx.runMutation(internal.imessagePrivacy.attachAgentRunThread, {
+          leaseId: privacyLeaseId,
+          threadId,
+        });
+        await ctx.runMutation(
+          internal.imessageInboundEvents.attachPrivacyContext,
+          {
+            eventKey,
+            threadId,
+            historyGeneration: privacyRun!.generation,
+          },
+        );
+      }
 
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
       if (!org) return await finish("Unable to find your account.");
@@ -411,12 +457,15 @@ export const processInbound = internalAction({
             org.type === "broker" && scope.kind === "single_org",
         },
       )) as AgentScope;
-      const readOrgIds = agentScope.mode === "broker_portfolio" ? agentScope.readOrgIds : scope.orgIds;
-      const scopedOrgs = await Promise.all(
+      const readOrgIds =
+        agentScope.mode === "broker_portfolio"
+          ? agentScope.readOrgIds
+          : scope.orgIds;
+      const scopedOrgs = (await Promise.all(
         readOrgIds.map((scopedOrgId) =>
           ctx.runQuery(internal.orgs.getInternal, { id: scopedOrgId }),
         ),
-      ) as Array<Doc<"organizations"> | null>;
+      )) as Array<Doc<"organizations"> | null>;
       const orgNamesById = Object.fromEntries(
         scopedOrgs
           .filter(Boolean)
@@ -431,31 +480,39 @@ export const processInbound = internalAction({
         args.attachments,
       );
 
-      await ctx.runMutation(internal.threads.insertImessageMessage, {
+      const inboundThreadMessageId = await ctx.runMutation(
+        internal.threads.insertImessageMessage,
+        {
+          threadId,
+          orgId,
+          role: "user",
+          userId: currentParticipant?.userId,
+          userName:
+            currentParticipant?.userName ??
+            currentParticipant?.displayName ??
+            anonymousParticipantLabel(senderAddress, 1),
+          imessageSenderAddress: senderAddress,
+          imessageParticipantLabel:
+            currentParticipant?.userName ??
+            currentParticipant?.displayName ??
+            anonymousParticipantLabel(senderAddress, 1),
+          content: inboundMessageText,
+          messageId: args.sourceMessageId ?? eventKey,
+          attachments:
+            attachmentRecords.length > 0
+              ? attachmentRecords.map((a) => ({
+                  filename: a.filename,
+                  contentType: a.contentType,
+                  size: a.size,
+                  fileId: a.fileId,
+                }))
+              : undefined,
+        },
+      );
+      const boundedHistory = await loadBoundedAgentHistory(ctx, {
         threadId,
-        orgId,
-        role: "user",
-        userId: currentParticipant?.userId,
-        userName:
-          currentParticipant?.userName ??
-          currentParticipant?.displayName ??
-          anonymousParticipantLabel(senderAddress, 1),
-        imessageSenderAddress: senderAddress,
-        imessageParticipantLabel:
-          currentParticipant?.userName ??
-          currentParticipant?.displayName ??
-          anonymousParticipantLabel(senderAddress, 1),
-        content: inboundMessageText,
-        messageId: args.sourceMessageId ?? eventKey,
-        attachments:
-          attachmentRecords.length > 0
-            ? attachmentRecords.map((a) => ({
-                filename: a.filename,
-                contentType: a.contentType,
-                size: a.size,
-                fileId: a.fileId,
-              }))
-            : undefined,
+        currentMessageId: inboundThreadMessageId,
+        surface: "imessage",
       });
 
       if (
@@ -472,6 +529,7 @@ export const processInbound = internalAction({
             responseMessageId: `${eventKey}:voice-transcription-failed`,
           },
         );
+        await scheduleThreadHistoryCompaction(ctx, threadId);
         return await finish(
           VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
           undefined,
@@ -479,54 +537,54 @@ export const processInbound = internalAction({
         );
       }
 
-      const history = await ctx.runQuery(internal.threads.getImessageHistory, {
-        threadId,
-        limit: 16,
-      }) as ImessageHistoryMessage[];
+      const history = boundedHistory.messages as ImessageHistoryMessage[];
       const historyForContext = history.filter((msg) => {
         if (msg.status === "processing") return false;
         if (isImessageStatusCue(msg)) return false;
-        return !(msg.role === "user" && msg.content === inboundMessageText);
+        return String(msg._id) !== String(inboundThreadMessageId);
       });
       const recentConversationContext =
         buildRecentImessageTextContext(historyForContext);
 
-      const draftEmails = await ctx.runQuery(
+      const draftEmails = (await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId, orgId },
-      ) as Array<Doc<"pendingEmails">>;
-      const pendingEmails = await ctx.runQuery(
+      )) as Array<Doc<"pendingEmails">>;
+      const pendingEmails = (await ctx.runQuery(
         internal.pendingEmails.findPendingByThread,
         { threadId },
-      ) as Array<Doc<"pendingEmails">>;
+      )) as Array<Doc<"pendingEmails">>;
       const latestCancelledEmail = await ctx.runQuery(
         internal.pendingEmails.findLatestCancelledByThread,
         { threadId, orgId },
       );
-      const deterministicControlResult = await runImessageDeterministicControls(ctx, {
-        messageText: inboundMessageText,
-        orgId,
-        orgName: org.name,
-        userName: user.name,
-        userEmail: user.email,
-        threadId,
-        eventKey,
-        chatGuid,
-        isGroup,
-        scopeMode: agentScope.mode,
-        currentSenderIsLinked,
-        draftEmails,
-        pendingEmails,
-        latestCancelledEmail,
-        recentConversationContext,
-        history: historyForContext,
-      });
+      const deterministicControlResult = await runImessageDeterministicControls(
+        ctx,
+        {
+          messageText: inboundMessageText,
+          orgId,
+          orgName: org.name,
+          userName: user.name,
+          userEmail: user.email,
+          threadId,
+          eventKey,
+          chatGuid,
+          isGroup,
+          scopeMode: agentScope.mode,
+          currentSenderIsLinked,
+          draftEmails,
+          pendingEmails,
+          latestCancelledEmail,
+          recentConversationContext,
+          history: historyForContext,
+          currentMessageId: inboundThreadMessageId,
+        },
+      );
       if (deterministicControlResult) {
-        return await finish(
-          deterministicControlResult.response,
-          undefined,
-          { leaveGroup: deterministicControlResult.leaveGroup },
-        );
+        await scheduleThreadHistoryCompaction(ctx, threadId);
+        return await finish(deterministicControlResult.response, undefined, {
+          leaveGroup: deterministicControlResult.leaveGroup,
+        });
       }
 
       const policyFocusIds = await validatePolicyFocusIds(
@@ -546,13 +604,15 @@ export const processInbound = internalAction({
         messageText: inboundMessageText,
         currentSpeakerLabel,
         attachmentRecords,
+        currentMessageId: inboundThreadMessageId,
       });
 
-      const brokerIdentity = org.type === "client"
-        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-            clientOrgId: orgId,
-          })
-        : null;
+      const brokerIdentity =
+        org.type === "client"
+          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+              clientOrgId: orgId,
+            })
+          : null;
 
       const systemPrompt =
         buildSystemPromptForContext({
@@ -586,6 +646,8 @@ export const processInbound = internalAction({
           scopeKind: scope.kind,
         }) +
         buildPolicyToolInstructions(8) +
+        buildThreadHistoryToolInstructions() +
+        buildThreadContinuityPrompt(boundedHistory.summary) +
         (policyFocusBlock ? `\n\n${policyFocusBlock}` : "");
 
       const runState = createImessageAgentRunState();
@@ -594,10 +656,9 @@ export const processInbound = internalAction({
           emailReferencedPolicyIds.push(policyId);
         }
       };
-      const orgMembers = (await ctx.runQuery(
-        internal.users.listByOrgInternal,
-        { orgId },
-      )) as Array<Doc<"users">>;
+      const orgMembers = (await ctx.runQuery(internal.users.listByOrgInternal, {
+        orgId,
+      })) as Array<Doc<"users">>;
       const allowedRecipients = [
         ...new Set(
           [
@@ -609,14 +670,13 @@ export const processInbound = internalAction({
             .map((email) => String(email).toLowerCase()),
         ),
       ];
-      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
-        inboundMessageText,
-      );
+      const brokerDirectedEmailRequest =
+        isBrokerDirectedEmailRequest(inboundMessageText);
       const brokerRecipientEmail = brokerDirectedEmailRequest
         ? brokerIdentity?.contactEmail
         : undefined;
       const brokerRecipientName = brokerDirectedEmailRequest
-        ? brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName
+        ? (brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName)
         : undefined;
       const availableEmailAttachments = attachmentRecords
         .filter(
@@ -629,15 +689,16 @@ export const processInbound = internalAction({
           fileId: att.fileId,
         }));
       const availableFileIds = new Set(
-        availableEmailAttachments.map((attachment) => String(attachment.fileId)),
+        availableEmailAttachments.map((attachment) =>
+          String(attachment.fileId),
+        ),
       );
       const requirementImportAttachments = selectRequirementImportAttachments(
         inboundMessageText,
         availableEmailAttachments,
       );
-      const requirementImportDefaultScope = inferRequirementImportScope(
-        inboundMessageText,
-      );
+      const requirementImportDefaultScope =
+        inferRequirementImportScope(inboundMessageText);
       const imessageWritableOrgIds =
         agentScope.mode === "broker_portfolio"
           ? agentScope.writableOrgIds
@@ -680,7 +741,8 @@ export const processInbound = internalAction({
               return "Ask the user to confirm before creating a new iMessage group chat.";
             }
             return await ctx.runAction(
-              internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+              internal.actions.createOutboundImessageGroup
+                .createOutboundImessageGroupInternal,
               {
                 orgId,
                 userId: user._id,
@@ -696,14 +758,17 @@ export const processInbound = internalAction({
               coordinate_mailbox_task: {
                 ...coordinateMailboxTask,
                 execute: async (params: { task: string }) =>
-                  await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
-                    orgId,
-                    userId: user._id,
-                    task: params.task,
-                    routingParentId: `${eventKey}:agent`,
-                    statusToPhone: fromPhone,
-                    statusChatGuid: chatGuid,
-                  }),
+                  await ctx.runAction(
+                    internal.actions.mailboxCoordinator.runInternal,
+                    {
+                      orgId,
+                      userId: user._id,
+                      task: params.task,
+                      routingParentId: `${eventKey}:agent`,
+                      statusToPhone: fromPhone,
+                      statusChatGuid: chatGuid,
+                    },
+                  ),
               },
               web_research: {
                 ...webResearch,
@@ -742,7 +807,9 @@ export const processInbound = internalAction({
                 agentAddress: emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user.email,
-                defaultTo: brokerDirectedEmailRequest ? brokerRecipientEmail : user.email,
+                defaultTo: brokerDirectedEmailRequest
+                  ? brokerRecipientEmail
+                  : user.email,
                 defaultRecipientName: brokerDirectedEmailRequest
                   ? brokerRecipientName
                   : user.name,
@@ -765,10 +832,13 @@ export const processInbound = internalAction({
                 conversationContext:
                   recentConversationContext +
                   (draftEmails.length > 0
-                    ? `\n\nCURRENT EMAIL DRAFTS:\n${buildEmailDraftTextSummary(draftEmails, {
-                        sampleSize: Math.min(3, draftEmails.length),
-                        commands: "chat",
-                      })}`
+                    ? `\n\nCURRENT EMAIL DRAFTS:\n${buildEmailDraftTextSummary(
+                        draftEmails,
+                        {
+                          sampleSize: Math.min(3, draftEmails.length),
+                          commands: "chat",
+                        },
+                      )}`
                     : ""),
                 onResult: runState.setEmailResult,
               }),
@@ -827,10 +897,10 @@ export const processInbound = internalAction({
           emailResult.status === "draft" ||
           emailResult.status === "needs_confirmation"
         ) {
-          const draftsAfterEmailTool = await ctx.runQuery(
+          const draftsAfterEmailTool = (await ctx.runQuery(
             internal.pendingEmails.listDraftsInternal,
             { threadId, orgId },
-          ) as Array<Doc<"pendingEmails">>;
+          )) as Array<Doc<"pendingEmails">>;
           if (draftsAfterEmailTool.length > 0) {
             pendingEmailIdForResponse =
               pendingEmailIdForResponse ?? draftsAfterEmailTool[0]._id;
@@ -942,24 +1012,29 @@ export const processInbound = internalAction({
       }));
       let agentResponseMessageId: Id<"threadMessages"> | undefined;
       if (!responseAlreadySent && responseText.trim()) {
-        agentResponseMessageId = await ctx.runMutation(internal.threads.insertImessageMessage, {
-          threadId,
-          orgId,
-          role: "agent",
-          content: responseText,
-          responseMessageId: `${eventKey}:response`,
-          referencedPolicyIds:
-            runState.presentedPolicyIds.length > 0
-              ? runState.presentedPolicyIds
-              : undefined,
-          pendingEmailId: pendingEmailIdForResponse,
-          attachments:
-            agentAttachments.length > 0 ? agentAttachments : undefined,
-          usedTools: usedTools.length > 0 ? usedTools : undefined,
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          toolArtifacts:
-            imessageToolArtifacts.length > 0 ? imessageToolArtifacts : undefined,
-        });
+        agentResponseMessageId = await ctx.runMutation(
+          internal.threads.insertImessageMessage,
+          {
+            threadId,
+            orgId,
+            role: "agent",
+            content: responseText,
+            responseMessageId: `${eventKey}:response`,
+            referencedPolicyIds:
+              runState.presentedPolicyIds.length > 0
+                ? runState.presentedPolicyIds
+                : undefined,
+            pendingEmailId: pendingEmailIdForResponse,
+            attachments:
+              agentAttachments.length > 0 ? agentAttachments : undefined,
+            usedTools: usedTools.length > 0 ? usedTools : undefined,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            toolArtifacts:
+              imessageToolArtifacts.length > 0
+                ? imessageToolArtifacts
+                : undefined,
+          },
+        );
       }
 
       const appCards = await mintImessageAppCards(ctx, {
@@ -969,6 +1044,7 @@ export const processInbound = internalAction({
         presentedPolicyIds: runState.presentedPolicyIds,
         artifacts: imessageToolArtifacts,
       });
+      await scheduleThreadHistoryCompaction(ctx, threadId);
 
       return await finish(
         responseAlreadySent ? "" : responseText,
@@ -982,6 +1058,12 @@ export const processInbound = internalAction({
       const message = error instanceof Error ? error.message : String(error);
       console.error("[imessage] Agent processing error:", message);
       return await finish(FATAL_ACTION_FAILED_MESSAGE);
+    } finally {
+      if (privacyLeaseId) {
+        await ctx.runMutation(internal.imessagePrivacy.releaseAgentRun, {
+          leaseId: privacyLeaseId,
+        });
+      }
     }
   },
 });

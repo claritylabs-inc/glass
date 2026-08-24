@@ -70,8 +70,15 @@ describe("iMessage agent context helpers", () => {
           content: "Working on it.",
           responseMessageId: "event:status",
         },
-        { role: "user", userName: "Terry", content: "Show my policies" },
-        { role: "agent", content: "You have one active policy." },
+        {
+          role: "user",
+          userName: "Terry",
+          content: "Show my policies",
+        },
+        {
+          role: "agent",
+          content: "You have one active policy.",
+        },
       ]),
     ).toBe("Terry: Show my policies\nGlass: You have one active policy.");
   });
@@ -79,8 +86,15 @@ describe("iMessage agent context helpers", () => {
   test("builds model messages without artifact context and skips current echo", async () => {
     const messages = await buildImessageModelMessages({
       history: [
-        { role: "user", content: "Current message" },
         {
+          _id: "current",
+          _creationTime: 1,
+          role: "user",
+          content: "Current message",
+        },
+        {
+          _id: "agent-1",
+          _creationTime: 2,
           role: "agent",
           content: "Certificate follow-up is on hold.",
           toolArtifacts: [
@@ -98,6 +112,7 @@ describe("iMessage agent context helpers", () => {
       messageText: "Current message",
       currentSpeakerLabel: "Terry",
       attachmentRecords: [],
+      currentMessageId: "current" as Id<"threadMessages">,
     });
 
     expect(messages).toHaveLength(2);
@@ -114,8 +129,16 @@ describe("iMessage agent context helpers", () => {
   test("builds model messages with compact assistant tool activity", async () => {
     const messages = await buildImessageModelMessages({
       history: [
-        { role: "user", userName: "Terry", content: "Generate a COI" },
         {
+          _id: "user-1",
+          _creationTime: 1,
+          role: "user",
+          userName: "Terry",
+          content: "Generate a COI",
+        },
+        {
+          _id: "agent-1",
+          _creationTime: 2,
           role: "agent",
           content: "COI generated and attached.",
           usedTools: ["generate_coi"],
@@ -125,6 +148,7 @@ describe("iMessage agent context helpers", () => {
       messageText: "Where is the PDF?",
       currentSpeakerLabel: "Terry",
       attachmentRecords: [],
+      currentMessageId: "current-2" as Id<"threadMessages">,
     });
 
     expect(messages).toEqual([

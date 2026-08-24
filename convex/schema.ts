@@ -1435,6 +1435,7 @@ export default defineSchema({
       "updatedAt",
     ])
     .index("by_policyId", ["policyId"])
+    .index("by_threadId", ["threadId"])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
   policyDeliveryAttempts: defineTable({
@@ -1549,7 +1550,8 @@ export default defineSchema({
   })
     .index("by_orgId", ["orgId"])
     .index("by_certificateHolderId", ["certificateHolderId"])
-    .index("by_orgId_status", ["orgId", "status"]),
+    .index("by_orgId_status", ["orgId", "status"])
+    .index("by_fileId", ["fileId"]),
 
   insuranceRequirements: defineTable({
     orgId: v.id("organizations"),
@@ -2336,6 +2338,7 @@ export default defineSchema({
     ),
     currentPolicyVersionId: v.optional(v.id("policyVersions")),
   })
+    .index("by_fileId", ["fileId"])
     .index("by_carrier", ["carrier"])
     .index("by_policyYear", ["policyYear"])
     .index("by_userId", ["userId"])
@@ -2685,7 +2688,8 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_policyVersionId", ["policyVersionId"])
     .index("by_holderId", ["holderId"])
-    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"]),
+    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
+    .index("by_fileId", ["fileId"]),
 
   certificateWorkflowSettings: defineTable({
     brokerOrgId: v.optional(v.id("organizations")),
@@ -2740,6 +2744,7 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_certificateId", ["certificateId"])
     .index("by_holderId", ["holderId"])
+    .index("by_threadId", ["threadId"])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
   certificates: defineTable({
@@ -3407,6 +3412,9 @@ export default defineSchema({
     imessageScope: v.optional(
       v.union(v.literal("single_org"), v.literal("multi_org")),
     ),
+    // Direct iMessage threads are isolated by the owner's privacy generation.
+    // Legacy rows without this field belong to generation 0.
+    imessageHistoryGeneration: v.optional(v.number()),
     slackConnectionId: v.optional(v.id("slackWorkspaceConnections")),
     slackChannelId: v.optional(v.string()),
     slackThreadTs: v.optional(v.string()),
@@ -3430,6 +3438,10 @@ export default defineSchema({
     .index("by_orgId_deliveryContactKey", ["orgId", "deliveryContactKey"])
     .index("by_imessageChatGuid", ["imessageChatGuid"])
     .index("by_orgId_imessageChatGuid", ["orgId", "imessageChatGuid"])
+    .index(
+      "by_createdBy_and_originChannel_and_visibility_and_imessageHistoryGeneration",
+      ["createdBy", "originChannel", "visibility", "imessageHistoryGeneration"],
+    )
     .index("by_slackConnectionId_and_slackChannelId_and_slackThreadTs", [
       "slackConnectionId",
       "slackChannelId",
@@ -3549,7 +3561,151 @@ export default defineSchema({
     .index("by_slackTeamId_and_slackMessageTs", [
       "slackTeamId",
       "slackMessageTs",
+    ])
+    .searchIndex("search_content", {
+      searchField: "content",
+      filterFields: ["threadId"],
+    }),
+
+  threadContextStates: defineTable({
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    continuityMode: v.union(v.literal("thread_long"), v.literal("task_scoped")),
+    taskEpoch: v.number(),
+    taskStartedAt: v.number(),
+    lastUserMessageAt: v.optional(v.number()),
+    summary: v.optional(v.string()),
+    summarizedThroughMessageId: v.optional(v.id("threadMessages")),
+    summarizedThroughCreatedAt: v.optional(v.number()),
+    summaryVersion: v.number(),
+    status: v.union(
+      v.literal("idle"),
+      v.literal("scheduled"),
+      v.literal("ready"),
+      v.literal("error"),
+    ),
+    attemptCount: v.number(),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_threadId", ["threadId"])
+    .index("by_status_and_updatedAt", ["status", "updatedAt"]),
+
+  imessagePrivacyStates: defineTable({
+    userId: v.id("users"),
+    historyGeneration: v.number(),
+    activeDeletionJobId: v.optional(v.id("imessageHistoryDeletionJobs")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_userId", ["userId"]),
+
+  imessageAgentRunLeases: defineTable({
+    userId: v.id("users"),
+    threadId: v.optional(v.id("threads")),
+    generation: v.number(),
+    leaseKey: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_leaseKey", ["leaseKey"])
+    .index("by_threadId", ["threadId"])
+    .index("by_userId_and_expiresAt", ["userId", "expiresAt"])
+    .index("by_userId_and_generation_and_expiresAt", [
+      "userId",
+      "generation",
+      "expiresAt",
     ]),
+
+  imessageHistoryDeletionJobs: defineTable({
+    userId: v.id("users"),
+    kind: v.union(v.literal("preview"), v.literal("deletion")),
+    status: v.union(
+      v.literal("preparing"),
+      v.literal("ready"),
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    generationCutoff: v.number(),
+    inventoryComplete: v.boolean(),
+    threadCursor: v.optional(v.string()),
+    threadCount: v.number(),
+    messageCount: v.number(),
+    fileCount: v.number(),
+    processedThreadCount: v.number(),
+    deletedMessageCount: v.number(),
+    deletedFileCount: v.number(),
+    preservedFileCount: v.number(),
+    requestedAt: v.number(),
+    readyAt: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+    lastError: v.optional(v.string()),
+  })
+    .index("by_userId_and_requestedAt", ["userId", "requestedAt"])
+    .index("by_userId_and_status", ["userId", "status"]),
+
+  imessageHistoryDeletionTargets: defineTable({
+    jobId: v.id("imessageHistoryDeletionJobs"),
+    userId: v.id("users"),
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    chatGuid: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending_inventory"),
+      v.literal("inventoried"),
+      v.literal("deleting"),
+      v.literal("completed"),
+    ),
+    stage: v.optional(
+      v.union(
+        v.literal("connected_email"),
+        v.literal("policy_delivery"),
+        v.literal("certificate_workflow"),
+        v.literal("audit"),
+        v.literal("outbound"),
+        v.literal("app_cards"),
+        v.literal("pending_email"),
+        v.literal("delivery_attempt"),
+        v.literal("inbound_event"),
+        v.literal("legacy_inbound_event"),
+        v.literal("leases"),
+        v.literal("messages"),
+        v.literal("summary"),
+        v.literal("files"),
+        v.literal("thread"),
+        v.literal("completed"),
+      ),
+    ),
+    inventoryCursor: v.optional(v.string()),
+    messageCount: v.number(),
+    fileCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_jobId_and_threadId", ["jobId", "threadId"])
+    .index("by_jobId_and_status", ["jobId", "status"]),
+
+  imessageHistoryDeletionFiles: defineTable({
+    jobId: v.id("imessageHistoryDeletionJobs"),
+    targetId: v.id("imessageHistoryDeletionTargets"),
+    fileId: v.id("_storage"),
+    sourceRole: v.union(v.literal("user"), v.literal("agent")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("preserved"),
+      v.literal("deleted"),
+    ),
+    reason: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_jobId_and_fileId", ["jobId", "fileId"])
+    .index("by_targetId_and_status", ["targetId", "status"]),
 
   slackInboundEvents: defineTable({
     eventKey: v.string(),
@@ -3816,12 +3972,24 @@ export default defineSchema({
 
   imessageInboundEvents: defineTable({
     eventKey: v.string(),
-    fromPhone: v.string(),
+    fromPhone: v.optional(v.string()),
     chatGuid: v.optional(v.string()),
     isGroup: v.optional(v.boolean()),
-    messageText: v.string(),
+    messageText: v.optional(v.string()),
     sourceMessageId: v.optional(v.string()),
     receivedAt: v.optional(v.number()),
+    recoveryFailure: v.optional(
+      v.object({
+        stage: v.union(
+          v.literal("raw_message"),
+          v.literal("attachment_download"),
+        ),
+        error: v.string(),
+      }),
+    ),
+    threadId: v.optional(v.id("threads")),
+    historyGeneration: v.optional(v.number()),
+    privacyContextPending: v.optional(v.boolean()),
     status: v.union(
       v.literal("processing"),
       v.literal("completed"),
@@ -3833,7 +4001,9 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_eventKey", ["eventKey"])
-    .index("by_fromPhone", ["fromPhone"]),
+    .index("by_fromPhone", ["fromPhone"])
+    .index("by_chatGuid", ["chatGuid"])
+    .index("by_threadId", ["threadId"]),
 
   imessageOutboundSends: defineTable({
     idempotencyKey: v.string(),
@@ -3850,6 +4020,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_idempotencyKey", ["idempotencyKey"])
+    .index("by_threadId", ["threadId"])
     .index("by_threadMessageId", ["threadMessageId"]),
 
   appCardAccessLinks: defineTable({
@@ -3877,7 +4048,9 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_certificateId", ["certificateId"])
     .index("by_policyCertificateId", ["policyCertificateId"])
-    .index("by_policyChangeCaseId", ["policyChangeCaseId"]),
+    .index("by_policyChangeCaseId", ["policyChangeCaseId"])
+    .index("by_sourceThreadId", ["sourceThreadId"])
+    .index("by_sourceThreadMessageId", ["sourceThreadMessageId"]),
 
   imessageChats: defineTable({
     chatGuid: v.string(),
@@ -3977,10 +4150,10 @@ export default defineSchema({
       v.literal("failed"),
       v.literal("blocked"),
     ),
-    recipientEmail: v.string(),
+    recipientEmail: v.optional(v.string()),
     ccAddresses: v.optional(v.array(v.string())),
     bccAddresses: v.optional(v.array(v.string())),
-    subject: v.string(),
+    subject: v.optional(v.string()),
     messageId: v.optional(v.string()),
     resendEmailId: v.optional(v.string()),
     error: v.optional(v.string()),
@@ -3989,6 +4162,8 @@ export default defineSchema({
   })
     .index("by_pendingEmailId", ["pendingEmailId"])
     .index("by_orgId", ["orgId"])
+    .index("by_threadId", ["threadId"])
+    .index("by_threadMessageId", ["threadMessageId"])
     .index("by_status", ["status"]),
 
   // ── Presence ──
