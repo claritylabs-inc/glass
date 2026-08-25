@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { stepCountIs, streamText, tool } from "ai";
+import { generateText, stepCountIs, streamText, tool } from "ai";
 import {
   MockLanguageModelV3,
   convertArrayToReadableStream,
@@ -279,6 +279,103 @@ describe("cl-router LanguageModelV3 adapter", () => {
     expect(directModel.doStreamCalls).toHaveLength(1);
   });
 
+  test("completes the iMessage requirements tool loop after candidate exhaustion", async () => {
+    const lookupPolicy = vi.fn(async () => ({
+      lineOfBusiness: "E&O",
+      limit: "$5,000,000",
+    }));
+    const lookupRequirements = vi.fn(async () => ([{
+      title: "E&O minimum",
+      amount: 7_500_000,
+      assessment: "unverified",
+    }]));
+    let directStep = 0;
+    const directModel = new MockLanguageModelV3({
+      doGenerate: async () => {
+        directStep += 1;
+        return directStep === 1
+          ? {
+              content: [
+                {
+                  type: "tool-call",
+                  toolCallId: "policy-call",
+                  toolName: "lookup_policy",
+                  input: "{}",
+                },
+                {
+                  type: "tool-call",
+                  toolCallId: "requirements-call",
+                  toolName: "lookup_compliance_requirements",
+                  input: "{}",
+                },
+              ],
+              finishReason: { unified: "tool-calls", raw: "tool-calls" },
+              usage,
+              warnings: [],
+            }
+          : {
+              content: [{
+                type: "text",
+                text: "The E&O requirement remains unverified because the policy lacks structured per-claim evidence.",
+              }],
+              finishReason: { unified: "stop", raw: "stop" },
+              usage,
+              warnings: [],
+            };
+      },
+    });
+    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => Response.json({
+      error: {
+        code: "router_candidates_exhausted",
+        message: "Every eligible provider candidate failed",
+        retryable: true,
+        executionStarted: true,
+        requestId: "failed-query-request",
+        attempts: [{
+          attempt: 1,
+          provider: "fireworks",
+          model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+          outcome: "error",
+          errorCode: "provider_500",
+        }],
+      },
+    }, { status: 502 }));
+    const onDirectFallback = vi.fn();
+    const model = createClRouterLanguageModel({
+      ...adapterOptions(directModel, fetchMock),
+      onDirectFallback,
+    });
+
+    const result = await generateText({
+      model,
+      prompt: "Does our E&O policy cover all of our requirements?",
+      tools: {
+        lookup_policy: tool({
+          inputSchema: z.object({}),
+          execute: lookupPolicy,
+        }),
+        lookup_compliance_requirements: tool({
+          inputSchema: z.object({}),
+          execute: lookupRequirements,
+        }),
+      },
+      stopWhen: stepCountIs(2),
+    });
+
+    expect(result.text).toContain("remains unverified");
+    expect(lookupPolicy).toHaveBeenCalledOnce();
+    expect(lookupRequirements).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(directModel.doGenerateCalls).toHaveLength(2);
+    expect(onDirectFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        routerCode: "router_candidates_exhausted",
+        requestId: "failed-query-request",
+      }),
+      expect.objectContaining({ step: 1 }),
+    );
+  });
+
   test("sends an operator model override as the initial router pin", async () => {
     const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
       generatedResponse("Pinned answer."),
@@ -403,6 +500,9 @@ describe("cl-router LanguageModelV3 adapter", () => {
       expect.any(ClRouterToolContractError),
       expect.objectContaining({ step: 1 }),
     );
+    expect(onDirectFallback.mock.calls[0]?.[0]).toMatchObject({
+      requestId: "request-1",
+    });
   });
 
   test("fails when the direct fallback also violates the forced tool contract", async () => {

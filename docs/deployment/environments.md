@@ -87,7 +87,10 @@ once, pin the chosen route for the remaining steps, and disable router fallback
 after the first successful model step. Routed generation carries one total
 execution budget. Production may switch a no-tool call to the configured
 fallback for typed pre-execution unavailability, a proven pre-connection
-refusal/DNS failure, or a blank/output-limited completion. A blank or truncated
+refusal/DNS failure, initial candidate exhaustion before visible output or tool
+execution, or a blank/output-limited completion. `query_reason` always retains
+a cross-provider router candidate even when a stale static settings snapshot
+contains a same-provider fallback. A blank or truncated
 turn that already completed tools instead receives one tool-free continuation
 over the existing results, so imports and other actions are not replayed.
 Generic text/object helpers still fail closed when passed tool-loop-only options.
@@ -115,16 +118,18 @@ or admin API is unavailable; it deliberately cannot be overridden by the UI.
 the freeze toggle.
 
 During the guarded rollout, Glass uses direct break-glass only in production
-for proven pre-execution outages. Timeouts, generic 5xx responses,
-authentication/validation failures, other 4xx responses, malformed responses,
-and every failure after a successful step fail closed. Enabled tasks in local
+before it has observed output or tool execution. Proven pre-connection outages,
+the bounded initial interactive timeout, and typed candidate exhaustion are
+eligible; authentication/validation failures, other 4xx responses, malformed
+responses, and every failure after a successful step fail closed. Enabled tasks in local
 and shared development also fail closed so analytics cannot be
 silently bypassed. Chat never switches routes after visible streamed output or
 a tool result.
 
 `/operator/routing` combines router health, policy and hourly rollups with
-30-day Glass routing events. It shows actual versus shadow routes, request IDs,
-cost and failure aggregates, and agent workflow outcomes, and owns the
+30-day Glass routing events. It shows actual versus shadow routes, router-owned
+request IDs, sanitized failed provider attempts, cost and failure aggregates,
+and agent workflow outcomes, and owns the
 authenticated global freeze toggle. An active operator can control the healthy
 router configured by `CL_ROUTER_URL` from any Glass environment; the admin
 secret remains server-side. Workflow feedback is submitted only when tool

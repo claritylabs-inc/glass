@@ -144,6 +144,13 @@ describe("cl-router requests", () => {
         retryable: true,
         executionStarted: false,
         requestId: "failed-request",
+        attempts: [{
+          attempt: 1,
+          provider: "fireworks",
+          model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+          outcome: "timeout",
+          errorCode: "provider_timeout",
+        }],
       },
     }, { status: 503 }));
 
@@ -157,6 +164,35 @@ describe("cl-router requests", () => {
       retryable: true,
       executionStarted: false,
       requestId: "failed-request",
+      attempts: [{
+        attempt: 1,
+        provider: "fireworks",
+        model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+        outcome: "timeout",
+        errorCode: "provider_timeout",
+      }],
+    });
+  });
+
+  test("ignores malformed optional attempt diagnostics without losing the typed failure", async () => {
+    const fetchMock = vi.fn(async () => Response.json({
+      error: {
+        code: "router_candidates_exhausted",
+        message: "Every eligible provider candidate failed",
+        retryable: true,
+        executionStarted: true,
+        requestId: "failed-request-2",
+        attempts: [{ provider: "fireworks", privateMessage: "secret" }],
+      },
+    }, { status: 502 }));
+
+    await expect(clRouterGenerate(
+      { task: "chat", taskKind: "query_reason", prompt: "Check requirements." },
+      { environment, fetch: fetchMock },
+    )).rejects.toMatchObject({
+      routerCode: "router_candidates_exhausted",
+      requestId: "failed-request-2",
+      attempts: [],
     });
   });
 

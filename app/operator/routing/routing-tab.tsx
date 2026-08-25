@@ -88,6 +88,13 @@ export function routeLabel(route: Route | null | undefined) {
   return route ? `${route.provider} / ${route.model}` : "None";
 }
 
+function actualRouteLabel(event: RoutingEvent) {
+  if (event.provider && event.model) {
+    return routeLabel({ provider: event.provider, model: event.model });
+  }
+  return event.status === "error" ? "Not reported" : "None";
+}
+
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
@@ -113,6 +120,10 @@ function formatTokenCount(value: number | undefined) {
   return value === undefined ? "—" : value.toLocaleString();
 }
 
+function formatOptionalBoolean(value: boolean | undefined) {
+  return value === undefined ? "—" : value ? "Yes" : "No";
+}
+
 function hasUsageTelemetry(event: RoutingEvent) {
   return [
     event.inputTokens,
@@ -133,7 +144,7 @@ export function routingEventOutcome(event: RoutingEvent) {
       label: "Fell back",
       tone: "warning" as const,
       description:
-        "The primary path failed before execution, so Glass used a direct fallback route.",
+        "The routed path failed before Glass observed output or tool execution, so Glass used a direct fallback route.",
     };
   }
   if (event.status === "error") {
@@ -157,7 +168,7 @@ export function routingEventOutcome(event: RoutingEvent) {
       label: "Recovered",
       tone: "warning" as const,
       description:
-        "The primary route failed before execution, and the configured fallback completed the run.",
+        "The primary route failed before Glass observed output or tool execution, and the configured fallback completed the run.",
     };
   }
   return {
@@ -191,10 +202,7 @@ export function RoutingEventDrawer({
   onClose: () => void;
 }) {
   const outcome = routingEventOutcome(event);
-  const route =
-    event.provider && event.model
-      ? routeLabel({ provider: event.provider, model: event.model })
-      : "—";
+  const route = actualRouteLabel(event);
 
   return (
     <SettingsDrawer
@@ -231,7 +239,7 @@ export function RoutingEventDrawer({
             label="Phase"
             value={`${formatIdentifier(event.phase)} · ${formatIdentifier(event.label)}`}
           />
-          <OperationalLabelValueRow label="Route" value={route} />
+          <OperationalLabelValueRow label="Actual route" value={route} />
           <OperationalLabelValueRow
             label="Transport"
             value={formatIdentifier(event.transport)}
@@ -287,6 +295,35 @@ export function RoutingEventDrawer({
             />
           ) : null}
         </OperationalLabelValueList>
+
+        {event.routerCode || event.failureAttempts?.length ? (
+          <OperationalLabelValueList title="Router failure">
+            <OperationalLabelValueRow
+              label="Code"
+              value={formatIdentifier(event.routerCode)}
+            />
+            <OperationalLabelValueRow
+              label="HTTP status"
+              value={event.routerStatus?.toString() ?? "—"}
+            />
+            <OperationalLabelValueRow
+              label="Retryable"
+              value={formatOptionalBoolean(event.routerRetryable)}
+            />
+            <OperationalLabelValueRow
+              label="Provider execution started"
+              value={formatOptionalBoolean(event.routerExecutionStarted)}
+            />
+            <OperationalLabelValueRow
+              label="Failed attempts"
+              value={event.failureAttempts?.length
+                ? event.failureAttempts.map((attempt) =>
+                    `${attempt.attempt}. ${attempt.provider} / ${attempt.model} · ${formatIdentifier(attempt.errorCode ?? attempt.outcome)}`
+                  ).join("; ")
+                : "—"}
+            />
+          </OperationalLabelValueList>
+        ) : null}
 
         {event.kind === "model_step" ? (
           <OperationalLabelValueList title="Routing">
@@ -1269,11 +1306,7 @@ export function RoutingTab({
                         </button>
                       </td>
                       <td className="px-4 py-3">
-                        {routeLabel(
-                          event.provider && event.model
-                            ? { provider: event.provider, model: event.model }
-                            : undefined,
-                        )}
+                        {actualRouteLabel(event)}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
                         {routeLabel(event.routing?.wouldHaveChosen)}

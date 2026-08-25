@@ -63,6 +63,14 @@ export type ClRouterResponseMetadata = {
   costStatus: "priced" | "unpriced";
 };
 
+export type ClRouterFailureAttempt = {
+  attempt: number;
+  provider: ModelProvider;
+  model: string;
+  outcome: "error" | "timeout";
+  errorCode?: string;
+};
+
 export type ClRouterMessagePart =
   | { type: "text"; text: string }
   | { type: "image"; image: string; mediaType?: string }
@@ -129,6 +137,7 @@ export type ClRouterStreamEvent =
       retryable: boolean;
       executionStarted?: boolean;
       requestId?: string;
+      attempts?: ClRouterFailureAttempt[];
     };
   };
 
@@ -211,6 +220,7 @@ export class ClRouterRequestError extends Error {
   readonly retryable?: boolean;
   readonly executionStarted?: boolean;
   readonly requestId?: string;
+  readonly attempts: readonly ClRouterFailureAttempt[];
 
   constructor(kind: ClRouterErrorKind, message: string, options?: {
     status?: number;
@@ -219,6 +229,7 @@ export class ClRouterRequestError extends Error {
     retryable?: boolean;
     executionStarted?: boolean;
     requestId?: string;
+    attempts?: readonly ClRouterFailureAttempt[];
   }) {
     super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "ClRouterRequestError";
@@ -228,6 +239,7 @@ export class ClRouterRequestError extends Error {
     if (options?.retryable !== undefined) this.retryable = options.retryable;
     if (options?.executionStarted !== undefined) this.executionStarted = options.executionStarted;
     if (options?.requestId !== undefined) this.requestId = options.requestId;
+    this.attempts = options?.attempts ?? [];
   }
 }
 
@@ -344,7 +356,7 @@ export function isClRouterFailureCode(value: unknown): value is ClRouterFailureC
 
 function readClRouterFailure(
   value: unknown,
-): Pick<ClRouterRequestError, "routerCode" | "retryable" | "executionStarted" | "requestId"> & {
+): Pick<ClRouterRequestError, "routerCode" | "retryable" | "executionStarted" | "requestId" | "attempts"> & {
   message: string;
 } | null {
   if (!isRecord(value) || !isRecord(value.error)) return null;
@@ -364,6 +376,7 @@ function readClRouterFailure(
     retryable: error.retryable,
     executionStarted: error.executionStarted,
     ...(typeof error.requestId === "string" ? { requestId: error.requestId } : {}),
+    attempts: readFailureAttempts(error.attempts),
   };
 }
 
@@ -395,6 +408,34 @@ function isModelRoute(value: unknown): value is ModelRoute {
     typeof value.provider === "string" && value.provider.length > 0 &&
     typeof value.model === "string" && value.model.length > 0
   );
+}
+
+function readFailureAttempts(value: unknown): ClRouterFailureAttempt[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): ClRouterFailureAttempt[] => {
+    if (!isRecord(item)) return [];
+    const attempt = item.attempt;
+    const outcome = item.outcome;
+    const failureErrorCode = item.errorCode;
+    if (
+      !isModelRoute(item) ||
+      !isNonNegativeInteger(attempt) ||
+      attempt === 0 ||
+      (outcome !== "error" && outcome !== "timeout") ||
+      (failureErrorCode !== undefined && typeof failureErrorCode !== "string")
+    ) {
+      return [];
+    }
+    return [{
+      attempt,
+      provider: item.provider,
+      model: item.model,
+      outcome,
+      ...(typeof failureErrorCode === "string"
+        ? { errorCode: failureErrorCode }
+        : {}),
+    }];
+  });
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -691,6 +732,7 @@ function parseStreamEventBlock(block: string): ClRouterStreamEvent | null {
           ...(typeof payload.error.requestId === "string"
             ? { requestId: payload.error.requestId }
             : {}),
+          attempts: readFailureAttempts(payload.error.attempts),
         },
       };
     default:

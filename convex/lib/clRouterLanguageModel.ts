@@ -68,7 +68,11 @@ export class ClRouterToolContractError extends ClRouterRequestError {
   readonly expectedToolName?: string;
   readonly actualToolNames: string[];
 
-  constructor(expectedToolName: string | undefined, actualToolNames: string[]) {
+  constructor(
+    expectedToolName: string | undefined,
+    actualToolNames: string[],
+    options?: { requestId?: string },
+  ) {
     const expectation = expectedToolName
       ? `tool ${expectedToolName}`
       : "at least one tool call";
@@ -78,11 +82,39 @@ export class ClRouterToolContractError extends ClRouterRequestError {
     super(
       "invalid_response",
       `cl-router violated the forced tool contract: expected ${expectation}, received ${actual}`,
+      options,
     );
     this.name = "ClRouterToolContractError";
     this.expectedToolName = expectedToolName;
     this.actualToolNames = actualToolNames;
   }
+}
+
+function failureWithResponseContext(
+  error: unknown,
+  response: ClRouterResponseMetadata,
+): unknown {
+  if (error instanceof ClRouterToolContractError) {
+    return new ClRouterToolContractError(
+      error.expectedToolName,
+      error.actualToolNames,
+      { requestId: response.requestId },
+    );
+  }
+  if (error instanceof ClRouterRequestError) {
+    return new ClRouterRequestError(error.kind, error.message, {
+      ...(error.status === undefined ? {} : { status: error.status }),
+      ...(error.routerCode === undefined ? {} : { routerCode: error.routerCode }),
+      ...(error.retryable === undefined ? {} : { retryable: error.retryable }),
+      ...(error.executionStarted === undefined
+        ? {}
+        : { executionStarted: error.executionStarted }),
+      requestId: response.requestId,
+      attempts: error.attempts,
+      cause: error,
+    });
+  }
+  return error;
 }
 
 export class ClRouterVisibleOutputError extends Error {
@@ -428,6 +460,8 @@ function isSafeInitialFallbackError(
 ): boolean {
   const isProduction = environment.GLASS_ENV === "production";
   return (isProduction && error instanceof ClRouterToolContractError) ||
+    (isProduction && error instanceof ClRouterRequestError &&
+      error.routerCode === "router_candidates_exhausted") ||
     (isProduction && hasInitialExecutionBudget &&
       error instanceof ClRouterRequestError &&
       (error.kind === "timeout" || error.routerCode === "router_budget_exhausted")) ||
@@ -584,8 +618,13 @@ export function createClRouterLanguageModel(
           request,
           clientOptions(options.abortSignal, successfulRouterSteps === 0),
         );
-        const content = generatedContent(response);
-        validateForcedToolContract(options.toolChoice, contentToolNames(content));
+        let content: LanguageModelV3Content[];
+        try {
+          content = generatedContent(response);
+          validateForcedToolContract(options.toolChoice, contentToolNames(content));
+        } catch (error) {
+          throw failureWithResponseContext(error, response);
+        }
         parentRequestId = response.requestId;
         selectedRoute = response.model;
         successfulRouterSteps += 1;
@@ -720,7 +759,7 @@ export function createClRouterLanguageModel(
                   } else if (event.type === "error") {
                     throw new ClRouterRequestError(
                       event.error.retryable ? "server" : "client",
-                      `cl-router stream failed (${event.error.code})`,
+                      event.error.message,
                       {
                         ...(isClRouterFailureCode(event.error.code)
                           ? { routerCode: event.error.code }
@@ -730,6 +769,7 @@ export function createClRouterLanguageModel(
                           ? {}
                           : { executionStarted: event.error.executionStarted }),
                         ...(event.error.requestId ? { requestId: event.error.requestId } : {}),
+                        attempts: event.error.attempts,
                       },
                     );
                   } else {

@@ -313,6 +313,96 @@ describe("Convex cl-router generation integration", () => {
     });
   });
 
+  test("records the failing router request and final attempted route after a later tool-loop failure", async () => {
+    vi.stubEnv("CL_ROUTER_TASKS", "chat");
+    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
+    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => Response.json({
+        ...routerResponse({
+          text: "",
+          toolCalls: [{
+            toolCallId: "call-1",
+            toolName: "lookup_policy",
+            input: { policyNumber: "GL-100" },
+          }],
+        }),
+        finishReason: "tool-calls",
+      }))
+      .mockImplementationOnce(async () => Response.json({
+        error: {
+          code: "router_candidates_exhausted",
+          message: "Every eligible provider candidate failed",
+          retryable: true,
+          executionStarted: true,
+          requestId: "failed-request-2",
+          attempts: [{
+            attempt: 1,
+            provider: "fireworks",
+            model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+            outcome: "error",
+            errorCode: "provider_500",
+          }],
+        },
+      }, { status: 502 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = routerContext();
+
+    await expect(generateAgentTextForOrg(
+      ctx as never,
+      "org-1" as Id<"organizations">,
+      "chat",
+      {
+        prompt: "Find GL-100.",
+        tools: {
+          lookup_policy: tool({
+            inputSchema: z.object({ policyNumber: z.string() }),
+            execute: async () => ({ carrier: "Acme" }),
+          }),
+        },
+        stopWhen: stepCountIs(2),
+      },
+      {
+        taskKind: "query_reason",
+        sessionKey: "thread-1",
+        trace: {
+          traceId: "agent-message-failed",
+          parentRequestId: "user-message-1",
+          label: "test.agent",
+          phase: "query_reason",
+          channel: "imessage",
+        },
+      },
+    )).rejects.toMatchObject({
+      routerCode: "router_candidates_exhausted",
+      requestId: "failed-request-2",
+    });
+
+    const mutationCalls = ctx.runMutation.mock.calls as unknown as Array<
+      [unknown, Record<string, unknown>]
+    >;
+    const runEvent = mutationCalls
+      .map((call) => call[1])
+      .find((args) => args.status === "error");
+    expect(runEvent).toMatchObject({
+      requestId: "failed-request-2",
+      provider: "fireworks",
+      model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+      routerCode: "router_candidates_exhausted",
+      routerStatus: 502,
+      routerRetryable: true,
+      routerExecutionStarted: true,
+      failureAttempts: [{
+        attempt: 1,
+        provider: "fireworks",
+        model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+        outcome: "error",
+        errorCode: "provider_500",
+      }],
+    });
+  });
+
   test("fails closed instead of silently bypassing an enabled router task with tools", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "classification");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
