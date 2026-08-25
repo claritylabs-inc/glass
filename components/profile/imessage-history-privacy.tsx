@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Loader2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import {
@@ -56,6 +57,12 @@ export function ImessagePrivacyPanel({
     state?.deletion?.status === "queued" ||
     state?.deletion?.status === "running";
   const previewReady = state?.preview?.status === "ready";
+  const previewPreparing = state?.preview?.status === "preparing";
+  const previewFailed =
+    state?.preview?.status === "failed" ||
+    state?.deletion?.status === "failed";
+  const noHistory =
+    previewReady && (state.preview?.threadCount ?? 0) === 0;
   return (
     <OperationalPanel>
       <OperationalPanelHeader title="Personal iMessage history" />
@@ -80,22 +87,36 @@ export function ImessagePrivacyPanel({
               leave this page while deletion continues.
             </p>
           ) : null}
+          {noHistory ? (
+            <p
+              className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
+            >
+              There is no iMessage history to delete.
+            </p>
+          ) : previewFailed ? (
+            <p
+              className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
+            >
+              Glass couldn’t check your iMessage history. Try again.
+            </p>
+          ) : null}
         </div>
         <PillButton
           className="self-start sm:self-center"
           variant="destructive"
-          disabled={busy || active || state === undefined}
+          disabled={
+            busy ||
+            active ||
+            previewPreparing ||
+            noHistory ||
+            state === undefined
+          }
           onClick={previewReady ? onReview : onPrepare}
         >
-          {busy || state === undefined ? (
+          {busy || previewPreparing || state === undefined ? (
             <Loader2 className="size-3.5 animate-spin" />
           ) : null}
-          {previewReady
-            ? "Review deletion"
-            : state?.preview?.status === "failed" ||
-                state?.deletion?.status === "failed"
-              ? "Prepare retry"
-              : "Delete iMessage history"}
+          Delete iMessage history
         </PillButton>
       </OperationalPanelBody>
     </OperationalPanel>
@@ -142,7 +163,7 @@ export function ImessagePrivacyDialog({
 
   return (
     <Dialog
-      open={open}
+      open={open && (!ready || hasHistory)}
       onOpenChange={(nextOpen) => {
         if (!busy) onOpenChange(nextOpen);
       }}
@@ -216,12 +237,28 @@ export function useImessagePrivacyActions(
   setBusy: (busy: boolean) => void,
   setOpen: (open: boolean) => void,
 ) {
+  const pendingPreviewJobId = useRef<
+    NonNullable<ImessagePrivacyState["preview"]>["id"] | null
+  >(null);
+
+  useEffect(() => {
+    const preview = privacy.state?.preview;
+    if (!preview || preview.id !== pendingPreviewJobId.current) return;
+    if (preview.status === "ready") {
+      pendingPreviewJobId.current = null;
+      if (preview.threadCount > 0) setOpen(true);
+    } else if (preview.status === "failed") {
+      pendingPreviewJobId.current = null;
+    }
+  }, [privacy.state?.preview, setOpen]);
+
   const prepare = async () => {
     setBusy(true);
-    setOpen(true);
     try {
-      await privacy.preparePreview({});
+      const result = await privacy.preparePreview({});
+      pendingPreviewJobId.current = result.previewJobId;
     } catch (error) {
+      pendingPreviewJobId.current = null;
       toast.error(
         getUserFacingErrorMessage(error, "Could not prepare deletion"),
       );
