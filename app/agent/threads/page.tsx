@@ -1,12 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LockKeyhole, Mail, MessageCircle, MessageSquare } from "lucide-react";
+import {
+  LockKeyhole,
+  Mail,
+  MessageCircle,
+  MessageSquare,
+  Plus,
+} from "lucide-react";
 import { SiSlack } from "react-icons/si";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
 import { ActionSurfaceButton } from "@/components/ui/action-surface";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { FadeIn } from "@/components/ui/fade-in";
+import { PillButton } from "@/components/ui/pill-button";
+import { openCommandPalette } from "@/components/command-palette";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import { getThreadDisplayLabel, type ThreadDisplayLike } from "@/lib/thread-display";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -23,20 +32,31 @@ export default function AgentThreadsPage() {
     api.threads.list,
     { archived: false },
   ) as ThreadRow[] | undefined;
-  const visibleThreads = threads ?? [];
 
   return (
-    <AppShell breadcrumbDetail="Threads">
+    <AppShell
+      breadcrumbDetail="Threads"
+      actions={
+        <PillButton type="button" onClick={openCommandPalette}>
+          <Plus className="h-4 w-4" />
+          New thread
+        </PillButton>
+      }
+    >
       <FadeIn when={true} duration={0.12}>
-        {visibleThreads.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>
-              No threads yet
-            </p>
-          </div>
+        {threads === undefined ? (
+          <div className="min-h-32" aria-hidden="true" />
+        ) : threads.length === 0 ? (
+          <EmptyStateCard
+            icon={<MessageSquare className="h-5 w-5" />}
+            title="No threads yet"
+            description="Start a conversation with Glass about your policies, requirements, or connected email."
+            actionLabel="Start a thread"
+            onAction={openCommandPalette}
+          />
         ) : (
           <div className="space-y-1">
-            {visibleThreads.map((thread) => {
+            {threads.map((thread) => {
               const isPrivateSlack =
                 thread.originChannel === "slack" &&
                 thread.visibility === "user_private";
