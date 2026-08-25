@@ -23,6 +23,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { api } from "@/convex/_generated/api";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { cn } from "@/lib/utils";
 
 export type ImessagePrivacyState = FunctionReturnType<
   typeof api.imessagePrivacy.getPersonalImessageDeletionState
@@ -97,7 +98,10 @@ export function ImessagePrivacyPanel({
           ) : null}
         </div>
         <PillButton
-          className="self-start sm:self-center"
+          className={cn(
+            "self-start sm:self-center",
+            noHistory && "disabled:grayscale",
+          )}
           variant="destructive"
           disabled={
             busy ||
