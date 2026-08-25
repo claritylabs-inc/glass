@@ -9,7 +9,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Loader2, Mail, MessageSquareText } from "lucide-react";
+import { Loader2, Mail } from "lucide-react";
 import {
   OperationalPanel,
   OperationalPanelBody,
@@ -18,7 +18,6 @@ import {
 import { PillButton } from "@/components/ui/pill-button";
 import { Label } from "@/components/ui/label";
 import { SelfEmailChangeDrawer } from "@/components/settings/change-email-drawer";
-import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
   Select,
   SelectContent,
@@ -106,9 +105,8 @@ export default function ProfilePage() {
   const [phone, setPhone] = useState("");
   const [debouncedPhone, setDebouncedPhone] = useState("");
   const [emailDrawerOpen, setEmailDrawerOpen] = useState(false);
-  const [proactiveDrawerOpen, setProactiveDrawerOpen] = useState(false);
-  const [proactiveDraft, setProactiveDraft] =
-    useState<ProactiveChannelChoice>("email");
+  const [pendingProactiveChoice, setPendingProactiveChoice] =
+    useState<ProactiveChannelChoice | null>(null);
   const [savingProactiveChannels, setSavingProactiveChannels] = useState(false);
   const [profileSection, setProfileSection] = useState<"profile" | "privacy">(
     "profile",
@@ -225,33 +223,23 @@ export default function ProfilePage() {
     void profileAutoSave.saveNow();
   }
 
-  function openProactiveDrawer() {
-    const currentChoice =
-      proactiveChannelChoice(proactivePreferences) ?? "email";
-    setProactiveDraft(
-      !viewer?.phone && currentChoice !== "email" ? "email" : currentChoice,
-    );
-    setEmailDrawerOpen(false);
-    setProactiveDrawerOpen(true);
-  }
-
-  async function saveProactiveChannels() {
+  async function saveProactiveChannels(nextChoice: ProactiveChannelChoice) {
     if (!currentOrg?.orgId) return;
     const includesImessage =
-      proactiveDraft === "imessage" || proactiveDraft === "both";
+      nextChoice === "imessage" || nextChoice === "both";
     if (includesImessage && !viewer?.phone) {
       toast.error("Add a mobile number before choosing iMessage");
       return;
     }
+    setPendingProactiveChoice(nextChoice);
     setSavingProactiveChannels(true);
     try {
       await setProactiveChannels({
         orgId: currentOrg.orgId,
-        email: proactiveDraft === "email" || proactiveDraft === "both",
+        email: nextChoice === "email" || nextChoice === "both",
         imessage: includesImessage,
       });
       toast.success("Proactive contact method updated");
-      setProactiveDrawerOpen(false);
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
@@ -260,6 +248,7 @@ export default function ProfilePage() {
         ),
       );
     } finally {
+      setPendingProactiveChoice(null);
       setSavingProactiveChannels(false);
     }
   }
@@ -275,18 +264,16 @@ export default function ProfilePage() {
   }
 
   const effectiveProactiveChoice = proactiveChannelChoice(proactivePreferences);
+  const displayedProactiveChoice =
+    pendingProactiveChoice ?? effectiveProactiveChoice;
   const headerActions = (
     <>
       <AutoSaveStatus status={profileAutoSave.status} />
       <PillButton
         size="compact"
-        variant="icon"
+        variant="iconLabel"
         label="Change email"
-        expandLabel
-        onClick={() => {
-          setProactiveDrawerOpen(false);
-          setEmailDrawerOpen(true);
-        }}
+        onClick={() => setEmailDrawerOpen(true)}
       >
         <Mail className="h-3.5 w-3.5" />
       </PillButton>
@@ -297,89 +284,12 @@ export default function ProfilePage() {
     <AppShell
       actions={headerActions}
       rightPanel={
-        <>
-          <SelfEmailChangeDrawer
-            open={emailDrawerOpen}
-            onOpenChange={setEmailDrawerOpen}
-            currentEmail={viewer?.email}
-            onConfirmed={(email) => patchViewer({ email })}
-          />
-          <SettingsDrawer
-            open={proactiveDrawerOpen}
-            onOpenChange={setProactiveDrawerOpen}
-            title="Proactive conversations"
-            footer={
-              <>
-                <PillButton
-                  variant="secondary"
-                  disabled={savingProactiveChannels}
-                  onClick={() => setProactiveDrawerOpen(false)}
-                >
-                  Cancel
-                </PillButton>
-                <PillButton
-                  disabled={savingProactiveChannels || !currentOrg?.orgId}
-                  onClick={() => void saveProactiveChannels()}
-                >
-                  {savingProactiveChannels ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : null}
-                  Save
-                </PillButton>
-              </>
-            }
-          >
-            <div className="space-y-4">
-              <div>
-                <Label
-                  htmlFor="proactive-contact-method"
-                  className="mb-1.5 text-muted-foreground"
-                >
-                  Preferred contact method
-                </Label>
-                <Select
-                  value={proactiveDraft}
-                  onValueChange={(value) => {
-                    if (isProactiveChannelChoice(value)) {
-                      setProactiveDraft(value);
-                    }
-                  }}
-                >
-                  <SelectTrigger
-                    id="proactive-contact-method"
-                    className="w-full"
-                  >
-                    <SelectValue>
-                      {PROACTIVE_CHANNEL_LABELS[proactiveDraft]}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="email">Email</SelectItem>
-                    <SelectItem value="imessage" disabled={!viewer?.phone}>
-                      Text (iMessage)
-                    </SelectItem>
-                    <SelectItem value="both" disabled={!viewer?.phone}>
-                      Email and text (iMessage)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <p
-                className={`text-muted-foreground ${typeStyle("body.default")}`}
-              >
-                Glass uses this for proactive mailbox findings and compliance
-                conversations. In-app notifications still appear in Glass.
-              </p>
-              {!viewer?.phone ? (
-                <p
-                  className={`text-muted-foreground ${typeStyle("body.default")}`}
-                >
-                  Add a mobile number to use iMessage.
-                </p>
-              ) : null}
-            </div>
-          </SettingsDrawer>
-        </>
+        <SelfEmailChangeDrawer
+          open={emailDrawerOpen}
+          onOpenChange={setEmailDrawerOpen}
+          currentEmail={viewer?.email}
+          onConfirmed={(email) => patchViewer({ email })}
+        />
       }
     >
       <ProfileSectionTabs
@@ -481,38 +391,54 @@ export default function ProfilePage() {
               <OperationalPanelHeader
                 title="Proactive conversations"
                 className="px-5 py-3.5"
-                action={
-                  <PillButton
-                    size="compact"
-                    variant="secondary"
-                    onClick={openProactiveDrawer}
-                  >
-                    Edit
-                  </PillButton>
-                }
               />
-              <OperationalPanelBody className="px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
-                    <MessageSquareText className="size-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <p
-                      className={`text-foreground ${typeStyle("body.medium")}`}
+              <OperationalPanelBody className="px-5 py-5">
+                <div className="max-w-lg">
+                  <Label
+                    htmlFor="proactive-contact-method"
+                    className="mb-1.5 text-muted-foreground"
+                  >
+                    Preferred contact method
+                  </Label>
+                  <Select
+                    value={displayedProactiveChoice ?? ""}
+                    disabled={
+                      proactivePreferences === undefined ||
+                      savingProactiveChannels ||
+                      !currentOrg?.orgId
+                    }
+                    onValueChange={(value) => {
+                      if (isProactiveChannelChoice(value)) {
+                        void saveProactiveChannels(value);
+                      }
+                    }}
+                  >
+                    <SelectTrigger
+                      id="proactive-contact-method"
+                      className="w-full"
                     >
-                      {proactivePreferences === undefined
-                        ? "Loading contact method"
-                        : effectiveProactiveChoice
-                          ? PROACTIVE_CHANNEL_LABELS[effectiveProactiveChoice]
-                          : "In-app only"}
-                    </p>
-                    <p
-                      className={`mt-0.5 text-muted-foreground ${typeStyle("body.default")}`}
-                    >
-                      Where Glass contacts you when it finds something that
-                      needs attention.
-                    </p>
-                  </div>
+                      <SelectValue
+                        placeholder={
+                          proactivePreferences === undefined
+                            ? "Loading contact method"
+                            : "In-app only"
+                        }
+                      >
+                        {displayedProactiveChoice
+                          ? PROACTIVE_CHANNEL_LABELS[displayedProactiveChoice]
+                          : undefined}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="email">Email</SelectItem>
+                      <SelectItem value="imessage" disabled={!viewer?.phone}>
+                        Text (iMessage)
+                      </SelectItem>
+                      <SelectItem value="both" disabled={!viewer?.phone}>
+                        Email and text (iMessage)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </OperationalPanelBody>
             </OperationalPanel>

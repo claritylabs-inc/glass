@@ -2,35 +2,158 @@
 
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
+import { Shuffle, SlidersHorizontal } from "lucide-react";
+import {
+  getModelDisplayName,
+  ModelProviderLogo,
+  ModelRouteLogo,
+  type ModelProviderId,
+} from "@/components/model-provider-logo";
+import { Badge } from "@/components/ui/badge";
 import { GlassWordmark } from "@/components/ui/glass-wordmark";
+import { OperationalPanel } from "@/components/ui/operational-panel";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { typeStyle } from "@/lib/typography";
+import {
+  MODEL_ROUTE_LABELS,
+  PROVIDER_LABELS,
+} from "@/convex/lib/modelCatalog";
 
-const TASK_LABELS: Record<string, string> = {
-  chat: "Chat",
-  email_draft: "Email Draft",
-  email_reply: "Email Reply",
-  analysis: "Analysis",
-  summary: "Summary",
-  classification: "Classification",
-  extraction: "PDF Extraction",
-  triage: "Email Triage",
-  email_extraction: "Email Extraction",
-  security: "Security Guard",
+type WeatherProviderId = ModelProviderId | "moonshot";
+type WeatherRoute = {
+  task: string;
+  taskLabel?: string;
+  model: string;
+  provider: WeatherProviderId;
+  providerLabel?: string;
+  routing?: "automatic" | "manual";
 };
 
-const PROVIDER_COLORS: Record<string, string> = {
-  OpenAI: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  Anthropic: "bg-orange-500/15 text-orange-700 dark:text-orange-400",
-  DeepSeek: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-};
+const TASK_LABELS: Record<string, string> = MODEL_ROUTE_LABELS;
+const PROVIDER_NAMES: Record<string, string> = PROVIDER_LABELS;
+
+function humanizeIdentifier(value: string) {
+  return value
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+function ProviderMark({ provider }: { provider: WeatherProviderId }) {
+  if (provider === "moonshot") return null;
+  return (
+    <ModelProviderLogo
+      provider={provider}
+      size={16}
+      className={
+        provider === "openai" || provider === "xai" ? "dark:invert" : undefined
+      }
+    />
+  );
+}
+
+function ModelMark({
+  provider,
+  model,
+}: {
+  provider: WeatherProviderId;
+  model: string;
+}) {
+  if (provider === "moonshot") return null;
+  const needsDarkModeInversion =
+    provider === "openai" || provider === "xai" || model.includes("gpt-oss");
+  return (
+    <ModelRouteLogo
+      route={{ provider, model }}
+      size={17}
+      className={needsDarkModeInversion ? "dark:invert" : undefined}
+    />
+  );
+}
+
+function RoutingBadge({ routing }: { routing: "automatic" | "manual" }) {
+  const automatic = routing === "automatic";
+  return (
+    <Badge variant="outline" className="text-muted-foreground">
+      {automatic ? <Shuffle /> : <SlidersHorizontal />}
+      {automatic ? "Automatic" : "Manually set"}
+    </Badge>
+  );
+}
+
+function WeatherTableSkeleton() {
+  return (
+    <OperationalPanel as="div">
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[32%]">Task</TableHead>
+            <TableHead className="w-[20%]">Provider</TableHead>
+            <TableHead className="w-[30%]">Model</TableHead>
+            <TableHead className="w-[18%]">Routing</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: 8 }).map((_, index) => (
+            <TableRow key={index} className="hover:bg-transparent">
+              <TableCell>
+                <Skeleton className="h-4 w-40" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-24" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-36" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-5 w-24 rounded-full" />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </OperationalPanel>
+  );
+}
 
 export default function WeatherPage() {
   const config = useCachedQuery("modelConfig.list", api.modelConfig.list, {});
+  const compatibleConfig = config as
+    | {
+        routes: WeatherRoute[];
+        fallback?: Pick<WeatherRoute, "model" | "provider">;
+      }
+    | undefined;
+  const routes = compatibleConfig
+    ? [
+        ...compatibleConfig.routes,
+        ...(compatibleConfig.fallback &&
+        !compatibleConfig.routes.some((route) => route.task === "fallback")
+          ? [
+              {
+                task: "fallback",
+                ...compatibleConfig.fallback,
+                routing: "automatic" as const,
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:py-24">
+      <main className="mx-auto max-w-4xl px-4 py-16 sm:py-24">
         <div className="mb-10">
           <Link
             href="https://claritylabs.inc"
@@ -49,68 +172,60 @@ export default function WeatherPage() {
         </div>
 
         {!config ? (
-          <div className="space-y-3">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-12 rounded-lg bg-foreground/[0.03]" />
-            ))}
-          </div>
+          <WeatherTableSkeleton />
         ) : (
-          <>
-            <div className="rounded-xl border border-input overflow-hidden">
-              <table className={`w-full ${typeStyle("body.default")}`}>
-                <thead>
-                  <tr className="border-b border-input bg-foreground/[0.02]">
-                    <th className={`px-4 py-3 text-left text-foreground/40 ${typeStyle("label.table")} `}>
-                      Task
-                    </th>
-                    <th className={`px-4 py-3 text-left text-foreground/40 ${typeStyle("label.table")} `}>
-                      Model
-                    </th>
-                    <th className={`px-4 py-3 text-left text-foreground/40 ${typeStyle("label.table")} `}>
-                      Provider
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {config.routes.map((route, i) => (
-                    <tr
-                      key={route.task}
-                      className={
-                        i < config.routes.length - 1
-                          ? "border-b border-border-subtle"
-                          : ""
-                      }
+          <OperationalPanel as="div">
+            <Table className="min-w-[760px]">
+              <TableCaption className="sr-only">
+                Current provider and model routing for every Glass AI task.
+              </TableCaption>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[32%]">Task</TableHead>
+                  <TableHead className="w-[20%]">Provider</TableHead>
+                  <TableHead className="w-[30%]">Model</TableHead>
+                  <TableHead className="w-[18%]">Routing</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {routes.map((route) => (
+                  <TableRow key={route.task} className="hover:bg-transparent">
+                    <TableCell
+                      className={`text-foreground ${typeStyle("body.medium")}`}
                     >
-                      <td className="px-4 py-3 text-foreground/70">
-                        {TASK_LABELS[route.task] ?? route.task}
-                      </td>
-                      <td className={`px-4 py-3 text-foreground/60 ${typeStyle("technical.codeCompact")}`}>
-                        {route.model}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-block rounded-full px-2.5 py-0.5 ${typeStyle("label.tag")} ${
-                            PROVIDER_COLORS[route.provider] ??
-                            "bg-foreground/10 text-foreground/60"
-                          }`}
-                        >
-                          {route.provider}
+                      {route.taskLabel ??
+                        TASK_LABELS[route.task] ??
+                        humanizeIdentifier(route.task)}
+                    </TableCell>
+                    <TableCell>
+                      <span className="flex items-center gap-2 text-foreground">
+                        <ProviderMark provider={route.provider} />
+                        {route.providerLabel ??
+                          PROVIDER_NAMES[route.provider] ??
+                          humanizeIdentifier(route.provider)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="flex items-center gap-2 text-foreground">
+                        <ModelMark
+                          provider={route.provider}
+                          model={route.model}
+                        />
+                        <span title={route.model}>
+                          {getModelDisplayName(route.model)}
                         </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <p className={`mt-4 text-foreground/30 ${typeStyle("caption.default")}`}>
-              Fallback:{" "}
-              <span className={`${typeStyle("technical.code")}`}>{config.fallback.model}</span> (
-              {config.fallback.provider})
-            </p>
-          </>
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <RoutingBadge routing={route.routing ?? "automatic"} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </OperationalPanel>
         )}
-      </div>
+      </main>
     </div>
   );
 }

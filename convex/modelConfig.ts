@@ -1,5 +1,10 @@
 import { query } from "./_generated/server";
-import { MODEL_ROUTING, FALLBACK_MODEL } from "./lib/models";
+import {
+  MODEL_ROUTE_IDS,
+  MODEL_ROUTE_LABELS,
+  PROVIDER_LABELS,
+} from "./lib/modelCatalog";
+import { resolvePublicModelDefaults } from "./modelSettings";
 
 /**
  * Public query exposing the current AI model routing table.
@@ -7,15 +12,23 @@ import { MODEL_ROUTING, FALLBACK_MODEL } from "./lib/models";
  */
 export const list = query({
   args: {},
-  handler: async () => {
-    const entries = Object.entries(MODEL_ROUTING).map(([task, info]) => ({
-      task,
-      model: info.model,
-      provider: info.provider,
-    }));
+  handler: async (ctx) => {
+    const config = await resolvePublicModelDefaults(ctx);
     return {
-      routes: entries,
-      fallback: FALLBACK_MODEL,
+      routes: MODEL_ROUTE_IDS.map((task) => {
+        const route = config.routes[task];
+        return {
+          task,
+          taskLabel: MODEL_ROUTE_LABELS[task],
+          model: route.model,
+          provider: route.provider,
+          providerLabel: PROVIDER_LABELS[route.provider],
+          routing:
+            config.routeSources[task] === "global"
+              ? ("manual" as const)
+              : ("automatic" as const),
+        };
+      }),
     };
   },
 });
