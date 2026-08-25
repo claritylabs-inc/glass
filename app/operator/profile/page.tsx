@@ -21,10 +21,6 @@ import { api } from "@/convex/_generated/api";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
-import {
-  ImessagePrivacySettings,
-  ProfileSectionTabs,
-} from "@/components/profile/imessage-history-privacy";
 
 type OperatorCurrent = FunctionReturnType<typeof api.operator.current>;
 
@@ -61,9 +57,6 @@ function OperatorProfileShell({
 function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
   const updateProfile = useMutation(api.users.updateProfile);
   const [name, setName] = useState(current.user.name ?? "");
-  const [profileSection, setProfileSection] = useState<"profile" | "privacy">(
-    "profile",
-  );
   const email = current.user.email ?? current.profile.email;
   const accessLevel = current.profile.role === "owner" ? "Owner" : "Operator";
 
@@ -88,81 +81,69 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
       actions={<AutoSaveStatus status={profileAutoSave.status} />}
     >
       <div className="w-full">
-        <ProfileSectionTabs
-          active={profileSection}
-          onChange={setProfileSection}
-        />
-        {profileSection === "profile" ? (
-          <>
-            <FadeIn when={true} staggerIndex={1} duration={0.4}>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void profileAutoSave.saveNow();
-                }}
-              >
-                <OperationalPanel>
-                  <OperationalPanelHeader title="Account" />
-                  <OperationalPanelBody className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <Label htmlFor="operator-profile-name" className="mb-1.5">
-                        Name
-                      </Label>
-                      <Input
-                        id="operator-profile-name"
-                        value={name}
-                        onChange={(event) => setName(event.target.value)}
-                        onBlur={() => void profileAutoSave.saveNow()}
-                        placeholder="Your name"
-                        autoComplete="name"
-                      />
-                    </div>
-                    <div>
-                      <Label
-                        htmlFor="operator-profile-email"
-                        className="mb-1.5"
-                      >
-                        Email
-                      </Label>
-                      <Input
-                        id="operator-profile-email"
-                        type="email"
-                        value={email}
-                        disabled
-                      />
-                    </div>
-                    <div>
-                      <Label
-                        htmlFor="operator-profile-access"
-                        className="mb-1.5"
-                      >
-                        Access level
-                      </Label>
-                      <Input
-                        id="operator-profile-access"
-                        value={accessLevel}
-                        disabled
-                      />
-                    </div>
-                  </OperationalPanelBody>
-                </OperationalPanel>
-              </form>
-            </FadeIn>
+        <FadeIn when={true} staggerIndex={1} duration={0.4}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void profileAutoSave.saveNow();
+            }}
+          >
+            <OperationalPanel>
+              <OperationalPanelHeader title="Account" />
+              <OperationalPanelBody className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="operator-profile-name" className="mb-1.5">
+                    Name
+                  </Label>
+                  <Input
+                    id="operator-profile-name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    onBlur={() => void profileAutoSave.saveNow()}
+                    placeholder="Your name"
+                    autoComplete="name"
+                  />
+                </div>
+                <div>
+                  <Label
+                    htmlFor="operator-profile-email"
+                    className="mb-1.5"
+                  >
+                    Email
+                  </Label>
+                  <Input
+                    id="operator-profile-email"
+                    type="email"
+                    value={email}
+                    disabled
+                  />
+                </div>
+                <div>
+                  <Label
+                    htmlFor="operator-profile-access"
+                    className="mb-1.5"
+                  >
+                    Access level
+                  </Label>
+                  <Input
+                    id="operator-profile-access"
+                    value={accessLevel}
+                    disabled
+                  />
+                </div>
+              </OperationalPanelBody>
+            </OperationalPanel>
+          </form>
+        </FadeIn>
 
-            <FadeIn when={true} staggerIndex={2} duration={0.4}>
-              <OperationalPanel className="mt-4">
-                <OperationalPanelHeader title="Appearance" />
-                <OperationalPanelBody>
-                  <ThemeModeSelector className="max-w-lg" />
-                </OperationalPanelBody>
-              </OperationalPanel>
-            </FadeIn>
-          </>
-        ) : (
-          <FadeIn when={true} staggerIndex={1} duration={0.4}>
-            <ImessagePrivacySettings />
-          </FadeIn>
-        )}
+        <FadeIn when={true} staggerIndex={2} duration={0.4}>
+          <OperationalPanel className="mt-4">
+            <OperationalPanelHeader title="Appearance" />
+            <OperationalPanelBody>
+              <ThemeModeSelector className="max-w-lg" />
+            </OperationalPanelBody>
+          </OperationalPanel>
+        </FadeIn>
       </div>
     </OperatorProfileShell>
   );
