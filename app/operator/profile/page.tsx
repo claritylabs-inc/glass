@@ -22,7 +22,7 @@ import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
-  ImessagePrivacyDrawer,
+  ImessagePrivacyDialog,
   ImessagePrivacyPanel,
   ProfileSectionTabs,
   useImessagePrivacy,
@@ -67,13 +67,13 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
   const [profileSection, setProfileSection] = useState<"profile" | "privacy">(
     "profile",
   );
-  const [privacyDrawerOpen, setPrivacyDrawerOpen] = useState(false);
+  const [privacyDialogOpen, setPrivacyDialogOpen] = useState(false);
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const imessagePrivacy = useImessagePrivacy();
   const privacyActions = useImessagePrivacyActions(
     imessagePrivacy,
     setPrivacyBusy,
-    setPrivacyDrawerOpen,
+    setPrivacyDialogOpen,
   );
   const email = current.user.email ?? current.profile.email;
   const accessLevel = current.profile.role === "owner" ? "Owner" : "Operator";
@@ -97,18 +97,16 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
   return (
     <OperatorProfileShell
       actions={<AutoSaveStatus status={profileAutoSave.status} />}
-      rightPanel={
-        <ImessagePrivacyDrawer
-          open={privacyDrawerOpen}
-          onOpenChange={setPrivacyDrawerOpen}
+    >
+      <div className="w-full">
+        <ImessagePrivacyDialog
+          open={privacyDialogOpen}
+          onOpenChange={setPrivacyDialogOpen}
           state={imessagePrivacy.state}
           busy={privacyBusy}
           onPrepare={() => void privacyActions.prepare()}
           onConfirm={() => void privacyActions.confirm()}
         />
-      }
-    >
-      <div className="w-full">
         <ProfileSectionTabs
           active={profileSection}
           onChange={setProfileSection}
@@ -185,7 +183,7 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
               state={imessagePrivacy.state}
               busy={privacyBusy}
               onPrepare={() => void privacyActions.prepare()}
-              onReview={() => setPrivacyDrawerOpen(true)}
+              onReview={() => setPrivacyDialogOpen(true)}
             />
           </FadeIn>
         )}

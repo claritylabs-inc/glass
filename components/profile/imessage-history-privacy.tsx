@@ -1,17 +1,23 @@
 "use client";
 
-import dayjs from "dayjs";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { Loader2, MessageSquareLock, ShieldCheck } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
   OperationalPanel,
   OperationalPanelBody,
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PillButton } from "@/components/ui/pill-button";
 import { api } from "@/convex/_generated/api";
 import { typeStyle } from "@/lib/typography";
@@ -96,7 +102,11 @@ export function ImessagePrivacyPanel({
   );
 }
 
-export function ImessagePrivacyDrawer({
+function countLabel(count: number, singular: string) {
+  return `${count} ${count === 1 ? singular : `${singular}s`}`;
+}
+
+export function ImessagePrivacyDialog({
   open,
   onOpenChange,
   state,
@@ -117,144 +127,87 @@ export function ImessagePrivacyDrawer({
   const failed =
     preview?.status === "failed" || state?.deletion?.status === "failed";
   const blocked = state?.hasActiveAgentTurn === true;
-  const canConfirm =
-    ready && !blocked && !busy && (preview?.threadCount ?? 0) > 0;
+  const hasHistory = ready && (preview?.threadCount ?? 0) > 0;
+  const checking =
+    state === undefined || preparing || (busy && !ready) || (!preview && !failed);
+  const canConfirm = hasHistory && !blocked && !busy;
+
+  const title = checking
+    ? "Checking iMessage history…"
+    : failed
+      ? "Couldn’t check iMessage history"
+      : !hasHistory
+        ? "There is no iMessage history to delete"
+        : "Delete personal iMessage history?";
 
   return (
-    <SettingsDrawer
+    <Dialog
       open={open}
-      onOpenChange={onOpenChange}
-      title="Delete personal iMessage history"
-      footer={
-        <>
-          <PillButton
-            variant="secondary"
-            disabled={busy}
-            onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </PillButton>
-          {ready ? (
-            <PillButton
-              variant="destructive"
-              disabled={!canConfirm}
-              onClick={onConfirm}
-            >
-              {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              Permanently delete
-            </PillButton>
+      onOpenChange={(nextOpen) => {
+        if (!busy) onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {hasHistory ? (
+            <DialogDescription>
+              <strong>{countLabel(preview.threadCount, "conversation")}</strong>
+              , <strong>{countLabel(preview.messageCount, "message")}</strong>,
+              and <strong>{countLabel(preview.fileCount, "file")}</strong> will
+              be permanently deleted from Glass.
+              {blocked
+                ? " Wait for the active iMessage response to finish, then try again."
+                : null}
+            </DialogDescription>
+          ) : null}
+        </DialogHeader>
+
+        <DialogFooter>
+          {hasHistory && !blocked ? (
+            <>
+              <PillButton
+                variant="secondary"
+                disabled={busy}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </PillButton>
+              <PillButton
+                variant="destructive"
+                disabled={!canConfirm}
+                onClick={onConfirm}
+              >
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                Permanently delete
+              </PillButton>
+            </>
+          ) : failed ? (
+            <>
+              <PillButton
+                variant="secondary"
+                disabled={busy}
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </PillButton>
+              <PillButton disabled={busy} onClick={onPrepare}>
+                {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                Try again
+              </PillButton>
+            </>
           ) : (
-            <PillButton disabled={busy || preparing} onClick={onPrepare}>
-              {busy || preparing ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : null}
-              Prepare inventory
+            <PillButton
+              variant="secondary"
+              disabled={busy}
+              onClick={() => onOpenChange(false)}
+            >
+              {checking ? "Cancel" : "Close"}
             </PillButton>
           )}
-        </>
-      }
-    >
-      <div className="space-y-5">
-        <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-            <MessageSquareLock className="size-4" />
-          </span>
-          <div>
-            <p className={`text-foreground ${typeStyle("body.medium")}`}>
-              This action cannot be undone in Glass.
-            </p>
-            <p
-              className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              Only your personal, direct iMessage conversations are included.
-              Organization-visible and group conversations are excluded.
-            </p>
-          </div>
-        </div>
-
-        {preparing ? (
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-foreground/[0.02] p-3 text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            <span className={typeStyle("body.default")}>
-              Counting eligible conversations and attachments…
-            </span>
-          </div>
-        ) : null}
-
-        {failed ? (
-          <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3">
-            <p className={`text-destructive ${typeStyle("body.medium")}`}>
-              Glass could not finish the deletion workflow
-            </p>
-            <p
-              className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              Prepare a fresh inventory to retry safely from the remaining
-              history.
-            </p>
-          </div>
-        ) : null}
-
-        {ready ? (
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              ["Conversations", preview.threadCount],
-              ["Messages", preview.messageCount],
-              ["Files", preview.fileCount],
-            ].map(([label, value]) => (
-              <div
-                key={String(label)}
-                className="rounded-lg border border-border bg-foreground/[0.02] p-3"
-              >
-                <p className={`text-foreground ${typeStyle("heading.micro")}`}>
-                  {String(value)}
-                </p>
-                <p
-                  className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
-                >
-                  {String(label)}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {ready && preview.readyAt ? (
-          <p
-            className={`text-muted-foreground ${typeStyle("caption.default")}`}
-          >
-            Inventory prepared{" "}
-            {dayjs(preview.readyAt).format("MMM D, YYYY h:mm A")}. It expires
-            after five minutes so the confirmation stays current.
-          </p>
-        ) : null}
-
-        {blocked ? (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
-            <p
-              className={`text-amber-800 dark:text-amber-300 ${typeStyle("body.medium")}`}
-            >
-              An iMessage response is active
-            </p>
-            <p
-              className={`mt-1 text-amber-800/80 dark:text-amber-300/80 ${typeStyle("body.default")}`}
-            >
-              Wait for it to finish, then prepare a fresh inventory before
-              deleting.
-            </p>
-          </div>
-        ) : null}
-
-        {(preview?.threadCount ?? 0) === 0 && ready ? (
-          <div className="flex items-start gap-2 rounded-lg border border-border p-3">
-            <ShieldCheck className="mt-0.5 size-4 text-emerald-600 dark:text-emerald-400" />
-            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-              Glass found no eligible personal direct-iMessage history.
-            </p>
-          </div>
-        ) : null}
-      </div>
-    </SettingsDrawer>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -40,7 +40,7 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { typeStyle } from "@/lib/typography";
 import {
-  ImessagePrivacyDrawer,
+  ImessagePrivacyDialog,
   ImessagePrivacyPanel,
   ProfileSectionTabs,
   useImessagePrivacy,
@@ -116,7 +116,7 @@ export default function ProfilePage() {
   const [profileSection, setProfileSection] = useState<"profile" | "privacy">(
     "profile",
   );
-  const [privacyDrawerOpen, setPrivacyDrawerOpen] = useState(false);
+  const [privacyDialogOpen, setPrivacyDialogOpen] = useState(false);
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const [persistedValues, setPersistedValues] = useState<ProfileValues | null>(
     null,
@@ -125,7 +125,7 @@ export default function ProfilePage() {
   const privacyActions = useImessagePrivacyActions(
     imessagePrivacy,
     setPrivacyBusy,
-    setPrivacyDrawerOpen,
+    setPrivacyDialogOpen,
   );
 
   useEffect(() => {
@@ -390,17 +390,17 @@ export default function ProfilePage() {
               ) : null}
             </div>
           </SettingsDrawer>
-          <ImessagePrivacyDrawer
-            open={privacyDrawerOpen}
-            onOpenChange={setPrivacyDrawerOpen}
-            state={imessagePrivacy.state}
-            busy={privacyBusy}
-            onPrepare={() => void privacyActions.prepare()}
-            onConfirm={() => void privacyActions.confirm()}
-          />
         </>
       }
     >
+      <ImessagePrivacyDialog
+        open={privacyDialogOpen}
+        onOpenChange={setPrivacyDialogOpen}
+        state={imessagePrivacy.state}
+        busy={privacyBusy}
+        onPrepare={() => void privacyActions.prepare()}
+        onConfirm={() => void privacyActions.confirm()}
+      />
       <ProfileSectionTabs
         active={profileSection}
         onChange={setProfileSection}
@@ -555,7 +555,7 @@ export default function ProfilePage() {
             state={imessagePrivacy.state}
             busy={privacyBusy}
             onPrepare={() => void privacyActions.prepare()}
-            onReview={() => setPrivacyDrawerOpen(true)}
+            onReview={() => setPrivacyDialogOpen(true)}
           />
         </FadeIn>
       )}
