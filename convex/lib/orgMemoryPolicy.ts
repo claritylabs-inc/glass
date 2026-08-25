@@ -1,3 +1,8 @@
+import {
+  normalizedSearchText,
+  uniqueSearchTerms,
+} from "./searchTokenizer";
+
 export type OrgMemoryType = "fact" | "preference" | "risk_note" | "observation";
 export type OrgMemorySource =
   | "extraction"
@@ -6,6 +11,15 @@ export type OrgMemorySource =
   | "email"
   | "imessage"
   | "slack";
+
+export type OrgMemoryProvenance = {
+  kind: "organization_fact";
+  derivation:
+    | "company_profile_extraction"
+    | "conversation_extraction"
+    | "agent_tool";
+  schemaVersion: "organization-fact-v1";
+};
 
 export const COMPANY_CONTEXT_MEMORY_MAX_LENGTH = 280;
 
@@ -40,18 +54,8 @@ const UNSAFE_COMPANY_MEMORY_PATTERNS = [
   /\b[A-Z]{2,}(?:-[A-Z0-9]{2,}){2,}\b/,
 ];
 
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
 function orgNameTokens(orgName: string | undefined | null) {
-  return normalizeText(orgName ?? "")
-    .split(" ")
+  return uniqueSearchTerms(orgName ?? "")
     .filter((token) => token.length > 1 && !ORG_SUFFIXES.has(token));
 }
 
@@ -59,8 +63,8 @@ export function mentionsOrganization(content: string, orgName?: string | null) {
   const tokens = orgNameTokens(orgName);
   if (tokens.length === 0) return true;
 
-  const normalizedContent = normalizeText(content);
-  const normalizedOrgName = normalizeText(orgName ?? "");
+  const normalizedContent = normalizedSearchText(content);
+  const normalizedOrgName = normalizedSearchText(orgName ?? "");
   if (normalizedOrgName && normalizedContent.includes(normalizedOrgName)) {
     return true;
   }
@@ -77,16 +81,11 @@ export function rankOrgMemoryForQuery<T extends OrgMemoryContextItem>(
   memories: T[],
   limit: number,
 ): T[] {
-  const normalizedQuery = queryText.trim().toLowerCase();
-  const terms = Array.from(new Set(
-    normalizedQuery
-      .split(/[^a-z0-9$.,%-]+/)
-      .map((term) => term.trim())
-      .filter((term) => term.length > 2),
-  ));
+  const normalizedQuery = normalizedSearchText(queryText);
+  const terms = uniqueSearchTerms(queryText, { minimumLength: 3 });
   return memories
     .map((memory) => {
-      const content = memory.content.toLowerCase();
+      const content = normalizedSearchText(memory.content);
       const score =
         (normalizedQuery && content.includes(normalizedQuery) ? 8 : 0) +
         terms.reduce(
@@ -108,12 +107,19 @@ export function isCompanyContextMemory(args: {
   content: string;
   orgName?: string | null;
   policyId?: unknown;
+  provenance?: OrgMemoryProvenance;
 }) {
   const content = normalizeMemoryContent(args.content);
   if (args.type !== "fact") return false;
   if (!content || content.length > COMPANY_CONTEXT_MEMORY_MAX_LENGTH) return false;
   if (args.policyId) return false;
   if (!mentionsOrganization(content, args.orgName)) return false;
+  if (
+    args.provenance?.kind === "organization_fact" &&
+    args.provenance.schemaVersion === "organization-fact-v1"
+  ) {
+    return true;
+  }
   if (/^(we|our|i|the user|user)\b/i.test(content)) return false;
   return !UNSAFE_COMPANY_MEMORY_PATTERNS.some((pattern) => pattern.test(content));
 }

@@ -3,14 +3,14 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { SendIdempotency, type SendResult } from "./idempotency.js";
-import { toSlackMarkdown, toSlackMrkdwn } from "./mrkdwn.js";
 
 type SendRequest = {
   clientMessageId: string;
   teamId: string;
   channelId: string;
   threadTs?: string;
-  text: string;
+  mrkdwnText?: string;
+  text?: string;
   blocks?: SlackBlock[];
   attachments?: Array<{ url: string; filename: string; contentType: string }>;
 };
@@ -19,7 +19,8 @@ type UpdateRequest = {
   teamId: string;
   channelId: string;
   messageTs: string;
-  text: string;
+  mrkdwnText?: string;
+  text?: string;
   blocks?: SlackBlock[];
 };
 type StatusRequest = {
@@ -54,7 +55,8 @@ type StreamAppendRequest = {
   }>;
 };
 type StreamStopRequest = StreamAppendRequest & {
-  text: string;
+  markdownText?: string;
+  text?: string;
   blocks?: SlackBlock[];
 };
 type EphemeralRequest = {
@@ -190,12 +192,16 @@ function validateSend(input: SendRequest) {
     throw new Error("clientMessageId, teamId, and channelId are required");
   }
   if (
-    !input.text.trim() &&
+    !transportMrkdwnText(input).trim() &&
     !input.blocks?.length &&
     !input.attachments?.length
   ) {
     throw new Error("A message or attachment is required");
   }
+}
+
+function transportMrkdwnText(input: { mrkdwnText?: string; text?: string }) {
+  return input.mrkdwnText ?? input.text ?? "";
 }
 
 async function fetchCustomerInstallation(
@@ -493,6 +499,7 @@ async function uploadSlackFile(args: {
 
 async function sendSlack(input: SendRequest): Promise<SendResult> {
   validateSend(input);
+  const mrkdwnText = transportMrkdwnText(input);
   if (mode === "mock") {
     const attachmentFailures = (input.attachments ?? []).flatMap((file) => {
       const key = `${input.clientMessageId}:${file.filename}`;
@@ -513,13 +520,13 @@ async function sendSlack(input: SendRequest): Promise<SendResult> {
 
   const installation = await slackInstallation(input.teamId);
   let messageId: string | undefined;
-  if (input.text.trim() || input.blocks?.length) {
+  if (mrkdwnText.trim() || input.blocks?.length) {
     const sent = await slackApi<SlackResponse & { ts?: string }>(
       "chat.postMessage",
       installation.botToken,
       {
         channel: input.channelId,
-        text: toSlackMrkdwn(input.text),
+        text: mrkdwnText,
         ...(input.blocks?.length ? { blocks: input.blocks } : {}),
         mrkdwn: true,
         unfurl_links: false,
@@ -570,7 +577,7 @@ async function updateSlackMessage(input: UpdateRequest) {
     {
       channel: input.channelId,
       ts: input.messageTs,
-      text: toSlackMrkdwn(input.text),
+      text: transportMrkdwnText(input),
       blocks: input.blocks ?? [],
     },
   );
@@ -602,7 +609,10 @@ async function addSlackReaction(input: ReactionRequest) {
       name: input.name,
     });
   } catch (error) {
-    if (!(error instanceof SlackProviderError) || error.code !== "already_reacted") {
+    if (
+      !(error instanceof SlackProviderError) ||
+      error.code !== "already_reacted"
+    ) {
       throw error;
     }
   }
@@ -619,7 +629,10 @@ async function removeSlackReaction(input: ReactionRequest) {
       name: input.name,
     });
   } catch (error) {
-    if (!(error instanceof SlackProviderError) || error.code !== "no_reaction") {
+    if (
+      !(error instanceof SlackProviderError) ||
+      error.code !== "no_reaction"
+    ) {
       throw error;
     }
   }
@@ -664,7 +677,7 @@ async function appendSlackStream(input: StreamAppendRequest) {
     channel: input.channelId,
     ts: input.messageTs,
     ...(input.markdownText?.trim()
-      ? { markdown_text: toSlackMarkdown(input.markdownText) }
+      ? { markdown_text: input.markdownText }
       : {}),
     ...(taskChunks.length ? { chunks: taskChunks } : {}),
   });
@@ -675,15 +688,14 @@ async function stopSlackStream(input: StreamStopRequest) {
   if (mode === "mock") return { messageId: input.messageTs };
   const installation = await slackInstallation(input.teamId);
   const taskChunks = streamTaskChunks(input.tasks);
+  const markdownText = input.markdownText ?? input.text ?? "";
   const stopped = await slackApi<SlackResponse & { ts?: string }>(
     "chat.stopStream",
     installation.botToken,
     {
       channel: input.channelId,
       ts: input.messageTs,
-      ...(input.text.trim()
-        ? { markdown_text: toSlackMarkdown(input.text) }
-        : {}),
+      ...(markdownText.trim() ? { markdown_text: markdownText } : {}),
       ...(input.blocks?.length ? { blocks: input.blocks } : {}),
       ...(taskChunks.length ? { chunks: taskChunks } : {}),
     },

@@ -15,6 +15,7 @@ import {
   type SlackBlock,
 } from "../lib/slackBlocks";
 import { MAX_POLICY_CARDS_PER_TURN } from "../lib/agentPolicyPresentation";
+import { renderSlackStreamingMarkdown } from "../lib/transportRenderers";
 
 const internalApi = internal as any;
 const WORKER_TIMEOUT_MS = 30_000;
@@ -91,10 +92,19 @@ function hashPayload(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+const CLASSIC_BLOCK_FALLBACK_CODES = new Set([
+  "invalid_blocks",
+  "msg_blocks_too_long",
+  "msg_blocks_too_many",
+  "unsupported_block_type",
+  "unknown_block_type",
+]);
+
 function fallbackEligible(error: unknown): boolean {
-  const value = error instanceof Error ? error.message : String(error);
-  return /invalid_blocks|msg_blocks_too_(?:long|many)|unsupported|unknown_type/i.test(
-    value,
+  return Boolean(
+    error instanceof SlackPresentationError &&
+    error.providerErrorCode &&
+    CLASSIC_BLOCK_FALLBACK_CODES.has(error.providerErrorCode),
   );
 }
 
@@ -297,10 +307,7 @@ export const setReaction = internalAction({
     const name = processingReactionName(args.name);
     const previousName =
       presentation.processingReaction ?? SLACK_DEFAULT_PROCESSING_REACTION;
-    const messageTs = await sourceMessageTimestamp(
-      ctx,
-      args.threadMessageId,
-    );
+    const messageTs = await sourceMessageTimestamp(ctx, args.threadMessageId);
     const added = await bestEffortReaction({
       operation: "add",
       teamId: presentation.teamId,
@@ -317,10 +324,10 @@ export const setReaction = internalAction({
       messageTs,
       name: previousName,
     });
-    await ctx.runMutation(
-      internalApi.slackPresentation.setProcessingReaction,
-      { id: presentation._id, processingReaction: name },
-    );
+    await ctx.runMutation(internalApi.slackPresentation.setProcessingReaction, {
+      id: presentation._id,
+      processingReaction: name,
+    });
     return { applied: true, name };
   },
 });
@@ -381,12 +388,15 @@ export const finish = internalAction({
 
     const deliver = async (blocks: SlackBlock[]) => {
       let providerMessageId = presentation.providerMessageId;
+      const renderedText = formatSlackAnswerText(message.content);
       if (providerMessageId && presentation.mode === "stream") {
+        const markdownText = renderSlackStreamingMarkdown(message.content);
         await workerRequest("/stream/stop", {
           teamId: target.teamId,
           channelId: target.channelId,
           messageTs: providerMessageId,
-          text: message.content,
+          markdownText,
+          text: markdownText,
           blocks,
         });
       } else if (providerMessageId) {
@@ -394,7 +404,8 @@ export const finish = internalAction({
           teamId: target.teamId,
           channelId: target.channelId,
           messageTs: providerMessageId,
-          text: message.content,
+          mrkdwnText: renderedText,
+          text: renderedText,
           blocks,
         });
       } else {
@@ -403,7 +414,8 @@ export const finish = internalAction({
           teamId: target.teamId,
           channelId: target.channelId,
           threadTs: presentation.threadTs,
-          text: message.content,
+          mrkdwnText: renderedText,
+          text: renderedText,
           blocks,
         });
         providerMessageId = sent.messageId;
@@ -477,8 +489,7 @@ export const clearReaction = internalAction({
       channelId: presentation.channelId,
       messageTs: await sourceMessageTimestamp(ctx, args.threadMessageId),
       name:
-        presentation.processingReaction ??
-        SLACK_DEFAULT_PROCESSING_REACTION,
+        presentation.processingReaction ?? SLACK_DEFAULT_PROCESSING_REACTION,
     });
   },
 });

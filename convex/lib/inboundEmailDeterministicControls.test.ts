@@ -5,7 +5,10 @@ import {
   type InboundEmailDraftControl,
 } from "./inboundEmailDeterministicControls";
 
-function draft(id: string, subject = "Coverage update"): InboundEmailDraftControl {
+function draft(
+  id: string,
+  subject = "Coverage update",
+): InboundEmailDraftControl {
   return {
     _id: id as Id<"pendingEmails">,
     recipientEmail: "client@example.com",
@@ -33,7 +36,7 @@ describe("runInboundEmailDeterministicControls", () => {
     expect(ctx.runAction).not.toHaveBeenCalled();
   });
 
-  test("sends all drafts for short send-all commands", async () => {
+  test("does not send thread-global drafts from a prose command", async () => {
     const ctx = {
       runAction: vi.fn(async () => null),
       runMutation: vi.fn(async () => null),
@@ -44,8 +47,8 @@ describe("runInboundEmailDeterministicControls", () => {
         messageText: "send all",
         draftEmails: [draft("draft-1"), draft("draft-2")],
       }),
-    ).resolves.toEqual({ responseBody: "Sent 2 draft emails." });
-    expect(ctx.runAction).toHaveBeenCalledTimes(2);
+    ).resolves.toBeNull();
+    expect(ctx.runAction).not.toHaveBeenCalled();
   });
 
   test("updates a single draft recipient from a standalone email address", async () => {

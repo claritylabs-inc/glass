@@ -41,7 +41,6 @@ export async function runInboundEmailDeterministicControls(
     draftEmailIds: args.draftEmails.map((draftEmail) => draftEmail._id),
     pendingEmailIds: [],
     allowDraftList: true,
-    allowDraftSendAll: true,
     maxControlTextLength: args.maxControlTextLength ?? 120,
   });
   if (
@@ -49,7 +48,6 @@ export async function runInboundEmailDeterministicControls(
     ![
       "show_draft_emails",
       "update_single_draft_recipient",
-      "send_draft_emails",
     ].includes(command.kind)
   ) {
     return null;

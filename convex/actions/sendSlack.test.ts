@@ -54,7 +54,7 @@ describe("sendSlack", () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(payload).toMatchObject({
-        text: "",
+        mrkdwnText: "I couldn't complete that request.",
         blocks: [{ type: "section" }],
       });
       return Response.json({ messageId: "1800000000.500" });
@@ -127,7 +127,7 @@ describe("sendSlack", () => {
       const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
       payloads.push(payload);
       return Response.json({
-        messageId: payload.text ? rootMessageTs : "1800000000.701",
+        messageId: payload.mrkdwnText ? rootMessageTs : "1800000000.701",
       });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -156,13 +156,13 @@ describe("sendSlack", () => {
     expect(payloads).toHaveLength(2);
     expect(payloads[0]).toMatchObject({
       clientMessageId: "policy-delivery:fixture:slack:text",
-      text: "Your policy is ready.",
+      mrkdwnText: "Your policy is ready.",
     });
     expect(payloads[0]).not.toHaveProperty("threadTs");
     expect(payloads[1]).toMatchObject({
       clientMessageId: `policy-delivery:fixture:slack:file:${seeded.fileId}`,
       threadTs: rootMessageTs,
-      text: "",
+      mrkdwnText: "",
       attachments: [{ filename: "policy.pdf", contentType: "application/pdf" }],
     });
 

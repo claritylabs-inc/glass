@@ -1,4 +1,4 @@
-import type { ModelMessage } from "ai";
+import type { JSONValue, ModelMessage } from "ai";
 
 export type AgentToolSurface = "web" | "email" | "imessage" | "slack" | "mcp";
 
@@ -43,6 +43,7 @@ export type AgentHistoryMessage = {
   _id: string;
   _creationTime: number;
   role: "user" | "agent" | "system";
+  messageKind?: "conversation" | "workflow_status" | "channel_sync";
   content: string;
   status?: string;
   userName?: string;
@@ -53,6 +54,13 @@ export type AgentHistoryMessage = {
   attachments?: Array<{ filename: string }>;
   toolArtifacts?: unknown;
   usedTools?: unknown;
+};
+
+export type PrivateAgentHistoryMetadata = {
+  tools: string[];
+  workflowOutcomes: JSONValue[];
+  attachmentNames: string[];
+  attachmentFailures: string[];
 };
 
 export type SelectedAgentHistory<T extends AgentHistoryMessage> = {
@@ -74,7 +82,8 @@ function isModelHistoryMessage(message: AgentHistoryMessage): boolean {
   }
   if (message.role === "system") return false;
   if (
-    message.responseMessageId?.endsWith(":status") ||
+    message.messageKind === "workflow_status" ||
+    message.messageKind === "channel_sync" ||
     !message.content.trim()
   ) {
     return false;
@@ -198,6 +207,11 @@ export function buildTextModelHistory(
       return [{ role: "user", content }];
     }
     if (message.role !== "agent" || !message.content.trim()) return [];
+    const privateHistory = buildPrivateAgentHistoryMetadata({
+      toolArtifacts: message.toolArtifacts,
+      usedTools: message.usedTools,
+      attachments: message.attachments,
+    });
     return [
       {
         role: "assistant",
@@ -207,6 +221,7 @@ export function buildTextModelHistory(
           usedTools: message.usedTools,
           attachments: message.attachments,
         }),
+        providerOptions: { glass: { privateHistory } },
       },
     ];
   });
@@ -260,36 +275,32 @@ export function buildAssistantMessageContentWithArtifacts(args: {
   usedTools?: unknown;
   attachments?: unknown;
 }): string {
-  const content = args.content.trim();
-  const usedTools = dedupeStrings(stringArray(args.usedTools));
-  const attachedFiles = dedupeStrings(attachmentNames(args.attachments));
-  const failedFiles = collectAttachmentFailureNames(args.toolArtifacts);
-
-  if (
-    usedTools.length === 0 &&
-    attachedFiles.length === 0 &&
-    failedFiles.length === 0
-  ) {
-    return args.content;
-  }
-
-  const trailerParts: string[] = [];
-  if (usedTools.length > 0) {
-    trailerParts.push(`tools: ${usedTools.join(", ")}`);
-  }
-  if (attachedFiles.length > 0) {
-    trailerParts.push(`attached: ${attachedFiles.map(quote).join(", ")}`);
-  }
-  if (failedFiles.length > 0) {
-    trailerParts.push(
-      `attachment failed: ${failedFiles.map(quote).join(", ")}`,
-    );
-  }
-
-  return `${content}\n\n[tool activity: ${trailerParts.join("; ")}]`;
+  return args.content;
 }
 
-const INTERNAL_TOOL_ACTIVITY_PATTERN = /\[tool activity:[^\r\n]*\]/gi;
+export function buildPrivateAgentHistoryMetadata(args: {
+  toolArtifacts?: unknown;
+  usedTools?: unknown;
+  attachments?: unknown;
+}): PrivateAgentHistoryMetadata {
+  const workflowOutcomes = Array.isArray(args.toolArtifacts)
+    ? args.toolArtifacts.flatMap((artifact) => {
+        const record = objectRecord(artifact);
+        return record?.type === "workflow_outcome" && isJsonValue(record.data)
+          ? [record.data]
+          : [];
+      })
+    : [];
+  return {
+    tools: dedupeStrings(stringArray(args.usedTools)),
+    workflowOutcomes,
+    attachmentNames: dedupeStrings(attachmentNames(args.attachments)),
+    attachmentFailures: collectAttachmentFailureNames(args.toolArtifacts),
+  };
+}
+
+const LEGACY_TOOL_ACTIVITY_TRAILER_PATTERN =
+  /(?:\r?\n){2}\[tool activity:[^\r\n]*\][ \t]*(?:\r?\n)*$/i;
 
 /**
  * Tool activity trailers are private model-history context. A model may echo
@@ -297,11 +308,8 @@ const INTERNAL_TOOL_ACTIVITY_PATTERN = /\[tool activity:[^\r\n]*\]/gi;
  * channel removes it again before persistence or delivery.
  */
 export function stripInternalAgentActivity(content: string): string {
-  return content
-    .replace(INTERNAL_TOOL_ACTIVITY_PATTERN, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  if (!LEGACY_TOOL_ACTIVITY_TRAILER_PATTERN.test(content)) return content;
+  return content.replace(LEGACY_TOOL_ACTIVITY_TRAILER_PATTERN, "").trimEnd();
 }
 
 function dedupeStrings(values: string[]): string[] {
@@ -313,10 +321,6 @@ function dedupeStrings(values: string[]): string[] {
     result.push(value);
   }
   return result;
-}
-
-function quote(value: string): string {
-  return `"${value.replace(/"/g, "'")}"`;
 }
 
 function stringArray(value: unknown): string[] {
@@ -338,6 +342,25 @@ function attachmentNames(value: unknown): string[] {
 function objectRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function isJsonValue(value: unknown): value is JSONValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  const record = objectRecord(value);
+  return (
+    record !== null &&
+    Object.values(record).every(
+      (item) => item === undefined || isJsonValue(item),
+    )
+  );
 }
 
 function collectAttachmentFailureNames(artifacts: unknown): string[] {

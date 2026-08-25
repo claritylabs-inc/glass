@@ -14,6 +14,7 @@ describe("Slack Block Kit renderers", () => {
           contentType: "application/pdf",
           size: 1024,
           fileId: "storage-1" as any,
+          kind: "coi",
         }],
         agentSteps: [
           { type: "reasoning", text: "private reasoning" },
@@ -59,7 +60,7 @@ describe("Slack Block Kit renderers", () => {
         "✅ :white_check_mark: **Policy:** [Open](https://example.test/policy) with *review notes*",
       ),
     ).toBe(
-      "*Policy:* <https://example.test/policy|Open> with _review notes_",
+      ":white_check_mark: *Policy:* <https://example.test/policy|Open> with _review notes_",
     );
   });
 });

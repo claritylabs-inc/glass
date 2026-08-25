@@ -5,10 +5,6 @@ import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { Mail, MessageCircle } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
-import {
-  QuotedContent,
-  splitQuotedReply,
-} from "@/components/conversation-message";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { OperatorSidebar } from "../operator-sidebar";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
@@ -100,9 +96,7 @@ function Timeline({
     <div className="flex flex-col gap-4">
       {messages.map((log) => {
         const isInbound = log.direction === "inbound";
-        const { content, quoted } = isInbound
-          ? splitQuotedReply(log.content)
-          : { content: log.content, quoted: null };
+        const content = log.content;
 
         return (
           <div
@@ -131,7 +125,6 @@ function Timeline({
               <ProseMarkdown gfm breaks compact={isInbound}>
                 {content}
               </ProseMarkdown>
-              {quoted ? <QuotedContent text={quoted} /> : null}
             </ThreadMessageBubble>
           </div>
         );

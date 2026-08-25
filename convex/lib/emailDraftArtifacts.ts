@@ -35,7 +35,6 @@ export type EmailDraftArtifactParams = {
   subject: string;
   body: string;
   attachments: EmailAttachmentMeta[];
-  allowMultipleCoiAttachments?: boolean;
   referencedPolicyIds?: Id<"policies">[];
   sendBlockedReason?: string;
 };
@@ -94,7 +93,6 @@ export async function upsertEmailDraftArtifact(
       renderedHtml: emailPayload.html,
       attachments:
         params.attachments.length > 0 ? params.attachments : undefined,
-      allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
       referencedPolicyIds: params.referencedPolicyIds,
       sendBlockedReason: params.sendBlockedReason,
       chatMessageId: context.chatMessageId,
@@ -140,7 +138,6 @@ export async function upsertEmailDraftArtifact(
     renderedText: emailPayload.text,
     renderedHtml: emailPayload.html,
     attachments: params.attachments.length > 0 ? params.attachments : undefined,
-    allowMultipleCoiAttachments: params.allowMultipleCoiAttachments,
     referencedPolicyIds: params.referencedPolicyIds,
     sendBlockedReason: params.sendBlockedReason,
     status: "draft",

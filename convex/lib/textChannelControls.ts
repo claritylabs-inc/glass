@@ -4,22 +4,27 @@ import {
   isPendingEmailRestoreIntent,
 } from "./emailCancelIntent";
 import {
-  isSendAllEmailDraftsIntent,
   isShowMoreEmailDraftIntent,
 } from "./emailDraftSummary";
-import { extractEmailAddress } from "./emailAddress";
+import { parseStandaloneEmailAddress } from "./emailAddress";
 import type { EmailCommand } from "./emailWorkflow";
 
-const DRAFT_APPROVAL_PATTERN =
-  /^(yes|yep|yeah|ok|okay|approved|approve|confirmed|confirm|send|send it|send please|looks good|this is good|go ahead|do it|please send)\.?!?$/i;
+const CONTEXTUAL_CONFIRMATIONS = new Set([
+  "yes",
+  "confirm",
+  "send",
+  "send it",
+]);
+
+export function isContextualConfirmation(text: string) {
+  const normalized = text.trim().toLowerCase().replace(/[.!?]+$/, "").trim();
+  return CONTEXTUAL_CONFIRMATIONS.has(normalized);
+}
 
 export type TextChannelEmailControl<EmailId> = EmailCommand<EmailId>;
 
 function extractStandaloneEmailAddress(text: string): string | null {
-  if (!/^\s*<?[\w.+-]+@[\w.-]+\.\w+>?\s*[.!?]?\s*$/.test(text)) {
-    return null;
-  }
-  return extractEmailAddress(text);
+  return parseStandaloneEmailAddress(text);
 }
 
 export function resolveTextChannelEmailControl<EmailId>(args: {
@@ -31,7 +36,6 @@ export function resolveTextChannelEmailControl<EmailId>(args: {
   pendingEmailIds: EmailId[];
   allowDraftApproval?: boolean;
   allowDraftList?: boolean;
-  allowDraftSendAll?: boolean;
   maxControlTextLength?: number;
 }): TextChannelEmailControl<EmailId> | null {
   const text = args.messageText.trim();
@@ -68,15 +72,12 @@ export function resolveTextChannelEmailControl<EmailId>(args: {
     if (args.allowDraftList && isShowMoreEmailDraftIntent(text)) {
       return { kind: "show_draft_emails" };
     }
-    if (args.allowDraftSendAll && isSendAllEmailDraftsIntent(text)) {
-      return { kind: "send_draft_emails", emailIds: args.draftEmailIds };
-    }
     const draftApprovalEmailIds =
       args.draftApprovalEmailIds ?? args.draftEmailIds;
     if (
       args.allowDraftApproval &&
       draftApprovalEmailIds.length > 0 &&
-      DRAFT_APPROVAL_PATTERN.test(text)
+      isContextualConfirmation(text)
     ) {
       return { kind: "send_draft_emails", emailIds: draftApprovalEmailIds };
     }

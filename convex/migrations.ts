@@ -150,6 +150,17 @@ export const backfillPolicyDeliveryAttemptOwners = migrations.define({
   },
 });
 
+export const unsetLegacyCoiAttachmentAuthorization = migrations.define({
+  table: "pendingEmails",
+  batchSize: 100,
+  migrateOne: async (ctx, pendingEmail) => {
+    if (pendingEmail.allowMultipleCoiAttachments === undefined) return;
+    await ctx.db.patch(pendingEmail._id, {
+      allowMultipleCoiAttachments: undefined,
+    });
+  },
+});
+
 export const runDeclarationFactsBackfill = migrations.runner([
   internal.migrations.backfillDeclarationFacts,
   internal.migrations.syncDeclarationFactProfiles,
@@ -164,4 +175,8 @@ export const runPolicyDeliveryOwnerBackfill = migrations.runner([
   internal.migrations.backfillPolicyDeliveryRuleOwners,
   internal.migrations.backfillPolicyDeliveryJobOwners,
   internal.migrations.backfillPolicyDeliveryAttemptOwners,
+]);
+
+export const runLegacyCoiAttachmentAuthorizationCleanup = migrations.runner([
+  internal.migrations.unsetLegacyCoiAttachmentAuthorization,
 ]);

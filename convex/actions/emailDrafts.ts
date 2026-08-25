@@ -175,7 +175,7 @@ export const sendForMcp = internalAction({
     }
     await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
       id: args.draftId,
-      userConfirmedDraft: true,
+      authorization: { kind: "mcp_explicit_action" },
     });
     const updated = (await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: args.draftId,
@@ -214,7 +214,7 @@ export const sendManyForMcp = internalAction({
           internal.actions.sendPendingEmail.sendDraftInternal,
           {
             id: draft._id,
-            userConfirmedDraft: true,
+            authorization: { kind: "mcp_explicit_action" },
           },
         );
         sent.push({ id: draft._id, recipientEmail: draft.recipientEmail });

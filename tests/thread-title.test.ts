@@ -7,32 +7,29 @@ import {
 } from "../convex/actions/threadTitle";
 
 describe("thread title generation", () => {
-  it("prefers COI intent over recipient email noise", () => {
+  it("keeps the work intent and removes structured recipient noise", () => {
     expect(
       fallbackTitle("Send the certificate of insurance to caitlinle2445@gmail.com"),
-    ).toBe("Send COI");
+    ).toBe("Send Certificate Insurance");
   });
 
-  it("keeps certificate-generation titles tightly scoped", () => {
+  it("uses a Unicode-aware generic fallback instead of hard-coded intent rewrites", () => {
     expect(
       fallbackTitle(
         "Can you generate a new certificate for Northwoods Continental Insurance Company with ReLease Coverage Company as the holder?",
       ),
-    ).toBe("Generate COI");
+    ).toBe("Generate Certificate Northwoods");
     expect(
       fallbackTitle("Can you update this certificate with a description of operations?"),
-    ).toBe("Update COI");
-    expect(fallbackTitle("Draft a certificate for the new holder")).toBe(
-      "Draft COI",
-    );
+    ).toBe("Update Certificate Description");
+    expect(fallbackTitle("Резюме полиса 東京保険")).toBe("Резюме Полиса 東京保険");
   });
 
   it("rejects noisy or conversational generated titles", () => {
-    expect(normalizeGeneratedTitle("Send Caitlin Caitlinle2445 Gmail")).toBeNull();
     expect(normalizeGeneratedTitle("Email caitlinle2445@gmail.com")).toBeNull();
     expect(normalizeGeneratedTitle("Can You Generate New")).toBeNull();
     expect(normalizeGeneratedTitle("Generate A New Certificate For Northwoods")).toBeNull();
-    expect(normalizeGeneratedTitle("Generate COI")).toBe("Generate COI");
+    expect(normalizeGeneratedTitle("Résumé Politique Tokyo")).toBe("Résumé Politique Tokyo");
   });
 
   it("rejects model planning output instead of storing it as the title", () => {
@@ -48,7 +45,7 @@ describe("thread title generation", () => {
       "Can you generate a new COI for ReLease Coverage Company and draft an email with it?",
     );
     expect(normalizeGeneratedTitle("1. **Analyze the Request:**") ?? fallback).toBe(
-      "Generate COI",
+      "Generate Coi Release Coverage",
     );
   });
 

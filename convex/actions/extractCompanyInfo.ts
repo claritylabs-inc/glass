@@ -158,6 +158,11 @@ ${content}`,
       type: "fact" as const,
       content,
       source: "extraction" as const,
+      provenance: {
+        kind: "organization_fact" as const,
+        derivation: "company_profile_extraction" as const,
+        schemaVersion: "organization-fact-v1" as const,
+      },
     }));
 
   if (memoryItems.length > 0) {

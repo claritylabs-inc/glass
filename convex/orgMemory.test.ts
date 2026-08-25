@@ -106,6 +106,40 @@ describe("orgMemory", () => {
     expect(await t.query(listByOrgFn, { orgId })).toEqual([]);
   });
 
+  test("stores typed server-derived facts that contain insurance homonyms", async () => {
+    const t = convexTest(schema, modules);
+    const orgId = await t.run((ctx) =>
+      ctx.db.insert("organizations", {
+        name: "Clarity Labs Inc.",
+        type: "client",
+      }),
+    );
+
+    const memoryId = await t.mutation(upsertFn, {
+      orgId,
+      type: "fact",
+      content: "Clarity Labs operates a carrier integration support team.",
+      source: "extraction",
+      provenance: {
+        kind: "organization_fact",
+        derivation: "company_profile_extraction",
+        schemaVersion: "organization-fact-v1",
+      },
+    });
+
+    expect(memoryId).not.toBeNull();
+    expect(await t.query(listByOrgFn, { orgId })).toMatchObject([
+      {
+        content: "Clarity Labs operates a carrier integration support team.",
+        provenance: {
+          kind: "organization_fact",
+          derivation: "company_profile_extraction",
+          schemaVersion: "organization-fact-v1",
+        },
+      },
+    ]);
+  });
+
   test("lets org admins edit and delete memory", async () => {
     const t = convexTest(schema, modules);
     const { adminUserId, memoryId, orgId } = await t.run(async (ctx) => {

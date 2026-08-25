@@ -64,4 +64,30 @@ describe("agent prompt retrieval bounds", () => {
       rankOrgMemoryForQuery("battery manufacturing operations", memories, 2),
     ).toEqual([memories[1], memories[0]]);
   });
+
+  it("retrieves accented and non-Latin policy and memory terms", () => {
+    const nodes = [
+      {
+        policyId: "policy-zurich",
+        nodeId: "node-zurich",
+        title: "Zürich 東京 Schedule",
+        kind: "schedule",
+        path: "forms.zurich",
+        description: "Coverage for São Paulo operations",
+        textExcerpt: "東京 office details",
+        order: 1,
+      },
+    ];
+    expect(rankSourceNodesForQuery("ZÜRICH 東京", nodes)).toMatchObject([
+      { nodeId: "node-zurich" },
+    ]);
+
+    const memories = [
+      { content: "Acme operates in São Paulo.", updatedAt: 1 },
+      { content: "Acme operates in Boston.", updatedAt: 2 },
+    ];
+    expect(rankOrgMemoryForQuery("São Paulo", memories, 1)).toEqual([
+      memories[0],
+    ]);
+  });
 });

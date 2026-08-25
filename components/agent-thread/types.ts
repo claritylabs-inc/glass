@@ -11,6 +11,9 @@ export type ThreadMessage = {
   clientMutationId?: string;
   channel: "chat" | "email" | "imessage" | "slack";
   role: "user" | "agent" | "system";
+  messageKind?: "conversation" | "workflow_status" | "channel_sync";
+  sourceThreadMessageId?: Id<"threadMessages">;
+  dedupeKey?: string;
   userId?: Id<"users">;
   userName?: string;
   operatorInitiated?: {
@@ -42,6 +45,23 @@ export type ThreadMessage = {
   subject?: string;
   content: string;
   contentHtml?: string;
+  emailContent?: {
+    rawText?: string;
+    rawHtml?: string;
+    quotedText?: string;
+    parserVersion: string;
+    parseInputTruncated?: boolean;
+    forwarded?: {
+      email: {
+        from?: { address?: string; name?: string };
+        to: { address?: string; name?: string }[];
+        cc: { address?: string; name?: string }[];
+        subject?: string;
+        date?: string;
+        body?: string;
+      };
+    };
+  };
   reasoning?: string;
   agentSteps?: AgentStep[];
   messageId?: string;
@@ -51,6 +71,7 @@ export type ThreadMessage = {
     contentType: string;
     size: number;
     fileId?: Id<"_storage">;
+    kind?: "coi" | "original_policy" | "uploaded_file" | "generated_document";
   }[];
   replyToMessageId?: Id<"threadMessages">;
   referencedPolicyIds?: Id<"policies">[];

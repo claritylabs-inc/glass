@@ -33,8 +33,9 @@ import {
   buildEmailExpertTool,
   resolveEmailAgentIdentity,
 } from "../lib/emailSubagent";
-import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
+import { pendingEmailDraftFingerprint } from "../lib/actionConfirmationFingerprint";
+import { countCoiAttachments } from "../lib/coiAttachmentGuards";
 import { buildEmailDraftTextSummary } from "../lib/emailDraftSummary";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
@@ -54,7 +55,6 @@ import {
   type ImessageAppCard,
 } from "../lib/imessageAppCards";
 import { runImessageDeterministicControls } from "../lib/imessageDeterministicControls";
-import { postProcessImessageResponseText } from "../lib/imessageResponsePostProcessing";
 import {
   buildThreadContinuityPrompt,
   buildThreadHistoryToolInstructions,
@@ -77,9 +77,8 @@ import {
   storeImessageAttachments,
 } from "../lib/imessageIngress";
 import {
-  inferRequirementImportScope,
+  decideRequirementAttachmentImport,
   requiredRequirementImportStep,
-  selectRequirementImportAttachments,
 } from "../lib/requirementAttachmentIntent";
 
 export { buildFallbackImessageChatGuid } from "../lib/imessageIngress";
@@ -403,7 +402,7 @@ export const processInbound = internalAction({
       );
       if (!injectionCheck.safe) {
         console.warn("[security] iMessage prompt injection blocked", {
-          fromPhone,
+          audit: injectionCheck.audit,
         });
         return await finish("I can't process that request.");
       }
@@ -563,6 +562,7 @@ export const processInbound = internalAction({
         {
           messageText: inboundMessageText,
           orgId,
+          userId: user._id,
           orgName: org.name,
           userName: user.name,
           userEmail: user.email,
@@ -575,7 +575,6 @@ export const processInbound = internalAction({
           draftEmails,
           pendingEmails,
           latestCancelledEmail,
-          recentConversationContext,
           history: historyForContext,
           currentMessageId: inboundThreadMessageId,
         },
@@ -670,14 +669,6 @@ export const processInbound = internalAction({
             .map((email) => String(email).toLowerCase()),
         ),
       ];
-      const brokerDirectedEmailRequest =
-        isBrokerDirectedEmailRequest(inboundMessageText);
-      const brokerRecipientEmail = brokerDirectedEmailRequest
-        ? brokerIdentity?.contactEmail
-        : undefined;
-      const brokerRecipientName = brokerDirectedEmailRequest
-        ? (brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName)
-        : undefined;
       const availableEmailAttachments = attachmentRecords
         .filter(
           (att): att is typeof att & { fileId: Id<"_storage"> } => !!att.fileId,
@@ -693,12 +684,17 @@ export const processInbound = internalAction({
           String(attachment.fileId),
         ),
       );
-      const requirementImportAttachments = selectRequirementImportAttachments(
-        inboundMessageText,
-        availableEmailAttachments,
-      );
-      const requirementImportDefaultScope =
-        inferRequirementImportScope(inboundMessageText);
+      const requirementImportResolution =
+        await decideRequirementAttachmentImport(ctx, {
+          orgId,
+          messageText: inboundMessageText,
+          attachments: availableEmailAttachments,
+        });
+      const requirementImportAttachments =
+        requirementImportResolution.authorization === "auto"
+          ? requirementImportResolution.attachments
+          : [];
+      const requirementImportDefaultScope = requirementImportResolution.scope;
       const imessageWritableOrgIds =
         agentScope.mode === "broker_portfolio"
           ? agentScope.writableOrgIds
@@ -807,13 +803,12 @@ export const processInbound = internalAction({
                 agentAddress: emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user.email,
-                defaultTo: brokerDirectedEmailRequest
-                  ? brokerRecipientEmail
-                  : user.email,
-                defaultRecipientName: brokerDirectedEmailRequest
-                  ? brokerRecipientName
-                  : user.name,
-                requireKnownRecipient: brokerDirectedEmailRequest,
+                defaultTo: user.email,
+                defaultRecipientName: user.name,
+                brokerRecipientEmail: brokerIdentity?.contactEmail,
+                brokerRecipientName:
+                  brokerIdentity?.contactName ??
+                  brokerIdentity?.brokerCompanyName,
                 missingRecipientMessage:
                   "No broker contact email is set for this organization. Add the broker contact in Settings, or send me the broker's email address first.",
                 unknownRecipientMessage:
@@ -825,9 +820,7 @@ export const processInbound = internalAction({
                 allowedRecipients,
                 availableAttachments: availableEmailAttachments,
                 referencedPolicyIds: emailReferencedPolicyIds,
-                autoSendEmails: brokerDirectedEmailRequest
-                  ? false
-                  : org.autoSendEmails === true,
+                autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 conversationContext:
                   recentConversationContext +
@@ -886,12 +879,19 @@ export const processInbound = internalAction({
       let responseText = turn.text;
       let responseAlreadySent = false;
       let pendingEmailIdForResponse: Id<"pendingEmails"> | undefined;
+      let emailConfirmationPrompt:
+        | {
+            content: string;
+            dedupeKey: string;
+            pendingEmailId: Id<"pendingEmails">;
+            payload: Doc<"threadActionConfirmations">["payload"];
+          }
+        | undefined;
       const emailResult = runState.getEmailResult();
       if (emailResult) {
         const visibleEmailResponseBody = stripInternalAgentActivity(
           emailResult.responseBody,
         );
-        responseText = visibleEmailResponseBody;
         pendingEmailIdForResponse = emailResult.pendingEmailId;
         if (
           emailResult.status === "draft" ||
@@ -901,13 +901,40 @@ export const processInbound = internalAction({
             internal.pendingEmails.listDraftsInternal,
             { threadId, orgId },
           )) as Array<Doc<"pendingEmails">>;
-          if (draftsAfterEmailTool.length > 0) {
-            pendingEmailIdForResponse =
-              pendingEmailIdForResponse ?? draftsAfterEmailTool[0]._id;
-            responseText = buildEmailDraftTextSummary(draftsAfterEmailTool, {
-              sampleSize: Math.min(3, draftsAfterEmailTool.length),
-              commands: "chat",
-            });
+          const draft = emailResult.pendingEmailId
+            ? draftsAfterEmailTool.find(
+                (candidate) => candidate._id === emailResult.pendingEmailId,
+              )
+            : draftsAfterEmailTool[0];
+          if (draft) {
+            pendingEmailIdForResponse = pendingEmailIdForResponse ?? draft._id;
+            const fingerprint = await pendingEmailDraftFingerprint(draft);
+            const multipleCoiAttachments =
+              countCoiAttachments(draft.attachments) > 1;
+            const statusText = multipleCoiAttachments
+              ? `Confirm this exact COI batch for ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}. This authorizes the attachment set; use /send 1 after authorization.`
+              : `Confirm this exact draft to ${draft.recipientEmail} with subject “${draft.subject}” to send it.`;
+            emailConfirmationPrompt = {
+              content: statusText,
+              dedupeKey: `imessage-email-confirmation:${String(draft._id)}:${fingerprint}`,
+              pendingEmailId: draft._id,
+              payload: multipleCoiAttachments
+                ? {
+                    kind: "coi_batch_delivery",
+                    pendingEmailId: draft._id,
+                    recipientEmail: draft.recipientEmail.trim().toLowerCase(),
+                    fileIds: (draft.attachments ?? []).map(
+                      ({ fileId }) => fileId,
+                    ),
+                    draftFingerprint: fingerprint,
+                  }
+                : {
+                    kind: "email_send",
+                    pendingEmailIds: [draft._id],
+                    draftFingerprints: [fingerprint],
+                  },
+            };
+            if (!responseText.trim()) responseText = visibleEmailResponseBody;
           }
         }
         if (emailResult.status === "pending") {
@@ -937,14 +964,6 @@ export const processInbound = internalAction({
       }
 
       responseText = stripInternalAgentActivity(responseText);
-      responseText = postProcessImessageResponseText({
-        messageText: inboundMessageText,
-        recentConversationContext,
-        responseText,
-        usedTools,
-        responseFileAttachments,
-        shouldStripGenericCta: !emailResult && !responseAlreadySent,
-      });
       if (!responseText.trim() && !responseAlreadySent) {
         console.warn("[imessage] Model completed without response text", {
           fromPhone,
@@ -1011,7 +1030,7 @@ export const processInbound = internalAction({
         fileId: c.storageId,
       }));
       let agentResponseMessageId: Id<"threadMessages"> | undefined;
-      if (!responseAlreadySent && responseText.trim()) {
+      if (responseText.trim()) {
         agentResponseMessageId = await ctx.runMutation(
           internal.threads.insertImessageMessage,
           {
@@ -1037,6 +1056,87 @@ export const processInbound = internalAction({
         );
       }
 
+      if (emailConfirmationPrompt && agentResponseMessageId) {
+        const statusMessageId = await ctx.runMutation(
+          internal.threads.insertWorkflowStatusMessage,
+          {
+            orgId,
+            threadId,
+            channel: "imessage",
+            sourceThreadMessageId: agentResponseMessageId,
+            pendingEmailId: emailConfirmationPrompt.pendingEmailId,
+            dedupeKey: emailConfirmationPrompt.dedupeKey,
+            content: emailConfirmationPrompt.content,
+          },
+        );
+        await ctx.runMutation(
+          internal.threadActionConfirmations.createInternal,
+          {
+            orgId,
+            threadId,
+            actor: { kind: "user", userId: user._id },
+            promptMessageId: statusMessageId,
+            payload: emailConfirmationPrompt.payload,
+          },
+        );
+        responseText = `${responseText.trim()}\n\n${emailConfirmationPrompt.content}`;
+      }
+
+      if (
+        !emailResult &&
+        requirementImportResolution.authorization === "confirmation" &&
+        requirementImportResolution.scope &&
+        requirementImportResolution.decision &&
+        agentResponseMessageId
+      ) {
+        const decision = requirementImportResolution.decision;
+        const statusText = `Confirm importing ${requirementImportResolution.attachments.map((attachment) => attachment.filename).join(", ")} as ${requirementImportResolution.scope === "vendors" ? "vendor" : "your organization's"} insurance requirements.`;
+        const statusMessageId = await ctx.runMutation(
+          internal.threads.insertWorkflowStatusMessage,
+          {
+            orgId,
+            threadId,
+            channel: "imessage",
+            sourceThreadMessageId: agentResponseMessageId,
+            dedupeKey: `imessage-requirement-import-confirmation:${eventKey}`,
+            content: statusText,
+          },
+        );
+        await ctx.runMutation(
+          internal.threadActionConfirmations.createInternal,
+          {
+            orgId,
+            threadId,
+            actor: { kind: "user", userId: user._id },
+            promptMessageId: statusMessageId,
+            payload: {
+              kind: "requirement_import",
+              fileIds: requirementImportResolution.attachments.map(
+                (attachment) => attachment.fileId,
+              ),
+              classifications: requirementImportResolution.attachments.map(
+                (attachment) => {
+                  const classification = decision.documents.find(
+                    (document) => document.fileId === String(attachment.fileId),
+                  );
+                  return {
+                    fileId: attachment.fileId,
+                    filename: attachment.filename,
+                    contentType: attachment.contentType,
+                    documentClass: "insurance_requirements" as const,
+                    confidence: classification?.confidence ?? 0,
+                  };
+                },
+              ),
+              scope: requirementImportResolution.scope,
+              confidence: decision.confidence,
+              intentEvidence: decision.intentEvidence,
+            },
+          },
+        );
+        responseText = `${responseText.trim()}\n\n${statusText}`;
+      }
+
       const appCards = await mintImessageAppCards(ctx, {
         threadId,
         sourceThreadMessageId: agentResponseMessageId,
@@ -1047,7 +1147,7 @@ export const processInbound = internalAction({
       await scheduleThreadHistoryCompaction(ctx, threadId);
 
       return await finish(
-        responseAlreadySent ? "" : responseText,
+        responseText,
         responseAttachments.length > 0 ? responseAttachments : undefined,
         {
           appCards: appCards.length > 0 ? appCards : undefined,

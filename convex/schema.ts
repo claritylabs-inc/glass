@@ -6,6 +6,17 @@ import { acordTaxonomyBackfillReportValidator } from "./lib/acordTaxonomyBackfil
 import { agentStepsValidator } from "./lib/agentSteps";
 import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
 import { certificateRequirementSnapshotValidator } from "./lib/certificateRequirementPlan";
+import {
+  emailContentValidator,
+  pendingEmailAttachmentKindValidator,
+  pendingEmailAttachmentValidator,
+  threadMessageKindValidator,
+} from "./lib/threadMessageValidators";
+import {
+  threadActionActorValidator,
+  threadActionConfirmationPayloadValidator,
+  threadActionConfirmationStatusValidator,
+} from "./lib/threadActionConfirmationValidators";
 
 const modelProviderValidator = v.union(
   v.literal("openai"),
@@ -1020,6 +1031,17 @@ export default defineSchema({
     confidence: v.optional(v.number()),
     observedAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
+    provenance: v.optional(
+      v.object({
+        kind: v.literal("organization_fact"),
+        derivation: v.union(
+          v.literal("company_profile_extraction"),
+          v.literal("conversation_extraction"),
+          v.literal("agent_tool"),
+        ),
+        schemaVersion: v.literal("organization-fact-v1"),
+      }),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -3005,7 +3027,7 @@ export default defineSchema({
     .index("by_policyId", ["policyId"])
     .index("by_orgId", ["orgId"])
     .index("by_chunkId", ["chunkId"])
-    .vectorIndex("by_embedding", {
+    .vectorIndex("embedding", {
       vectorField: "embedding",
       dimensions: 1536,
       filterFields: ["orgId"],
@@ -3263,7 +3285,7 @@ export default defineSchema({
   })
     .index("by_conversationId", ["conversationId"])
     .index("by_orgId", ["orgId"])
-    .vectorIndex("by_embedding", {
+    .vectorIndex("embedding", {
       vectorField: "embedding",
       dimensions: 1536,
       filterFields: ["orgId"],
@@ -3459,6 +3481,9 @@ export default defineSchema({
       v.literal("slack"),
     ),
     role: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
+    messageKind: v.optional(threadMessageKindValidator),
+    sourceThreadMessageId: v.optional(v.id("threadMessages")),
+    dedupeKey: v.optional(v.string()),
     // User messages
     userId: v.optional(v.id("users")),
     userName: v.optional(v.string()),
@@ -3488,6 +3513,7 @@ export default defineSchema({
     // Content
     content: v.string(),
     contentHtml: v.optional(v.string()),
+    emailContent: v.optional(emailContentValidator),
     // Reasoning / thinking content (for models that support it)
     reasoning: v.optional(v.string()),
     // Ordered activity timeline: reasoning segments interleaved with tool calls
@@ -3500,6 +3526,7 @@ export default defineSchema({
           contentType: v.string(),
           size: v.number(),
           fileId: v.optional(v.id("_storage")),
+          kind: v.optional(pendingEmailAttachmentKindValidator),
         }),
       ),
     ),
@@ -3562,6 +3589,7 @@ export default defineSchema({
       "slackTeamId",
       "slackMessageTs",
     ])
+    .index("by_threadId_and_dedupeKey", ["threadId", "dedupeKey"])
     .searchIndex("search_content", {
       searchField: "content",
       filterFields: ["threadId"],
@@ -3591,6 +3619,25 @@ export default defineSchema({
   })
     .index("by_threadId", ["threadId"])
     .index("by_status_and_updatedAt", ["status", "updatedAt"]),
+
+  threadActionConfirmations: defineTable({
+    orgId: v.id("organizations"),
+    threadId: v.id("threads"),
+    actor: threadActionActorValidator,
+    promptMessageId: v.id("threadMessages"),
+    payload: threadActionConfirmationPayloadValidator,
+    taskEpoch: v.number(),
+    status: threadActionConfirmationStatusValidator,
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    invalidatedAt: v.optional(v.number()),
+    invalidationReason: v.optional(v.string()),
+  })
+    .index("by_threadId_and_status", ["threadId", "status"])
+    .index("by_promptMessageId", ["promptMessageId"])
+    .index("by_expiresAt", ["expiresAt"]),
 
   imessagePrivacyStates: defineTable({
     userId: v.id("users"),
@@ -4114,17 +4161,18 @@ export default defineSchema({
     bccAddresses: v.optional(v.array(v.string())),
     subject: v.string(),
     emailBody: v.string(), // plain content (for thread record)
-    attachments: v.optional(
-      v.array(
-        v.object({
-          filename: v.string(),
-          contentType: v.string(),
-          size: v.number(),
-          fileId: v.id("_storage"),
-        }),
-      ),
-    ),
+    attachments: v.optional(v.array(pendingEmailAttachmentValidator)),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
+    coiBatchAuthorization: v.optional(
+      v.object({
+        recipientEmail: v.string(),
+        fileIds: v.array(v.id("_storage")),
+        draftFingerprint: v.string(),
+        confirmedBy: threadActionActorValidator,
+        confirmationId: v.id("threadActionConfirmations"),
+        confirmedAt: v.number(),
+      }),
+    ),
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
   })

@@ -140,7 +140,14 @@ describe("Slack presentation lifecycle", () => {
             (block) => block.type === "card",
           )
         ) {
-          return Response.json({ error: "invalid_blocks" }, { status: 400 });
+          return Response.json(
+            {
+              error: "The provider rejected the rich blocks",
+              providerErrorCode: "invalid_blocks",
+              retryable: false,
+            },
+            { status: 400 },
+          );
         }
         if (path === "/send") return Response.json({ messageId: "1800.1" });
         if (path === "/reaction/add" || path === "/reaction/remove") {

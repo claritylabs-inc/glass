@@ -48,14 +48,14 @@ import {
   storedAttachmentsToImessageOutbound,
 } from "../lib/imessageOutbound";
 import {
-  buildEmailPayload,
-  buildEmailSignature,
   buildEmailExpertTool,
   resolveEmailAgentIdentity,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
-import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
-import { isCoiAttachmentFilename } from "../lib/coiAttachmentGuards";
+import {
+  countCoiAttachments,
+  type EmailAttachmentLike,
+} from "../lib/coiAttachmentGuards";
 import { type AgentScope } from "../lib/agentScope";
 import {
   classifyPromptInjection,
@@ -63,8 +63,10 @@ import {
   enforceInputLimits,
 } from "../lib/security";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
+import { pendingEmailDraftFingerprint } from "../lib/actionConfirmationFingerprint";
 import {
   buildAssistantMessageContentWithArtifacts,
+  buildPrivateAgentHistoryMetadata,
   buildRecentAgentConversationContext,
   buildThreadContinuityPrompt,
   buildThreadHistoryToolInstructions,
@@ -87,134 +89,13 @@ import {
   spreadsheetBufferToText,
 } from "../lib/spreadsheetText";
 import {
-  inferRequirementImportScope,
+  decideRequirementAttachmentImport,
   requiredRequirementImportStep,
-  selectRequirementImportAttachments,
 } from "../lib/requirementAttachmentIntent";
 import {
   SLACK_PROCESSING_REACTIONS,
   SLACK_REACTION_TOOL_NAME,
 } from "../lib/slackBlocks";
-
-function restoreSentenceBoundarySpacing(text: string): string {
-  return text
-    .replace(/([a-z0-9)"')\]][.!?])(?=[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)"')\]][.!?])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)"')\]][.!?]\]\])(?=[A-Z])/g, "$1 ")
-    .replace(/([a-z0-9)"')\]][.!?]\]\])(?=\[\[(?:g|i|u):[A-Z])/g, "$1 ");
-}
-
-type DraftEmailForBatchRevision = {
-  _id: Id<"pendingEmails">;
-  recipientEmail: string;
-  ccAddresses?: string[];
-  bccAddresses?: string[];
-  subject: string;
-  emailBody: string;
-  attachments?: Array<{
-    filename: string;
-    contentType: string;
-    size: number;
-    fileId: Id<"_storage">;
-  }>;
-  referencedPolicyIds?: Id<"policies">[];
-  threadMessageId?: Id<"threadMessages">;
-};
-
-function normalizeDraftMatchText(value: string | undefined): string {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9@.+-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parseCoiAttachmentName(filename: string): {
-  holder?: string;
-  policyRef?: string;
-} {
-  const match = filename.match(
-    /^COI\s+-\s+(.+?)\s+-\s+([A-Z0-9][A-Z0-9-]{5,})\.pdf$/i,
-  );
-  if (!match) return {};
-  return {
-    holder: match[1]?.trim(),
-    policyRef: match[2]?.trim(),
-  };
-}
-
-function draftRecipientTokens(recipientEmail: string): string[] {
-  const normalized = recipientEmail.toLowerCase().trim();
-  const localPart = normalized.split("@")[0] ?? "";
-  const plusTag = localPart.includes("+")
-    ? localPart.split("+").at(-1)
-    : localPart;
-  return [normalized, localPart, plusTag ?? ""]
-    .map((token) => normalizeDraftMatchText(token).replace(/\d+$/g, ""))
-    .filter((token) => token.length >= 4);
-}
-
-function selectSafeDraftAttachments(
-  draft: DraftEmailForBatchRevision,
-): DraftEmailForBatchRevision["attachments"] {
-  const attachments = draft.attachments ?? [];
-  const coiAttachments = attachments.filter((attachment) =>
-    isCoiAttachmentFilename(attachment.filename),
-  );
-  if (coiAttachments.length <= 1) return attachments;
-
-  const tokens = [
-    ...draftRecipientTokens(draft.recipientEmail),
-    normalizeDraftMatchText(draft.emailBody),
-  ].filter((token) => token.length >= 4);
-  const matches = coiAttachments.filter((attachment) => {
-    const { holder } = parseCoiAttachmentName(attachment.filename);
-    const searchable = normalizeDraftMatchText(
-      `${attachment.filename} ${holder ?? ""}`,
-    );
-    return tokens.some((token) => searchable.includes(token));
-  });
-
-  return matches.length === 1 ? [matches[0]] : [];
-}
-
-function buildElaboratedCoiDraftBody(params: {
-  draft: DraftEmailForBatchRevision;
-  attachments: DraftEmailForBatchRevision["attachments"];
-  coveredName: string;
-}) {
-  const attachment = params.attachments?.find((candidate) =>
-    isCoiAttachmentFilename(candidate.filename),
-  );
-  const parsed = attachment ? parseCoiAttachmentName(attachment.filename) : {};
-  const holder =
-    parsed.holder ??
-    params.draft.emailBody
-      .match(/for\s+(.+?)\s+for\s+Sentinel/i)?.[1]
-      ?.trim() ??
-    "the listed certificate holder";
-  const policyRef =
-    parsed.policyRef ??
-    params.draft.emailBody.match(/#([A-Z0-9][A-Z0-9-]{5,})/i)?.[1]?.trim() ??
-    "the referenced policy";
-
-  return [
-    `Attached is the Certificate of Insurance for ${holder}.`,
-    "",
-    `The certificate is for Sentinel Pacific Specialty Insurance Company policy #${policyRef} and reflects coverage for ${params.coveredName}.`,
-  ].join("\n");
-}
-
-function isMultiDraftElaborationRequest(text: string): boolean {
-  return (
-    /\b(email|draft)s?\b/i.test(text) &&
-    /\b(elaborate|revise|update|edit|change|mention|include|add)\b/i.test(
-      text,
-    ) &&
-    /\b(holder|certificate|coi|covering|covers|policy)\b/i.test(text) &&
-    !/\b(send|cancel|delete|remove)\b/i.test(text)
-  );
-}
 
 function isTextLikeAttachment(filename: string, contentType: string) {
   const lowerName = filename.toLowerCase();
@@ -317,6 +198,7 @@ type ChatAttachment = {
   contentType: string;
   size: number;
   fileId?: string;
+  kind?: "coi" | "original_policy" | "uploaded_file" | "generated_document";
 };
 
 type ChatContentPart =
@@ -536,74 +418,20 @@ async function buildMessageHistoryWithAttachmentContext(
           usedTools: msg.usedTools,
           attachments: msg.attachments,
         }),
+        providerOptions: {
+          glass: {
+            privateHistory: buildPrivateAgentHistoryMetadata({
+              toolArtifacts: msg.toolArtifacts,
+              usedTools: msg.usedTools,
+              attachments: msg.attachments,
+            }),
+          },
+        },
       });
     }
   }
 
   return { history, latestAttachmentNames };
-}
-
-function explicitlyForbidsSideEffects(text: string): boolean {
-  return /\b(?:do not|don['’]t|dont|without)\b[^.!?\n]{0,100}\b(?:generate|create|send|email|forward|deliver|change)\b/i.test(
-    text,
-  );
-}
-
-function hasCoiEmailIntent(text: string): boolean {
-  return (
-    !explicitlyForbidsSideEffects(text) &&
-    /\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text) &&
-    /\b(send|email|forward|deliver)\b/i.test(text)
-  );
-}
-
-function claimsCoiEmailCompletion(text: string): boolean {
-  if (!/\b(coi|certificate(?:\s+of\s+insurance)?)\b/i.test(text)) return false;
-  for (const match of text.matchAll(
-    /\b(done|sent|sending|emailing|delivering|generated|attached)\b/gi,
-  )) {
-    if (!isNegatedActionClaim(text, match.index)) return true;
-  }
-  return false;
-}
-
-function hasEmailSendIntent(text: string): boolean {
-  return (
-    !explicitlyForbidsSideEffects(text) &&
-    /\b(send|sent|email|emailed|forward|forwarded|deliver|delivered)\b/i.test(
-      text,
-    )
-  );
-}
-
-function isNegatedActionClaim(text: string, actionIndex: number): boolean {
-  const prefix = text.slice(Math.max(0, actionIndex - 60), actionIndex);
-  return /\b(?:not|never|haven['’]t|hasn['’]t|wasn['’]t|isn['’]t|didn['’]t|couldn['’]t|unable to|failed to)(?:\s+\w+){0,4}\s*$/i.test(
-    prefix,
-  );
-}
-
-function claimsEmailSendCompletion(text: string): boolean {
-  for (const match of text.matchAll(
-    /\b(sent|emailed|delivered|sending|emailing|delivering)\b/gi,
-  )) {
-    if (!isNegatedActionClaim(text, match.index)) return true;
-  }
-  return false;
-}
-
-function claimsEmailDraftCompletion(text: string): boolean {
-  for (const match of text.matchAll(
-    /\b(drafted|prepared|created|updated|revised)\b/gi,
-  )) {
-    if (
-      !isNegatedActionClaim(text, match.index) &&
-      /\b(email|draft)\b/i.test(text.slice(match.index, match.index + 100))
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 export const run = internalAction({
@@ -666,6 +494,9 @@ export const run = internalAction({
           ...controlState,
           agentMessageId: agentMsgId,
           userMessageId: args.userMessageId,
+          userId: args.userId,
+          threadId: args.threadId,
+          orgId: args.orgId,
         })
       ) {
         await scheduleThreadHistoryCompaction(ctx, args.threadId);
@@ -700,7 +531,7 @@ export const run = internalAction({
           });
           console.warn("[security] Prompt injection blocked", {
             threadId: args.threadId,
-            reason: injectionCheck.reason,
+            audit: injectionCheck.audit,
           });
           await scheduleThreadHistoryCompaction(ctx, args.threadId);
           return;
@@ -710,6 +541,7 @@ export const run = internalAction({
       if (
         await runWebChatTaskControl(ctx, {
           orgId: args.orgId,
+          threadId: args.threadId,
           agentMessageId: agentMsgId,
           userMessageId: args.userMessageId,
           messageText: text,
@@ -824,13 +656,17 @@ export const run = internalAction({
           fileId: Id<"_storage">;
         } => Boolean(attachment.fileId),
       );
-      const requirementImportAttachments = selectRequirementImportAttachments(
-        String(latestUserContent),
-        latestUserAttachments,
-      );
-      const requirementImportDefaultScope = inferRequirementImportScope(
-        String(latestUserContent),
-      );
+      const requirementImportResolution =
+        await decideRequirementAttachmentImport(ctx, {
+          orgId: args.orgId,
+          messageText: String(latestUserContent),
+          attachments: latestUserAttachments,
+        });
+      const requirementImportAttachments =
+        requirementImportResolution.authorization === "auto"
+          ? requirementImportResolution.attachments
+          : [];
+      const requirementImportDefaultScope = requirementImportResolution.scope;
       const policyFocusIds = await validatePolicyFocusIds(
         ctx,
         scope,
@@ -985,15 +821,6 @@ export const run = internalAction({
       const allowedRecipients = brokerIdentity?.contactEmail
         ? [...new Set([...baseAllowedRecipients, brokerIdentity.contactEmail])]
         : baseAllowedRecipients;
-      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
-        String(latestUserContent ?? ""),
-      );
-      const brokerRecipientEmail = brokerDirectedEmailRequest
-        ? brokerIdentity?.contactEmail
-        : undefined;
-      const brokerRecipientName = brokerDirectedEmailRequest
-        ? (brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName)
-        : undefined;
       const availableAttachments = allMessages.flatMap(
         (m: Record<string, unknown>) =>
           (
@@ -1003,14 +830,12 @@ export const run = internalAction({
                   contentType: string;
                   size: number;
                   fileId?: Id<"_storage">;
+                  kind?: string;
                 }>
               | undefined) ?? []
           )
             .filter((att) => att.fileId)
-            .filter(
-              (att) =>
-                m.role !== "agent" || !isCoiAttachmentFilename(att.filename),
-            )
+            .filter((att) => m.role !== "agent" || att.kind !== "coi")
             .map((att) => ({
               filename: att.filename,
               contentType: att.contentType,
@@ -1060,88 +885,6 @@ export const run = internalAction({
               ),
             ].join("\n\n")
           : "";
-      if (
-        currentDraftEmails.length > 1 &&
-        isMultiDraftElaborationRequest(text) &&
-        emailIdentity.canSend &&
-        emailIdentity.agentAddress &&
-        emailIdentity.fromHeader
-      ) {
-        const agentAddress = emailIdentity.agentAddress;
-        const fromHeader = emailIdentity.fromHeader;
-        const signature = buildEmailSignature(
-          agentAddress,
-          emailIdentity.brokerBranding,
-        );
-        let revisedCount = 0;
-        let repairedAttachmentCount = 0;
-
-        for (const draft of currentDraftEmails as DraftEmailForBatchRevision[]) {
-          const attachments = selectSafeDraftAttachments(draft);
-          if ((draft.attachments?.length ?? 0) > (attachments?.length ?? 0)) {
-            repairedAttachmentCount += 1;
-          }
-          const body = buildElaboratedCoiDraftBody({
-            draft,
-            attachments,
-            coveredName:
-              typeof org.name === "string" && org.name.trim() ? org.name : "us",
-          });
-          const emailPayload = buildEmailPayload({
-            fromHeader,
-            to: draft.recipientEmail,
-            cc: draft.ccAddresses ?? [],
-            bcc: draft.bccAddresses ?? [],
-            subject: draft.subject,
-            body,
-            signature,
-          });
-
-          await ctx.runMutation(internal.pendingEmails.updateDraftInternal, {
-            id: draft._id,
-            emailPayload: JSON.stringify(emailPayload),
-            recipientEmail: draft.recipientEmail,
-            ccAddresses: draft.ccAddresses,
-            bccAddresses: draft.bccAddresses,
-            subject: draft.subject,
-            emailBody: body,
-            attachments:
-              attachments && attachments.length > 0 ? attachments : undefined,
-            referencedPolicyIds: draft.referencedPolicyIds,
-            chatMessageId: agentMsgId,
-          });
-
-          if (draft.threadMessageId) {
-            await ctx.runMutation(internal.threads.updateEmailMessage, {
-              id: draft.threadMessageId,
-              content: body,
-              toAddresses: [draft.recipientEmail],
-              ccAddresses: draft.ccAddresses,
-              bccAddresses: draft.bccAddresses,
-              subject: draft.subject,
-              attachments:
-                attachments && attachments.length > 0 ? attachments : undefined,
-              pendingEmailId: draft._id,
-              status: "draft_email",
-            });
-          }
-          revisedCount += 1;
-        }
-
-        await ctx.runMutation(internal.threads.updateAgentMessage, {
-          id: agentMsgId,
-          content: [
-            `Done — I revised all ${revisedCount} email drafts with the holder, policy, and coverage details.`,
-            repairedAttachmentCount > 0
-              ? `I also repaired ${repairedAttachmentCount} draft${repairedAttachmentCount === 1 ? "" : "s"} so each email only has that recipient's COI attached.`
-              : null,
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-        });
-        await scheduleThreadHistoryCompaction(ctx, args.threadId);
-        return;
-      }
       const emailToolResult: { current: EmailSubagentResult | null } = {
         current: null,
       };
@@ -1362,13 +1105,12 @@ export const run = internalAction({
                 agentAddress: emailIdentity.agentAddress,
                 brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user?.email,
-                defaultTo: brokerDirectedEmailRequest
-                  ? brokerRecipientEmail
-                  : user?.email,
-                defaultRecipientName: brokerDirectedEmailRequest
-                  ? brokerRecipientName
-                  : user?.name,
-                requireKnownRecipient: brokerDirectedEmailRequest,
+                defaultTo: user?.email,
+                defaultRecipientName: user?.name,
+                brokerRecipientEmail: brokerIdentity?.contactEmail,
+                brokerRecipientName:
+                  brokerIdentity?.contactName ??
+                  brokerIdentity?.brokerCompanyName,
                 missingRecipientMessage:
                   "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
                 unknownRecipientMessage:
@@ -1387,9 +1129,7 @@ export const run = internalAction({
                 allowedRecipients,
                 availableAttachments,
                 referencedPolicyIds: emailReferencedPolicyIds,
-                autoSendEmails: brokerDirectedEmailRequest
-                  ? false
-                  : org.autoSendEmails === true,
+                autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 conversationContext:
                   recentConversationContext +
@@ -1468,46 +1208,11 @@ export const run = internalAction({
 
       // Publish one complete reply after the run finishes. Web chat observes
       // only the processing state before this atomic final update.
-      content = stripInternalAgentActivity(
-        restoreSentenceBoundarySpacing(content),
-      );
+      content = stripInternalAgentActivity(content);
       const emailResult = emailToolResult.current;
       if (!content && !emailResult) {
         content =
           "I couldn't format that response. Please try again in a moment.";
-      }
-      const completedEmailSend =
-        emailResult?.status === "sent" || emailResult?.status === "pending";
-      const completedCoiEmailSideEffect =
-        usedTools.includes("email_expert") ||
-        usedTools.includes("generate_coi") ||
-        responseAttachments.some((attachment) =>
-          /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(attachment.filename),
-        );
-      if (
-        hasEmailSendIntent(latestUserContent) &&
-        claimsEmailSendCompletion(content) &&
-        !completedEmailSend
-      ) {
-        content =
-          currentDraftEmails.length > 0
-            ? "I haven't sent the email. The draft is still open and needs a successful send action."
-            : "I haven't sent the email. I need to complete a successful email send before marking it sent.";
-      }
-      if (
-        hasCoiEmailIntent(latestUserContent) &&
-        claimsCoiEmailCompletion(content) &&
-        !completedCoiEmailSideEffect
-      ) {
-        content =
-          "I haven't generated or emailed those COIs yet. I need to create the certificates and send the emails before marking this done.";
-      }
-      if (
-        claimsEmailDraftCompletion(content) &&
-        !usedTools.includes("email_expert")
-      ) {
-        content =
-          "I haven't created an email draft yet. I can prepare one once the recipient, policy, and attachments are confirmed.";
       }
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
@@ -1529,44 +1234,116 @@ export const run = internalAction({
           responseAttachments.length > 0 ? responseAttachments : undefined,
       });
       if (emailResult) {
+        await ctx.runMutation(internal.threads.updateAgentMessage, {
+          id: agentMsgId,
+          content,
+          pendingEmailId: emailResult.pendingEmailId,
+          status: emailResult.status === "pending" ? "pending_send" : undefined,
+        });
         if (
           emailResult.pendingEmailId &&
           (emailResult.status === "draft" ||
             emailResult.status === "needs_confirmation")
         ) {
-          const recipientText = emailResult.responseTo
-            ? ` to ${emailResult.responseTo}`
-            : "";
-          const draftedCoi = emailResult.attachments?.some((attachment) =>
-            /certificate[-_\s]?of[-_\s]?insurance|coi/i.test(
-              attachment.filename,
-            ),
-          );
-          const draftNotice = draftedCoi
-            ? `I drafted the certificate of insurance email${recipientText}. Review it in the email draft card.`
-            : `I drafted the email${recipientText}. Review it in the email draft card.`;
-          const nextContent = content.trim()
-            ? `${content.trim()}\n\n${draftNotice}`
-            : draftNotice;
-          await ctx.runMutation(internal.threads.updateAgentMessage, {
-            id: agentMsgId,
-            content: nextContent,
-            pendingEmailId: emailResult.pendingEmailId,
+          const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+            id: emailResult.pendingEmailId,
           });
-          content = nextContent;
-        } else {
-          const visibleEmailResponseBody = stripInternalAgentActivity(
-            emailResult.responseBody,
-          );
-          await ctx.runMutation(internal.threads.updateAgentMessage, {
-            id: agentMsgId,
-            content: visibleEmailResponseBody,
-            pendingEmailId: emailResult.pendingEmailId,
-            status:
-              emailResult.status === "pending" ? "pending_send" : undefined,
-          });
-          content = visibleEmailResponseBody;
+          if (draft?.status === "draft") {
+            const fingerprint = await pendingEmailDraftFingerprint(draft);
+            const multipleCoiAttachments =
+              countCoiAttachments(
+                draft.attachments as EmailAttachmentLike[] | undefined,
+              ) > 1;
+            const statusMessageId = await ctx.runMutation(
+              internal.threads.insertWorkflowStatusMessage,
+              {
+                orgId: args.orgId,
+                threadId: args.threadId,
+                sourceThreadMessageId: agentMsgId,
+                pendingEmailId: draft._id,
+                dedupeKey: `email-confirmation:${String(draft._id)}:${fingerprint}`,
+                content: multipleCoiAttachments
+                  ? `Confirm this exact COI batch for ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}. This authorizes the attachment set; use Send after authorization.`
+                  : `Confirm this exact draft to ${draft.recipientEmail} with subject “${draft.subject}” to send it.`,
+              },
+            );
+            await ctx.runMutation(
+              internal.threadActionConfirmations.createInternal,
+              {
+                orgId: args.orgId,
+                threadId: args.threadId,
+                actor: { kind: "user", userId: args.userId },
+                promptMessageId: statusMessageId,
+                payload: multipleCoiAttachments
+                  ? {
+                      kind: "coi_batch_delivery",
+                      pendingEmailId: draft._id,
+                      recipientEmail: draft.recipientEmail.trim().toLowerCase(),
+                      fileIds: (draft.attachments ?? []).map(
+                        (attachment) => attachment.fileId,
+                      ),
+                      draftFingerprint: fingerprint,
+                    }
+                  : {
+                      kind: "email_send",
+                      pendingEmailIds: [draft._id],
+                      draftFingerprints: [fingerprint],
+                    },
+              },
+            );
+          }
         }
+      }
+
+      if (
+        !emailResult &&
+        requirementImportResolution.authorization === "confirmation" &&
+        requirementImportResolution.scope &&
+        requirementImportResolution.decision
+      ) {
+        const decision = requirementImportResolution.decision;
+        const statusMessageId = await ctx.runMutation(
+          internal.threads.insertWorkflowStatusMessage,
+          {
+            orgId: args.orgId,
+            threadId: args.threadId,
+            sourceThreadMessageId: agentMsgId,
+            dedupeKey: `requirement-import-confirmation:${String(args.userMessageId)}`,
+            content: `Confirm importing ${requirementImportResolution.attachments.map((attachment) => attachment.filename).join(", ")} as ${requirementImportResolution.scope === "vendors" ? "vendor" : "your organization's"} insurance requirements.`,
+          },
+        );
+        await ctx.runMutation(
+          internal.threadActionConfirmations.createInternal,
+          {
+            orgId: args.orgId,
+            threadId: args.threadId,
+            actor: { kind: "user", userId: args.userId },
+            promptMessageId: statusMessageId,
+            payload: {
+              kind: "requirement_import",
+              fileIds: requirementImportResolution.attachments.map(
+                (attachment) => attachment.fileId,
+              ),
+              classifications: requirementImportResolution.attachments.map(
+                (attachment) => {
+                  const classification = decision.documents.find(
+                    (document) => document.fileId === String(attachment.fileId),
+                  );
+                  return {
+                    fileId: attachment.fileId,
+                    filename: attachment.filename,
+                    contentType: attachment.contentType,
+                    documentClass: "insurance_requirements" as const,
+                    confidence: classification?.confidence ?? 0,
+                  };
+                },
+              ),
+              scope: requirementImportResolution.scope,
+              confidence: decision.confidence,
+              intentEvidence: decision.intentEvidence,
+            },
+          },
+        );
       }
 
       await scheduleThreadHistoryCompaction(ctx, args.threadId);
@@ -1616,13 +1393,7 @@ export const run = internalAction({
               ? `Glass reply: ${threadLabel}`
               : "Glass reply";
           const plainText = `Thread: ${threadLabel}\n\n${stripMarkdown(content)}\n\nView thread: ${threadUrl}`;
-          const htmlBody = content
-            .split("\n\n")
-            .map(
-              (p: string) =>
-                `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`,
-            )
-            .join("\n");
+          const htmlBody = markdownToHtml(content);
           const html = buildEmailShell({
             title: escapeHtml(subject),
             siteUrl,

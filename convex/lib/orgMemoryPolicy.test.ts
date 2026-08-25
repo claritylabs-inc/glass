@@ -49,4 +49,27 @@ describe("org memory policy", () => {
       }),
     ).toBe(false);
   });
+
+  test("trusts server-derived organization-fact provenance over broad word filters", () => {
+    expect(
+      isCompanyContextMemory({
+        type: "fact",
+        orgName: "Clarity Labs Inc.",
+        content: "Clarity Labs operates a carrier integration support team.",
+        provenance: {
+          kind: "organization_fact",
+          derivation: "company_profile_extraction",
+          schemaVersion: "organization-fact-v1",
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      isCompanyContextMemory({
+        type: "fact",
+        orgName: "Clarity Labs Inc.",
+        content: "Clarity Labs operates a carrier integration support team.",
+      }),
+    ).toBe(false);
+  });
 });

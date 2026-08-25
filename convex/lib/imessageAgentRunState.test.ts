@@ -29,7 +29,19 @@ describe("createImessageAgentRunState", () => {
     state.onResponseAttachment({ filename: "coi.pdf" });
     state.onResponseAttachment({ filename: "coi.pdf", fileId });
     state.onToolArtifact({ type: "certificate_result", data: { fileId } });
-    state.appendWorkflowOutcomes([{ kind: "certificate_generated" }]);
+    const workflowOutcome = {
+      workflowKind: "certificate_request" as const,
+      status: "completed" as const,
+      nextAction: "none",
+      requiredSlots: [],
+      forbiddenQuestions: [],
+      forbiddenClaims: [],
+      sideEffects: [],
+      artifacts: [{ type: "certificate", id: String(fileId) }],
+      comms: { headline: "Certificate generated." },
+      audit: [],
+    };
+    state.appendWorkflowOutcomes([workflowOutcome]);
     state.setEmailResult(emailResult);
 
     expect(state.responseFileAttachments).toEqual([
@@ -37,7 +49,7 @@ describe("createImessageAgentRunState", () => {
     ]);
     expect(state.toolArtifacts).toEqual([
       { type: "certificate_result", data: { fileId } },
-      { type: "workflow_outcome", data: { kind: "certificate_generated" } },
+      { type: "workflow_outcome", data: workflowOutcome },
     ]);
     expect(state.getEmailResult()).toBe(emailResult);
   });

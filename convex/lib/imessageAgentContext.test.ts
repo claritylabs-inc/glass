@@ -69,6 +69,7 @@ describe("iMessage agent context helpers", () => {
           role: "agent",
           content: "Working on it.",
           responseMessageId: "event:status",
+          messageKind: "workflow_status",
         },
         {
           role: "user",
@@ -83,7 +84,7 @@ describe("iMessage agent context helpers", () => {
     ).toBe("Terry: Show my policies\nGlass: You have one active policy.");
   });
 
-  test("builds model messages without artifact context and skips current echo", async () => {
+  test("keeps non-workflow artifacts out of private history and skips current echo", async () => {
     const messages = await buildImessageModelMessages({
       history: [
         {
@@ -119,6 +120,16 @@ describe("iMessage agent context helpers", () => {
     expect(messages[0]).toEqual({
       role: "assistant",
       content: "Certificate follow-up is on hold.",
+      providerOptions: {
+        glass: {
+          privateHistory: {
+            tools: [],
+            workflowOutcomes: [],
+            attachmentNames: [],
+            attachmentFailures: [],
+          },
+        },
+      },
     });
     expect(messages[1]).toEqual({
       role: "user",
@@ -126,7 +137,7 @@ describe("iMessage agent context helpers", () => {
     });
   });
 
-  test("builds model messages with compact assistant tool activity", async () => {
+  test("builds model messages with private assistant tool activity", async () => {
     const messages = await buildImessageModelMessages({
       history: [
         {
@@ -155,8 +166,17 @@ describe("iMessage agent context helpers", () => {
       { role: "user", content: "[Terry]: Generate a COI" },
       {
         role: "assistant",
-        content:
-          'COI generated and attached.\n\n[tool activity: tools: generate_coi; attached: "COI - Example Holder.pdf"]',
+        content: "COI generated and attached.",
+        providerOptions: {
+          glass: {
+            privateHistory: {
+              tools: ["generate_coi"],
+              workflowOutcomes: [],
+              attachmentNames: ["COI - Example Holder.pdf"],
+              attachmentFailures: [],
+            },
+          },
+        },
       },
       { role: "user", content: "[Terry]: Where is the PDF?" },
     ]);

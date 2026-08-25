@@ -1,5 +1,6 @@
+import dayjs from "dayjs";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { MutationCtx } from "../_generated/server";
 import { normalizeEmailAddress } from "./emailAddress";
 import { parseEmailPayloadRecord } from "./emailPayloadFields";
 
@@ -39,63 +40,36 @@ export function updateEmailPayloadRecipient(
   return JSON.stringify(payload);
 }
 
-function parseLegacyConfirmationOutput(
-  output: string | undefined,
-  recipientEmail: string,
-): string | null {
-  if (!output) return null;
-  try {
-    const parsed = JSON.parse(output) as {
-      status?: unknown;
-      confirmationReason?: unknown;
-      responseTo?: unknown;
-    };
-    if (parsed.status !== "needs_confirmation") return null;
-    if (
-      typeof parsed.responseTo === "string" &&
-      normalizeEmailAddress(parsed.responseTo) !== recipientEmail
-    ) {
-      return null;
-    }
-    return typeof parsed.confirmationReason === "string" &&
-      parsed.confirmationReason.trim()
-      ? parsed.confirmationReason.trim()
-      : "Confirm the recipient before sending.";
-  } catch {
-    return null;
-  }
-}
-
-export async function withLegacySendBlockedReason(
-  ctx: QueryCtx,
-  pending: Doc<"pendingEmails"> | null,
+export async function invalidateDraftConfirmations(
+  ctx: MutationCtx,
+  pending: Doc<"pendingEmails">,
+  reason: string,
 ) {
-  if (
-    !pending ||
-    pending.status !== "draft" ||
-    pending.sendBlockedReason ||
-    !pending.threadId
-  ) {
-    return pending;
-  }
-
-  const recipientEmail = normalizeEmailAddress(pending.recipientEmail);
-  const messages = await ctx.db
-    .query("threadMessages")
-    .withIndex("by_threadId", (q) => q.eq("threadId", pending.threadId!))
+  if (!pending.threadId) return;
+  const now = dayjs().valueOf();
+  const confirmations = await ctx.db
+    .query("threadActionConfirmations")
+    .withIndex("by_threadId_and_status", (query) =>
+      query.eq("threadId", pending.threadId!).eq("status", "pending"),
+    )
     .collect();
-  for (const message of [...messages].reverse()) {
-    if (message.pendingEmailId !== pending._id) continue;
-    for (const toolCall of [...(message.toolCalls ?? [])].reverse()) {
-      const reason = parseLegacyConfirmationOutput(
-        toolCall.output,
-        recipientEmail,
-      );
-      if (reason) return { ...pending, sendBlockedReason: reason };
-    }
+  for (const confirmation of confirmations) {
+    const payload = confirmation.payload;
+    const applies =
+      payload.kind === "draft_snapshot" ||
+      payload.kind === "email_send" ||
+      payload.kind === "email_cancel"
+        ? payload.pendingEmailIds.includes(pending._id)
+        : payload.kind === "coi_batch_delivery" &&
+          payload.pendingEmailId === pending._id;
+    if (!applies) continue;
+    await ctx.db.patch(confirmation._id, {
+      status: "stale",
+      invalidatedAt: now,
+      invalidationReason: reason,
+      updatedAt: now,
+    });
   }
-
-  return pending;
 }
 
 export async function restoreCancelledEmailAsDraft(
@@ -111,7 +85,9 @@ export async function restoreCancelledEmailAsDraft(
     status: "draft",
     scheduledSendTime: 0,
     sentMessageId: undefined,
+    coiBatchAuthorization: undefined,
   });
+  await invalidateDraftConfirmations(ctx, pending, "draft_restored");
 
   if (pending.threadMessageId) {
     await ctx.db.patch(pending.threadMessageId, {
@@ -145,11 +121,15 @@ export async function cancelDraftOrPendingEmail(
   id: Id<"pendingEmails">,
 ) {
   const pending = await ctx.db.get(id);
-  if (!pending || (pending.status !== "pending" && pending.status !== "draft")) {
+  if (
+    !pending ||
+    (pending.status !== "pending" && pending.status !== "draft")
+  ) {
     return false;
   }
 
   await ctx.db.patch(id, { status: "cancelled" });
+  await invalidateDraftConfirmations(ctx, pending, "draft_cancelled");
 
   if (pending.threadMessageId) {
     await ctx.db.patch(pending.threadMessageId, {
@@ -195,7 +175,9 @@ export async function updateDraftRecipient(
       recipientEmail,
     ),
     sendBlockedReason: undefined,
+    coiBatchAuthorization: undefined,
   });
+  await invalidateDraftConfirmations(ctx, pending, "draft_recipient_changed");
 
   if (pending.threadMessageId) {
     await ctx.db.patch(pending.threadMessageId, {

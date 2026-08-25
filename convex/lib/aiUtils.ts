@@ -12,55 +12,27 @@ import {
   sourceSpanIdsFromValue,
 } from "./policyDocumentStructure";
 import { lobLabel, policyLobCodes, toLobCodes } from "./linesOfBusiness";
+import {
+  normalizedSearchText,
+  uniqueSearchTerms,
+} from "./searchTokenizer";
+import {
+  renderAgentMarkdownHtml,
+  renderAgentMarkdownText,
+} from "./transportRenderers";
+
+export { hasConfidenceMarkers, stripConfidenceMarkers } from "./confidence";
 
 export { buildConversationMemoryContext, buildConversationMemoryFromList, buildDocumentContext } from "./agentPrompts";
 
 /* ── Markdown processing ── */
 
-// Mirror of CONFIDENCE_MARKER_RE in lib/confidence.ts. Kept inline here because
-// Convex bundles only the convex/ tree and cannot import the app-side module.
-// The agent tints phrases with `[[g|i|u:...]]`; outside the web chat those
-// markers are stripped back to the bare phrase (group 2).
-const CONFIDENCE_MARKER_RE = /\[\[(?:g|i|u):([\s\S]+?)\]\]/g;
-const CONFIDENCE_MARKER_PRESENT_RE = /\[\[(?:g|i|u):[\s\S]+?\]\]/;
-
-function normalizeConfidenceMarkers(text: string): string {
-  return text.replace(/\[\[(g|i|u)\]:/g, "[[$1:");
-}
-
-export function hasConfidenceMarkers(text: string): boolean {
-  return CONFIDENCE_MARKER_PRESENT_RE.test(normalizeConfidenceMarkers(text));
-}
-
-export function stripConfidenceMarkers(text: string): string {
-  return normalizeConfidenceMarkers(text).replace(CONFIDENCE_MARKER_RE, "$1");
-}
-
 export function stripMarkdown(text: string): string {
-  let result = stripConfidenceMarkers(text);
-  result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
-  result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "$1 ($2)");
-  result = result.replace(/\*\*(.+?)\*\*/g, "$1");
-  result = result.replace(/\*(.+?)\*/g, "$1");
-  return result;
+  return renderAgentMarkdownText(text);
 }
 
 export function markdownToHtml(text: string): string {
-  const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
-  let result = normalizeConfidenceMarkers(text);
-  result = result.replace(CONFIDENCE_MARKER_RE, "$1");
-  result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
-  result = result.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-    `<a href="$2" ${linkStyle}>$1</a>`,
-  );
-  result = result.replace(
-    /(?<!href=")(https?:\/\/[^\s<)]+)/g,
-    `<a href="$1" ${linkStyle}>$1</a>`,
-  );
-  result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
-  return result;
+  return renderAgentMarkdownHtml(text);
 }
 
 /* ── Email signature ── */
@@ -320,8 +292,8 @@ export function policySearchScore(
   lineOfBusiness?: string,
   carrier?: string,
 ): number {
-  const q = query.toLowerCase().trim();
-  const words = q.split(/\s+/).filter((w) => w.length > 2);
+  const q = normalizedSearchText(query);
+  const words = uniqueSearchTerms(query, { minimumLength: 3 });
   const linesOfBusiness = policyLobCodes(policy as { linesOfBusiness?: string[] });
   const lineTerms = linesOfBusiness.flatMap((code) => [code, lobLabel(code)]);
   const coverages = (policy.coverages as Array<{ name?: string; limit?: string }> | undefined) ?? [];
@@ -344,29 +316,42 @@ export function policySearchScore(
     ...lineTerms,
     ...coverages.flatMap((c) => [c.name, c.limit]),
     outlineText,
-  ].filter(Boolean).join(" ").toLowerCase();
+  ].filter(Boolean).join(" ");
+  const normalizedSearch = normalizedSearchText(searchText);
 
   if (lineOfBusiness) {
     const requested = toLobCodes([lineOfBusiness]);
-    const normalizedFilter = lineOfBusiness.toLowerCase();
+    const normalizedFilter = normalizedSearchText(lineOfBusiness);
     const canMatchByCode = !(requested.length === 1 && requested[0] === "OLIB" && normalizedFilter !== "olib" && !normalizedFilter.includes("other liability"));
     const matchesLine = (canMatchByCode && requested.some((code) => linesOfBusiness.includes(code))) ||
-      lineTerms.some((term) => term.toLowerCase().includes(normalizedFilter)) ||
-      searchText.includes(normalizedFilter);
+      lineTerms.some((term) =>
+        normalizedSearchText(term).includes(normalizedFilter),
+      ) ||
+      normalizedSearch.includes(normalizedFilter);
     if (!matchesLine) return 0;
   }
-  if (carrier && !String(policy.security ?? policy.carrier ?? "").toLowerCase().includes(carrier.toLowerCase())) {
+  if (
+    carrier &&
+    !normalizedSearchText(String(policy.security ?? policy.carrier ?? "")).includes(
+      normalizedSearchText(carrier),
+    )
+  ) {
     return 0;
   }
 
   let score = 0;
   if (lineOfBusiness) score += 1;
   if (carrier) score += 1;
-  if (q && searchText.includes(q)) score += 6;
+  if (q && normalizedSearch.includes(q)) score += 6;
   for (const word of words) {
-    if (searchText.includes(word)) score += 1;
+    if (normalizedSearch.includes(word)) score += 1;
   }
-  if (/\b(policy|policies|number|coverage|limit|deductible|premium)\b/i.test(query)) score += 1;
+  if (
+    words.some((word) =>
+      ["policy", "policies", "number", "coverage", "limit", "deductible", "premium"]
+        .includes(word),
+    )
+  ) score += 1;
   return score;
 }
 
@@ -381,10 +366,7 @@ function textValue(value: unknown): string {
 }
 
 function queryTerms(query: string): string[] {
-  const raw = query
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 2);
+  const raw = uniqueSearchTerms(query, { minimumLength: 3 });
   const terms = new Set<string>();
   const add = (term: string) => {
     if (term.length > 2) terms.add(term);

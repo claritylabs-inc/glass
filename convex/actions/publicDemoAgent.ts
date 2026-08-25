@@ -210,104 +210,13 @@ function hasPriorSafetyNotice(logs: PublicDemoLog[]) {
   );
 }
 
-function removeRepeatedSafetyFooter(text: string) {
-  return text
-    .replace(/\s*Demo data only, not real advice\.?/gi, "")
-    .replace(/\s*Demo only[:.] No real certificate or insurance advice\.?/gi, "")
-    .replace(
-      /\s*Demo only: no certificate was issued, and this is not insurance advice\.?/gi,
-      "",
-    )
-    .replace(
-      /\s*Demo only: no certificate was issued, nothing here is binding, and this is not insurance advice\.?/gi,
-      "",
-    )
-    .split("\n")
-    .filter(
-      (line) =>
-        !/^\s*demo only[:.]/i.test(line) &&
-        !/\bno certificate (?:was )?issued\b/i.test(line),
-    )
-    .join("\n")
-    .trim();
-}
-
-function flattenImessageText(text: string) {
-  return text
-    .split("\n")
-    .map((line) => line.trim().replace(/^[-*]\s+/, ""))
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .replace(/\s+([,.!?])/g, "$1")
-    .replace(/[“”]/g, '"')
-    .trim();
-}
-
-function conciseImessageFallback(args: {
-  text: string;
-  latestMessage: string;
-}) {
-  const combined = `${args.latestMessage}\n${args.text}`.toLowerCase();
-  let text = args.text;
-
-  if (/\b(what can|what does).*\bglass\b|\bglass do\b/.test(combined)) {
-    text =
-      "Glass can read insurance docs/emails, spot gaps, and draft follow-ups. Want COIs, renewals, or vendor compliance?";
-  } else if (/\b(coi|certificate|cert|proof of insurance)\b/.test(combined)) {
-    text = "Glass can draft the COI request and broker follow-up.";
-  } else if (/\b(vendor|compliance|requirement)\b/.test(combined)) {
-    text = "Glass can check vendor evidence against requirements and flag gaps.";
-  } else if (/\b(email|inbox|mailbox|renewal|follow[- ]?up)\b/.test(combined)) {
-    text = "Glass can find policy emails, pull the key details, and draft the follow-up.";
-  } else {
-    text = args.text.split(/(?<=[.!?])\s+/)[0] ?? args.text;
-  }
-
-  return text;
-}
-
-function normalizeEmailResponse(text: string) {
-  return text
-    .trim()
-    .replace(/\s+-\s+(?=[A-Z0-9])/g, "\n- ")
-    .replace(/:\n(- )/g, ":\n\n$1")
-    .replace(/\n{3,}/g, "\n\n");
-}
-
-function normalizeChannelResponse(args: {
-  text: string;
-  channel: PublicDemoChannel;
-  latestMessage: string;
-}) {
-  if (args.channel === "email") {
-    return normalizeEmailResponse(args.text);
-  }
-
-  const flattened = flattenImessageText(args.text)
-    .replace(/^hi\s+[^,!.—-]+[,!—-]\s*/i, "")
-    .replace(/\bhere(?:'|’)s a simulated example\b[:\s-]*/i, "")
-    .replace(/\bwant the matching sample [^?]+\?/gi, "")
-    .trim();
-  const artifactLike =
-    /\b(sample COI text block|COI delivery email|simulated Glass demo email|no certificate issued\/attached|no certificate was issued or attached)\b/i.test(
-      flattened,
-    );
-
-  if (flattened.length <= 240 && !artifactLike) return flattened;
-  return conciseImessageFallback({
-    text: flattened,
-    latestMessage: args.latestMessage,
-  });
-}
-
 function addSimulationNotice(args: {
   text: string;
   channel: PublicDemoChannel;
   alreadyWarned: boolean;
 }) {
-  const text = removeRepeatedSafetyFooter(args.text) || args.text.trim();
-  if (args.alreadyWarned) {
+  const text = args.text.trim();
+  if (args.alreadyWarned || hasSafetyNotice(text)) {
     return text;
   }
   const notice =
@@ -316,6 +225,33 @@ function addSimulationNotice(args: {
       : "Demo only: no certificate was issued, nothing here is binding, and this is not insurance advice.";
   const separator = args.channel === "imessage" ? " " : "\n\n";
   return `${text}${separator}${notice}`;
+}
+
+const PUBLIC_DEMO_TRANSPORT_CAPS: Record<PublicDemoChannel, number> = {
+  email: 8_000,
+  imessage: 520,
+};
+
+function publicDemoResponseIsValid(args: {
+  text: string;
+  channel: PublicDemoChannel;
+  alreadyWarned: boolean;
+}) {
+  const text = args.text.trim();
+  if (!text || Array.from(text).length > PUBLIC_DEMO_TRANSPORT_CAPS[args.channel]) {
+    return false;
+  }
+  return (
+    args.alreadyWarned ||
+    !mentionsRealOrAdviceRisk(text) ||
+    hasSafetyNotice(text)
+  );
+}
+
+function neutralPublicDemoFailure(channel: PublicDemoChannel) {
+  return channel === "imessage"
+    ? "I couldn't safely format that demo response. Please try a shorter request."
+    : "I couldn't safely format that demo response. Please try again with a shorter request.";
 }
 
 function formatPublicDemoEmail(args: {
@@ -613,7 +549,7 @@ export const respond = internalAction({
       args.sourceMessageId ??
       args.resendEmailId ??
       `${String(conversation._id)}:${logs.length}`;
-    const result = await generateAgentTextForPublicTask(
+    let result = await generateAgentTextForPublicTask(
       ctx,
       task,
       {
@@ -656,21 +592,10 @@ export const respond = internalAction({
       ctaStatus,
       lead,
     });
-    if (!responseText) {
-      responseText =
-        channel === "imessage"
-          ? "I can show a quick Glass demo with example policy data. What should I walk through?"
-          : "I can show a quick Glass demo with example policy data. Reply with the workflow you want to see, such as policy Q&A, vendor compliance, mailbox search, or certificate drafting.";
-    }
     if (needsTextEmail && responseText.includes(PUBLIC_DEMO_BOOKING_URL)) {
       responseText =
         "What is the best email to prefill on the product-demo booking link?";
     }
-    responseText = normalizeChannelResponse({
-      text: responseText,
-      channel,
-      latestMessage: args.messageText,
-    });
     if (
       shouldAttachSimulationNotice({
         channel,
@@ -684,8 +609,74 @@ export const respond = internalAction({
         channel,
         alreadyWarned,
       });
-    } else if (channel === "imessage") {
-      responseText = removeRepeatedSafetyFooter(responseText) || responseText;
+    }
+
+    if (
+      !publicDemoResponseIsValid({
+        text: responseText,
+        channel,
+        alreadyWarned,
+      })
+    ) {
+      const retry = await generateAgentTextForPublicTask(
+        ctx,
+        task,
+        {
+          maxOutputTokens: channel === "imessage" ? 120 : 700,
+          system: `${system}\n\nRETRY REQUIREMENT: Return one self-contained, safe response under ${PUBLIC_DEMO_TRANSPORT_CAPS[channel]} Unicode code points. Do not claim that a real artifact was created or delivered. Include the simulation notice when this conversation has not already displayed one.`,
+          messages: [
+            ...messages,
+            { role: "assistant", content: responseText },
+            {
+              role: "user",
+              content:
+                "Rewrite that response to satisfy the retry requirement without adding a new topic or call to action.",
+            },
+          ],
+        },
+        {
+          taskKind:
+            channel === "email"
+              ? "public_demo_email_reply"
+              : "public_demo_chat",
+          sessionKey: String(conversation._id),
+          trace: {
+            traceId: `${publicDemoRunId}:retry`,
+            parentRequestId: publicDemoRunId,
+            label: "convex.publicDemoAgent.retry",
+            phase:
+              channel === "email"
+                ? "public_demo_email_reply"
+                : "public_demo_chat",
+            channel,
+          },
+        },
+      );
+      result = retry;
+      responseText = generatedTextFromResult(retry).trim();
+      if (
+        shouldAttachSimulationNotice({
+          channel,
+          latestMessage: args.messageText,
+          responseText,
+          alreadyWarned,
+        })
+      ) {
+        responseText = addSimulationNotice({
+          text: responseText,
+          channel,
+          alreadyWarned,
+        });
+      }
+      if (
+        !publicDemoResponseIsValid({
+          text: responseText,
+          channel,
+          alreadyWarned,
+        })
+      ) {
+        responseText = neutralPublicDemoFailure(channel);
+      }
     }
 
     await ctx.runMutation(internal.publicDemo.updateConversationLead, {

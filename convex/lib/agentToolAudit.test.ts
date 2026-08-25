@@ -23,6 +23,18 @@ describe("collectToolAudit", () => {
   });
 
   test("collects step-level workflow outcomes", () => {
+    const workflowOutcome = {
+      workflowKind: "certificate_request",
+      status: "completed",
+      nextAction: "generate_certificate",
+      requiredSlots: [],
+      forbiddenQuestions: [],
+      forbiddenClaims: [],
+      sideEffects: [],
+      artifacts: [],
+      comms: { headline: "Certificate generated." },
+      audit: [],
+    };
     expect(
       collectToolAudit({
         steps: [
@@ -32,7 +44,7 @@ describe("collectToolAudit", () => {
               {
                 name: "generate_coi",
                 output: {
-                  workflowOutcome: { kind: "certificate_generated" },
+                  workflowOutcome,
                 },
               },
             ],
@@ -42,7 +54,22 @@ describe("collectToolAudit", () => {
     ).toMatchObject({
       usedTools: ["generate_coi"],
       completedTools: ["generate_coi"],
-      workflowOutcomes: [{ kind: "certificate_generated" }],
+      workflowOutcomes: [workflowOutcome],
     });
+  });
+
+  test("drops malformed workflow outcomes", () => {
+    expect(
+      collectToolAudit({
+        toolResults: [
+          {
+            toolName: "generate_coi",
+            output: {
+              workflowOutcome: { kind: "certificate_generated" },
+            },
+          },
+        ],
+      }).workflowOutcomes,
+    ).toEqual([]);
   });
 });

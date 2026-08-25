@@ -1,5 +1,23 @@
 const RESPONSE_SEGMENT_MAX_CHARS = 520;
 
+function hardSplitToken(token: string): string[] {
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const codePoint of token) {
+    if (
+      current &&
+      current.length + codePoint.length > RESPONSE_SEGMENT_MAX_CHARS
+    ) {
+      chunks.push(current);
+      current = "";
+    }
+    current += codePoint;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 function splitLongTextLine(line: string): string[] {
   if (line.length <= RESPONSE_SEGMENT_MAX_CHARS) return [line];
 
@@ -12,7 +30,9 @@ function splitLongTextLine(line: string): string[] {
       continue;
     }
     if (current) chunks.push(current);
-    current = word;
+    const wordChunks = hardSplitToken(word);
+    chunks.push(...wordChunks.slice(0, -1));
+    current = wordChunks.at(-1) ?? "";
   }
   if (current) chunks.push(current);
   return chunks;

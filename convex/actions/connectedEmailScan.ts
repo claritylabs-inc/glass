@@ -7,6 +7,7 @@ import type {
   MessageAddressObject,
   MessageStructureObject,
 } from "imapflow";
+import { convert } from "html-to-text";
 import { v, type Infer } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
@@ -224,12 +225,17 @@ function formatEnvelopeAddresses(addresses?: MessageAddressObject[]) {
     .join(", ");
 }
 
-function automationTextPreview(value: string, contentType?: string) {
-  const text = contentType?.toLowerCase() === "text/html"
-    ? value
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
+export function automationTextPreview(value: string, contentType?: string) {
+  const text = contentType?.toLowerCase().startsWith("text/html")
+    ? convert(value, {
+        wordwrap: false,
+        limits: { maxInputLength: AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES },
+        selectors: [
+          { selector: "script", format: "skip" },
+          { selector: "style", format: "skip" },
+          { selector: "a", options: { ignoreHref: true } },
+        ],
+      })
     : value;
   return text.replace(/\s+/g, " ").trim().slice(0, 12_000);
 }

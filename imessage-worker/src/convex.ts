@@ -46,23 +46,63 @@ export interface ImessageResponse {
   sendContactCard?: boolean;
 }
 
+export type ImessageConvexErrorCode =
+  | "request_timeout"
+  | "http_error"
+  | "network_error";
+
+export class ImessageConvexError extends Error {
+  constructor(
+    readonly code: ImessageConvexErrorCode,
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "ImessageConvexError";
+  }
+}
+
+export function isImessageConvexTimeout(
+  error: unknown,
+): error is ImessageConvexError {
+  return error instanceof ImessageConvexError && error.code === "request_timeout";
+}
+
 export async function sendToConvex(
   siteUrl: string,
   secret: string,
   payload: ImessageRequest,
 ): Promise<ImessageResponse> {
-  const res = await fetch(`${siteUrl}/imessage-inbound`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${siteUrl}/imessage-inbound`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new ImessageConvexError(
+        "request_timeout",
+        "The Convex request timed out",
+      );
+    }
+    throw new ImessageConvexError(
+      "network_error",
+      "The Convex request could not be completed",
+    );
+  }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "(no body)");
-    throw new Error(`Convex responded ${res.status}: ${text}`);
+    throw new ImessageConvexError(
+      res.status === 408 || res.status === 504 ? "request_timeout" : "http_error",
+      `Convex responded ${res.status}: ${text}`,
+      res.status,
+    );
   }
 
   return res.json() as Promise<ImessageResponse>;

@@ -24,7 +24,9 @@ import {
   buildTextModelHistory,
   buildThreadContinuityPrompt,
   buildThreadHistoryToolInstructions,
+  stripInternalAgentActivity,
 } from "../lib/agentMessageHistory";
+import { stripConfidenceMarkers } from "../lib/confidence";
 import {
   loadBoundedAgentHistory,
   scheduleThreadHistoryCompaction,
@@ -97,7 +99,7 @@ export const run = internalAction({
     if (!injectionCheck.safe) {
       console.warn("[security] Prompt injection blocked in MCP chat", {
         orgId: args.orgId,
-        reason: injectionCheck.reason,
+        audit: injectionCheck.audit,
       });
       return {
         threadId: (args.threadId as string) ?? "",
@@ -487,6 +489,10 @@ MCP MODE:
             })),
           )
         : undefined;
-    return { threadId: threadId as string, response: content, attachments };
+    return {
+      threadId: threadId as string,
+      response: stripConfidenceMarkers(stripInternalAgentActivity(content)),
+      attachments,
+    };
   },
 });

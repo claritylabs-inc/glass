@@ -22,6 +22,11 @@ import {
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
 import { canAccessThread } from "./lib/threadAccess";
+import {
+  emailContentValidator,
+  pendingEmailAttachmentKindValidator,
+  threadMessageKindValidator,
+} from "./lib/threadMessageValidators";
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
@@ -514,6 +519,7 @@ export const sendMessage = mutation({
           contentType: v.string(),
           size: v.number(),
           fileId: v.id("_storage"),
+          kind: v.optional(pendingEmailAttachmentKindValidator),
         }),
       ),
     ),
@@ -578,6 +584,7 @@ export const sendMessage = mutation({
       clientMutationId: args.clientMutationId,
       channel: "chat",
       role: "user",
+      messageKind: "conversation",
       userId,
       userName,
       operatorInitiated,
@@ -597,6 +604,7 @@ export const sendMessage = mutation({
           orgId,
           channel: "chat",
           role: "agent",
+          messageKind: "conversation",
           content: "",
           status: "processing",
           replyToMessageId: messageId,
@@ -692,6 +700,7 @@ export const insertProcessingMessage = mutation({
       orgId,
       channel: "chat",
       role: "agent",
+      messageKind: "conversation",
       content: "",
       status: "processing",
     });
@@ -845,13 +854,21 @@ export const insertAgentMessage = internalMutation({
   args: {
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
+    channel: v.optional(
+      v.union(
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("slack"),
+      ),
+    ),
     replyToMessageId: v.optional(v.id("threadMessages")),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId: args.orgId,
-      channel: "chat",
+      channel: args.channel ?? "chat",
       role: "agent",
       content: "",
       status: "processing",
@@ -906,6 +923,7 @@ export const claimAgentResponse = internalMutation({
       orgId: args.orgId,
       channel: "chat",
       role: "agent",
+      messageKind: "conversation",
       content: "",
       status: "processing",
       replyToMessageId: args.userMessageId,
@@ -949,6 +967,7 @@ export const updateAgentMessage = internalMutation({
           contentType: v.string(),
           size: v.number(),
           fileId: v.optional(v.id("_storage")),
+          kind: v.optional(pendingEmailAttachmentKindValidator),
         }),
       ),
     ),
@@ -1008,6 +1027,7 @@ export const insertAttachmentMessageInternal = internalMutation({
         contentType: v.string(),
         size: v.number(),
         fileId: v.id("_storage"),
+        kind: v.optional(pendingEmailAttachmentKindValidator),
       }),
     ),
   },
@@ -1023,6 +1043,47 @@ export const insertAttachmentMessageInternal = internalMutation({
       role: "agent",
       content: args.content,
       attachments: args.attachments,
+    });
+    await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
+    return messageId;
+  },
+});
+
+export const insertWorkflowStatusMessage = internalMutation({
+  args: {
+    threadId: v.id("threads"),
+    orgId: v.id("organizations"),
+    channel: v.optional(
+      v.union(
+        v.literal("chat"),
+        v.literal("email"),
+        v.literal("imessage"),
+        v.literal("slack"),
+      ),
+    ),
+    content: v.string(),
+    pendingEmailId: v.optional(v.id("pendingEmails")),
+    sourceThreadMessageId: v.optional(v.id("threadMessages")),
+    dedupeKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("threadMessages")
+      .withIndex("by_threadId_and_dedupeKey", (query) =>
+        query.eq("threadId", args.threadId).eq("dedupeKey", args.dedupeKey),
+      )
+      .unique();
+    if (existing) return existing._id;
+    const messageId = await ctx.db.insert("threadMessages", {
+      threadId: args.threadId,
+      orgId: args.orgId,
+      channel: args.channel ?? "chat",
+      role: "agent",
+      messageKind: "workflow_status",
+      sourceThreadMessageId: args.sourceThreadMessageId,
+      dedupeKey: args.dedupeKey,
+      content: args.content,
+      pendingEmailId: args.pendingEmailId,
     });
     await ctx.db.patch(args.threadId, { lastMessageAt: dayjs().valueOf() });
     return messageId;
@@ -1047,21 +1108,14 @@ export const listThreadAttachmentsInternal = internalQuery({
         if (args.excludeEmailArtifacts && message.channel === "email") {
           return false;
         }
+        if (args.excludeAgentCoiAttachments && message.role === "agent") {
+          return false;
+        }
         return true;
       })
       .flatMap((message) =>
         (message.attachments ?? [])
           .filter((attachment) => attachment.fileId)
-          .filter(
-            (attachment) =>
-              !(
-                args.excludeAgentCoiAttachments &&
-                message.role === "agent" &&
-                /\b(coi|certificate[-_\s]?of[-_\s]?insurance)\b/i.test(
-                  attachment.filename,
-                )
-              ),
-          )
           .map((attachment) => ({
             filename: attachment.filename,
             contentType: attachment.contentType,
@@ -1411,6 +1465,7 @@ export const insertUserMessageInternal = internalMutation({
       orgId: args.orgId,
       channel: "chat",
       role: "user",
+      messageKind: "conversation",
       userId: args.userId,
       userName: args.userName,
       content: args.content,
@@ -1580,6 +1635,9 @@ export const insertImessageMessage = internalMutation({
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
     role: v.union(v.literal("user"), v.literal("agent")),
+    messageKind: v.optional(threadMessageKindValidator),
+    sourceThreadMessageId: v.optional(v.id("threadMessages")),
+    dedupeKey: v.optional(v.string()),
     userId: v.optional(v.id("users")),
     userName: v.optional(v.string()),
     imessageSenderAddress: v.optional(v.string()),
@@ -1594,6 +1652,7 @@ export const insertImessageMessage = internalMutation({
           contentType: v.string(),
           size: v.number(),
           fileId: v.optional(v.id("_storage")),
+          kind: v.optional(pendingEmailAttachmentKindValidator),
         }),
       ),
     ),
@@ -1622,11 +1681,23 @@ export const insertImessageMessage = internalMutation({
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.dedupeKey) {
+      const existing = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_threadId_and_dedupeKey", (query) =>
+          query.eq("threadId", args.threadId).eq("dedupeKey", args.dedupeKey),
+        )
+        .unique();
+      if (existing) return existing._id;
+    }
     const messageId = await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId: args.orgId,
       channel: "imessage",
       role: args.role,
+      messageKind: args.messageKind ?? "conversation",
+      sourceThreadMessageId: args.sourceThreadMessageId,
+      dedupeKey: args.dedupeKey,
       userId: args.userId,
       userName: args.userName,
       imessageSenderAddress: args.imessageSenderAddress,
@@ -1948,15 +2019,7 @@ export const findEmailThreadBySubject = internalQuery({
       }
     }
 
-    return (
-      threads.find(
-        (thread) =>
-          thread.title
-            .replace(/^(\s*(re|fwd?)\s*:\s*)+/i, "")
-            .trim()
-            .toLowerCase() === baseSubject,
-      ) ?? null
-    );
+    return null;
   },
 });
 
@@ -1984,6 +2047,9 @@ export const insertEmailMessage = internalMutation({
     threadId: v.id("threads"),
     orgId: v.id("organizations"),
     role: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
+    messageKind: v.optional(threadMessageKindValidator),
+    sourceThreadMessageId: v.optional(v.id("threadMessages")),
+    dedupeKey: v.optional(v.string()),
     fromEmail: v.optional(v.string()),
     fromName: v.optional(v.string()),
     toAddresses: v.optional(v.array(v.string())),
@@ -1992,6 +2058,7 @@ export const insertEmailMessage = internalMutation({
     subject: v.optional(v.string()),
     content: v.string(),
     contentHtml: v.optional(v.string()),
+    emailContent: v.optional(emailContentValidator),
     messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
     attachments: v.optional(
@@ -2001,6 +2068,7 @@ export const insertEmailMessage = internalMutation({
           contentType: v.string(),
           size: v.number(),
           fileId: v.optional(v.id("_storage")),
+          kind: v.optional(pendingEmailAttachmentKindValidator),
         }),
       ),
     ),
@@ -2028,11 +2096,23 @@ export const insertEmailMessage = internalMutation({
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   },
   handler: async (ctx, args) => {
+    if (args.dedupeKey) {
+      const existing = await ctx.db
+        .query("threadMessages")
+        .withIndex("by_threadId_and_dedupeKey", (query) =>
+          query.eq("threadId", args.threadId).eq("dedupeKey", args.dedupeKey),
+        )
+        .unique();
+      if (existing) return existing._id;
+    }
     const messageDocId = await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId: args.orgId,
       channel: "email",
       role: args.role,
+      messageKind: args.messageKind ?? "conversation",
+      sourceThreadMessageId: args.sourceThreadMessageId,
+      dedupeKey: args.dedupeKey,
       fromEmail: args.fromEmail,
       fromName: args.fromName,
       toAddresses: args.toAddresses,
@@ -2041,6 +2121,7 @@ export const insertEmailMessage = internalMutation({
       subject: args.subject,
       content: args.content,
       contentHtml: args.contentHtml,
+      emailContent: args.emailContent,
       messageId: args.messageId,
       responseMessageId: args.responseMessageId,
       resendEmailId: args.resendEmailId,
@@ -2078,6 +2159,7 @@ export const updateEmailMessage = internalMutation({
           contentType: v.string(),
           size: v.number(),
           fileId: v.optional(v.id("_storage")),
+          kind: v.optional(pendingEmailAttachmentKindValidator),
         }),
       ),
     ),

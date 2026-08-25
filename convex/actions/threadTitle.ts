@@ -1,17 +1,19 @@
 "use node";
 
 import { v } from "convex/values";
+import { z } from "zod";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateTextForOrg } from "../lib/models";
+import { generateObjectForOrg } from "../lib/models";
 import { logAiError } from "../lib/aiUtils";
+import { tokenizeSearchText } from "../lib/searchTokenizer";
 
 export const TITLE_SYSTEM_PROMPT = `You are a thread title generator for an insurance work assistant.
 
 Given the initial user request and any starting page context, output a short title that captures the user's actual work intent.
 
 Rules:
-- Output ONLY the title, no quotes, no punctuation, no explanation.
+- Return the title field only. Do not include analysis or explanation.
 - Do not output analysis, reasoning, steps, headings, lists, or Markdown.
 - Use title case.
 - Use 2-4 words.
@@ -21,6 +23,10 @@ Rules:
 - Never include raw email addresses, email domains, usernames, file IDs, generated IDs, or local-part fragments.
 - For certificate of insurance work, use a compact action title such as "Generate COI", "Update COI", "Draft COI", or "Send COI".
 - Good examples: "Generate COI", "Send COI", "GL Coverage Limits", "Cyber Liability Policy", "Endorsement Follow Up", "Renewal Timeline".`;
+
+const ThreadTitleOutputSchema = z.object({
+  title: z.string().min(1).max(80),
+});
 
 type TitleContext = {
   userMessage: string;
@@ -36,86 +42,88 @@ type TitleContext = {
   assistantReply?: string;
 };
 
-function stripEmailNoise(input: string): string {
+function stripStructuredTitleNoise(input: string): string {
   return input
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, " ")
-    .replace(/\b(?:gmail|icloud|outlook|hotmail|yahoo|aol|protonmail|com|net|org|inc)\b/gi, " ")
-    .replace(/\b[a-z]+[a-z0-9._%+-]*\d{2,}[a-z0-9._%+-]*\b/gi, " ");
+    .replace(/https?:\/\/\S+/giu, " ");
 }
 
 export function normalizeGeneratedTitle(raw: string): string | null {
-  const trimmedRaw = raw.trim();
+  const trimmedRaw = raw.normalize("NFC").trim();
   if (
     !trimmedRaw ||
     trimmedRaw.includes("\n") ||
+    /[\p{Cc}\p{Cf}]/u.test(trimmedRaw) ||
     /[*_`#>]/.test(trimmedRaw) ||
     /^\s*(?:[-+]\s|\d+[.)]\s)/.test(trimmedRaw) ||
-    /\b(?:analy[sz]e|understand|identify|determine)\s+(?:the\s+)?(?:user(?:'s)?\s+)?(?:request|intent)\b/i.test(
-      trimmedRaw,
-    ) ||
-    /@|https?:\/\//i.test(trimmedRaw) ||
-    /\b(?:gmail|icloud|outlook|hotmail|yahoo|aol|protonmail)\b/i.test(trimmedRaw) ||
-    /\b[a-z]+[a-z0-9._%+-]*\d{2,}[a-z0-9._%+-]*\b/i.test(trimmedRaw)
+    /@|https?:\/\//iu.test(trimmedRaw)
   ) {
     return null;
   }
 
-  const cleaned = stripEmailNoise(trimmedRaw)
+  const cleaned = stripStructuredTitleNoise(trimmedRaw)
     .trim()
-    .replace(/^["']|["']$/g, "")
+    .replace(/^["'“”‘’]|["'“”‘’]$/gu, "")
     .split("\n")[0]
-    .replace(/[.!?]+$/g, "")
+    .replace(/[.!?]+$/gu, "")
     .replace(/\s+/g, " ")
     .trim();
 
   if (!cleaned) return null;
-  if (cleaned.length > 40) return null;
+  if (Array.from(cleaned).length > 40) return null;
   if (cleaned.split(/\s+/).length > 4) return null;
-  if (/^(?:can|could|would|will)\s+you\b|^(?:i|we)\s+(?:need|want)\b|^please\b/i.test(cleaned)) {
+  if (!/^[\p{L}\p{M}\p{N}][\p{L}\p{M}\p{N}\s&'’+/-]*$/u.test(cleaned)) {
     return null;
   }
-  if (/@|https?:\/\//i.test(cleaned)) return null;
+  const words = tokenizeSearchText(cleaned);
+  const conversationalOpening = words.slice(0, 2).join(" ");
+  if (
+    ["can you", "could you", "would you", "will you", "i need", "i want", "we need", "we want"]
+      .includes(conversationalOpening) ||
+    words[0] === "please"
+  ) {
+    return null;
+  }
+  if (
+    words.some((word) =>
+      ["analyze", "analyse", "understand", "identify", "determine"].includes(word),
+    ) && words.some((word) => ["request", "intent"].includes(word))
+  ) {
+    return null;
+  }
   return cleaned;
 }
 
-function certificateTitle(seed: string): string | null {
-  if (!/\b(?:coi|certificates?)\b/i.test(seed)) return null;
-  if (/\b(?:update|revise|reissue|correct|change|edit|modify)\b/i.test(seed)) {
-    return "Update COI";
-  }
-  if (/\b(?:generate|create|issue|make|produce)\b/i.test(seed)) {
-    return "Generate COI";
-  }
-  if (/\b(?:send|email|forward|share|deliver)\b/i.test(seed)) {
-    return "Send COI";
-  }
-  if (/\b(?:draft|prepare)\b/i.test(seed)) return "Draft COI";
-  return "COI Request";
-}
-
 export function fallbackTitle(seed: string): string {
-  const normalizedSeed = stripEmailNoise(seed);
-  const lower = normalizedSeed.toLowerCase();
-
-  const certificate = certificateTitle(normalizedSeed);
-  if (certificate) return certificate;
-
-  const words = normalizedSeed
-    .replace(/https?:\/\/\S+/g, "")
-    .replace(/[^a-zA-Z0-9\s-]/g, " ")
-    .split(/\s+/)
-    .filter((word) => word.length > 2)
-    .filter((word) => !/^(a|an|the|and|for|with|about|please|can|could|would|will|you|your|we|our|what|when|where|which|show|tell|need|want|does|have|new)$/i.test(word))
-    .filter((word) => !/^\d+$/.test(word))
+  const stopWords = new Set([
+    "the", "and", "for", "with", "about", "of", "to", "this", "please", "can", "could",
+    "would", "will", "you", "your", "our", "what", "when", "where",
+    "which", "show", "tell", "need", "want", "does", "have", "new",
+  ]);
+  const words = tokenizeSearchText(stripStructuredTitleNoise(seed), {
+    minimumLength: 2,
+  })
+    .filter((word) => !stopWords.has(word))
+    .filter((word) => !/^\p{N}+$/u.test(word))
     .slice(0, 4);
 
-  const title = (words.length ? words : seed.split(/\s+/).slice(0, 4))
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ")
-    .trim();
+  const fallbackWords = words.length
+    ? words
+    : tokenizeSearchText(seed, { minimumLength: 1 }).slice(0, 4);
+  const titledWords = fallbackWords
+    .map((word) => {
+      const [first, ...rest] = Array.from(word);
+      return `${first?.toLocaleUpperCase("und") ?? ""}${rest.join("")}`;
+    });
+  const boundedWords: string[] = [];
+  for (const word of titledWords) {
+    const candidate = [...boundedWords, word].join(" ");
+    if (Array.from(candidate).length > 40) break;
+    boundedWords.push(word);
+  }
+  const title = boundedWords.join(" ").trim();
 
-  if (!title && lower.includes("email")) return "Email Request";
-  return title.slice(0, 40) || "New Chat";
+  return title || "New Chat";
 }
 
 export function buildTitlePromptContent(context: TitleContext): string {
@@ -181,12 +189,13 @@ export const generate = internalAction({
 
       let title = fallbackTitle(seed);
       try {
-        const { text } = await generateTextForOrg(ctx, thread.orgId, "summary", {
+        const result = await generateObjectForOrg(ctx, thread.orgId, "summary", {
+          schema: ThreadTitleOutputSchema,
           maxOutputTokens: 16,
           system: TITLE_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: promptContent }],
+          prompt: promptContent,
         });
-        const generated = normalizeGeneratedTitle(text);
+        const generated = normalizeGeneratedTitle(result.object.title);
         if (generated) title = generated;
       } catch (err) {
         logAiError("threadTitle.generateText", err, { threadId: args.threadId });

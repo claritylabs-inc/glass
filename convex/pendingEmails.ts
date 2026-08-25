@@ -5,15 +5,15 @@ import {
   internalQuery,
   internalMutation,
 } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import {
   cancelDraftOrPendingEmail,
+  invalidateDraftConfirmations,
   restoreCancelledEmailAsDraft,
   updateDraftRecipient,
-  withLegacySendBlockedReason,
 } from "./lib/emailDraftService";
 import { extractStoredEmailPayloadFields } from "./lib/emailPayloadFields";
+import { pendingEmailAttachmentValidator } from "./lib/threadMessageValidators";
 
 // ── Queries ──
 
@@ -23,7 +23,7 @@ export const get = query({
     const { orgId } = await requireOrgAccess(ctx);
     const pending = await ctx.db.get(args.id);
     if (!pending || pending.orgId !== orgId) return null;
-    return await withLegacySendBlockedReason(ctx, pending);
+    return pending;
   },
 });
 
@@ -93,16 +93,7 @@ export const create = internalMutation({
     references: v.optional(v.string()),
     renderedText: v.optional(v.string()),
     renderedHtml: v.optional(v.string()),
-    attachments: v.optional(
-      v.array(
-        v.object({
-          filename: v.string(),
-          contentType: v.string(),
-          size: v.number(),
-          fileId: v.id("_storage"),
-        })
-      )
-    ),
+    attachments: v.optional(v.array(pendingEmailAttachmentValidator)),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     sendBlockedReason: v.optional(v.string()),
@@ -160,12 +151,7 @@ export const updateDraftInternal = internalMutation({
     references: v.optional(v.string()),
     renderedText: v.optional(v.string()),
     renderedHtml: v.optional(v.string()),
-    attachments: v.optional(v.array(v.object({
-      filename: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-      fileId: v.id("_storage"),
-    }))),
+    attachments: v.optional(v.array(pendingEmailAttachmentValidator)),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     chatMessageId: v.optional(v.id("threadMessages")),
@@ -185,6 +171,11 @@ export const updateDraftInternal = internalMutation({
       ...patch
     } = args;
     const payloadFields = extractStoredEmailPayloadFields(emailPayload);
+    const existing = await ctx.db.get(id);
+    if (!existing || existing.status !== "draft") {
+      throw new Error("Only draft emails can be updated");
+    }
+    await invalidateDraftConfirmations(ctx, existing, "draft_content_changed");
     await ctx.db.patch(id, {
       ...patch,
       emailPayload,
@@ -197,6 +188,7 @@ export const updateDraftInternal = internalMutation({
       status: "draft",
       scheduledSendTime: 0,
       sendBlockedReason: args.sendBlockedReason,
+      coiBatchAuthorization: undefined,
     });
   },
 });
@@ -264,7 +256,7 @@ export const markSent = internalMutation({
 export const getInternal = internalQuery({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
-    return await withLegacySendBlockedReason(ctx, await ctx.db.get(args.id));
+    return await ctx.db.get(args.id);
   },
 });
 
@@ -347,12 +339,7 @@ export const listDraftsInternal = internalQuery({
     const drafts = rows
       .filter((row) => row.orgId === args.orgId && row.status === "draft")
       .sort((a, b) => b._creationTime - a._creationTime);
-    const enriched = await Promise.all(
-      drafts.map((draft) => withLegacySendBlockedReason(ctx, draft)),
-    );
-    return enriched.filter(
-      (draft): draft is Doc<"pendingEmails"> => draft !== null,
-    );
+    return drafts;
   },
 });
 
@@ -369,5 +356,24 @@ export const restoreAsDraftInternal = internalMutation({
   handler: async (ctx, args) => {
     const restored = await restoreCancelledEmailAsDraft(ctx, args.id);
     return restored ? { id: args.id } : null;
+  },
+});
+
+export const verifyLegacyCoiAttachmentAuthorizationCleanup = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const remaining = await ctx.db
+      .query("pendingEmails")
+      .filter((query) =>
+        query.neq(
+          query.field("allowMultipleCoiAttachments"),
+          undefined,
+        ),
+      )
+      .first();
+    return {
+      complete: remaining === null,
+      remainingSampleId: remaining?._id,
+    };
   },
 });

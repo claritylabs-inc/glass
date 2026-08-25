@@ -14,6 +14,7 @@ import { terminal } from "@spectrum-ts/terminal";
 import {
   reportImessageDeliveryEvent,
   sendToConvex,
+  isImessageConvexTimeout,
   type ImessageAppCard,
   type ImessageDeliveryFailure,
   type ImessageResponseAttachment,
@@ -216,12 +217,7 @@ if (
 }
 
 export function imessageProcessingFallbackMessage(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  if (
-    /Convex responded 408|Client disconnected|timed?\s*out|timeout/i.test(
-      message,
-    )
-  ) {
+  if (isImessageConvexTimeout(err)) {
     return "I'm still working on that. If I don't follow up here, check Glass for the draft.";
   }
   return "Sorry, something went wrong. Please try again.";

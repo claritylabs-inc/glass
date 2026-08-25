@@ -3,7 +3,10 @@
 import type { ModelMessage } from "ai";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { buildAssistantMessageContentWithArtifacts } from "./agentMessageHistory";
+import {
+  buildAssistantMessageContentWithArtifacts,
+  buildPrivateAgentHistoryMetadata,
+} from "./agentMessageHistory";
 import {
   MAX_IMESSAGE_AUDIO_BYTES,
   isImessageAudioAttachment,
@@ -22,6 +25,7 @@ export type ImessageHistoryMessage = {
   content: string;
   userName?: string;
   responseMessageId?: string;
+  messageKind?: "conversation" | "workflow_status" | "channel_sync";
   toolArtifacts?: Array<{ type: string; data: unknown }>;
   usedTools?: string[];
   attachments?: Array<{ filename: string }>;
@@ -126,9 +130,9 @@ export async function transcribeImessageVoiceMemos(
 }
 
 export function isImessageStatusCue(message: {
-  responseMessageId?: string;
+  messageKind?: "conversation" | "workflow_status" | "channel_sync";
 }): boolean {
-  return message.responseMessageId?.endsWith(":status") === true;
+  return message.messageKind === "workflow_status";
 }
 
 export function buildRecentImessageTextContext(
@@ -138,6 +142,7 @@ export function buildRecentImessageTextContext(
     status?: string;
     userName?: string;
     responseMessageId?: string;
+    messageKind?: "conversation" | "workflow_status" | "channel_sync";
   }>,
 ): string {
   return messages
@@ -173,6 +178,11 @@ export async function buildImessageModelMessages(args: {
           : msg.content,
       });
     } else if (msg.role === "agent" && msg.content) {
+      const privateHistory = buildPrivateAgentHistoryMetadata({
+        toolArtifacts: msg.toolArtifacts,
+        usedTools: msg.usedTools,
+        attachments: msg.attachments,
+      });
       modelMessages.push({
         role: "assistant",
         content: buildAssistantMessageContentWithArtifacts({
@@ -181,6 +191,7 @@ export async function buildImessageModelMessages(args: {
           usedTools: msg.usedTools,
           attachments: msg.attachments,
         }),
+        providerOptions: { glass: { privateHistory } },
       });
     }
   }

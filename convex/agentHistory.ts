@@ -1,10 +1,15 @@
 import dayjs from "dayjs";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
+import { normalizedSearchText } from "./lib/searchTokenizer";
 
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, internalQuery } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+} from "./_generated/server";
 import {
   AGENT_CHANNEL_HISTORY_POLICY,
   IMESSAGE_TASK_INACTIVITY_MS,
@@ -22,6 +27,28 @@ const surfaceValidator = v.union(
 );
 
 const SUMMARY_SOURCE_BATCH_SIZE = 48;
+
+async function invalidatePendingConfirmations(
+  ctx: MutationCtx,
+  threadId: Id<"threads">,
+  reason: string,
+  now: number,
+) {
+  const confirmations = await ctx.db
+    .query("threadActionConfirmations")
+    .withIndex("by_threadId_and_status", (query) =>
+      query.eq("threadId", threadId).eq("status", "pending"),
+    )
+    .collect();
+  for (const confirmation of confirmations) {
+    await ctx.db.patch(confirmation._id, {
+      status: "stale",
+      invalidatedAt: now,
+      invalidationReason: reason,
+      updatedAt: now,
+    });
+  }
+}
 
 function deriveLegacyTaskStart(
   messages: Doc<"threadMessages">[],
@@ -98,6 +125,14 @@ export const prepareForTurn = internalMutation({
         currentMessage._creationTime,
       );
     const modeChanged = existing.continuityMode !== continuityMode;
+    if (inactiveReset || modeChanged) {
+      await invalidatePendingConfirmations(
+        ctx,
+        args.threadId,
+        "task_epoch_changed",
+        now,
+      );
+    }
     await ctx.db.patch(existing._id, {
       continuityMode,
       lastUserMessageAt: currentMessage._creationTime,
@@ -141,6 +176,7 @@ export const resetTask = internalMutation({
       throw new Error("Thread history turn not found");
     }
     const now = dayjs().valueOf();
+    await invalidatePendingConfirmations(ctx, args.threadId, "task_reset", now);
     if (!existing) {
       await ctx.db.insert("threadContextStates", {
         threadId: thread._id,
@@ -460,10 +496,13 @@ export const searchThreadHistory = internalQuery({
       return [];
     }
     const limit = Math.max(1, Math.min(8, Math.floor(args.limit)));
+    const normalizedQuery =
+      normalizedSearchText(args.query) || args.query.trim();
+    if (!normalizedQuery) return [];
     const rows = await ctx.db
       .query("threadMessages")
       .withSearchIndex("search_content", (q) =>
-        q.search("content", args.query).eq("threadId", args.threadId),
+        q.search("content", normalizedQuery).eq("threadId", args.threadId),
       )
       .take(limit * 2);
     return rows

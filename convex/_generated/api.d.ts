@@ -29,7 +29,6 @@ import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractSupplementary from "../actions/extractSupplementary.js";
 import type * as actions_generateCoi from "../actions/generateCoi.js";
-import type * as actions_generateEmailBody from "../actions/generateEmailBody.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
 import type * as actions_handleInboundImessage from "../actions/handleInboundImessage.js";
 import type * as actions_handleInboundSlack from "../actions/handleInboundSlack.js";
@@ -108,7 +107,7 @@ import type * as lib_acordTaxonomyBackfill from "../lib/acordTaxonomyBackfill.js
 import type * as lib_acordTaxonomyBackfillReport from "../lib/acordTaxonomyBackfillReport.js";
 import type * as lib_actionFailures from "../lib/actionFailures.js";
 import type * as lib_actorRef from "../lib/actorRef.js";
-import type * as lib_agentEmailTemplate from "../lib/agentEmailTemplate.js";
+import type * as lib_actionConfirmationFingerprint from "../lib/actionConfirmationFingerprint.js";
 import type * as lib_agentMessageHistory from "../lib/agentMessageHistory.js";
 import type * as lib_agentPolicyFocus from "../lib/agentPolicyFocus.js";
 import type * as lib_agentPolicyPresentation from "../lib/agentPolicyPresentation.js";
@@ -148,6 +147,7 @@ import type * as lib_complianceAgent from "../lib/complianceAgent.js";
 import type * as lib_complianceCheck from "../lib/complianceCheck.js";
 import type * as lib_complianceRequirementMigration from "../lib/complianceRequirementMigration.js";
 import type * as lib_complianceTypes from "../lib/complianceTypes.js";
+import type * as lib_confidence from "../lib/confidence.js";
 import type * as lib_convexDocumentStore from "../lib/convexDocumentStore.js";
 import type * as lib_convexMemoryStore from "../lib/convexMemoryStore.js";
 import type * as lib_convexSourceRetriever from "../lib/convexSourceRetriever.js";
@@ -167,7 +167,6 @@ import type * as lib_emailDraftArtifacts from "../lib/emailDraftArtifacts.js";
 import type * as lib_emailDraftService from "../lib/emailDraftService.js";
 import type * as lib_emailDraftSummary from "../lib/emailDraftSummary.js";
 import type * as lib_emailIdentity from "../lib/emailIdentity.js";
-import type * as lib_emailIntentGuards from "../lib/emailIntentGuards.js";
 import type * as lib_emailPayloadFields from "../lib/emailPayloadFields.js";
 import type * as lib_emailPolicySources from "../lib/emailPolicySources.js";
 import type * as lib_emailSubagent from "../lib/emailSubagent.js";
@@ -178,6 +177,7 @@ import type * as lib_extraction from "../lib/extraction.js";
 import type * as lib_extractionFieldReview from "../lib/extractionFieldReview.js";
 import type * as lib_extractionIntegrityAudit from "../lib/extractionIntegrityAudit.js";
 import type * as lib_extractionPostProcess from "../lib/extractionPostProcess.js";
+import type * as lib_forwardReplyDirection from "../lib/forwardReplyDirection.js";
 import type * as lib_extractionPromotion from "../lib/extractionPromotion.js";
 import type * as lib_extractionPromptGuidance from "../lib/extractionPromptGuidance.js";
 import type * as lib_extractionTraceRouterFields from "../lib/extractionTraceRouterFields.js";
@@ -193,7 +193,7 @@ import type * as lib_imessageDeterministicControls from "../lib/imessageDetermin
 import type * as lib_imessageGroupResolution from "../lib/imessageGroupResolution.js";
 import type * as lib_imessageIngress from "../lib/imessageIngress.js";
 import type * as lib_imessageOutbound from "../lib/imessageOutbound.js";
-import type * as lib_imessageResponsePostProcessing from "../lib/imessageResponsePostProcessing.js";
+import type * as lib_inboundEmailParser from "../lib/inboundEmailParser.js";
 import type * as lib_imessageSlashCommands from "../lib/imessageSlashCommands.js";
 import type * as lib_inboundEmailDeterministicControls from "../lib/inboundEmailDeterministicControls.js";
 import type * as lib_industries from "../lib/industries.js";
@@ -235,6 +235,7 @@ import type * as lib_requirementAttachmentIntent from "../lib/requirementAttachm
 import type * as lib_resend from "../lib/resend.js";
 import type * as lib_sdkCallbacks from "../lib/sdkCallbacks.js";
 import type * as lib_security from "../lib/security.js";
+import type * as lib_searchTokenizer from "../lib/searchTokenizer.js";
 import type * as lib_slackAvailability from "../lib/slackAvailability.js";
 import type * as lib_slackBlocks from "../lib/slackBlocks.js";
 import type * as lib_slackChannelRouting from "../lib/slackChannelRouting.js";
@@ -247,11 +248,13 @@ import type * as lib_slackRetry from "../lib/slackRetry.js";
 import type * as lib_slackSecurity from "../lib/slackSecurity.js";
 import type * as lib_sourceTree from "../lib/sourceTree.js";
 import type * as lib_spreadsheetText from "../lib/spreadsheetText.js";
-import type * as lib_taskControlDecision from "../lib/taskControlDecision.js";
 import type * as lib_taskControlIntent from "../lib/taskControlIntent.js";
 import type * as lib_textChannelCommands from "../lib/textChannelCommands.js";
 import type * as lib_textChannelControls from "../lib/textChannelControls.js";
 import type * as lib_threadAccess from "../lib/threadAccess.js";
+import type * as lib_threadActionConfirmationValidators from "../lib/threadActionConfirmationValidators.js";
+import type * as lib_threadMessageValidators from "../lib/threadMessageValidators.js";
+import type * as lib_transportRenderers from "../lib/transportRenderers.js";
 import type * as lib_userFacingErrors from "../lib/userFacingErrors.js";
 import type * as lib_userPhone from "../lib/userPhone.js";
 import type * as lib_valueNormalization from "../lib/valueNormalization.js";
@@ -296,6 +299,7 @@ import type * as slackLifecycle from "../slackLifecycle.js";
 import type * as sourceNodes from "../sourceNodes.js";
 import type * as sourceSpans from "../sourceSpans.js";
 import type * as threads from "../threads.js";
+import type * as threadActionConfirmations from "../threadActionConfirmations.js";
 import type * as users from "../users.js";
 
 import type {
@@ -326,7 +330,6 @@ declare const fullApi: ApiFromModules<{
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractSupplementary": typeof actions_extractSupplementary;
   "actions/generateCoi": typeof actions_generateCoi;
-  "actions/generateEmailBody": typeof actions_generateEmailBody;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;
   "actions/handleInboundImessage": typeof actions_handleInboundImessage;
   "actions/handleInboundSlack": typeof actions_handleInboundSlack;
@@ -405,7 +408,7 @@ declare const fullApi: ApiFromModules<{
   "lib/acordTaxonomyBackfillReport": typeof lib_acordTaxonomyBackfillReport;
   "lib/actionFailures": typeof lib_actionFailures;
   "lib/actorRef": typeof lib_actorRef;
-  "lib/agentEmailTemplate": typeof lib_agentEmailTemplate;
+  "lib/actionConfirmationFingerprint": typeof lib_actionConfirmationFingerprint;
   "lib/agentMessageHistory": typeof lib_agentMessageHistory;
   "lib/agentPolicyFocus": typeof lib_agentPolicyFocus;
   "lib/agentPolicyPresentation": typeof lib_agentPolicyPresentation;
@@ -445,6 +448,7 @@ declare const fullApi: ApiFromModules<{
   "lib/complianceCheck": typeof lib_complianceCheck;
   "lib/complianceRequirementMigration": typeof lib_complianceRequirementMigration;
   "lib/complianceTypes": typeof lib_complianceTypes;
+  "lib/confidence": typeof lib_confidence;
   "lib/convexDocumentStore": typeof lib_convexDocumentStore;
   "lib/convexMemoryStore": typeof lib_convexMemoryStore;
   "lib/convexSourceRetriever": typeof lib_convexSourceRetriever;
@@ -464,7 +468,6 @@ declare const fullApi: ApiFromModules<{
   "lib/emailDraftService": typeof lib_emailDraftService;
   "lib/emailDraftSummary": typeof lib_emailDraftSummary;
   "lib/emailIdentity": typeof lib_emailIdentity;
-  "lib/emailIntentGuards": typeof lib_emailIntentGuards;
   "lib/emailPayloadFields": typeof lib_emailPayloadFields;
   "lib/emailPolicySources": typeof lib_emailPolicySources;
   "lib/emailSubagent": typeof lib_emailSubagent;
@@ -475,6 +478,7 @@ declare const fullApi: ApiFromModules<{
   "lib/extractionFieldReview": typeof lib_extractionFieldReview;
   "lib/extractionIntegrityAudit": typeof lib_extractionIntegrityAudit;
   "lib/extractionPostProcess": typeof lib_extractionPostProcess;
+  "lib/forwardReplyDirection": typeof lib_forwardReplyDirection;
   "lib/extractionPromotion": typeof lib_extractionPromotion;
   "lib/extractionPromptGuidance": typeof lib_extractionPromptGuidance;
   "lib/extractionTraceRouterFields": typeof lib_extractionTraceRouterFields;
@@ -490,7 +494,7 @@ declare const fullApi: ApiFromModules<{
   "lib/imessageGroupResolution": typeof lib_imessageGroupResolution;
   "lib/imessageIngress": typeof lib_imessageIngress;
   "lib/imessageOutbound": typeof lib_imessageOutbound;
-  "lib/imessageResponsePostProcessing": typeof lib_imessageResponsePostProcessing;
+  "lib/inboundEmailParser": typeof lib_inboundEmailParser;
   "lib/imessageSlashCommands": typeof lib_imessageSlashCommands;
   "lib/inboundEmailDeterministicControls": typeof lib_inboundEmailDeterministicControls;
   "lib/industries": typeof lib_industries;
@@ -532,6 +536,7 @@ declare const fullApi: ApiFromModules<{
   "lib/resend": typeof lib_resend;
   "lib/sdkCallbacks": typeof lib_sdkCallbacks;
   "lib/security": typeof lib_security;
+  "lib/searchTokenizer": typeof lib_searchTokenizer;
   "lib/slackAvailability": typeof lib_slackAvailability;
   "lib/slackBlocks": typeof lib_slackBlocks;
   "lib/slackChannelRouting": typeof lib_slackChannelRouting;
@@ -544,11 +549,13 @@ declare const fullApi: ApiFromModules<{
   "lib/slackSecurity": typeof lib_slackSecurity;
   "lib/sourceTree": typeof lib_sourceTree;
   "lib/spreadsheetText": typeof lib_spreadsheetText;
-  "lib/taskControlDecision": typeof lib_taskControlDecision;
   "lib/taskControlIntent": typeof lib_taskControlIntent;
   "lib/textChannelCommands": typeof lib_textChannelCommands;
   "lib/textChannelControls": typeof lib_textChannelControls;
   "lib/threadAccess": typeof lib_threadAccess;
+  "lib/threadActionConfirmationValidators": typeof lib_threadActionConfirmationValidators;
+  "lib/threadMessageValidators": typeof lib_threadMessageValidators;
+  "lib/transportRenderers": typeof lib_transportRenderers;
   "lib/userFacingErrors": typeof lib_userFacingErrors;
   "lib/userPhone": typeof lib_userPhone;
   "lib/valueNormalization": typeof lib_valueNormalization;
@@ -593,6 +600,7 @@ declare const fullApi: ApiFromModules<{
   sourceNodes: typeof sourceNodes;
   sourceSpans: typeof sourceSpans;
   threads: typeof threads;
+  threadActionConfirmations: typeof threadActionConfirmations;
   users: typeof users;
 }>;
 

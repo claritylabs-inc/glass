@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { explicitlyRequestsCoiBatchForOneEmail } from "../convex/lib/coiAttachmentGuards";
 import {
   isPendingEmailCancelConfirmation,
   isPendingEmailCancelIntent,
   isPendingEmailRestoreIntent,
 } from "../convex/lib/emailCancelIntent";
-import { isBrokerDirectedEmailRequest } from "../convex/lib/emailIntentGuards";
 import { resolveEmailAgentIdentity } from "../convex/lib/emailSubagent";
 import { getAuthSiteUrl, getPortalUrlForOrg } from "../convex/lib/domains";
 import {
@@ -107,22 +105,4 @@ describe("directed email safety", () => {
     expect(isPendingEmailRestoreIntent("restore the draft")).toBe(true);
   });
 
-  it("allows only explicit one-email certificate bundles", () => {
-    expect(
-      explicitlyRequestsCoiBatchForOneEmail(
-        "Attach all five COIs and send them to adyan@cove.dev",
-      ),
-    ).toBe(true);
-    expect(
-      explicitlyRequestsCoiBatchForOneEmail(
-        "Send each holder their certificate separately",
-      ),
-    ).toBe(false);
-  });
-
-  it("recognizes broker-directed requests without treating any address as a broker", () => {
-    expect(isBrokerDirectedEmailRequest("Can you send this to my broker?")).toBe(true);
-    expect(isBrokerDirectedEmailRequest("Please draft an email for our broker")).toBe(true);
-    expect(isBrokerDirectedEmailRequest("Send this to adyan@example.com")).toBe(false);
-  });
 });

@@ -2,12 +2,12 @@ import { describe, expect, test } from "vitest";
 import {
   AGENT_CHANNEL_HISTORY_POLICY,
   buildAssistantMessageContentWithArtifacts,
+  buildPrivateAgentHistoryMetadata,
   buildThreadContinuityPrompt,
   selectBoundedAgentHistory,
   shouldStartNewImessageTask,
   stripInternalAgentActivity,
 } from "./agentMessageHistory";
-import { rankTaskControlCandidates } from "./taskControlIntent";
 
 describe("buildAssistantMessageContentWithArtifacts", () => {
   test("does not append raw tool artifact data when no tool metadata exists", () => {
@@ -28,19 +28,17 @@ describe("buildAssistantMessageContentWithArtifacts", () => {
     ).toBe("Certificate follow-up is on hold.");
   });
 
-  test("appends compact tool and attachment activity", () => {
+  test("keeps tool and attachment activity out of customer-visible text", () => {
     expect(
       buildAssistantMessageContentWithArtifacts({
         content: "COI generated.",
         usedTools: ["lookup_policy", "generate_coi"],
         attachments: [{ filename: "COI - Polychain Capital Fund IV.pdf" }],
       }),
-    ).toBe(
-      'COI generated.\n\n[tool activity: tools: lookup_policy, generate_coi; attached: "COI - Polychain Capital Fund IV.pdf"]',
-    );
+    ).toBe("COI generated.");
   });
 
-  test("appends compact attachment failure activity", () => {
+  test("keeps attachment failure activity out of customer-visible text", () => {
     expect(
       buildAssistantMessageContentWithArtifacts({
         content: "COI generated.",
@@ -61,9 +59,7 @@ describe("buildAssistantMessageContentWithArtifacts", () => {
           },
         ],
       }),
-    ).toBe(
-      'COI generated.\n\n[tool activity: tools: generate_coi; attachment failed: "COI - Signalfire Fund III.pdf"]',
-    );
+    ).toBe("COI generated.");
   });
 
   test("leaves ordinary assistant content unchanged", () => {
@@ -76,6 +72,56 @@ describe("buildAssistantMessageContentWithArtifacts", () => {
   });
 });
 
+describe("buildPrivateAgentHistoryMetadata", () => {
+  test("collects compact JSON-safe workflow, tool, and attachment context", () => {
+    expect(
+      buildPrivateAgentHistoryMetadata({
+        usedTools: ["lookup_policy", "generate_coi", "generate_coi"],
+        attachments: [{ filename: "COI - Example Holder.pdf" }],
+        toolArtifacts: [
+          {
+            type: "workflow_outcome",
+            data: {
+              workflowKind: "certificate_request",
+              status: "completed",
+            },
+          },
+          {
+            type: "imessage_attachment_delivery",
+            data: {
+              status: "failed",
+              failures: [{ filename: "failed.pdf" }],
+            },
+          },
+        ],
+      }),
+    ).toEqual({
+      tools: ["lookup_policy", "generate_coi"],
+      workflowOutcomes: [
+        {
+          workflowKind: "certificate_request",
+          status: "completed",
+        },
+      ],
+      attachmentNames: ["COI - Example Holder.pdf"],
+      attachmentFailures: ["failed.pdf"],
+    });
+  });
+
+  test("drops workflow metadata that is not JSON-safe", () => {
+    expect(
+      buildPrivateAgentHistoryMetadata({
+        toolArtifacts: [
+          {
+            type: "workflow_outcome",
+            data: { unsafe: Symbol("unsafe") },
+          },
+        ],
+      }).workflowOutcomes,
+    ).toEqual([]);
+  });
+});
+
 describe("stripInternalAgentActivity", () => {
   test("removes an echoed private tool trailer from customer-visible text", () => {
     expect(
@@ -85,12 +131,14 @@ describe("stripInternalAgentActivity", () => {
     ).toBe("That's the full book.");
   });
 
-  test("removes echoed activity without collapsing surrounding paragraphs", () => {
+  test("preserves a non-trailing legacy marker as ordinary content", () => {
     expect(
       stripInternalAgentActivity(
         "First paragraph.\n\n[TOOL ACTIVITY: tools: lookup_policy]\n\nSecond paragraph.",
       ),
-    ).toBe("First paragraph.\n\nSecond paragraph.");
+    ).toBe(
+      "First paragraph.\n\n[TOOL ACTIVITY: tools: lookup_policy]\n\nSecond paragraph.",
+    );
   });
 
   test("preserves ordinary customer-facing discussion of tool activity", () => {
@@ -152,6 +200,25 @@ describe("bounded agent conversation history", () => {
     expect(selected.estimatedTokenCount).toBe(0);
   });
 
+  test("excludes only structured status records from model history", () => {
+    const selected = selectBoundedAgentHistory(
+      [
+        message("u1", 1, "user", "Show me the draft."),
+        {
+          ...message("legacy", 2, "agent", "Email sent to a@example.com"),
+          responseMessageId: "legacy:status",
+        },
+        {
+          ...message("status", 3, "agent", "Email sent to b@example.com"),
+          messageKind: "workflow_status" as const,
+        },
+      ],
+      { currentMessageId: "u1" },
+    );
+
+    expect(selected.messages.map((item) => item._id)).toEqual(["u1", "legacy"]);
+  });
+
   test("injects an internal summary without treating it as policy evidence", () => {
     expect(buildThreadContinuityPrompt("User chose option B.")).toContain(
       "User chose option B.",
@@ -168,11 +235,5 @@ describe("bounded agent conversation history", () => {
     );
     expect(shouldStartNewImessageTask(1_000, 1_000 + sevenDays)).toBe(true);
     expect(shouldStartNewImessageTask(undefined, sevenDays)).toBe(false);
-  });
-
-  test("classifies explicit start-over language as an iMessage task reset", () => {
-    const ranking = rankTaskControlCandidates("start over");
-    expect(ranking.highConfidence).toBe(true);
-    expect(ranking.topCandidate?.intent).toBe("reset_task");
   });
 });

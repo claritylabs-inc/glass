@@ -49,6 +49,11 @@ import { createAgentPolicyPresentationState } from "./agentPolicyPresentation";
 import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 import type { AgentToolSurface } from "./agentMessageHistory";
 import { readStoredThreadAttachment } from "./agentThreadAttachment";
+import {
+  normalizedSearchText,
+  uniqueSearchTerms,
+} from "./searchTokenizer";
+import type { WorkflowOutcome } from "./workflows/types";
 
 const COMPANY_CONTEXT_QUERY_STOP_WORDS = new Set([
   "about",
@@ -64,6 +69,7 @@ type ToolAttachment = {
   contentType: string;
   size: number;
   fileId?: Id<"_storage">;
+  kind?: "coi" | "original_policy" | "uploaded_file" | "generated_document";
 };
 
 type ToolArtifact = {
@@ -656,10 +662,10 @@ export function buildAgentToolExecutors(
             return "That organization is not in the readable scope.";
           }
         } else if (params.query?.trim()) {
-          const query = params.query.trim().toLowerCase();
+          const query = normalizedSearchText(params.query);
           const nameMatches = options.scope.orgs
             .filter((org) => {
-              const name = org.name.toLowerCase();
+              const name = normalizedSearchText(org.name);
               return name.includes(query) || query.includes(name);
             })
             .map((org) => org.orgId);
@@ -687,15 +693,14 @@ export function buildAgentToolExecutors(
             }),
           )
         ).flat();
-        const queryTerms = (
-          params.query?.toLowerCase().match(/[a-z0-9]+/g) ?? []
-        )
-          .filter((term) => term.length >= 3)
+        const queryTerms = uniqueSearchTerms(params.query ?? "", {
+          minimumLength: 3,
+        })
           .filter((term) => !COMPANY_CONTEXT_QUERY_STOP_WORDS.has(term));
         const relevantMemories =
           params.query?.trim() && targetOrgIds.length > 1 && !matchedOrgByName
             ? memories.filter((memory) => {
-                const content = memory.content.toLowerCase();
+                const content = normalizedSearchText(memory.content);
                 return queryTerms.some((term) => content.includes(term));
               })
             : memories;
@@ -819,11 +824,54 @@ export function buildAgentToolExecutors(
                 (total, imported) => total + imported.createdCount,
                 0,
               );
+              const workflowOutcome: WorkflowOutcome<"requirement_import"> = {
+                workflowKind: "requirement_import",
+                status: "completed",
+                nextAction: "review_imported_requirements",
+                requiredSlots: [],
+                forbiddenQuestions: [],
+                forbiddenClaims: [
+                  "import_completed_without_import_completed_side_effect",
+                ],
+                sideEffects: imports.flatMap((imported) => [
+                  {
+                    kind: "import_completed" as const,
+                    targetType: "requirementSourceDocument",
+                    targetId: String(imported.sourceDocumentId),
+                  },
+                  ...imported.requirementIds.map((requirementId) => ({
+                    kind: "record_created" as const,
+                    targetType: "insuranceRequirement",
+                    targetId: String(requirementId),
+                  })),
+                ]),
+                artifacts: imports.flatMap((imported) => [
+                  {
+                    type: "requirement_source_document",
+                    id: String(imported.sourceDocumentId),
+                  },
+                  ...imported.requirementIds.map((requirementId) => ({
+                    type: "insurance_requirement",
+                    id: String(requirementId),
+                  })),
+                ]),
+                comms: {
+                  headline: `${imports.length} requirement source${imports.length === 1 ? " was" : "s were"} imported.`,
+                },
+                audit: [
+                  {
+                    step: "requirement_import",
+                    decision: "completed",
+                    detail: `${createdCount} requirements created`,
+                  },
+                ],
+              };
               return {
                 status: "imported" as const,
                 message: `${imports.length} requirement source${imports.length === 1 ? " was" : "s were"} saved and ${createdCount} new insurance requirement${createdCount === 1 ? " was" : "s were"} extracted. Use lookup_compliance_requirements before answering the compliance question.`,
                 imports,
                 createdCount,
+                workflowOutcome,
               };
             },
           },
@@ -924,6 +972,11 @@ export function buildAgentToolExecutors(
           type: "fact",
           content: params.content,
           source: orgMemorySourceForSurface(options.surface),
+          provenance: {
+            kind: "organization_fact",
+            derivation: "agent_tool",
+            schemaVersion: "organization-fact-v1",
+          },
         });
         if (!savedId) {
           return "Not saved. Memory is limited to stable company context, not policy details, agent behavior, drafts, requests, or workflow state.";
@@ -957,6 +1010,7 @@ export function buildAgentToolExecutors(
           contentType: "application/pdf",
           size: 0,
           fileId: policy.fileId as Id<"_storage">,
+          kind: "original_policy" as const,
         };
         await options.onResponseAttachment?.(attachment);
         return {
@@ -1174,6 +1228,7 @@ export function buildAgentToolExecutors(
                   contentType: "application/pdf",
                   size: Number(item.size ?? 0),
                   fileId: item.fileId as Id<"_storage">,
+                  kind: "coi" as const,
                 };
                 attachments.push(attachment);
                 await options.onResponseAttachment?.(attachment);
@@ -1296,6 +1351,7 @@ export function buildAgentToolExecutors(
             contentType: "application/pdf",
             size: generated.size,
             fileId: generated.fileId as Id<"_storage">,
+            kind: "coi" as const,
           };
           await options.onResponseAttachment?.(attachment);
           if (generated.status === "existing") {

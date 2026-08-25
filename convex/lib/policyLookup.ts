@@ -7,6 +7,10 @@ import { searchPolicyDocument } from "./aiUtils";
 import type { GlassSourceSpan } from "./pdfSourceSpans";
 import { preparePdfTextWithParserFallback } from "./liteparsePreprocessor";
 import { formatSourceSpanLabel } from "./policyDocumentStructure";
+import {
+  normalizedSearchText,
+  uniqueSearchTerms,
+} from "./searchTokenizer";
 
 type LookupResult = Record<string, unknown>;
 type SourceSpanDoc = {
@@ -56,18 +60,13 @@ function textValue(value: unknown): string {
 }
 
 function queryTerms(query: string): string[] {
-  return Array.from(new Set(
-    query
-      .toLowerCase()
-      .split(/[^a-z0-9$.,%-]+/)
-      .map((term) => term.trim())
-      .filter((term) => term.length > 2),
-  ));
+  return uniqueSearchTerms(query, { minimumLength: 3 });
 }
 
 function scoreSpan(query: string, terms: string[], span: SourceSpanDoc): number {
-  const text = span.text.toLowerCase();
-  let score = query && text.includes(query.toLowerCase()) ? 6 : 0;
+  const text = normalizedSearchText(span.text);
+  const normalizedQuery = normalizedSearchText(query);
+  let score = normalizedQuery && text.includes(normalizedQuery) ? 6 : 0;
   for (const term of terms) {
     if (text.includes(term)) score += 1;
   }
@@ -76,8 +75,11 @@ function scoreSpan(query: string, terms: string[], span: SourceSpanDoc): number 
 }
 
 function scoreNode(query: string, terms: string[], node: SourceNodeDoc): number {
-  const text = `${node.title} ${node.description} ${node.textExcerpt ?? ""}`.toLowerCase();
-  let score = query && text.includes(query.toLowerCase()) ? 8 : 0;
+  const text = normalizedSearchText(
+    `${node.title} ${node.description} ${node.textExcerpt ?? ""}`,
+  );
+  const normalizedQuery = normalizedSearchText(query);
+  let score = normalizedQuery && text.includes(normalizedQuery) ? 8 : 0;
   for (const term of terms) {
     if (text.includes(term)) score += 1;
   }
@@ -94,17 +96,19 @@ function sourceSpanIdsFromResult(result: LookupResult): string[] {
 }
 
 function attachSourceSpans(result: LookupResult, spans: Array<SourceSpanDoc & { score: number }>): LookupResult {
-  const resultText = `${textValue(result.title)} ${textValue(result.content)}`.toLowerCase();
+  const resultText = normalizedSearchText(
+    `${textValue(result.title)} ${textValue(result.content)}`,
+  );
   const citedIds = new Set(sourceSpanIdsFromResult(result));
   const matched = spans
     .filter((span) => {
       if (span.spanId && citedIds.has(span.spanId)) return true;
       if (span.score <= 0) return false;
       if (!resultText) return true;
-      const title = textValue(result.title).toLowerCase();
+      const title = normalizedSearchText(textValue(result.title));
       return (
-        resultText.includes(span.text.slice(0, 80).toLowerCase()) ||
-        (span.sectionId && title.includes(span.sectionId.toLowerCase())) ||
+        resultText.includes(normalizedSearchText(span.text.slice(0, 80))) ||
+        (span.sectionId && title.includes(normalizedSearchText(span.sectionId))) ||
         span.score >= 2
       );
     })

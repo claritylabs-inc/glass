@@ -31,15 +31,16 @@ function formatAttachmentSummary(draft: DraftLike) {
 
 export function isShowMoreEmailDraftIntent(text: string) {
   const normalized = text.trim().toLowerCase();
-  return (
-    /^(more|show more|show all|list drafts|show drafts|show email drafts|show all drafts|list email drafts)$/i.test(normalized) ||
-    /\b(show|list|see)\b[\s\S]{0,40}\b(more|all|drafts|emails)\b/i.test(normalized)
-  );
-}
-
-export function isSendAllEmailDraftsIntent(text: string) {
-  const normalized = text.trim().toLowerCase();
-  return /^(send all|send drafts|send all drafts|send all emails|confirm and send|approve all|approved all)$/i.test(normalized);
+  return new Set([
+    "more",
+    "show more",
+    "show all",
+    "list drafts",
+    "show drafts",
+    "show email drafts",
+    "show all drafts",
+    "list email drafts",
+  ]).has(normalized);
 }
 
 export function buildEmailDraftTextSummary(
