@@ -19,6 +19,7 @@ export type EmailAttachmentMeta = {
   contentType: string;
   size: number;
   fileId: Id<"_storage">;
+  kind?: "coi" | "original_policy" | "uploaded_file" | "generated_document";
 };
 
 export type EmailDeliverySource =
@@ -31,15 +32,7 @@ export function buildAgentEmailHtmlBody(
   body: string,
   signature: { html: string },
 ): string {
-  return (
-    body
-      .split("\n\n")
-      .map(
-        (p) =>
-          `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`,
-      )
-      .join("\n") + signature.html
-  );
+  return markdownToHtml(body) + signature.html;
 }
 
 export function buildEmailPayload(params: {

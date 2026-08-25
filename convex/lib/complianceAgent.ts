@@ -6,6 +6,7 @@ import {
   type RequirementScope,
 } from "./complianceTypes";
 import { lobLabel } from "./linesOfBusiness";
+import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
 
 type Requirement = Pick<
   Doc<"insuranceRequirements">,
@@ -63,13 +64,6 @@ const SCOPE_LABELS: Record<RequirementScope, string> = {
   vendors: "Vendor",
   own_org: "My",
 };
-
-function normalizeText(value: string | undefined | null) {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 function formatLimits(requirement: Requirement) {
   const limits = requirement.limits ?? [];
@@ -173,14 +167,12 @@ export function filterComplianceRequirements(
     scope?: RequirementScope | "all";
   },
 ) {
-  const queryTerms = normalizeText(query)
-    .split(/\s+/)
-    .filter((term) => term.length >= 3);
+  const queryTerms = uniqueSearchTerms(query ?? "", { minimumLength: 3 });
 
   return requirements.filter((requirement) => {
     if (scope && scope !== "all" && requirement.scope !== scope) return false;
     if (!queryTerms.length) return true;
-    const haystack = normalizeText(
+    const haystack = normalizedSearchText(
       [
         requirement.title,
         requirement.scope,

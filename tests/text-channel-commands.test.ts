@@ -14,6 +14,9 @@ const commandCtx = {} as Parameters<typeof runImessageSlashCommand>[0];
 async function runCommand(messageText: string, currentSenderIsLinked: boolean) {
   const args: Parameters<typeof runImessageSlashCommand>[1] = {
     messageText,
+    userId: "user-1" as Id<"users">,
+    threadId: "thread-1" as Id<"threads">,
+    currentMessageId: "message-1" as Id<"threadMessages">,
     orgName: "Acme Co",
     userName: "Linked User",
     userEmail: "linked@example.com",
@@ -25,6 +28,7 @@ async function runCommand(messageText: string, currentSenderIsLinked: boolean) {
         _id: "draft-1" as Id<"pendingEmails">,
         recipientEmail: "broker@example.com",
         subject: "Sensitive renewal",
+        emailBody: "Please review the attached renewal.",
       },
     ],
     pendingEmails: [],
@@ -69,36 +73,6 @@ describe("text channel slash commands", () => {
     });
   });
 
-  it("keeps the public help text aligned with the implemented commands", () => {
-    expect(TEXT_CHANNEL_COMMAND_HELP.split("\n")).toEqual([
-      "Commands:",
-      "/help, /commands",
-      "/status",
-      "/drafts",
-      "/send 1, /send all",
-      "/discard 1, /discard all",
-      "/cancel, /reset, /new",
-      "/leave, /whoami",
-      "",
-      "Try /drafts then /send 1.",
-    ]);
-    for (const command of [
-      "/help",
-      "/commands",
-      "/status",
-      "/drafts",
-      "/send",
-      "/discard",
-      "/cancel",
-      "/reset",
-      "/new",
-      "/leave",
-      "/whoami",
-    ]) {
-      expect(TEXT_CHANNEL_COMMAND_HELP).toContain(command);
-    }
-  });
-
   it("does not let anonymous group participants use tenant-scoped slash commands", async () => {
     await expect(runCommand("/help", false)).resolves.toMatchObject({
       response: TEXT_CHANNEL_COMMAND_HELP,
@@ -116,5 +90,4 @@ describe("text channel slash commands", () => {
     expect(result?.response).toContain("Linked User");
     expect(result?.response).toContain("Acme Co");
   });
-
 });

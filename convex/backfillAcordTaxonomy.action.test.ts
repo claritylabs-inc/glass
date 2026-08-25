@@ -304,11 +304,11 @@ describe("ACORD taxonomy dry-run orchestration", () => {
     const stored = await t.run(async (ctx) => ({
       run: await ctx.db
         .query("acordTaxonomyWriteRuns")
-        .withIndex("by_runId", (query) => query.eq("runId", runId))
+        .withIndex("run", (query) => query.eq("runId", runId))
         .unique(),
       pages: await ctx.db
         .query("acordTaxonomyWritePages")
-        .withIndex("by_runId", (query) => query.eq("runId", runId))
+        .withIndex("run", (query) => query.eq("runId", runId))
         .collect(),
     }));
     expect(stored.run).toMatchObject({
@@ -443,7 +443,7 @@ describe("ACORD taxonomy dry-run orchestration", () => {
       policy: await ctx.db.get(policyId),
       results: await ctx.db
         .query("acordTaxonomyWritePolicyResults")
-        .withIndex("by_runId", (query) => query.eq("runId", runId))
+        .withIndex("run", (query) => query.eq("runId", runId))
         .collect(),
     }));
     expect(stored.policy?.linesOfBusiness).toEqual(["TRVL"]);

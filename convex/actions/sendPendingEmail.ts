@@ -1,6 +1,7 @@
 "use node";
 
-import { v } from "convex/values";
+import dayjs from "dayjs";
+import { v, type Infer } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { getAgentDomain } from "../lib/resend";
@@ -9,7 +10,11 @@ import {
   sendTrackedResendEmail,
   toResendAttachments,
 } from "../lib/emailDelivery";
-import { shouldBlockUnapprovedCoiAttachmentBatch } from "../lib/coiAttachmentGuards";
+import { countCoiAttachments } from "../lib/coiAttachmentGuards";
+import {
+  buildPendingEmailConfirmation,
+  pendingEmailDraftFingerprint,
+} from "../lib/actionConfirmationFingerprint";
 import { sendOutboundImessage } from "../lib/imessageOutbound";
 import {
   formatEmailDraftBlockers,
@@ -21,6 +26,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "../lib/userFacingErrors";
+import { threadActionActorsMatch } from "../lib/threadActionConfirmationValidators";
 
 type SendEmailResult = { recipientEmail: string } | null;
 type BulkDraftSendResult = {
@@ -28,33 +34,207 @@ type BulkDraftSendResult = {
   failed: Array<{ id: Id<"pendingEmails">; error: string }>;
 };
 
-function assertSafeDraftAttachments(pending: Doc<"pendingEmails">) {
-  if (shouldBlockUnapprovedCoiAttachmentBatch({
-    attachments: pending.attachments,
-    requestText: `${pending.subject}\n${pending.emailBody}`,
-    allowMultipleCoiAttachments: pending.allowMultipleCoiAttachments,
-  })) {
+const draftSendAuthorizationValidator = v.union(
+  v.object({
+    kind: v.literal("confirmation"),
+    confirmationId: v.id("threadActionConfirmations"),
+  }),
+  v.object({ kind: v.literal("scheduled") }),
+  v.object({ kind: v.literal("organization_auto_send") }),
+  v.object({ kind: v.literal("mcp_explicit_action") }),
+);
+
+type DraftSendAuthorization =
+  | Infer<typeof draftSendAuthorizationValidator>
+  | { kind: "authenticated_user_action" };
+
+function isCurrentCompletedConfirmation(
+  confirmation: Doc<"threadActionConfirmations"> | null,
+): confirmation is Doc<"threadActionConfirmations"> {
+  return (
+    confirmation?.status === "completed" &&
+    confirmation.expiresAt > dayjs().valueOf()
+  );
+}
+
+async function authorizeExplicitCoiBatches(
+  ctx: ActionCtx,
+  drafts: Array<Doc<"pendingEmails">>,
+  actorUserId: Id<"users">,
+) {
+  for (const draft of drafts) {
+    const confirmation = await buildPendingEmailConfirmation(draft);
+    if (confirmation.payload.kind !== "coi_batch_delivery") continue;
+    if (!draft.threadId) {
+      throw new Error("COI batch confirmation requires a thread.");
+    }
+    const batchPromptMessageId = await ctx.runMutation(
+      internal.threads.insertWorkflowStatusMessage,
+      {
+        orgId: draft.orgId,
+        threadId: draft.threadId,
+        sourceThreadMessageId: draft.chatMessageId,
+        pendingEmailId: draft._id,
+        dedupeKey: `explicit-coi-batch:${String(draft._id)}:${confirmation.fingerprint}`,
+        content: `Explicitly confirmed ${draft.attachments?.length ?? 0} attachments for ${draft.recipientEmail}.`,
+      },
+    );
+    const batchConfirmationId = await ctx.runMutation(
+      internal.threadActionConfirmations.createInternal,
+      {
+        orgId: draft.orgId,
+        threadId: draft.threadId,
+        actor: { kind: "user", userId: actorUserId },
+        promptMessageId: batchPromptMessageId,
+        payload: confirmation.payload,
+      },
+    );
+    const batchConfirmation = await ctx.runMutation(
+      internal.threadActionConfirmations.consumeInternal,
+      {
+        id: batchConfirmationId,
+        actor: { kind: "user", userId: actorUserId },
+        requireAdjacentPrompt: false,
+      },
+    );
+    if (batchConfirmation !== "completed") {
+      throw new Error(`COI batch confirmation ${batchConfirmation}.`);
+    }
+  }
+}
+
+async function assertDraftSendAuthorization(
+  ctx: ActionCtx,
+  pending: Doc<"pendingEmails">,
+  authorization: DraftSendAuthorization,
+) {
+  if (authorization.kind === "scheduled") {
+    if (pending.status !== "pending" || !pending.scheduledSendTime) {
+      throw new Error(
+        "Scheduled email authorization is not valid for this draft.",
+      );
+    }
+    return;
+  }
+  if (authorization.kind === "organization_auto_send") {
+    const org = await ctx.runQuery(internal.orgs.getInternal, {
+      id: pending.orgId,
+    });
+    if (org?.autoSendEmails !== true) {
+      throw new Error("Organization auto-send is not enabled.");
+    }
+    return;
+  }
+  if (
+    authorization.kind === "mcp_explicit_action" ||
+    authorization.kind === "authenticated_user_action"
+  ) {
+    if (pending.status !== "draft") {
+      throw new Error("Explicit send requires a current draft.");
+    }
+    return;
+  }
+
+  const confirmation = await ctx.runQuery(
+    internal.threadActionConfirmations.getInternal,
+    { id: authorization.confirmationId },
+  );
+  if (
+    !isCurrentCompletedConfirmation(confirmation) ||
+    confirmation.orgId !== pending.orgId ||
+    confirmation.threadId !== pending.threadId ||
+    (confirmation.payload.kind !== "email_send" &&
+      confirmation.payload.kind !== "draft_snapshot" &&
+      confirmation.payload.kind !== "coi_batch_delivery")
+  ) {
     throw new Error(
-      "This COI draft has too many certificate attachments. Cancel it and regenerate the draft before sending.",
+      "A completed confirmation for this exact draft is required.",
+    );
+  }
+  if (confirmation.payload.kind === "coi_batch_delivery") {
+    if (
+      confirmation.payload.pendingEmailId !== pending._id ||
+      confirmation.payload.draftFingerprint !==
+        (await pendingEmailDraftFingerprint(pending))
+    ) {
+      throw new Error(
+        "The confirmed COI batch changed and must be reviewed again.",
+      );
+    }
+    return;
+  }
+  const index = confirmation.payload.pendingEmailIds.findIndex(
+    (id) => id === pending._id,
+  );
+  if (
+    index < 0 ||
+    confirmation.payload.draftFingerprints[index] !==
+      (await pendingEmailDraftFingerprint(pending))
+  ) {
+    throw new Error("The confirmed draft changed and must be reviewed again.");
+  }
+}
+
+async function hasExactCoiBatchAuthorization(
+  ctx: ActionCtx,
+  pending: Doc<"pendingEmails">,
+) {
+  const authorization = pending.coiBatchAuthorization;
+  if (!authorization) return false;
+  const confirmation = await ctx.runQuery(
+    internal.threadActionConfirmations.getInternal,
+    { id: authorization.confirmationId },
+  );
+  if (
+    !isCurrentCompletedConfirmation(confirmation) ||
+    confirmation.payload.kind !== "coi_batch_delivery" ||
+    confirmation.payload.pendingEmailId !== pending._id
+  ) {
+    return false;
+  }
+  const confirmationPayload = confirmation.payload;
+  const recipientEmail = pending.recipientEmail.trim().toLowerCase();
+  const fileIds = (pending.attachments ?? []).map(({ fileId }) =>
+    String(fileId),
+  );
+  return (
+    threadActionActorsMatch(authorization.confirmedBy, confirmation.actor) &&
+    authorization.recipientEmail === recipientEmail &&
+    confirmationPayload.recipientEmail === recipientEmail &&
+    authorization.draftFingerprint ===
+      (await pendingEmailDraftFingerprint(pending)) &&
+    authorization.draftFingerprint === confirmationPayload.draftFingerprint &&
+    fileIds.length === authorization.fileIds.length &&
+    fileIds.length === confirmationPayload.fileIds.length &&
+    fileIds.every(
+      (fileId, index) =>
+        fileId === String(authorization.fileIds[index]) &&
+        fileId === String(confirmationPayload.fileIds[index]),
+    )
+  );
+}
+
+async function assertSafeDraftAttachments(
+  ctx: ActionCtx,
+  pending: Doc<"pendingEmails">,
+) {
+  const requiresExactBatchAuthorization =
+    countCoiAttachments(pending.attachments) > 1 ||
+    pending.allowMultipleCoiAttachments === true;
+  if (!requiresExactBatchAuthorization) return;
+  const hasExactBatchAuthorization = await hasExactCoiBatchAuthorization(
+    ctx,
+    pending,
+  );
+  if (!hasExactBatchAuthorization) {
+    throw new Error(
+      "This multi-COI draft needs confirmation for its exact recipient and attachment list before sending.",
     );
   }
 }
 
 function outboundMessageIdForPending(id: Id<"pendingEmails">) {
   return `<glass-pending-${String(id)}@${getAgentDomain()}>`;
-}
-
-async function sendTextConfirmation(params: {
-  toPhone: string;
-  chatGuid?: string;
-  message: string;
-}): Promise<boolean> {
-  return await sendOutboundImessage({
-    toPhone: params.toPhone,
-    chatGuid: params.chatGuid,
-    message: params.message,
-    logPrefix: "sendPendingEmail",
-  });
 }
 
 async function sendPendingEmailById(
@@ -64,18 +244,19 @@ async function sendPendingEmailById(
     allowedStatuses: Array<Doc<"pendingEmails">["status"]>;
     updateChatMessage: boolean;
     notifyImessage: boolean;
-    userConfirmedDraft: boolean;
+    authorization: DraftSendAuthorization;
   },
 ): Promise<SendEmailResult> {
-  const pending = (await ctx.runQuery(internal.pendingEmails.getInternal, {
+  const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
     id,
-  })) as Doc<"pendingEmails"> | null;
+  });
   if (!pending || !options.allowedStatuses.includes(pending.status)) {
-    return null; // cancelled or already sent
+    return null;
   }
+  await assertDraftSendAuthorization(ctx, pending, options.authorization);
   const sendability = getEmailDraftSendability(pending, {
     allowedStatuses: options.allowedStatuses,
-    confirmationGranted: options.userConfirmedDraft,
+    confirmationGranted: true,
   });
   if (sendability.status === "blocked") {
     if (
@@ -91,7 +272,7 @@ async function sendPendingEmailById(
       `Draft needs confirmation before sending: ${formatEmailDraftBlockers(sendability.blockers)}`,
     );
   }
-  assertSafeDraftAttachments(pending);
+  await assertSafeDraftAttachments(ctx, pending);
 
   try {
     const thread = pending.threadId
@@ -105,10 +286,7 @@ async function sendPendingEmailById(
       threadEmail: thread?.threadEmail,
     });
     if (pending.attachments && pending.attachments.length > 0) {
-      payload.attachments = await toResendAttachments(
-        ctx,
-        pending.attachments,
-      );
+      payload.attachments = await toResendAttachments(ctx, pending.attachments);
     }
     const result = await sendTrackedResendEmail(ctx, {
       source: "pending_email",
@@ -126,7 +304,6 @@ async function sendPendingEmailById(
     if (!result.ok) throw new Error(`Failed to send email: ${result.error}`);
     const sentMessageId = result.id;
 
-    // Mark as sent
     await ctx.runMutation(internal.pendingEmails.markSent, {
       id,
       sentMessageId,
@@ -182,10 +359,11 @@ async function sendPendingEmailById(
             ? ` CC ${pending.ccAddresses.join(", ")}`
             : "";
         const confirmation = `Email sent to ${pending.recipientEmail}.${ccNote}`;
-        const sent = await sendTextConfirmation({
+        const sent = await sendOutboundImessage({
           toPhone: thread.threadPhone,
           chatGuid: thread.imessageChatGuid,
           message: confirmation,
+          logPrefix: "sendPendingEmail",
         });
         if (sent) {
           await ctx.runMutation(internal.threads.insertImessageMessage, {
@@ -228,7 +406,7 @@ export const sendPending = internalAction({
       allowedStatuses: ["pending"],
       updateChatMessage: true,
       notifyImessage: true,
-      userConfirmedDraft: false,
+      authorization: { kind: "scheduled" },
     });
   },
 });
@@ -236,14 +414,14 @@ export const sendPending = internalAction({
 export const sendDraftInternal = internalAction({
   args: {
     id: v.id("pendingEmails"),
-    userConfirmedDraft: v.boolean(),
+    authorization: draftSendAuthorizationValidator,
   },
   handler: async (ctx, args) => {
     await sendPendingEmailById(ctx, args.id, {
       allowedStatuses: ["draft"],
       updateChatMessage: false,
       notifyImessage: false,
-      userConfirmedDraft: args.userConfirmedDraft,
+      authorization: args.authorization,
     });
   },
 });
@@ -251,34 +429,32 @@ export const sendDraftInternal = internalAction({
 export const sendDraftNow = action({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args): Promise<{ recipientEmail: string }> => {
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as {
-      membership?: { orgId: string };
-    } | null;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {});
     if (!orgData?.membership?.orgId) {
       throwUserFacingError(userFacingErrorCodes.authRequired);
     }
     const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
       id: args.id,
-    }) as Doc<"pendingEmails"> | null;
+    });
     if (!pending || pending.orgId !== orgData.membership.orgId) {
       throw new Error("Not found");
     }
+    await authorizeExplicitCoiBatches(ctx, [pending], orgData.membership.userId);
     const sent = await sendPendingEmailById(ctx, args.id, {
       allowedStatuses: ["draft"],
       updateChatMessage: false,
       notifyImessage: false,
-      userConfirmedDraft: true,
+      authorization: { kind: "authenticated_user_action" },
     });
-    return sent ?? { recipientEmail: pending.recipientEmail };
+    if (!sent) throw new Error("Draft is no longer available to send.");
+    return sent;
   },
 });
 
 export const sendDraftsNow = action({
   args: { ids: v.array(v.id("pendingEmails")) },
   handler: async (ctx, args): Promise<BulkDraftSendResult> => {
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as {
-      membership?: { orgId: string };
-    } | null;
+    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {});
     if (!orgData?.membership?.orgId) {
       throwUserFacingError(userFacingErrorCodes.authRequired);
     }
@@ -292,7 +468,7 @@ export const sendDraftsNow = action({
     for (const id of uniqueIds) {
       const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
         id,
-      }) as Doc<"pendingEmails"> | null;
+      });
       if (!pending || pending.orgId !== orgData.membership.orgId) {
         throw new Error("Not found");
       }
@@ -302,6 +478,12 @@ export const sendDraftsNow = action({
       drafts.push(pending);
     }
 
+    await authorizeExplicitCoiBatches(
+      ctx,
+      drafts,
+      orgData.membership.userId,
+    );
+
     const result: BulkDraftSendResult = { sent: [], failed: [] };
     for (const draft of drafts) {
       try {
@@ -309,11 +491,12 @@ export const sendDraftsNow = action({
           allowedStatuses: ["draft"],
           updateChatMessage: false,
           notifyImessage: false,
-          userConfirmedDraft: true,
+          authorization: { kind: "authenticated_user_action" },
         });
+        if (!sent) throw new Error("Draft is no longer available to send.");
         result.sent.push({
           id: draft._id,
-          recipientEmail: sent?.recipientEmail ?? draft.recipientEmail,
+          recipientEmail: sent.recipientEmail,
         });
       } catch (err) {
         result.failed.push({

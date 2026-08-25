@@ -75,7 +75,7 @@ export const getClientOwnedSettings = query({
     await getOrgAccessForClientDelivery(ctx, args.clientOrgId);
     const owned = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+      .withIndex("owner_client", (q) =>
         q
           .eq("deliveryOwnerOrgId", args.clientOrgId)
           .eq("clientOrgId", args.clientOrgId),
@@ -86,7 +86,7 @@ export const getClientOwnedSettings = query({
     if (!client?.brokerOrgId) return null;
     return await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q
           .eq("brokerOrgId", client.brokerOrgId)
           .eq("clientOrgId", args.clientOrgId),
@@ -123,7 +123,7 @@ async function upsertClientOwnedSettings(
 ) {
   const existing = await ctx.db
     .query("policyDeliverySettings")
-    .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+    .withIndex("owner_client", (q) =>
       q
         .eq("deliveryOwnerOrgId", args.clientOrgId)
         .eq("clientOrgId", args.clientOrgId),
@@ -237,7 +237,7 @@ export const getBrokerSettings = query({
     if ((access.org.type ?? "client") !== "broker") return null;
     return await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q.eq("brokerOrgId", access.orgId).eq("clientOrgId", undefined),
       )
       .first();
@@ -266,7 +266,7 @@ export const updateBrokerSettings = mutation({
     };
     const existing = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q.eq("brokerOrgId", access.orgId).eq("clientOrgId", undefined),
       )
       .first();
@@ -288,7 +288,7 @@ export const getClientOverride = query({
     const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
     return await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q
           .eq("brokerOrgId", access.brokerOrgId)
           .eq("clientOrgId", args.clientOrgId),
@@ -304,7 +304,7 @@ export const getClientSettings = query({
     const [override, brokerSettings] = await Promise.all([
       ctx.db
         .query("policyDeliverySettings")
-        .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+        .withIndex("broker_client", (q) =>
           q
             .eq("brokerOrgId", access.brokerOrgId)
             .eq("clientOrgId", args.clientOrgId),
@@ -312,7 +312,7 @@ export const getClientSettings = query({
         .first(),
       ctx.db
         .query("policyDeliverySettings")
-        .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+        .withIndex("broker_client", (q) =>
           q.eq("brokerOrgId", access.brokerOrgId).eq("clientOrgId", undefined),
         )
         .first(),
@@ -348,7 +348,7 @@ export const updateClientOverride = mutation({
     };
     const existing = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q
           .eq("brokerOrgId", access.brokerOrgId)
           .eq("clientOrgId", args.clientOrgId),
@@ -376,7 +376,7 @@ export const clearClientOverride = mutation({
     );
     const existing = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q
           .eq("brokerOrgId", access.brokerOrgId)
           .eq("clientOrgId", args.clientOrgId),
@@ -394,7 +394,7 @@ export const listRules = query({
       if (args.clientOrgId && args.clientOrgId !== current.orgId) return [];
       return await ctx.db
         .query("policyDeliveryRules")
-        .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+        .withIndex("owner_client", (q) =>
           q
             .eq("deliveryOwnerOrgId", current.orgId)
             .eq("clientOrgId", current.orgId),
@@ -411,7 +411,7 @@ export const listRules = query({
     }
     const rows = await ctx.db
       .query("policyDeliveryRules")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
       .collect();
     return rows
       .filter((row) => row.clientOrgId === args.clientOrgId)
@@ -550,7 +550,7 @@ export const listQueue = query({
     const rows = args.status
       ? await ctx.db
           .query("policyDeliveryJobs")
-          .withIndex("by_brokerOrgId_status_updatedAt", (q) =>
+          .withIndex("broker_status", (q) =>
             q.eq("brokerOrgId", access.orgId).eq("status", args.status!),
           )
           .order("desc")
@@ -558,7 +558,7 @@ export const listQueue = query({
       : (
           await ctx.db
             .query("policyDeliveryJobs")
-            .withIndex("by_brokerOrgId_status_updatedAt", (q) =>
+            .withIndex("broker_status", (q) =>
               q.eq("brokerOrgId", access.orgId),
             )
             .order("desc")
@@ -572,7 +572,7 @@ export const listQueue = query({
           ctx.db.get(job.policyId),
           ctx.db
             .query("policyDeliveryAttempts")
-            .withIndex("by_jobId", (q) => q.eq("jobId", job._id))
+            .withIndex("job", (q) => q.eq("jobId", job._id))
             .collect(),
         ]);
         if (!policy || policy.deletedAt) return null;
@@ -594,7 +594,7 @@ export const getJob = query({
     if (!policy || policy.deletedAt) return null;
     const attempts = await ctx.db
       .query("policyDeliveryAttempts")
-      .withIndex("by_jobId", (q) => q.eq("jobId", args.id))
+      .withIndex("job", (q) => q.eq("jobId", args.id))
       .collect();
     return { ...job, policy, attempts };
   },
@@ -683,7 +683,7 @@ export const enqueueInternal = internalMutation({
     ].join(":");
     const existing = await ctx.db
       .query("policyDeliveryJobs")
-      .withIndex("by_idempotencyKey", (q) =>
+      .withIndex("idempotency", (q) =>
         q.eq("idempotencyKey", idempotencyKey),
       )
       .first();
@@ -734,7 +734,7 @@ export const getContextInternal = internalQuery({
     if (!policy || policy.deletedAt) return null;
     const ownerSettings = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+      .withIndex("owner_client", (q) =>
         q
           .eq("deliveryOwnerOrgId", deliveryOwnerOrgId)
           .eq("clientOrgId", job.clientOrgId),
@@ -742,19 +742,19 @@ export const getContextInternal = internalQuery({
       .first();
     const brokerSettings = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q.eq("brokerOrgId", job.brokerOrgId).eq("clientOrgId", undefined),
       )
       .first();
     const clientSettings = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+      .withIndex("broker_client", (q) =>
         q.eq("brokerOrgId", job.brokerOrgId).eq("clientOrgId", job.clientOrgId),
       )
       .first();
     const ownerRules = await ctx.db
       .query("policyDeliveryRules")
-      .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+      .withIndex("owner_client", (q) =>
         q
           .eq("deliveryOwnerOrgId", deliveryOwnerOrgId)
           .eq("clientOrgId", job.clientOrgId),
@@ -763,7 +763,7 @@ export const getContextInternal = internalQuery({
     const allRules = job.brokerOrgId
       ? await ctx.db
           .query("policyDeliveryRules")
-          .withIndex("by_brokerOrgId", (q) =>
+          .withIndex("broker", (q) =>
             q.eq("brokerOrgId", job.brokerOrgId),
           )
           .collect()
@@ -781,7 +781,7 @@ export const getContextInternal = internalQuery({
     ).sort((a, b) => a.priority - b.priority);
     const members = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", job.clientOrgId))
+      .withIndex("organization", (q) => q.eq("orgId", job.clientOrgId))
       .collect();
     const users = await Promise.all(
       members.map((membership) => ctx.db.get(membership.userId)),
@@ -796,12 +796,12 @@ export const getContextInternal = internalQuery({
     const brokerMembers = brokerOrgId
       ? await ctx.db
           .query("orgMemberships")
-          .withIndex("by_orgId", (q) => q.eq("orgId", brokerOrgId))
+          .withIndex("organization", (q) => q.eq("orgId", brokerOrgId))
           .collect()
       : [];
     const connection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", job.clientOrgId).eq("status", "active"),
       )
       .first();
@@ -811,13 +811,13 @@ export const getContextInternal = internalQuery({
     const primarySlackChannel = healthyConnection
       ? ((await ctx.db
           .query("slackChannelBindings")
-          .withIndex("by_connectionId_and_status", (q) =>
+          .withIndex("connection_status", (q) =>
             q.eq("connectionId", healthyConnection._id).eq("status", "active"),
           )
           .first()) ??
         (await ctx.db
           .query("slackChannelBindings")
-          .withIndex("by_connectionId_and_status", (q) =>
+          .withIndex("connection_status", (q) =>
             q
               .eq("connectionId", healthyConnection._id)
               .eq("status", "unavailable"),
@@ -830,7 +830,7 @@ export const getContextInternal = internalQuery({
     );
     const agentChannels = await ctx.db
       .query("agentChannelSettings")
-      .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", job.clientOrgId))
+      .withIndex("client", (q) => q.eq("clientOrgId", job.clientOrgId))
       .first();
     return {
       job,
@@ -920,25 +920,25 @@ export const verifyDeliveryOwnerBackfill = internalQuery({
     const [settings, rules, jobs, attempts] = await Promise.all([
       ctx.db
         .query("policyDeliverySettings")
-        .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+        .withIndex("owner_client", (q) =>
           q.eq("deliveryOwnerOrgId", undefined),
         )
         .first(),
       ctx.db
         .query("policyDeliveryRules")
-        .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+        .withIndex("owner_client", (q) =>
           q.eq("deliveryOwnerOrgId", undefined),
         )
         .first(),
       ctx.db
         .query("policyDeliveryJobs")
-        .withIndex("by_deliveryOwnerOrgId_and_status_and_updatedAt", (q) =>
+        .withIndex("owner_status", (q) =>
           q.eq("deliveryOwnerOrgId", undefined),
         )
         .first(),
       ctx.db
         .query("policyDeliveryAttempts")
-        .withIndex("by_deliveryOwnerOrgId_and_createdAt", (q) =>
+        .withIndex("owner_created", (q) =>
           q.eq("deliveryOwnerOrgId", undefined),
         )
         .first(),

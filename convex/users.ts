@@ -74,7 +74,7 @@ async function latestActiveEmailChangeRequest(
   const now = dayjs().valueOf();
   const pending = await ctx.db
     .query("userEmailChangeRequests")
-    .withIndex("by_target_status", (q) =>
+    .withIndex("target_status", (q) =>
       q.eq("targetUserId", targetUserId).eq("status", "pending"),
     )
     .collect();
@@ -119,7 +119,7 @@ async function emailAvailabilityForTarget(
   const now = dayjs().valueOf();
   const pending = await ctx.db
     .query("userEmailChangeRequests")
-    .withIndex("by_newEmail_status", (q) =>
+    .withIndex("email_status", (q) =>
       q.eq("newEmail", normalizedEmail).eq("status", "pending"),
     )
     .collect();
@@ -488,7 +488,7 @@ export const createEmailChangeRequestInternal = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("userEmailChangeRequests")
-      .withIndex("by_target_status", (q) =>
+      .withIndex("target_status", (q) =>
         q.eq("targetUserId", args.targetUserId).eq("status", "pending"),
       )
       .collect();
@@ -547,7 +547,7 @@ export const completeOnboarding = mutation({
     // Also mark org as onboarded if user has one
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
     if (membership) {
       await ctx.db.patch(membership.orgId, { onboardingComplete: true });
@@ -578,7 +578,7 @@ export const restartOnboarding = mutation({
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
     if (membership) {
       await ctx.db.patch(membership.orgId, { onboardingComplete: false });
@@ -624,7 +624,7 @@ export const listByOrgInternal = internalQuery({
   handler: async (ctx, args) => {
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     const users = await Promise.all(
       memberships.map((m) => ctx.db.get(m.userId)),
@@ -641,7 +641,7 @@ export const getPrimaryOrgAdminInternal = internalQuery({
 
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     const firstAdmin = memberships.find(
       (membership) => membership.role === "admin",
@@ -681,7 +681,7 @@ export const resetAccount = mutation({
     // Get user's org
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
     const orgId = membership?.orgId;
 
@@ -689,11 +689,11 @@ export const resetAccount = mutation({
     const policies = orgId
       ? await ctx.db
           .query("policies")
-          .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+          .withIndex("organization", (q) => q.eq("orgId", orgId))
           .collect()
       : await ctx.db
           .query("policies")
-          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .withIndex("user", (q) => q.eq("userId", userId))
           .collect();
     for (const policy of policies) {
       if (policy.fileId) {
@@ -706,13 +706,13 @@ export const resetAccount = mutation({
     const threads = orgId
       ? await ctx.db
           .query("threads")
-          .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+          .withIndex("organization", (q) => q.eq("orgId", orgId))
           .collect()
       : [];
     for (const thread of threads) {
       const messages = await ctx.db
         .query("threadMessages")
-        .withIndex("by_threadId", (q) => q.eq("threadId", thread._id))
+        .withIndex("thread", (q) => q.eq("threadId", thread._id))
         .collect();
       for (const message of messages) {
         await ctx.db.delete(message._id);

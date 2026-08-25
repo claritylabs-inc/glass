@@ -117,7 +117,7 @@ export async function getOrgAccess(
   // 1. Direct membership
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
+    .withIndex("organization_user", (q) => q.eq("orgId", orgId).eq("userId", userId))
     .first();
 
   if (membership) {
@@ -135,7 +135,7 @@ export async function getOrgAccess(
   if (orgType === "client" && org.brokerOrgId) {
     const brokerMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", org.brokerOrgId!).eq("userId", userId),
       )
       .first();
@@ -176,7 +176,7 @@ export async function getOrgAccess(
   // that vendor or to its broker portal capabilities.
   const activeRelationships = await ctx.db
     .query("connectedOrgRelationships")
-    .withIndex("by_vendorOrgId_status", (q) =>
+    .withIndex("vendor_status", (q) =>
       q.eq("vendorOrgId", orgId).eq("status", "active"),
     )
     .collect();
@@ -184,7 +184,7 @@ export async function getOrgAccess(
   for (const relationship of activeRelationships) {
     const clientMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", relationship.clientOrgId).eq("userId", userId),
       )
       .first();
@@ -254,7 +254,7 @@ function toCurrentOrgAccess(access: OrgAccess): CurrentOrgAccess {
 async function getFirstOrgMembershipForUser(ctx: Ctx, userId: Id<"users">) {
   return await ctx.db
     .query("orgMemberships")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .withIndex("user", (q) => q.eq("userId", userId))
     .first();
 }
 

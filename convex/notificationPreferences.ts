@@ -41,7 +41,7 @@ async function upsertPref(
 ) {
   const existing = await ctx.db
     .query("notificationPreferences")
-    .withIndex("by_userId_orgId_type_channel", (q) =>
+    .withIndex("preference_scope", (q) =>
       q
         .eq("userId", userId)
         .eq("orgId", orgId)
@@ -77,7 +77,7 @@ async function preferenceForType(
 ) {
   return await ctx.db
     .query("notificationPreferences")
-    .withIndex("by_userId_orgId_type_channel", (q) =>
+    .withIndex("preference_scope", (q) =>
       q
         .eq("userId", args.userId)
         .eq("orgId", args.orgId)
@@ -260,7 +260,7 @@ export const getForUser = query({
     assertCurrentOrg(orgId, args.orgId);
     return await ctx.db
       .query("notificationPreferences")
-      .withIndex("by_userId_orgId", (q) => q.eq("userId", userId).eq("orgId", args.orgId))
+      .withIndex("user_organization", (q) => q.eq("userId", userId).eq("orgId", args.orgId))
       .collect();
   },
 });

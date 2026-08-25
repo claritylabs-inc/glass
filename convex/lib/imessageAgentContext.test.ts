@@ -69,18 +69,33 @@ describe("iMessage agent context helpers", () => {
           role: "agent",
           content: "Working on it.",
           responseMessageId: "event:status",
+          messageKind: "workflow_status",
         },
-        { role: "user", userName: "Terry", content: "Show my policies" },
-        { role: "agent", content: "You have one active policy." },
+        {
+          role: "user",
+          userName: "Terry",
+          content: "Show my policies",
+        },
+        {
+          role: "agent",
+          content: "You have one active policy.",
+        },
       ]),
     ).toBe("Terry: Show my policies\nGlass: You have one active policy.");
   });
 
-  test("builds model messages without artifact context and skips current echo", async () => {
+  test("keeps non-workflow artifacts out of private history and skips current echo", async () => {
     const messages = await buildImessageModelMessages({
       history: [
-        { role: "user", content: "Current message" },
         {
+          _id: "current",
+          _creationTime: 1,
+          role: "user",
+          content: "Current message",
+        },
+        {
+          _id: "agent-1",
+          _creationTime: 2,
           role: "agent",
           content: "Certificate follow-up is on hold.",
           toolArtifacts: [
@@ -98,6 +113,7 @@ describe("iMessage agent context helpers", () => {
       messageText: "Current message",
       currentSpeakerLabel: "Terry",
       attachmentRecords: [],
+      currentMessageId: "current" as Id<"threadMessages">,
     });
 
     expect(messages).toHaveLength(2);
@@ -111,11 +127,19 @@ describe("iMessage agent context helpers", () => {
     });
   });
 
-  test("builds model messages with compact assistant tool activity", async () => {
+  test("builds model messages with private assistant tool activity", async () => {
     const messages = await buildImessageModelMessages({
       history: [
-        { role: "user", userName: "Terry", content: "Generate a COI" },
         {
+          _id: "user-1",
+          _creationTime: 1,
+          role: "user",
+          userName: "Terry",
+          content: "Generate a COI",
+        },
+        {
+          _id: "agent-1",
+          _creationTime: 2,
           role: "agent",
           content: "COI generated and attached.",
           usedTools: ["generate_coi"],
@@ -125,14 +149,24 @@ describe("iMessage agent context helpers", () => {
       messageText: "Where is the PDF?",
       currentSpeakerLabel: "Terry",
       attachmentRecords: [],
+      currentMessageId: "current-2" as Id<"threadMessages">,
     });
 
     expect(messages).toEqual([
       { role: "user", content: "[Terry]: Generate a COI" },
       {
         role: "assistant",
-        content:
-          'COI generated and attached.\n\n[tool activity: tools: generate_coi; attached: "COI - Example Holder.pdf"]',
+        content: "COI generated and attached.",
+        providerOptions: {
+          glass: {
+            privateHistory: {
+              tools: ["generate_coi"],
+              workflowOutcomes: [],
+              attachmentNames: ["COI - Example Holder.pdf"],
+              attachmentFailures: [],
+            },
+          },
+        },
       },
       { role: "user", content: "[Terry]: Where is the PDF?" },
     ]);

@@ -21,7 +21,7 @@ export const syncChat = internalMutation({
     const now = Date.now();
     const existing = await ctx.db
       .query("imessageChats")
-      .withIndex("by_chatGuid", (q) => q.eq("chatGuid", args.chatGuid))
+      .withIndex("chat", (q) => q.eq("chatGuid", args.chatGuid))
       .first();
     const shouldSendContactCard = !args.isGroup && !existing?.contactCardSentAt;
 
@@ -60,7 +60,7 @@ export const syncChat = internalMutation({
     for (const participant of args.participants) {
       const existingParticipant = await ctx.db
         .query("imessageParticipants")
-        .withIndex("by_chatGuid_address", (q) =>
+        .withIndex("chat_address", (q) =>
           q.eq("chatGuid", args.chatGuid).eq("address", participant.address),
         )
         .first();
@@ -96,7 +96,7 @@ export const markLeft = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("imessageChats")
-      .withIndex("by_chatGuid", (q) => q.eq("chatGuid", args.chatGuid))
+      .withIndex("chat", (q) => q.eq("chatGuid", args.chatGuid))
       .first();
     if (!existing) return;
     await ctx.db.patch(existing._id, {

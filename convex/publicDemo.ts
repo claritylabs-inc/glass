@@ -35,7 +35,7 @@ export const checkRateLimit = internalMutation({
     const now = dayjs().valueOf();
     const counter = await ctx.db
       .query("publicDemoRateCounters")
-      .withIndex("by_rateKey", (q) => q.eq("rateKey", args.rateKey))
+      .withIndex("key", (q) => q.eq("rateKey", args.rateKey))
       .first();
 
     if (!counter || now - counter.windowStart > PUBLIC_DEMO_WINDOW_MS) {
@@ -76,7 +76,7 @@ export const findOrCreateConversation = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("publicDemoConversations")
-      .withIndex("by_channel_senderHash", (q) =>
+      .withIndex("channel_sender", (q) =>
         q.eq("channel", args.channel).eq("senderHash", args.senderHash),
       )
       .first();
@@ -123,7 +123,7 @@ export const listConversationLogsInternal = internalQuery({
   handler: async (ctx, args) => {
     const logs = await ctx.db
       .query("publicDemoChatLogs")
-      .withIndex("by_conversationId_createdAt", (q) =>
+      .withIndex("conversation_created", (q) =>
         q.eq("conversationId", args.conversationId),
       )
       .order("desc")
@@ -204,6 +204,7 @@ export const updateConversationLead = internalMutation({
     leadUseCase: v.optional(v.string()),
     stage: v.optional(stageValidator),
     ctaStatus: v.optional(ctaStatusValidator),
+    safetyNoticeSent: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
@@ -216,6 +217,8 @@ export const updateConversationLead = internalMutation({
       leadUseCase: args.leadUseCase ?? conversation.leadUseCase,
       stage: args.stage ?? conversation.stage,
       ctaStatus: args.ctaStatus ?? conversation.ctaStatus,
+      safetyNoticeSent:
+        args.safetyNoticeSent ?? conversation.safetyNoticeSent,
       updatedAt: now,
     });
     return await ctx.db.get(args.conversationId);
@@ -248,7 +251,7 @@ export const upsertSalesTranscript = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("publicDemoSalesTranscripts")
-      .withIndex("by_conversationId", (q) =>
+      .withIndex("conversation", (q) =>
         q.eq("conversationId", args.conversationId),
       )
       .first();

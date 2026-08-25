@@ -16,6 +16,7 @@ export type EmailCommandDraft = Pick<
   | "ccAddresses"
   | "bccAddresses"
   | "sendBlockedReason"
+  | "referencedPolicyIds"
 >;
 
 export type EmailCommandExecutionResult = {
@@ -35,7 +36,13 @@ type EmailCommandMutation =
 export type EmailCommandExecutionCtx = {
   runAction(
     action: typeof internal.actions.sendPendingEmail.sendDraftInternal,
-    args: { id: Id<"pendingEmails">; userConfirmedDraft: boolean },
+    args: {
+      id: Id<"pendingEmails">;
+      authorization: {
+        kind: "confirmation";
+        confirmationId: Id<"threadActionConfirmations">;
+      };
+    },
   ): Promise<unknown>;
   runMutation(
     mutation: EmailCommandMutation,
@@ -52,6 +59,7 @@ export async function executeEmailCommand(
     draftEmails: EmailCommandDraft[];
     includeBodyPreview?: boolean;
     continueOnSendFailure?: boolean;
+    sendConfirmationId?: Id<"threadActionConfirmations">;
   },
 ): Promise<EmailCommandExecutionResult> {
   if (command.kind === "restore_cancelled_email") {
@@ -128,13 +136,26 @@ export async function executeEmailCommand(
   }
 
   if (command.kind === "send_draft_emails") {
+    if (!args.sendConfirmationId) {
+      return {
+        kind: "send_failed",
+        responseBody:
+          "The draft selection must be displayed and confirmed again before sending.",
+        sentCount: 0,
+        failedCount: command.emailIds.length,
+        error: "Missing exact draft confirmation",
+      };
+    }
     let sentCount = 0;
     const failures: string[] = [];
     for (const id of command.emailIds) {
       try {
         await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
           id,
-          userConfirmedDraft: true,
+          authorization: {
+            kind: "confirmation",
+            confirmationId: args.sendConfirmationId,
+          },
         });
         sentCount += 1;
       } catch (err) {

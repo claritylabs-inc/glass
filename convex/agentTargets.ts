@@ -35,14 +35,14 @@ export const list = query({
     }
     const allPolicies = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .withIndex("organization", (q) => q.eq("orgId", orgId))
       .collect();
     const activeDocuments = allPolicies.filter(
       (policy) => policy.pipelineStatus === "complete" && !policy.deletedAt,
     );
     const requirements = await ctx.db
       .query("insuranceRequirements")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         q.eq("orgId", orgId).eq("status", "active"),
       )
       .order("desc")
@@ -53,7 +53,7 @@ export const list = query({
         ? (
             await ctx.db
               .query("connectedEmailAccounts")
-              .withIndex("by_orgId_status", (q) =>
+              .withIndex("organization_status", (q) =>
                 q.eq("orgId", orgId).eq("status", "active"),
               )
               .collect()

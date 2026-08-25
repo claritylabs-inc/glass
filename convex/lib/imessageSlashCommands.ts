@@ -1,5 +1,5 @@
 import type { ActionCtx } from "../_generated/server";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import type { AgentScope } from "./agentScope";
 import {
@@ -9,10 +9,16 @@ import {
   type TextChannelCommandTarget,
 } from "./textChannelCommands";
 import { taskControlResponse } from "./taskControlIntent";
+import { pendingEmailDraftFingerprint } from "./actionConfirmationFingerprint";
 
 type PendingEmailForCommand = Pick<
   Doc<"pendingEmails">,
   "_id" | "recipientEmail" | "subject" | "sendBlockedReason"
+  | "ccAddresses"
+  | "bccAddresses"
+  | "emailBody"
+  | "attachments"
+  | "referencedPolicyIds"
 >;
 
 type ImessageCommandHistoryMessage = {
@@ -22,6 +28,10 @@ type ImessageCommandHistoryMessage = {
 export type ImessageSlashCommandResult = {
   response: string;
   leaveGroup?: boolean;
+  draftSnapshot?: {
+    pendingEmailIds: Id<"pendingEmails">[];
+    draftFingerprints: string[];
+  };
 };
 
 type KnownTextChannelCommand = Extract<
@@ -101,6 +111,7 @@ async function sendDrafts(
   ctx: ActionCtx,
   drafts: PendingEmailForCommand[],
   target: TextChannelCommandTarget | undefined,
+  confirmationId: Id<"threadActionConfirmations">,
 ) {
   const selected = selectedByTarget(drafts, target);
   if (selected.length === 0) return targetHelp("/send", drafts.length);
@@ -111,7 +122,7 @@ async function sendDrafts(
     try {
       await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
         id: draft._id,
-        userConfirmedDraft: true,
+        authorization: { kind: "confirmation", confirmationId },
       });
       sentCount += 1;
     } catch (err) {
@@ -213,8 +224,39 @@ function whoamiText(args: {
   return `${identity}. Org: ${args.orgName}. Chat: ${chatKind}. Scope: ${scope}.`;
 }
 
-function requiresLinkedSender(command: KnownTextChannelCommand) {
-  return command.name !== "help";
+async function consumeDisplayedDraftSnapshot(
+  ctx: ActionCtx,
+  args: {
+    threadId: Id<"threads">;
+    currentMessageId: Id<"threadMessages">;
+    userId: Id<"users">;
+    selectedIds: Id<"pendingEmails">[];
+  },
+) {
+  const confirmation = await ctx.runQuery(
+    internal.threadActionConfirmations.latestPendingInternal,
+    { threadId: args.threadId },
+  );
+  const payload = confirmation?.payload;
+  if (
+    confirmation?.actor.kind !== "user" ||
+    confirmation.actor.userId !== args.userId ||
+    payload?.kind !== "draft_snapshot" ||
+    args.selectedIds.length === 0 ||
+    args.selectedIds.some((id) => !payload.pendingEmailIds.includes(id))
+  ) {
+    return null;
+  }
+  const outcome = await ctx.runMutation(
+    internal.threadActionConfirmations.consumeInternal,
+    {
+      id: confirmation._id,
+      actor: { kind: "user", userId: args.userId },
+      currentMessageId: args.currentMessageId,
+      requireAdjacentPrompt: true,
+    },
+  );
+  return { confirmationId: confirmation._id, outcome };
 }
 
 async function runKnownCommand(
@@ -229,14 +271,25 @@ async function runKnownCommand(
     draftEmails: PendingEmailForCommand[];
     pendingEmails: PendingEmailForCommand[];
     history: ImessageCommandHistoryMessage[];
+    threadId: Id<"threads">;
+    currentMessageId: Id<"threadMessages">;
+    userId: Id<"users">;
   },
 ): Promise<ImessageSlashCommandResult> {
   switch (command.name) {
     case "help":
       return { response: TEXT_CHANNEL_COMMAND_HELP };
     case "cancel":
+      await ctx.runMutation(internal.agentHistory.resetTask, {
+        threadId: args.threadId,
+        currentMessageId: args.currentMessageId,
+      });
       return { response: taskControlResponse("cancel_task") };
     case "reset":
+      await ctx.runMutation(internal.agentHistory.resetTask, {
+        threadId: args.threadId,
+        currentMessageId: args.currentMessageId,
+      });
       return { response: taskControlResponse("reset_task") };
     case "status":
       return {
@@ -251,19 +304,71 @@ async function runKnownCommand(
         response: formatDrafts(args.draftEmails, {
           showAll: command.args[0]?.toLowerCase() === "all",
         }),
+        draftSnapshot:
+          args.draftEmails.length > 0
+            ? {
+                pendingEmailIds: args.draftEmails.map((draft) => draft._id),
+                draftFingerprints: await Promise.all(
+                  args.draftEmails.map((draft) =>
+                    pendingEmailDraftFingerprint(draft),
+                  ),
+                ),
+              }
+            : undefined,
       };
     case "send":
-      return {
-        response: await sendDrafts(ctx, args.draftEmails, command.target),
-      };
+      {
+        const selected = selectedByTarget(args.draftEmails, command.target);
+        const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
+          threadId: args.threadId,
+          currentMessageId: args.currentMessageId,
+          userId: args.userId,
+          selectedIds: selected.map((draft) => draft._id),
+        });
+        if (!snapshot) {
+          return {
+            response:
+              "Use /drafts immediately before /send so Glass can verify the exact displayed draft snapshot.",
+          };
+        }
+        if (snapshot.outcome !== "completed") {
+          return {
+            response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
+          };
+        }
+        return {
+          response: await sendDrafts(
+            ctx,
+            args.draftEmails,
+            command.target,
+            snapshot.confirmationId,
+          ),
+        };
+      }
     case "discard":
-      return {
-        response: await discardEmails(
-          ctx,
-          [...args.draftEmails, ...args.pendingEmails],
-          command.target,
-        ),
-      };
+      {
+        const selected = selectedByTarget(args.draftEmails, command.target);
+        const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
+          threadId: args.threadId,
+          currentMessageId: args.currentMessageId,
+          userId: args.userId,
+          selectedIds: selected.map((email) => email._id),
+        });
+        if (!snapshot) {
+          return {
+            response:
+              "Use /drafts immediately before /discard so Glass can verify the exact displayed draft snapshot.",
+          };
+        }
+        if (snapshot.outcome !== "completed") {
+          return {
+            response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
+          };
+        }
+        return {
+          response: await discardEmails(ctx, args.draftEmails, command.target),
+        };
+      }
     case "leave":
       return args.isGroup
         ? { response: "Leaving this group chat.", leaveGroup: true }
@@ -286,6 +391,9 @@ export async function runImessageSlashCommand(
     draftEmails: PendingEmailForCommand[];
     pendingEmails: PendingEmailForCommand[];
     history: ImessageCommandHistoryMessage[];
+    threadId: Id<"threads">;
+    currentMessageId: Id<"threadMessages">;
+    userId: Id<"users">;
   },
 ): Promise<ImessageSlashCommandResult | null> {
   const command = parseTextChannelCommand(args.messageText);
@@ -297,7 +405,7 @@ export async function runImessageSlashCommand(
     };
   }
 
-  if (requiresLinkedSender(command) && !args.currentSenderIsLinked) {
+  if (command.name !== "help" && !args.currentSenderIsLinked) {
     return { response: IMESSAGE_LINKED_SENDER_REQUIRED };
   }
 

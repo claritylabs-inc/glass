@@ -32,7 +32,7 @@ async function syncThreadMessageDelivery(
   if (!message || message.channel !== "slack") return;
   const sends = await ctx.db
     .query("slackOutboundSends")
-    .withIndex("by_threadMessageId", (q) =>
+    .withIndex("message", (q) =>
       q.eq("threadMessageId", threadMessageId),
     )
     .collect();
@@ -62,13 +62,13 @@ async function resolveSendTarget(
   const binding =
     (await ctx.db
       .query("slackChannelBindings")
-      .withIndex("by_connectionId_and_status", (q) =>
+      .withIndex("connection_status", (q) =>
         q.eq("connectionId", connection._id).eq("status", "active"),
       )
       .first()) ??
     (await ctx.db
       .query("slackChannelBindings")
-      .withIndex("by_connectionId_and_status", (q) =>
+      .withIndex("connection_status", (q) =>
         q.eq("connectionId", connection._id).eq("status", "unavailable"),
       )
       .first());
@@ -96,7 +96,7 @@ async function resolveSendTarget(
   if (!hostMatch && !customerMatch && !resolvedChannelId.startsWith("D")) {
     const membership = await ctx.db
       .query("slackChannelMemberships")
-      .withIndex("by_connectionId_and_channelId", (q) =>
+      .withIndex("connection_channel", (q) =>
         q.eq("connectionId", connection._id).eq("channelId", resolvedChannelId),
       )
       .first();
@@ -200,7 +200,7 @@ export const claim = internalMutation({
     }
     const existing = await ctx.db
       .query("slackOutboundSends")
-      .withIndex("by_idempotencyKey", (q) =>
+      .withIndex("idempotency", (q) =>
         q.eq("idempotencyKey", args.idempotencyKey),
       )
       .first();

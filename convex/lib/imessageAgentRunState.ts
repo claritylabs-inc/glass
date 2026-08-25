@@ -1,4 +1,5 @@
 import type { Id } from "../_generated/dataModel";
+import type { WorkflowOutcome } from "./workflows/types";
 import type { EmailSubagentResult } from "./emailSubagent";
 
 type ToolAttachment = {
@@ -41,7 +42,7 @@ export function createImessageAgentRunState() {
     onToolArtifact(artifact: ToolArtifact) {
       toolArtifacts.push(artifact);
     },
-    appendWorkflowOutcomes(workflowOutcomes: unknown[]) {
+    appendWorkflowOutcomes(workflowOutcomes: WorkflowOutcome[]) {
       for (const workflowOutcome of workflowOutcomes) {
         toolArtifacts.push({
           type: "workflow_outcome",

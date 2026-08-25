@@ -8,7 +8,7 @@ export const listByPolicyInternal = internalQuery({
   handler: async (ctx, args) => {
     return ctx.db
       .query("policyFiles")
-      .withIndex("by_policyId", (idx) => idx.eq("policyId", args.policyId))
+      .withIndex("policy", (idx) => idx.eq("policyId", args.policyId))
       .collect();
   },
 });

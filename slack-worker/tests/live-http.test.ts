@@ -98,6 +98,15 @@ before(async () => {
     if (request.url === "/api/chat.postMessage") {
       return respond(response, { ok: true, ts: "1800000000.100" });
     }
+    if (request.url === "/api/chat.update") {
+      return respond(response, { ok: true, ts: "1800000000.100" });
+    }
+    if (request.url === "/api/chat.appendStream") {
+      return respond(response, { ok: true });
+    }
+    if (request.url === "/api/chat.stopStream") {
+      return respond(response, { ok: true, ts: "1800000000.100" });
+    }
     if (request.url === "/api/files.getUploadURLExternal") {
       if (
         !request.headers["content-type"]?.startsWith(
@@ -290,7 +299,8 @@ describe("native Slack worker HTTP adapter", () => {
       clientMessageId: "native-send-1",
       teamId: "T-CUSTOMER",
       channelId: "C-CUSTOMER",
-      text: "**Policy:** [Open](https://example.test/policy)",
+      mrkdwnText:
+        "*Policy:* <https://example.test/policy|Open>\nStatus: :bound:",
     });
     assert.deepEqual(await send.json(), {
       messageId: "1800000000.100",
@@ -303,7 +313,7 @@ describe("native Slack worker HTTP adapter", () => {
     const { client_msg_id: clientMessageId, ...chatBody } = chatCall.body;
     assert.deepEqual(chatBody, {
       channel: "C-CUSTOMER",
-      text: "*Policy:* <https://example.test/policy|Open>",
+      text: "*Policy:* <https://example.test/policy|Open>\nStatus: :bound:",
       mrkdwn: true,
       unfurl_links: false,
       unfurl_media: false,
@@ -335,6 +345,71 @@ describe("native Slack worker HTTP adapter", () => {
     );
   });
 
+  test("passes transport-ready message and stream formats through unchanged", async () => {
+    const mrkdwnText = "*Coverage:* `A:B` and :literal_status:";
+    const markdownText = "**Coverage:** `A:B` and :literal_status:";
+
+    assert.equal(
+      (
+        await workerRequest("/message/update", {
+          teamId: "T-CUSTOMER",
+          channelId: "C-CUSTOMER",
+          messageTs: "1800000000.100",
+          mrkdwnText,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await workerRequest("/stream/append", {
+          teamId: "T-CUSTOMER",
+          channelId: "C-CUSTOMER",
+          messageTs: "1800000000.100",
+          markdownText,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await workerRequest("/stream/stop", {
+          teamId: "T-CUSTOMER",
+          channelId: "C-CUSTOMER",
+          messageTs: "1800000000.100",
+          markdownText,
+        })
+      ).status,
+      200,
+    );
+
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/chat.update")?.body,
+      {
+        channel: "C-CUSTOMER",
+        ts: "1800000000.100",
+        text: mrkdwnText,
+        blocks: [],
+      },
+    );
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/chat.appendStream")?.body,
+      {
+        channel: "C-CUSTOMER",
+        ts: "1800000000.100",
+        markdown_text: markdownText,
+      },
+    );
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body,
+      {
+        channel: "C-CUSTOMER",
+        ts: "1800000000.100",
+        markdown_text: markdownText,
+      },
+    );
+  });
+
   test("uses form encoding for Slack file metadata and upload URL calls", async () => {
     const attachment = await workerRequest("/attachment", {
       teamId: "T-CUSTOMER",
@@ -346,7 +421,7 @@ describe("native Slack worker HTTP adapter", () => {
       clientMessageId: "native-file-1",
       teamId: "T-CUSTOMER",
       channelId: "C-CUSTOMER",
-      text: "",
+      mrkdwnText: "",
       attachments: [
         {
           url: `${providerOrigin}/source.pdf`,

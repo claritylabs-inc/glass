@@ -6,7 +6,7 @@ import { z } from "zod";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
   generateAgentTextForPublicTask,
   generatedTextFromResult,
@@ -30,26 +30,10 @@ import {
   type PublicDemoLeadContext,
   type PublicDemoLeadStage,
 } from "../lib/publicDemoAgent";
+import { collectToolAudit } from "../lib/agentToolAudit";
 
-type PublicDemoConversation = {
-  _id: Id<"publicDemoConversations">;
-  channel: PublicDemoChannel;
-  senderContact?: string;
-  leadName?: string;
-  leadCompany?: string;
-  leadEmail?: string;
-  leadUseCase?: string;
-  stage: PublicDemoLeadStage;
-  ctaStatus: PublicDemoCtaStatus;
-  turnCount: number;
-};
-
-type PublicDemoLog = {
-  direction: "inbound" | "outbound" | "system";
-  content: string;
-  createdAt: number;
-  subject?: string;
-};
+type PublicDemoConversation = Doc<"publicDemoConversations">;
+type PublicDemoLog = Doc<"publicDemoChatLogs">;
 
 type PublicDemoAgentResponse = {
   conversationId: Id<"publicDemoConversations">;
@@ -95,51 +79,6 @@ function logsToMessages(logs: PublicDemoLog[]): ModelMessage[] {
           ? `Subject: ${log.subject}\n\n${log.content}`
           : log.content,
     }));
-}
-
-function safeJson(value: unknown) {
-  try {
-    return JSON.stringify(value).slice(0, 2000);
-  } catch {
-    return undefined;
-  }
-}
-
-function collectToolAudit(result: unknown) {
-  const calls: Array<{ name: string; input?: string; output?: string }> = [];
-  const add = (part: unknown, output?: unknown) => {
-    if (!part || typeof part !== "object") return;
-    const record = part as Record<string, unknown>;
-    const name =
-      typeof record.toolName === "string"
-        ? record.toolName
-        : typeof record.name === "string"
-          ? record.name
-          : undefined;
-    if (!name) return;
-    calls.push({
-      name,
-      input: safeJson(record.input ?? record.args),
-      output: safeJson(output ?? record.output ?? record.result),
-    });
-  };
-
-  const root = result as Record<string, unknown>;
-  if (Array.isArray(root.toolCalls)) {
-    for (const call of root.toolCalls) add(call);
-  }
-  if (Array.isArray(root.steps)) {
-    for (const step of root.steps) {
-      const stepRecord = step as Record<string, unknown>;
-      if (Array.isArray(stepRecord.toolCalls)) {
-        for (const call of stepRecord.toolCalls) add(call);
-      }
-      if (Array.isArray(stepRecord.toolResults)) {
-        for (const toolResult of stepRecord.toolResults) add(toolResult);
-      }
-    }
-  }
-  return calls.slice(0, 20);
 }
 
 function inferStage(args: {
@@ -198,118 +137,13 @@ function nextStep(stage: PublicDemoLeadStage, ctaStatus: PublicDemoCtaStatus) {
   return "Continue demo, capture name/company, and qualify use case.";
 }
 
-function hasSafetyNotice(text: string) {
-  return /\b(demo only|demo data only|not real|not binding|no certificate (?:was )?issued|not insurance advice)\b/i.test(
-    text,
-  );
-}
-
-function hasPriorSafetyNotice(logs: PublicDemoLog[]) {
-  return logs.some(
-    (log) => log.direction === "outbound" && hasSafetyNotice(log.content),
-  );
-}
-
-function removeRepeatedSafetyFooter(text: string) {
-  return text
-    .replace(/\s*Demo data only, not real advice\.?/gi, "")
-    .replace(/\s*Demo only[:.] No real certificate or insurance advice\.?/gi, "")
-    .replace(
-      /\s*Demo only: no certificate was issued, and this is not insurance advice\.?/gi,
-      "",
-    )
-    .replace(
-      /\s*Demo only: no certificate was issued, nothing here is binding, and this is not insurance advice\.?/gi,
-      "",
-    )
-    .split("\n")
-    .filter(
-      (line) =>
-        !/^\s*demo only[:.]/i.test(line) &&
-        !/\bno certificate (?:was )?issued\b/i.test(line),
-    )
-    .join("\n")
-    .trim();
-}
-
-function flattenImessageText(text: string) {
-  return text
-    .split("\n")
-    .map((line) => line.trim().replace(/^[-*]\s+/, ""))
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .replace(/\s+([,.!?])/g, "$1")
-    .replace(/[“”]/g, '"')
-    .trim();
-}
-
-function conciseImessageFallback(args: {
-  text: string;
-  latestMessage: string;
-}) {
-  const combined = `${args.latestMessage}\n${args.text}`.toLowerCase();
-  let text = args.text;
-
-  if (/\b(what can|what does).*\bglass\b|\bglass do\b/.test(combined)) {
-    text =
-      "Glass can read insurance docs/emails, spot gaps, and draft follow-ups. Want COIs, renewals, or vendor compliance?";
-  } else if (/\b(coi|certificate|cert|proof of insurance)\b/.test(combined)) {
-    text = "Glass can draft the COI request and broker follow-up.";
-  } else if (/\b(vendor|compliance|requirement)\b/.test(combined)) {
-    text = "Glass can check vendor evidence against requirements and flag gaps.";
-  } else if (/\b(email|inbox|mailbox|renewal|follow[- ]?up)\b/.test(combined)) {
-    text = "Glass can find policy emails, pull the key details, and draft the follow-up.";
-  } else {
-    text = args.text.split(/(?<=[.!?])\s+/)[0] ?? args.text;
-  }
-
-  return text;
-}
-
-function normalizeEmailResponse(text: string) {
-  return text
-    .trim()
-    .replace(/\s+-\s+(?=[A-Z0-9])/g, "\n- ")
-    .replace(/:\n(- )/g, ":\n\n$1")
-    .replace(/\n{3,}/g, "\n\n");
-}
-
-function normalizeChannelResponse(args: {
-  text: string;
-  channel: PublicDemoChannel;
-  latestMessage: string;
-}) {
-  if (args.channel === "email") {
-    return normalizeEmailResponse(args.text);
-  }
-
-  const flattened = flattenImessageText(args.text)
-    .replace(/^hi\s+[^,!.—-]+[,!—-]\s*/i, "")
-    .replace(/\bhere(?:'|’)s a simulated example\b[:\s-]*/i, "")
-    .replace(/\bwant the matching sample [^?]+\?/gi, "")
-    .trim();
-  const artifactLike =
-    /\b(sample COI text block|COI delivery email|simulated Glass demo email|no certificate issued\/attached|no certificate was issued or attached)\b/i.test(
-      flattened,
-    );
-
-  if (flattened.length <= 240 && !artifactLike) return flattened;
-  return conciseImessageFallback({
-    text: flattened,
-    latestMessage: args.latestMessage,
-  });
-}
-
 function addSimulationNotice(args: {
   text: string;
   channel: PublicDemoChannel;
   alreadyWarned: boolean;
 }) {
-  const text = removeRepeatedSafetyFooter(args.text) || args.text.trim();
-  if (args.alreadyWarned) {
-    return text;
-  }
+  const text = args.text.trim();
+  if (args.alreadyWarned) return text;
   const notice =
     args.channel === "imessage"
       ? "Demo data only, not real advice."
@@ -317,6 +151,26 @@ function addSimulationNotice(args: {
   const separator = args.channel === "imessage" ? " " : "\n\n";
   return `${text}${separator}${notice}`;
 }
+
+const PUBLIC_DEMO_TRANSPORT_CAPS: Record<PublicDemoChannel, number> = {
+  email: 8_000,
+  imessage: 520,
+};
+
+function validatedPublicDemoResponse(args: {
+  text: string;
+  channel: PublicDemoChannel;
+  alreadyWarned: boolean;
+}): string | undefined {
+  if (!args.text.trim()) return undefined;
+  const text = addSimulationNotice(args);
+  return Array.from(text).length <= PUBLIC_DEMO_TRANSPORT_CAPS[args.channel]
+    ? text
+    : undefined;
+}
+
+const NEUTRAL_PUBLIC_DEMO_FAILURE =
+  "I couldn't safely format that demo response. Please try a shorter request.";
 
 function formatPublicDemoEmail(args: {
   body: string;
@@ -326,38 +180,6 @@ function formatPublicDemoEmail(args: {
   const text = stripMarkdown(args.body) + signature.text;
   const html = buildAgentEmailHtmlBody(args.body, signature);
   return { text, html };
-}
-
-function mentionsRealOrAdviceRisk(text: string) {
-  return /\b(real|valid|binding|official|certified|usable|issued|attached|proof of insurance|insurance advice|legal advice)\b/i.test(
-    text,
-  );
-}
-
-function mentionsRealLookingDemoArtifact(text: string) {
-  return (
-    /\b(sample|example|simulated|draft)\b.{0,80}\b(coi|certificate|policy answer|coverage answer|compliance result|email)\b/i.test(
-      text,
-    ) ||
-    /\b(policy number|carrier|limit|additional insured|waiver of subrogation|certificate holder|covered|not covered|compliant|noncompliant|needs attention)\b/i.test(
-      text,
-    )
-  );
-}
-
-function shouldAttachSimulationNotice(args: {
-  channel: PublicDemoChannel;
-  latestMessage: string;
-  responseText: string;
-  alreadyWarned: boolean;
-}) {
-  if (args.alreadyWarned) return false;
-  const combined = `${args.latestMessage}\n${args.responseText}`;
-  if (mentionsRealOrAdviceRisk(combined)) return true;
-  if (args.channel === "email") {
-    return mentionsRealLookingDemoArtifact(args.responseText);
-  }
-  return mentionsRealLookingDemoArtifact(args.responseText);
 }
 
 export const respond = internalAction({
@@ -374,14 +196,14 @@ export const respond = internalAction({
     chatGuid: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<PublicDemoAgentResponse> => {
-    const channel = args.channel as PublicDemoChannel;
+    const channel = args.channel;
     const normalizedSender = args.senderContact.trim().toLowerCase();
     const rateKey = senderHash(channel, normalizedSender);
     const rate = await ctx.runMutation(internal.publicDemo.checkRateLimit, {
       rateKey,
     });
 
-    const conversation = (await ctx.runMutation(
+    const conversation = await ctx.runMutation(
       internal.publicDemo.findOrCreateConversation,
       {
         channel,
@@ -390,7 +212,7 @@ export const respond = internalAction({
         agentAddress: args.agentAddress,
         leadEmail: channel === "email" ? args.fromEmail : undefined,
       },
-    )) as PublicDemoConversation;
+    );
 
     await ctx.runMutation(internal.publicDemo.appendChatLog, {
       conversationId: conversation._id,
@@ -411,8 +233,8 @@ export const respond = internalAction({
     if (!rate.allowed) {
       const text =
         channel === "imessage"
-          ? "I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book here: https://cal.com/team/claritylabs/product-demo"
-          : "I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book a product demo at https://cal.com/team/claritylabs/product-demo.";
+          ? `I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book here: ${PUBLIC_DEMO_BOOKING_URL}`
+          : `I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book a product demo at ${PUBLIC_DEMO_BOOKING_URL}.`;
       const formatted =
         channel === "email"
           ? formatPublicDemoEmail({ body: text, agentAddress: args.agentAddress })
@@ -421,7 +243,7 @@ export const respond = internalAction({
         conversationId: conversation._id,
         stage: "rate_limited",
       });
-      const outboundLogId = (await ctx.runMutation(
+      const outboundLogId = await ctx.runMutation(
         internal.publicDemo.appendChatLog,
         {
           conversationId: conversation._id,
@@ -432,7 +254,7 @@ export const respond = internalAction({
           contentHtml: formatted.html,
           deliveryStatus: "generated",
         },
-      )) as Id<"publicDemoChatLogs">;
+      );
       return {
         conversationId: conversation._id,
         outboundLogId,
@@ -441,14 +263,14 @@ export const respond = internalAction({
       };
     }
 
-    const logs = (await ctx.runQuery(
+    const logs = await ctx.runQuery(
       internal.publicDemo.listConversationLogsInternal,
       {
         conversationId: conversation._id,
         limit: 16,
       },
-    )) as PublicDemoLog[];
-    const alreadyWarned = hasPriorSafetyNotice(logs);
+    );
+    const alreadyWarned = conversation.safetyNoticeSent === true;
     const leadPatch: PublicDemoLeadContext = {};
     let ctaStatus: PublicDemoCtaStatus = conversation.ctaStatus;
     let ctaUrl: string | undefined;
@@ -597,7 +419,6 @@ export const respond = internalAction({
       lead: initialLead,
       turnCount: conversation.turnCount,
       latestMessage: args.messageText,
-      hasSentSafetyNotice: alreadyWarned,
     });
     const messages = [
       ...logsToMessages(logs.slice(0, -1)),
@@ -613,7 +434,7 @@ export const respond = internalAction({
       args.sourceMessageId ??
       args.resendEmailId ??
       `${String(conversation._id)}:${logs.length}`;
-    const result = await generateAgentTextForPublicTask(
+    let result = await generateAgentTextForPublicTask(
       ctx,
       task,
       {
@@ -656,48 +477,63 @@ export const respond = internalAction({
       ctaStatus,
       lead,
     });
-    if (!responseText) {
-      responseText =
-        channel === "imessage"
-          ? "I can show a quick Glass demo with example policy data. What should I walk through?"
-          : "I can show a quick Glass demo with example policy data. Reply with the workflow you want to see, such as policy Q&A, vendor compliance, mailbox search, or certificate drafting.";
-    }
-    if (needsTextEmail && responseText.includes(PUBLIC_DEMO_BOOKING_URL)) {
-      responseText =
-        "What is the best email to prefill on the product-demo booking link?";
-    }
-    responseText = normalizeChannelResponse({
+    let validatedResponse = validatedPublicDemoResponse({
       text: responseText,
       channel,
-      latestMessage: args.messageText,
+      alreadyWarned,
     });
-    if (
-      shouldAttachSimulationNotice({
-        channel,
-        latestMessage: args.messageText,
-        responseText,
-        alreadyWarned,
-      })
-    ) {
-      responseText = addSimulationNotice({
+    if (!validatedResponse) {
+      const retry = await generateAgentTextForPublicTask(
+        ctx,
+        task,
+        {
+          maxOutputTokens: channel === "imessage" ? 120 : 700,
+          system: `${system}\n\nRETRY REQUIREMENT: Return one self-contained, safe response under ${PUBLIC_DEMO_TRANSPORT_CAPS[channel]} Unicode code points. Do not claim that a real artifact was created or delivered. Do not add a simulation notice; the transport owns it.`,
+          messages: [
+            ...messages,
+            { role: "assistant", content: responseText },
+            {
+              role: "user",
+              content:
+                "Rewrite that response to satisfy the retry requirement without adding a new topic or call to action.",
+            },
+          ],
+        },
+        {
+          taskKind:
+            channel === "email"
+              ? "public_demo_email_reply"
+              : "public_demo_chat",
+          sessionKey: String(conversation._id),
+          trace: {
+            traceId: `${publicDemoRunId}:retry`,
+            parentRequestId: publicDemoRunId,
+            label: "convex.publicDemoAgent.retry",
+            phase:
+              channel === "email"
+                ? "public_demo_email_reply"
+                : "public_demo_chat",
+            channel,
+          },
+        },
+      );
+      result = retry;
+      responseText = generatedTextFromResult(retry).trim();
+      validatedResponse = validatedPublicDemoResponse({
         text: responseText,
         channel,
         alreadyWarned,
       });
-    } else if (channel === "imessage") {
-      responseText = removeRepeatedSafetyFooter(responseText) || responseText;
     }
+    responseText =
+      validatedResponse ??
+      addSimulationNotice({
+        text: NEUTRAL_PUBLIC_DEMO_FAILURE,
+        channel,
+        alreadyWarned,
+      });
 
-    await ctx.runMutation(internal.publicDemo.updateConversationLead, {
-      conversationId: conversation._id,
-      leadName: lead.name,
-      leadCompany: lead.company,
-      leadEmail: lead.email,
-      leadUseCase: lead.useCase,
-      stage: nextStage,
-      ctaStatus,
-    });
-    const toolCalls = collectToolAudit(result);
+    const toolCalls = collectToolAudit(result).toolCalls;
     const formatted =
       channel === "email"
         ? formatPublicDemoEmail({
@@ -705,7 +541,7 @@ export const respond = internalAction({
             agentAddress: args.agentAddress,
           })
         : { text: responseText, html: markdownToHtml(responseText) };
-    const outboundLogId = (await ctx.runMutation(
+    const outboundLogId = await ctx.runMutation(
       internal.publicDemo.appendChatLog,
       {
         conversationId: conversation._id,
@@ -722,15 +558,25 @@ export const respond = internalAction({
         ctaUrl,
         deliveryStatus: "generated",
       },
-    )) as Id<"publicDemoChatLogs">;
+    );
+    await ctx.runMutation(internal.publicDemo.updateConversationLead, {
+      conversationId: conversation._id,
+      leadName: lead.name,
+      leadCompany: lead.company,
+      leadEmail: lead.email,
+      leadUseCase: lead.useCase,
+      stage: nextStage,
+      ctaStatus,
+      safetyNoticeSent: true,
+    });
 
-    const latestLogs = (await ctx.runQuery(
+    const latestLogs = await ctx.runQuery(
       internal.publicDemo.listConversationLogsInternal,
       {
         conversationId: conversation._id,
         limit: 20,
       },
-    )) as PublicDemoLog[];
+    );
     await ctx.runMutation(internal.publicDemo.upsertSalesTranscript, {
       conversationId: conversation._id,
       channel,

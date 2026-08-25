@@ -76,7 +76,7 @@ async function createMemberInvitation(
 
   const memberships = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .withIndex("organization", (q) => q.eq("orgId", orgId))
     .collect();
   const existingUser = await ctx.db
     .query("users")
@@ -91,7 +91,7 @@ async function createMemberInvitation(
   const expiresAt = dayjs(now).add(7, "day").valueOf();
   const existingInvites = await ctx.db
     .query("orgInvitations")
-    .withIndex("by_email", (q) => q.eq("email", email))
+    .withIndex("email", (q) => q.eq("email", email))
     .collect();
   const pendingForOrg = existingInvites.find(
     (i) => i.orgId === orgId && i.status === "pending",
@@ -123,7 +123,7 @@ async function requireOrgAdminForUser(
 ) {
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .withIndex("user", (q) => q.eq("userId", userId))
     .first();
   if (!membership) {
     throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
@@ -239,12 +239,12 @@ export const viewerOrg = query({
     if (args.orgId) {
       membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_orgId_userId", (q) => q.eq("orgId", args.orgId!).eq("userId", userId))
+        .withIndex("organization_user", (q) => q.eq("orgId", args.orgId!).eq("userId", userId))
         .first();
     } else {
       membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .withIndex("user", (q) => q.eq("userId", userId))
         .first();
     }
 
@@ -329,7 +329,7 @@ export const listMembers = query({
 
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .withIndex("organization", (q) => q.eq("orgId", orgId))
       .collect();
 
     const members = await Promise.all(
@@ -342,7 +342,7 @@ export const listMembers = query({
           .collect();
         const pendingEmailChanges = await ctx.db
           .query("userEmailChangeRequests")
-          .withIndex("by_target_status", (q) =>
+          .withIndex("target_status", (q) =>
             q.eq("targetUserId", m.userId).eq("status", "pending"),
           )
           .collect();
@@ -387,7 +387,7 @@ export const listInvitations = query({
 
     return await ctx.db
       .query("orgInvitations")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .withIndex("organization", (q) => q.eq("orgId", orgId))
       .collect();
   },
 });
@@ -404,7 +404,7 @@ export const checkHandleAvailability = query({
     }
     const existingOrg = await ctx.db
       .query("organizations")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
+      .withIndex("handle", (q) => q.eq("agentHandle", normalized))
       .first();
     const taken = !!existingOrg && existingOrg._id !== args.excludeOrgId;
     return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
@@ -418,7 +418,7 @@ export const publicBrokerBySlug = query({
     const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
     const org = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .withIndex("slug", (q) => q.eq("slug", normalized))
       .first();
     if (!org || org.type !== "broker") return null;
     if ((org.operatorStatus ?? "live") !== "live") return null;
@@ -451,7 +451,7 @@ export const checkSlugAvailability = query({
     }
     const existing = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .withIndex("slug", (q) => q.eq("slug", normalized))
       .first();
     return {
       available: !existing,
@@ -469,12 +469,12 @@ export const checkPendingInvitation = query({
     // Check both original case and lowercase since invitations may be stored either way
     const byOriginal = await ctx.db
       .query("orgInvitations")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("email", (q) => q.eq("email", args.email))
       .collect();
     const byLower = args.email !== email
       ? await ctx.db
           .query("orgInvitations")
-          .withIndex("by_email", (q) => q.eq("email", email))
+          .withIndex("email", (q) => q.eq("email", email))
           .collect()
       : [];
     const all = [...byOriginal, ...byLower];
@@ -498,13 +498,13 @@ export const pendingInvitationForViewer = query({
     // Check both original case and lowercase
     const byOriginal = await ctx.db
       .query("orgInvitations")
-      .withIndex("by_email", (q) => q.eq("email", user.email!))
+      .withIndex("email", (q) => q.eq("email", user.email!))
       .collect();
     const lowerEmail = normalizeEmail(user.email!);
     const byLower = user.email !== lowerEmail
       ? await ctx.db
           .query("orgInvitations")
-          .withIndex("by_email", (q) => q.eq("email", lowerEmail))
+          .withIndex("email", (q) => q.eq("email", lowerEmail))
           .collect()
       : [];
     const all = [...byOriginal, ...byLower];
@@ -552,7 +552,7 @@ export const createBrokerOrg = mutation({
     }
     const slugTaken = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .withIndex("slug", (q) => q.eq("slug", normalized))
       .first();
     if (slugTaken) throw new Error("Slug already taken");
 
@@ -561,7 +561,7 @@ export const createBrokerOrg = mutation({
       const handleNorm = args.agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
       const handleTaken = await ctx.db
         .query("organizations")
-        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", handleNorm))
+        .withIndex("handle", (q) => q.eq("agentHandle", handleNorm))
         .first();
       if (handleTaken) throw new Error("Handle already taken");
     }
@@ -604,7 +604,7 @@ export const createClientOrg = mutation({
     // Check if user already has an org membership
     const existingMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
     if (existingMembership) {
       throw new Error("User already belongs to an organization");
@@ -710,7 +710,7 @@ export const getBrokerIdentity = query({
       identity.brokerOrgId && access.accessType === "broker_of_client"
         ? await ctx.db
             .query("orgMemberships")
-            .withIndex("by_orgId_userId", (q) =>
+            .withIndex("organization_user", (q) =>
               q
                 .eq("orgId", identity.brokerOrgId!)
                 .eq("userId", access.userId),
@@ -731,7 +731,7 @@ export const getBrokerIdentity = query({
             (
               await ctx.db
                 .query("orgMemberships")
-                .withIndex("by_orgId", (q) =>
+                .withIndex("organization", (q) =>
                   q.eq("orgId", identity.brokerOrgId!),
                 )
                 .collect()
@@ -772,7 +772,7 @@ export const getBrokerPageContext = query({
     if (!userId) return { showBrokerPage: false, isVendorOnly: false };
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
     if (!membership) return { showBrokerPage: false, isVendorOnly: false };
     const org = await ctx.db.get(membership.orgId);
@@ -781,13 +781,13 @@ export const getBrokerPageContext = query({
     }
     const customerRelationship = await ctx.db
       .query("connectedOrgRelationships")
-      .withIndex("by_clientOrgId_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", org._id).eq("status", "active"),
       )
       .first();
     const vendorRelationship = await ctx.db
       .query("connectedOrgRelationships")
-      .withIndex("by_vendorOrgId_status", (q) =>
+      .withIndex("vendor_status", (q) =>
         q.eq("vendorOrgId", org._id).eq("status", "active"),
       )
       .first();
@@ -831,7 +831,7 @@ export const updateClientBrokerAssignment = mutation({
     if (args.producerId && connectedBrokerOrgId) {
       const membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_orgId_userId", (q) =>
+        .withIndex("organization_user", (q) =>
           q.eq("orgId", connectedBrokerOrgId).eq("userId", args.producerId!),
         )
         .first();
@@ -844,14 +844,14 @@ export const updateClientBrokerAssignment = mutation({
     const assignments = connectedBrokerOrgId
       ? await ctx.db
           .query("brokerClientAssignments")
-          .withIndex("by_orgId_clientOrgId", (q) =>
+          .withIndex("organization_client", (q) =>
             q.eq("orgId", connectedBrokerOrgId).eq("clientOrgId", args.clientOrgId),
           )
           .collect()
       : (
           await ctx.db
             .query("brokerClientAssignments")
-            .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId))
+            .withIndex("client", (q) => q.eq("clientOrgId", args.clientOrgId))
             .collect()
         ).filter((assignment) => !assignment.orgId);
     const brokerCompanyName = connectedBrokerOrgId
@@ -911,14 +911,14 @@ export const listClients = query({
 
     const clients = await ctx.db
       .query("organizations")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", args.orgId))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", args.orgId))
       .collect();
 
     return await Promise.all(
       clients.map(async (client) => {
         const members = await ctx.db
           .query("orgMemberships")
-          .withIndex("by_orgId", (q) => q.eq("orgId", client._id))
+          .withIndex("organization", (q) => q.eq("orgId", client._id))
           .collect();
         return { ...client, memberCount: members.length };
       }),
@@ -935,7 +935,7 @@ export const listAllOrgsForViewer = query({
 
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .collect();
 
     return await Promise.all(
@@ -1158,7 +1158,7 @@ export const claimAgentHandle = mutation({
 
     const existingOrg = await ctx.db
       .query("organizations")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", normalized))
+      .withIndex("handle", (q) => q.eq("agentHandle", normalized))
       .first();
     if (existingOrg && existingOrg._id !== orgId) throw new Error("Handle already taken");
 
@@ -1460,7 +1460,7 @@ export const acceptInvitation = mutation({
     // Check not already a member
     const existing = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", invitation.orgId).eq("userId", userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", invitation.orgId).eq("userId", userId))
       .first();
     if (existing) {
       await ctx.db.patch(args.invitationId, { status: "accepted" });
@@ -1498,7 +1498,7 @@ export const removeMember = mutation({
 
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .withIndex("organization", (q) => q.eq("orgId", orgId))
       .collect();
 
     if (membership.role === "admin") {
@@ -1552,7 +1552,7 @@ export const updateMemberRole = mutation({
     if (membership.role === "admin" && args.role === "member") {
       const admins = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+        .withIndex("organization", (q) => q.eq("orgId", orgId))
         .collect();
       const adminCount = admins.filter((m) => m.role === "admin").length;
       if (adminCount <= 1) throw new Error("Cannot demote the last admin");
@@ -1663,7 +1663,7 @@ export const setPrimaryInsuranceContact = mutation({
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", args.userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", orgId).eq("userId", args.userId))
       .first();
     if (!membership) throw new Error("User is not a member of this organization");
 
@@ -1687,7 +1687,7 @@ export const ensurePrimaryInsuranceContact = mutation({
 
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+      .withIndex("organization", (q) => q.eq("orgId", orgId))
       .collect();
 
     const currentPrimaryStillMember = org.primaryInsuranceContactId
@@ -1743,7 +1743,7 @@ export const getByHandle = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("organizations")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
+      .withIndex("handle", (q) => q.eq("agentHandle", args.handle))
       .first();
   },
 });
@@ -1772,7 +1772,7 @@ async function senderMatchesOrg(
   if (org.emailVerification !== "strict") {
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
+      .withIndex("organization", (q) => q.eq("orgId", org._id))
       .collect();
     for (const membership of memberships) {
       const user = await ctx.db.get(membership.userId);
@@ -1797,7 +1797,7 @@ export const resolveClientBySender = internalQuery({
 
     const handleOwner = await ctx.db
       .query("organizations")
-      .withIndex("by_agentHandle", (q) => q.eq("agentHandle", args.handle))
+      .withIndex("handle", (q) => q.eq("agentHandle", args.handle))
       .first();
 
     if (handleOwner && handleOwner.type !== "broker") {
@@ -1814,7 +1814,7 @@ export const resolveClientBySender = internalQuery({
     if (!handleOwner) {
       const standaloneOrgs = await ctx.db
         .query("organizations")
-        .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", undefined))
+        .withIndex("broker", (q) => q.eq("brokerOrgId", undefined))
         .collect();
 
       for (const org of standaloneOrgs) {
@@ -1829,7 +1829,7 @@ export const resolveClientBySender = internalQuery({
 
     const clientOrgs = await ctx.db
       .query("organizations")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrg._id))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrg._id))
       .collect();
 
     // 1. Strict: explicit allowedEmails match
@@ -1850,7 +1850,7 @@ export const resolveClientBySender = internalQuery({
       if (client.emailVerification === "strict") continue;
       const memberships = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_orgId", (q) => q.eq("orgId", client._id))
+        .withIndex("organization", (q) => q.eq("orgId", client._id))
         .collect();
       for (const m of memberships) {
         const u = await ctx.db.get(m.userId);
@@ -1868,7 +1868,7 @@ export const getOrgsByUserId = internalQuery({
   handler: async (ctx, args) => {
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("user", (q) => q.eq("userId", args.userId))
       .collect();
 
     const orgs = await Promise.all(
@@ -1891,7 +1891,7 @@ export const getMembersInternal = internalQuery({
   handler: async (ctx, args) => {
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     return Promise.all(
       memberships.map(async (m) => {
@@ -1916,7 +1916,7 @@ export const getUserMembership = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("user", (q) => q.eq("userId", args.userId))
       .first();
   },
 });
@@ -1929,7 +1929,7 @@ export const getUserMemberships = internalQuery({
       uniqueUserIds.map((userId) =>
         ctx.db
           .query("orgMemberships")
-          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .withIndex("user", (q) => q.eq("userId", userId))
           .first(),
       ),
     );
@@ -1945,7 +1945,7 @@ export const hasMembershipInternal = internalQuery({
   handler: async (ctx, args) => {
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", args.orgId).eq("userId", args.userId),
       )
       .first();
@@ -2009,7 +2009,7 @@ export const listMembersForOrg = query({
     }
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     return (await Promise.all(
       memberships.map(async (m) => {

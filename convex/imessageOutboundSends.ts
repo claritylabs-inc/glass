@@ -15,7 +15,7 @@ export const claim = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("imessageOutboundSends")
-      .withIndex("by_idempotencyKey", (q) =>
+      .withIndex("idempotency", (q) =>
         q.eq("idempotencyKey", args.idempotencyKey),
       )
       .first();
@@ -60,7 +60,7 @@ export const complete = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("imessageOutboundSends")
-      .withIndex("by_idempotencyKey", (q) =>
+      .withIndex("idempotency", (q) =>
         q.eq("idempotencyKey", args.idempotencyKey),
       )
       .first();
@@ -81,7 +81,7 @@ export const fail = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("imessageOutboundSends")
-      .withIndex("by_idempotencyKey", (q) =>
+      .withIndex("idempotency", (q) =>
         q.eq("idempotencyKey", args.idempotencyKey),
       )
       .first();

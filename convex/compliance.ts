@@ -167,7 +167,7 @@ async function requireAdminWriteActor(
 ) {
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId_userId", (q) =>
+    .withIndex("organization_user", (q) =>
       q.eq("orgId", orgId).eq("userId", userId),
     )
     .first();
@@ -292,7 +292,7 @@ async function listRequirementsForOrg(
 ) {
   const rows = await ctx.db
     .query("insuranceRequirements")
-    .withIndex("by_orgId_status", (q) =>
+    .withIndex("organization_status", (q) =>
       q.eq("orgId", orgId).eq("status", "active"),
     )
     .collect();
@@ -309,7 +309,7 @@ function requirementsForVendor(
 async function listPoliciesForOrg(ctx: QueryCtx, orgId: Id<"organizations">) {
   return await ctx.db
     .query("policies")
-    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .withIndex("organization", (q) => q.eq("orgId", orgId))
     .collect();
 }
 
@@ -320,7 +320,7 @@ async function latestChecksForSubject(
 ) {
   return await ctx.db
     .query("complianceChecks")
-    .withIndex("by_requirementId_subjectOrgId", (q) =>
+    .withIndex("requirement_subject", (q) =>
       q.eq("requirementId", requirementId).eq("subjectOrgId", subjectOrgId),
     )
     .collect();
@@ -364,7 +364,7 @@ async function listClientRequirementsForVendor(
 ) {
   const relationships = await ctx.db
     .query("connectedOrgRelationships")
-    .withIndex("by_vendorOrgId_status", (q) =>
+    .withIndex("vendor_status", (q) =>
       q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
     )
     .collect();
@@ -410,7 +410,7 @@ async function listRequirementsVisibleToOrg(
   const [ownRequirementRows, orgPolicies, org] = await Promise.all([
     ctx.db
       .query("insuranceRequirements")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         q.eq("orgId", orgId).eq("status", "active"),
       )
       .order("desc")
@@ -494,7 +494,7 @@ export const listRequirements = query({
     if (!orgId) {
       const membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .withIndex("user", (q) => q.eq("userId", userId))
         .first();
       if (!membership) throw new Error("Organization required");
       orgId = membership.orgId;
@@ -618,7 +618,7 @@ export const listRequirementSources = query({
     if (!orgId) {
       const membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .withIndex("user", (q) => q.eq("userId", userId))
         .first();
       if (!membership) throw new Error("Organization required");
       orgId = membership.orgId;
@@ -627,7 +627,7 @@ export const listRequirementSources = query({
     const [sources, requirements] = await Promise.all([
       ctx.db
         .query("requirementSourceDocuments")
-        .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+        .withIndex("organization", (q) => q.eq("orgId", orgId))
         .collect(),
       listRequirementsForOrg(ctx, orgId),
     ]);
@@ -781,7 +781,7 @@ export const updateRequirementSource = mutation({
     await ctx.db.patch(args.sourceDocumentId, sourcePatch);
     const requirements = await ctx.db
       .query("insuranceRequirements")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         q.eq("orgId", args.orgId).eq("status", "active"),
       )
       .collect();
@@ -835,7 +835,7 @@ export const archiveRequirementSources = mutation({
     const selected = new Set(sourceDocumentIds);
     const requirements = await ctx.db
       .query("insuranceRequirements")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         q.eq("orgId", args.orgId).eq("status", "active"),
       )
       .collect();
@@ -977,7 +977,7 @@ async function vendorComplianceRows(
   const clientRequirements = await listRequirementsForOrg(ctx, clientOrgId);
   const relationships = await ctx.db
     .query("connectedOrgRelationships")
-    .withIndex("by_clientOrgId_status", (q) =>
+    .withIndex("client_status", (q) =>
       q.eq("clientOrgId", clientOrgId).eq("status", "active"),
     )
     .collect();
@@ -1049,7 +1049,7 @@ export const listVendorCompliance = query({
     if (!clientOrgId) {
       const membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .withIndex("user", (q) => q.eq("userId", userId))
         .first();
       if (!membership) throw new Error("Organization required");
       clientOrgId = membership.orgId;
@@ -1070,7 +1070,7 @@ export const getVendorChecklist = query({
     if (!vendorOrgId) {
       const membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .withIndex("user", (q) => q.eq("userId", userId))
         .first();
       if (!membership) throw new Error("Organization required");
       vendorOrgId = membership.orgId;
@@ -1079,13 +1079,13 @@ export const getVendorChecklist = query({
     const relationships = args.clientOrgId
       ? await ctx.db
         .query("connectedOrgRelationships")
-        .withIndex("by_clientOrgId_vendorOrgId", (q) =>
+        .withIndex("client_vendor", (q) =>
           q.eq("clientOrgId", args.clientOrgId!).eq("vendorOrgId", vendorOrgId),
         )
         .collect()
       : await ctx.db
         .query("connectedOrgRelationships")
-        .withIndex("by_vendorOrgId_status", (q) =>
+        .withIndex("vendor_status", (q) =>
           q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
         )
         .collect();
@@ -1331,7 +1331,7 @@ export const listOrgIdsWithActiveOwnRequirementsInternal = internalQuery({
   handler: async (ctx) => {
     const requirements = await ctx.db
       .query("insuranceRequirements")
-      .withIndex("by_status_scope", (query) =>
+      .withIndex("status_scope", (query) =>
         query.eq("status", "active").eq("scope", "own_org"),
       )
       .collect();
@@ -1782,7 +1782,7 @@ export const getConnectedVendorContactInternal = internalQuery({
   handler: async (ctx, args) => {
     const invitations = await ctx.db
       .query("connectedOrgInvitations")
-      .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId))
+      .withIndex("client", (q) => q.eq("clientOrgId", args.clientOrgId))
       .collect();
     const invitation = invitations
       .filter(
@@ -1793,7 +1793,7 @@ export const getConnectedVendorContactInternal = internalQuery({
       .sort((a, b) => b.updatedAt - a.updatedAt)[0];
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.vendorOrgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.vendorOrgId))
       .collect();
     const vendorUsers = (
       await Promise.all(memberships.map((membership) => ctx.db.get(membership.userId)))
@@ -1878,7 +1878,7 @@ export const recordOwnComplianceRunInternal = internalMutation({
       const latest = await ctx.db
         .query("complianceChecks")
         .withIndex(
-          "by_requirementId_subjectOrgId_checkedBy_checkedAt",
+          "review_history",
           (query) =>
             query
               .eq("requirementId", check.requirementId)
@@ -2048,7 +2048,7 @@ export const recordVendorComplianceRunInternal = internalMutation({
     for (const row of args.rows) {
       const previousSnapshots = await ctx.db
         .query("complianceChecks")
-        .withIndex("by_relationshipId", (q) =>
+        .withIndex("relationship", (q) =>
           q.eq("relationshipId", row.relationshipId),
         )
         .collect();

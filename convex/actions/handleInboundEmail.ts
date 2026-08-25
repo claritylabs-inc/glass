@@ -29,7 +29,6 @@ import {
   validatePolicyFocusIds,
 } from "../lib/agentPolicyFocus";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { AgentScope } from "../lib/agentScope";
 import {
   sendResendEmail,
   getAgentDomain,
@@ -42,6 +41,7 @@ import {
   buildBrokerPortfolioSystemPrompt,
   buildChannelInstructions,
   buildPolicyToolInstructions,
+  stripMarkdown,
 } from "../lib/aiUtils";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import {
@@ -53,29 +53,56 @@ import { isWhiteLabelingEnabled } from "../lib/branding";
 import { getClientPortalUrl } from "../lib/domains";
 import {
   buildEmailExpertTool,
+  buildAgentEmailHtmlBody,
   toResendAttachments,
   type EmailAttachmentMeta,
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
-import { isBrokerDirectedEmailRequest } from "../lib/emailIntentGuards";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
 import {
-  buildAssistantMessageContentWithArtifacts,
-  stripInternalAgentActivity,
+  buildRecentAgentConversationContext,
+  buildTextModelHistory,
+  buildThreadContinuityPrompt,
+  buildThreadHistoryToolInstructions,
 } from "../lib/agentMessageHistory";
-import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
+import { cleanAgentMarkdownForTransport } from "../lib/transportRenderers";
 import {
-  buildEmailDraftTextSummary,
-} from "../lib/emailDraftSummary";
+  loadBoundedAgentHistory,
+  scheduleThreadHistoryCompaction,
+} from "../lib/agentHistoryLoader";
+import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
+import { buildEmailDraftTextSummary } from "../lib/emailDraftSummary";
 import { runInboundEmailDeterministicControls } from "../lib/inboundEmailDeterministicControls";
 import {
-  inferRequirementImportScope,
+  buildRequirementImportConfirmation,
+  confirmedRequirementImportMessage,
+  decideRequirementAttachmentImport,
+  importConfirmedRequirementSources,
   requiredRequirementImportStep,
-  selectRequirementImportAttachments,
 } from "../lib/requirementAttachmentIntent";
+import {
+  formatInboundEmailForAgent,
+  hasEmailParticipantEvidence,
+  parseInboundEmail,
+  resolveForwardReplyAddress,
+  storedInboundEmailContent,
+} from "../lib/inboundEmailParser";
+import { decideForwardReplyDirection } from "../lib/forwardReplyDirection";
+import { executeEmailCommand } from "../lib/emailCommandExecutor";
+import { isContextualConfirmation } from "../lib/textChannelControls";
+import {
+  isPendingEmailCancelConfirmation,
+  isPendingEmailCancelIntent,
+} from "../lib/emailCancelIntent";
+import {
+  buildPendingEmailConfirmation,
+  pendingEmailDraftFingerprint,
+} from "../lib/actionConfirmationFingerprint";
+import { extractEmailAddress } from "../lib/emailAddress";
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
 const GLASS_PENDING_MESSAGE_ID_RE = /<?glass-pending-([^@\s>]+)@[^>\s]+>?/gi;
+const MAX_CAPTURED_PENDING_EMAIL_ID_LENGTH = 128;
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com",
@@ -127,7 +154,12 @@ function extractPendingEmailIdsFromHeaders(values: Array<string | undefined>) {
     if (!value) continue;
     for (const match of value.matchAll(GLASS_PENDING_MESSAGE_ID_RE)) {
       const pendingEmailId = match[1]?.trim();
-      if (pendingEmailId) ids.add(pendingEmailId);
+      if (
+        pendingEmailId &&
+        pendingEmailId.length <= MAX_CAPTURED_PENDING_EMAIL_ID_LENGTH
+      ) {
+        ids.add(pendingEmailId);
+      }
     }
   }
   return [...ids];
@@ -154,12 +186,6 @@ interface ReceivedEmailContent {
   headers?: unknown;
 }
 
-function extractEmailAddress(raw: string | undefined): string {
-  if (!raw) return "";
-  const match = raw.match(/<([^>]+)>/);
-  return match ? match[1].toLowerCase() : raw.toLowerCase().trim();
-}
-
 function extractName(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   const match = raw.match(/^"?([^"<]+)"?\s*</);
@@ -169,12 +195,11 @@ function extractName(raw: string | undefined): string | undefined {
 function parseAddressList(raw: string | string[] | undefined): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) {
-    return raw.map((a) => extractEmailAddress(a)).filter(Boolean);
+    return raw.flatMap((address) => extractEmailAddress(address) ?? []);
   }
   return raw
     .split(",")
-    .map((a) => extractEmailAddress(a.trim()))
-    .filter(Boolean);
+    .flatMap((address) => extractEmailAddress(address) ?? []);
 }
 
 function findAgentHandle(
@@ -195,36 +220,6 @@ function findAgentHandle(
       return { handle: localPart };
     }
   }
-  return null;
-}
-
-function stripQuotedText(body: string): string {
-  const onWrotePattern = /\r?\n\s*On .+wrote:\s*\r?\n[\s\S]*$/;
-  let cleaned = body.replace(onWrotePattern, "");
-  cleaned = cleaned.replace(
-    /\r?\n\s*-{5,}\s*Forwarded message\s*-{5,}[\s\S]*$/,
-    "",
-  );
-  const lines = cleaned.split("\n");
-  while (lines.length > 0 && /^\s*>/.test(lines[lines.length - 1])) {
-    lines.pop();
-  }
-  return lines.join("\n").trimEnd();
-}
-
-function extractForwardedSender(body: string): string | null {
-  const gmailMatch = body.match(
-    /-{5,}\s*Forwarded message\s*-{5,}[\s\S]*?From:\s*(?:[^<]*<)?([^\s<>]+@[^\s<>]+)/i,
-  );
-  if (gmailMatch) return gmailMatch[1].toLowerCase();
-  const appleMatch = body.match(
-    /Begin forwarded message:[\s\S]*?From:\s*(?:[^<]*<)?([^\s<>]+@[^\s<>]+)/i,
-  );
-  if (appleMatch) return appleMatch[1].toLowerCase();
-  const outlookMatch = body.match(
-    /From:\s*(?:[^<]*<)?([^\s<>]+@[^\s<>]+)[\s\S]*?Sent:\s*/i,
-  );
-  if (outlookMatch) return outlookMatch[1].toLowerCase();
   return null;
 }
 
@@ -298,11 +293,11 @@ interface DownloadedAttachment {
   buffer: Buffer;
 }
 
-type ToolSentEmail = {
-  responseBody: string;
-  responseTo: string;
-  responseCc?: string[];
-  responseMessageId?: string;
+type PendingEmailConfirmationPrompt = {
+  content: string;
+  dedupeKey: string;
+  pendingEmailId?: Id<"pendingEmails">;
+  payload: Doc<"threadActionConfirmations">["payload"];
 };
 
 type EmailThreadMode = "direct" | "cc" | "forward" | "unknown";
@@ -401,9 +396,35 @@ async function fetchEmailContent(
       console.error("Both APIs failed. Proceeding without body.", errorText);
       return {};
     }
-    return await fallback.json();
+    return fallback.json();
   }
-  return await res.json();
+  return res.json();
+}
+
+async function hasPriorParticipantEvidence(
+  ctx: ActionCtx,
+  threadId: Id<"threads">,
+  fromEmail: string,
+): Promise<boolean> {
+  const messages = await ctx.runQuery(internal.threads.getEmailHistory, {
+    threadId,
+  });
+  return hasEmailParticipantEvidence(messages, fromEmail);
+}
+
+async function getPendingEmailFromCapturedId(
+  ctx: ActionCtx,
+  capturedId: string,
+): Promise<Doc<"pendingEmails"> | null> {
+  try {
+    // The internal query's v.id("pendingEmails") argument validator verifies
+    // both the Convex ID encoding and table before its handler can run.
+    return (await ctx.runQuery(internal.pendingEmails.getInternal, {
+      id: capturedId as Id<"pendingEmails">,
+    })) as Doc<"pendingEmails"> | null;
+  } catch {
+    return null;
+  }
 }
 
 async function resolveInboundThread(
@@ -435,16 +456,15 @@ async function resolveInboundThread(
     args.references,
   ]);
   for (const pendingEmailId of deterministicPendingEmailIds) {
-    const pending = await ctx.runQuery(internal.pendingEmails.getInternal, {
-      id: pendingEmailId as Id<"pendingEmails">,
-    }).catch(() => null) as Doc<"pendingEmails"> | null;
+    const pending = await getPendingEmailFromCapturedId(ctx, pendingEmailId);
     if (!pending || pending.orgId !== args.orgId) continue;
     correlatedPendingEmailId = pending._id;
     if (pending.threadMessageId) {
-      matchedParentEmailMessage = await ctx.runQuery(
-        internal.threads.getMessageInternal,
-        { id: pending.threadMessageId },
-      ).catch(() => null) as Doc<"threadMessages"> | null;
+      matchedParentEmailMessage = await ctx
+        .runQuery(internal.threads.getMessageInternal, {
+          id: pending.threadMessageId,
+        })
+        .catch(() => null);
     }
     if (pending.threadId) {
       existingThreadId = pending.threadId;
@@ -461,7 +481,7 @@ async function resolveInboundThread(
     const matched = await ctx.runQuery(
       internal.threads.findEmailMessageByMessageId,
       { orgId: args.orgId, messageId: candidate },
-    ) as Doc<"threadMessages"> | null;
+    );
     if (!matched) continue;
     matchedParentEmailMessage = matched;
     existingThreadId = matched.threadId;
@@ -499,7 +519,11 @@ async function resolveInboundThread(
       internal.threads.findEmailThreadBySubject,
       { orgId: args.orgId, subject: args.subject, fromEmail: args.fromEmail },
     );
-    if (subjectMatch) {
+    const hasReferenceEvidence = replyMessageIdCandidates.length > 0;
+    const hasParticipantEvidence = subjectMatch
+      ? await hasPriorParticipantEvidence(ctx, subjectMatch._id, args.fromEmail)
+      : false;
+    if (subjectMatch && (hasReferenceEvidence || hasParticipantEvidence)) {
       existingThreadId = subjectMatch._id;
       threadRootMode = subjectMatch.emailMode;
     }
@@ -563,7 +587,7 @@ export const processInbound = internalAction({
       }
     }
 
-    const fromEmail = extractEmailAddress(data.from);
+    const fromEmail = extractEmailAddress(data.from) ?? "";
     const fromName = extractName(data.from);
     const toAddresses = parseAddressList(data.to);
     const ccAddresses = parseAddressList(data.cc);
@@ -603,17 +627,23 @@ export const processInbound = internalAction({
       const emailContent = data.email_id
         ? await fetchEmailContent(data.email_id)
         : {};
-      const rawBody = emailContent.text ?? "";
-      const body = stripQuotedText(rawBody);
+      const parsedInboundEmail = parseInboundEmail({
+        subject: data.subject,
+        text: emailContent.text,
+        html: emailContent.html,
+      });
+      const bodyForAgent = formatInboundEmailForAgent(parsedInboundEmail);
       const guardedInput = enforceInputLimits(
-        [data.subject ?? "", body].join("\n\n"),
+        [data.subject ?? "", bodyForAgent].join("\n\n"),
       );
       const injectionCheck = await classifyPromptInjection(ctx, guardedInput);
       if (!injectionCheck.safe) {
-        console.warn("[security] Prompt injection blocked in public demo email", {
-          fromEmail,
-          reason: injectionCheck.reason,
-        });
+        console.warn(
+          "[security] Prompt injection blocked in public demo email",
+          {
+            audit: injectionCheck.audit,
+          },
+        );
         return;
       }
 
@@ -623,7 +653,7 @@ export const processInbound = internalAction({
         {
           channel: "email",
           senderContact: fromEmail,
-          messageText: body || data.subject || "Tell me about Glass.",
+          messageText: bodyForAgent || data.subject || "Tell me about Glass.",
           subject: data.subject,
           fromName,
           fromEmail,
@@ -671,18 +701,20 @@ export const processInbound = internalAction({
       );
     }
 
-    // Get all org members for domain detection and primary contact resolution
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, {
       orgId,
     });
     const memberEmails = orgMembers
-      .map((m: any) => m.user?.email)
-      .filter(Boolean) as string[];
-    const firstAdmin = orgMembers.find((m: any) => m.role === "admin");
+      .flatMap((membership) =>
+        membership.user?.email ? [membership.user.email] : [],
+      );
+    const firstAdmin = orgMembers.find(
+      (membership) => membership.role === "admin",
+    );
 
-    // Match sender to an org member by email — so the right user is attributed
     const senderMember = orgMembers.find(
-      (m: any) => m.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
+      (membership) =>
+        membership.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
     );
     const primaryUserId =
       senderMember?.userId ??
@@ -696,19 +728,27 @@ export const processInbound = internalAction({
 
     // Fetch full email content and attachments from Resend API
     const emailContent = await fetchEmailContent(data.email_id);
-    const rawBody = emailContent.text ?? "";
-    const body = stripQuotedText(rawBody);
-    const bodyHtml = emailContent.html ?? undefined;
+    const parsedInboundEmail = parseInboundEmail({
+      subject: data.subject,
+      text: emailContent.text,
+      html: emailContent.html,
+    });
+    const body = parsedInboundEmail.currentText;
+    const bodyForAgent = formatInboundEmailForAgent(parsedInboundEmail);
+    const bodyHtml = parsedInboundEmail.rawHtml;
     const attachments = await fetchAttachments(data.email_id);
 
     const guardedInput = enforceInputLimits(
-      [data.subject ?? "", body].join("\n\n"),
+      [data.subject ?? "", bodyForAgent].join("\n\n"),
     );
-    const injectionCheck = await classifyPromptInjection(ctx, guardedInput, orgId);
+    const injectionCheck = await classifyPromptInjection(
+      ctx,
+      guardedInput,
+      orgId,
+    );
     if (!injectionCheck.safe) {
       console.warn("[security] Prompt injection blocked in inbound email", {
-        fromEmail,
-        reason: injectionCheck.reason,
+        audit: injectionCheck.audit,
       });
       return;
     }
@@ -749,12 +789,7 @@ export const processInbound = internalAction({
       senderDomain && companyDomains.includes(senderDomain)
     );
 
-    const subjectIsForward = /^Fwd?:/i.test(data.subject ?? "");
-    const bodyIsForward =
-      /(?:-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:)/i.test(
-        rawBody,
-      );
-    const isForwarded = subjectIsForward || bodyIsForward;
+    const isForwarded = Boolean(parsedInboundEmail.forwarded);
 
     const mode: EmailThreadMode =
       isInternal && isForwarded
@@ -823,7 +858,8 @@ export const processInbound = internalAction({
       filename: string;
       contentType: string;
       size: number;
-      fileId?: string;
+      fileId?: Id<"_storage">;
+      kind: "uploaded_file";
     }[] = [];
 
     for (const att of attachments) {
@@ -837,6 +873,7 @@ export const processInbound = internalAction({
           contentType: att.content_type,
           size: att.size,
           fileId,
+          kind: "uploaded_file",
         });
       } catch (err) {
         console.warn(`Failed to store attachment ${att.filename}:`, err);
@@ -845,6 +882,7 @@ export const processInbound = internalAction({
           filename: att.filename,
           contentType: att.content_type,
           size: att.size,
+          kind: "uploaded_file",
         });
       }
     }
@@ -874,11 +912,12 @@ export const processInbound = internalAction({
         subject,
         content: body,
         contentHtml: bodyHtml,
+        emailContent: storedInboundEmailContent(parsedInboundEmail),
         messageId,
         resendEmailId: resendEmailId || undefined,
-        attachments:
-          attachmentRecords.length > 0 ? (attachmentRecords as any) : undefined,
-        pendingEmailId: matchedParentEmailMessage?.pendingEmailId ?? correlatedPendingEmailId,
+        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
+        pendingEmailId:
+          matchedParentEmailMessage?.pendingEmailId ?? correlatedPendingEmailId,
       },
     );
 
@@ -906,7 +945,7 @@ export const processInbound = internalAction({
           ``,
           `---`,
           ``,
-          body || "(no body)",
+          bodyForAgent || "(no body)",
           ``,
           `---`,
           ``,
@@ -916,19 +955,7 @@ export const processInbound = internalAction({
         const signature = buildSignature(agentAddress, brokerBranding);
         const fullText = notificationBody + signature.text;
 
-        const autoLink = (text: string) =>
-          text.replace(
-            /(https?:\/\/[^\s<)]+)/g,
-            '<a href="$1" style="color:#2563eb;text-decoration:underline">$1</a>',
-          );
-        const htmlBody = notificationBody
-          .split("\n\n")
-          .map(
-            (p) =>
-              `<p style="margin:0 0 12px;line-height:1.5">${autoLink(p.replace(/\n/g, "<br>"))}</p>`,
-          )
-          .join("\n");
-        const fullHtml = htmlBody + signature.html;
+        const fullHtml = buildAgentEmailHtmlBody(notificationBody, signature);
 
         const notifSubject = `[Glass] Help needed: ${subject}`;
 
@@ -973,7 +1000,7 @@ export const processInbound = internalAction({
     }
 
     try {
-      const scope = (await ctx.runQuery(
+      const scope = await ctx.runQuery(
         internal.lib.agentScope.resolveForAction,
         {
           orgId,
@@ -982,7 +1009,7 @@ export const processInbound = internalAction({
           allowBrokerPortfolio:
             org.type === "broker" && isInternal && effectiveMode === "direct",
         },
-      )) as AgentScope;
+      );
 
       const siteUrl = getClientPortalUrl();
 
@@ -992,40 +1019,43 @@ export const processInbound = internalAction({
       });
       const userName = primaryUser?.name?.split(/\s+/)[0];
 
-      const brokerIdentity = org.type === "client"
-        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-            clientOrgId: orgId,
-          })
-        : null;
-      const systemPrompt = scope.mode === "broker_portfolio"
-        ? buildBrokerPortfolioSystemPrompt({
-            brokerName: typeof org.name === "string" ? org.name : undefined,
-            brokerContext: typeof org.context === "string" ? org.context : undefined,
-            userName,
-            siteUrl,
-          })
-        : buildSystemPromptForContext({
-            org: {
-              name: org.name,
-              context: org.context,
-              broker: brokerIdentity?.brokerCompanyName
-                ? {
-                    name: brokerIdentity.brokerCompanyName,
-                    contactName: brokerIdentity.contactName,
-                    contactEmail: brokerIdentity.contactEmail,
-                    contactPhone: brokerIdentity.contactPhone,
-                  }
-                : undefined,
-            },
-            mode:
-              effectiveMode === "direct"
-                ? "direct"
-                : effectiveMode === "cc"
-                  ? "cc"
-                  : "forward",
-            userName,
-            siteUrl,
-          });
+      const brokerIdentity =
+        org.type === "client"
+          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
+              clientOrgId: orgId,
+            })
+          : null;
+      const systemPrompt =
+        scope.mode === "broker_portfolio"
+          ? buildBrokerPortfolioSystemPrompt({
+              brokerName: typeof org.name === "string" ? org.name : undefined,
+              brokerContext:
+                typeof org.context === "string" ? org.context : undefined,
+              userName,
+              siteUrl,
+            })
+          : buildSystemPromptForContext({
+              org: {
+                name: org.name,
+                context: org.context,
+                broker: brokerIdentity?.brokerCompanyName
+                  ? {
+                      name: brokerIdentity.brokerCompanyName,
+                      contactName: brokerIdentity.contactName,
+                      contactEmail: brokerIdentity.contactEmail,
+                      contactPhone: brokerIdentity.contactPhone,
+                    }
+                  : undefined,
+              },
+              mode:
+                effectiveMode === "direct"
+                  ? "direct"
+                  : effectiveMode === "cc"
+                    ? "cc"
+                    : "forward",
+              userName,
+              siteUrl,
+            });
       // Build messages — include thread history for context
       const messages: ModelMessage[] = [];
       let threadMessagesForGuards: Array<{
@@ -1039,31 +1069,25 @@ export const processInbound = internalAction({
         toolArtifacts?: Array<{ type: string; data: unknown }>;
       }> = [];
 
-      if (unifiedThreadId) {
-        const threadMessages = await ctx.runQuery(
-          internal.threads.getEmailHistory,
-          { threadId: unifiedThreadId, excludeMessageId: inboundMessageId },
-        );
-        threadMessagesForGuards = threadMessages;
-        for (const msg of threadMessages) {
-          if (msg.role === "user") {
-            messages.push({
-              role: "user",
-              content: `Subject: ${msg.subject ?? subject}\n\nFrom: ${msg.fromName ? `${msg.fromName} <${msg.fromEmail}>` : msg.fromEmail}\n\n${msg.content}`,
-            });
-          } else if (msg.role === "agent") {
-            messages.push({
-              role: "assistant",
-              content: buildAssistantMessageContentWithArtifacts({
-                content: msg.content,
-                toolArtifacts: msg.toolArtifacts,
-                usedTools: msg.usedTools,
-                attachments: msg.attachments,
-              }),
-            });
-          }
-        }
-      }
+      const boundedHistory = await loadBoundedAgentHistory(ctx, {
+        threadId: unifiedThreadId,
+        currentMessageId: inboundMessageId,
+        surface: "email",
+      });
+      threadMessagesForGuards = boundedHistory.messages.filter(
+        (message) => message._id !== inboundMessageId,
+      );
+      messages.push(
+        ...buildTextModelHistory(boundedHistory.messages, {
+          excludeMessageId: String(inboundMessageId),
+          formatUser: (message) =>
+            `Subject: ${message.subject ?? subject}\n\nFrom: ${
+              message.fromName
+                ? `${message.fromName} <${message.fromEmail ?? "unknown"}>`
+                : (message.fromEmail ?? "unknown")
+            }\n\n${message.content}`,
+        }),
+      );
 
       const policyFocusIds = await validatePolicyFocusIds(
         ctx,
@@ -1075,7 +1099,7 @@ export const processInbound = internalAction({
       const emailReferencedPolicyIds: Id<"policies">[] = [];
 
       // Build the current message — include attachments if present
-      const emailText = `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${body}`;
+      const emailText = `Subject: ${subject}\n\nFrom: ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}\n\n${bodyForAgent}`;
 
       // Only include supported text/PDF attachments in Claude context
       const claudeAttachments = attachments.filter((a) =>
@@ -1138,7 +1162,9 @@ export const processInbound = internalAction({
           effectiveMode,
         }) +
         buildPolicyToolInstructions(10) +
-        (policyFocusBlock ? `\n\n${policyFocusBlock}` : "");
+        (policyFocusBlock ? `\n\n${policyFocusBlock}` : "") +
+        buildThreadHistoryToolInstructions() +
+        buildThreadContinuityPrompt(boundedHistory.summary);
       if (claudeAttachments.length > 0) {
         const filenames = claudeAttachments.map((a) => a.filename).join(", ");
         systemContext += `\n\nATTACHMENTS: The user's email includes ${claudeAttachments.length} attachment(s): ${filenames}. The content has been provided to you. Reference relevant information from attachments in your response when applicable.`;
@@ -1156,40 +1182,42 @@ export const processInbound = internalAction({
         }
       }
 
-      let toolSentEmail: ToolSentEmail | null = null;
+      const emailToolState: { result: EmailSubagentResult | null } = {
+        result: null,
+      };
       const generatedCoiAttachments: EmailAttachmentMeta[] = [];
       const emailToolArtifacts: Array<{ type: string; data: unknown }> = [];
       const availableEmailAttachments = attachmentRecords
         .filter(
-          (rec): rec is typeof rec & { fileId: Id<"_storage"> } =>
-            !!rec.fileId,
+          (rec): rec is typeof rec & { fileId: Id<"_storage"> } => !!rec.fileId,
         )
         .map((rec) => ({
           filename: rec.filename,
           contentType: rec.contentType,
           size: rec.size,
           fileId: rec.fileId,
+          kind: rec.kind,
         }));
       const availableFileIds = new Set(
-        availableEmailAttachments.map((attachment) => String(attachment.fileId)),
+        availableEmailAttachments.map((attachment) =>
+          String(attachment.fileId),
+        ),
       );
-      const requirementImportText = [subject ?? "", body].join("\n\n");
-      const requirementImportAttachments = selectRequirementImportAttachments(
-        requirementImportText,
-        availableEmailAttachments,
-      );
-      const requirementImportDefaultScope = inferRequirementImportScope(
-        requirementImportText,
-      );
-      const brokerDirectedEmailRequest = isBrokerDirectedEmailRequest(
-        [subject ?? "", body].join("\n\n"),
-      );
-      const brokerRecipientEmail = brokerDirectedEmailRequest
-        ? brokerIdentity?.contactEmail
-        : undefined;
-      const brokerRecipientName = brokerDirectedEmailRequest
-        ? brokerIdentity?.contactName ?? brokerIdentity?.brokerCompanyName
-        : undefined;
+      const requirementImportText = [subject ?? "", bodyForAgent].join("\n\n");
+      const requirementImportResolution =
+        await decideRequirementAttachmentImport(ctx, {
+          orgId,
+          messageText: requirementImportText,
+          attachments: availableEmailAttachments,
+        });
+      const requirementImportAttachments =
+        requirementImportResolution.authorization === "auto"
+          ? requirementImportResolution.attachments
+          : [];
+      const requirementImportDefaultScope =
+        requirementImportResolution.authorization === "none"
+          ? undefined
+          : requirementImportResolution.scope;
 
       const emailTools = {
         ...buildAgentToolExecutors(ctx, {
@@ -1214,6 +1242,7 @@ export const processInbound = internalAction({
               contentType: attachment.contentType,
               size: attachment.size,
               fileId: attachment.fileId,
+              kind: attachment.kind,
             });
           },
           onToolArtifact: (artifact) => {
@@ -1232,13 +1261,12 @@ export const processInbound = internalAction({
                 agentAddress,
                 brokerBranding,
                 senderEmail: fromEmail,
-                defaultTo: brokerDirectedEmailRequest
-                  ? brokerRecipientEmail
-                  : fromEmail,
-                defaultRecipientName: brokerDirectedEmailRequest
-                  ? brokerRecipientName
-                  : fromName,
-                requireKnownRecipient: brokerDirectedEmailRequest,
+                defaultTo: fromEmail,
+                defaultRecipientName: fromName,
+                brokerRecipientEmail: brokerIdentity?.contactEmail,
+                brokerRecipientName:
+                  brokerIdentity?.contactName ??
+                  brokerIdentity?.brokerCompanyName,
                 missingRecipientMessage:
                   "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
                 unknownRecipientMessage:
@@ -1277,24 +1305,15 @@ export const processInbound = internalAction({
                 ],
                 availableAttachments: availableEmailAttachments,
                 referencedPolicyIds: emailReferencedPolicyIds,
-                autoSendEmails: brokerDirectedEmailRequest
-                  ? false
-                  : org.autoSendEmails === true,
+                autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 conversationContext: [
                   `Inbound email from ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,
                   `Subject: ${subject}`,
-                  body,
+                  bodyForAgent,
                 ].join("\n\n"),
                 onResult: (result: EmailSubagentResult) => {
-                  if (result.status === "sent" || result.status === "pending") {
-                    toolSentEmail = {
-                      responseBody: result.responseBody,
-                      responseTo: result.responseTo ?? "",
-                      responseCc: result.responseCc,
-                      responseMessageId: result.responseMessageId,
-                    };
-                  }
+                  emailToolState.result = result;
                 },
               }),
             }
@@ -1313,7 +1332,8 @@ export const processInbound = internalAction({
                     return "Ask the user to confirm before creating a new iMessage group chat.";
                   }
                   return await ctx.runAction(
-                    internal.actions.createOutboundImessageGroup.createOutboundImessageGroupInternal,
+                    internal.actions.createOutboundImessageGroup
+                      .createOutboundImessageGroupInternal,
                     {
                       orgId,
                       userId: primaryUserId,
@@ -1334,41 +1354,57 @@ export const processInbound = internalAction({
                   dateTo?: string;
                   limit?: number;
                 }) =>
-                  await ctx.runAction(internal.actions.connectedEmail.searchInternal, {
-                    orgId,
-                    userId: primaryUserId,
-                    query: params.query,
-                    mailbox: params.mailbox,
-                    sinceDays: params.sinceDays,
-                    dateFrom: params.dateFrom,
-                    dateTo: params.dateTo,
-                    limit: params.limit,
-                  }),
+                  await ctx.runAction(
+                    internal.actions.connectedEmail.searchInternal,
+                    {
+                      orgId,
+                      userId: primaryUserId,
+                      query: params.query,
+                      mailbox: params.mailbox,
+                      sinceDays: params.sinceDays,
+                      dateFrom: params.dateFrom,
+                      dateTo: params.dateTo,
+                      limit: params.limit,
+                    },
+                  ),
               },
               read_connected_email: {
                 ...readConnectedEmail,
                 execute: async (params: { emailRef: string }) =>
-                  await ctx.runAction(internal.actions.connectedEmail.readInternal, {
-                    orgId,
-                    userId: primaryUserId,
-                    emailRef: params.emailRef,
-                  }),
+                  await ctx.runAction(
+                    internal.actions.connectedEmail.readInternal,
+                    {
+                      orgId,
+                      userId: primaryUserId,
+                      emailRef: params.emailRef,
+                    },
+                  ),
               },
               read_connected_email_attachment: {
                 ...readConnectedEmailAttachment,
-                execute: async (params: { emailRef: string; filename: string }) =>
-                  await ctx.runAction(internal.actions.connectedEmail.readAttachmentInternal, {
-                    orgId,
-                    userId: primaryUserId,
-                    emailRef: params.emailRef,
-                    filename: params.filename,
-                  }),
+                execute: async (params: {
+                  emailRef: string;
+                  filename: string;
+                }) =>
+                  await ctx.runAction(
+                    internal.actions.connectedEmail.readAttachmentInternal,
+                    {
+                      orgId,
+                      userId: primaryUserId,
+                      emailRef: params.emailRef,
+                      filename: params.filename,
+                    },
+                  ),
               },
               import_connected_email_policy_attachments: {
                 ...importConnectedEmailPolicyAttachments,
-                execute: async (params: { emailRef: string; filenames?: string[] }) =>
+                execute: async (params: {
+                  emailRef: string;
+                  filenames?: string[];
+                }) =>
                   await ctx.runAction(
-                    internal.actions.connectedEmail.importPolicyAttachmentsInternal,
+                    internal.actions.connectedEmail
+                      .importPolicyAttachmentsInternal,
                     {
                       orgId,
                       userId: primaryUserId,
@@ -1382,11 +1418,16 @@ export const processInbound = internalAction({
                 execute: async (params: {
                   emailRef: string;
                   filenames?: string[];
-                  sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
+                  sourceType?:
+                    | "lease_agreement"
+                    | "client_contract"
+                    | "vendor_requirements"
+                    | "other";
                   scope?: "vendors" | "own_org";
                 }) =>
                   await ctx.runAction(
-                    internal.actions.connectedEmail.importRequirementAttachmentsInternal,
+                    internal.actions.connectedEmail
+                      .importRequirementAttachmentsInternal,
                     {
                       orgId,
                       userId: primaryUserId,
@@ -1404,23 +1445,29 @@ export const processInbound = internalAction({
                   relationshipLabel?: string;
                   note?: string;
                 }) =>
-                  await ctx.runAction(internal.connectedOrgs.requestVendorAccessByEmailInternal, {
-                    clientOrgId: orgId,
-                    requestedByUserId: primaryUserId,
-                    vendorEmail: params.vendorEmail,
-                    relationshipLabel: params.relationshipLabel,
-                    note: params.note,
-                  }),
+                  await ctx.runAction(
+                    internal.connectedOrgs.requestVendorAccessByEmailInternal,
+                    {
+                      clientOrgId: orgId,
+                      requestedByUserId: primaryUserId,
+                      vendorEmail: params.vendorEmail,
+                      relationshipLabel: params.relationshipLabel,
+                      note: params.note,
+                    },
+                  ),
               },
               coordinate_mailbox_task: {
                 ...coordinateMailboxTask,
                 execute: async (params: { task: string }) =>
-                  await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
-                    orgId,
-                    userId: primaryUserId,
-                    task: params.task,
-                    routingParentId: String(inboundMessageId),
-                  }),
+                  await ctx.runAction(
+                    internal.actions.mailboxCoordinator.runInternal,
+                    {
+                      orgId,
+                      userId: primaryUserId,
+                      task: params.task,
+                      routingParentId: String(inboundMessageId),
+                    },
+                  ),
               },
               web_research: {
                 ...webResearch,
@@ -1513,36 +1560,125 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       const currentDraftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId: unifiedThreadId, orgId },
-      ) as Array<Doc<"pendingEmails">>;
+      );
       if (currentDraftEmails.length > 0) {
-        systemContext += `\n\nCURRENT EMAIL DRAFTS:\n${buildEmailDraftTextSummary(currentDraftEmails, {
-          sampleSize: Math.min(3, currentDraftEmails.length),
-          includeIds: false,
-          commands: "chat",
-        })}\n\nFor email replies about multiple drafts, show a short sample first and ask whether the user wants more detail instead of dumping every draft.`;
+        systemContext += `\n\nCURRENT EMAIL DRAFTS:\n${buildEmailDraftTextSummary(
+          currentDraftEmails,
+          {
+            sampleSize: Math.min(3, currentDraftEmails.length),
+            includeIds: false,
+            commands: "chat",
+          },
+        )}\n\nFor email replies about multiple drafts, show a short sample first and ask whether the user wants more detail instead of dumping every draft.`;
       }
       systemContext += `\n\nYou have tools to look up policies, search policy source evidence and document outlines, compare coverages, check compliance requirements, look up connected vendors, inspect vendor policies, inspect requirement-by-requirement vendor compliance, save notes, generate COIs, and extract uploaded policy attachments. Use them as needed before answering. Decide yourself whether the email requires answering a question, generating a COI, and/or extracting an attached policy — you may do more than one.`;
 
       let responseBody: string;
-      const deterministicControlResult =
-        await runInboundEmailDeterministicControls(ctx, {
-          messageText: stripQuotedText(body),
-          draftEmails: currentDraftEmails,
-        });
-      if (deterministicControlResult) {
+      let handledConfirmation = false;
+      let confirmationControlResponse: string | null = null;
+      const normalizedEmailActor = fromEmail.trim().toLowerCase();
+      const latestConfirmation = await ctx.runQuery(
+        internal.threadActionConfirmations.latestPendingInternal,
+        { threadId: unifiedThreadId },
+      );
+      if (
+        latestConfirmation?.orgId === orgId &&
+        latestConfirmation.actor.kind === "email" &&
+        latestConfirmation.actor.address === normalizedEmailActor
+      ) {
+        const confirmationRequested =
+          latestConfirmation.payload.kind === "email_cancel"
+            ? isPendingEmailCancelConfirmation(parsedInboundEmail.currentText)
+            : isContextualConfirmation(parsedInboundEmail.currentText);
+        if (confirmationRequested) {
+          handledConfirmation = true;
+          const confirmationResult = await ctx.runMutation(
+            internal.threadActionConfirmations.consumeInternal,
+            {
+              id: latestConfirmation._id,
+              actor: { kind: "email", address: normalizedEmailActor },
+              currentMessageId: inboundMessageId,
+              requireAdjacentPrompt: true,
+            },
+          );
+          if (confirmationResult !== "completed") {
+            confirmationControlResponse =
+              confirmationResult === "expired"
+                ? "That confirmation expired. Ask me to show the current draft or import again before confirming."
+                : "That item changed or is no longer the latest confirmation. Ask me to show it again before confirming.";
+          } else if (
+            latestConfirmation.payload.kind === "email_send" ||
+            latestConfirmation.payload.kind === "coi_batch_delivery"
+          ) {
+            const emailIds =
+              latestConfirmation.payload.kind === "email_send"
+                ? latestConfirmation.payload.pendingEmailIds
+                : [latestConfirmation.payload.pendingEmailId];
+            const result = await executeEmailCommand(
+              ctx,
+              { kind: "send_draft_emails", emailIds },
+              {
+                draftEmails: currentDraftEmails,
+                sendConfirmationId: latestConfirmation._id,
+              },
+            );
+            confirmationControlResponse = result.responseBody;
+          } else if (latestConfirmation.payload.kind === "requirement_import") {
+            const imported = await importConfirmedRequirementSources(ctx, {
+              orgId,
+              userId: primaryUserId,
+              payload: latestConfirmation.payload,
+            });
+            emailToolArtifacts.push({
+              type: "workflow_outcome",
+              data: imported.workflowOutcome,
+            });
+            confirmationControlResponse =
+              confirmedRequirementImportMessage(imported);
+          } else if (latestConfirmation.payload.kind === "email_cancel") {
+            const result = await executeEmailCommand(
+              ctx,
+              {
+                kind: "cancel_draft_emails",
+                emailIds: latestConfirmation.payload.pendingEmailIds,
+              },
+              { draftEmails: currentDraftEmails },
+            );
+            confirmationControlResponse = result.responseBody;
+          }
+        }
+      }
+
+      const deterministicControlResult = handledConfirmation
+        ? null
+        : await runInboundEmailDeterministicControls(ctx, {
+            messageText: parsedInboundEmail.currentText,
+            draftEmails: currentDraftEmails,
+          });
+      const cancelRequestTargets =
+        !handledConfirmation &&
+        currentDraftEmails.length > 0 &&
+        isPendingEmailCancelIntent(parsedInboundEmail.currentText)
+          ? currentDraftEmails
+          : [];
+      if (confirmationControlResponse) {
+        responseBody = confirmationControlResponse;
+      } else if (cancelRequestTargets.length > 0) {
+        responseBody = `I found ${cancelRequestTargets.length} current draft email${cancelRequestTargets.length === 1 ? "" : "s"}.`;
+      } else if (deterministicControlResult) {
         responseBody = deterministicControlResult.responseBody;
       } else {
         const turn = await runAgentTurn(ctx, {
           orgId,
           task: "email_reply",
-          messageText: `Subject: ${subject}\n\n${stripQuotedText(body)}`,
+          messageText: `Subject: ${subject}\n\n${bodyForAgent}`,
           currentAttachmentNames: claudeAttachments.map(
             (attachment) => attachment.filename,
           ),
-          recentConversationContext: threadMessagesForGuards
-            .slice(-12)
-            .map((message) => `${message.role}: ${message.content ?? ""}`)
-            .join("\n"),
+          recentConversationContext: buildRecentAgentConversationContext(
+            boundedHistory.messages,
+            String(inboundMessageId),
+          ),
           options: {
             maxOutputTokens: AGENT_MAX_OUTPUT_TOKENS,
             system: systemContext,
@@ -1576,15 +1712,73 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         responseBody = turn.text;
       }
 
-      responseBody = stripInternalAgentActivity(responseBody);
+      responseBody = cleanAgentMarkdownForTransport(responseBody);
       if (!responseBody) {
         responseBody =
           "I couldn't format that response. Please try again in a moment.";
       }
 
-      const sentByTool = toolSentEmail as ToolSentEmail | null;
-      if (sentByTool) {
+      const resolvedEmailResult = emailToolState.result;
+      if (
+        resolvedEmailResult?.status === "sent" ||
+        resolvedEmailResult?.status === "pending"
+      ) {
+        await scheduleThreadHistoryCompaction(ctx, unifiedThreadId);
         return;
+      }
+
+      let pendingConfirmationPrompt: PendingEmailConfirmationPrompt | null =
+        null;
+      if (
+        resolvedEmailResult?.pendingEmailId &&
+        (resolvedEmailResult.status === "draft" ||
+          resolvedEmailResult.status === "needs_confirmation")
+      ) {
+        const draft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+          id: resolvedEmailResult.pendingEmailId,
+        });
+        if (draft?.status === "draft") {
+          const confirmation = await buildPendingEmailConfirmation(draft);
+          pendingConfirmationPrompt =
+            confirmation.payload.kind === "coi_batch_delivery"
+              ? {
+                  content: `Reply “yes” to authorize and send this exact COI batch to ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}.`,
+                  dedupeKey: `email-coi-batch-confirmation:${String(draft._id)}:${confirmation.fingerprint}`,
+                  pendingEmailId: draft._id,
+                  payload: confirmation.payload,
+                }
+              : {
+                  content: `Reply “yes” to send this exact draft to ${draft.recipientEmail} with subject “${draft.subject}”.`,
+                  dedupeKey: `email-send-confirmation:${String(draft._id)}:${confirmation.fingerprint}`,
+                  pendingEmailId: draft._id,
+                  payload: confirmation.payload,
+                };
+        }
+      } else if (!handledConfirmation && cancelRequestTargets.length > 0) {
+        pendingConfirmationPrompt = {
+          content: `Confirm cancellation of ${cancelRequestTargets.length === 1 ? "the draft email" : `${cancelRequestTargets.length} draft emails`} by replying “yes cancel”.`,
+          dedupeKey: `email-cancel-confirmation:${String(inboundMessageId)}`,
+          payload: {
+            kind: "email_cancel",
+            pendingEmailIds: cancelRequestTargets.map((draft) => draft._id),
+            draftFingerprints: await Promise.all(
+              cancelRequestTargets.map((draft) =>
+                pendingEmailDraftFingerprint(draft),
+              ),
+            ),
+          },
+        };
+      } else if (!resolvedEmailResult && !handledConfirmation) {
+        const confirmation = buildRequirementImportConfirmation(
+          requirementImportResolution,
+        );
+        if (confirmation) {
+          pendingConfirmationPrompt = {
+            content: `Reply “yes”. ${confirmation.message}`,
+            dedupeKey: `email-requirement-import-confirmation:${String(inboundMessageId)}`,
+            payload: confirmation.payload,
+          };
+        }
       }
 
       // Domain guard: strip internal URLs from customer-facing replies
@@ -1600,46 +1794,16 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         );
       }
 
-      // Build reply with signature
-      const stripMarkdown = (text: string) => {
-        let result = text;
-        result = result.replace(/^#{1,6}\s+(.+)$/gm, "$1");
-        result = result.replace(
-          /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-          "$1 ($2)",
-        );
-        result = result.replace(/\*\*(.+?)\*\*/g, "$1");
-        result = result.replace(/\*(.+?)\*/g, "$1");
-        return result;
-      };
-      const plainTextBody = stripMarkdown(responseBody);
+      const deliveryResponseBody = pendingConfirmationPrompt
+        ? `${responseBody.trim()}\n\n${pendingConfirmationPrompt.content}`
+        : responseBody;
+      const plainTextBody = stripMarkdown(deliveryResponseBody);
       const signature = buildSignature(agentAddress, brokerBranding);
       const fullReplyText = plainTextBody + signature.text;
-
-      const linkStyle = 'style="color:#2563eb;text-decoration:underline"';
-      const markdownToHtml = (text: string) => {
-        let result = text;
-        result = result.replace(/^#{1,6}\s+(.+)$/gm, "<strong>$1</strong>");
-        result = result.replace(
-          /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
-          `<a href="$2" ${linkStyle}>$1</a>`,
-        );
-        result = result.replace(
-          /(?<!href=")(https?:\/\/[^\s<)]+)/g,
-          `<a href="$1" ${linkStyle}>$1</a>`,
-        );
-        result = result.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-        result = result.replace(/\*(.+?)\*/g, "<em>$1</em>");
-        return result;
-      };
-      const bodyHtmlContent = responseBody
-        .split("\n\n")
-        .map(
-          (p) =>
-            `<p style="margin:0 0 12px;line-height:1.5">${markdownToHtml(p.replace(/\n/g, "<br>"))}</p>`,
-        )
-        .join("\n");
-      const fullReplyHtml = bodyHtmlContent + signature.html;
+      const fullReplyHtml = buildAgentEmailHtmlBody(
+        deliveryResponseBody,
+        signature,
+      );
 
       // Determine reply recipients
       const primaryUserEmail = primaryUser?.email;
@@ -1647,12 +1811,18 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       let replyCc: string[] = [];
 
       if (effectiveMode === "forward") {
-        const originalSender = extractForwardedSender(rawBody);
-        replyTo = originalSender ?? fromEmail;
-        replyCc = [fromEmail];
-        if (replyTo === fromEmail) {
-          replyCc = [];
-        }
+        const forwardReplyDirection = await decideForwardReplyDirection(ctx, {
+          orgId,
+          currentText: parsedInboundEmail.currentText,
+          forwarderEmail: fromEmail,
+          parsedOriginalSender:
+            parsedInboundEmail.forwarded?.email.from?.address,
+        });
+        replyTo = resolveForwardReplyAddress({
+          parsed: parsedInboundEmail,
+          forwarderEmail: fromEmail,
+          forwardReplyDirection,
+        });
       } else if (effectiveMode === "cc") {
         replyTo = fromEmail;
         replyCc = [...toAddresses, ...ccAddresses].filter(
@@ -1704,20 +1874,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
 
       // Threading headers
       const replyHeaders: Record<string, string> = {};
-      if (effectiveMode === "forward") {
-        const xFwd = getHeader("X-Forwarded-Message-Id");
-        const refs = getHeader("References");
-        const originalMessageId =
-          xFwd ||
-          (refs ? refs.trim().split(/\s+/).pop() : undefined) ||
-          messageId;
-        if (originalMessageId) {
-          replyHeaders["In-Reply-To"] = originalMessageId;
-          replyHeaders["References"] = refs
-            ? `${refs} ${originalMessageId}`
-            : originalMessageId;
-        }
-      } else if (messageId) {
+      if (messageId) {
         replyHeaders["In-Reply-To"] = messageId;
         replyHeaders["References"] = messageId;
       }
@@ -1733,23 +1890,49 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       }
       const sentMessageId = sendResult.id;
 
-      await ctx.runMutation(internal.threads.insertEmailMessage, {
-        threadId: unifiedThreadId,
-        orgId,
-        role: "agent",
-        content: responseBody,
-        toAddresses: [replyTo],
-        ccAddresses: replyCc.length > 0 ? replyCc : undefined,
-        responseMessageId: sentMessageId,
-        attachments:
-          generatedCoiAttachments.length > 0
-            ? generatedCoiAttachments
-            : undefined,
-        toolArtifacts:
-          emailToolArtifacts.length > 0
-            ? emailToolArtifacts
-            : undefined,
-      });
+      const agentResponseMessageId = await ctx.runMutation(
+        internal.threads.insertEmailMessage,
+        {
+          threadId: unifiedThreadId,
+          orgId,
+          role: "agent",
+          content: responseBody,
+          toAddresses: [replyTo],
+          ccAddresses: replyCc.length > 0 ? replyCc : undefined,
+          responseMessageId: sentMessageId,
+          attachments:
+            generatedCoiAttachments.length > 0
+              ? generatedCoiAttachments
+              : undefined,
+          toolArtifacts:
+            emailToolArtifacts.length > 0 ? emailToolArtifacts : undefined,
+        },
+      );
+      if (pendingConfirmationPrompt) {
+        const statusMessageId = await ctx.runMutation(
+          internal.threads.insertWorkflowStatusMessage,
+          {
+            threadId: unifiedThreadId,
+            orgId,
+            channel: "email",
+            content: pendingConfirmationPrompt.content,
+            pendingEmailId: pendingConfirmationPrompt.pendingEmailId,
+            sourceThreadMessageId: agentResponseMessageId,
+            dedupeKey: pendingConfirmationPrompt.dedupeKey,
+          },
+        );
+        await ctx.runMutation(
+          internal.threadActionConfirmations.createInternal,
+          {
+            orgId,
+            threadId: unifiedThreadId,
+            actor: { kind: "email", address: normalizedEmailActor },
+            promptMessageId: statusMessageId,
+            payload: pendingConfirmationPrompt.payload,
+          },
+        );
+      }
+      await scheduleThreadHistoryCompaction(ctx, unifiedThreadId);
 
       // Audit: log agent references to policies
       for (const pId of referencedPolicySourceIds) {
@@ -1768,7 +1951,10 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         const failureSubject = subject.startsWith("Re:")
           ? subject
           : `Re: ${subject}`;
-        const failureHtml = `<p style="margin:0 0 12px;line-height:1.5">${FATAL_ACTION_FAILED_MESSAGE}</p>`;
+        const failureHtml = buildAgentEmailHtmlBody(
+          FATAL_ACTION_FAILED_MESSAGE,
+          buildSignature(agentAddress, brokerBranding),
+        );
         const failurePayload: Record<string, unknown> = {
           from: fromHeader,
           to: fromEmail,

@@ -287,7 +287,7 @@ async function childNodes(
 ) {
   const children = await ctx.db
     .query("sourceNodes")
-    .withIndex("by_policyId_parentNodeId", (q) =>
+    .withIndex("policy_parent", (q) =>
       q.eq("policyId", policyId).eq("parentNodeId", parentNodeId),
     )
     .collect();
@@ -348,7 +348,7 @@ async function topLevelSourceNodes(
 ) {
   const rootCandidates = await ctx.db
     .query("sourceNodes")
-    .withIndex("by_policyId_parentNodeId", (q) =>
+    .withIndex("policy_parent", (q) =>
       q.eq("policyId", policyId).eq("parentNodeId", undefined),
     )
     .collect();
@@ -437,7 +437,7 @@ export const listByPolicy = query({
     if (!await canReadPolicySourceNodes(ctx, args.policyId, args.allowOperatorAccess)) return [];
     const nodes = await ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .collect();
     const childParentIds = new Set(
       nodes
@@ -465,7 +465,7 @@ export const listByPolicyAndNodeIds = query({
       if (byId.has(nodeId)) return byId.get(nodeId);
       const node = await ctx.db
         .query("sourceNodes")
-        .withIndex("by_policyId_nodeId", (q) =>
+        .withIndex("policy_node", (q) =>
           q.eq("policyId", args.policyId).eq("nodeId", nodeId),
         )
         .first();
@@ -500,7 +500,7 @@ export const listByPolicyInternal = internalQuery({
   handler: async (ctx, args) => {
     return ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .collect();
   },
 });
@@ -514,7 +514,7 @@ export const listByPolicyCandidatesInternal = internalQuery({
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 120), 250));
     return ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .take(limit);
   },
 });
@@ -543,7 +543,7 @@ export const listContextByPolicyAndNodeIdsInternal = internalQuery({
       return addNode(
         await ctx.db
           .query("sourceNodes")
-          .withIndex("by_policyId_nodeId", (q) =>
+          .withIndex("policy_node", (q) =>
             q.eq("policyId", args.policyId).eq("nodeId", nodeId),
           )
           .first(),
@@ -561,7 +561,7 @@ export const listContextByPolicyAndNodeIdsInternal = internalQuery({
       for (const nodeId of wanted) {
         const children = await ctx.db
           .query("sourceNodes")
-          .withIndex("by_policyId_parentNodeId", (q) =>
+          .withIndex("policy_parent", (q) =>
             q.eq("policyId", args.policyId).eq("parentNodeId", nodeId),
           )
           .take(maxChildren);
@@ -582,7 +582,7 @@ export const listByOrgInternal = internalQuery({
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 1000), 2000));
     return ctx.db
       .query("sourceNodes")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(limit);
   },
 });
@@ -592,7 +592,7 @@ export const hasNodesForOrg = internalQuery({
   handler: async (ctx, args) => {
     const first = await ctx.db
       .query("sourceNodes")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .first();
     return first !== null;
   },
@@ -603,7 +603,7 @@ export const hasNodesForPolicy = internalQuery({
   handler: async (ctx, args) => {
     const first = await ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .first();
     return first !== null;
   },
@@ -641,7 +641,7 @@ export const deleteByPolicy = internalMutation({
   handler: async (ctx, args) => {
     const nodes = await ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .take(50);
     for (const node of nodes) await ctx.db.delete(node._id);
     return { deleted: nodes.length };

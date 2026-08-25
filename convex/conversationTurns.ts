@@ -18,7 +18,7 @@ export const listByConversation = internalQuery({
   handler: async (ctx, args) => {
     const q = ctx.db
       .query("conversationTurns")
-      .withIndex("by_conversationId", (q) => q.eq("conversationId", args.conversationId))
+      .withIndex("conversation", (q) => q.eq("conversationId", args.conversationId))
       .order("desc");
     const turns = await q.take(args.limit ?? 50);
     return turns.reverse(); // oldest first

@@ -3,14 +3,13 @@ import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import dayjs from "dayjs";
 import { SendIdempotency, type SendResult } from "./idempotency.js";
-import { toSlackMarkdown, toSlackMrkdwn } from "./mrkdwn.js";
 
 type SendRequest = {
   clientMessageId: string;
   teamId: string;
   channelId: string;
   threadTs?: string;
-  text: string;
+  mrkdwnText: string;
   blocks?: SlackBlock[];
   attachments?: Array<{ url: string; filename: string; contentType: string }>;
 };
@@ -19,7 +18,7 @@ type UpdateRequest = {
   teamId: string;
   channelId: string;
   messageTs: string;
-  text: string;
+  mrkdwnText: string;
   blocks?: SlackBlock[];
 };
 type StatusRequest = {
@@ -54,7 +53,7 @@ type StreamAppendRequest = {
   }>;
 };
 type StreamStopRequest = StreamAppendRequest & {
-  text: string;
+  markdownText: string;
   blocks?: SlackBlock[];
 };
 type EphemeralRequest = {
@@ -190,7 +189,7 @@ function validateSend(input: SendRequest) {
     throw new Error("clientMessageId, teamId, and channelId are required");
   }
   if (
-    !input.text.trim() &&
+    !input.mrkdwnText.trim() &&
     !input.blocks?.length &&
     !input.attachments?.length
   ) {
@@ -238,7 +237,7 @@ async function slackInstallation(teamId: string): Promise<SlackInstallation> {
     return { teamId, botToken: "mock", botUserId: "U-GLASS" };
   }
   const pending = installationInFlight.get(teamId);
-  if (pending) return await pending;
+  if (pending) return pending;
   const request = fetchCustomerInstallation(teamId);
   installationInFlight.set(teamId, request);
   try {
@@ -513,13 +512,13 @@ async function sendSlack(input: SendRequest): Promise<SendResult> {
 
   const installation = await slackInstallation(input.teamId);
   let messageId: string | undefined;
-  if (input.text.trim() || input.blocks?.length) {
+  if (input.mrkdwnText.trim() || input.blocks?.length) {
     const sent = await slackApi<SlackResponse & { ts?: string }>(
       "chat.postMessage",
       installation.botToken,
       {
         channel: input.channelId,
-        text: toSlackMrkdwn(input.text),
+        text: input.mrkdwnText,
         ...(input.blocks?.length ? { blocks: input.blocks } : {}),
         mrkdwn: true,
         unfurl_links: false,
@@ -570,7 +569,7 @@ async function updateSlackMessage(input: UpdateRequest) {
     {
       channel: input.channelId,
       ts: input.messageTs,
-      text: toSlackMrkdwn(input.text),
+      text: input.mrkdwnText,
       blocks: input.blocks ?? [],
     },
   );
@@ -602,7 +601,10 @@ async function addSlackReaction(input: ReactionRequest) {
       name: input.name,
     });
   } catch (error) {
-    if (!(error instanceof SlackProviderError) || error.code !== "already_reacted") {
+    if (
+      !(error instanceof SlackProviderError) ||
+      error.code !== "already_reacted"
+    ) {
       throw error;
     }
   }
@@ -619,7 +621,10 @@ async function removeSlackReaction(input: ReactionRequest) {
       name: input.name,
     });
   } catch (error) {
-    if (!(error instanceof SlackProviderError) || error.code !== "no_reaction") {
+    if (
+      !(error instanceof SlackProviderError) ||
+      error.code !== "no_reaction"
+    ) {
       throw error;
     }
   }
@@ -664,7 +669,7 @@ async function appendSlackStream(input: StreamAppendRequest) {
     channel: input.channelId,
     ts: input.messageTs,
     ...(input.markdownText?.trim()
-      ? { markdown_text: toSlackMarkdown(input.markdownText) }
+      ? { markdown_text: input.markdownText }
       : {}),
     ...(taskChunks.length ? { chunks: taskChunks } : {}),
   });
@@ -681,8 +686,8 @@ async function stopSlackStream(input: StreamStopRequest) {
     {
       channel: input.channelId,
       ts: input.messageTs,
-      ...(input.text.trim()
-        ? { markdown_text: toSlackMarkdown(input.text) }
+      ...(input.markdownText.trim()
+        ? { markdown_text: input.markdownText }
         : {}),
       ...(input.blocks?.length ? { blocks: input.blocks } : {}),
       ...(taskChunks.length ? { chunks: taskChunks } : {}),

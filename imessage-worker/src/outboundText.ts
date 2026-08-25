@@ -4,77 +4,6 @@ const markdownLexer = new Marked();
 const BLOCK_SEPARATOR = "\n\n";
 const LIST_INDENT = "  ";
 const TABLE_CELL_SEPARATOR = " | ";
-const INTERNAL_TOOL_ACTIVITY_PATTERN = /\[tool activity:[^\r\n]*\]/gi;
-
-function stripInternalAgentActivity(value: string) {
-  return value
-    .replace(INTERNAL_TOOL_ACTIVITY_PATTERN, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function normalizeGlassMarkdown(value: string) {
-  value = stripInternalAgentActivity(value);
-  let result = "";
-  let openMarkers = 0;
-  let markdownBracketDepth = 0;
-  let codeDelimiterLength = 0;
-
-  for (let index = 0; index < value.length; ) {
-    const opener =
-      codeDelimiterLength === 0
-        ? value.slice(index).match(/^\[\[(?:g|i|u)(?:\]:|:)/)?.[0]
-        : undefined;
-    if (opener) {
-      openMarkers += 1;
-      index += opener.length;
-      continue;
-    }
-    if (openMarkers > 0 && value[index] === "`") {
-      let runLength = 1;
-      while (value[index + runLength] === "`") runLength += 1;
-      if (codeDelimiterLength === 0) {
-        codeDelimiterLength = runLength;
-      } else if (runLength === codeDelimiterLength) {
-        codeDelimiterLength = 0;
-      }
-      result += value.slice(index, index + runLength);
-      index += runLength;
-      continue;
-    }
-    if (openMarkers > 0 && codeDelimiterLength === 0) {
-      if (value[index] === "\\" && index + 1 < value.length) {
-        result += value.slice(index, index + 2);
-        index += 2;
-        continue;
-      }
-      if (value[index] === "[") {
-        markdownBracketDepth += 1;
-      } else if (value[index] === "]") {
-        if (markdownBracketDepth > 0) {
-          markdownBracketDepth -= 1;
-        } else if (value.startsWith("]]", index)) {
-          openMarkers -= 1;
-          index += 2;
-          continue;
-        } else if (index === value.length - 1) {
-          openMarkers -= 1;
-          index += 1;
-          continue;
-        }
-      }
-    }
-    result += value[index];
-    index += 1;
-  }
-
-  return result;
-}
-
-export function imessageMarkdownSource(value: string) {
-  return normalizeGlassMarkdown(value);
-}
 
 function renderInlineTokens(tokens: Token[]): string {
   return tokens.map(renderInlineToken).join("");
@@ -90,9 +19,7 @@ function renderImage(token: Tokens.Image) {
 }
 
 function renderHtml(value: string) {
-  return value
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "");
+  return value.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
 }
 
 function renderInlineToken(token: Token): string {
@@ -148,7 +75,9 @@ function renderList(list: Tokens.List) {
 
 function renderTable(table: Tokens.Table) {
   const renderRow = (cells: Tokens.TableCell[]) =>
-    cells.map((cell) => renderInlineTokens(cell.tokens)).join(TABLE_CELL_SEPARATOR);
+    cells
+      .map((cell) => renderInlineTokens(cell.tokens))
+      .join(TABLE_CELL_SEPARATOR);
   return [renderRow(table.header), ...table.rows.map(renderRow)].join("\n");
 }
 
@@ -185,5 +114,5 @@ function renderBlockTokens(tokens: Token[]) {
 }
 
 export function imessagePlainText(value: string) {
-  return renderBlockTokens(markdownLexer.lexer(normalizeGlassMarkdown(value))).trim();
+  return renderBlockTokens(markdownLexer.lexer(value)).trim();
 }

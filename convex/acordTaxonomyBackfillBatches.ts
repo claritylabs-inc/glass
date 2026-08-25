@@ -43,7 +43,7 @@ export const recordDryRunPageInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("acordTaxonomyDryRunPages")
-      .withIndex("by_runId_cursorKey", (query) =>
+      .withIndex("run_cursor", (query) =>
         query.eq("runId", args.runId).eq("cursorKey", args.cursorKey)
       )
       .unique();
@@ -94,7 +94,7 @@ export const resumeDryRunInternal = internalMutation({
   handler: async (ctx, args) => {
     const latest = await ctx.db
       .query("acordTaxonomyDryRunPages")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .order("desc")
       .first();
     if (!latest) {
@@ -141,7 +141,7 @@ export const startWriteRunInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("acordTaxonomyWriteRuns")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .unique();
     if (existing) return existing;
     const id = await ctx.db.insert("acordTaxonomyWriteRuns", {
@@ -164,7 +164,7 @@ export const getWriteRunInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("acordTaxonomyWriteRuns")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .unique(),
 });
 
@@ -177,7 +177,7 @@ export const listWriteReportPagesInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("acordTaxonomyWritePages")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .paginate({
         cursor: args.cursor,
         numItems: args.limit,
@@ -193,7 +193,7 @@ export const listWritePolicyResultsInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("acordTaxonomyWritePolicyResults")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .paginate({
         cursor: args.cursor,
         numItems: args.limit,
@@ -208,7 +208,7 @@ export const getWritePolicyResultInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("acordTaxonomyWritePolicyResults")
-      .withIndex("by_runId_policyId", (query) =>
+      .withIndex("run_policy", (query) =>
         query.eq("runId", args.runId).eq("policyId", args.policyId)
       )
       .unique(),
@@ -227,14 +227,14 @@ export const recordWritePageInternal = internalMutation({
   handler: async (ctx, args) => {
     const run = await ctx.db
       .query("acordTaxonomyWriteRuns")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .unique();
     if (!run) {
       throw new Error(`ACORD taxonomy write run ${args.runId} was not found`);
     }
     const existing = await ctx.db
       .query("acordTaxonomyWritePages")
-      .withIndex("by_runId_cursorKey", (query) =>
+      .withIndex("run_cursor", (query) =>
         query.eq("runId", args.runId).eq("cursorKey", args.cursorKey)
       )
       .unique();
@@ -329,7 +329,7 @@ export const recordWriteFailureInternal = internalMutation({
   handler: async (ctx, args) => {
     const run = await ctx.db
       .query("acordTaxonomyWriteRuns")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .unique();
     if (!run || run.status === "completed") {
       return {
@@ -382,7 +382,7 @@ export const resumeWriteRunInternal = internalMutation({
   handler: async (ctx, args) => {
     const run = await ctx.db
       .query("acordTaxonomyWriteRuns")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .unique();
     if (!run) {
       throw new Error(`ACORD taxonomy write run ${args.runId} was not found`);
@@ -427,7 +427,7 @@ export const listDryRunReportPagesInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("acordTaxonomyDryRunPages")
-      .withIndex("by_runId", (query) => query.eq("runId", args.runId))
+      .withIndex("run", (query) => query.eq("runId", args.runId))
       .paginate({
         cursor: args.cursor,
         numItems: args.limit,
@@ -492,7 +492,7 @@ export const listPolicyIdsPageInternal = internalQuery({
     const page = args.orgId
       ? await ctx.db
           .query("policies")
-          .withIndex("by_orgId", (query) =>
+          .withIndex("organization", (query) =>
             query.eq("orgId", args.orgId!)
           )
           .paginate({
@@ -537,7 +537,7 @@ export const listSourceSpansPageInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("sourceSpans")
-      .withIndex("by_policyId", (query) =>
+      .withIndex("policy", (query) =>
         query.eq("policyId", args.policyId)
       )
       .paginate({
@@ -554,7 +554,7 @@ export const listSourceNodesPageInternal = internalQuery({
   handler: async (ctx, args) => {
     const page = await ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (query) =>
+      .withIndex("policy", (query) =>
         query.eq("policyId", args.policyId)
       )
       .paginate({
@@ -590,7 +590,7 @@ export const applyPolicyDecisionInternal = internalMutation({
     if (args.writeContext) {
       const existing = await ctx.db
         .query("acordTaxonomyWritePolicyResults")
-        .withIndex("by_runId_policyId", (query) =>
+        .withIndex("run_policy", (query) =>
           query
             .eq("runId", args.writeContext!.runId)
             .eq("policyId", args.policyId)
@@ -600,7 +600,7 @@ export const applyPolicyDecisionInternal = internalMutation({
 
       const run = await ctx.db
         .query("acordTaxonomyWriteRuns")
-        .withIndex("by_runId", (query) =>
+        .withIndex("run", (query) =>
           query.eq("runId", args.writeContext!.runId)
         )
         .unique();

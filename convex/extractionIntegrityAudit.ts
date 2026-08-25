@@ -22,7 +22,7 @@ export const listPoliciesPageInternal = internalQuery({
       .map(async (policy) => {
         const run = await ctx.db
           .query("policyExtractionRuns")
-          .withIndex("by_policyId", (q) => q.eq("policyId", policy._id))
+          .withIndex("policy", (q) => q.eq("policyId", policy._id))
           .first();
         return { policy, run };
       }));
@@ -38,7 +38,7 @@ export const listSourceSpansPageInternal = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("sourceSpans")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .paginate({ cursor: args.cursor, numItems: 200 });
   },
 });
@@ -51,7 +51,7 @@ export const listSourceNodesPageInternal = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .paginate({ cursor: args.cursor, numItems: 200 });
   },
 });
@@ -63,7 +63,7 @@ export const getQueueCandidateInternal = internalQuery({
     if (!policy || policy.extractionDataStage !== "final" || !policy.fileId) return null;
     const run = await ctx.db
       .query("policyExtractionRuns")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .first();
     return {
       policyId: policy._id,

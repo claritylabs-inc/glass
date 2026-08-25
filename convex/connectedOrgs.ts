@@ -168,7 +168,7 @@ async function requireConnectVendorOrg(
 async function pickUserOrg(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
   const memberships = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .withIndex("user", (q) => q.eq("userId", userId))
     .collect();
   const membershipCandidates = await Promise.all(
     memberships.map(async (membership) => ({
@@ -224,7 +224,7 @@ export const listVendors = query({
       ? [{ orgId: args.orgId }]
       : await ctx.db
           .query("orgMemberships")
-          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .withIndex("user", (q) => q.eq("userId", userId))
           .collect();
 
     const rows = [];
@@ -243,11 +243,11 @@ export const listVendors = query({
       const [relationships, invitations] = await Promise.all([
         ctx.db
           .query("connectedOrgRelationships")
-          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", membership.orgId))
+          .withIndex("client", (q) => q.eq("clientOrgId", membership.orgId))
           .collect(),
         ctx.db
           .query("connectedOrgInvitations")
-          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", membership.orgId))
+          .withIndex("client", (q) => q.eq("clientOrgId", membership.orgId))
           .collect(),
       ]);
       const invitationsByRelationshipId = new Map(
@@ -281,7 +281,7 @@ export const listClients = query({
       ? [{ orgId: args.orgId }]
       : await ctx.db
           .query("orgMemberships")
-          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .withIndex("user", (q) => q.eq("userId", userId))
           .collect();
 
     const rows = [];
@@ -300,11 +300,11 @@ export const listClients = query({
       const [relationships, invitations] = await Promise.all([
         ctx.db
           .query("connectedOrgRelationships")
-          .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", membership.orgId))
+          .withIndex("vendor", (q) => q.eq("vendorOrgId", membership.orgId))
           .collect(),
         ctx.db
           .query("connectedOrgInvitations")
-          .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", membership.orgId))
+          .withIndex("vendor", (q) => q.eq("vendorOrgId", membership.orgId))
           .collect(),
       ]);
       for (const rel of relationships) rows.push(await enrichRelationship(ctx, rel));
@@ -472,7 +472,7 @@ async function upsertRelationship(
   await requireConnectVendorOrg(ctx, args.vendorOrgId);
   const existing = await ctx.db
     .query("connectedOrgRelationships")
-    .withIndex("by_clientOrgId_vendorOrgId", (q) =>
+    .withIndex("client_vendor", (q) =>
       q.eq("clientOrgId", args.clientOrgId).eq("vendorOrgId", args.vendorOrgId),
     )
     .first();
@@ -522,7 +522,7 @@ export const acceptInvitation = mutation({
     const tokenHash = await sha256Hex(args.token);
     const inv = await ctx.db
       .query("connectedOrgInvitations")
-      .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", tokenHash))
+      .withIndex("token", (q) => q.eq("inviteTokenHash", tokenHash))
       .first();
     if (!inv) throw new Error("Invite not found");
     if (inv.status !== "pending") throw new Error("This vendor invite is no longer pending");
@@ -610,11 +610,11 @@ export const revoke = mutation({
     const { userId } = await requireAuth(ctx);
     const clientMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", rel.clientOrgId).eq("userId", userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", rel.clientOrgId).eq("userId", userId))
       .first();
     const vendorMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", rel.vendorOrgId).eq("userId", userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", rel.vendorOrgId).eq("userId", userId))
       .first();
     if (clientMembership?.role !== "admin" && vendorMembership?.role !== "admin") {
       throwUserFacingError(
@@ -643,7 +643,7 @@ export const createEmailRequestInternal = internalMutation({
   handler: async (ctx, args) => {
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", args.clientOrgId).eq("userId", args.requestedByUserId),
       )
       .first();
@@ -714,7 +714,7 @@ export const refreshEmailRequestInternal = internalMutation({
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", inv.clientOrgId).eq("userId", args.requestedByUserId),
       )
       .first();
@@ -749,7 +749,7 @@ export const getInvitationByHashInternal = internalQuery({
   handler: async (ctx, args) => {
     const inv = await ctx.db
       .query("connectedOrgInvitations")
-      .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", args.tokenHash))
+      .withIndex("token", (q) => q.eq("inviteTokenHash", args.tokenHash))
       .first();
     if (!inv) return null;
     return await enrichInvitation(ctx, inv);
@@ -761,7 +761,7 @@ export const listActiveVendorsInternal = internalQuery({
   handler: async (ctx, args) => {
     const relationships = await ctx.db
       .query("connectedOrgRelationships")
-      .withIndex("by_clientOrgId_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
       )
       .collect();
@@ -774,7 +774,7 @@ export const hasActiveConnectionInternal = internalQuery({
   handler: async (ctx, args) => {
     const rel = await ctx.db
       .query("connectedOrgRelationships")
-      .withIndex("by_clientOrgId_vendorOrgId", (q) =>
+      .withIndex("client_vendor", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("vendorOrgId", args.vendorOrgId),
       )
       .first();

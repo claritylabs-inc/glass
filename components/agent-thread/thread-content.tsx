@@ -51,10 +51,7 @@ import { Button } from "@/components/ui/button";
 import { MessageMetaTag } from "@/components/ui/message-meta-tag";
 import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
-import {
-  splitQuotedReply,
-  QuotedContent,
-} from "@/components/conversation-message";
+import { QuotedContent } from "@/components/conversation-message";
 import { EditableBreadcrumbTitle } from "@/components/editable-breadcrumb-title";
 import {
   ContextReferenceCard,
@@ -266,9 +263,6 @@ function messagePromptReferences(
   return references;
 }
 
-const EMAIL_SENDING_RE = /^sending email to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.{3}$/i;
-const EMAIL_SENT_RE = /^email sent to\s+(.+?)(?:\s*\(cc:.*\))?\s*\.$/i;
-
 function ThreadAttachmentList({
   attachments,
   threadId,
@@ -387,180 +381,27 @@ function ThreadAttachmentList({
   );
 }
 
-function normalizeStatusContent(content: string) {
-  return content.replace(/[*_`]/g, "").replace(/\s+/g, " ").trim();
-}
-
-function normalizeMessageForDedupe(content: string) {
-  return normalizeStatusContent(content)
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/<([^>\s]+@[^>\s]+)>/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function getEmailStatusRecipient(message: ThreadMessage) {
-  const normalized = normalizeStatusContent(message.content);
-  const match =
-    normalized.match(EMAIL_SENT_RE) ?? normalized.match(EMAIL_SENDING_RE);
-  return match?.[1]?.trim().toLowerCase();
-}
-
-function isEmailSendStatusMessage(message: ThreadMessage) {
-  if (message.role !== "agent") return false;
-  if (message.channel !== "chat" && message.channel !== "imessage")
-    return false;
-  if (message.pendingEmailId) return true;
-  return getEmailStatusRecipient(message) != null;
-}
-
-function isEmailSendingStatusMessage(message: ThreadMessage) {
-  return EMAIL_SENDING_RE.test(normalizeStatusContent(message.content));
-}
-
-function isEmailSentStatusMessage(message: ThreadMessage) {
-  return EMAIL_SENT_RE.test(normalizeStatusContent(message.content));
-}
-
-function emailMessageMatchesRecipient(
-  message: ThreadMessage,
-  recipient?: string,
-) {
-  if (!recipient) return true;
-  return (
-    message.toAddresses?.some(
-      (address) => address.toLowerCase() === recipient,
-    ) ?? false
-  );
-}
-
 function findRelatedEmailMessages(
   messages: ThreadMessage[],
   message: ThreadMessage,
-  index: number,
   attachedEmailMessageIds: Set<string>,
 ) {
-  if (!isEmailSendStatusMessage(message)) return [];
-
-  const related = new Map<string, ThreadMessage>();
-
-  if (message.pendingEmailId) {
-    const linked = messages.find(
-      (candidate) =>
-        candidate.channel === "email" &&
-        candidate.role === "agent" &&
-        candidate.pendingEmailId === message.pendingEmailId &&
-        candidate._id !== message._id,
-    );
-    if (linked && !attachedEmailMessageIds.has(linked._id)) {
-      related.set(linked._id, linked);
-    }
+  if (
+    message.role !== "agent" ||
+    message.pendingEmailId === undefined ||
+    message.messageKind === "channel_sync"
+  ) {
+    return [];
   }
 
-  const recipient = getEmailStatusRecipient(message);
-  let start = index;
-  while (start > 0 && messages[start - 1]?.role !== "user") start -= 1;
-  let end = index;
-  while (end + 1 < messages.length && messages[end + 1]?.role !== "user")
-    end += 1;
-
-  for (const candidate of messages
-    .slice(start, end + 1)
-    .filter(
-      (candidate) =>
-        candidate.channel === "email" &&
-        candidate.role === "agent" &&
-        candidate._id !== message._id &&
-        !attachedEmailMessageIds.has(candidate._id) &&
-        emailMessageMatchesRecipient(candidate, recipient),
-    )
-    .sort(
-      (a, b) =>
-        Math.abs(a._creationTime - message._creationTime) -
-        Math.abs(b._creationTime - message._creationTime),
-    )) {
-    related.set(candidate._id, candidate);
-  }
-
-  return [...related.values()].sort(
-    (a, b) => a._creationTime - b._creationTime,
-  );
-}
-
-function hasLaterEmailSendCompletion(
-  messages: ThreadMessage[],
-  message: ThreadMessage,
-  index: number,
-) {
-  if (!isEmailSendingStatusMessage(message)) return false;
-  const recipient = getEmailStatusRecipient(message);
-  for (let i = index + 1; i < messages.length; i += 1) {
-    const candidate = messages[i];
-    if (!candidate || candidate.role === "user") return false;
-    if (
-      message.pendingEmailId &&
+  const linked = messages.find(
+    (candidate) =>
+      candidate.channel === "email" &&
+      candidate.role === "agent" &&
       candidate.pendingEmailId === message.pendingEmailId &&
-      isEmailSentStatusMessage(candidate)
-    ) {
-      return true;
-    }
-    if (
-      isEmailSentStatusMessage(candidate) &&
-      getEmailStatusRecipient(candidate) === recipient
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function hasSameEmailSentStatus(first: ThreadMessage, second: ThreadMessage) {
-  if (!isEmailSentStatusMessage(first) || !isEmailSentStatusMessage(second))
-    return false;
-  const firstRecipient = getEmailStatusRecipient(first);
-  const secondRecipient = getEmailStatusRecipient(second);
-  if (!firstRecipient || !secondRecipient) return false;
-  return firstRecipient === secondRecipient;
-}
-
-function hasEarlierIdenticalAgentMessage(
-  messages: ThreadMessage[],
-  message: ThreadMessage,
-  index: number,
-) {
-  if (message.role !== "agent") return false;
-  if (message.channel !== "chat" && message.channel !== "imessage")
-    return false;
-  const normalized = normalizeMessageForDedupe(message.content);
-  if (!normalized) return false;
-
-  for (let i = index - 1; i >= 0; i -= 1) {
-    const candidate = messages[i];
-    if (!candidate || candidate.role === "user") return false;
-    if (candidate.role !== "agent") continue;
-    if (candidate.channel !== "chat" && candidate.channel !== "imessage")
-      continue;
-    if (
-      normalizeMessageForDedupe(candidate.content) === normalized ||
-      hasSameEmailSentStatus(candidate, message)
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function isImessageSyncMessage(message: ThreadMessage) {
-  if (message.role !== "agent" || message.channel !== "imessage") return false;
-  const normalized = normalizeMessageForDedupe(message.content);
-  return (
-    /^glass replied in web chat:?/.test(normalized) ||
-    /\bfrom glass web chat:/.test(normalized) ||
-    /\bshared attachment\(s\) from glass web chat\.?$/.test(normalized) ||
-    /\bsent (?:a )?message from glass web chat\.?$/.test(normalized)
+      candidate._id !== message._id,
   );
+  return linked && !attachedEmailMessageIds.has(linked._id) ? [linked] : [];
 }
 
 type ThreadMessageRenderPlan = {
@@ -622,13 +463,9 @@ function buildThreadMessageRenderPlan(
   const hiddenStatusMessageIds = new Set<string>();
   const relatedEmailsByMessageId = new Map<string, ThreadMessage[]>();
 
-  messages.forEach((message, index) => {
+  messages.forEach((message) => {
     if (message.status === "processing") return;
-    if (
-      isImessageSyncMessage(message) ||
-      hasEarlierIdenticalAgentMessage(messages, message, index) ||
-      hasLaterEmailSendCompletion(messages, message, index)
-    ) {
+    if (message.messageKind === "channel_sync") {
       hiddenStatusMessageIds.add(message._id);
       return;
     }
@@ -636,7 +473,6 @@ function buildThreadMessageRenderPlan(
     const relatedEmailMessages = findRelatedEmailMessages(
       messages,
       message,
-      index,
       attachedEmailMessageIds,
     );
     if (relatedEmailMessages.length === 0) return;
@@ -1368,6 +1204,22 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
     );
   }
 
+  if (msg.messageKind === "workflow_status") {
+    return (
+      <div
+        role="status"
+        className="flex w-full items-start gap-2.5 rounded-lg border border-border/50 bg-muted/25 px-3 py-2"
+      >
+        <StatusTag tone="info" className="mt-0.5 shrink-0">
+          Workflow
+        </StatusTag>
+        <p className={`min-w-0 text-muted-foreground ${typeStyle("body.default")}`}>
+          {msg.content}
+        </p>
+      </div>
+    );
+  }
+
   // Error state
   if (msg.status === "error" && msg.role !== "agent") {
     return (
@@ -1545,11 +1397,9 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   const displayName = messageSenderName(msg);
   const isOperatorInitiated = Boolean(msg.operatorInitiated);
 
-  // For email messages, strip quoted reply text
   const isEmail = msg.channel === "email";
-  const { content: cleanContent, quoted } = isEmail
-    ? splitQuotedReply(msg.content)
-    : { content: msg.content, quoted: null };
+  const cleanContent = msg.content;
+  const quoted = isEmail ? (msg.emailContent?.quotedText ?? null) : null;
 
   const initials = displayName
     .split(/\s+/)

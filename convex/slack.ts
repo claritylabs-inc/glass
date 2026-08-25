@@ -23,14 +23,14 @@ export const getActiveConnection = internalQuery({
   handler: async (ctx, args) => {
     const connection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
       )
       .first();
     if (!connection || !isSlackConnectionHealthy(connection)) return null;
     const unavailableBinding = await ctx.db
       .query("slackChannelBindings")
-      .withIndex("by_connectionId_and_status", (q) =>
+      .withIndex("connection_status", (q) =>
         q.eq("connectionId", connection._id).eq("status", "unavailable"),
       )
       .first();
@@ -60,7 +60,7 @@ async function resolveGlassUserId(
   if (!user || user.accountKind === "operator") return undefined;
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId_userId", (q) =>
+    .withIndex("organization_user", (q) =>
       q.eq("orgId", connection.clientOrgId).eq("userId", user._id),
     )
     .first();
@@ -78,7 +78,7 @@ async function resolveActor(
   }
   const existing = await ctx.db
     .query("slackActors")
-    .withIndex("by_connectionId_and_teamId_and_slackUserId", (q) =>
+    .withIndex("slack_identity", (q) =>
       q
         .eq("connectionId", connection._id)
         .eq("teamId", senderTeamId)
@@ -87,7 +87,7 @@ async function resolveActor(
     .first();
   const operator = await ctx.db
     .query("operatorProfiles")
-    .withIndex("by_slackTeamId_and_slackUserId", (q) =>
+    .withIndex("slack_user", (q) =>
       q.eq("slackTeamId", senderTeamId).eq("slackUserId", event.senderUserId),
     )
     .first();
@@ -112,7 +112,7 @@ async function resolveActor(
     const existingGlassUserId = existing.glassUserId;
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", connection.clientOrgId).eq("userId", existingGlassUserId),
       )
       .first();
@@ -177,7 +177,7 @@ async function primaryBinding(
 ) {
   const binding = await ctx.db
     .query("slackChannelBindings")
-    .withIndex("by_connectionId_and_status", (q) =>
+    .withIndex("connection_status", (q) =>
       q.eq("connectionId", connectionId).eq("status", "active"),
     )
     .first();
@@ -242,7 +242,7 @@ async function createHandoff(
 ) {
   const existing = await ctx.db
     .query("slackHandoffs")
-    .withIndex("by_connectionId_and_sourceChannelId_and_sourceThreadTs", (q) =>
+    .withIndex("source_thread", (q) =>
       q
         .eq("connectionId", args.connection._id)
         .eq("sourceChannelId", args.sourceChannelId)
@@ -290,14 +290,14 @@ async function scrubDeletedSlackMessage(
   }
   const revisions = await ctx.db
     .query("slackMessageRevisions")
-    .withIndex("by_threadMessageId_and_editedAt", (q) =>
+    .withIndex("message_edited", (q) =>
       q.eq("threadMessageId", args.message._id),
     )
     .collect();
   for (const revision of revisions) await ctx.db.delete(revision._id);
   const sourceEvents = await ctx.db
     .query("slackInboundEvents")
-    .withIndex("by_connection_channel_thread_message", (q) =>
+    .withIndex("thread_message", (q) =>
       q
         .eq("connectionId", args.connectionId)
         .eq("channelId", args.event.channelId)
@@ -348,20 +348,20 @@ export const claimInbound = internalMutation({
   handler: async (ctx, args) => {
     const duplicate = await ctx.db
       .query("slackInboundEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", args.eventKey))
       .first();
     if (duplicate) return { duplicate: true, status: duplicate.status };
 
     let connection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first();
     if (!connection) {
       const hostBinding = await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_hostTeamId_and_hostChannelId", (q) =>
+        .withIndex("host_channel", (q) =>
           q.eq("hostTeamId", args.teamId).eq("hostChannelId", args.channelId),
         )
         .first();
@@ -384,7 +384,7 @@ export const claimInbound = internalMutation({
     });
     const mirroredDuplicate = await ctx.db
       .query("slackInboundEvents")
-      .withIndex("by_canonicalEventKey", (q) =>
+      .withIndex("canonical", (q) =>
         q.eq("canonicalEventKey", logicalEventKey),
       )
       .first();
@@ -393,7 +393,7 @@ export const claimInbound = internalMutation({
     }
     const settings = await ctx.db
       .query("agentChannelSettings")
-      .withIndex("by_clientOrgId", (q) =>
+      .withIndex("client", (q) =>
         q.eq("clientOrgId", connection.clientOrgId),
       )
       .first();
@@ -412,7 +412,7 @@ export const claimInbound = internalMutation({
       const activeThread = await ctx.db
         .query("threads")
         .withIndex(
-          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          "slack_thread",
           (q) =>
             q
               .eq("slackConnectionId", connection._id)
@@ -429,7 +429,7 @@ export const claimInbound = internalMutation({
       .valueOf();
     const queued = await ctx.db
       .query("slackInboundEvents")
-      .withIndex("by_connection_channel_thread_status_schedule", (q) =>
+      .withIndex("thread_schedule", (q) =>
         q
           .eq("connectionId", connection._id)
           .eq("channelId", args.channelId)
@@ -481,7 +481,7 @@ export const claimBatch = internalMutation({
     const connectionId = scheduledEvent.connectionId;
     const queued = await ctx.db
       .query("slackInboundEvents")
-      .withIndex("by_connection_channel_thread_status_schedule", (q) =>
+      .withIndex("thread_schedule", (q) =>
         q
           .eq("connectionId", connectionId)
           .eq("channelId", scheduledEvent.channelId)
@@ -663,7 +663,7 @@ export const prepareBatch = internalMutation({
       const existingThread = await ctx.db
         .query("threads")
         .withIndex(
-          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          "slack_thread",
           (q) =>
             q
               .eq("slackConnectionId", connection._id)
@@ -676,7 +676,7 @@ export const prepareBatch = internalMutation({
         const message = existingThread
           ? await ctx.db
               .query("threadMessages")
-              .withIndex("by_threadId_and_slackMessageTs", (q) =>
+              .withIndex("thread_message", (q) =>
                 q
                   .eq("threadId", existingThread._id)
                   .eq("slackMessageTs", event.messageTs),
@@ -730,7 +730,7 @@ export const prepareBatch = internalMutation({
       const membership = !isDirectMessage
         ? await ctx.db
             .query("slackChannelMemberships")
-            .withIndex("by_connectionId_and_channelId", (q) =>
+            .withIndex("connection_channel", (q) =>
               q
                 .eq("connectionId", connection._id)
                 .eq("channelId", threadChannelId),
@@ -1046,7 +1046,7 @@ export const createDeliveryRecord = internalMutation({
     const existing = await ctx.db
       .query("threads")
       .withIndex(
-        "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+        "slack_thread",
         (q) =>
           q
             .eq("slackConnectionId", args.connectionId)

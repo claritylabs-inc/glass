@@ -42,7 +42,7 @@ describe("resolveTextChannelEmailControl", () => {
 
     expect(
       resolveTextChannelEmailControl({
-        messageText: "send please",
+        messageText: "send",
         isCancelConfirmationContext: false,
         draftEmailIds: ["draft"],
         draftApprovalEmailIds: ["draft"],
@@ -53,7 +53,7 @@ describe("resolveTextChannelEmailControl", () => {
 
     expect(
       resolveTextChannelEmailControl({
-        messageText: "send please",
+        messageText: "send",
         isCancelConfirmationContext: false,
         draftEmailIds: ["draft"],
         draftApprovalEmailIds: ["draft"],
@@ -65,7 +65,7 @@ describe("resolveTextChannelEmailControl", () => {
   test("does not approve a draft that was not attached to the preceding response", () => {
     expect(
       resolveTextChannelEmailControl({
-        messageText: "send please",
+        messageText: "send",
         isCancelConfirmationContext: false,
         draftEmailIds: ["stale-draft"],
         draftApprovalEmailIds: [],
@@ -93,7 +93,6 @@ describe("resolveTextChannelEmailControl", () => {
         isCancelConfirmationContext: false,
         draftEmailIds: ["draft"],
         pendingEmailIds: [],
-        allowDraftSendAll: true,
       }),
     ).toEqual({
       kind: "update_single_draft_recipient",
@@ -107,7 +106,6 @@ describe("resolveTextChannelEmailControl", () => {
         isCancelConfirmationContext: false,
         draftEmailIds: ["draft"],
         pendingEmailIds: [],
-        allowDraftSendAll: true,
       }),
     ).toBeNull();
   });

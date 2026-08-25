@@ -1,8 +1,11 @@
+import type { WorkflowOutcome } from "./workflows/types";
+import { parseWorkflowOutcome } from "./workflows/types";
+
 export type AgentToolAudit = {
   usedTools: string[];
   completedTools: string[];
   toolCalls: Array<{ name: string; input?: string; output?: string }>;
-  workflowOutcomes: unknown[];
+  workflowOutcomes: WorkflowOutcome[];
 };
 
 function serializeToolAuditValue(value: unknown): string | undefined {
@@ -18,7 +21,7 @@ export function collectToolAudit(result: unknown): AgentToolAudit {
   const usedTools: string[] = [];
   const completedTools: string[] = [];
   const toolCalls: AgentToolAudit["toolCalls"] = [];
-  const workflowOutcomes: unknown[] = [];
+  const workflowOutcomes: WorkflowOutcome[] = [];
   const seenTools = new Set<string>();
   const seenCompletedTools = new Set<string>();
 
@@ -50,7 +53,10 @@ export function collectToolAudit(result: unknown): AgentToolAudit {
     const output =
       resultPart.output ?? resultPart.result ?? resultPart.value ?? undefined;
     if (output && typeof output === "object" && "workflowOutcome" in output) {
-      workflowOutcomes.push((output as Record<string, unknown>).workflowOutcome);
+      const workflowOutcome = parseWorkflowOutcome(
+        (output as Record<string, unknown>).workflowOutcome,
+      );
+      if (workflowOutcome) workflowOutcomes.push(workflowOutcome);
     }
     const target = [...toolCalls]
       .reverse()

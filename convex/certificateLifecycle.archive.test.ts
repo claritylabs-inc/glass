@@ -157,7 +157,7 @@ describe("certificateLifecycle archive", () => {
       const certificate = await ctx.db.get(certificateId);
       const jobs = await ctx.db
         .query("certificateWorkflowJobs")
-        .withIndex("by_certificateId", (q) => q.eq("certificateId", certificateId))
+        .withIndex("certificate", (q) => q.eq("certificateId", certificateId))
         .collect();
       return { certificate, jobs };
     });

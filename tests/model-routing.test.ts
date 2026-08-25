@@ -144,7 +144,20 @@ describe("model routing", () => {
           usedTools: ["import_requirement_attachments"],
           completedTools: ["import_requirement_attachments"],
           toolCalls: [{ name: "import_requirement_attachments" }],
-          workflowOutcomes: [{ status: "completed" }],
+          workflowOutcomes: [
+            {
+              workflowKind: "requirement_import",
+              status: "completed",
+              nextAction: "none",
+              requiredSlots: [],
+              forbiddenQuestions: [],
+              forbiddenClaims: [],
+              sideEffects: [],
+              artifacts: [],
+              comms: { headline: "Requirements imported." },
+              audit: [],
+            },
+          ],
         },
       ),
     ).toMatchObject({

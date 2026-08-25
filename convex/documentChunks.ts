@@ -15,7 +15,7 @@ export const listByPolicy = internalQuery({
   handler: async (ctx, args) => {
     return ctx.db
       .query("documentChunks")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .collect();
   },
 });
@@ -26,7 +26,7 @@ export const hasChunksForOrg = internalQuery({
   handler: async (ctx, args) => {
     const first = await ctx.db
       .query("documentChunks")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .first();
     return first !== null;
   },
@@ -63,7 +63,7 @@ export const listAllForOrg = internalQuery({
   handler: async (ctx, args) => {
     return ctx.db
       .query("documentChunks")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
   },
 });
@@ -74,7 +74,7 @@ export const deleteByPolicy = internalMutation({
   handler: async (ctx, args) => {
     const chunks = await ctx.db
       .query("documentChunks")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .take(50);
     for (const chunk of chunks) {
       await ctx.db.delete(chunk._id);

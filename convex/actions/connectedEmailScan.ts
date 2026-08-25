@@ -14,6 +14,7 @@ import { internal } from "../_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { generateObjectForOrg } from "../lib/models";
+import { htmlToPlainText } from "../lib/inboundEmailParser";
 import {
   canAutoExecuteMailboxDecision,
   mailboxAutomationBatchSchema,
@@ -225,11 +226,8 @@ function formatEnvelopeAddresses(addresses?: MessageAddressObject[]) {
 }
 
 function automationTextPreview(value: string, contentType?: string) {
-  const text = contentType?.toLowerCase() === "text/html"
-    ? value
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
+  const text = contentType?.toLowerCase().startsWith("text/html")
+    ? htmlToPlainText(value, AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES)
     : value;
   return text.replace(/\s+/g, " ").trim().slice(0, 12_000);
 }

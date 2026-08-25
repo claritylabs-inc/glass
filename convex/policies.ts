@@ -73,7 +73,7 @@ async function deactivatePolicyDeclarationFacts(
 ) {
   const facts = await ctx.db
     .query("policyDeclarationFacts")
-    .withIndex("by_policyId_active", (q) =>
+    .withIndex("policy_active", (q) =>
       q.eq("policyId", policyId).eq("active", true),
     )
     .collect();
@@ -92,7 +92,7 @@ async function reactivatePolicyDeclarationFacts(
 ) {
   const facts = await ctx.db
     .query("policyDeclarationFacts")
-    .withIndex("by_policyId_active", (q) =>
+    .withIndex("policy_active", (q) =>
       q.eq("policyId", policyId).eq("active", false),
     )
     .collect();
@@ -402,7 +402,7 @@ export function normalizeEditableFields(
 async function getPolicyExtractionRun(ctx: any, policyId: DataModelId<"policies">) {
   return await ctx.db
     .query("policyExtractionRuns")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .withIndex("policy", (q: any) => q.eq("policyId", policyId))
     .first();
 }
 
@@ -505,7 +505,7 @@ async function enqueueExternalPolicyExtraction(
 ) {
   const existingRows = await ctx.db
     .query("policyExtractionQueue")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .withIndex("policy", (q: any) => q.eq("policyId", policyId))
     .collect();
   const [first, ...duplicates] = existingRows;
   const fields = {
@@ -538,7 +538,7 @@ async function enqueueExternalPolicyExtractionPreview(
 ) {
   const existingRows = await ctx.db
     .query("policyExtractionPreviewQueue")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .withIndex("policy", (q: any) => q.eq("policyId", policyId))
     .collect();
   const [first, ...duplicates] = existingRows;
   const fields = {
@@ -569,7 +569,7 @@ async function clearExternalPolicyExtractionQueue(
 ) {
   const rows = await ctx.db
     .query("policyExtractionQueue")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .withIndex("policy", (q: any) => q.eq("policyId", policyId))
     .collect();
   for (const row of rows) {
     await ctx.db.delete(row._id);
@@ -582,7 +582,7 @@ async function clearExternalPolicyExtractionPreviewQueue(
 ) {
   const rows = await ctx.db
     .query("policyExtractionPreviewQueue")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .withIndex("policy", (q: any) => q.eq("policyId", policyId))
     .collect();
   for (const row of rows) {
     await ctx.db.delete(row._id);
@@ -597,7 +597,7 @@ async function patchExternalPolicyExtractionPreviewQueueLease(
 ) {
   const rows = await ctx.db
     .query("policyExtractionPreviewQueue")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .withIndex("policy", (q: any) => q.eq("policyId", policyId))
     .collect();
   const [first, ...duplicates] = rows;
   if (first) {
@@ -622,7 +622,7 @@ async function patchExternalPolicyExtractionQueueLease(
 ) {
   const rows = await ctx.db
     .query("policyExtractionQueue")
-    .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId))
+    .withIndex("policy", (q: any) => q.eq("policyId", policyId))
     .collect();
   const [first, ...duplicates] = rows;
   if (first) {
@@ -647,10 +647,10 @@ async function clearPolicyExtractionArtifacts(
   const query = kind
     ? ctx.db
       .query("policyExtractionArtifacts")
-      .withIndex("by_policyId_kind", (q: any) => q.eq("policyId", policyId).eq("kind", kind))
+      .withIndex("policy_kind", (q: any) => q.eq("policyId", policyId).eq("kind", kind))
     : ctx.db
       .query("policyExtractionArtifacts")
-      .withIndex("by_policyId", (q: any) => q.eq("policyId", policyId));
+      .withIndex("policy", (q: any) => q.eq("policyId", policyId));
   const artifacts = await query.collect();
   for (const artifact of artifacts) {
     await ctx.storage.delete(artifact.storageId).catch(() => {});
@@ -836,7 +836,7 @@ async function insertPipelineTraceLog(
   if (!traceId) return;
   const session = await ctx.db
     .query("policyExtractionTraceSessions")
-    .withIndex("by_traceId", (q: any) => q.eq("traceId", traceId))
+    .withIndex("trace", (q: any) => q.eq("traceId", traceId))
     .first();
   if (!session) return;
   await ctx.db.insert("policyExtractionTraceEvents", {
@@ -953,7 +953,7 @@ export const listAllInternal = internalQuery({
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     return all.filter(isFinalExtractedPolicy);
   },
@@ -966,7 +966,7 @@ export const listAllPreviewReadableInternal = internalQuery({
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     return all
       .filter(isPreviewReadablePolicy)
@@ -986,7 +986,7 @@ export const listPreviewReadableForAgentContextInternal = internalQuery({
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 120), 160));
     const candidates = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
       .take(limit * 3);
     return candidates
       .filter(isPreviewReadablePolicy)
@@ -1004,7 +1004,7 @@ export const listAllInternalByUser = internalQuery({
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_userId", (idx) => idx.eq("userId", args.userId as unknown as never))
+      .withIndex("user", (idx) => idx.eq("userId", args.userId as unknown as never))
       .collect();
     return all.filter(isFinalExtractedPolicy);
   },
@@ -1393,7 +1393,7 @@ export const insertAutomationUploadInternal = internalMutation({
 
     const existing = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (query) => query.eq("orgId", args.orgId))
+      .withIndex("organization", (query) => query.eq("orgId", args.orgId))
       .collect();
     const duplicate = existing.find(
       (policy) =>
@@ -2091,7 +2091,7 @@ export const confirmPolicyFactFromSource = internalMutation({
 
     const policySpans = await ctx.db
       .query("sourceSpans")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.id))
+      .withIndex("policy", (q) => q.eq("policyId", args.id))
       .collect();
     const validSpanIds = new Set(policySpans.map((span) => span.spanId));
     const invalidSpanIds = args.sourceSpanIds.filter((id) => !validSpanIds.has(id));
@@ -2173,7 +2173,7 @@ export const checkDuplicateUploadByHash = mutation({
 
     const policies = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
       .collect();
 
     const duplicate = policies.find((policy) => {
@@ -2197,7 +2197,7 @@ export const hasPendingExtractionInternal = internalQuery({
   handler: async (ctx, args) => {
     const policies = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (query) => query.eq("orgId", args.orgId))
+      .withIndex("organization", (query) => query.eq("orgId", args.orgId))
       .collect();
     const nonFinalPolicies = policies.filter(
       (policy) =>
@@ -2350,7 +2350,7 @@ export const listForBroker = query({
     assertCanReadPolicy(access);
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.clientOrgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.clientOrgId))
       .collect();
     const filtered = all.filter((p) => {
       const matchesArchive = args.archived
@@ -2379,7 +2379,7 @@ export const listForClient = query({
     const { orgId } = access;
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", orgId))
       .collect();
     const filtered = all.filter((p) => {
       const matchesArchive = args.archived
@@ -2602,7 +2602,7 @@ export const listByOrgInternal = internalQuery({
   handler: async (ctx, args) => {
     const policies = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     return policies;
   },
@@ -2727,7 +2727,7 @@ export const promoteCompletedExtractionInternal = internalMutation({
     if (manifest.protocolVersion === "source-tree-v2") {
       const sectionArtifacts = await ctx.db
         .query("policyExtractionArtifacts")
-        .withIndex("by_policyId_kind", (q) =>
+        .withIndex("policy_kind", (q) =>
           q.eq("policyId", args.id).eq("kind", "section_result"),
         )
         .collect();
@@ -3026,7 +3026,7 @@ export const listForOrg = query({
     assertCanReadPolicies(access);
     const all = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
       .collect();
     const filtered = all.filter(
       (policy) =>
@@ -3084,7 +3084,7 @@ export const pipelineSaveArtifact = internalMutation({
     if (kind === "section_result") {
       const existingSections = await ctx.db
         .query("policyExtractionArtifacts")
-        .withIndex("by_policyId_kind", (q) =>
+        .withIndex("policy_kind", (q) =>
           q.eq("policyId", policyId).eq("kind", kind),
         )
         .collect();
@@ -3106,7 +3106,7 @@ export const pipelineSaveArtifact = internalMutation({
         : undefined;
       const existingBundles = await ctx.db
         .query("policyExtractionArtifacts")
-        .withIndex("by_policyId_kind", (q) =>
+        .withIndex("policy_kind", (q) =>
           q.eq("policyId", policyId).eq("kind", kind),
         )
         .collect();
@@ -3174,7 +3174,7 @@ export const pipelineListResumableArtifacts = internalQuery({
     if (!run) return null;
     const artifacts = await ctx.db
       .query("policyExtractionArtifacts")
-      .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+      .withIndex("policy", (q) => q.eq("policyId", policyId))
       .order("desc")
       .collect();
     return {
@@ -3200,7 +3200,7 @@ export const pipelineGetArtifact = internalQuery({
   handler: async (ctx, { jobId, kind }) => {
     return await ctx.db
       .query("policyExtractionArtifacts")
-      .withIndex("by_policyId_kind", (q) =>
+      .withIndex("policy_kind", (q) =>
         q.eq("policyId", jobId as DataModelId<"policies">).eq("kind", kind),
       )
       .order("desc")
@@ -3532,7 +3532,7 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
     );
     const queueRows = await ctx.db
       .query("policyExtractionQueue")
-      .withIndex("by_status_updatedAt", (q) => q.eq("status", "queued"))
+      .withIndex("status_updated", (q) => q.eq("status", "queued"))
       .order("asc")
       .take(batchSize);
 
@@ -3621,7 +3621,7 @@ export const pipelineClaimExternalWorkerJob = internalMutation({
         if (previewPending) {
           const previewRows = await ctx.db
             .query("policyExtractionPreviewQueue")
-            .withIndex("by_policyId", (q) => q.eq("policyId", run.policyId))
+            .withIndex("policy", (q) => q.eq("policyId", run.policyId))
             .collect();
           if (previewRows.length === 0) {
             await enqueueExternalPolicyExtractionPreview(ctx, run.policyId, run._id, now);
@@ -3661,7 +3661,7 @@ export const pipelineClaimExternalPreviewWorkerJob = internalMutation({
     );
     const queueRows = await ctx.db
       .query("policyExtractionPreviewQueue")
-      .withIndex("by_status_updatedAt", (q) => q.eq("status", "queued"))
+      .withIndex("status_updated", (q) => q.eq("status", "queued"))
       .order("asc")
       .take(batchSize);
 
@@ -3747,7 +3747,7 @@ export const pipelineExtendPreviewLease = internalMutation({
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("policyExtractionPreviewQueue")
-      .withIndex("by_policyId", (q) =>
+      .withIndex("policy", (q) =>
         q.eq("policyId", args.jobId as DataModelId<"policies">),
       )
       .collect();
@@ -3775,7 +3775,7 @@ export const pipelineCompletePreviewLease = internalMutation({
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("policyExtractionPreviewQueue")
-      .withIndex("by_policyId", (q) =>
+      .withIndex("policy", (q) =>
         q.eq("policyId", args.jobId as DataModelId<"policies">),
       )
       .collect();
@@ -3809,21 +3809,21 @@ export const pipelineRequeueStale = internalMutation({
     const cutoff = now - olderThanMs;
     const runs = await ctx.db
       .query("policyExtractionRuns")
-      .withIndex("by_pipelineStatus_updatedAt", (q) =>
+      .withIndex("status_updated", (q) =>
         q.eq("pipelineStatus", "running").lt("updatedAt", cutoff),
       )
       .order("asc")
       .take(batchSize);
     const leasedQueueRows = await ctx.db
       .query("policyExtractionQueue")
-      .withIndex("by_status_updatedAt", (q) =>
+      .withIndex("status_updated", (q) =>
         q.eq("status", "leased").lt("updatedAt", cutoff),
       )
       .order("asc")
       .take(batchSize);
     const leasedPreviewRows = await ctx.db
       .query("policyExtractionPreviewQueue")
-      .withIndex("by_status_updatedAt", (q) =>
+      .withIndex("status_updated", (q) =>
         q.eq("status", "leased").lt("updatedAt", cutoff),
       )
       .order("asc")

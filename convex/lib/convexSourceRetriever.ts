@@ -3,6 +3,10 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import {
+  normalizedSearchText,
+  uniqueSearchTerms,
+} from "./searchTokenizer";
 
 type EmbedText = (text: string) => Promise<number[]>;
 
@@ -118,18 +122,13 @@ type SourceNodeDoc = {
 };
 
 function queryTerms(query: string): string[] {
-  return Array.from(new Set(
-    query
-      .toLowerCase()
-      .split(/[^a-z0-9$.,%-]+/)
-      .map((term) => term.trim())
-      .filter((term) => term.length > 2),
-  ));
+  return uniqueSearchTerms(query, { minimumLength: 3 });
 }
 
 function scoreText(query: string, terms: string[], text: string): number {
-  const lower = text.toLowerCase();
-  let score = query && lower.includes(query.toLowerCase()) ? 8 : 0;
+  const lower = normalizedSearchText(text);
+  const normalizedQuery = normalizedSearchText(query);
+  let score = normalizedQuery && lower.includes(normalizedQuery) ? 8 : 0;
   for (const term of terms) {
     if (lower.includes(term)) score += 1;
   }

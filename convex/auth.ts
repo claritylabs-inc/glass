@@ -106,11 +106,11 @@ export const stashInviteOtp = internalMutation({
     if (!normalized) return false;
     const pendingInvites = await ctx.db
       .query("clientInvitations")
-      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .withIndex("status", (q) => q.eq("status", "pending"))
       .collect();
     const pendingVendorInvites = await ctx.db
       .query("connectedOrgInvitations")
-      .withIndex("by_vendorEmail", (q) => q.eq("vendorEmail", normalized))
+      .withIndex("email", (q) => q.eq("vendorEmail", normalized))
       .collect();
     const expiresAt = Date.now() + 15 * 60 * 1000; // mirror OTP maxAge
     let matched = false;
@@ -145,7 +145,7 @@ export const brokerBrandingForEmail = internalQuery({
     // 1. Check for a pending client invitation with this email, pick most recent.
     const invites = await ctx.db
       .query("clientInvitations")
-      .withIndex("by_status", (q) => q.eq("status", "pending"))
+      .withIndex("status", (q) => q.eq("status", "pending"))
       .collect();
     const match = invites
       .filter((i) => i.primaryContactEmail?.trim().toLowerCase() === normalized)
@@ -163,7 +163,7 @@ export const brokerBrandingForEmail = internalQuery({
       if (user) {
         const membership = await ctx.db
           .query("orgMemberships")
-          .withIndex("by_userId", (q) => q.eq("userId", user._id))
+          .withIndex("user", (q) => q.eq("userId", user._id))
           .first();
         if (membership) {
           const org = await ctx.db.get(membership.orgId);

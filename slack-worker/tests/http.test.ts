@@ -96,11 +96,10 @@ describe("Slack worker HTTP adapter", () => {
         clientMessageId: "mock-send",
         teamId: "T-CUSTOMER",
         channelId: "C-PRIMARY",
-        text: "Policy details",
+        mrkdwnText: "Policy details",
       }).then((response) => response.json()),
       { messageId: "mock-mock-send", attachmentFailures: [] },
     );
-
     const actor = await workerRequest("/actor", {
       teamId: "T-CUSTOMER",
       userId: "U-CUSTOMER",

@@ -6,6 +6,7 @@ import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
 import {
   isCompanyContextMemory,
   normalizeMemoryContent,
+  type OrgMemoryProvenance,
   type OrgMemoryType,
 } from "./lib/orgMemoryPolicy";
 import type { Id } from "./_generated/dataModel";
@@ -29,6 +30,15 @@ const orgMemorySourceValidator = v.union(
   v.literal("imessage"),
   v.literal("slack"),
 );
+const orgMemoryProvenanceValidator = v.object({
+  kind: v.literal("organization_fact"),
+  derivation: v.union(
+    v.literal("company_profile_extraction"),
+    v.literal("conversation_extraction"),
+    v.literal("agent_tool"),
+  ),
+  schemaVersion: v.literal("organization-fact-v1"),
+});
 
 async function orgNameById(
   ctx: QueryCtx | MutationCtx,
@@ -65,6 +75,7 @@ function activeCompanyFacts<T extends {
   content: string;
   expiresAt?: number;
   policyId?: unknown;
+  provenance?: OrgMemoryProvenance;
 }>(
   memories: T[],
   orgName: string | null,
@@ -77,6 +88,7 @@ function activeCompanyFacts<T extends {
       content: memory.content,
       orgName,
       policyId: memory.policyId,
+      provenance: memory.provenance,
     })
   );
 }
@@ -96,13 +108,14 @@ async function findAndMergeDuplicate(
     sourceRef?: string;
     confidence?: number;
     observedAt?: number;
+    provenance?: OrgMemoryProvenance;
   },
   now: number,
 ): Promise<Id<"orgMemory"> | null> {
   const sourceMatch = item.sourceRef
     ? await ctx.db
         .query("orgMemory")
-        .withIndex("by_org_sourceRef", (q) =>
+        .withIndex("organization_source", (q) =>
           q.eq("orgId", item.orgId).eq("sourceRef", item.sourceRef),
         )
         .first()
@@ -112,7 +125,7 @@ async function findAndMergeDuplicate(
     const contentKey = memoryContentKey(item.content);
     const existing = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org_type", (q) =>
+      .withIndex("organization_type", (q) =>
         q.eq("orgId", item.orgId).eq("type", item.type),
       )
       .take(500);
@@ -130,6 +143,7 @@ async function findAndMergeDuplicate(
       item.observedAt === undefined
         ? duplicate.observedAt
         : Math.max(duplicate.observedAt ?? 0, item.observedAt),
+    provenance: item.provenance ?? duplicate.provenance,
     updatedAt: now,
   });
   return duplicate._id;
@@ -152,7 +166,7 @@ export const listByOrg = internalQuery({
   handler: async (ctx, args) => {
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(500);
     const orgName = await orgNameById(ctx, args.orgId);
     const active = activeCompanyFacts(memories, orgName);
@@ -169,7 +183,7 @@ export const listByType = internalQuery({
   handler: async (ctx, args) => {
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org_type", (q) =>
+      .withIndex("organization_type", (q) =>
         q.eq("orgId", args.orgId).eq("type", args.type),
       )
       .take(500);
@@ -191,6 +205,7 @@ export const upsert = internalMutation({
     confidence: v.optional(v.number()),
     observedAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
+    provenance: v.optional(orgMemoryProvenanceValidator),
   },
   handler: async (ctx, args) => {
     const orgName = await orgNameById(ctx, args.orgId);
@@ -200,6 +215,7 @@ export const upsert = internalMutation({
       content,
       orgName,
       policyId: args.policyId,
+      provenance: args.provenance,
     })) {
       return null;
     }
@@ -244,6 +260,7 @@ export const bulkInsert = internalMutation({
         sourceRef: v.optional(v.string()),
         confidence: v.optional(v.number()),
         observedAt: v.optional(v.number()),
+        provenance: v.optional(orgMemoryProvenanceValidator),
       }),
     ),
   },
@@ -264,6 +281,7 @@ export const bulkInsert = internalMutation({
         content,
         orgName,
         policyId: item.policyId,
+        provenance: item.provenance,
       })) {
         continue;
       }
@@ -291,7 +309,7 @@ export const deleteExpired = internalMutation({
     const now = dayjs().valueOf();
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(500);
     let cleaned = 0;
     for (const m of memories) {
@@ -318,7 +336,7 @@ export const list = query({
     }
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(500);
     const orgName = await orgNameById(ctx, args.orgId);
     return activeCompanyFacts(memories, orgName)
@@ -346,11 +364,13 @@ export const update = mutation({
     const now = dayjs().valueOf();
     await ctx.db.patch(args.id, {
       content,
+      provenance: undefined,
       updatedAt: now,
     });
     return {
       ...memory,
       content,
+      provenance: undefined,
       updatedAt: now,
     };
   },

@@ -56,7 +56,7 @@ async function getBrokerDefault(ctx: ReadCtx, brokerOrgId?: Id<"organizations"> 
   if (!brokerOrgId) return null;
   return await ctx.db
     .query("certificateWorkflowSettings")
-    .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+    .withIndex("broker_client", (q) =>
       q.eq("brokerOrgId", brokerOrgId).eq("clientOrgId", undefined),
     )
     .first();
@@ -66,7 +66,7 @@ async function getClientOverride(ctx: ReadCtx, clientOrgId?: Id<"organizations">
   if (!clientOrgId) return null;
   return await ctx.db
     .query("certificateWorkflowSettings")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrgId))
+    .withIndex("client", (q) => q.eq("clientOrgId", clientOrgId))
     .first();
 }
 

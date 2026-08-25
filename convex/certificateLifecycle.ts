@@ -90,7 +90,7 @@ function isOpenWorkflowJobStatus(status: Doc<"certificateWorkflowJobs">["status"
 async function nextCertificateVersionNumber(ctx: ReadCtx, certificateId: Id<"policyCertificates">) {
   const latest = await ctx.db
     .query("certificateVersions")
-    .withIndex("by_certificateId_versionNumber", (q) => q.eq("certificateId", certificateId))
+    .withIndex("certificate_version", (q) => q.eq("certificateId", certificateId))
     .order("desc")
     .first();
   return (latest?.versionNumber ?? 0) + 1;
@@ -102,7 +102,7 @@ async function currentPolicyVersionId(ctx: ReadCtx, policyId: Id<"policies">) {
   if (policy.currentPolicyVersionId) return policy.currentPolicyVersionId;
   const latest = await ctx.db
     .query("policyVersions")
-    .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", policyId))
+    .withIndex("policy_version", (q) => q.eq("policyId", policyId))
     .order("desc")
     .first();
   return latest?._id;
@@ -140,7 +140,7 @@ async function collectIssuedCertificateCandidates(ctx: ReadCtx, args: {
   const policyVersionId = args.policyVersionId ?? await currentPolicyVersionId(ctx, args.policyId);
   const parents = await ctx.db
     .query("policyCertificates")
-    .withIndex("by_policyId_status", (q) =>
+    .withIndex("policy_status", (q) =>
       q.eq("policyId", args.policyId).eq("status", "active"),
     )
     .collect();
@@ -189,7 +189,7 @@ export const listByPolicy = query({
     if (!access) return [];
     const certificates = await ctx.db
       .query("policyCertificates")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .collect();
     const enriched = await Promise.all(
       certificates.map(async (certificate) => {
@@ -200,7 +200,7 @@ export const listByPolicy = query({
           certificate.latestIssuedVersionId ? ctx.db.get(certificate.latestIssuedVersionId) : null,
           ctx.db
             .query("certificateVersions")
-            .withIndex("by_certificateId_versionNumber", (q) =>
+            .withIndex("certificate_version", (q) =>
               q.eq("certificateId", certificate._id),
             )
             .order("desc")
@@ -234,7 +234,7 @@ export const listForOrg = query({
     await getOrgAccess(ctx, args.orgId, { allowOperator: true });
     const certificates = await ctx.db
       .query("policyCertificates")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     return await Promise.all(
       certificates.map(async (certificate) => {
@@ -244,7 +244,7 @@ export const listForOrg = query({
           certificate.currentVersionId ? ctx.db.get(certificate.currentVersionId) : null,
           ctx.db
             .query("certificateVersions")
-            .withIndex("by_certificateId_versionNumber", (q) =>
+            .withIndex("certificate_version", (q) =>
               q.eq("certificateId", certificate._id),
             )
             .order("desc")
@@ -280,7 +280,7 @@ export const listVersionsInternal = internalQuery({
     const rows = args.certificateId
       ? await ctx.db
           .query("certificateVersions")
-          .withIndex("by_certificateId_versionNumber", (q) =>
+          .withIndex("certificate_version", (q) =>
             q.eq("certificateId", args.certificateId!),
           )
           .order("desc")
@@ -288,16 +288,16 @@ export const listVersionsInternal = internalQuery({
       : args.holderId
         ? await ctx.db
             .query("certificateVersions")
-            .withIndex("by_holderId", (q) => q.eq("holderId", args.holderId!))
+            .withIndex("holder", (q) => q.eq("holderId", args.holderId!))
             .collect()
         : args.policyId
           ? await ctx.db
               .query("certificateVersions")
-              .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId!))
+              .withIndex("policy", (q) => q.eq("policyId", args.policyId!))
               .collect()
           : await ctx.db
               .query("certificateVersions")
-              .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+              .withIndex("organization", (q) => q.eq("orgId", args.orgId))
               .collect();
     const scoped = rows
       .filter((row) => row.orgId === args.orgId)
@@ -357,7 +357,7 @@ export const archive = mutation({
 
     const jobs = await ctx.db
       .query("certificateWorkflowJobs")
-      .withIndex("by_certificateId", (q) => q.eq("certificateId", args.certificateId))
+      .withIndex("certificate", (q) => q.eq("certificateId", args.certificateId))
       .collect();
     let cancelledJobs = 0;
     for (const job of jobs) {
@@ -392,7 +392,7 @@ export const unarchive = mutation({
 
     const siblings = await ctx.db
       .query("policyCertificates")
-      .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", certificate.dedupeKey))
+      .withIndex("dedupe", (q) => q.eq("dedupeKey", certificate.dedupeKey))
       .collect();
     const conflict = siblings.find((row) =>
       row._id !== args.certificateId && row.status !== "archived",
@@ -431,7 +431,7 @@ export const getOrCreateParentInternal = internalMutation({
     });
     const existing = (await ctx.db
       .query("policyCertificates")
-      .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
+      .withIndex("dedupe", (q) => q.eq("dedupeKey", dedupeKey))
       .collect())
       .find((row) => row.status !== "archived");
     if (existing) {
@@ -513,7 +513,7 @@ function cleanupGroupHasAddressConflict(rows: Array<{
 async function versionsForCertificate(ctx: ReadCtx, certificateId: Id<"policyCertificates">) {
   return await ctx.db
     .query("certificateVersions")
-    .withIndex("by_certificateId_versionNumber", (q) => q.eq("certificateId", certificateId))
+    .withIndex("certificate_version", (q) => q.eq("certificateId", certificateId))
     .order("asc")
     .collect();
 }
@@ -526,7 +526,7 @@ async function cleanupDuplicatePolicyCertificates(ctx: MutationCtx, args: {
   const now = dayjs().valueOf();
   const parents = await ctx.db
     .query("policyCertificates")
-    .withIndex("by_policyId_status", (q) =>
+    .withIndex("policy_status", (q) =>
       q.eq("policyId", args.policyId).eq("status", "active"),
     )
     .collect();
@@ -688,11 +688,11 @@ export const recordIssuedVersionInternal = internalMutation({
         ctx.db.get(args.holderId),
         ctx.db
           .query("policyCertificates")
-          .withIndex("by_holderId", (q) => q.eq("holderId", args.holderId))
+          .withIndex("holder", (q) => q.eq("holderId", args.holderId))
           .collect(),
         ctx.db
           .query("certificateHolderPolicyLinks")
-          .withIndex("by_holderId", (q) => q.eq("holderId", args.holderId))
+          .withIndex("holder", (q) => q.eq("holderId", args.holderId))
           .collect(),
       ]);
       const displayName = args.certificateHolderName?.trim();
@@ -772,7 +772,7 @@ export const recordIssuedVersionInternal = internalMutation({
     }
     const existingIssued = await ctx.db
       .query("certificateVersions")
-      .withIndex("by_certificateId", (q) => q.eq("certificateId", args.certificateId))
+      .withIndex("certificate", (q) => q.eq("certificateId", args.certificateId))
       .filter((q) => q.eq(q.field("status"), "issued"))
       .collect();
     for (const version of existingIssued) {

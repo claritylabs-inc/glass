@@ -54,7 +54,7 @@ export function createConvexMemoryStore(
       options?: { limit?: number; filter?: ChunkFilter },
     ): Promise<DocumentChunk[]> {
       const queryEmbedding = await embed(query);
-      const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
+      const results = await ctx.vectorSearch("documentChunks", "embedding", {
         vector: queryEmbedding,
         limit: options?.limit ?? 10,
         filter: (q) => q.eq("orgId", orgId),

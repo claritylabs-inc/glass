@@ -13,7 +13,7 @@ export const getContext = internalQuery({
     if (!notification) return null;
     const connection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", notification.orgId).eq("status", "active"),
       )
       .first();
@@ -21,13 +21,13 @@ export const getContext = internalQuery({
     const primary =
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_connectionId_and_status", (q) =>
+        .withIndex("connection_status", (q) =>
           q.eq("connectionId", connection._id).eq("status", "active"),
         )
         .first()) ??
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_connectionId_and_status", (q) =>
+        .withIndex("connection_status", (q) =>
           q.eq("connectionId", connection._id).eq("status", "unavailable"),
         )
         .first());

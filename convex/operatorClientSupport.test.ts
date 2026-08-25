@@ -167,7 +167,7 @@ describe("operator client support", () => {
     const audits = await fixture.t.run((ctx) =>
       ctx.db
         .query("operatorAuditEvents")
-        .withIndex("by_targetOrgId_createdAt", (q) =>
+        .withIndex("target_created", (q) =>
           q.eq("targetOrgId", fixture.clientOrgId),
         )
         .collect(),

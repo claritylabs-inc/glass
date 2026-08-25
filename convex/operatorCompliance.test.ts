@@ -113,7 +113,7 @@ describe("operator client compliance management", () => {
       requirement: await ctx.db.get(requirementId),
       audits: await ctx.db
         .query("operatorAuditEvents")
-        .withIndex("by_targetOrgId_createdAt", (q) =>
+        .withIndex("target_created", (q) =>
           q.eq("targetOrgId", fixture.clientOrgId),
         )
         .collect(),

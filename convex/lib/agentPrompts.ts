@@ -36,6 +36,10 @@ import { formatCoverageBreakdownForPrompt } from "./coverageBreakdown";
 import type { AgentScope } from "./agentScope";
 import { formatAgentScopePortfolioIndex, orgLabelForScope } from "./agentScope";
 import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
+import {
+  normalizedSearchText,
+  uniqueSearchTerms,
+} from "./searchTokenizer";
 export { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 
 export const MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES = 120;
@@ -185,13 +189,7 @@ export async function buildComplianceRequirementsContext(
 }
 
 function sourceQueryTerms(query: string): string[] {
-  return Array.from(new Set(
-    query
-      .toLowerCase()
-      .split(/[^a-z0-9$.,%-]+/)
-      .map((term) => term.trim())
-      .filter((term) => term.length > 2),
-  ));
+  return uniqueSearchTerms(query, { minimumLength: 3 });
 }
 
 function scoreSourceNode(query: string, terms: string[], node: SourceNodeRecord): number {
@@ -201,10 +199,12 @@ function scoreSourceNode(query: string, terms: string[], node: SourceNodeRecord)
     node.path,
     node.description,
     node.textExcerpt,
-  ].filter(Boolean).join(" ").toLowerCase();
-  let score = query && text.includes(query.toLowerCase()) ? 8 : 0;
+  ].filter(Boolean).join(" ");
+  const normalizedText = normalizedSearchText(text);
+  const normalizedQuery = normalizedSearchText(query);
+  let score = normalizedQuery && normalizedText.includes(normalizedQuery) ? 8 : 0;
   for (const term of terms) {
-    if (text.includes(term)) score += 1;
+    if (normalizedText.includes(term)) score += 1;
   }
   if (node.kind === "table_row" || node.kind === "schedule") score += 1.5;
   return score;
@@ -280,7 +280,7 @@ async function buildVectorContext(
   const queryEmbedding = await embed(queryText);
   const policyMap = new Map(policies.map((p) => [p._id, p]));
 
-  const results = await ctx.vectorSearch("documentChunks", "by_embedding", {
+  const results = await ctx.vectorSearch("documentChunks", "embedding", {
     vector: queryEmbedding,
     limit: DOCUMENT_CHUNK_VECTOR_LIMIT,
     filter: (q) => q.eq("orgId", orgId),

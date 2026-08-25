@@ -152,7 +152,7 @@ export const resolveAccess = internalQuery({
     // Direct membership
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", orgId).eq("userId", userId))
       .first();
 
     if (membership) {
@@ -169,7 +169,7 @@ export const resolveAccess = internalQuery({
     if (orgType === "client" && org.brokerOrgId) {
       const brokerMembership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_orgId_userId", (q) =>
+        .withIndex("organization_user", (q) =>
           q.eq("orgId", org.brokerOrgId!).eq("userId", userId),
         )
         .first();

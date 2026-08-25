@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalQuery } from "../_generated/server";
+import { internalQuery, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   throwUserFacingError,
@@ -7,7 +7,7 @@ import {
 } from "./userFacingErrors";
 import type { ActorRef } from "./actorRef";
 
-export type AgentSurface =
+type AgentSurface =
   | "web"
   | "email"
   | "imessage"
@@ -15,7 +15,7 @@ export type AgentSurface =
   | "mcp"
   | "cli";
 
-export type AgentScopeOrg = {
+type AgentScopeOrg = {
   orgId: Id<"organizations">;
   name: string;
   type: "broker" | "client";
@@ -57,7 +57,7 @@ function orgName(org: Doc<"organizations">): string {
 }
 
 async function validateOperatorInitiatedMessage(
-  ctx: any,
+  ctx: QueryCtx,
   args: {
     orgId: Id<"organizations">;
     userId: Id<"users">;
@@ -82,7 +82,7 @@ async function validateOperatorInitiatedMessage(
     ctx.db.get(args.userId),
     ctx.db
       .query("operatorProfiles")
-      .withIndex("by_userId", (q: any) => q.eq("userId", args.userId))
+      .withIndex("user", (q) => q.eq("userId", args.userId))
       .first(),
     ctx.db.get(operatorInitiated.impersonationSessionId),
   ]);
@@ -100,10 +100,10 @@ async function validateOperatorInitiatedMessage(
   return operatorInitiated;
 }
 
-async function summarizeOrg(_ctx: any, org: Doc<"organizations">, args: {
+function summarizeOrg(org: Doc<"organizations">, args: {
   primaryOrgId: Id<"organizations">;
   canWrite: boolean;
-}): Promise<AgentScopeOrg> {
+}): AgentScopeOrg {
   return {
     orgId: org._id,
     name: orgName(org),
@@ -143,7 +143,7 @@ export const resolveForAction = internalQuery({
       const settings = actor
         ? await ctx.db
             .query("agentChannelSettings")
-            .withIndex("by_clientOrgId", (q) =>
+            .withIndex("client", (q) =>
               q.eq("clientOrgId", actor.clientOrgId),
             )
             .first()
@@ -167,7 +167,7 @@ export const resolveForAction = internalQuery({
         readOrgIds: [primaryOrg._id],
         writableOrgIds: [primaryOrg._id],
         orgs: [
-          await summarizeOrg(ctx, primaryOrg, {
+          summarizeOrg(primaryOrg, {
             primaryOrgId: primaryOrg._id,
             canWrite: true,
           }),
@@ -184,7 +184,7 @@ export const resolveForAction = internalQuery({
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", args.orgId).eq("userId", args.userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", args.orgId).eq("userId", args.userId))
       .first();
     const operatorInitiated = membership
       ? null
@@ -208,7 +208,7 @@ export const resolveForAction = internalQuery({
     ) {
       const settings = await ctx.db
         .query("agentChannelSettings")
-        .withIndex("by_clientOrgId", (q) =>
+        .withIndex("client", (q) =>
           q.eq("clientOrgId", primaryOrg._id),
         )
         .first();
@@ -230,7 +230,12 @@ export const resolveForAction = internalQuery({
         primaryOrgId: primaryOrg._id,
         readOrgIds: [primaryOrg._id],
         writableOrgIds: [primaryOrg._id],
-        orgs: [await summarizeOrg(ctx, primaryOrg, { primaryOrgId: primaryOrg._id, canWrite: true })],
+        orgs: [
+          summarizeOrg(primaryOrg, {
+            primaryOrgId: primaryOrg._id,
+            canWrite: true,
+          }),
+        ],
         focusedOrgId: args.focusedOrgId,
         brokerInternal: false,
         operatorInitiated: operatorInitiated ?? undefined,
@@ -239,7 +244,7 @@ export const resolveForAction = internalQuery({
 
     const clients = await ctx.db
       .query("organizations")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", primaryOrg._id))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", primaryOrg._id))
       .collect();
 
     let focusedOrgId = args.focusedOrgId;
@@ -249,13 +254,13 @@ export const resolveForAction = internalQuery({
     }
 
     const portfolioOrgs = [primaryOrg, ...clients];
-    const orgs = await Promise.all(
-      portfolioOrgs.map((org) =>
-        summarizeOrg(ctx, org, {
-          primaryOrgId: primaryOrg._id,
-          canWrite: org._id === primaryOrg._id || org.brokerOrgId === primaryOrg._id,
-        }),
-      ),
+    const orgs = portfolioOrgs.map((org) =>
+      summarizeOrg(org, {
+        primaryOrgId: primaryOrg._id,
+        canWrite:
+          org._id === primaryOrg._id ||
+          org.brokerOrgId === primaryOrg._id,
+      }),
     );
 
     return {

@@ -85,7 +85,7 @@ export const list = query({
     const access = await requireDirectOrgMember(ctx, args.orgId);
     const accounts = await ctx.db
       .query("connectedEmailAccounts")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     const visible = accounts.filter(
       (account) =>
@@ -96,7 +96,7 @@ export const list = query({
       visible.map(async (account) => {
         const scanState = await ctx.db
           .query("connectedEmailScanStates")
-          .withIndex("by_accountId_mailbox", (query) =>
+          .withIndex("account_mailbox", (query) =>
             query.eq("accountId", account._id).eq("mailbox", "INBOX"),
           )
           .first();
@@ -132,7 +132,7 @@ export const listAccessibleInternal = internalQuery({
   handler: async (ctx, args) => {
     const accounts = await ctx.db
       .query("connectedEmailAccounts")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         q.eq("orgId", args.orgId).eq("status", "active"),
       )
       .collect();
@@ -148,7 +148,7 @@ export const listAutomationEligibleInternal = internalQuery({
   handler: async (ctx) => {
     const accounts = await ctx.db
       .query("connectedEmailAccounts")
-      .withIndex("by_status", (query) => query.eq("status", "active"))
+      .withIndex("status", (query) => query.eq("status", "active"))
       .collect();
     return accounts.filter(isAutomationEligible);
   },
@@ -159,7 +159,7 @@ export const listAutomationEligibleForOrgInternal = internalQuery({
   handler: async (ctx, args) => {
     const accounts = await ctx.db
       .query("connectedEmailAccounts")
-      .withIndex("by_orgId_status", (query) =>
+      .withIndex("organization_status", (query) =>
         query.eq("orgId", args.orgId).eq("status", "active"),
       )
       .collect();
@@ -192,7 +192,7 @@ export const getManageableForUserInternal = internalQuery({
     if (!account || account.status !== "active") return null;
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", account.orgId).eq("userId", args.userId),
       )
       .first();
@@ -228,7 +228,7 @@ export const upsertInternal = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("connectedEmailAccounts")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .filter((q) =>
         q.and(
           q.eq(q.field("userId"), args.userId),
@@ -345,7 +345,7 @@ export const updateSettings = mutation({
     });
     const scanState = await ctx.db
       .query("connectedEmailScanStates")
-      .withIndex("by_accountId_mailbox", (query) =>
+      .withIndex("account_mailbox", (query) =>
         query.eq("accountId", account._id).eq("mailbox", "INBOX"),
       )
       .first();

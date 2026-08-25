@@ -20,7 +20,7 @@ async function getClientDetailRecord(ctx: QueryCtx, clientOrgId: Id<"organizatio
 
   const firstMembership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId", (q) => q.eq("orgId", clientOrgId))
+    .withIndex("organization", (q) => q.eq("orgId", clientOrgId))
     .first();
   const primaryUser = firstMembership ? await ctx.db.get(firstMembership.userId) : null;
 
@@ -40,12 +40,12 @@ async function getClientDetailRecord(ctx: QueryCtx, clientOrgId: Id<"organizatio
 async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">) {
   const clientOrgs = await ctx.db
     .query("organizations")
-    .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+    .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
     .collect();
 
   const pendingInvitations = await ctx.db
     .query("clientInvitations")
-    .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+    .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
     .collect();
   // Legacy invites created without a pre-existing client org.
   const activeInvites = pendingInvitations.filter((i) => i.status === "pending" && !i.clientOrgId);
@@ -57,7 +57,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
   const draftRows = draftOrgs.map((org) => {
     const policiesCountPromise = ctx.db
       .query("policies")
-      .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
+      .withIndex("organization", (q) => q.eq("orgId", org._id))
       .collect()
       .then((r) => r.filter((p) => !p.deletedAt).length);
     return { org, policiesCountPromise };
@@ -68,7 +68,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
       const [activePolicies, lastActivityEvent, assignments, brand] = await Promise.all([
         ctx.db
           .query("policies")
-          .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
+          .withIndex("organization", (q) => q.eq("orgId", org._id))
           .filter((q) =>
             q.and(
               q.eq(q.field("documentType"), "policy"),
@@ -79,21 +79,21 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
           .then((r) => r.length),
         ctx.db
           .query("brokerActivity")
-          .withIndex("by_brokerOrgId_clientOrgId_createdAt", (q) =>
+          .withIndex("broker_client", (q) =>
             q.eq("brokerOrgId", brokerOrgId).eq("clientOrgId", org._id),
           )
           .order("desc")
           .first(),
         ctx.db
           .query("brokerClientAssignments")
-          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", org._id))
+          .withIndex("client", (q) => q.eq("clientOrgId", org._id))
           .collect(),
         orgBrandFields(ctx, org),
       ]);
 
       const firstMembership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_orgId", (q) => q.eq("orgId", org._id))
+        .withIndex("organization", (q) => q.eq("orgId", org._id))
         .first();
       const primaryUser = firstMembership ? await ctx.db.get(firstMembership.userId) : null;
 
@@ -165,7 +165,7 @@ async function listRowsForBroker(ctx: QueryCtx, brokerOrgId: Id<"organizations">
 async function assertBrokerMembership(ctx: QueryCtx, brokerOrgId: Id<"organizations">, userId: Id<"users">) {
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId_userId", (q) => q.eq("orgId", brokerOrgId).eq("userId", userId))
+    .withIndex("organization_user", (q) => q.eq("orgId", brokerOrgId).eq("userId", userId))
     .first();
   if (!membership) throwUserFacingError(userFacingErrorCodes.orgAccessRequired);
 

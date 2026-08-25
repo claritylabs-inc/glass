@@ -15,7 +15,7 @@ export const heartbeat = mutation({
     // Find existing presence record for this user
     const existing = await ctx.db
       .query("presence")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
 
     if (existing) {
@@ -44,7 +44,7 @@ export const getPagePresence = query({
 
     const all = await ctx.db
       .query("presence")
-      .withIndex("by_pageKey", (q) => q.eq("pageKey", args.pageKey))
+      .withIndex("page", (q) => q.eq("pageKey", args.pageKey))
       .collect();
 
     return all

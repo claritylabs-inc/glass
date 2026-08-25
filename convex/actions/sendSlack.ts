@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { formatSlackAnswerText } from "../lib/slackBlocks";
 
 const attachmentValidator = v.object({
   fileId: v.id("_storage"),
@@ -13,6 +14,7 @@ const attachmentValidator = v.object({
 });
 const slackBlocksValidator = v.array(v.any());
 const WORKER_TIMEOUT_MS = 30_000;
+// Break the generated API's recursive reference to this action module.
 const internalApi = internal as any;
 
 class SlackDeliveryError extends Error {
@@ -100,6 +102,10 @@ async function performSend(
   if (attachments.some((attachment) => !attachment.url)) {
     throw new Error("A Slack attachment URL is unavailable");
   }
+  const mrkdwnText = formatSlackAnswerText(args.content);
+  const transportText =
+    mrkdwnText ||
+    (attachments.length > 0 ? "" : "I couldn't complete that request.");
   const worker = workerConfig();
   const response = await fetch(`${worker.url}/send`, {
     method: "POST",
@@ -112,7 +118,7 @@ async function performSend(
       teamId: target.teamId,
       channelId: target.channelId,
       threadTs: args.threadTs,
-      text: args.content,
+      mrkdwnText: transportText,
       blocks: args.blocks,
       attachments: attachments.map(({ filename, contentType, url }) => ({
         filename,
@@ -164,7 +170,7 @@ async function sendSingle(ctx: ActionCtx, args: SlackSendArgs) {
       channelId: claim.row.channelId,
       threadTs: claim.row.threadTs,
       content: claim.row.content,
-      blocks: claim.row.blocks as Array<Record<string, unknown>> | undefined,
+      blocks: claim.row.blocks,
       attachments: claim.row.attachments,
     });
   } catch (error) {

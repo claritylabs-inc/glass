@@ -13,6 +13,15 @@ describe("iMessage response delivery", () => {
     ]);
   });
 
+  it("hard-splits a single oversized token without breaking a code point", () => {
+    const token = `${"a".repeat(519)}😀b`;
+    const segments = splitImessageResponse(token);
+
+    expect(segments).toEqual(["a".repeat(519), "😀b"]);
+    expect(segments.every((segment) => segment.length <= 520)).toBe(true);
+    expect(segments.join("")).toBe(token);
+  });
+
   it("delivers every bubble through one native reply operation", async () => {
     const replyAll = vi.fn(async (segments: string[]) => segments.length);
     const sendChat = vi.fn(async () => undefined);

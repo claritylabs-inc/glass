@@ -66,7 +66,7 @@ describe("sendNotificationImessage", () => {
       notification: await ctx.db.get(notificationId),
       threads: await ctx.db
         .query("threads")
-        .withIndex("by_orgId_threadPhone", (q) =>
+        .withIndex("organization_phone", (q) =>
           q.eq("orgId", orgId).eq("threadPhone", "+14155550123"),
         )
         .collect(),
@@ -175,7 +175,7 @@ describe("sendNotificationImessage", () => {
     const snapshot = await t.run(async (ctx) => ({
       threads: await ctx.db
         .query("threads")
-        .withIndex("by_orgId_threadPhone", (q) =>
+        .withIndex("organization_phone", (q) =>
           q.eq("orgId", seeded.orgId).eq("threadPhone", "+14155550123"),
         )
         .collect(),

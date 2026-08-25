@@ -450,6 +450,10 @@ http.route({
       participants?: Array<{ address: string; displayName?: string }>;
       sourceMessageId?: string;
       receivedAt?: number;
+      recoveryFailure?: {
+        stage: "raw_message" | "attachment_download";
+        error: string;
+      };
       attachments?: Array<{ data: string; mimeType: string; name: string }>;
     };
     try {
@@ -484,6 +488,7 @@ http.route({
           participants: body.participants,
           sourceMessageId: body.sourceMessageId,
           receivedAt: body.receivedAt,
+          recoveryFailure: body.recoveryFailure,
           attachments: body.attachments,
         },
       );
@@ -2061,7 +2066,13 @@ const MCP_TOOLS = [
             "Optional exact original source language supporting the requirement",
         },
       },
-      required: ["kind", "scope", "title", "requirement_text", "line_of_business"],
+      required: [
+        "kind",
+        "scope",
+        "title",
+        "requirement_text",
+        "line_of_business",
+      ],
     },
   },
   {

@@ -3,7 +3,9 @@
 import type { ModelMessage } from "ai";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { buildAssistantMessageContentWithArtifacts } from "./agentMessageHistory";
+import {
+  buildPrivateAgentHistoryMetadata,
+} from "./agentMessageHistory";
 import {
   MAX_IMESSAGE_AUDIO_BYTES,
   isImessageAudioAttachment,
@@ -12,17 +14,17 @@ import {
   type StoredImessageAttachmentRecord,
 } from "./imessageIngress";
 import { tryBuildParsedPdfText } from "./liteparsePreprocessor";
-import {
-  transcribeAudioForOrg,
-  transcribeAudioForPublicTask,
-} from "./models";
+import { transcribeAudioForOrg, transcribeAudioForPublicTask } from "./models";
 
 export type ImessageHistoryMessage = {
+  _id: string;
+  _creationTime: number;
   status?: string;
   role: "user" | "agent" | "system";
   content: string;
   userName?: string;
   responseMessageId?: string;
+  messageKind?: "conversation" | "workflow_status" | "channel_sync";
   toolArtifacts?: Array<{ type: string; data: unknown }>;
   usedTools?: string[];
   attachments?: Array<{ filename: string }>;
@@ -57,9 +59,7 @@ export async function transcribeImessageVoiceMemos(
     attachments?: RawImessageAttachment[];
   },
 ): Promise<ImessageVoiceMemoInput> {
-  const voiceMemos = (args.attachments ?? []).filter(
-    isImessageAudioAttachment,
-  );
+  const voiceMemos = (args.attachments ?? []).filter(isImessageAudioAttachment);
   if (voiceMemos.length === 0) {
     return {
       messageText: args.messageText,
@@ -129,9 +129,9 @@ export async function transcribeImessageVoiceMemos(
 }
 
 export function isImessageStatusCue(message: {
-  responseMessageId?: string;
+  messageKind?: "conversation" | "workflow_status" | "channel_sync";
 }): boolean {
-  return message.responseMessageId?.endsWith(":status") === true;
+  return message.messageKind === "workflow_status";
 }
 
 export function buildRecentImessageTextContext(
@@ -141,6 +141,7 @@ export function buildRecentImessageTextContext(
     status?: string;
     userName?: string;
     responseMessageId?: string;
+    messageKind?: "conversation" | "workflow_status" | "channel_sync";
   }>,
 ): string {
   return messages
@@ -154,35 +155,39 @@ export function buildRecentImessageTextContext(
     .join("\n");
 }
 
-export async function buildImessageModelMessages(
-  args: {
-    history: ImessageHistoryMessage[];
-    messageText: string;
-    currentSpeakerLabel: string;
-    attachmentRecords: StoredImessageAttachmentRecord[];
-  },
-): Promise<ModelMessage[]> {
+export async function buildImessageModelMessages(args: {
+  history: ImessageHistoryMessage[];
+  messageText: string;
+  currentSpeakerLabel: string;
+  attachmentRecords: StoredImessageAttachmentRecord[];
+  currentMessageId: Id<"threadMessages">;
+}): Promise<ModelMessage[]> {
   const modelMessages: ModelMessage[] = [];
 
   for (const msg of args.history) {
     if (msg.status === "processing") continue;
-    if (msg.role === "user" && msg.content === args.messageText) continue;
+    if (msg._id === args.currentMessageId) continue;
     if (isImessageStatusCue(msg)) continue;
 
     if (msg.role === "user") {
       modelMessages.push({
         role: "user",
-        content: msg.userName ? `[${msg.userName}]: ${msg.content}` : msg.content,
+        content: msg.userName
+          ? `[${msg.userName}]: ${msg.content}`
+          : msg.content,
       });
     } else if (msg.role === "agent" && msg.content) {
+      const privateHistory = buildPrivateAgentHistoryMetadata({
+        toolArtifacts: msg.toolArtifacts,
+        usedTools: msg.usedTools,
+        attachments: msg.attachments,
+      });
       modelMessages.push({
         role: "assistant",
-        content: buildAssistantMessageContentWithArtifacts({
-          content: msg.content,
-          toolArtifacts: msg.toolArtifacts,
-          usedTools: msg.usedTools,
-          attachments: msg.attachments,
-        }),
+        content: msg.content,
+        ...(privateHistory
+          ? { providerOptions: { glass: { privateHistory } } }
+          : {}),
       });
     }
   }

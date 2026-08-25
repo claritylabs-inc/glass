@@ -149,7 +149,7 @@ export const listSpansByPolicyAndSpanIds = query({
     if (wanted.size >= BULK_SPAN_LOOKUP_THRESHOLD) {
       const spans = await ctx.db
         .query("sourceSpans")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .collect();
       policySpanMap = new Map(spans.map((span) => [span.spanId, span]));
     }
@@ -162,7 +162,7 @@ export const listSpansByPolicyAndSpanIds = query({
       }
       const span = await ctx.db
         .query("sourceSpans")
-        .withIndex("by_policyId_spanId", (q) =>
+        .withIndex("policy_span", (q) =>
           q.eq("policyId", args.policyId).eq("spanId", spanId),
         )
         .first();
@@ -198,7 +198,7 @@ export const listSpansByPolicyInternal = internalQuery({
   handler: async (ctx, args) => {
     return ctx.db
       .query("sourceSpans")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .collect();
   },
 });
@@ -208,7 +208,7 @@ export const listChunksByPolicy = internalQuery({
   handler: async (ctx, args) => {
     return ctx.db
       .query("sourceChunks")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .collect();
   },
 });
@@ -222,7 +222,7 @@ export const listChunksByOrgInternal = internalQuery({
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 1000), 2000));
     return ctx.db
       .query("sourceChunks")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(limit);
   },
 });
@@ -232,7 +232,7 @@ export const hasChunksForOrg = internalQuery({
   handler: async (ctx, args) => {
     const first = await ctx.db
       .query("sourceChunks")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .first();
     return first !== null;
   },
@@ -297,11 +297,11 @@ export const deleteByPolicy = internalMutation({
   handler: async (ctx, args) => {
     const spans = await ctx.db
       .query("sourceSpans")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .take(100);
     const chunks = await ctx.db
       .query("sourceChunks")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .take(50);
     for (const span of spans) await ctx.db.delete(span._id);
     for (const chunk of chunks) await ctx.db.delete(chunk._id);

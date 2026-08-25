@@ -11,7 +11,7 @@ export const checkRateLimit = internalMutation({
   handler: async (ctx, { tokenId }) => {
     const counter = await ctx.db
       .query("rateLimitCounters")
-      .withIndex("by_tokenId", (q) => q.eq("tokenId", tokenId))
+      .withIndex("token", (q) => q.eq("tokenId", tokenId))
       .first();
 
     const now = Date.now();
@@ -53,7 +53,7 @@ export const getRateLimitStatus = internalQuery({
   handler: async (ctx, { tokenId }) => {
     const counter = await ctx.db
       .query("rateLimitCounters")
-      .withIndex("by_tokenId", (q) => q.eq("tokenId", tokenId))
+      .withIndex("token", (q) => q.eq("tokenId", tokenId))
       .first();
 
     if (!counter) {

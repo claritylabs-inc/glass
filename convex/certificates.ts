@@ -274,7 +274,7 @@ export const listByPolicyInternal = internalQuery({
 
     const rows = await ctx.db
       .query("certificates")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .order("desc")
       .collect();
 
@@ -295,12 +295,12 @@ export const listActivityByPolicy = query({
     const [certificates, holds] = await Promise.all([
       ctx.db
         .query("certificates")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .order("desc")
         .collect(),
       ctx.db
         .query("certificateRequestHolds")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .order("desc")
         .collect(),
     ]);
@@ -326,7 +326,7 @@ export const listByRequirementSource = query({
     await getOrgAccess(ctx, args.orgId, { allowOperator: true });
     const versions = await ctx.db
       .query("certificateVersions")
-      .withIndex("by_requirementSourceDocumentId", (q) =>
+      .withIndex("source", (q) =>
         q.eq("requirementSourceDocumentId", args.requirementSourceDocumentId),
       )
       .order("desc")
@@ -446,7 +446,7 @@ export const getHolderPolicyRelationshipInternal = internalQuery({
   handler: async (ctx, args) => {
     const links = await ctx.db
       .query("certificateHolderPolicyLinks")
-      .withIndex("by_holderId", (q) => q.eq("holderId", args.holderId))
+      .withIndex("holder", (q) => q.eq("holderId", args.holderId))
       .collect();
     const current = links.find((link) =>
       link.policyId === args.policyId && link.status === "current",

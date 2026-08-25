@@ -75,7 +75,7 @@ export async function resolveBrokerIdentityForClient(
 
     const assignments = await ctx.db
       .query("brokerClientAssignments")
-      .withIndex("by_orgId_clientOrgId", (q) =>
+      .withIndex("organization_client", (q) =>
         q.eq("orgId", clientOrg.brokerOrgId!).eq("clientOrgId", clientOrg._id),
       )
       .collect();
@@ -104,7 +104,7 @@ export async function resolveBrokerIdentityForClient(
 
   const assignments = await ctx.db
     .query("brokerClientAssignments")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrg._id))
+    .withIndex("client", (q) => q.eq("clientOrgId", clientOrg._id))
     .collect();
   const assignment =
     primaryAssignment(assignments.filter((row) => !row.orgId)) ??

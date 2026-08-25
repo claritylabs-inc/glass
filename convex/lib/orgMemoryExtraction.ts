@@ -82,6 +82,11 @@ Rules:
       sourceRef: `${args.sourceRef}:fact:${stableFactHash(fact.content.toLowerCase())}`,
       confidence: fact.confidence,
       observedAt: args.observedAt,
+      provenance: {
+        kind: "organization_fact",
+        derivation: "conversation_extraction",
+        schemaVersion: "organization-fact-v1",
+      },
     });
     if (memoryId) memoryIds.push(memoryId);
   }

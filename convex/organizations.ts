@@ -63,7 +63,7 @@ export const updateSlug = mutation({
 
     const existing = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .withIndex("slug", (q) => q.eq("slug", normalized))
       .first();
 
     if (existing && existing._id !== args.brokerOrgId) {
@@ -116,5 +116,5 @@ export const getInternal = internalQuery({
 export const listMembershipsForOrg = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) =>
-    ctx.db.query("orgMemberships").withIndex("by_orgId", (q) => q.eq("orgId", args.orgId)).collect(),
+    ctx.db.query("orgMemberships").withIndex("organization", (q) => q.eq("orgId", args.orgId)).collect(),
 });

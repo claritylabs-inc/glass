@@ -5,17 +5,15 @@ import {
   internalQuery,
   internalMutation,
 } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import {
   cancelDraftOrPendingEmail,
+  invalidateDraftConfirmations,
   restoreCancelledEmailAsDraft,
   updateDraftRecipient,
-  withLegacySendBlockedReason,
 } from "./lib/emailDraftService";
 import { extractStoredEmailPayloadFields } from "./lib/emailPayloadFields";
-
-// ── Queries ──
+import { pendingEmailAttachmentValidator } from "./lib/threadMessageValidators";
 
 export const get = query({
   args: { id: v.id("pendingEmails") },
@@ -23,11 +21,9 @@ export const get = query({
     const { orgId } = await requireOrgAccess(ctx);
     const pending = await ctx.db.get(args.id);
     if (!pending || pending.orgId !== orgId) return null;
-    return await withLegacySendBlockedReason(ctx, pending);
+    return pending;
   },
 });
-
-// ── Mutations ──
 
 export const cancel = mutation({
   args: { id: v.id("pendingEmails") },
@@ -35,24 +31,8 @@ export const cancel = mutation({
     const { orgId } = await requireOrgAccess(ctx);
     const pending = await ctx.db.get(args.id);
     if (!pending || pending.orgId !== orgId) throw new Error("Not found");
-    if (pending.status !== "pending" && pending.status !== "draft") {
+    if (!(await cancelDraftOrPendingEmail(ctx, args.id))) {
       throw new Error("Email already processed");
-    }
-
-    await ctx.db.patch(args.id, { status: "cancelled" });
-
-    if (pending.threadMessageId) {
-      await ctx.db.patch(pending.threadMessageId, {
-        status: "cancelled",
-      });
-    }
-
-    if (pending.chatMessageId) {
-      await ctx.db.patch(pending.chatMessageId, {
-        content: "Email cancelled.",
-        status: undefined,
-        pendingEmailId: args.id,
-      });
     }
   },
 });
@@ -70,8 +50,6 @@ export const restoreAsDraft = mutation({
     await restoreCancelledEmailAsDraft(ctx, args.id);
   },
 });
-
-// ── Internal ──
 
 export const create = internalMutation({
   args: {
@@ -93,16 +71,7 @@ export const create = internalMutation({
     references: v.optional(v.string()),
     renderedText: v.optional(v.string()),
     renderedHtml: v.optional(v.string()),
-    attachments: v.optional(
-      v.array(
-        v.object({
-          filename: v.string(),
-          contentType: v.string(),
-          size: v.number(),
-          fileId: v.id("_storage"),
-        })
-      )
-    ),
+    attachments: v.optional(v.array(pendingEmailAttachmentValidator)),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     sendBlockedReason: v.optional(v.string()),
@@ -160,12 +129,7 @@ export const updateDraftInternal = internalMutation({
     references: v.optional(v.string()),
     renderedText: v.optional(v.string()),
     renderedHtml: v.optional(v.string()),
-    attachments: v.optional(v.array(v.object({
-      filename: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-      fileId: v.id("_storage"),
-    }))),
+    attachments: v.optional(v.array(pendingEmailAttachmentValidator)),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     chatMessageId: v.optional(v.id("threadMessages")),
@@ -185,6 +149,11 @@ export const updateDraftInternal = internalMutation({
       ...patch
     } = args;
     const payloadFields = extractStoredEmailPayloadFields(emailPayload);
+    const existing = await ctx.db.get(id);
+    if (!existing || existing.status !== "draft") {
+      throw new Error("Only draft emails can be updated");
+    }
+    await invalidateDraftConfirmations(ctx, existing, "draft_content_changed");
     await ctx.db.patch(id, {
       ...patch,
       emailPayload,
@@ -197,6 +166,7 @@ export const updateDraftInternal = internalMutation({
       status: "draft",
       scheduledSendTime: 0,
       sendBlockedReason: args.sendBlockedReason,
+      coiBatchAuthorization: undefined,
     });
   },
 });
@@ -223,10 +193,11 @@ export const scheduleDraftInternal = internalMutation({
     }
 
     if (pending.threadId) {
+      const threadId = pending.threadId;
       const recipientEmail = pending.recipientEmail.trim().toLowerCase();
       const threadEmails = await ctx.db
         .query("pendingEmails")
-        .withIndex("by_threadId", (q) => q.eq("threadId", pending.threadId!))
+        .withIndex("thread", (q) => q.eq("threadId", threadId))
         .collect();
       const supersededDrafts = threadEmails.filter(
         (candidate) =>
@@ -264,17 +235,16 @@ export const markSent = internalMutation({
 export const getInternal = internalQuery({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
-    return await withLegacySendBlockedReason(ctx, await ctx.db.get(args.id));
+    return ctx.db.get(args.id);
   },
 });
 
-/** Find pending (not yet sent/cancelled) emails in a thread */
 export const findPendingByThread = internalQuery({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("pendingEmails")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return all.filter((e) => e.status === "pending");
   },
@@ -285,7 +255,7 @@ export const findDraftByThread = internalQuery({
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("pendingEmails")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return all
       .filter((e) => e.status === "draft")
@@ -302,7 +272,7 @@ export const findDraftByThreadAndRecipient = internalQuery({
     const recipientEmail = args.recipientEmail.trim().toLowerCase();
     const all = await ctx.db
       .query("pendingEmails")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return all
       .filter((e) =>
@@ -321,7 +291,7 @@ export const findLatestCancelledByThread = internalQuery({
   handler: async (ctx, args) => {
     const all = await ctx.db
       .query("pendingEmails")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return all
       .filter((e) => e.orgId === args.orgId && e.status === "cancelled")
@@ -335,28 +305,23 @@ export const listDraftsInternal = internalQuery({
     threadId: v.optional(v.id("threads")),
   },
   handler: async (ctx, args) => {
-    const rows = args.threadId
+    const threadId = args.threadId;
+    const rows = threadId
       ? await ctx.db
           .query("pendingEmails")
-          .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId!))
+          .withIndex("thread", (q) => q.eq("threadId", threadId))
           .collect()
       : await ctx.db
           .query("pendingEmails")
-          .withIndex("by_status", (q) => q.eq("status", "draft"))
+          .withIndex("status", (q) => q.eq("status", "draft"))
           .collect();
     const drafts = rows
       .filter((row) => row.orgId === args.orgId && row.status === "draft")
       .sort((a, b) => b._creationTime - a._creationTime);
-    const enriched = await Promise.all(
-      drafts.map((draft) => withLegacySendBlockedReason(ctx, draft)),
-    );
-    return enriched.filter(
-      (draft): draft is Doc<"pendingEmails"> => draft !== null,
-    );
+    return drafts;
   },
 });
 
-/** Cancel a pending email (internal — no auth check) */
 export const cancelInternal = internalMutation({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
@@ -369,5 +334,24 @@ export const restoreAsDraftInternal = internalMutation({
   handler: async (ctx, args) => {
     const restored = await restoreCancelledEmailAsDraft(ctx, args.id);
     return restored ? { id: args.id } : null;
+  },
+});
+
+export const verifyLegacyCoiAttachmentAuthorizationCleanup = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const remaining = await ctx.db
+      .query("pendingEmails")
+      .filter((query) =>
+        query.neq(
+          query.field("allowMultipleCoiAttachments"),
+          undefined,
+        ),
+      )
+      .first();
+    return {
+      complete: remaining === null,
+      remainingSampleId: remaining?._id,
+    };
   },
 });

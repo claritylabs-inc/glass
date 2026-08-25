@@ -196,7 +196,7 @@ async function createFollowUpDraft(
     try {
       await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
         id: draftId,
-        userConfirmedDraft: false,
+        authorization: { kind: "organization_auto_send" },
       });
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: contextMessageId,

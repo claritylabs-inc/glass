@@ -1,8 +1,8 @@
 import type { Doc, Id } from "../_generated/dataModel";
-import { stripInternalAgentActivity } from "./agentMessageHistory";
 import { getClientPortalUrl } from "./domains";
 import { lobLabel, policyLobCodes } from "./linesOfBusiness";
 import { resolvePolicyCarrierDisplay } from "./policyPartyContext";
+import { renderSlackMrkdwn } from "./transportRenderers";
 
 export type SlackBlock = Record<string, unknown>;
 type SlackAgentStep = NonNullable<Doc<"threadMessages">["agentSteps"]>[number];
@@ -47,8 +47,6 @@ const TOOL_LABELS: Record<string, string> = {
   web_research: "Researched the web",
   render_email_preview: "Rendered the email preview",
 };
-const EMOJI_SEQUENCE = /(?:[#*0-9]\uFE0F?\u20E3|\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
-const SLACK_EMOJI_SHORTCODE = /(?<![\w]):[a-z0-9_+-]+:/gi;
 
 function blockId(...parts: Array<string | number>): string {
   return parts
@@ -67,19 +65,7 @@ function escapeMrkdwn(value: string): string {
 }
 
 export function formatSlackAnswerText(value: string): string {
-  return stripInternalAgentActivity(value)
-    .replace(/\[\[(g|i|u)\]:/g, "[[$1:")
-    .replace(/\[\[(?:g|i|u):([\s\S]+?)\]\]/g, "$1")
-    .replace(EMOJI_SEQUENCE, "")
-    .replace(SLACK_EMOJI_SHORTCODE, "")
-    .replace(/^[ \t]+/gm, "")
-    .replace(/[ \t]+$/gm, "")
-    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "_$1_")
-    .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
-    .replace(/\*\*([^*\n]+)\*\*/g, "*$1*")
-    .replace(/__([^_\n]+)__/g, "*$1*")
-    .replace(/~~([^~\n]+)~~/g, "~$1~")
-    .replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, "<$2|$1>");
+  return renderSlackMrkdwn(value);
 }
 
 function displayDate(value: string | undefined): string | undefined {
@@ -129,8 +115,8 @@ function slackCertificateUrl(
 function certificateAttachments(
   message: Pick<Doc<"threadMessages">, "attachments">,
 ) {
-  return (message.attachments ?? []).filter((attachment) =>
-    /(?:certificate|\bcoi\b)/i.test(attachment.filename),
+  return (message.attachments ?? []).filter(
+    (attachment) => attachment.kind === "coi",
   );
 }
 

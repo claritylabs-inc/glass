@@ -65,7 +65,7 @@ export const cleanupPoliciesBatchInternal = internalMutation({
     const page = args.orgId
       ? await ctx.db
           .query("policies")
-          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId!))
+          .withIndex("organization", (q) => q.eq("orgId", args.orgId!))
           .paginate({ numItems: args.limit, cursor: args.cursor ?? null })
       : await ctx.db
           .query("policies")

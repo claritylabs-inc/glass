@@ -20,7 +20,7 @@ const policyVersionKindValidator = v.union(
 async function nextVersionNumber(ctx: MutationCtx, policyId: Id<"policies">) {
   const latest = await ctx.db
     .query("policyVersions")
-    .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", policyId))
+    .withIndex("policy_version", (q) => q.eq("policyId", policyId))
     .order("desc")
     .first();
   return (latest?.versionNumber ?? 0) + 1;
@@ -33,7 +33,7 @@ export const listByPolicy = query({
     if (!access) return [];
     return await ctx.db
       .query("policyVersions")
-      .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy_version", (q) => q.eq("policyId", args.policyId))
       .order("desc")
       .collect();
   },
@@ -44,7 +44,7 @@ export const listByPolicyInternal = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("policyVersions")
-      .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy_version", (q) => q.eq("policyId", args.policyId))
       .order("desc")
       .collect();
   },
@@ -60,7 +60,7 @@ export const listForOrgInternal = internalQuery({
       ? [await ctx.db.get(args.policyId)]
       : await ctx.db
           .query("policies")
-          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+          .withIndex("organization", (q) => q.eq("orgId", args.orgId))
           .collect();
     const activePolicyIds = new Set(
       activePolicies
@@ -71,12 +71,12 @@ export const listForOrgInternal = internalQuery({
     const rows = args.policyId
       ? await ctx.db
           .query("policyVersions")
-          .withIndex("by_policyId_createdAt", (q) => q.eq("policyId", args.policyId!))
+          .withIndex("policy_created", (q) => q.eq("policyId", args.policyId!))
           .order("desc")
           .collect()
       : await ctx.db
           .query("policyVersions")
-          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+          .withIndex("organization", (q) => q.eq("orgId", args.orgId))
           .collect();
     return rows
       .filter(
@@ -98,7 +98,7 @@ export const getCurrentInternal = internalQuery({
     }
     return await ctx.db
       .query("policyVersions")
-      .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy_version", (q) => q.eq("policyId", args.policyId))
       .order("desc")
       .first();
   },
@@ -170,7 +170,7 @@ export const ensureInitialInternal = internalMutation({
 
     const latest = await ctx.db
       .query("policyVersions")
-      .withIndex("by_policyId_versionNumber", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy_version", (q) => q.eq("policyId", args.policyId))
       .order("desc")
       .first();
     if (latest) {

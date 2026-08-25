@@ -77,7 +77,7 @@ describe("own insurance compliance monitor", () => {
     const snapshots = await t.run((ctx) =>
       ctx.db
         .query("complianceChecks")
-        .withIndex("by_requirementId_subjectOrgId", (query) =>
+        .withIndex("requirement_subject", (query) =>
           query
             .eq("requirementId", requirementId)
             .eq("subjectOrgId", orgId),
