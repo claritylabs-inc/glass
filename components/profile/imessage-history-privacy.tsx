@@ -63,6 +63,9 @@ export function ImessagePrivacyPanel({
     state?.deletion?.status === "failed";
   const noHistory =
     previewReady && (state.preview?.threadCount ?? 0) === 0;
+  const description = noHistory
+    ? "There is no iMessage history to delete."
+    : "This does not delete messages from Apple Messages, group chats, or business records such as policies, certificates, and delivery outcomes.";
   return (
     <OperationalPanel>
       <OperationalPanelHeader title="Personal iMessage history" />
@@ -74,9 +77,7 @@ export function ImessagePrivacyPanel({
           <p
             className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
           >
-            This does not delete messages from Apple Messages, group chats, or
-            business records such as policies, certificates, and delivery
-            outcomes.
+            {description}
           </p>
           {active && state?.deletion ? (
             <p
@@ -87,13 +88,7 @@ export function ImessagePrivacyPanel({
               leave this page while deletion continues.
             </p>
           ) : null}
-          {noHistory ? (
-            <p
-              className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              There is no iMessage history to delete.
-            </p>
-          ) : previewFailed ? (
+          {previewFailed ? (
             <p
               className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
             >
