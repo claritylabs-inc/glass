@@ -17,7 +17,6 @@ import {
 } from "../lib/aiUtils";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { AgentScope } from "../lib/agentScope";
 import { isImessageInboundEnabled } from "../lib/imessageConfig";
 import { sendOutboundImessage } from "../lib/imessageOutbound";
 import { getClientPortalUrl } from "../lib/domains";
@@ -34,8 +33,7 @@ import {
   resolveEmailAgentIdentity,
 } from "../lib/emailSubagent";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
-import { pendingEmailDraftFingerprint } from "../lib/actionConfirmationFingerprint";
-import { countCoiAttachments } from "../lib/coiAttachmentGuards";
+import { buildPendingEmailConfirmation } from "../lib/actionConfirmationFingerprint";
 import { buildEmailDraftTextSummary } from "../lib/emailDraftSummary";
 import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
@@ -58,8 +56,8 @@ import { runImessageDeterministicControls } from "../lib/imessageDeterministicCo
 import {
   buildThreadContinuityPrompt,
   buildThreadHistoryToolInstructions,
-  stripInternalAgentActivity,
 } from "../lib/agentMessageHistory";
+import { cleanAgentMarkdownForTransport } from "../lib/transportRenderers";
 import {
   loadBoundedAgentHistory,
   scheduleThreadHistoryCompaction,
@@ -77,6 +75,7 @@ import {
   storeImessageAttachments,
 } from "../lib/imessageIngress";
 import {
+  buildRequirementImportConfirmation,
   decideRequirementAttachmentImport,
   requiredRequirementImportStep,
 } from "../lib/requirementAttachmentIntent";
@@ -251,31 +250,28 @@ export const processInbound = internalAction({
       const phones = [...participantInputs.keys()].filter(
         (address) => !address.includes("@"),
       );
-      const linkedUsers = (await ctx.runQuery(internal.users.findManyByPhones, {
+      const linkedUsers = await ctx.runQuery(internal.users.findManyByPhones, {
         phones,
-      })) as Array<Doc<"users"> | null>;
+      });
       const linkedUserRecords = linkedUsers.filter(
-        (linkedUser): linkedUser is Doc<"users"> => Boolean(linkedUser),
+        (linkedUser) => linkedUser !== null,
       );
       const usersByPhone = new Map(
-        linkedUserRecords
-          .filter((linkedUser) => linkedUser.phone)
-          .map((linkedUser) => [
-            normalizeImessageAddress(linkedUser.phone!),
-            linkedUser,
-          ]),
+        linkedUserRecords.flatMap((linkedUser) =>
+          linkedUser.phone
+            ? [[normalizeImessageAddress(linkedUser.phone), linkedUser] as const]
+            : [],
+        ),
       );
-      const memberships = (await ctx.runQuery(
+      const memberships = await ctx.runQuery(
         internal.orgs.getUserMemberships,
         {
           userIds: linkedUserRecords.map((linkedUser) => linkedUser._id),
         },
-      )) as Array<Doc<"orgMemberships"> | null>;
+      );
       const membershipByUserId = new Map(
         memberships
-          .filter((membership): membership is Doc<"orgMemberships"> =>
-            Boolean(membership),
-          )
+          .filter((membership) => membership !== null)
           .map((membership) => [String(membership.userId), membership]),
       );
 
@@ -429,9 +425,9 @@ export const processInbound = internalAction({
           historyGeneration: privacyRun?.generation,
         },
       );
-      if (privacyLeaseId) {
+      if (privacyRun) {
         await ctx.runMutation(internal.imessagePrivacy.attachAgentRunThread, {
-          leaseId: privacyLeaseId,
+          leaseId: privacyRun.leaseId,
           threadId,
         });
         await ctx.runMutation(
@@ -439,14 +435,14 @@ export const processInbound = internalAction({
           {
             eventKey,
             threadId,
-            historyGeneration: privacyRun!.generation,
+            historyGeneration: privacyRun.generation,
           },
         );
       }
 
       const org = await ctx.runQuery(internal.orgs.getInternal, { id: orgId });
       if (!org) return await finish("Unable to find your account.");
-      const agentScope = (await ctx.runQuery(
+      const agentScope = await ctx.runQuery(
         internal.lib.agentScope.resolveForAction,
         {
           orgId,
@@ -455,20 +451,20 @@ export const processInbound = internalAction({
           allowBrokerPortfolio:
             org.type === "broker" && scope.kind === "single_org",
         },
-      )) as AgentScope;
+      );
       const readOrgIds =
         agentScope.mode === "broker_portfolio"
           ? agentScope.readOrgIds
           : scope.orgIds;
-      const scopedOrgs = (await Promise.all(
+      const scopedOrgs = await Promise.all(
         readOrgIds.map((scopedOrgId) =>
           ctx.runQuery(internal.orgs.getInternal, { id: scopedOrgId }),
         ),
-      )) as Array<Doc<"organizations"> | null>;
+      );
       const orgNamesById = Object.fromEntries(
         scopedOrgs
-          .filter(Boolean)
-          .map((scopedOrg) => [String(scopedOrg!._id), scopedOrg!.name]),
+          .filter((scopedOrg) => scopedOrg !== null)
+          .map((scopedOrg) => [String(scopedOrg._id), scopedOrg.name]),
       );
 
       const userName = user.name?.split(/\s+/)[0];
@@ -536,7 +532,7 @@ export const processInbound = internalAction({
         );
       }
 
-      const history = boundedHistory.messages as ImessageHistoryMessage[];
+      const history: ImessageHistoryMessage[] = boundedHistory.messages;
       const historyForContext = history.filter((msg) => {
         if (msg.status === "processing") return false;
         if (isImessageStatusCue(msg)) return false;
@@ -545,14 +541,14 @@ export const processInbound = internalAction({
       const recentConversationContext =
         buildRecentImessageTextContext(historyForContext);
 
-      const draftEmails = (await ctx.runQuery(
+      const draftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId, orgId },
-      )) as Array<Doc<"pendingEmails">>;
-      const pendingEmails = (await ctx.runQuery(
+      );
+      const pendingEmails = await ctx.runQuery(
         internal.pendingEmails.findPendingByThread,
         { threadId },
-      )) as Array<Doc<"pendingEmails">>;
+      );
       const latestCancelledEmail = await ctx.runQuery(
         internal.pendingEmails.findLatestCancelledByThread,
         { threadId, orgId },
@@ -655,15 +651,17 @@ export const processInbound = internalAction({
           emailReferencedPolicyIds.push(policyId);
         }
       };
-      const orgMembers = (await ctx.runQuery(internal.users.listByOrgInternal, {
+      const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, {
         orgId,
-      })) as Array<Doc<"users">>;
+      });
       const allowedRecipients = [
         ...new Set(
           [
             user.email,
             brokerIdentity?.contactEmail,
-            ...orgMembers.map((member) => member.email),
+            ...orgMembers.flatMap((member) =>
+              member?.email ? [member.email] : [],
+            ),
           ]
             .filter(Boolean)
             .map((email) => String(email).toLowerCase()),
@@ -694,7 +692,10 @@ export const processInbound = internalAction({
         requirementImportResolution.authorization === "auto"
           ? requirementImportResolution.attachments
           : [];
-      const requirementImportDefaultScope = requirementImportResolution.scope;
+      const requirementImportDefaultScope =
+        requirementImportResolution.authorization === "none"
+          ? undefined
+          : requirementImportResolution.scope;
       const imessageWritableOrgIds =
         agentScope.mode === "broker_portfolio"
           ? agentScope.writableOrgIds
@@ -889,7 +890,7 @@ export const processInbound = internalAction({
         | undefined;
       const emailResult = runState.getEmailResult();
       if (emailResult) {
-        const visibleEmailResponseBody = stripInternalAgentActivity(
+        const visibleEmailResponseBody = cleanAgentMarkdownForTransport(
           emailResult.responseBody,
         );
         pendingEmailIdForResponse = emailResult.pendingEmailId;
@@ -897,10 +898,10 @@ export const processInbound = internalAction({
           emailResult.status === "draft" ||
           emailResult.status === "needs_confirmation"
         ) {
-          const draftsAfterEmailTool = (await ctx.runQuery(
+          const draftsAfterEmailTool = await ctx.runQuery(
             internal.pendingEmails.listDraftsInternal,
             { threadId, orgId },
-          )) as Array<Doc<"pendingEmails">>;
+          );
           const draft = emailResult.pendingEmailId
             ? draftsAfterEmailTool.find(
                 (candidate) => candidate._id === emailResult.pendingEmailId,
@@ -908,31 +909,16 @@ export const processInbound = internalAction({
             : draftsAfterEmailTool[0];
           if (draft) {
             pendingEmailIdForResponse = pendingEmailIdForResponse ?? draft._id;
-            const fingerprint = await pendingEmailDraftFingerprint(draft);
-            const multipleCoiAttachments =
-              countCoiAttachments(draft.attachments) > 1;
-            const statusText = multipleCoiAttachments
+            const confirmation = await buildPendingEmailConfirmation(draft);
+            const statusText =
+              confirmation.payload.kind === "coi_batch_delivery"
               ? `Confirm this exact COI batch for ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}. This authorizes the attachment set; use /send 1 after authorization.`
               : `Confirm this exact draft to ${draft.recipientEmail} with subject “${draft.subject}” to send it.`;
             emailConfirmationPrompt = {
               content: statusText,
-              dedupeKey: `imessage-email-confirmation:${String(draft._id)}:${fingerprint}`,
+              dedupeKey: `imessage-email-confirmation:${String(draft._id)}:${confirmation.fingerprint}`,
               pendingEmailId: draft._id,
-              payload: multipleCoiAttachments
-                ? {
-                    kind: "coi_batch_delivery",
-                    pendingEmailId: draft._id,
-                    recipientEmail: draft.recipientEmail.trim().toLowerCase(),
-                    fileIds: (draft.attachments ?? []).map(
-                      ({ fileId }) => fileId,
-                    ),
-                    draftFingerprint: fingerprint,
-                  }
-                : {
-                    kind: "email_send",
-                    pendingEmailIds: [draft._id],
-                    draftFingerprints: [fingerprint],
-                  },
+              payload: confirmation.payload,
             };
             if (!responseText.trim()) responseText = visibleEmailResponseBody;
           }
@@ -963,7 +949,7 @@ export const processInbound = internalAction({
         }
       }
 
-      responseText = stripInternalAgentActivity(responseText);
+      responseText = cleanAgentMarkdownForTransport(responseText);
       if (!responseText.trim() && !responseAlreadySent) {
         console.warn("[imessage] Model completed without response text", {
           fromPhone,
@@ -1082,15 +1068,10 @@ export const processInbound = internalAction({
         responseText = `${responseText.trim()}\n\n${emailConfirmationPrompt.content}`;
       }
 
-      if (
-        !emailResult &&
-        requirementImportResolution.authorization === "confirmation" &&
-        requirementImportResolution.scope &&
-        requirementImportResolution.decision &&
-        agentResponseMessageId
-      ) {
-        const decision = requirementImportResolution.decision;
-        const statusText = `Confirm importing ${requirementImportResolution.attachments.map((attachment) => attachment.filename).join(", ")} as ${requirementImportResolution.scope === "vendors" ? "vendor" : "your organization's"} insurance requirements.`;
+      const requirementConfirmation = !emailResult
+        ? buildRequirementImportConfirmation(requirementImportResolution)
+        : undefined;
+      if (requirementConfirmation && agentResponseMessageId) {
         const statusMessageId = await ctx.runMutation(
           internal.threads.insertWorkflowStatusMessage,
           {
@@ -1099,7 +1080,7 @@ export const processInbound = internalAction({
             channel: "imessage",
             sourceThreadMessageId: agentResponseMessageId,
             dedupeKey: `imessage-requirement-import-confirmation:${eventKey}`,
-            content: statusText,
+            content: requirementConfirmation.message,
           },
         );
         await ctx.runMutation(
@@ -1109,32 +1090,10 @@ export const processInbound = internalAction({
             threadId,
             actor: { kind: "user", userId: user._id },
             promptMessageId: statusMessageId,
-            payload: {
-              kind: "requirement_import",
-              fileIds: requirementImportResolution.attachments.map(
-                (attachment) => attachment.fileId,
-              ),
-              classifications: requirementImportResolution.attachments.map(
-                (attachment) => {
-                  const classification = decision.documents.find(
-                    (document) => document.fileId === String(attachment.fileId),
-                  );
-                  return {
-                    fileId: attachment.fileId,
-                    filename: attachment.filename,
-                    contentType: attachment.contentType,
-                    documentClass: "insurance_requirements" as const,
-                    confidence: classification?.confidence ?? 0,
-                  };
-                },
-              ),
-              scope: requirementImportResolution.scope,
-              confidence: decision.confidence,
-              intentEvidence: decision.intentEvidence,
-            },
+            payload: requirementConfirmation.payload,
           },
         );
-        responseText = `${responseText.trim()}\n\n${statusText}`;
+        responseText = `${responseText.trim()}\n\n${requirementConfirmation.message}`;
       }
 
       const appCards = await mintImessageAppCards(ctx, {

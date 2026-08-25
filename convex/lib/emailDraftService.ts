@@ -1,6 +1,6 @@
-import dayjs from "dayjs";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { invalidatePendingConfirmations } from "../threadActionConfirmations";
 import { normalizeEmailAddress } from "./emailAddress";
 import { parseEmailPayloadRecord } from "./emailPayloadFields";
 
@@ -45,31 +45,19 @@ export async function invalidateDraftConfirmations(
   pending: Doc<"pendingEmails">,
   reason: string,
 ) {
-  if (!pending.threadId) return;
-  const now = dayjs().valueOf();
-  const confirmations = await ctx.db
-    .query("threadActionConfirmations")
-    .withIndex("by_threadId_and_status", (query) =>
-      query.eq("threadId", pending.threadId!).eq("status", "pending"),
-    )
-    .collect();
-  for (const confirmation of confirmations) {
+  const threadId = pending.threadId;
+  if (!threadId) return;
+  await invalidatePendingConfirmations(ctx, threadId, reason, (confirmation) => {
     const payload = confirmation.payload;
-    const applies =
+    return (
       payload.kind === "draft_snapshot" ||
       payload.kind === "email_send" ||
       payload.kind === "email_cancel"
         ? payload.pendingEmailIds.includes(pending._id)
         : payload.kind === "coi_batch_delivery" &&
-          payload.pendingEmailId === pending._id;
-    if (!applies) continue;
-    await ctx.db.patch(confirmation._id, {
-      status: "stale",
-      invalidatedAt: now,
-      invalidationReason: reason,
-      updatedAt: now,
-    });
-  }
+            payload.pendingEmailId === pending._id
+    );
+  });
 }
 
 export async function restoreCancelledEmailAsDraft(

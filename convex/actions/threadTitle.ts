@@ -28,11 +28,51 @@ const ThreadTitleOutputSchema = z.object({
   title: z.string().min(1).max(80),
 });
 
+const TITLE_STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "about",
+  "of",
+  "to",
+  "this",
+  "please",
+  "can",
+  "could",
+  "would",
+  "will",
+  "you",
+  "your",
+  "our",
+  "what",
+  "when",
+  "where",
+  "which",
+  "show",
+  "tell",
+  "need",
+  "want",
+  "does",
+  "have",
+  "new",
+]);
+
+const CONVERSATIONAL_TITLE_OPENINGS = new Set([
+  "can you",
+  "could you",
+  "would you",
+  "will you",
+  "i need",
+  "i want",
+  "we need",
+  "we want",
+]);
+
 type TitleContext = {
   userMessage: string;
   initialContext?: {
     pageType: string;
-    entityId?: string;
     summary?: string;
   };
   attachments?: Array<{
@@ -61,10 +101,8 @@ export function normalizeGeneratedTitle(raw: string): string | null {
     return null;
   }
 
-  const cleaned = stripStructuredTitleNoise(trimmedRaw)
-    .trim()
+  const cleaned = trimmedRaw
     .replace(/^["'“”‘’]|["'“”‘’]$/gu, "")
-    .split("\n")[0]
     .replace(/[.!?]+$/gu, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -78,8 +116,7 @@ export function normalizeGeneratedTitle(raw: string): string | null {
   const words = tokenizeSearchText(cleaned);
   const conversationalOpening = words.slice(0, 2).join(" ");
   if (
-    ["can you", "could you", "would you", "will you", "i need", "i want", "we need", "we want"]
-      .includes(conversationalOpening) ||
+    CONVERSATIONAL_TITLE_OPENINGS.has(conversationalOpening) ||
     words[0] === "please"
   ) {
     return null;
@@ -95,21 +132,17 @@ export function normalizeGeneratedTitle(raw: string): string | null {
 }
 
 export function fallbackTitle(seed: string): string {
-  const stopWords = new Set([
-    "the", "and", "for", "with", "about", "of", "to", "this", "please", "can", "could",
-    "would", "will", "you", "your", "our", "what", "when", "where",
-    "which", "show", "tell", "need", "want", "does", "have", "new",
-  ]);
-  const words = tokenizeSearchText(stripStructuredTitleNoise(seed), {
+  const titleText = stripStructuredTitleNoise(seed);
+  const words = tokenizeSearchText(titleText, {
     minimumLength: 2,
   })
-    .filter((word) => !stopWords.has(word))
+    .filter((word) => !TITLE_STOP_WORDS.has(word))
     .filter((word) => !/^\p{N}+$/u.test(word))
     .slice(0, 4);
 
   const fallbackWords = words.length
     ? words
-    : tokenizeSearchText(seed, { minimumLength: 1 }).slice(0, 4);
+    : tokenizeSearchText(titleText, { minimumLength: 1 }).slice(0, 4);
   const titledWords = fallbackWords
     .map((word) => {
       const [first, ...rest] = Array.from(word);
@@ -152,10 +185,6 @@ export function buildTitlePromptContent(context: TitleContext): string {
   return parts.join("\n\n");
 }
 
-/**
- * Generate a short title for a thread from its first user message.
- * Scheduled from sendMessage so it runs independently of agent response streaming.
- */
 export const generate = internalAction({
   args: {
     threadId: v.id("threads"),
@@ -179,12 +208,17 @@ export const generate = internalAction({
       const promptContent = buildTitlePromptContent({
         userMessage: seed,
         initialContext: thread.initialContext,
-        attachments: message?.attachments
-          ?.filter((attachment: { filename?: string }) => Boolean(attachment.filename))
-          .map((attachment: { filename?: string; contentType?: string }) => ({
-            filename: attachment.filename!,
-            contentType: attachment.contentType,
-          })),
+        attachments: message?.attachments?.flatMap(
+          (attachment: { filename?: string; contentType?: string }) =>
+            attachment.filename
+              ? [
+                  {
+                    filename: attachment.filename,
+                    contentType: attachment.contentType,
+                  },
+                ]
+              : [],
+        ),
       });
 
       let title = fallbackTitle(seed);
@@ -201,7 +235,6 @@ export const generate = internalAction({
         logAiError("threadTitle.generateText", err, { threadId: args.threadId });
       }
 
-      // Re-check the title hasn't been manually changed in the meantime
       const latest = await ctx.runQuery(internal.threads.getInternal, {
         id: args.threadId,
       });

@@ -11,6 +11,7 @@ import {
   isXlsxSpreadsheetAttachment,
   spreadsheetBufferToText,
 } from "./spreadsheetText";
+import type { AgentToolSurface } from "./agentMessageHistory";
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENT_TEXT_CHARS = 80_000;
@@ -62,6 +63,7 @@ export async function readStoredThreadAttachment(
   ctx: ActionCtx,
   args: {
     orgId: Id<"organizations">;
+    surface: AgentToolSurface;
     threadId: Id<"threads">;
     messageId: Id<"threadMessages">;
     filename: string;
@@ -148,7 +150,7 @@ export async function readStoredThreadAttachment(
           parentRequestId: String(args.messageId),
           label: "convex.readThreadAttachment",
           phase: "query_attachment",
-          channel: "web",
+          channel: args.surface,
         },
       },
     );

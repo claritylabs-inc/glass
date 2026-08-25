@@ -116,11 +116,11 @@ describe("operator client policy management", () => {
       policy: await ctx.db.get(policyId),
       policyAudits: await ctx.db
         .query("policyAuditLog")
-        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .withIndex("policy", (q) => q.eq("policyId", policyId))
         .collect(),
       operatorAudits: await ctx.db
         .query("operatorAuditEvents")
-        .withIndex("by_targetOrgId_createdAt", (q) =>
+        .withIndex("target_created", (q) =>
           q.eq("targetOrgId", fixture.clientOrgId),
         )
         .collect(),

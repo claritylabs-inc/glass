@@ -4,7 +4,6 @@ import type { ModelMessage } from "ai";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
-  buildAssistantMessageContentWithArtifacts,
   buildPrivateAgentHistoryMetadata,
 } from "./agentMessageHistory";
 import {
@@ -185,13 +184,10 @@ export async function buildImessageModelMessages(args: {
       });
       modelMessages.push({
         role: "assistant",
-        content: buildAssistantMessageContentWithArtifacts({
-          content: msg.content,
-          toolArtifacts: msg.toolArtifacts,
-          usedTools: msg.usedTools,
-          attachments: msg.attachments,
-        }),
-        providerOptions: { glass: { privateHistory } },
+        content: msg.content,
+        ...(privateHistory
+          ? { providerOptions: { glass: { privateHistory } } }
+          : {}),
       });
     }
   }

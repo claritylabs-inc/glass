@@ -10,11 +10,9 @@ type RawAttachmentInfo = {
   guid: string;
   fileName: string;
   mimeType: string;
-  totalBytes?: number;
 };
 
 type RawMessage = {
-  guid: string;
   content: {
     text?: string;
     attachments: readonly RawAttachmentInfo[];
@@ -33,7 +31,7 @@ export type InboundRecoveryClient = {
   };
 };
 
-export type NormalizedInboundTurn = {
+type NormalizedInboundTurn = {
   sourceMessageId?: string;
   messageText: string;
   attachments: ImessageAttachment[];
@@ -116,7 +114,7 @@ async function readRawAttachment(
   const bytes = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
   if (bytes.length === 0)
     throw new Error("Photon returned an empty attachment");
-  return await readAttachment({
+  return readAttachment({
     name: attachment.fileName,
     mimeType: attachment.mimeType,
     read: async () => bytes,

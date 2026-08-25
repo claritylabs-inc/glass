@@ -94,11 +94,11 @@ describe("policy archive and restore", () => {
       const policy = await ctx.db.get(policyId);
       const audits = await ctx.db
         .query("policyAuditLog")
-        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .withIndex("policy", (q) => q.eq("policyId", policyId))
         .collect();
       const fact = await ctx.db
         .query("policyDeclarationFacts")
-        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .withIndex("policy", (q) => q.eq("policyId", policyId))
         .first();
       return { policy, audits, fact };
     });
@@ -132,7 +132,7 @@ describe("policy archive and restore", () => {
       policy: await ctx.db.get(policyId),
       facts: await ctx.db
         .query("policyDeclarationFacts")
-        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .withIndex("policy", (q) => q.eq("policyId", policyId))
         .collect(),
     }));
     expect(restored.policy?.deletedAt).toBeUndefined();

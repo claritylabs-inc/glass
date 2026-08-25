@@ -8,7 +8,7 @@ import { stripInternalAgentActivity } from "./agentMessageHistory";
 
 const EMOJI_SEQUENCE = /(?:[#*0-9]\uFE0F?\u20E3|\p{Regional_Indicator}{2}|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0F|\p{Emoji_Modifier})?)*)/gu;
 
-function canonicalAgentMarkdown(value: string): string {
+export function cleanAgentMarkdownForTransport(value: string): string {
   return stripConfidenceMarkers(stripInternalAgentActivity(value));
 }
 
@@ -147,7 +147,7 @@ class SlackStreamingRenderer extends SlackMrkdwnRenderer {
 
 function renderWith(renderer: Renderer, markdown: string): string {
   return String(
-    marked.parse(canonicalAgentMarkdown(markdown), {
+    marked.parse(cleanAgentMarkdownForTransport(markdown), {
       async: false,
       gfm: true,
       renderer,
@@ -169,7 +169,7 @@ export function renderSlackStreamingMarkdown(markdown: string): string {
 
 export function renderAgentMarkdownHtml(markdown: string): string {
   const rendered = String(
-    marked.parse(canonicalAgentMarkdown(markdown), {
+    marked.parse(cleanAgentMarkdownForTransport(markdown), {
       async: false,
       gfm: true,
     }),

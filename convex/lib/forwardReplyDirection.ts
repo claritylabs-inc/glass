@@ -33,7 +33,11 @@ export async function decideForwardReplyDirection(
         schema: ForwardReplyDecisionSchema,
         maxOutputTokens: 220,
         system: `Decide who Glass is explicitly directed to answer in an internally forwarded email. Default to the forwarding user. Select original_sender only when the forwarding user's current, unquoted text affirmatively tells Glass to reply or respond to that exact original sender. Merely forwarding a message, asking Glass to review it, or quoting headers is not direction. Honor negation. Return the exact supplied original sender address or omit it.`,
-        prompt: JSON.stringify(args),
+        prompt: JSON.stringify({
+          currentText: args.currentText,
+          forwarderEmail: args.forwarderEmail,
+          originalSender: args.parsedOriginalSender,
+        }),
       },
     );
     const parsed = ForwardReplyDecisionSchema.safeParse(object);

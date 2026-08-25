@@ -22,11 +22,8 @@ import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
-  ImessagePrivacyDialog,
-  ImessagePrivacyPanel,
+  ImessagePrivacySettings,
   ProfileSectionTabs,
-  useImessagePrivacy,
-  useImessagePrivacyActions,
 } from "@/components/profile/imessage-history-privacy";
 
 type OperatorCurrent = FunctionReturnType<typeof api.operator.current>;
@@ -67,14 +64,6 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
   const [profileSection, setProfileSection] = useState<"profile" | "privacy">(
     "profile",
   );
-  const [privacyDialogOpen, setPrivacyDialogOpen] = useState(false);
-  const [privacyBusy, setPrivacyBusy] = useState(false);
-  const imessagePrivacy = useImessagePrivacy();
-  const privacyActions = useImessagePrivacyActions(
-    imessagePrivacy,
-    setPrivacyBusy,
-    setPrivacyDialogOpen,
-  );
   const email = current.user.email ?? current.profile.email;
   const accessLevel = current.profile.role === "owner" ? "Owner" : "Operator";
 
@@ -99,14 +88,6 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
       actions={<AutoSaveStatus status={profileAutoSave.status} />}
     >
       <div className="w-full">
-        <ImessagePrivacyDialog
-          open={privacyDialogOpen}
-          onOpenChange={setPrivacyDialogOpen}
-          state={imessagePrivacy.state}
-          busy={privacyBusy}
-          onPrepare={() => void privacyActions.prepare()}
-          onConfirm={() => void privacyActions.confirm()}
-        />
         <ProfileSectionTabs
           active={profileSection}
           onChange={setProfileSection}
@@ -179,12 +160,7 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
           </>
         ) : (
           <FadeIn when={true} staggerIndex={1} duration={0.4}>
-            <ImessagePrivacyPanel
-              state={imessagePrivacy.state}
-              busy={privacyBusy}
-              onPrepare={() => void privacyActions.prepare()}
-              onReview={() => setPrivacyDialogOpen(true)}
-            />
+            <ImessagePrivacySettings />
           </FadeIn>
         )}
       </div>

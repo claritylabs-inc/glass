@@ -65,7 +65,7 @@ async function activeOperatorForUser(
     ctx.db.get(userId),
     ctx.db
       .query("operatorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first(),
   ]);
   if (!user || user.accountKind !== "operator") return null;
@@ -142,7 +142,7 @@ export async function getActiveOperatorImpersonation(ctx: Ctx) {
   if (!operator) return null;
   const session = await ctx.db
     .query("operatorImpersonationSessions")
-    .withIndex("by_operator_status", (q) =>
+    .withIndex("operator_status", (q) =>
       q.eq("operatorUserId", operator.userId).eq("status", "active"),
     )
     .first();

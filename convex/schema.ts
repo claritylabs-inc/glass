@@ -480,9 +480,9 @@ export default defineSchema({
     cancelledAt: v.optional(v.number()),
     cancelledByUserId: v.optional(v.id("users")),
   })
-    .index("by_target_status", ["targetUserId", "status"])
-    .index("by_newEmail_status", ["newEmail", "status"])
-    .index("by_requestedBy", ["requestedByUserId"]),
+    .index("target_status", ["targetUserId", "status"])
+    .index("email_status", ["newEmail", "status"])
+    .index("requester", ["requestedByUserId"]),
 
   // Organizations — owns company data, agent, broker info
   organizations: defineTable({
@@ -596,10 +596,10 @@ export default defineSchema({
     ),
     agentDisplayName: v.optional(v.string()),
   })
-    .index("by_agentHandle", ["agentHandle"])
-    .index("by_type", ["type"])
-    .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_slug", ["slug"]),
+    .index("handle", ["agentHandle"])
+    .index("type", ["type"])
+    .index("broker", ["brokerOrgId"])
+    .index("slug", ["slug"]),
 
   // Org memberships — links users to orgs
   orgMemberships: defineTable({
@@ -607,9 +607,9 @@ export default defineSchema({
     userId: v.id("users"),
     role: v.union(v.literal("admin"), v.literal("member")),
   })
-    .index("by_userId", ["userId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_userId", ["orgId", "userId"]),
+    .index("user", ["userId"])
+    .index("organization", ["orgId"])
+    .index("organization_user", ["orgId", "userId"]),
 
   // Internal official-site lookup cache. Consumer-facing identity and
   // branding are persisted together on policies.carrierIdentity.
@@ -645,7 +645,7 @@ export default defineSchema({
     sourceUrls: v.array(v.string()),
     enrichmentVersion: v.optional(v.number()),
     updatedAt: v.number(),
-  }).index("by_normalizedName", ["normalizedName"]),
+  }).index("name", ["normalizedName"]),
 
   carrierIdentityBackfillResults: defineTable({
     policyId: v.id("policies"),
@@ -660,8 +660,8 @@ export default defineSchema({
     shouldEnrich: v.boolean(),
     updatedAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_outcome", ["outcome"]),
+    .index("policy", ["policyId"])
+    .index("outcome", ["outcome"]),
 
   acordTaxonomyDryRunPages: defineTable({
     runId: v.string(),
@@ -673,8 +673,8 @@ export default defineSchema({
     isDone: v.boolean(),
     createdAt: v.number(),
   })
-    .index("by_runId", ["runId"])
-    .index("by_runId_cursorKey", ["runId", "cursorKey"]),
+    .index("run", ["runId"])
+    .index("run_cursor", ["runId", "cursorKey"]),
 
   acordTaxonomyWriteRuns: defineTable({
     runId: v.string(),
@@ -690,7 +690,7 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_runId", ["runId"]),
+  }).index("run", ["runId"]),
 
   acordTaxonomyWritePages: defineTable({
     runId: v.string(),
@@ -701,8 +701,8 @@ export default defineSchema({
     isDone: v.boolean(),
     createdAt: v.number(),
   })
-    .index("by_runId", ["runId"])
-    .index("by_runId_cursorKey", ["runId", "cursorKey"]),
+    .index("run", ["runId"])
+    .index("run_cursor", ["runId", "cursorKey"]),
 
   acordTaxonomyWritePolicyResults: defineTable({
     runId: v.string(),
@@ -711,17 +711,17 @@ export default defineSchema({
     report: acordTaxonomyBackfillReportValidator,
     createdAt: v.number(),
   })
-    .index("by_runId", ["runId"])
-    .index("by_runId_cursorKey", ["runId", "cursorKey"])
-    .index("by_runId_policyId", ["runId", "policyId"]),
+    .index("run", ["runId"])
+    .index("run_cursor", ["runId", "cursorKey"])
+    .index("run_policy", ["runId", "policyId"]),
 
   operatorAuthNonces: defineTable({
     nonce: v.string(),
     timestamp: v.number(),
     expiresAt: v.number(),
   })
-    .index("by_nonce", ["nonce"])
-    .index("by_expiresAt", ["expiresAt"]),
+    .index("nonce", ["nonce"])
+    .index("expiration", ["expiresAt"]),
 
   operatorProfiles: defineTable({
     userId: v.id("users"),
@@ -733,10 +733,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_userId", ["userId"])
-    .index("by_email", ["email"])
-    .index("by_slackTeamId_and_slackUserId", ["slackTeamId", "slackUserId"])
-    .index("by_status", ["status"]),
+    .index("user", ["userId"])
+    .index("email", ["email"])
+    .index("slack_user", ["slackTeamId", "slackUserId"])
+    .index("status", ["status"]),
 
   operatorImpersonationSessions: defineTable({
     operatorUserId: v.id("users"),
@@ -746,8 +746,8 @@ export default defineSchema({
     createdAt: v.number(),
     endedAt: v.optional(v.number()),
   })
-    .index("by_operator_status", ["operatorUserId", "status"])
-    .index("by_targetOrgId", ["targetOrgId"]),
+    .index("operator_status", ["operatorUserId", "status"])
+    .index("target", ["targetOrgId"]),
 
   operatorAuditEvents: defineTable({
     operatorUserId: v.id("users"),
@@ -771,8 +771,8 @@ export default defineSchema({
     metadata: v.optional(v.any()),
     createdAt: v.number(),
   })
-    .index("by_operatorUserId_createdAt", ["operatorUserId", "createdAt"])
-    .index("by_targetOrgId_createdAt", ["targetOrgId", "createdAt"]),
+    .index("operator_created", ["operatorUserId", "createdAt"])
+    .index("target_created", ["targetOrgId", "createdAt"]),
 
   modelRoutingEvents: defineTable({
     kind: v.union(
@@ -836,10 +836,10 @@ export default defineSchema({
     timestamp: v.number(),
     expiresAt: v.number(),
   })
-    .index("by_timestamp", ["timestamp"])
-    .index("by_task_timestamp", ["task", "timestamp"])
-    .index("by_runId_timestamp", ["runId", "timestamp"])
-    .index("by_expiresAt", ["expiresAt"]),
+    .index("time", ["timestamp"])
+    .index("task_time", ["task", "timestamp"])
+    .index("run_time", ["runId", "timestamp"])
+    .index("expiration", ["expiresAt"]),
 
   brokerModelSettings: defineTable({
     brokerOrgId: v.id("organizations"),
@@ -881,7 +881,7 @@ export default defineSchema({
     ),
     updatedBy: v.id("users"),
     updatedAt: v.number(),
-  }).index("by_brokerOrgId", ["brokerOrgId"]),
+  }).index("broker", ["brokerOrgId"]),
 
   globalModelSettings: defineTable({
     key: v.literal("default"),
@@ -918,7 +918,7 @@ export default defineSchema({
     webRetrieval: v.optional(webRetrievalValidator),
     updatedBy: v.id("users"),
     updatedAt: v.number(),
-  }).index("by_key", ["key"]),
+  }).index("key", ["key"]),
 
   connectedEmailAccounts: defineTable({
     orgId: v.id("organizations"),
@@ -943,10 +943,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_userId", ["userId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_status", ["status"]),
+    .index("organization", ["orgId"])
+    .index("user", ["userId"])
+    .index("organization_status", ["orgId", "status"])
+    .index("status", ["status"]),
 
   connectedEmailScanStates: defineTable({
     accountId: v.id("connectedEmailAccounts"),
@@ -959,8 +959,8 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     updatedAt: v.number(),
   })
-    .index("by_accountId_mailbox", ["accountId", "mailbox"])
-    .index("by_orgId", ["orgId"]),
+    .index("account_mailbox", ["accountId", "mailbox"])
+    .index("organization", ["orgId"]),
 
   connectedEmailAutomationItems: defineTable({
     accountId: v.id("connectedEmailAccounts"),
@@ -1002,11 +1002,11 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_accountId_messageKey", ["accountId", "messageKey"])
-    .index("by_threadId", ["threadId"])
-    .index("by_threadId_and_emailRef", ["threadId", "emailRef"])
-    .index("by_orgId_updatedAt", ["orgId", "updatedAt"])
-    .index("by_status_updatedAt", ["status", "updatedAt"]),
+    .index("account_message", ["accountId", "messageKey"])
+    .index("thread", ["threadId"])
+    .index("thread_email", ["threadId", "emailRef"])
+    .index("organization_updated", ["orgId", "updatedAt"])
+    .index("status_updated", ["status", "updatedAt"]),
 
   // Org memory — persistent AI knowledge (facts, preferences, risk notes, observations)
   orgMemory: defineTable({
@@ -1045,9 +1045,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_org", ["orgId"])
-    .index("by_org_type", ["orgId", "type"])
-    .index("by_org_sourceRef", ["orgId", "sourceRef"]),
+    .index("organization", ["orgId"])
+    .index("organization_type", ["orgId", "type"])
+    .index("organization_source", ["orgId", "sourceRef"]),
 
   // Passport, integrations, email-inbox, and org-documents tables
   // were removed as part of the v0.2.0 scope simplification. See git history.
@@ -1065,8 +1065,8 @@ export default defineSchema({
     ),
     expiresAt: v.number(),
   })
-    .index("by_email", ["email"])
-    .index("by_orgId", ["orgId"]),
+    .index("email", ["email"])
+    .index("organization", ["orgId"]),
 
   brokerClientAssignments: defineTable({
     orgId: v.optional(v.id("organizations")), // connected broker org; omitted for standalone external contacts
@@ -1080,9 +1080,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
   })
-    .index("by_orgId_clientOrgId", ["orgId", "clientOrgId"])
-    .index("by_orgId_producerId", ["orgId", "producerId"])
-    .index("by_clientOrgId", ["clientOrgId"]),
+    .index("organization_client", ["orgId", "clientOrgId"])
+    .index("organization_producer", ["orgId", "producerId"])
+    .index("client", ["clientOrgId"]),
 
   agentChannelSettings: defineTable({
     clientOrgId: v.id("organizations"),
@@ -1096,7 +1096,7 @@ export default defineSchema({
     updatedByOperatorUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_clientOrgId", ["clientOrgId"]),
+  }).index("client", ["clientOrgId"]),
 
   slackSetupStates: defineTable({
     clientOrgId: v.id("organizations"),
@@ -1144,7 +1144,7 @@ export default defineSchema({
     cancelledAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_clientOrgId", ["clientOrgId"]),
+  }).index("client", ["clientOrgId"]),
 
   slackInstallations: defineTable({
     teamId: v.string(),
@@ -1164,7 +1164,7 @@ export default defineSchema({
     ),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_teamId_and_status", ["teamId", "status"]),
+  }).index("team_status", ["teamId", "status"]),
 
   slackWorkspaceConnections: defineTable({
     clientOrgId: v.id("organizations"),
@@ -1211,9 +1211,9 @@ export default defineSchema({
     updatedAt: v.number(),
     disconnectedAt: v.optional(v.number()),
   })
-    .index("by_clientOrgId_and_status", ["clientOrgId", "status"])
-    .index("by_teamId_and_status", ["teamId", "status"])
-    .index("by_status_and_nextReconciliationAt", [
+    .index("client_status", ["clientOrgId", "status"])
+    .index("team_status", ["teamId", "status"])
+    .index("reconcile_schedule", [
       "status",
       "nextReconciliationAt",
     ]),
@@ -1255,10 +1255,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_connectionId_and_status", ["connectionId", "status"])
-    .index("by_clientOrgId_and_status", ["clientOrgId", "status"])
-    .index("by_hostTeamId_and_hostChannelId", ["hostTeamId", "hostChannelId"])
-    .index("by_connectionId_and_customerChannelId", [
+    .index("connection_status", ["connectionId", "status"])
+    .index("client_status", ["clientOrgId", "status"])
+    .index("host_channel", ["hostTeamId", "hostChannelId"])
+    .index("connection_customer", [
       "connectionId",
       "customerChannelId",
     ]),
@@ -1275,8 +1275,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_connectionId_and_status", ["connectionId", "status"])
-    .index("by_connectionId_and_channelId", ["connectionId", "channelId"]),
+    .index("connection_status", ["connectionId", "status"])
+    .index("connection_channel", ["connectionId", "channelId"]),
 
   slackLifecycleEvents: defineTable({
     source: v.union(
@@ -1316,10 +1316,10 @@ export default defineSchema({
     receivedAt: v.number(),
     processedAt: v.optional(v.number()),
   })
-    .index("by_eventKey", ["eventKey"])
-    .index("by_connectionId_and_receivedAt", ["connectionId", "receivedAt"])
-    .index("by_clientOrgId_and_receivedAt", ["clientOrgId", "receivedAt"])
-    .index("by_status_and_receivedAt", ["status", "receivedAt"]),
+    .index("event", ["eventKey"])
+    .index("connection_received", ["connectionId", "receivedAt"])
+    .index("client_received", ["clientOrgId", "receivedAt"])
+    .index("status_received", ["status", "receivedAt"]),
 
   slackActors: defineTable({
     connectionId: v.id("slackWorkspaceConnections"),
@@ -1338,12 +1338,12 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_connectionId_and_teamId_and_slackUserId", [
+    .index("slack_identity", [
       "connectionId",
       "teamId",
       "slackUserId",
     ])
-    .index("by_operatorUserId", ["operatorUserId"]),
+    .index("operator", ["operatorUserId"]),
 
   slackOAuthStates: defineTable({
     stateHash: v.string(),
@@ -1364,9 +1364,9 @@ export default defineSchema({
     invalidatedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
-    .index("by_stateHash", ["stateHash"])
-    .index("by_clientOrgId_and_purpose", ["clientOrgId", "purpose"])
-    .index("by_expiresAt", ["expiresAt"]),
+    .index("state", ["stateHash"])
+    .index("client_purpose", ["clientOrgId", "purpose"])
+    .index("expiration", ["expiresAt"]),
 
   policyDeliverySettings: defineTable({
     brokerOrgId: v.optional(v.id("organizations")),
@@ -1381,12 +1381,12 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_deliveryOwnerOrgId_and_clientOrgId", [
+    .index("broker", ["brokerOrgId"])
+    .index("owner_client", [
       "deliveryOwnerOrgId",
       "clientOrgId",
     ])
-    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"]),
+    .index("broker_client", ["brokerOrgId", "clientOrgId"]),
 
   policyDeliveryRules: defineTable({
     brokerOrgId: v.optional(v.id("organizations")),
@@ -1405,13 +1405,13 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_deliveryOwnerOrgId_and_clientOrgId", [
+    .index("broker", ["brokerOrgId"])
+    .index("owner_client", [
       "deliveryOwnerOrgId",
       "clientOrgId",
     ])
-    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"])
-    .index("by_brokerOrgId_priority", ["brokerOrgId", "priority"]),
+    .index("broker_client", ["brokerOrgId", "clientOrgId"])
+    .index("broker_priority", ["brokerOrgId", "priority"]),
 
   policyDeliveryJobs: defineTable({
     brokerOrgId: v.optional(v.id("organizations")),
@@ -1440,25 +1440,25 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_brokerOrgId_status_updatedAt", [
+    .index("broker_status", [
       "brokerOrgId",
       "status",
       "updatedAt",
     ])
-    .index("by_deliveryOwnerOrgId_and_status_and_updatedAt", [
+    .index("owner_status", [
       "deliveryOwnerOrgId",
       "status",
       "updatedAt",
     ])
-    .index("by_clientOrgId_updatedAt", ["clientOrgId", "updatedAt"])
-    .index("by_clientOrgId_status_updatedAt", [
+    .index("client_updated", ["clientOrgId", "updatedAt"])
+    .index("client_status", [
       "clientOrgId",
       "status",
       "updatedAt",
     ])
-    .index("by_policyId", ["policyId"])
-    .index("by_threadId", ["threadId"])
-    .index("by_idempotencyKey", ["idempotencyKey"]),
+    .index("policy", ["policyId"])
+    .index("thread", ["threadId"])
+    .index("idempotency", ["idempotencyKey"]),
 
   policyDeliveryAttempts: defineTable({
     jobId: v.id("policyDeliveryJobs"),
@@ -1476,13 +1476,13 @@ export default defineSchema({
     error: v.optional(v.string()),
     createdAt: v.number(),
   })
-    .index("by_jobId", ["jobId"])
-    .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"])
-    .index("by_deliveryOwnerOrgId_and_createdAt", [
+    .index("job", ["jobId"])
+    .index("broker_created", ["brokerOrgId", "createdAt"])
+    .index("owner_created", [
       "deliveryOwnerOrgId",
       "createdAt",
     ])
-    .index("by_clientOrgId_createdAt", ["clientOrgId", "createdAt"]),
+    .index("client_created", ["clientOrgId", "createdAt"]),
 
   connectedOrgRelationships: defineTable({
     // A client/customer org can view selected insurance system-of-record data
@@ -1504,11 +1504,11 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_clientOrgId", ["clientOrgId"])
-    .index("by_vendorOrgId", ["vendorOrgId"])
-    .index("by_clientOrgId_vendorOrgId", ["clientOrgId", "vendorOrgId"])
-    .index("by_vendorOrgId_status", ["vendorOrgId", "status"])
-    .index("by_clientOrgId_status", ["clientOrgId", "status"]),
+    .index("client", ["clientOrgId"])
+    .index("vendor", ["vendorOrgId"])
+    .index("client_vendor", ["clientOrgId", "vendorOrgId"])
+    .index("vendor_status", ["vendorOrgId", "status"])
+    .index("client_status", ["clientOrgId", "status"]),
 
   connectedOrgInvitations: defineTable({
     clientOrgId: v.id("organizations"),
@@ -1531,10 +1531,10 @@ export default defineSchema({
     otpCode: v.optional(v.string()),
     otpCodeExpiresAt: v.optional(v.number()),
   })
-    .index("by_tokenHash", ["inviteTokenHash"])
-    .index("by_clientOrgId", ["clientOrgId"])
-    .index("by_vendorEmail", ["vendorEmail"])
-    .index("by_vendorOrgId", ["vendorOrgId"]),
+    .index("token", ["inviteTokenHash"])
+    .index("client", ["clientOrgId"])
+    .index("email", ["vendorEmail"])
+    .index("vendor", ["vendorOrgId"]),
 
   requirementSourceDocuments: defineTable({
     orgId: v.id("organizations"),
@@ -1570,10 +1570,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_certificateHolderId", ["certificateHolderId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_fileId", ["fileId"]),
+    .index("organization", ["orgId"])
+    .index("holder", ["certificateHolderId"])
+    .index("organization_status", ["orgId", "status"])
+    .index("file", ["fileId"]),
 
   insuranceRequirements: defineTable({
     orgId: v.id("organizations"),
@@ -1697,9 +1697,9 @@ export default defineSchema({
     ),
     minimumRequired: v.optional(v.boolean()),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_status_scope", ["status", "scope"]),
+    .index("organization", ["orgId"])
+    .index("organization_status", ["orgId", "status"])
+    .index("status_scope", ["status", "scope"]),
 
   complianceChecks: defineTable({
     orgId: v.id("organizations"),
@@ -1735,10 +1735,10 @@ export default defineSchema({
     ),
     checkedByUserId: v.optional(v.id("users")),
   })
-    .index("by_requirementId_subjectOrgId", ["requirementId", "subjectOrgId"])
-    .index("by_orgId_subjectOrgId", ["orgId", "subjectOrgId"])
-    .index("by_relationshipId", ["relationshipId"])
-    .index("by_requirementId_subjectOrgId_checkedBy_checkedAt", [
+    .index("requirement_subject", ["requirementId", "subjectOrgId"])
+    .index("organization_subject", ["orgId", "subjectOrgId"])
+    .index("relationship", ["relationshipId"])
+    .index("review_history", [
       "requirementId",
       "subjectOrgId",
       "checkedBy",
@@ -1764,9 +1764,9 @@ export default defineSchema({
     otpCode: v.optional(v.string()),
     otpCodeExpiresAt: v.optional(v.number()),
   })
-    .index("by_tokenHash", ["inviteTokenHash"])
-    .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_status", ["status"]),
+    .index("token", ["inviteTokenHash"])
+    .index("broker", ["brokerOrgId"])
+    .index("status", ["status"]),
 
   policies: defineTable({
     ...pipelineFields(),
@@ -2360,11 +2360,11 @@ export default defineSchema({
     ),
     currentPolicyVersionId: v.optional(v.id("policyVersions")),
   })
-    .index("by_fileId", ["fileId"])
-    .index("by_carrier", ["carrier"])
-    .index("by_policyYear", ["policyYear"])
-    .index("by_userId", ["userId"])
-    .index("by_orgId", ["orgId"]),
+    .index("file", ["fileId"])
+    .index("carrier", ["carrier"])
+    .index("year", ["policyYear"])
+    .index("user", ["userId"])
+    .index("organization", ["orgId"]),
 
   // Runtime state for policy extraction. Keep high-churn logs, leases, and
   // large resumable checkpoints off the policy document itself.
@@ -2394,8 +2394,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_pipelineStatus_updatedAt", ["pipelineStatus", "updatedAt"]),
+    .index("policy", ["policyId"])
+    .index("status_updated", ["pipelineStatus", "updatedAt"]),
 
   // Narrow queue for external Railway extraction workers. Claim polling reads
   // this table instead of scanning all running pipeline records.
@@ -2409,8 +2409,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_status_updatedAt", ["status", "updatedAt"]),
+    .index("policy", ["policyId"])
+    .index("status_updated", ["status", "updatedAt"]),
 
   // Lightweight first-read queue. Preview workers populate bounded canonical
   // fields before the full source-backed extraction pipeline completes.
@@ -2424,8 +2424,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_status_updatedAt", ["status", "updatedAt"]),
+    .index("policy", ["policyId"])
+    .index("status_updated", ["status", "updatedAt"]),
 
   // Storage-backed transient extraction artifacts. These records point at JSON
   // blobs in Convex file storage for pre-embedding chunk/source-span payloads,
@@ -2448,8 +2448,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_policyId_kind", ["policyId", "kind"]),
+    .index("policy", ["policyId"])
+    .index("policy_kind", ["policyId", "kind"]),
 
   policyExtractionTraceSessions: defineTable({
     traceId: v.string(),
@@ -2480,12 +2480,12 @@ export default defineSchema({
     expiresAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_traceId", ["traceId"])
-    .index("by_startedAt", ["startedAt"])
-    .index("by_status_startedAt", ["status", "startedAt"])
-    .index("by_orgId_startedAt", ["orgId", "startedAt"])
-    .index("by_policyId_startedAt", ["policyId", "startedAt"])
-    .index("by_expiresAt", ["expiresAt"]),
+    .index("trace", ["traceId"])
+    .index("started", ["startedAt"])
+    .index("status_started", ["status", "startedAt"])
+    .index("organization_started", ["orgId", "startedAt"])
+    .index("policy_started", ["policyId", "startedAt"])
+    .index("expiration", ["expiresAt"]),
 
   policyExtractionTraceEvents: defineTable({
     traceId: v.string(),
@@ -2526,9 +2526,9 @@ export default defineSchema({
     details: v.optional(v.any()),
     expiresAt: v.number(),
   })
-    .index("by_traceId_timestamp", ["traceId", "timestamp"])
-    .index("by_policyId_timestamp", ["policyId", "timestamp"])
-    .index("by_expiresAt", ["expiresAt"]),
+    .index("trace_time", ["traceId", "timestamp"])
+    .index("policy_time", ["policyId", "timestamp"])
+    .index("expiration", ["expiresAt"]),
 
   // ── Policy Files (multi-file support) ──
 
@@ -2552,9 +2552,9 @@ export default defineSchema({
     createdAt: v.number(),
     orgId: v.id("organizations"),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_fileId", ["fileId"]),
+    .index("policy", ["policyId"])
+    .index("organization", ["orgId"])
+    .index("file", ["fileId"]),
 
   policyVersions: defineTable({
     orgId: v.id("organizations"),
@@ -2574,11 +2574,11 @@ export default defineSchema({
     createdByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_policyId_versionNumber", ["policyId", "versionNumber"])
-    .index("by_policyId_createdAt", ["policyId", "createdAt"])
-    .index("by_caseId", ["caseId"]),
+    .index("organization", ["orgId"])
+    .index("policy", ["policyId"])
+    .index("policy_version", ["policyId", "versionNumber"])
+    .index("policy_created", ["policyId", "createdAt"])
+    .index("case", ["caseId"]),
 
   certificateHolders: defineTable({
     orgId: v.id("organizations"),
@@ -2610,10 +2610,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_normalizedName", ["orgId", "normalizedName"])
-    .index("by_orgId_normalizedEmail", ["orgId", "normalizedEmail"])
-    .index("by_orgId_normalizedAddressKey", ["orgId", "normalizedAddressKey"]),
+    .index("organization", ["orgId"])
+    .index("organization_name", ["orgId", "normalizedName"])
+    .index("organization_email", ["orgId", "normalizedEmail"])
+    .index("organization_address", ["orgId", "normalizedAddressKey"]),
 
   certificateHolderPolicyLinks: defineTable({
     orgId: v.id("organizations"),
@@ -2635,11 +2635,11 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_holderId", ["holderId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_policyId_status", ["policyId", "status"])
-    .index("by_policyVersionId", ["policyVersionId"]),
+    .index("organization", ["orgId"])
+    .index("holder", ["holderId"])
+    .index("policy", ["policyId"])
+    .index("policy_status", ["policyId", "status"])
+    .index("policy_version", ["policyVersionId"]),
 
   policyCertificates: defineTable({
     orgId: v.id("organizations"),
@@ -2660,13 +2660,13 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_holderId", ["holderId"])
-    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_policyId_status", ["policyId", "status"])
-    .index("by_dedupeKey", ["dedupeKey"]),
+    .index("organization", ["orgId"])
+    .index("policy", ["policyId"])
+    .index("holder", ["holderId"])
+    .index("source", ["requirementSourceDocumentId"])
+    .index("organization_status", ["orgId", "status"])
+    .index("policy_status", ["policyId", "status"])
+    .index("dedupe", ["dedupeKey"]),
 
   certificateVersions: defineTable({
     orgId: v.id("organizations"),
@@ -2704,14 +2704,14 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_certificateId", ["certificateId"])
-    .index("by_certificateId_versionNumber", ["certificateId", "versionNumber"])
-    .index("by_policyId", ["policyId"])
-    .index("by_policyVersionId", ["policyVersionId"])
-    .index("by_holderId", ["holderId"])
-    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
-    .index("by_fileId", ["fileId"]),
+    .index("organization", ["orgId"])
+    .index("certificate", ["certificateId"])
+    .index("certificate_version", ["certificateId", "versionNumber"])
+    .index("policy", ["policyId"])
+    .index("policy_version", ["policyVersionId"])
+    .index("holder", ["holderId"])
+    .index("source", ["requirementSourceDocumentId"])
+    .index("file", ["fileId"]),
 
   certificateWorkflowSettings: defineTable({
     brokerOrgId: v.optional(v.id("organizations")),
@@ -2727,9 +2727,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_brokerOrgId", ["brokerOrgId"])
-    .index("by_brokerOrgId_clientOrgId", ["brokerOrgId", "clientOrgId"])
-    .index("by_clientOrgId", ["clientOrgId"]),
+    .index("broker", ["brokerOrgId"])
+    .index("broker_client", ["brokerOrgId", "clientOrgId"])
+    .index("client", ["clientOrgId"]),
 
   certificateWorkflowJobs: defineTable({
     orgId: v.id("organizations"),
@@ -2761,13 +2761,13 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_policyId", ["policyId"])
-    .index("by_certificateId", ["certificateId"])
-    .index("by_holderId", ["holderId"])
-    .index("by_threadId", ["threadId"])
-    .index("by_idempotencyKey", ["idempotencyKey"]),
+    .index("organization", ["orgId"])
+    .index("organization_status", ["orgId", "status"])
+    .index("policy", ["policyId"])
+    .index("certificate", ["certificateId"])
+    .index("holder", ["holderId"])
+    .index("thread", ["threadId"])
+    .index("idempotency", ["idempotencyKey"]),
 
   certificates: defineTable({
     orgId: v.id("organizations"),
@@ -2804,10 +2804,10 @@ export default defineSchema({
     requestSignature: v.optional(v.string()),
     createdAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
-    .index("by_fileId", ["fileId"]),
+    .index("policy", ["policyId"])
+    .index("organization", ["orgId"])
+    .index("source", ["requirementSourceDocumentId"])
+    .index("file", ["fileId"]),
 
   certificateRequestHolds: defineTable({
     orgId: v.id("organizations"),
@@ -2859,11 +2859,11 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_requirementSourceDocumentId", ["requirementSourceDocumentId"])
-    .index("by_policyChangeCaseId", ["policyChangeCaseId"])
-    .index("by_status", ["status"]),
+    .index("organization", ["orgId"])
+    .index("policy", ["policyId"])
+    .index("source", ["requirementSourceDocumentId"])
+    .index("change", ["policyChangeCaseId"])
+    .index("status", ["status"]),
 
   // ── Notifications ──
 
@@ -2958,11 +2958,11 @@ export default defineSchema({
     ),
     slackSentAt: v.optional(v.number()),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_status", ["orgId", "status"])
-    .index("by_orgId_type", ["orgId", "type"])
-    .index("by_userId", ["userId"])
-    .index("by_orgId_coalesceKey_status", ["orgId", "coalesceKey", "status"]),
+    .index("organization", ["orgId"])
+    .index("organization_status", ["orgId", "status"])
+    .index("organization_type", ["orgId", "type"])
+    .index("user", ["userId"])
+    .index("coalesce_status", ["orgId", "coalesceKey", "status"]),
 
   notificationPreferences: defineTable({
     userId: v.id("users"),
@@ -2972,8 +2972,8 @@ export default defineSchema({
     enabled: v.boolean(),
     updatedAt: v.number(),
   })
-    .index("by_userId_orgId", ["userId", "orgId"])
-    .index("by_userId_orgId_type_channel", [
+    .index("user_organization", ["userId", "orgId"])
+    .index("preference_scope", [
       "userId",
       "orgId",
       "type",
@@ -3003,13 +3003,13 @@ export default defineSchema({
     summary: v.string(),
     createdAt: v.number(),
   })
-    .index("by_brokerOrgId_createdAt", ["brokerOrgId", "createdAt"])
-    .index("by_brokerOrgId_clientOrgId_createdAt", [
+    .index("broker_created", ["brokerOrgId", "createdAt"])
+    .index("broker_client", [
       "brokerOrgId",
       "clientOrgId",
       "createdAt",
     ])
-    .index("by_clientOrgId_createdAt", ["clientOrgId", "createdAt"]),
+    .index("client_created", ["clientOrgId", "createdAt"]),
 
   // ── Vector Search (cl-sdk 0.5.0+) ──
 
@@ -3024,9 +3024,9 @@ export default defineSchema({
     embedding: v.array(v.float64()), // 1536-dim vector (text-embedding-3-small)
     createdAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_chunkId", ["chunkId"])
+    .index("policy", ["policyId"])
+    .index("organization", ["orgId"])
+    .index("chunk", ["chunkId"])
     .vectorIndex("embedding", {
       vectorField: "embedding",
       dimensions: 1536,
@@ -3060,11 +3060,11 @@ export default defineSchema({
     metadata: v.optional(v.any()),
     createdAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_spanId", ["spanId"])
-    .index("by_policyId_spanId", ["policyId", "spanId"])
-    .index("by_policyId_parentSpanId", ["policyId", "parentSpanId"]),
+    .index("policy", ["policyId"])
+    .index("organization", ["orgId"])
+    .index("span", ["spanId"])
+    .index("policy_span", ["policyId", "spanId"])
+    .index("policy_parent", ["policyId", "parentSpanId"]),
 
   // Source-tree hierarchy over raw source spans. This is the canonical
   // retrieval/index layer for policy wording and source-backed facts.
@@ -3088,11 +3088,11 @@ export default defineSchema({
     embedding: v.optional(v.array(v.float64())),
     createdAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_nodeId", ["nodeId"])
-    .index("by_policyId_nodeId", ["policyId", "nodeId"])
-    .index("by_policyId_parentNodeId", ["policyId", "parentNodeId"]),
+    .index("policy", ["policyId"])
+    .index("organization", ["orgId"])
+    .index("node", ["nodeId"])
+    .index("policy_node", ["policyId", "nodeId"])
+    .index("policy_parent", ["policyId", "parentNodeId"]),
 
   // Compatibility chunks over source spans. Source tree nodes are the primary
   // retrieval layer; these preserve span IDs for legacy lookup surfaces.
@@ -3107,9 +3107,9 @@ export default defineSchema({
     embedding: v.optional(v.array(v.float64())),
     createdAt: v.number(),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_chunkId", ["chunkId"]),
+    .index("policy", ["policyId"])
+    .index("organization", ["orgId"])
+    .index("chunk", ["chunkId"]),
 
   policyChangeCases: defineTable({
     orgId: v.id("organizations"),
@@ -3144,9 +3144,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId_status", ["orgId", "status"]),
+    .index("organization", ["orgId"])
+    .index("policy", ["policyId"])
+    .index("organization_status", ["orgId", "status"]),
 
   policyUpdateRuns: defineTable({
     orgId: v.id("organizations"),
@@ -3170,10 +3170,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_caseId", ["caseId"])
-    .index("by_status", ["status"]),
+    .index("organization", ["orgId"])
+    .index("policy", ["policyId"])
+    .index("case", ["caseId"])
+    .index("status", ["status"]),
 
   policyDeclarationFacts: defineTable({
     orgId: v.id("organizations"),
@@ -3202,11 +3202,11 @@ export default defineSchema({
     active: v.boolean(),
     recordHash: v.string(),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId_fieldGroup", ["orgId", "fieldGroup"])
-    .index("by_policyId_active", ["policyId", "active"])
-    .index("by_recordHash", ["recordHash"]),
+    .index("organization", ["orgId"])
+    .index("policy", ["policyId"])
+    .index("organization_group", ["orgId", "fieldGroup"])
+    .index("policy_active", ["policyId", "active"])
+    .index("record", ["recordHash"]),
 
   pcePackets: defineTable({
     orgId: v.id("organizations"),
@@ -3217,9 +3217,9 @@ export default defineSchema({
     createdAt: v.number(),
     submittedAt: v.optional(v.number()),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_caseId", ["caseId"])
-    .index("by_policyId", ["policyId"]),
+    .index("organization", ["orgId"])
+    .index("case", ["caseId"])
+    .index("policy", ["policyId"]),
 
   caseMessages: defineTable({
     orgId: v.id("organizations"),
@@ -3245,8 +3245,8 @@ export default defineSchema({
     createdByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
   })
-    .index("by_caseId", ["caseId"])
-    .index("by_orgId", ["orgId"]),
+    .index("case", ["caseId"])
+    .index("organization", ["orgId"]),
 
   caseEvidenceLinks: defineTable({
     orgId: v.id("organizations"),
@@ -3256,9 +3256,9 @@ export default defineSchema({
     quote: v.optional(v.string()),
     createdAt: v.number(),
   })
-    .index("by_caseId", ["caseId"])
-    .index("by_sourceSpanId", ["sourceSpanId"])
-    .index("by_orgId", ["orgId"]),
+    .index("case", ["caseId"])
+    .index("span", ["sourceSpanId"])
+    .index("organization", ["orgId"]),
 
   caseValidationReports: defineTable({
     orgId: v.id("organizations"),
@@ -3271,8 +3271,8 @@ export default defineSchema({
     issues: v.any(),
     createdAt: v.number(),
   })
-    .index("by_caseId", ["caseId"])
-    .index("by_orgId", ["orgId"]),
+    .index("case", ["caseId"])
+    .index("organization", ["orgId"]),
 
   // Conversation turns for cross-thread memory search
   conversationTurns: defineTable({
@@ -3283,8 +3283,8 @@ export default defineSchema({
     embedding: v.array(v.float64()), // 1536-dim vector
     createdAt: v.number(),
   })
-    .index("by_conversationId", ["conversationId"])
-    .index("by_orgId", ["orgId"])
+    .index("conversation", ["conversationId"])
+    .index("organization", ["orgId"])
     .vectorIndex("embedding", {
       vectorField: "embedding",
       dimensions: 1536,
@@ -3302,16 +3302,17 @@ export default defineSchema({
     leadUseCase: v.optional(v.string()),
     stage: publicDemoLeadStageValidator,
     ctaStatus: publicDemoCtaStatusValidator,
+    safetyNoticeSent: v.optional(v.boolean()),
     turnCount: v.number(),
     lastMessageAt: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_channel_senderHash", ["channel", "senderHash"])
-    .index("by_lastMessageAt", ["lastMessageAt"])
-    .index("by_stage_lastMessageAt", ["stage", "lastMessageAt"])
-    .index("by_ctaStatus_lastMessageAt", ["ctaStatus", "lastMessageAt"])
-    .index("by_leadEmail", ["leadEmail"]),
+    .index("channel_sender", ["channel", "senderHash"])
+    .index("activity", ["lastMessageAt"])
+    .index("stage_activity", ["stage", "lastMessageAt"])
+    .index("cta_activity", ["ctaStatus", "lastMessageAt"])
+    .index("email", ["leadEmail"]),
 
   publicDemoChatLogs: defineTable({
     conversationId: v.id("publicDemoConversations"),
@@ -3344,9 +3345,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
   })
-    .index("by_conversationId_createdAt", ["conversationId", "createdAt"])
-    .index("by_channel_createdAt", ["channel", "createdAt"])
-    .index("by_createdAt", ["createdAt"]),
+    .index("conversation_created", ["conversationId", "createdAt"])
+    .index("channel_created", ["channel", "createdAt"])
+    .index("created", ["createdAt"]),
 
   publicDemoSalesTranscripts: defineTable({
     conversationId: v.id("publicDemoConversations"),
@@ -3371,10 +3372,10 @@ export default defineSchema({
     createdAt: v.number(),
     lastUpdatedAt: v.number(),
   })
-    .index("by_conversationId", ["conversationId"])
-    .index("by_lastUpdatedAt", ["lastUpdatedAt"])
-    .index("by_channel_lastUpdatedAt", ["channel", "lastUpdatedAt"])
-    .index("by_stage_lastUpdatedAt", ["stage", "lastUpdatedAt"]),
+    .index("conversation", ["conversationId"])
+    .index("updated", ["lastUpdatedAt"])
+    .index("channel_updated", ["channel", "lastUpdatedAt"])
+    .index("stage_updated", ["stage", "lastUpdatedAt"]),
 
   policyAuditLog: defineTable({
     policyId: v.optional(v.id("policies")),
@@ -3384,8 +3385,8 @@ export default defineSchema({
     detail: v.optional(v.string()),
     metadata: v.optional(v.any()),
   })
-    .index("by_policyId", ["policyId"])
-    .index("by_orgId", ["orgId"]),
+    .index("policy", ["policyId"])
+    .index("organization", ["orgId"]),
 
   // ── Unified Threads ──
 
@@ -3451,20 +3452,22 @@ export default defineSchema({
       ),
     ),
   })
-    .index("by_orgId", ["orgId"])
-    .index("by_orgId_lastMessageAt", ["orgId", "lastMessageAt"])
-    .index("by_orgId_clientMutationId", ["orgId", "clientMutationId"])
-    .index("by_threadEmail", ["threadEmail"])
-    .index("by_threadPhone", ["threadPhone"])
-    .index("by_orgId_threadPhone", ["orgId", "threadPhone"])
-    .index("by_orgId_deliveryContactKey", ["orgId", "deliveryContactKey"])
-    .index("by_imessageChatGuid", ["imessageChatGuid"])
-    .index("by_orgId_imessageChatGuid", ["orgId", "imessageChatGuid"])
-    .index(
-      "by_createdBy_and_originChannel_and_visibility_and_imessageHistoryGeneration",
-      ["createdBy", "originChannel", "visibility", "imessageHistoryGeneration"],
-    )
-    .index("by_slackConnectionId_and_slackChannelId_and_slackThreadTs", [
+    .index("organization", ["orgId"])
+    .index("organization_activity", ["orgId", "lastMessageAt"])
+    .index("organization_mutation", ["orgId", "clientMutationId"])
+    .index("email", ["threadEmail"])
+    .index("phone", ["threadPhone"])
+    .index("organization_phone", ["orgId", "threadPhone"])
+    .index("organization_delivery", ["orgId", "deliveryContactKey"])
+    .index("chat", ["imessageChatGuid"])
+    .index("organization_chat", ["orgId", "imessageChatGuid"])
+    .index("private_history", [
+      "createdBy",
+      "originChannel",
+      "visibility",
+      "imessageHistoryGeneration",
+    ])
+    .index("slack_thread", [
       "slackConnectionId",
       "slackChannelId",
       "slackThreadTs",
@@ -3578,19 +3581,19 @@ export default defineSchema({
     pendingEmailId: v.optional(v.id("pendingEmails")),
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   })
-    .index("by_threadId", ["threadId"])
-    .index("by_orgId_clientMutationId", ["orgId", "clientMutationId"])
-    .index("by_messageId", ["messageId"])
-    .index("by_responseMessageId", ["responseMessageId"])
-    .index("by_resendEmailId", ["resendEmailId"])
-    .index("by_replyToMessageId", ["replyToMessageId"])
-    .index("by_threadId_and_slackMessageTs", ["threadId", "slackMessageTs"])
-    .index("by_slackTeamId_and_slackMessageTs", [
+    .index("thread", ["threadId"])
+    .index("organization_mutation", ["orgId", "clientMutationId"])
+    .index("message", ["messageId"])
+    .index("response", ["responseMessageId"])
+    .index("resend", ["resendEmailId"])
+    .index("reply", ["replyToMessageId"])
+    .index("thread_message", ["threadId", "slackMessageTs"])
+    .index("team_message", [
       "slackTeamId",
       "slackMessageTs",
     ])
-    .index("by_threadId_and_dedupeKey", ["threadId", "dedupeKey"])
-    .searchIndex("search_content", {
+    .index("thread_dedupe", ["threadId", "dedupeKey"])
+    .searchIndex("content", {
       searchField: "content",
       filterFields: ["threadId"],
     }),
@@ -3617,8 +3620,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_threadId", ["threadId"])
-    .index("by_status_and_updatedAt", ["status", "updatedAt"]),
+    .index("thread", ["threadId"]),
 
   threadActionConfirmations: defineTable({
     orgId: v.id("organizations"),
@@ -3634,10 +3636,7 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     invalidatedAt: v.optional(v.number()),
     invalidationReason: v.optional(v.string()),
-  })
-    .index("by_threadId_and_status", ["threadId", "status"])
-    .index("by_promptMessageId", ["promptMessageId"])
-    .index("by_expiresAt", ["expiresAt"]),
+  }).index("thread_status", ["threadId", "status"]),
 
   imessagePrivacyStates: defineTable({
     userId: v.id("users"),
@@ -3645,7 +3644,7 @@ export default defineSchema({
     activeDeletionJobId: v.optional(v.id("imessageHistoryDeletionJobs")),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_userId", ["userId"]),
+  }).index("user", ["userId"]),
 
   imessageAgentRunLeases: defineTable({
     userId: v.id("users"),
@@ -3656,14 +3655,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_leaseKey", ["leaseKey"])
-    .index("by_threadId", ["threadId"])
-    .index("by_userId_and_expiresAt", ["userId", "expiresAt"])
-    .index("by_userId_and_generation_and_expiresAt", [
-      "userId",
-      "generation",
-      "expiresAt",
-    ]),
+    .index("lease", ["leaseKey"])
+    .index("thread", ["threadId"])
+    .index("user_expiration", ["userId", "expiresAt"]),
 
   imessageHistoryDeletionJobs: defineTable({
     userId: v.id("users"),
@@ -3677,8 +3671,6 @@ export default defineSchema({
       v.literal("failed"),
     ),
     generationCutoff: v.number(),
-    inventoryComplete: v.boolean(),
-    threadCursor: v.optional(v.string()),
     threadCount: v.number(),
     messageCount: v.number(),
     fileCount: v.number(),
@@ -3692,15 +3684,11 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     updatedAt: v.number(),
     lastError: v.optional(v.string()),
-  })
-    .index("by_userId_and_requestedAt", ["userId", "requestedAt"])
-    .index("by_userId_and_status", ["userId", "status"]),
+  }).index("user_requested", ["userId", "requestedAt"]),
 
   imessageHistoryDeletionTargets: defineTable({
     jobId: v.id("imessageHistoryDeletionJobs"),
-    userId: v.id("users"),
     threadId: v.id("threads"),
-    orgId: v.id("organizations"),
     chatGuid: v.optional(v.string()),
     status: v.union(
       v.literal("pending_inventory"),
@@ -3725,23 +3713,19 @@ export default defineSchema({
         v.literal("summary"),
         v.literal("files"),
         v.literal("thread"),
-        v.literal("completed"),
       ),
     ),
     inventoryCursor: v.optional(v.string()),
-    messageCount: v.number(),
-    fileCount: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_jobId_and_threadId", ["jobId", "threadId"])
-    .index("by_jobId_and_status", ["jobId", "status"]),
+    .index("job_thread", ["jobId", "threadId"])
+    .index("job_status", ["jobId", "status"]),
 
   imessageHistoryDeletionFiles: defineTable({
     jobId: v.id("imessageHistoryDeletionJobs"),
     targetId: v.id("imessageHistoryDeletionTargets"),
     fileId: v.id("_storage"),
-    sourceRole: v.union(v.literal("user"), v.literal("agent")),
     status: v.union(
       v.literal("pending"),
       v.literal("preserved"),
@@ -3751,8 +3735,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_jobId_and_fileId", ["jobId", "fileId"])
-    .index("by_targetId_and_status", ["targetId", "status"]),
+    .index("job_file", ["jobId", "fileId"])
+    .index("target_status", ["targetId", "status"]),
 
   slackInboundEvents: defineTable({
     eventKey: v.string(),
@@ -3813,27 +3797,27 @@ export default defineSchema({
     scheduledFor: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_eventKey", ["eventKey"])
-    .index("by_canonicalEventKey", ["canonicalEventKey"])
-    .index("by_connectionId_and_channelId_and_threadTs", [
+    .index("event", ["eventKey"])
+    .index("canonical", ["canonicalEventKey"])
+    .index("slack_thread", [
       "connectionId",
       "channelId",
       "threadTs",
     ])
-    .index("by_connection_channel_thread_message", [
+    .index("thread_message", [
       "connectionId",
       "channelId",
       "threadTs",
       "messageTs",
     ])
-    .index("by_connection_channel_thread_status_schedule", [
+    .index("thread_schedule", [
       "connectionId",
       "channelId",
       "threadTs",
       "status",
       "scheduledFor",
     ])
-    .index("by_status_and_receivedAt", ["status", "receivedAt"]),
+    .index("status_received", ["status", "receivedAt"]),
 
   slackMessageRevisions: defineTable({
     threadMessageId: v.id("threadMessages"),
@@ -3843,8 +3827,8 @@ export default defineSchema({
     revisedContent: v.string(),
     editedAt: v.number(),
   })
-    .index("by_threadMessageId_and_editedAt", ["threadMessageId", "editedAt"])
-    .index("by_slackTeamId_and_slackMessageTs", [
+    .index("message_edited", ["threadMessageId", "editedAt"])
+    .index("team_message", [
       "slackTeamId",
       "slackMessageTs",
     ]),
@@ -3885,10 +3869,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_idempotencyKey", ["idempotencyKey"])
-    .index("by_threadMessageId", ["threadMessageId"])
-    .index("by_connectionId_and_status", ["connectionId", "status"])
-    .index("by_connectionId_and_status_and_nextAttemptAt", [
+    .index("idempotency", ["idempotencyKey"])
+    .index("message", ["threadMessageId"])
+    .index("connection_status", ["connectionId", "status"])
+    .index("retry_schedule", [
       "connectionId",
       "status",
       "nextAttemptAt",
@@ -3922,9 +3906,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_threadMessageId", ["threadMessageId"])
-    .index("by_actionTokenHash", ["actionTokenHash"])
-    .index("by_connection_channel_provider", [
+    .index("message", ["threadMessageId"])
+    .index("action", ["actionTokenHash"])
+    .index("channel_message", [
       "connectionId",
       "channelId",
       "providerMessageId",
@@ -3947,8 +3931,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_interactionKey", ["interactionKey"])
-    .index("by_presentationId_and_createdAt", ["presentationId", "createdAt"]),
+    .index("interaction", ["interactionKey"])
+    .index("presentation_created", ["presentationId", "createdAt"]),
 
   agentResponseFeedback: defineTable({
     orgId: v.id("organizations"),
@@ -3961,11 +3945,11 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_threadMessageId_and_slackActorId", [
+    .index("message_actor", [
       "threadMessageId",
       "slackActorId",
     ])
-    .index("by_orgId_and_createdAt", ["orgId", "createdAt"]),
+    .index("organization_created", ["orgId", "createdAt"]),
 
   slackHandoffs: defineTable({
     clientOrgId: v.id("organizations"),
@@ -3981,12 +3965,12 @@ export default defineSchema({
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
   })
-    .index("by_connectionId_and_sourceChannelId_and_sourceThreadTs", [
+    .index("source_thread", [
       "connectionId",
       "sourceChannelId",
       "sourceThreadTs",
     ])
-    .index("by_clientOrgId_and_status", ["clientOrgId", "status"]),
+    .index("client_status", ["clientOrgId", "status"]),
 
   agentActionAuditEvents: defineTable({
     orgId: v.id("organizations"),
@@ -4013,9 +3997,9 @@ export default defineSchema({
     status: v.union(v.literal("succeeded"), v.literal("failed")),
     createdAt: v.number(),
   })
-    .index("by_orgId_and_createdAt", ["orgId", "createdAt"])
-    .index("by_threadId_and_createdAt", ["threadId", "createdAt"])
-    .index("by_slackActorId_and_createdAt", ["slackActorId", "createdAt"]),
+    .index("organization_created", ["orgId", "createdAt"])
+    .index("thread_created", ["threadId", "createdAt"])
+    .index("actor_created", ["slackActorId", "createdAt"]),
 
   imessageInboundEvents: defineTable({
     eventKey: v.string(),
@@ -4047,10 +4031,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_eventKey", ["eventKey"])
-    .index("by_fromPhone", ["fromPhone"])
-    .index("by_chatGuid", ["chatGuid"])
-    .index("by_threadId", ["threadId"]),
+    .index("event", ["eventKey"])
+    .index("phone", ["fromPhone"])
+    .index("chat", ["chatGuid"])
+    .index("thread", ["threadId"]),
 
   imessageOutboundSends: defineTable({
     idempotencyKey: v.string(),
@@ -4066,9 +4050,9 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_idempotencyKey", ["idempotencyKey"])
-    .index("by_threadId", ["threadId"])
-    .index("by_threadMessageId", ["threadMessageId"]),
+    .index("idempotency", ["idempotencyKey"])
+    .index("thread", ["threadId"])
+    .index("message", ["threadMessageId"]),
 
   appCardAccessLinks: defineTable({
     orgId: v.id("organizations"),
@@ -4090,14 +4074,14 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_tokenHash", ["tokenHash"])
-    .index("by_orgId", ["orgId"])
-    .index("by_policyId", ["policyId"])
-    .index("by_certificateId", ["certificateId"])
-    .index("by_policyCertificateId", ["policyCertificateId"])
-    .index("by_policyChangeCaseId", ["policyChangeCaseId"])
-    .index("by_sourceThreadId", ["sourceThreadId"])
-    .index("by_sourceThreadMessageId", ["sourceThreadMessageId"]),
+    .index("token", ["tokenHash"])
+    .index("organization", ["orgId"])
+    .index("policy", ["policyId"])
+    .index("certificate", ["certificateId"])
+    .index("policy_certificate", ["policyCertificateId"])
+    .index("change", ["policyChangeCaseId"])
+    .index("thread", ["sourceThreadId"])
+    .index("source_message", ["sourceThreadMessageId"]),
 
   imessageChats: defineTable({
     chatGuid: v.string(),
@@ -4112,8 +4096,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_chatGuid", ["chatGuid"])
-    .index("by_primaryOrgId", ["primaryOrgId"]),
+    .index("chat", ["chatGuid"])
+    .index("organization", ["primaryOrgId"]),
 
   imessageParticipants: defineTable({
     chatGuid: v.string(),
@@ -4125,10 +4109,10 @@ export default defineSchema({
     firstSeenAt: v.number(),
     lastSeenAt: v.number(),
   })
-    .index("by_chatGuid", ["chatGuid"])
-    .index("by_address", ["address"])
-    .index("by_chatGuid_address", ["chatGuid", "address"])
-    .index("by_userId", ["userId"]),
+    .index("chat", ["chatGuid"])
+    .index("address", ["address"])
+    .index("chat_address", ["chatGuid", "address"])
+    .index("user", ["userId"]),
 
   // ── Pending Emails (send delay queue) ──
 
@@ -4176,8 +4160,8 @@ export default defineSchema({
     // For unified thread dual-write
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
   })
-    .index("by_threadId", ["threadId"])
-    .index("by_status", ["status"]),
+    .index("thread", ["threadId"])
+    .index("status", ["status"]),
 
   emailDeliveryAttempts: defineTable({
     orgId: v.id("organizations"),
@@ -4208,11 +4192,11 @@ export default defineSchema({
     startedAt: v.number(),
     completedAt: v.optional(v.number()),
   })
-    .index("by_pendingEmailId", ["pendingEmailId"])
-    .index("by_orgId", ["orgId"])
-    .index("by_threadId", ["threadId"])
-    .index("by_threadMessageId", ["threadMessageId"])
-    .index("by_status", ["status"]),
+    .index("pending", ["pendingEmailId"])
+    .index("organization", ["orgId"])
+    .index("thread", ["threadId"])
+    .index("message", ["threadMessageId"])
+    .index("status", ["status"]),
 
   // ── Presence ──
 
@@ -4228,7 +4212,7 @@ export default defineSchema({
       v.array(v.union(v.literal("read"), v.literal("write"))),
     ),
     description: v.optional(v.string()),
-  }).index("by_clientId", ["clientId"]),
+  }).index("client", ["clientId"]),
 
   oauthAuthCodes: defineTable({
     codeHash: v.string(),
@@ -4241,7 +4225,7 @@ export default defineSchema({
     expiresAt: v.number(),
     usedAt: v.optional(v.number()),
     scopes: v.optional(v.array(v.union(v.literal("read"), v.literal("write")))),
-  }).index("by_codeHash", ["codeHash"]),
+  }).index("code", ["codeHash"]),
 
   oauthTokens: defineTable({
     tokenHash: v.string(),
@@ -4256,9 +4240,9 @@ export default defineSchema({
     createdAt: v.number(),
     scopes: v.optional(v.array(v.union(v.literal("read"), v.literal("write")))),
   })
-    .index("by_tokenHash", ["tokenHash"])
-    .index("by_refreshTokenHash", ["refreshTokenHash"])
-    .index("by_userId", ["userId"]),
+    .index("token", ["tokenHash"])
+    .index("refresh_token", ["refreshTokenHash"])
+    .index("user", ["userId"]),
 
   // ── API Audit Log ──
 
@@ -4273,7 +4257,7 @@ export default defineSchema({
     body: v.optional(v.string()),
     response: v.optional(v.string()),
     tokenId: v.id("oauthTokens"),
-  }).index("by_orgId_timestamp", ["orgId", "timestamp"]),
+  }).index("organization_time", ["orgId", "timestamp"]),
 
   // ── Rate Limit Counters ──
 
@@ -4282,14 +4266,14 @@ export default defineSchema({
     windowStart: v.number(),
     count: v.number(),
     lastRequestMs: v.number(),
-  }).index("by_tokenId", ["tokenId"]),
+  }).index("token", ["tokenId"]),
 
   publicDemoRateCounters: defineTable({
     rateKey: v.string(),
     windowStart: v.number(),
     count: v.number(),
     lastRequestAt: v.number(),
-  }).index("by_rateKey", ["rateKey"]),
+  }).index("key", ["rateKey"]),
 
   // ── Presence ──
 
@@ -4300,6 +4284,6 @@ export default defineSchema({
     userName: v.optional(v.string()),
     lastSeen: v.number(),
   })
-    .index("by_pageKey", ["pageKey"])
-    .index("by_userId", ["userId"]),
+    .index("page", ["pageKey"])
+    .index("user", ["userId"]),
 });

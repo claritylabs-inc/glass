@@ -30,7 +30,7 @@ async function requireUserId(ctx: Parameters<typeof getAuthUserId>[0]) {
 async function getOrCreatePrivacyState(ctx: MutationCtx, userId: Id<"users">) {
   const existing = await ctx.db
     .query("imessagePrivacyStates")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .withIndex("user", (q) => q.eq("userId", userId))
     .unique();
   if (existing) return existing;
   const now = dayjs().valueOf();
@@ -45,15 +45,49 @@ async function getOrCreatePrivacyState(ctx: MutationCtx, userId: Id<"users">) {
   return created;
 }
 
+async function assertNoActiveDeletion(
+  ctx: MutationCtx,
+  state: Doc<"imessagePrivacyStates">,
+) {
+  if (!state.activeDeletionJobId) return;
+  const activeJob = await ctx.db.get(state.activeDeletionJobId);
+  if (activeJob && ["queued", "running"].includes(activeJob.status)) {
+    throw new Error("Your iMessage history deletion is already running.");
+  }
+}
+
+function initialDeletionJob(
+  userId: Id<"users">,
+  generationCutoff: number,
+  kind: "preview" | "deletion",
+  now: number,
+) {
+  return {
+    userId,
+    kind,
+    status: kind === "preview" ? ("preparing" as const) : ("queued" as const),
+    generationCutoff,
+    threadCount: 0,
+    messageCount: 0,
+    fileCount: 0,
+    processedThreadCount: 0,
+    deletedMessageCount: 0,
+    deletedFileCount: 0,
+    preservedFileCount: 0,
+    requestedAt: now,
+    updatedAt: now,
+  };
+}
+
 async function findActiveTargetedLease(
   ctx: Pick<QueryCtx, "db">,
   userId: Id<"users">,
   generationCutoff: number,
   now: number,
 ) {
-  return await ctx.db
+  return ctx.db
     .query("imessageAgentRunLeases")
-    .withIndex("by_userId_and_expiresAt", (q) =>
+    .withIndex("user_expiration", (q) =>
       q.eq("userId", userId).gt("expiresAt", now),
     )
     .filter((q) => q.lte(q.field("generation"), generationCutoff))
@@ -98,29 +132,12 @@ export const preparePersonalImessageDeletionPreview = mutation({
   handler: async (ctx) => {
     const userId = await requireUserId(ctx);
     const state = await getOrCreatePrivacyState(ctx, userId);
-    const activeJob = state.activeDeletionJobId
-      ? await ctx.db.get(state.activeDeletionJobId)
-      : null;
-    if (activeJob && ["queued", "running"].includes(activeJob.status)) {
-      throw new Error("Your iMessage history deletion is already running.");
-    }
+    await assertNoActiveDeletion(ctx, state);
     const now = dayjs().valueOf();
-    const jobId = await ctx.db.insert("imessageHistoryDeletionJobs", {
-      userId,
-      kind: "preview",
-      status: "preparing",
-      generationCutoff: state.historyGeneration,
-      inventoryComplete: false,
-      threadCount: 0,
-      messageCount: 0,
-      fileCount: 0,
-      processedThreadCount: 0,
-      deletedMessageCount: 0,
-      deletedFileCount: 0,
-      preservedFileCount: 0,
-      requestedAt: now,
-      updatedAt: now,
-    });
+    const jobId = await ctx.db.insert(
+      "imessageHistoryDeletionJobs",
+      initialDeletionJob(userId, state.historyGeneration, "preview", now),
+    );
     await scheduleInventory(ctx, jobId);
     return { previewJobId: jobId };
   },
@@ -132,11 +149,11 @@ export const getPersonalImessageDeletionState = query({
     const userId = await requireUserId(ctx);
     const state = await ctx.db
       .query("imessagePrivacyStates")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .unique();
     const jobs = await ctx.db
       .query("imessageHistoryDeletionJobs")
-      .withIndex("by_userId_and_requestedAt", (q) => q.eq("userId", userId))
+      .withIndex("user_requested", (q) => q.eq("userId", userId))
       .order("desc")
       .take(8);
     const generation = state?.historyGeneration ?? 0;
@@ -209,29 +226,12 @@ export const requestPersonalImessageDeletion = mutation({
         "Wait for the active iMessage response to finish, then try again.",
       );
     }
-    const activeJob = state.activeDeletionJobId
-      ? await ctx.db.get(state.activeDeletionJobId)
-      : null;
-    if (activeJob && ["queued", "running"].includes(activeJob.status)) {
-      throw new Error("Your iMessage history deletion is already running.");
-    }
+    await assertNoActiveDeletion(ctx, state);
 
-    const jobId = await ctx.db.insert("imessageHistoryDeletionJobs", {
-      userId,
-      kind: "deletion",
-      status: "queued",
-      generationCutoff: state.historyGeneration,
-      inventoryComplete: false,
-      threadCount: 0,
-      messageCount: 0,
-      fileCount: 0,
-      processedThreadCount: 0,
-      deletedMessageCount: 0,
-      deletedFileCount: 0,
-      preservedFileCount: 0,
-      requestedAt: now,
-      updatedAt: now,
-    });
+    const jobId = await ctx.db.insert(
+      "imessageHistoryDeletionJobs",
+      initialDeletionJob(userId, state.historyGeneration, "deletion", now),
+    );
     await ctx.db.patch(state._id, {
       historyGeneration: state.historyGeneration + 1,
       activeDeletionJobId: jobId,
@@ -254,7 +254,7 @@ export const claimAgentRun = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("imessageAgentRunLeases")
-      .withIndex("by_leaseKey", (q) => q.eq("leaseKey", args.leaseKey))
+      .withIndex("lease", (q) => q.eq("leaseKey", args.leaseKey))
       .unique();
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -310,7 +310,7 @@ export const inventoryThreads = internalMutation({
       const page = await ctx.db
         .query("threads")
         .withIndex(
-          "by_createdBy_and_originChannel_and_visibility_and_imessageHistoryGeneration",
+          "private_history",
           (q) =>
             q
               .eq("createdBy", job.userId)
@@ -326,7 +326,7 @@ export const inventoryThreads = internalMutation({
         }
         const existing = await ctx.db
           .query("imessageHistoryDeletionTargets")
-          .withIndex("by_jobId_and_threadId", (q) =>
+          .withIndex("job_thread", (q) =>
             q.eq("jobId", job._id).eq("threadId", thread._id),
           )
           .unique();
@@ -334,13 +334,9 @@ export const inventoryThreads = internalMutation({
         const now = dayjs().valueOf();
         await ctx.db.insert("imessageHistoryDeletionTargets", {
           jobId: job._id,
-          userId: job.userId,
           threadId: thread._id,
-          orgId: thread.orgId,
           chatGuid: thread.imessageChatGuid,
           status: "pending_inventory",
-          messageCount: 0,
-          fileCount: 0,
           createdAt: now,
           updatedAt: now,
         });
@@ -348,9 +344,7 @@ export const inventoryThreads = internalMutation({
       }
       const now = dayjs().valueOf();
       await ctx.db.patch(job._id, {
-        threadCursor: page.isDone ? undefined : page.continueCursor,
         threadCount: job.threadCount + added,
-        inventoryComplete: page.isDone,
         updatedAt: now,
       });
       if (page.isDone) {
@@ -376,7 +370,7 @@ export const inventoryNextTarget = internalMutation({
     try {
       const target = await ctx.db
         .query("imessageHistoryDeletionTargets")
-        .withIndex("by_jobId_and_status", (q) =>
+        .withIndex("job_status", (q) =>
           q.eq("jobId", job._id).eq("status", "pending_inventory"),
         )
         .first();
@@ -432,7 +426,7 @@ export const inventoryTargetMessages = internalMutation({
     try {
       const page = await ctx.db
         .query("threadMessages")
-        .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+        .withIndex("thread", (q) => q.eq("threadId", target.threadId))
         .order("asc")
         .paginate(args.paginationOpts);
       let addedFiles = 0;
@@ -442,7 +436,7 @@ export const inventoryTargetMessages = internalMutation({
           if (!fileId) continue;
           const existing = await ctx.db
             .query("imessageHistoryDeletionFiles")
-            .withIndex("by_jobId_and_fileId", (q) =>
+            .withIndex("job_file", (q) =>
               q.eq("jobId", job._id).eq("fileId", fileId),
             )
             .first();
@@ -452,7 +446,6 @@ export const inventoryTargetMessages = internalMutation({
             jobId: job._id,
             targetId: target._id,
             fileId,
-            sourceRole: message.role === "agent" ? "agent" : "user",
             status: "pending",
             createdAt: now,
             updatedAt: now,
@@ -463,8 +456,6 @@ export const inventoryTargetMessages = internalMutation({
       const now = dayjs().valueOf();
       await ctx.db.patch(target._id, {
         inventoryCursor: page.isDone ? undefined : page.continueCursor,
-        messageCount: target.messageCount + page.page.length,
-        fileCount: target.fileCount + addedFiles,
         status: page.isDone ? "inventoried" : "pending_inventory",
         updatedAt: now,
       });
@@ -533,13 +524,13 @@ export const deleteNextTarget = internalMutation({
     const target =
       (await ctx.db
         .query("imessageHistoryDeletionTargets")
-        .withIndex("by_jobId_and_status", (q) =>
+        .withIndex("job_status", (q) =>
           q.eq("jobId", job._id).eq("status", "deleting"),
         )
         .first()) ??
       (await ctx.db
         .query("imessageHistoryDeletionTargets")
-        .withIndex("by_jobId_and_status", (q) =>
+        .withIndex("job_status", (q) =>
           q.eq("jobId", job._id).eq("status", "inventoried"),
         )
         .first());
@@ -552,7 +543,7 @@ export const deleteNextTarget = internalMutation({
       });
       const state = await ctx.db
         .query("imessagePrivacyStates")
-        .withIndex("by_userId", (q) => q.eq("userId", job.userId))
+        .withIndex("user", (q) => q.eq("userId", job.userId))
         .unique();
       if (state?.activeDeletionJobId === job._id) {
         await ctx.db.patch(state._id, {
@@ -590,7 +581,7 @@ async function unlinkByThreadId(
 ) {
   const rows = await ctx.db
     .query(table)
-    .withIndex("by_threadId", (q) => q.eq("threadId", threadId))
+    .withIndex("thread", (q) => q.eq("threadId", threadId))
     .take(DELETE_BATCH_SIZE);
   for (const row of rows) {
     await ctx.db.patch(row._id, {
@@ -608,26 +599,47 @@ async function fileHasBusinessReference(
   const checks = await Promise.all([
     ctx.db
       .query("policies")
-      .withIndex("by_fileId", (q) => q.eq("fileId", fileId))
+      .withIndex("file", (q) => q.eq("fileId", fileId))
       .first(),
     ctx.db
       .query("policyFiles")
-      .withIndex("by_fileId", (q) => q.eq("fileId", fileId))
+      .withIndex("file", (q) => q.eq("fileId", fileId))
       .first(),
     ctx.db
       .query("requirementSourceDocuments")
-      .withIndex("by_fileId", (q) => q.eq("fileId", fileId))
+      .withIndex("file", (q) => q.eq("fileId", fileId))
       .first(),
     ctx.db
       .query("certificates")
-      .withIndex("by_fileId", (q) => q.eq("fileId", fileId))
+      .withIndex("file", (q) => q.eq("fileId", fileId))
       .first(),
     ctx.db
       .query("certificateVersions")
-      .withIndex("by_fileId", (q) => q.eq("fileId", fileId))
+      .withIndex("file", (q) => q.eq("fileId", fileId))
       .first(),
   ]);
   return checks.some(Boolean);
+}
+
+async function scrubInboundEvents(
+  ctx: MutationCtx,
+  rows: Doc<"imessageInboundEvents">[],
+) {
+  const updatedAt = dayjs().valueOf();
+  for (const row of rows) {
+    await ctx.db.patch(row._id, {
+      fromPhone: undefined,
+      chatGuid: undefined,
+      messageText: undefined,
+      response: undefined,
+      error: undefined,
+      recoveryFailure: undefined,
+      threadId: undefined,
+      historyGeneration: undefined,
+      privacyContextPending: undefined,
+      updatedAt,
+    });
+  }
 }
 
 export const deleteTargetBatch = internalMutation({
@@ -681,7 +693,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "audit") {
         const rows = await ctx.db
           .query("agentActionAuditEvents")
-          .withIndex("by_threadId_and_createdAt", (q) =>
+          .withIndex("thread_created", (q) =>
             q.eq("threadId", target.threadId),
           )
           .take(DELETE_BATCH_SIZE);
@@ -700,7 +712,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "outbound") {
         const rows = await ctx.db
           .query("imessageOutboundSends")
-          .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         for (const row of rows) {
           await ctx.db.patch(row._id, {
@@ -717,7 +729,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "app_cards") {
         const rows = await ctx.db
           .query("appCardAccessLinks")
-          .withIndex("by_sourceThreadId", (q) =>
+          .withIndex("thread", (q) =>
             q.eq("sourceThreadId", target.threadId),
           )
           .take(DELETE_BATCH_SIZE);
@@ -735,14 +747,14 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "pending_email") {
         const rows = await ctx.db
           .query("pendingEmails")
-          .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         let preservedFiles = 0;
         for (const row of rows) {
           for (const attachment of row.attachments ?? []) {
             const file = await ctx.db
               .query("imessageHistoryDeletionFiles")
-              .withIndex("by_jobId_and_fileId", (q) =>
+              .withIndex("job_file", (q) =>
                 q.eq("jobId", job._id).eq("fileId", attachment.fileId),
               )
               .first();
@@ -774,7 +786,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "delivery_attempt") {
         const rows = await ctx.db
           .query("emailDeliveryAttempts")
-          .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         for (const row of rows) {
           await ctx.db.patch(row._id, {
@@ -794,22 +806,9 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "inbound_event") {
         const rows = await ctx.db
           .query("imessageInboundEvents")
-          .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
-        for (const row of rows) {
-          await ctx.db.patch(row._id, {
-            fromPhone: undefined,
-            chatGuid: undefined,
-            messageText: undefined,
-            response: undefined,
-            error: undefined,
-            recoveryFailure: undefined,
-            threadId: undefined,
-            historyGeneration: undefined,
-            privacyContextPending: undefined,
-            updatedAt: dayjs().valueOf(),
-          });
-        }
+        await scrubInboundEvents(ctx, rows);
         if (rows.length) await scheduleDeleteTarget(ctx, target._id);
         else await advance("legacy_inbound_event");
         return;
@@ -818,7 +817,7 @@ export const deleteTargetBatch = internalMutation({
         const rows = target.chatGuid
           ? await ctx.db
               .query("imessageInboundEvents")
-              .withIndex("by_chatGuid", (q) =>
+              .withIndex("chat", (q) =>
                 q.eq("chatGuid", target.chatGuid),
               )
               .filter((q) =>
@@ -829,20 +828,7 @@ export const deleteTargetBatch = internalMutation({
               )
               .take(DELETE_BATCH_SIZE)
           : [];
-        for (const row of rows) {
-          await ctx.db.patch(row._id, {
-            fromPhone: undefined,
-            chatGuid: undefined,
-            messageText: undefined,
-            response: undefined,
-            error: undefined,
-            recoveryFailure: undefined,
-            threadId: undefined,
-            historyGeneration: undefined,
-            privacyContextPending: undefined,
-            updatedAt: dayjs().valueOf(),
-          });
-        }
+        await scrubInboundEvents(ctx, rows);
         if (rows.length) await scheduleDeleteTarget(ctx, target._id);
         else await advance("leases");
         return;
@@ -850,7 +836,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "leases") {
         const rows = await ctx.db
           .query("imessageAgentRunLeases")
-          .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         for (const row of rows) await ctx.db.delete(row._id);
         if (rows.length) await scheduleDeleteTarget(ctx, target._id);
@@ -860,7 +846,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "messages") {
         const rows = await ctx.db
           .query("threadMessages")
-          .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         for (const row of rows) await ctx.db.delete(row._id);
         if (rows.length) {
@@ -875,7 +861,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "summary") {
         const summary = await ctx.db
           .query("threadContextStates")
-          .withIndex("by_threadId", (q) => q.eq("threadId", target.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", target.threadId))
           .unique();
         if (summary) await ctx.db.delete(summary._id);
         await advance("files");
@@ -884,7 +870,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "files") {
         const files = await ctx.db
           .query("imessageHistoryDeletionFiles")
-          .withIndex("by_targetId_and_status", (q) =>
+          .withIndex("target_status", (q) =>
             q.eq("targetId", target._id).eq("status", "pending"),
           )
           .take(10);
@@ -923,7 +909,7 @@ export const deleteTargetBatch = internalMutation({
         const now = dayjs().valueOf();
         await ctx.db.patch(target._id, {
           status: "completed",
-          stage: "completed",
+          stage: undefined,
           updatedAt: now,
         });
         await ctx.db.patch(job._id, {
@@ -943,7 +929,6 @@ export const deleteTargetBatch = internalMutation({
         );
         return;
       }
-      if (stage === "completed") return;
       const unhandledStage: never = stage;
       return unhandledStage;
     } catch (error) {

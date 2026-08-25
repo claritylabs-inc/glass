@@ -394,14 +394,14 @@ describe("declarationFacts org profile sync", () => {
     const firstFactCount = await t.run(async (ctx) =>
       (await ctx.db
         .query("policyDeclarationFacts")
-        .withIndex("by_policyId_active", (q) => q.eq("policyId", newerPolicyId).eq("active", true))
+        .withIndex("policy_active", (q) => q.eq("policyId", newerPolicyId).eq("active", true))
         .collect()).length,
     );
     await t.mutation(syncPolicyInternalFn, { policyId: newerPolicyId });
     const secondFactCount = await t.run(async (ctx) =>
       (await ctx.db
         .query("policyDeclarationFacts")
-        .withIndex("by_policyId_active", (q) => q.eq("policyId", newerPolicyId).eq("active", true))
+        .withIndex("policy_active", (q) => q.eq("policyId", newerPolicyId).eq("active", true))
         .collect()).length,
     );
     expect(secondFactCount).toBe(firstFactCount);

@@ -44,6 +44,20 @@ type ImessageAttachmentDeliveryFailure = {
   error?: string;
 };
 
+async function findThreadMessageByDedupeKey(
+  ctx: MutationCtx,
+  threadId: Id<"threads">,
+  dedupeKey: string | undefined,
+) {
+  if (!dedupeKey) return null;
+  return ctx.db
+    .query("threadMessages")
+    .withIndex("thread_dedupe", (query) =>
+      query.eq("threadId", threadId).eq("dedupeKey", dedupeKey),
+    )
+    .unique();
+}
+
 type OperatorInitiatedMessage = {
   operatorUserId: Id<"users">;
   operatorEmail?: string;
@@ -150,7 +164,7 @@ async function deriveImessageGroupDisplayTitle(
 
   const participants = await ctx.db
     .query("imessageParticipants")
-    .withIndex("by_chatGuid", (q) => q.eq("chatGuid", thread.imessageChatGuid!))
+    .withIndex("chat", (q) => q.eq("chatGuid", thread.imessageChatGuid!))
     .collect();
   if (participants.length === 0) return undefined;
 
@@ -186,7 +200,7 @@ async function withImessageGroupDisplayTitles(
   ctx: QueryCtx,
   threads: Array<Doc<"threads">>,
 ): Promise<Array<Doc<"threads">>> {
-  return await Promise.all(
+  return Promise.all(
     threads.map((thread) => withImessageGroupDisplayTitle(ctx, thread)),
   );
 }
@@ -246,19 +260,19 @@ export const list = query({
     const { userId, orgId } = access;
     const all = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", orgId))
+      .withIndex("organization_activity", (q) => q.eq("orgId", orgId))
       .order("desc")
       .collect();
     const visible = all.filter((thread) =>
       canCurrentOrgUserAccessThread({ userId, orgId, thread }),
     );
     if (args.archived) {
-      return await withImessageGroupDisplayTitles(
+      return withImessageGroupDisplayTitles(
         ctx,
         visible.filter((t) => !!t.archivedAt),
       );
     }
-    return await withImessageGroupDisplayTitles(
+    return withImessageGroupDisplayTitles(
       ctx,
       visible.filter((t) => !t.archivedAt),
     );
@@ -272,7 +286,7 @@ export const get = query({
     const thread = await ctx.db.get(args.id);
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
       return null;
-    return await withImessageGroupDisplayTitle(ctx, thread);
+    return withImessageGroupDisplayTitle(ctx, thread);
   },
 });
 
@@ -302,7 +316,7 @@ export const messages = query({
       return [];
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return messages.map(clientVisibleMessage);
   },
@@ -320,7 +334,7 @@ export const listForClient = query({
     if (!access) return [];
     const all = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_lastMessageAt", (q) =>
+      .withIndex("organization_activity", (q) =>
         q.eq("orgId", args.clientOrgId),
       )
       .order("desc")
@@ -334,12 +348,12 @@ export const listForClient = query({
       }),
     );
     if (args.archived) {
-      return await withImessageGroupDisplayTitles(
+      return withImessageGroupDisplayTitles(
         ctx,
         visible.filter((t) => !!t.archivedAt),
       );
     }
-    return await withImessageGroupDisplayTitles(
+    return withImessageGroupDisplayTitles(
       ctx,
       visible.filter((t) => !t.archivedAt),
     );
@@ -365,7 +379,7 @@ export const getForClient = query({
       })
     )
       return null;
-    return await withImessageGroupDisplayTitle(ctx, thread);
+    return withImessageGroupDisplayTitle(ctx, thread);
   },
 });
 
@@ -390,7 +404,7 @@ export const messagesForClient = query({
       return [];
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return messages.map(clientVisibleMessage);
   },
@@ -414,7 +428,7 @@ export const create = mutation({
     if (args.clientMutationId) {
       const existing = await ctx.db
         .query("threads")
-        .withIndex("by_orgId_clientMutationId", (q) =>
+        .withIndex("organization_mutation", (q) =>
           q.eq("orgId", orgId).eq("clientMutationId", args.clientMutationId),
         )
         .first();
@@ -432,7 +446,7 @@ export const create = mutation({
     const org = await ctx.db.get(orgId);
     const threadEmail = createThreadEmail(org?.agentHandle, domain);
 
-    return await ctx.db.insert("threads", {
+    return ctx.db.insert("threads", {
       orgId,
       title: args.title ?? "New chat",
       createdBy: userId,
@@ -449,7 +463,7 @@ export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
     await requireOrgAccess(ctx);
-    return await ctx.storage.generateUploadUrl();
+    return ctx.storage.generateUploadUrl();
   },
 });
 
@@ -462,7 +476,7 @@ export const getAttachmentUrl = query({
       return null;
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     const isThreadAttachment = messages.some(
       (message) =>
@@ -472,7 +486,7 @@ export const getAttachmentUrl = query({
         ),
     );
     if (!isThreadAttachment) return null;
-    return await ctx.storage.getUrl(args.fileId);
+    return ctx.storage.getUrl(args.fileId);
   },
 });
 
@@ -486,7 +500,7 @@ export const getAttachmentUrls = query({
     const requested = new Set(args.fileIds);
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     const allowed = new Set<string>();
     for (const message of messages) {
@@ -543,7 +557,7 @@ export const sendMessage = mutation({
     if (args.clientMutationId) {
       const existing = await ctx.db
         .query("threadMessages")
-        .withIndex("by_orgId_clientMutationId", (q) =>
+        .withIndex("organization_mutation", (q) =>
           q.eq("orgId", orgId).eq("clientMutationId", args.clientMutationId),
         )
         .first();
@@ -561,7 +575,7 @@ export const sendMessage = mutation({
     const operatorInitiated = await buildOperatorInitiatedMessage(ctx, orgId);
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     for (const message of messages) {
       if (
@@ -695,7 +709,7 @@ export const insertProcessingMessage = mutation({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
     const { orgId } = await requireCurrentOrgThread(ctx, args.threadId);
-    return await ctx.db.insert("threadMessages", {
+    return ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId,
       channel: "chat",
@@ -774,7 +788,7 @@ export const retryAgentResponse = mutation({
     // (the most recent user message before this agent message)
     const threadMessages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", msg.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", msg.threadId))
       .order("asc")
       .collect();
     const msgIndex = threadMessages.findIndex((m) => m._id === args.messageId);
@@ -805,23 +819,23 @@ export const retryAgentResponse = mutation({
 export const getInternal = internalQuery({
   args: { id: v.id("threads") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    return ctx.db.get(args.id);
   },
 });
 
 export const getMessageInternal = internalQuery({
   args: { id: v.id("threadMessages") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    return ctx.db.get(args.id);
   },
 });
 
 export const messagesInternal = internalQuery({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
-    return await ctx.db
+    return ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
   },
 });
@@ -834,7 +848,7 @@ export const wasPolicyCardRecentlyPresentedInternal = internalQuery({
   handler: async (ctx, args) => {
     const recentMessages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .order("desc")
       .take(24);
     return recentMessages.some(
@@ -865,11 +879,12 @@ export const insertAgentMessage = internalMutation({
     replyToMessageId: v.optional(v.id("threadMessages")),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("threadMessages", {
+    return ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId: args.orgId,
       channel: args.channel ?? "chat",
       role: "agent",
+      messageKind: "conversation",
       content: "",
       status: "processing",
       replyToMessageId: args.replyToMessageId,
@@ -906,7 +921,7 @@ export const claimAgentResponse = internalMutation({
 
     const existing = await ctx.db
       .query("threadMessages")
-      .withIndex("by_replyToMessageId", (q) =>
+      .withIndex("reply", (q) =>
         q.eq("replyToMessageId", args.userMessageId),
       )
       .first();
@@ -1041,6 +1056,7 @@ export const insertAttachmentMessageInternal = internalMutation({
       orgId: args.orgId,
       channel: "chat",
       role: "agent",
+      messageKind: "conversation",
       content: args.content,
       attachments: args.attachments,
     });
@@ -1067,12 +1083,11 @@ export const insertWorkflowStatusMessage = internalMutation({
     dedupeKey: v.string(),
   },
   handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("threadMessages")
-      .withIndex("by_threadId_and_dedupeKey", (query) =>
-        query.eq("threadId", args.threadId).eq("dedupeKey", args.dedupeKey),
-      )
-      .unique();
+    const existing = await findThreadMessageByDedupeKey(
+      ctx,
+      args.threadId,
+      args.dedupeKey,
+    );
     if (existing) return existing._id;
     const messageId = await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
@@ -1100,28 +1115,26 @@ export const listThreadAttachmentsInternal = internalQuery({
   handler: async (ctx, args) => {
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return messages
-      .filter((message) => {
-        if (message.orgId !== args.orgId) return false;
-        if (args.excludeEmailArtifacts && message.channel === "email") {
-          return false;
-        }
-        if (args.excludeAgentCoiAttachments && message.role === "agent") {
-          return false;
-        }
-        return true;
-      })
+      .filter(
+        (message) =>
+          message.orgId === args.orgId &&
+          !(args.excludeEmailArtifacts && message.channel === "email"),
+      )
       .flatMap((message) =>
-        (message.attachments ?? [])
-          .filter((attachment) => attachment.fileId)
-          .map((attachment) => ({
-            filename: attachment.filename,
-            contentType: attachment.contentType,
-            size: attachment.size,
-            fileId: attachment.fileId!,
-          })),
+        (message.attachments ?? []).flatMap((attachment) => {
+          if (
+            !attachment.fileId ||
+            (args.excludeAgentCoiAttachments &&
+              message.role === "agent" &&
+              attachment.kind === "coi")
+          ) {
+            return [];
+          }
+          return [{ ...attachment, fileId: attachment.fileId }];
+        }),
       );
   },
 });
@@ -1235,7 +1248,7 @@ export const listByOrg = internalQuery({
   handler: async (ctx, args) => {
     const threads = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization_activity", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(50);
     const visible = args.userId
@@ -1247,7 +1260,7 @@ export const listByOrg = internalQuery({
           }),
         )
       : threads;
-    return await withImessageGroupDisplayTitles(ctx, visible);
+    return withImessageGroupDisplayTitles(ctx, visible);
   },
 });
 
@@ -1258,7 +1271,7 @@ export const createInternal = internalMutation({
     title: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("threads", {
+    return ctx.db.insert("threads", {
       orgId: args.orgId,
       title: args.title ?? "New chat",
       createdBy: args.userId,
@@ -1312,12 +1325,12 @@ export const recordNotificationImessageInternal = internalMutation({
   handler: async (ctx, args) => {
     const privacyState = await ctx.db
       .query("imessagePrivacyStates")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("user", (q) => q.eq("userId", args.userId))
       .unique();
     const historyGeneration = privacyState?.historyGeneration ?? 0;
     const existingMessage = await ctx.db
       .query("threadMessages")
-      .withIndex("by_messageId", (q) => q.eq("messageId", args.idempotencyKey))
+      .withIndex("message", (q) => q.eq("messageId", args.idempotencyKey))
       .first();
     if (existingMessage) {
       const existingThread = await ctx.db.get(existingMessage.threadId);
@@ -1345,7 +1358,7 @@ export const recordNotificationImessageInternal = internalMutation({
 
     const phoneThreads = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_threadPhone", (q) =>
+      .withIndex("organization_phone", (q) =>
         q.eq("orgId", args.orgId).eq("threadPhone", args.phone),
       )
       .collect();
@@ -1420,7 +1433,7 @@ export const findOrCreateForDeliveryContact = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_deliveryContactKey", (q) =>
+      .withIndex("organization_delivery", (q) =>
         q.eq("orgId", args.orgId).eq("deliveryContactKey", args.contactKey),
       )
       .first();
@@ -1438,7 +1451,7 @@ export const findOrCreateForDeliveryContact = internalMutation({
     const org = await ctx.db.get(args.orgId);
     const threadEmail = createThreadEmail(org?.agentHandle, domain);
 
-    return await ctx.db.insert("threads", {
+    return ctx.db.insert("threads", {
       orgId: args.orgId,
       title: args.title,
       createdBy: args.userId,
@@ -1478,9 +1491,9 @@ export const insertUserMessageInternal = internalMutation({
 export const findByEmail = internalQuery({
   args: { threadEmail: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    return ctx.db
       .query("threads")
-      .withIndex("by_threadEmail", (q) => q.eq("threadEmail", args.threadEmail))
+      .withIndex("email", (q) => q.eq("threadEmail", args.threadEmail))
       .first();
   },
 });
@@ -1497,12 +1510,12 @@ export const findOrCreateByPhone = internalMutation({
   handler: async (ctx, args) => {
     const privacyState = await ctx.db
       .query("imessagePrivacyStates")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("user", (q) => q.eq("userId", args.userId))
       .unique();
     const historyGeneration = privacyState?.historyGeneration ?? 0;
     const candidates = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_threadPhone", (q) =>
+      .withIndex("organization_phone", (q) =>
         q.eq("orgId", args.orgId).eq("threadPhone", args.fromPhone),
       )
       .collect();
@@ -1522,7 +1535,7 @@ export const findOrCreateByPhone = internalMutation({
       return existing._id;
     }
     const displayName = args.userName ?? args.fromPhone;
-    return await ctx.db.insert("threads", {
+    return ctx.db.insert("threads", {
       orgId: args.orgId,
       title: `iMessage - ${displayName}`,
       createdBy: args.userId,
@@ -1550,7 +1563,7 @@ export const findOrCreateByImessageChat = internalMutation({
   handler: async (ctx, args) => {
     const existingThreads = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_imessageChatGuid", (q) =>
+      .withIndex("organization_chat", (q) =>
         q.eq("orgId", args.orgId).eq("imessageChatGuid", args.chatGuid),
       )
       .collect();
@@ -1571,7 +1584,7 @@ export const findOrCreateByImessageChat = internalMutation({
     if (!args.isGroup && !existing && fallbackPhone) {
       const phoneThreads = await ctx.db
         .query("threads")
-        .withIndex("by_orgId_threadPhone", (q) =>
+        .withIndex("organization_phone", (q) =>
           q.eq("orgId", args.orgId).eq("threadPhone", fallbackPhone),
         )
         .collect();
@@ -1612,7 +1625,7 @@ export const findOrCreateByImessageChat = internalMutation({
 
     const displayName =
       args.title ?? args.userName ?? args.fallbackPhone ?? "Group chat";
-    return await ctx.db.insert("threads", {
+    return ctx.db.insert("threads", {
       orgId: args.orgId,
       title: formatImessageThreadTitle({ isGroup: args.isGroup, displayName }),
       createdBy: args.userId,
@@ -1681,15 +1694,12 @@ export const insertImessageMessage = internalMutation({
     error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    if (args.dedupeKey) {
-      const existing = await ctx.db
-        .query("threadMessages")
-        .withIndex("by_threadId_and_dedupeKey", (query) =>
-          query.eq("threadId", args.threadId).eq("dedupeKey", args.dedupeKey),
-        )
-        .unique();
-      if (existing) return existing._id;
-    }
+    const existing = await findThreadMessageByDedupeKey(
+      ctx,
+      args.threadId,
+      args.dedupeKey,
+    );
+    if (existing) return existing._id;
     const messageId = await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId: args.orgId,
@@ -1839,7 +1849,7 @@ export const getImessageHistory = internalQuery({
   handler: async (ctx, args) => {
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .order("desc")
       .take(args.limit ?? 20);
     return messages.reverse();
@@ -1902,7 +1912,7 @@ export const checkDuplicateEmail = internalQuery({
     if (args.resendEmailId) {
       const byResend = await ctx.db
         .query("threadMessages")
-        .withIndex("by_resendEmailId", (q) =>
+        .withIndex("resend", (q) =>
           q.eq("resendEmailId", args.resendEmailId),
         )
         .first();
@@ -1911,14 +1921,14 @@ export const checkDuplicateEmail = internalQuery({
     if (args.messageId) {
       const byMessage = await ctx.db
         .query("threadMessages")
-        .withIndex("by_messageId", (q) => q.eq("messageId", args.messageId))
+        .withIndex("message", (q) => q.eq("messageId", args.messageId))
         .first();
       if (byMessage) return true;
       const normalized = normalizeMessageId(args.messageId);
       if (normalized !== args.messageId) {
         const byNormalized = await ctx.db
           .query("threadMessages")
-          .withIndex("by_messageId", (q) => q.eq("messageId", normalized))
+          .withIndex("message", (q) => q.eq("messageId", normalized))
           .first();
         if (byNormalized) return true;
       }
@@ -1937,20 +1947,20 @@ export const findThreadByEmailMessageId = internalQuery({
     for (const candidate of [...new Set(candidates)]) {
       const inbound = await ctx.db
         .query("threadMessages")
-        .withIndex("by_messageId", (q) => q.eq("messageId", candidate))
+        .withIndex("message", (q) => q.eq("messageId", candidate))
         .first();
       if (inbound && inbound.orgId === args.orgId) {
-        return await ctx.db.get(inbound.threadId);
+        return ctx.db.get(inbound.threadId);
       }
 
       const outbound = await ctx.db
         .query("threadMessages")
-        .withIndex("by_responseMessageId", (q) =>
+        .withIndex("response", (q) =>
           q.eq("responseMessageId", candidate),
         )
         .first();
       if (outbound && outbound.orgId === args.orgId) {
-        return await ctx.db.get(outbound.threadId);
+        return ctx.db.get(outbound.threadId);
       }
     }
     return null;
@@ -1967,13 +1977,13 @@ export const findEmailMessageByMessageId = internalQuery({
     for (const candidate of [...new Set(candidates)]) {
       const byMessageId = await ctx.db
         .query("threadMessages")
-        .withIndex("by_messageId", (q) => q.eq("messageId", candidate))
+        .withIndex("message", (q) => q.eq("messageId", candidate))
         .first();
       if (byMessageId && byMessageId.orgId === args.orgId) return byMessageId;
 
       const byResponseMessageId = await ctx.db
         .query("threadMessages")
-        .withIndex("by_responseMessageId", (q) =>
+        .withIndex("response", (q) =>
           q.eq("responseMessageId", candidate),
         )
         .first();
@@ -1999,7 +2009,7 @@ export const findEmailThreadBySubject = internalQuery({
 
     const threads = await ctx.db
       .query("threads")
-      .withIndex("by_orgId_lastMessageAt", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization_activity", (q) => q.eq("orgId", args.orgId))
       .order("desc")
       .take(100);
 
@@ -2012,7 +2022,7 @@ export const findEmailThreadBySubject = internalQuery({
 
       const messages = await ctx.db
         .query("threadMessages")
-        .withIndex("by_threadId", (q) => q.eq("threadId", thread._id))
+        .withIndex("thread", (q) => q.eq("threadId", thread._id))
         .take(20);
       if (messages.some((message) => message.fromEmail === args.fromEmail)) {
         return thread;
@@ -2031,7 +2041,7 @@ export const getEmailHistory = internalQuery({
   handler: async (ctx, args) => {
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     return messages
       .filter(
@@ -2096,15 +2106,12 @@ export const insertEmailMessage = internalMutation({
     policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   },
   handler: async (ctx, args) => {
-    if (args.dedupeKey) {
-      const existing = await ctx.db
-        .query("threadMessages")
-        .withIndex("by_threadId_and_dedupeKey", (query) =>
-          query.eq("threadId", args.threadId).eq("dedupeKey", args.dedupeKey),
-        )
-        .unique();
-      if (existing) return existing._id;
-    }
+    const existing = await findThreadMessageByDedupeKey(
+      ctx,
+      args.threadId,
+      args.dedupeKey,
+    );
+    if (existing) return existing._id;
     const messageDocId = await ctx.db.insert("threadMessages", {
       threadId: args.threadId,
       orgId: args.orgId,

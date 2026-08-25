@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -25,11 +25,12 @@ import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { cn } from "@/lib/utils";
 
-export type ImessagePrivacyState = FunctionReturnType<
+type ImessagePrivacyState = FunctionReturnType<
   typeof api.imessagePrivacy.getPersonalImessageDeletionState
 >;
+type ImessagePreviewJobId = NonNullable<ImessagePrivacyState["preview"]>["id"];
 
-export function useImessagePrivacy() {
+function useImessagePrivacy() {
   const state = useQuery(
     api.imessagePrivacy.getPersonalImessageDeletionState,
     {},
@@ -40,10 +41,67 @@ export function useImessagePrivacy() {
   const requestDeletion = useMutation(
     api.imessagePrivacy.requestPersonalImessageDeletion,
   );
-  return { state, preparePreview, requestDeletion };
+  const [busy, setBusy] = useState(false);
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [dismissedPreviewJobId, setDismissedPreviewJobId] =
+    useState<ImessagePreviewJobId | null>(null);
+  const [pendingPreviewJobId, setPendingPreviewJobId] =
+    useState<ImessagePreviewJobId | null>(null);
+  const preview = state?.preview;
+  const dialogOpen =
+    manualDialogOpen ||
+    (preview?.id === pendingPreviewJobId &&
+      preview.status === "ready" &&
+      preview.threadCount > 0 &&
+      preview.id !== dismissedPreviewJobId);
+  const setDialogOpen = (open: boolean) => {
+    setManualDialogOpen(open);
+    if (!open && preview) {
+      setPendingPreviewJobId(null);
+      setDismissedPreviewJobId(preview.id);
+    }
+  };
+
+  const prepare = async () => {
+    setBusy(true);
+    try {
+      const result = await preparePreview({});
+      setPendingPreviewJobId(result.previewJobId);
+    } catch (error) {
+      setPendingPreviewJobId(null);
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not prepare deletion"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirm = async () => {
+    const previewJobId = state?.preview?.id;
+    if (!previewJobId) return;
+    setBusy(true);
+    try {
+      await requestDeletion({ previewJobId });
+      toast.success("Personal iMessage history deletion started");
+      setDialogOpen(false);
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, "Could not start deletion"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return {
+    state,
+    busy,
+    dialogOpen,
+    setDialogOpen,
+    prepare,
+    confirm,
+  };
 }
 
-export function ImessagePrivacyPanel({
+function ImessagePrivacyPanel({
   state,
   busy,
   onPrepare,
@@ -126,7 +184,7 @@ function countLabel(count: number, singular: string) {
   return `${count} ${count === 1 ? singular : `${singular}s`}`;
 }
 
-export function ImessagePrivacyDialog({
+function ImessagePrivacyDialog({
   open,
   onOpenChange,
   state,
@@ -231,55 +289,27 @@ export function ImessagePrivacyDialog({
   );
 }
 
-export function useImessagePrivacyActions(
-  privacy: ReturnType<typeof useImessagePrivacy>,
-  setBusy: (busy: boolean) => void,
-  setOpen: (open: boolean) => void,
-) {
-  const pendingPreviewJobId = useRef<
-    NonNullable<ImessagePrivacyState["preview"]>["id"] | null
-  >(null);
+export function ImessagePrivacySettings() {
+  const privacy = useImessagePrivacy();
 
-  useEffect(() => {
-    const preview = privacy.state?.preview;
-    if (!preview || preview.id !== pendingPreviewJobId.current) return;
-    if (preview.status === "ready") {
-      pendingPreviewJobId.current = null;
-      if (preview.threadCount > 0) setOpen(true);
-    } else if (preview.status === "failed") {
-      pendingPreviewJobId.current = null;
-    }
-  }, [privacy.state?.preview, setOpen]);
-
-  const prepare = async () => {
-    setBusy(true);
-    try {
-      const result = await privacy.preparePreview({});
-      pendingPreviewJobId.current = result.previewJobId;
-    } catch (error) {
-      pendingPreviewJobId.current = null;
-      toast.error(
-        getUserFacingErrorMessage(error, "Could not prepare deletion"),
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-  const confirm = async () => {
-    const previewJobId = privacy.state?.preview?.id;
-    if (!previewJobId) return;
-    setBusy(true);
-    try {
-      await privacy.requestDeletion({ previewJobId });
-      toast.success("Personal iMessage history deletion started");
-      setOpen(false);
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Could not start deletion"));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { prepare, confirm };
+  return (
+    <>
+      <ImessagePrivacyDialog
+        open={privacy.dialogOpen}
+        onOpenChange={privacy.setDialogOpen}
+        state={privacy.state}
+        busy={privacy.busy}
+        onPrepare={() => void privacy.prepare()}
+        onConfirm={() => void privacy.confirm()}
+      />
+      <ImessagePrivacyPanel
+        state={privacy.state}
+        busy={privacy.busy}
+        onPrepare={() => void privacy.prepare()}
+        onReview={() => privacy.setDialogOpen(true)}
+      />
+    </>
+  );
 }
 
 export function ProfileSectionTabs({

@@ -293,7 +293,7 @@ describe("Slack presentation lifecycle", () => {
       binding: await ctx.db.get(fixture.bindingId),
       presentation: await ctx.db
         .query("slackMessagePresentations")
-        .withIndex("by_threadMessageId", (q) =>
+        .withIndex("message", (q) =>
           q.eq("threadMessageId", fixture.messageId),
         )
         .unique(),

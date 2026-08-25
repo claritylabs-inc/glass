@@ -62,7 +62,7 @@ export async function replacePolicyDeclarationFacts(
 
   const existingActive = await ctx.db
     .query("policyDeclarationFacts")
-    .withIndex("by_policyId_active", (q) => q.eq("policyId", policyId).eq("active", true))
+    .withIndex("policy_active", (q) => q.eq("policyId", policyId).eq("active", true))
     .collect();
   const facts = policy.deletedAt
     ? []

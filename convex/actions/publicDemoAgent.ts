@@ -6,7 +6,7 @@ import { z } from "zod";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
   generateAgentTextForPublicTask,
   generatedTextFromResult,
@@ -30,26 +30,10 @@ import {
   type PublicDemoLeadContext,
   type PublicDemoLeadStage,
 } from "../lib/publicDemoAgent";
+import { collectToolAudit } from "../lib/agentToolAudit";
 
-type PublicDemoConversation = {
-  _id: Id<"publicDemoConversations">;
-  channel: PublicDemoChannel;
-  senderContact?: string;
-  leadName?: string;
-  leadCompany?: string;
-  leadEmail?: string;
-  leadUseCase?: string;
-  stage: PublicDemoLeadStage;
-  ctaStatus: PublicDemoCtaStatus;
-  turnCount: number;
-};
-
-type PublicDemoLog = {
-  direction: "inbound" | "outbound" | "system";
-  content: string;
-  createdAt: number;
-  subject?: string;
-};
+type PublicDemoConversation = Doc<"publicDemoConversations">;
+type PublicDemoLog = Doc<"publicDemoChatLogs">;
 
 type PublicDemoAgentResponse = {
   conversationId: Id<"publicDemoConversations">;
@@ -95,51 +79,6 @@ function logsToMessages(logs: PublicDemoLog[]): ModelMessage[] {
           ? `Subject: ${log.subject}\n\n${log.content}`
           : log.content,
     }));
-}
-
-function safeJson(value: unknown) {
-  try {
-    return JSON.stringify(value).slice(0, 2000);
-  } catch {
-    return undefined;
-  }
-}
-
-function collectToolAudit(result: unknown) {
-  const calls: Array<{ name: string; input?: string; output?: string }> = [];
-  const add = (part: unknown, output?: unknown) => {
-    if (!part || typeof part !== "object") return;
-    const record = part as Record<string, unknown>;
-    const name =
-      typeof record.toolName === "string"
-        ? record.toolName
-        : typeof record.name === "string"
-          ? record.name
-          : undefined;
-    if (!name) return;
-    calls.push({
-      name,
-      input: safeJson(record.input ?? record.args),
-      output: safeJson(output ?? record.output ?? record.result),
-    });
-  };
-
-  const root = result as Record<string, unknown>;
-  if (Array.isArray(root.toolCalls)) {
-    for (const call of root.toolCalls) add(call);
-  }
-  if (Array.isArray(root.steps)) {
-    for (const step of root.steps) {
-      const stepRecord = step as Record<string, unknown>;
-      if (Array.isArray(stepRecord.toolCalls)) {
-        for (const call of stepRecord.toolCalls) add(call);
-      }
-      if (Array.isArray(stepRecord.toolResults)) {
-        for (const toolResult of stepRecord.toolResults) add(toolResult);
-      }
-    }
-  }
-  return calls.slice(0, 20);
 }
 
 function inferStage(args: {
@@ -198,27 +137,13 @@ function nextStep(stage: PublicDemoLeadStage, ctaStatus: PublicDemoCtaStatus) {
   return "Continue demo, capture name/company, and qualify use case.";
 }
 
-function hasSafetyNotice(text: string) {
-  return /\b(demo only|demo data only|not real|not binding|no certificate (?:was )?issued|not insurance advice)\b/i.test(
-    text,
-  );
-}
-
-function hasPriorSafetyNotice(logs: PublicDemoLog[]) {
-  return logs.some(
-    (log) => log.direction === "outbound" && hasSafetyNotice(log.content),
-  );
-}
-
 function addSimulationNotice(args: {
   text: string;
   channel: PublicDemoChannel;
   alreadyWarned: boolean;
 }) {
   const text = args.text.trim();
-  if (args.alreadyWarned || hasSafetyNotice(text)) {
-    return text;
-  }
+  if (args.alreadyWarned) return text;
   const notice =
     args.channel === "imessage"
       ? "Demo data only, not real advice."
@@ -232,27 +157,20 @@ const PUBLIC_DEMO_TRANSPORT_CAPS: Record<PublicDemoChannel, number> = {
   imessage: 520,
 };
 
-function publicDemoResponseIsValid(args: {
+function validatedPublicDemoResponse(args: {
   text: string;
   channel: PublicDemoChannel;
   alreadyWarned: boolean;
-}) {
-  const text = args.text.trim();
-  if (!text || Array.from(text).length > PUBLIC_DEMO_TRANSPORT_CAPS[args.channel]) {
-    return false;
-  }
-  return (
-    args.alreadyWarned ||
-    !mentionsRealOrAdviceRisk(text) ||
-    hasSafetyNotice(text)
-  );
+}): string | undefined {
+  if (!args.text.trim()) return undefined;
+  const text = addSimulationNotice(args);
+  return Array.from(text).length <= PUBLIC_DEMO_TRANSPORT_CAPS[args.channel]
+    ? text
+    : undefined;
 }
 
-function neutralPublicDemoFailure(channel: PublicDemoChannel) {
-  return channel === "imessage"
-    ? "I couldn't safely format that demo response. Please try a shorter request."
-    : "I couldn't safely format that demo response. Please try again with a shorter request.";
-}
+const NEUTRAL_PUBLIC_DEMO_FAILURE =
+  "I couldn't safely format that demo response. Please try a shorter request.";
 
 function formatPublicDemoEmail(args: {
   body: string;
@@ -262,38 +180,6 @@ function formatPublicDemoEmail(args: {
   const text = stripMarkdown(args.body) + signature.text;
   const html = buildAgentEmailHtmlBody(args.body, signature);
   return { text, html };
-}
-
-function mentionsRealOrAdviceRisk(text: string) {
-  return /\b(real|valid|binding|official|certified|usable|issued|attached|proof of insurance|insurance advice|legal advice)\b/i.test(
-    text,
-  );
-}
-
-function mentionsRealLookingDemoArtifact(text: string) {
-  return (
-    /\b(sample|example|simulated|draft)\b.{0,80}\b(coi|certificate|policy answer|coverage answer|compliance result|email)\b/i.test(
-      text,
-    ) ||
-    /\b(policy number|carrier|limit|additional insured|waiver of subrogation|certificate holder|covered|not covered|compliant|noncompliant|needs attention)\b/i.test(
-      text,
-    )
-  );
-}
-
-function shouldAttachSimulationNotice(args: {
-  channel: PublicDemoChannel;
-  latestMessage: string;
-  responseText: string;
-  alreadyWarned: boolean;
-}) {
-  if (args.alreadyWarned) return false;
-  const combined = `${args.latestMessage}\n${args.responseText}`;
-  if (mentionsRealOrAdviceRisk(combined)) return true;
-  if (args.channel === "email") {
-    return mentionsRealLookingDemoArtifact(args.responseText);
-  }
-  return mentionsRealLookingDemoArtifact(args.responseText);
 }
 
 export const respond = internalAction({
@@ -310,14 +196,14 @@ export const respond = internalAction({
     chatGuid: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<PublicDemoAgentResponse> => {
-    const channel = args.channel as PublicDemoChannel;
+    const channel = args.channel;
     const normalizedSender = args.senderContact.trim().toLowerCase();
     const rateKey = senderHash(channel, normalizedSender);
     const rate = await ctx.runMutation(internal.publicDemo.checkRateLimit, {
       rateKey,
     });
 
-    const conversation = (await ctx.runMutation(
+    const conversation = await ctx.runMutation(
       internal.publicDemo.findOrCreateConversation,
       {
         channel,
@@ -326,7 +212,7 @@ export const respond = internalAction({
         agentAddress: args.agentAddress,
         leadEmail: channel === "email" ? args.fromEmail : undefined,
       },
-    )) as PublicDemoConversation;
+    );
 
     await ctx.runMutation(internal.publicDemo.appendChatLog, {
       conversationId: conversation._id,
@@ -347,8 +233,8 @@ export const respond = internalAction({
     if (!rate.allowed) {
       const text =
         channel === "imessage"
-          ? "I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book here: https://cal.com/team/claritylabs/product-demo"
-          : "I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book a product demo at https://cal.com/team/claritylabs/product-demo.";
+          ? `I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book here: ${PUBLIC_DEMO_BOOKING_URL}`
+          : `I am getting a lot of demo messages from this contact. Please try again in a few minutes, or book a product demo at ${PUBLIC_DEMO_BOOKING_URL}.`;
       const formatted =
         channel === "email"
           ? formatPublicDemoEmail({ body: text, agentAddress: args.agentAddress })
@@ -357,7 +243,7 @@ export const respond = internalAction({
         conversationId: conversation._id,
         stage: "rate_limited",
       });
-      const outboundLogId = (await ctx.runMutation(
+      const outboundLogId = await ctx.runMutation(
         internal.publicDemo.appendChatLog,
         {
           conversationId: conversation._id,
@@ -368,7 +254,7 @@ export const respond = internalAction({
           contentHtml: formatted.html,
           deliveryStatus: "generated",
         },
-      )) as Id<"publicDemoChatLogs">;
+      );
       return {
         conversationId: conversation._id,
         outboundLogId,
@@ -377,14 +263,14 @@ export const respond = internalAction({
       };
     }
 
-    const logs = (await ctx.runQuery(
+    const logs = await ctx.runQuery(
       internal.publicDemo.listConversationLogsInternal,
       {
         conversationId: conversation._id,
         limit: 16,
       },
-    )) as PublicDemoLog[];
-    const alreadyWarned = hasPriorSafetyNotice(logs);
+    );
+    const alreadyWarned = conversation.safetyNoticeSent === true;
     const leadPatch: PublicDemoLeadContext = {};
     let ctaStatus: PublicDemoCtaStatus = conversation.ctaStatus;
     let ctaUrl: string | undefined;
@@ -533,7 +419,6 @@ export const respond = internalAction({
       lead: initialLead,
       turnCount: conversation.turnCount,
       latestMessage: args.messageText,
-      hasSentSafetyNotice: alreadyWarned,
     });
     const messages = [
       ...logsToMessages(logs.slice(0, -1)),
@@ -592,38 +477,18 @@ export const respond = internalAction({
       ctaStatus,
       lead,
     });
-    if (needsTextEmail && responseText.includes(PUBLIC_DEMO_BOOKING_URL)) {
-      responseText =
-        "What is the best email to prefill on the product-demo booking link?";
-    }
-    if (
-      shouldAttachSimulationNotice({
-        channel,
-        latestMessage: args.messageText,
-        responseText,
-        alreadyWarned,
-      })
-    ) {
-      responseText = addSimulationNotice({
-        text: responseText,
-        channel,
-        alreadyWarned,
-      });
-    }
-
-    if (
-      !publicDemoResponseIsValid({
-        text: responseText,
-        channel,
-        alreadyWarned,
-      })
-    ) {
+    let validatedResponse = validatedPublicDemoResponse({
+      text: responseText,
+      channel,
+      alreadyWarned,
+    });
+    if (!validatedResponse) {
       const retry = await generateAgentTextForPublicTask(
         ctx,
         task,
         {
           maxOutputTokens: channel === "imessage" ? 120 : 700,
-          system: `${system}\n\nRETRY REQUIREMENT: Return one self-contained, safe response under ${PUBLIC_DEMO_TRANSPORT_CAPS[channel]} Unicode code points. Do not claim that a real artifact was created or delivered. Include the simulation notice when this conversation has not already displayed one.`,
+          system: `${system}\n\nRETRY REQUIREMENT: Return one self-contained, safe response under ${PUBLIC_DEMO_TRANSPORT_CAPS[channel]} Unicode code points. Do not claim that a real artifact was created or delivered. Do not add a simulation notice; the transport owns it.`,
           messages: [
             ...messages,
             { role: "assistant", content: responseText },
@@ -654,41 +519,21 @@ export const respond = internalAction({
       );
       result = retry;
       responseText = generatedTextFromResult(retry).trim();
-      if (
-        shouldAttachSimulationNotice({
-          channel,
-          latestMessage: args.messageText,
-          responseText,
-          alreadyWarned,
-        })
-      ) {
-        responseText = addSimulationNotice({
-          text: responseText,
-          channel,
-          alreadyWarned,
-        });
-      }
-      if (
-        !publicDemoResponseIsValid({
-          text: responseText,
-          channel,
-          alreadyWarned,
-        })
-      ) {
-        responseText = neutralPublicDemoFailure(channel);
-      }
+      validatedResponse = validatedPublicDemoResponse({
+        text: responseText,
+        channel,
+        alreadyWarned,
+      });
     }
+    responseText =
+      validatedResponse ??
+      addSimulationNotice({
+        text: NEUTRAL_PUBLIC_DEMO_FAILURE,
+        channel,
+        alreadyWarned,
+      });
 
-    await ctx.runMutation(internal.publicDemo.updateConversationLead, {
-      conversationId: conversation._id,
-      leadName: lead.name,
-      leadCompany: lead.company,
-      leadEmail: lead.email,
-      leadUseCase: lead.useCase,
-      stage: nextStage,
-      ctaStatus,
-    });
-    const toolCalls = collectToolAudit(result);
+    const toolCalls = collectToolAudit(result).toolCalls;
     const formatted =
       channel === "email"
         ? formatPublicDemoEmail({
@@ -696,7 +541,7 @@ export const respond = internalAction({
             agentAddress: args.agentAddress,
           })
         : { text: responseText, html: markdownToHtml(responseText) };
-    const outboundLogId = (await ctx.runMutation(
+    const outboundLogId = await ctx.runMutation(
       internal.publicDemo.appendChatLog,
       {
         conversationId: conversation._id,
@@ -713,15 +558,25 @@ export const respond = internalAction({
         ctaUrl,
         deliveryStatus: "generated",
       },
-    )) as Id<"publicDemoChatLogs">;
+    );
+    await ctx.runMutation(internal.publicDemo.updateConversationLead, {
+      conversationId: conversation._id,
+      leadName: lead.name,
+      leadCompany: lead.company,
+      leadEmail: lead.email,
+      leadUseCase: lead.useCase,
+      stage: nextStage,
+      ctaStatus,
+      safetyNoticeSent: true,
+    });
 
-    const latestLogs = (await ctx.runQuery(
+    const latestLogs = await ctx.runQuery(
       internal.publicDemo.listConversationLogsInternal,
       {
         conversationId: conversation._id,
         limit: 20,
       },
-    )) as PublicDemoLog[];
+    );
     await ctx.runMutation(internal.publicDemo.upsertSalesTranscript, {
       conversationId: conversation._id,
       channel,

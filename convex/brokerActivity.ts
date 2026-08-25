@@ -43,7 +43,7 @@ export const listPortfolio = query({
     const limit = args.limit ?? 50;
     const events = await ctx.db
       .query("brokerActivity")
-      .withIndex("by_brokerOrgId_createdAt", (q) =>
+      .withIndex("broker_created", (q) =>
         q.eq("brokerOrgId", args.brokerOrgId),
       )
       .order("desc")
@@ -77,7 +77,7 @@ export const listPortfolioInternal = internalQuery({
     const limit = args.limit ?? 50;
     const events = await ctx.db
       .query("brokerActivity")
-      .withIndex("by_brokerOrgId_createdAt", (q) =>
+      .withIndex("broker_created", (q) =>
         q.eq("brokerOrgId", args.orgId),
       )
       .order("desc")
@@ -112,7 +112,7 @@ export const listForClient = query({
     const limit = args.limit ?? 50;
     const events = await ctx.db
       .query("brokerActivity")
-      .withIndex("by_brokerOrgId_clientOrgId_createdAt", (q) =>
+      .withIndex("broker_client", (q) =>
         q
           .eq("brokerOrgId", args.brokerOrgId)
           .eq("clientOrgId", args.clientOrgId),

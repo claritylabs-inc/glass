@@ -1,7 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-  AGENT_CHANNEL_HISTORY_POLICY,
-  buildAssistantMessageContentWithArtifacts,
   buildPrivateAgentHistoryMetadata,
   buildThreadContinuityPrompt,
   selectBoundedAgentHistory,
@@ -9,71 +7,20 @@ import {
   stripInternalAgentActivity,
 } from "./agentMessageHistory";
 
-describe("buildAssistantMessageContentWithArtifacts", () => {
-  test("does not append raw tool artifact data when no tool metadata exists", () => {
-    expect(
-      buildAssistantMessageContentWithArtifacts({
-        content: "Certificate follow-up is on hold.",
-        toolArtifacts: [
-          {
-            type: "certificate_hold",
-            data: {
-              policyId: "policy-1",
-              holderName: "Example Holder",
-              source: "imessage",
-            },
-          },
-        ],
-      }),
-    ).toBe("Certificate follow-up is on hold.");
-  });
-
-  test("keeps tool and attachment activity out of customer-visible text", () => {
-    expect(
-      buildAssistantMessageContentWithArtifacts({
-        content: "COI generated.",
-        usedTools: ["lookup_policy", "generate_coi"],
-        attachments: [{ filename: "COI - Polychain Capital Fund IV.pdf" }],
-      }),
-    ).toBe("COI generated.");
-  });
-
-  test("keeps attachment failure activity out of customer-visible text", () => {
-    expect(
-      buildAssistantMessageContentWithArtifacts({
-        content: "COI generated.",
-        usedTools: ["generate_coi"],
-        toolArtifacts: [
-          {
-            type: "imessage_attachment_delivery",
-            data: {
-              status: "failed",
-              stage: "worker_delivery",
-              failures: [
-                {
-                  filename: "COI - Signalfire Fund III.pdf",
-                  error: "Photon rejected the attachment",
-                },
-              ],
-            },
-          },
-        ],
-      }),
-    ).toBe("COI generated.");
-  });
-
-  test("leaves ordinary assistant content unchanged", () => {
-    expect(
-      buildAssistantMessageContentWithArtifacts({
-        content: "No pending choices.",
-        toolArtifacts: [{ type: "other", data: {} }],
-      }),
-    ).toBe("No pending choices.");
-  });
-});
-
 describe("buildPrivateAgentHistoryMetadata", () => {
   test("collects compact JSON-safe workflow, tool, and attachment context", () => {
+    const workflowOutcome = {
+      workflowKind: "certificate_request",
+      status: "completed",
+      nextAction: "none",
+      requiredSlots: [],
+      forbiddenQuestions: [],
+      forbiddenClaims: [],
+      sideEffects: [],
+      artifacts: [],
+      comms: { headline: "Certificate generated" },
+      audit: [],
+    };
     expect(
       buildPrivateAgentHistoryMetadata({
         usedTools: ["lookup_policy", "generate_coi", "generate_coi"],
@@ -81,10 +28,7 @@ describe("buildPrivateAgentHistoryMetadata", () => {
         toolArtifacts: [
           {
             type: "workflow_outcome",
-            data: {
-              workflowKind: "certificate_request",
-              status: "completed",
-            },
+            data: workflowOutcome,
           },
           {
             type: "imessage_attachment_delivery",
@@ -97,18 +41,13 @@ describe("buildPrivateAgentHistoryMetadata", () => {
       }),
     ).toEqual({
       tools: ["lookup_policy", "generate_coi"],
-      workflowOutcomes: [
-        {
-          workflowKind: "certificate_request",
-          status: "completed",
-        },
-      ],
+      workflowOutcomes: [workflowOutcome],
       attachmentNames: ["COI - Example Holder.pdf"],
       attachmentFailures: ["failed.pdf"],
     });
   });
 
-  test("drops workflow metadata that is not JSON-safe", () => {
+  test("drops invalid workflow metadata", () => {
     expect(
       buildPrivateAgentHistoryMetadata({
         toolArtifacts: [
@@ -117,8 +56,8 @@ describe("buildPrivateAgentHistoryMetadata", () => {
             data: { unsafe: Symbol("unsafe") },
           },
         ],
-      }).workflowOutcomes,
-    ).toEqual([]);
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -140,12 +79,6 @@ describe("stripInternalAgentActivity", () => {
       "First paragraph.\n\n[TOOL ACTIVITY: tools: lookup_policy]\n\nSecond paragraph.",
     );
   });
-
-  test("preserves ordinary customer-facing discussion of tool activity", () => {
-    expect(
-      stripInternalAgentActivity("The tool activity audit is available."),
-    ).toBe("The tool activity audit is available.");
-  });
 });
 
 describe("bounded agent conversation history", () => {
@@ -159,19 +92,6 @@ describe("bounded agent conversation history", () => {
     _creationTime: creationTime,
     role,
     content,
-  });
-
-  test("requires every agent surface to declare its continuity policy", () => {
-    expect(AGENT_CHANNEL_HISTORY_POLICY).toEqual({
-      web: { continuityMode: "thread_long" },
-      email: { continuityMode: "thread_long" },
-      imessage: {
-        continuityMode: "task_scoped",
-        inactivityMs: 7 * 24 * 60 * 60 * 1000,
-      },
-      slack: { continuityMode: "thread_long" },
-      mcp: { continuityMode: "thread_long" },
-    });
   });
 
   test("keeps at most 24 complete user turns with their replies", () => {

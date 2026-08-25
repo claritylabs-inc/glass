@@ -33,7 +33,7 @@ async function interactionActor(
 ) {
   const actor = await ctx.db
     .query("slackActors")
-    .withIndex("by_connectionId_and_teamId_and_slackUserId", (q) =>
+    .withIndex("slack_identity", (q) =>
       q
         .eq("connectionId", presentation.connectionId)
         .eq("teamId", teamId)
@@ -64,7 +64,7 @@ export const create = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("slackMessagePresentations")
-      .withIndex("by_threadMessageId", (q) =>
+      .withIndex("message", (q) =>
         q.eq("threadMessageId", args.threadMessageId),
       )
       .first();
@@ -149,7 +149,7 @@ export const get = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("slackMessagePresentations")
-      .withIndex("by_threadMessageId", (q) =>
+      .withIndex("message", (q) =>
         q.eq("threadMessageId", args.threadMessageId),
       )
       .first(),
@@ -307,7 +307,7 @@ export const claimInteraction = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("slackInteractionEvents")
-      .withIndex("by_interactionKey", (q) =>
+      .withIndex("interaction", (q) =>
         q.eq("interactionKey", args.interactionKey),
       )
       .first();
@@ -315,7 +315,7 @@ export const claimInteraction = internalMutation({
     const actionTokenHash = await hashToken(args.actionToken);
     const presentation = await ctx.db
       .query("slackMessagePresentations")
-      .withIndex("by_actionTokenHash", (q) =>
+      .withIndex("action", (q) =>
         q.eq("actionTokenHash", actionTokenHash),
       )
       .first();
@@ -393,7 +393,7 @@ export const upsertFeedback = internalMutation({
     }
     const existing = await ctx.db
       .query("agentResponseFeedback")
-      .withIndex("by_threadMessageId_and_slackActorId", (q) =>
+      .withIndex("message_actor", (q) =>
         q
           .eq("threadMessageId", presentation.threadMessageId)
           .eq("slackActorId", actor._id),
@@ -452,7 +452,7 @@ export const submitFeedbackComment = internalMutation({
     }
     const feedback = await ctx.db
       .query("agentResponseFeedback")
-      .withIndex("by_threadMessageId_and_slackActorId", (q) =>
+      .withIndex("message_actor", (q) =>
         q
           .eq("threadMessageId", presentation.threadMessageId)
           .eq("slackActorId", actor._id),

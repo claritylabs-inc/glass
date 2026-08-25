@@ -7,7 +7,6 @@ import type {
   MessageAddressObject,
   MessageStructureObject,
 } from "imapflow";
-import { convert } from "html-to-text";
 import { v, type Infer } from "convex/values";
 import { action, internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
@@ -15,6 +14,7 @@ import { internal } from "../_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { generateObjectForOrg } from "../lib/models";
+import { htmlToPlainText } from "../lib/inboundEmailParser";
 import {
   canAutoExecuteMailboxDecision,
   mailboxAutomationBatchSchema,
@@ -225,17 +225,9 @@ function formatEnvelopeAddresses(addresses?: MessageAddressObject[]) {
     .join(", ");
 }
 
-export function automationTextPreview(value: string, contentType?: string) {
+function automationTextPreview(value: string, contentType?: string) {
   const text = contentType?.toLowerCase().startsWith("text/html")
-    ? convert(value, {
-        wordwrap: false,
-        limits: { maxInputLength: AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES },
-        selectors: [
-          { selector: "script", format: "skip" },
-          { selector: "style", format: "skip" },
-          { selector: "a", options: { ignoreHref: true } },
-        ],
-      })
+    ? htmlToPlainText(value, AUTOMATION_TEXT_DOWNLOAD_MAX_BYTES)
     : value;
   return text.replace(/\s+/g, " ").trim().slice(0, 12_000);
 }

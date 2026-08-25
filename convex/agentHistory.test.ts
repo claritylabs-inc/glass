@@ -233,7 +233,7 @@ describe("thread summary state", () => {
       async (ctx) =>
         await ctx.db
           .query("threadContextStates")
-          .withIndex("by_threadId", (q) => q.eq("threadId", fixture.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", fixture.threadId))
           .unique(),
     );
     expect(state?.taskEpoch).toBe(3);
@@ -290,7 +290,7 @@ describe("thread summary state", () => {
       async (ctx) =>
         await ctx.db
           .query("threadContextStates")
-          .withIndex("by_threadId", (q) => q.eq("threadId", fixture.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", fixture.threadId))
           .unique(),
     );
     expect(staleState?.attemptCount).toBe(0);
@@ -306,7 +306,7 @@ describe("thread summary state", () => {
       async (ctx) =>
         await ctx.db
           .query("threadContextStates")
-          .withIndex("by_threadId", (q) => q.eq("threadId", fixture.threadId))
+          .withIndex("thread", (q) => q.eq("threadId", fixture.threadId))
           .unique(),
     );
     expect(state).toMatchObject({

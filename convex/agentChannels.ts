@@ -114,7 +114,7 @@ async function readSettings(
 ) {
   const settings = await ctx.db
     .query("agentChannelSettings")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrgId))
+    .withIndex("client", (q) => q.eq("clientOrgId", clientOrgId))
     .first();
   return settings ?? { clientOrgId, ...DEFAULT_AGENT_CHANNEL_SETTINGS };
 }
@@ -125,7 +125,7 @@ async function activeConnection(
 ) {
   return await ctx.db
     .query("slackWorkspaceConnections")
-    .withIndex("by_clientOrgId_and_status", (q) =>
+    .withIndex("client_status", (q) =>
       q.eq("clientOrgId", clientOrgId).eq("status", "active"),
     )
     .first();
@@ -138,7 +138,7 @@ async function retainedConnection(
   for (const status of ["active", "revoked", "disconnected"] as const) {
     const connection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", clientOrgId).eq("status", status),
       )
       .order("desc")
@@ -164,7 +164,7 @@ async function slackSetupState(
 ) {
   return await ctx.db
     .query("slackSetupStates")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrgId))
+    .withIndex("client", (q) => q.eq("clientOrgId", clientOrgId))
     .first();
 }
 
@@ -176,7 +176,7 @@ async function invalidateSlackSetupOAuthStates(
   for (const purpose of ["customer", "customer_install_invite"] as const) {
     const states = await ctx.db
       .query("slackOAuthStates")
-      .withIndex("by_clientOrgId_and_purpose", (q) =>
+      .withIndex("client_purpose", (q) =>
         q.eq("clientOrgId", clientOrgId).eq("purpose", purpose),
       )
       .collect();
@@ -223,7 +223,7 @@ async function channelOverview(
   for (const status of ["active", "unavailable", "archived"] as const) {
     supportChannel = await ctx.db
       .query("slackChannelBindings")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", clientOrgId).eq("status", status),
       )
       .order("desc")
@@ -235,7 +235,7 @@ async function channelOverview(
     includeLifecycleHistory
       ? ctx.db
           .query("slackLifecycleEvents")
-          .withIndex("by_clientOrgId_and_receivedAt", (q) =>
+          .withIndex("client_received", (q) =>
             q.eq("clientOrgId", clientOrgId),
           )
           .order("desc")
@@ -245,7 +245,7 @@ async function channelOverview(
   const joinedChannels = connection
     ? await ctx.db
         .query("slackChannelMemberships")
-        .withIndex("by_connectionId_and_status", (q) =>
+        .withIndex("connection_status", (q) =>
           q.eq("connectionId", connection._id).eq("status", "active"),
         )
         .collect()
@@ -349,14 +349,14 @@ async function setupActorKind(
 ) {
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId_userId", (q) =>
+    .withIndex("organization_user", (q) =>
       q.eq("orgId", clientOrgId).eq("userId", userId),
     )
     .first();
   if (membership?.role === "admin") return "client_admin" as const;
   const profile = await ctx.db
     .query("operatorProfiles")
-    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .withIndex("user", (q) => q.eq("userId", userId))
     .first();
   return profile?.status === "active" ? ("operator" as const) : null;
 }
@@ -422,7 +422,7 @@ async function deactivateConnection(
         (["active", "unavailable"] as const).map((bindingStatus) =>
           ctx.db
             .query("slackChannelBindings")
-            .withIndex("by_connectionId_and_status", (q) =>
+            .withIndex("connection_status", (q) =>
               q.eq("connectionId", connection._id).eq("status", bindingStatus),
             )
             .collect(),
@@ -554,7 +554,7 @@ export const updateStandaloneAgentEmailHandleForOperator = mutation({
     if (handle) {
       const existing = await ctx.db
         .query("organizations")
-        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", handle))
+        .withIndex("handle", (q) => q.eq("agentHandle", handle))
         .unique();
       if (existing && existing._id !== client._id) {
         throw new Error("Agent email address is already taken");
@@ -693,7 +693,7 @@ export const finishSlackSetup = mutation({
       activeConnection(ctx, args.clientOrgId),
       ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
         )
         .first(),
@@ -794,7 +794,7 @@ export const setOperatorSlackIdentity = mutation({
     if (configuration.mode === "slack") {
       const installation = await ctx.db
         .query("slackInstallations")
-        .withIndex("by_teamId_and_status", (q) =>
+        .withIndex("team_status", (q) =>
           q.eq("teamId", hostTeamId).eq("status", "active"),
         )
         .first();
@@ -804,7 +804,7 @@ export const setOperatorSlackIdentity = mutation({
     }
     const collision = await ctx.db
       .query("operatorProfiles")
-      .withIndex("by_slackTeamId_and_slackUserId", (q) =>
+      .withIndex("slack_user", (q) =>
         q.eq("slackTeamId", teamId).eq("slackUserId", slackUserId),
       )
       .first();
@@ -866,7 +866,7 @@ async function upsertSettings(
 ) {
   const existing = await ctx.db
     .query("agentChannelSettings")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", clientOrgId))
+    .withIndex("client", (q) => q.eq("clientOrgId", clientOrgId))
     .first();
   const now = dayjs().valueOf();
   if (existing) {
@@ -909,7 +909,7 @@ export const authorizeSlackInstallInvite = internalQuery({
     }
     const profile = await ctx.db
       .query("operatorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("user", (q) => q.eq("userId", args.userId))
       .first();
     if (!profile || profile.status !== "active") {
       throwUserFacingError(userFacingErrorCodes.operatorRequired);
@@ -945,7 +945,7 @@ export const getActiveSlackConnectionByTeamId = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first(),
@@ -1079,13 +1079,13 @@ export const getSlackConnectionForMockSetup = internalQuery({
     (await activeConnection(ctx, args.clientOrgId)) ??
     (await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "disconnected"),
       )
       .first()) ??
     (await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "revoked"),
       )
       .first()),
@@ -1096,7 +1096,7 @@ export const getPrimarySlackBindingForSetup = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("slackChannelBindings")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
       )
       .first(),
@@ -1155,7 +1155,7 @@ export const createSlackInstallInviteOAuthState = internalMutation({
     const now = dayjs().valueOf();
     const existingStates = await ctx.db
       .query("slackOAuthStates")
-      .withIndex("by_clientOrgId_and_purpose", (q) =>
+      .withIndex("client_purpose", (q) =>
         q
           .eq("clientOrgId", args.clientOrgId)
           .eq("purpose", "customer_install_invite"),
@@ -1192,7 +1192,7 @@ export const recordSlackInstallInviteSent = internalMutation({
   handler: async (ctx, args) => {
     const profile = await ctx.db
       .query("operatorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", args.operatorUserId))
+      .withIndex("user", (q) => q.eq("userId", args.operatorUserId))
       .first();
     if (!profile || profile.status !== "active") {
       throwUserFacingError(userFacingErrorCodes.operatorRequired);
@@ -1264,7 +1264,7 @@ export const claimOAuthState = internalMutation({
     const stateHash = await sha256(args.state);
     const row = await ctx.db
       .query("slackOAuthStates")
-      .withIndex("by_stateHash", (q) => q.eq("stateHash", stateHash))
+      .withIndex("state", (q) => q.eq("stateHash", stateHash))
       .first();
     const now = dayjs().valueOf();
     if (!row || row.usedAt || row.invalidatedAt || row.expiresAt < now) {
@@ -1319,7 +1319,7 @@ async function upsertNativeSlackInstallation(
 ) {
   const active = await ctx.db
     .query("slackInstallations")
-    .withIndex("by_teamId_and_status", (q) =>
+    .withIndex("team_status", (q) =>
       q.eq("teamId", args.teamId).eq("status", "active"),
     )
     .first();
@@ -1330,13 +1330,13 @@ async function upsertNativeSlackInstallation(
     active ??
     (await ctx.db
       .query("slackInstallations")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "disconnected"),
       )
       .first()) ??
     (await ctx.db
       .query("slackInstallations")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "revoked"),
       )
       .first());
@@ -1384,7 +1384,7 @@ export const upsertSlackConnection = internalMutation({
   handler: async (ctx, args) => {
     const teamConnection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first();
@@ -1416,13 +1416,13 @@ export const upsertSlackConnection = internalMutation({
       clientConnection ??
       (await ctx.db
         .query("slackWorkspaceConnections")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "disconnected"),
         )
         .first()) ??
       (await ctx.db
         .query("slackWorkspaceConnections")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "revoked"),
         )
         .first());
@@ -1516,7 +1516,7 @@ export const upsertSlackConnection = internalMutation({
     );
     const deliverySettings = await ctx.db
       .query("policyDeliverySettings")
-      .withIndex("by_deliveryOwnerOrgId_and_clientOrgId", (q) =>
+      .withIndex("owner_client", (q) =>
         q
           .eq("deliveryOwnerOrgId", args.clientOrgId)
           .eq("clientOrgId", args.clientOrgId),
@@ -1544,7 +1544,7 @@ export const upsertSlackConnection = internalMutation({
     }
     const activeBinding = await ctx.db
       .query("slackChannelBindings")
-      .withIndex("by_clientOrgId_and_status", (q) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
       )
       .first();
@@ -1617,13 +1617,13 @@ export const bindPrimaryChannelForOperator = mutation({
     const existing =
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
         )
         .first()) ??
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "unavailable"),
         )
         .first());
@@ -1705,13 +1705,13 @@ export const bindPrimaryChannelInternal = internalMutation({
     const existing =
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
         )
         .first()) ??
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "unavailable"),
         )
         .first());
@@ -1803,14 +1803,14 @@ export const syncSlackChannelMembershipsInternal = internalMutation({
     const activeIds = new Set(args.channels.map((channel) => channel.id));
     const existing = await ctx.db
       .query("slackChannelMemberships")
-      .withIndex("by_connectionId_and_status", (q) =>
+      .withIndex("connection_status", (q) =>
         q.eq("connectionId", args.connectionId).eq("status", "active"),
       )
       .collect();
     for (const channel of args.channels) {
       const membership = await ctx.db
         .query("slackChannelMemberships")
-        .withIndex("by_connectionId_and_channelId", (q) =>
+        .withIndex("connection_channel", (q) =>
           q.eq("connectionId", args.connectionId).eq("channelId", channel.id),
         )
         .first();
@@ -1850,13 +1850,13 @@ export const syncSlackChannelMembershipsInternal = internalMutation({
     const supportChannel =
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "active"),
         )
         .first()) ??
       (await ctx.db
         .query("slackChannelBindings")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.clientOrgId).eq("status", "unavailable"),
         )
         .first());
@@ -1923,7 +1923,7 @@ export const selectAutomaticSlackChannelInternal = internalMutation({
     }
     const membership = await ctx.db
       .query("slackChannelMemberships")
-      .withIndex("by_connectionId_and_channelId", (q) =>
+      .withIndex("connection_channel", (q) =>
         q.eq("connectionId", args.connectionId).eq("channelId", args.channelId),
       )
       .first();
@@ -2050,7 +2050,7 @@ export const getSlackCredentialsByTeamId = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("slackInstallations")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first(),
@@ -2133,7 +2133,7 @@ export const getActiveSlackHostInstallation = internalQuery({
     if (!teamId) return null;
     const installation = await ctx.db
       .query("slackInstallations")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", teamId).eq("status", "active"),
       )
       .first();
@@ -2155,7 +2155,7 @@ export const getSlackHostStatus = query({
     }
     const installation = await ctx.db
       .query("slackInstallations")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", hostTeamId).eq("status", "active"),
       )
       .first();
@@ -2181,7 +2181,7 @@ export const revokeByTeamId = internalMutation({
   handler: async (ctx, args) => {
     const installation = await ctx.db
       .query("slackInstallations")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first();
@@ -2196,7 +2196,7 @@ export const revokeByTeamId = internalMutation({
     }
     const connection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first();
@@ -2235,7 +2235,7 @@ export const authorizeSlackHostSetup = internalQuery({
   handler: async (ctx, args) => {
     const profile = await ctx.db
       .query("operatorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .withIndex("user", (q) => q.eq("userId", args.userId))
       .first();
     return profile?.status === "active";
   },

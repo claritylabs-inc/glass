@@ -115,7 +115,7 @@ async function findAndMergeDuplicate(
   const sourceMatch = item.sourceRef
     ? await ctx.db
         .query("orgMemory")
-        .withIndex("by_org_sourceRef", (q) =>
+        .withIndex("organization_source", (q) =>
           q.eq("orgId", item.orgId).eq("sourceRef", item.sourceRef),
         )
         .first()
@@ -125,7 +125,7 @@ async function findAndMergeDuplicate(
     const contentKey = memoryContentKey(item.content);
     const existing = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org_type", (q) =>
+      .withIndex("organization_type", (q) =>
         q.eq("orgId", item.orgId).eq("type", item.type),
       )
       .take(500);
@@ -166,7 +166,7 @@ export const listByOrg = internalQuery({
   handler: async (ctx, args) => {
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(500);
     const orgName = await orgNameById(ctx, args.orgId);
     const active = activeCompanyFacts(memories, orgName);
@@ -183,7 +183,7 @@ export const listByType = internalQuery({
   handler: async (ctx, args) => {
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org_type", (q) =>
+      .withIndex("organization_type", (q) =>
         q.eq("orgId", args.orgId).eq("type", args.type),
       )
       .take(500);
@@ -309,7 +309,7 @@ export const deleteExpired = internalMutation({
     const now = dayjs().valueOf();
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(500);
     let cleaned = 0;
     for (const m of memories) {
@@ -336,7 +336,7 @@ export const list = query({
     }
     const memories = await ctx.db
       .query("orgMemory")
-      .withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .take(500);
     const orgName = await orgNameById(ctx, args.orgId);
     return activeCompanyFacts(memories, orgName)

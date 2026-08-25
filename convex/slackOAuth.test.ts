@@ -477,7 +477,7 @@ describe("Slack OAuth actions", () => {
     const state = await t.run((ctx) =>
       ctx.db
         .query("slackOAuthStates")
-        .withIndex("by_clientOrgId_and_purpose", (q) =>
+        .withIndex("client_purpose", (q) =>
           q
             .eq("clientOrgId", repair.clientOrgId)
             .eq("purpose", "customer"),

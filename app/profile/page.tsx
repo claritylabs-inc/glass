@@ -40,11 +40,8 @@ import {
 } from "@/lib/sync/use-cached-query";
 import { typeStyle } from "@/lib/typography";
 import {
-  ImessagePrivacyDialog,
-  ImessagePrivacyPanel,
+  ImessagePrivacySettings,
   ProfileSectionTabs,
-  useImessagePrivacy,
-  useImessagePrivacyActions,
 } from "@/components/profile/imessage-history-privacy";
 
 const inputClass = `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
@@ -116,16 +113,8 @@ export default function ProfilePage() {
   const [profileSection, setProfileSection] = useState<"profile" | "privacy">(
     "profile",
   );
-  const [privacyDialogOpen, setPrivacyDialogOpen] = useState(false);
-  const [privacyBusy, setPrivacyBusy] = useState(false);
   const [persistedValues, setPersistedValues] = useState<ProfileValues | null>(
     null,
-  );
-  const imessagePrivacy = useImessagePrivacy();
-  const privacyActions = useImessagePrivacyActions(
-    imessagePrivacy,
-    setPrivacyBusy,
-    setPrivacyDialogOpen,
   );
 
   useEffect(() => {
@@ -393,14 +382,6 @@ export default function ProfilePage() {
         </>
       }
     >
-      <ImessagePrivacyDialog
-        open={privacyDialogOpen}
-        onOpenChange={setPrivacyDialogOpen}
-        state={imessagePrivacy.state}
-        busy={privacyBusy}
-        onPrepare={() => void privacyActions.prepare()}
-        onConfirm={() => void privacyActions.confirm()}
-      />
       <ProfileSectionTabs
         active={profileSection}
         onChange={setProfileSection}
@@ -551,12 +532,7 @@ export default function ProfilePage() {
         </>
       ) : (
         <FadeIn when={true} staggerIndex={1} duration={0.4}>
-          <ImessagePrivacyPanel
-            state={imessagePrivacy.state}
-            busy={privacyBusy}
-            onPrepare={() => void privacyActions.prepare()}
-            onReview={() => setPrivacyDialogOpen(true)}
-          />
+          <ImessagePrivacySettings />
         </FadeIn>
       )}
     </AppShell>

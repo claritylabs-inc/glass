@@ -142,7 +142,7 @@ async function ensureClientMembership(
 ): Promise<{ clientOrgId: DataModelId<"organizations">; reused: boolean }> {
   const memberships = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+    .withIndex("user", (q) => q.eq("userId", args.userId))
     .collect();
   for (const m of memberships) {
     const org = await ctx.db.get(m.orgId);
@@ -207,7 +207,7 @@ export const joinBroker = mutation({
     const normalized = slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
     const broker = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (q) => q.eq("slug", normalized))
+      .withIndex("slug", (q) => q.eq("slug", normalized))
       .first();
     if (!broker || broker.type !== "broker") throw new Error("Broker not found");
 
@@ -428,7 +428,7 @@ export const deleteDraftClient = mutation({
     // Revoke any pending invitations for this org
     const invites = await ctx.db
       .query("clientInvitations")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", org.brokerOrgId!))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", org.brokerOrgId!))
       .collect();
     for (const inv of invites) {
       if (inv.clientOrgId === args.clientOrgId && inv.status === "pending") {
@@ -439,7 +439,7 @@ export const deleteDraftClient = mutation({
     // Soft delete the attached policies
     const policies = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.clientOrgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.clientOrgId))
       .collect();
     for (const p of policies) {
       if (!p.deletedAt) await ctx.db.patch(p._id, { deletedAt: Date.now() });
@@ -448,7 +448,7 @@ export const deleteDraftClient = mutation({
     // Remove assignments + memberships (draft orgs shouldn't have any, but be safe)
     const assignments = await ctx.db
       .query("brokerClientAssignments")
-      .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.clientOrgId))
+      .withIndex("client", (q) => q.eq("clientOrgId", args.clientOrgId))
       .collect();
     for (const a of assignments) await ctx.db.delete(a._id);
 
@@ -598,7 +598,7 @@ export const list = query({
 
     return await ctx.db
       .query("clientInvitations")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", args.orgId))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", args.orgId))
       .order("desc")
       .collect();
   },
@@ -681,7 +681,7 @@ export const acceptInvite = mutation({
     const tokenHash = await sha256Hex(args.token);
     const inv = await ctx.db
       .query("clientInvitations")
-      .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", tokenHash))
+      .withIndex("token", (q) => q.eq("inviteTokenHash", tokenHash))
       .first();
 
     if (!inv) throw new Error("Invitation not found");
@@ -753,7 +753,7 @@ export const getByHashInternal = internalQuery({
   handler: async (ctx, { tokenHash }) => {
     return await ctx.db
       .query("clientInvitations")
-      .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", tokenHash))
+      .withIndex("token", (q) => q.eq("inviteTokenHash", tokenHash))
       .first();
   },
 });
@@ -774,7 +774,7 @@ export const getDraftContextInternal = internalQuery({
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", org.brokerOrgId!).eq("userId", userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", org.brokerOrgId!).eq("userId", userId))
       .first();
     if (!membership) return null;
 
@@ -796,12 +796,12 @@ export const attachInvitationToDraft = internalMutation({
   handler: async (ctx, { clientOrgId, tokenHash }) => {
     const inv = await ctx.db
       .query("clientInvitations")
-      .withIndex("by_tokenHash", (q) => q.eq("inviteTokenHash", tokenHash))
+      .withIndex("token", (q) => q.eq("inviteTokenHash", tokenHash))
       .first();
     if (inv) {
       const previousInvites = await ctx.db
         .query("clientInvitations")
-        .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", inv.brokerOrgId))
+        .withIndex("broker", (q) => q.eq("brokerOrgId", inv.brokerOrgId))
         .collect();
       for (const previous of previousInvites) {
         if (
@@ -837,7 +837,7 @@ export const resolveAccessInternal = internalQuery({
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", orgId).eq("userId", userId))
       .first();
 
     if (membership) return { orgType, accessType: "member" as const, role: membership.role };
@@ -845,7 +845,7 @@ export const resolveAccessInternal = internalQuery({
     if (orgType === "client" && org.brokerOrgId) {
       const bm = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_orgId_userId", (q) =>
+        .withIndex("organization_user", (q) =>
           q.eq("orgId", org.brokerOrgId!).eq("userId", userId),
         )
         .first();

@@ -147,7 +147,7 @@ describe("carrier identity backfill action", () => {
       policy: await ctx.db.get(policyId),
       backfill: await ctx.db
         .query("carrierIdentityBackfillResults")
-        .withIndex("by_policyId", (query) =>
+        .withIndex("policy", (query) =>
           query.eq("policyId", policyId)
         )
         .unique(),
@@ -161,7 +161,7 @@ describe("carrier identity backfill action", () => {
       policy: await ctx.db.get(policyId),
       backfill: await ctx.db
         .query("carrierIdentityBackfillResults")
-        .withIndex("by_policyId", (query) =>
+        .withIndex("policy", (query) =>
           query.eq("policyId", policyId)
         )
         .unique(),
@@ -231,7 +231,7 @@ describe("carrier identity backfill action", () => {
     const result = await t.run(async (ctx) =>
       await ctx.db
         .query("carrierIdentityBackfillResults")
-        .withIndex("by_policyId", (query) =>
+        .withIndex("policy", (query) =>
           query.eq("policyId", policyId)
         )
         .unique()

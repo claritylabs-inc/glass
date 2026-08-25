@@ -224,8 +224,39 @@ function whoamiText(args: {
   return `${identity}. Org: ${args.orgName}. Chat: ${chatKind}. Scope: ${scope}.`;
 }
 
-function requiresLinkedSender(command: KnownTextChannelCommand) {
-  return command.name !== "help";
+async function consumeDisplayedDraftSnapshot(
+  ctx: ActionCtx,
+  args: {
+    threadId: Id<"threads">;
+    currentMessageId: Id<"threadMessages">;
+    userId: Id<"users">;
+    selectedIds: Id<"pendingEmails">[];
+  },
+) {
+  const confirmation = await ctx.runQuery(
+    internal.threadActionConfirmations.latestPendingInternal,
+    { threadId: args.threadId },
+  );
+  const payload = confirmation?.payload;
+  if (
+    confirmation?.actor.kind !== "user" ||
+    confirmation.actor.userId !== args.userId ||
+    payload?.kind !== "draft_snapshot" ||
+    args.selectedIds.length === 0 ||
+    args.selectedIds.some((id) => !payload.pendingEmailIds.includes(id))
+  ) {
+    return null;
+  }
+  const outcome = await ctx.runMutation(
+    internal.threadActionConfirmations.consumeInternal,
+    {
+      id: confirmation._id,
+      actor: { kind: "user", userId: args.userId },
+      currentMessageId: args.currentMessageId,
+      requireAdjacentPrompt: true,
+    },
+  );
+  return { confirmationId: confirmation._id, outcome };
 }
 
 async function runKnownCommand(
@@ -242,7 +273,6 @@ async function runKnownCommand(
     history: ImessageCommandHistoryMessage[];
     threadId: Id<"threads">;
     currentMessageId: Id<"threadMessages">;
-    orgId: Id<"organizations">;
     userId: Id<"users">;
   },
 ): Promise<ImessageSlashCommandResult> {
@@ -289,40 +319,21 @@ async function runKnownCommand(
     case "send":
       {
         const selected = selectedByTarget(args.draftEmails, command.target);
-        const confirmation = await ctx.runQuery(
-          internal.threadActionConfirmations.latestPendingInternal,
-          { threadId: args.threadId },
-        );
-        const draftSnapshot =
-          confirmation?.payload.kind === "draft_snapshot"
-            ? confirmation.payload
-            : undefined;
-        const selectedIds = selected.map((draft) => draft._id);
-        if (
-          !confirmation ||
-          confirmation.actor.kind !== "user" ||
-          confirmation.actor.userId !== args.userId ||
-          !draftSnapshot ||
-          selectedIds.length === 0 ||
-          selectedIds.some((id) => !draftSnapshot.pendingEmailIds.includes(id))
-        ) {
+        const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
+          threadId: args.threadId,
+          currentMessageId: args.currentMessageId,
+          userId: args.userId,
+          selectedIds: selected.map((draft) => draft._id),
+        });
+        if (!snapshot) {
           return {
             response:
               "Use /drafts immediately before /send so Glass can verify the exact displayed draft snapshot.",
           };
         }
-        const outcome = await ctx.runMutation(
-          internal.threadActionConfirmations.consumeInternal,
-          {
-            id: confirmation._id,
-            actor: { kind: "user", userId: args.userId },
-            currentMessageId: args.currentMessageId,
-            requireAdjacentPrompt: true,
-          },
-        );
-        if (outcome !== "completed") {
+        if (snapshot.outcome !== "completed") {
           return {
-            response: `That draft snapshot is ${outcome.replace("_", " ")}. Use /drafts and try again.`,
+            response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
           };
         }
         return {
@@ -330,54 +341,32 @@ async function runKnownCommand(
             ctx,
             args.draftEmails,
             command.target,
-            confirmation._id,
+            snapshot.confirmationId,
           ),
         };
       }
     case "discard":
       {
-        const allEmails = args.draftEmails;
-        const selected = selectedByTarget(allEmails, command.target);
-        const confirmation = await ctx.runQuery(
-          internal.threadActionConfirmations.latestPendingInternal,
-          { threadId: args.threadId },
-        );
-        const draftSnapshot =
-          confirmation?.payload.kind === "draft_snapshot"
-            ? confirmation.payload
-            : undefined;
-        if (
-          !confirmation ||
-          confirmation.actor.kind !== "user" ||
-          confirmation.actor.userId !== args.userId ||
-          !draftSnapshot ||
-          selected.length === 0 ||
-          selected.some(
-            (email) =>
-              !draftSnapshot.pendingEmailIds.includes(email._id),
-          )
-        ) {
+        const selected = selectedByTarget(args.draftEmails, command.target);
+        const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
+          threadId: args.threadId,
+          currentMessageId: args.currentMessageId,
+          userId: args.userId,
+          selectedIds: selected.map((email) => email._id),
+        });
+        if (!snapshot) {
           return {
             response:
               "Use /drafts immediately before /discard so Glass can verify the exact displayed draft snapshot.",
           };
         }
-        const outcome = await ctx.runMutation(
-          internal.threadActionConfirmations.consumeInternal,
-          {
-            id: confirmation._id,
-            actor: { kind: "user", userId: args.userId },
-            currentMessageId: args.currentMessageId,
-            requireAdjacentPrompt: true,
-          },
-        );
-        if (outcome !== "completed") {
+        if (snapshot.outcome !== "completed") {
           return {
-            response: `That draft snapshot is ${outcome.replace("_", " ")}. Use /drafts and try again.`,
+            response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
           };
         }
         return {
-          response: await discardEmails(ctx, allEmails, command.target),
+          response: await discardEmails(ctx, args.draftEmails, command.target),
         };
       }
     case "leave":
@@ -404,7 +393,6 @@ export async function runImessageSlashCommand(
     history: ImessageCommandHistoryMessage[];
     threadId: Id<"threads">;
     currentMessageId: Id<"threadMessages">;
-    orgId: Id<"organizations">;
     userId: Id<"users">;
   },
 ): Promise<ImessageSlashCommandResult | null> {
@@ -417,7 +405,7 @@ export async function runImessageSlashCommand(
     };
   }
 
-  if (requiresLinkedSender(command) && !args.currentSenderIsLinked) {
+  if (command.name !== "help" && !args.currentSenderIsLinked) {
     return { response: IMESSAGE_LINKED_SENDER_REQUIRED };
   }
 

@@ -505,7 +505,7 @@ describe("carrier identity branding", () => {
     const cached = await t.run((ctx) =>
       ctx.db
         .query("carrierBrands")
-        .withIndex("by_normalizedName", (query) =>
+        .withIndex("name", (query) =>
           query.eq("normalizedName", "allianz global assistance")
         )
         .unique()

@@ -45,7 +45,7 @@ test("updates notification channels atomically", async () => {
   const rows = await t.run((ctx) =>
     ctx.db
       .query("notificationPreferences")
-      .withIndex("by_userId_orgId", (q) =>
+      .withIndex("user_organization", (q) =>
         q.eq("userId", userId).eq("orgId", orgId),
       )
       .collect(),
@@ -98,7 +98,7 @@ test("does not partially save proactive channels when iMessage is unavailable", 
   const rows = await t.run((ctx) =>
     ctx.db
       .query("notificationPreferences")
-      .withIndex("by_userId_orgId", (q) =>
+      .withIndex("user_organization", (q) =>
         q.eq("userId", userId).eq("orgId", orgId),
       )
       .collect(),

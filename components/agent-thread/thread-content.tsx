@@ -381,43 +381,27 @@ function ThreadAttachmentList({
   );
 }
 
-function isEmailSendStatusMessage(message: ThreadMessage) {
-  return (
-    message.role === "agent" &&
-    message.pendingEmailId !== undefined &&
-    message.messageKind !== "channel_sync"
-  );
-}
-
 function findRelatedEmailMessages(
   messages: ThreadMessage[],
   message: ThreadMessage,
   attachedEmailMessageIds: Set<string>,
 ) {
-  if (!isEmailSendStatusMessage(message)) return [];
-
-  const related = new Map<string, ThreadMessage>();
-
-  if (message.pendingEmailId) {
-    const linked = messages.find(
-      (candidate) =>
-        candidate.channel === "email" &&
-        candidate.role === "agent" &&
-        candidate.pendingEmailId === message.pendingEmailId &&
-        candidate._id !== message._id,
-    );
-    if (linked && !attachedEmailMessageIds.has(linked._id)) {
-      related.set(linked._id, linked);
-    }
+  if (
+    message.role !== "agent" ||
+    message.pendingEmailId === undefined ||
+    message.messageKind === "channel_sync"
+  ) {
+    return [];
   }
 
-  return [...related.values()].sort(
-    (a, b) => a._creationTime - b._creationTime,
+  const linked = messages.find(
+    (candidate) =>
+      candidate.channel === "email" &&
+      candidate.role === "agent" &&
+      candidate.pendingEmailId === message.pendingEmailId &&
+      candidate._id !== message._id,
   );
-}
-
-function isImessageSyncMessage(message: ThreadMessage) {
-  return message.messageKind === "channel_sync";
+  return linked && !attachedEmailMessageIds.has(linked._id) ? [linked] : [];
 }
 
 type ThreadMessageRenderPlan = {
@@ -481,9 +465,7 @@ function buildThreadMessageRenderPlan(
 
   messages.forEach((message) => {
     if (message.status === "processing") return;
-    if (
-      isImessageSyncMessage(message)
-    ) {
+    if (message.messageKind === "channel_sync") {
       hiddenStatusMessageIds.add(message._id);
       return;
     }

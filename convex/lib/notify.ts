@@ -108,7 +108,7 @@ export const notifyInternal = internalMutation({
 
       const existing = await ctx.db
         .query("notifications")
-        .withIndex("by_orgId_coalesceKey_status", (q) =>
+        .withIndex("coalesce_status", (q) =>
           q
             .eq("orgId", args.orgId)
             .eq("coalesceKey", coalesceKey!)
@@ -154,7 +154,7 @@ export const notifyInternal = internalMutation({
       ? [{ userId: args.userId }]
       : await ctx.db
           .query("orgMemberships")
-          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+          .withIndex("organization", (q) => q.eq("orgId", args.orgId))
           .collect();
 
     let anyEmailScheduled = false;
@@ -218,7 +218,7 @@ export const notifyInternal = internalMutation({
     const channelSettings = slackCategory
       ? await ctx.db
           .query("agentChannelSettings")
-          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.orgId))
+          .withIndex("client", (q) => q.eq("clientOrgId", args.orgId))
           .first()
       : null;
     const shouldSendSlack =
@@ -229,20 +229,20 @@ export const notifyInternal = internalMutation({
     if (shouldSendSlack) {
       const connection = await ctx.db
         .query("slackWorkspaceConnections")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", args.orgId).eq("status", "active"),
         )
         .first();
       const primary = connection
         ? ((await ctx.db
             .query("slackChannelBindings")
-            .withIndex("by_connectionId_and_status", (q) =>
+            .withIndex("connection_status", (q) =>
               q.eq("connectionId", connection._id).eq("status", "active"),
             )
             .first()) ??
           (await ctx.db
             .query("slackChannelBindings")
-            .withIndex("by_connectionId_and_status", (q) =>
+            .withIndex("connection_status", (q) =>
               q.eq("connectionId", connection._id).eq("status", "unavailable"),
             )
             .first()))

@@ -8,9 +8,9 @@
  *   [[i:phrase]]  inferred   — a reasonable deduction from available information
  *   [[u:phrase]]  unverified — general knowledge / assumption, not source-backed
  *
- * In the web chat those spans render as tinted, hoverable text with a legend
- * and an overall confidence score. Everywhere else (plain text, copied text,
- * email, iMessage) the markers are stripped back to the bare phrase.
+ * In the web chat those spans render as tinted, hoverable text. Everywhere
+ * else (plain text, copied text, email, iMessage) the markers are stripped
+ * back to the bare phrase.
  *
  * Keep this module dependency-free and runtime-agnostic. Stored messages may
  * contain legacy markers, so non-web consumers must use the parser below
@@ -18,9 +18,9 @@
  */
 
 export type ConfidenceLevel = "grounded" | "inferred" | "unverified";
-export type ConfidenceMarkerCode = "g" | "i" | "u";
+type ConfidenceMarkerCode = "g" | "i" | "u";
 
-export type ConfidenceTextSegment =
+type ConfidenceTextSegment =
   | { type: "text"; value: string }
   | {
       type: "confidence";
@@ -29,21 +29,12 @@ export type ConfidenceTextSegment =
       value: string;
     };
 
-/** Single-letter marker codes the agent emits, mapped to their level. */
-export const CONFIDENCE_LEVEL_BY_CODE: Record<string, ConfidenceLevel> = {
+const CONFIDENCE_LEVEL_BY_CODE: Record<string, ConfidenceLevel> = {
   g: "grounded",
   i: "inferred",
   u: "unverified",
 };
 
-/** Weight each level contributes to the aggregate confidence score (0–1). */
-const LEVEL_WEIGHT: Record<ConfidenceLevel, number> = {
-  grounded: 1,
-  inferred: 0.5,
-  unverified: 0,
-};
-
-/** Human-readable copy for the legend and per-phrase tooltips. */
 export const CONFIDENCE_LEVEL_META: Record<
   ConfidenceLevel,
   { label: string; description: string }
@@ -66,8 +57,7 @@ const CONFIDENCE_MARKER_OPEN_RE = /\[\[(g|i|u):/;
 const CONFIDENCE_OPEN_PLACEHOLDER = "\uE000";
 const CONFIDENCE_CLOSE_PLACEHOLDER = "\uE001";
 
-/** Repair the common malformed opener `[[g]:` before parsing or stripping. */
-export function normalizeConfidenceMarkers(text: string): string {
+function normalizeConfidenceMarkers(text: string): string {
   return text.replace(/\[\[(g|i|u)\]:/g, "[[$1:");
 }
 function confidenceOpenerAt(
@@ -206,38 +196,10 @@ export function hasConfidenceMarkers(text: string): boolean {
   );
 }
 
-/** Replace every confidence marker with just its inner phrase. */
 export function stripConfidenceMarkers(text: string): string {
   return parseConfidenceMarkers(text)
     .map((segment) => segment.value)
     .join("");
-}
-
-/**
- * Summarize the confidence annotations in a message: an overall score (0–1,
- * length-weighted) and per-level phrase counts. Returns null when the message
- * has no confidence markers.
- */
-export function summarizeConfidence(text: string): {
-  score: number;
-  counts: Record<ConfidenceLevel, number>;
-} | null {
-  const counts: Record<ConfidenceLevel, number> = {
-    grounded: 0,
-    inferred: 0,
-    unverified: 0,
-  };
-  let weightedChars = 0;
-  let totalChars = 0;
-  for (const segment of parseConfidenceMarkers(text)) {
-    if (segment.type !== "confidence") continue;
-    const length = segment.value.length;
-    counts[segment.level] += 1;
-    totalChars += length;
-    weightedChars += length * LEVEL_WEIGHT[segment.level];
-  }
-  if (totalChars === 0) return null;
-  return { score: weightedChars / totalChars, counts };
 }
 
 type MdastNode = {

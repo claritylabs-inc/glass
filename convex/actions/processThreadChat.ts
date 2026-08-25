@@ -53,19 +53,13 @@ import {
   type EmailSubagentResult,
 } from "../lib/emailSubagent";
 import {
-  countCoiAttachments,
-  type EmailAttachmentLike,
-} from "../lib/coiAttachmentGuards";
-import { type AgentScope } from "../lib/agentScope";
-import {
   classifyPromptInjection,
   collectAllowedRecipients,
   enforceInputLimits,
 } from "../lib/security";
 import { FATAL_ACTION_FAILED_MESSAGE } from "../lib/actionFailures";
-import { pendingEmailDraftFingerprint } from "../lib/actionConfirmationFingerprint";
+import { buildPendingEmailConfirmation } from "../lib/actionConfirmationFingerprint";
 import {
-  buildAssistantMessageContentWithArtifacts,
   buildPrivateAgentHistoryMetadata,
   buildRecentAgentConversationContext,
   buildThreadContinuityPrompt,
@@ -89,6 +83,7 @@ import {
   spreadsheetBufferToText,
 } from "../lib/spreadsheetText";
 import {
+  buildRequirementImportConfirmation,
   decideRequirementAttachmentImport,
   requiredRequirementImportStep,
 } from "../lib/requirementAttachmentIntent";
@@ -197,7 +192,7 @@ type ChatAttachment = {
   filename: string;
   contentType: string;
   size: number;
-  fileId?: string;
+  fileId?: Id<"_storage">;
   kind?: "coi" | "original_policy" | "uploaded_file" | "generated_document";
 };
 
@@ -356,7 +351,7 @@ async function buildAttachmentParts(
 
 async function buildMessageHistoryWithAttachmentContext(
   ctx: ActionCtx,
-  messages: Array<Record<string, unknown>>,
+  messages: Doc<"threadMessages">[],
   latestUserMessageId?: string,
 ): Promise<{ history: ModelMessage[]; latestAttachmentNames: string[] }> {
   const history: ModelMessage[] = [];
@@ -383,9 +378,7 @@ async function buildMessageHistoryWithAttachmentContext(
       const text = msg.userName
         ? `[${String(msg.userName)}]: ${content}`
         : content;
-      const attachments = Array.isArray(msg.attachments)
-        ? (msg.attachments as ChatAttachment[])
-        : [];
+      const attachments = msg.attachments ?? [];
       const isLatestUser = latestUserMessageId === String(msg._id);
       const includeAttachmentContext =
         attachments.length > 0 &&
@@ -410,23 +403,17 @@ async function buildMessageHistoryWithAttachmentContext(
 
       history.push({ role: "user", content: text });
     } else if (msg.role === "agent" && content) {
+      const privateHistory = buildPrivateAgentHistoryMetadata({
+        toolArtifacts: msg.toolArtifacts,
+        usedTools: msg.usedTools,
+        attachments: msg.attachments,
+      });
       history.push({
         role: "assistant",
-        content: buildAssistantMessageContentWithArtifacts({
-          content: stripConfidenceMarkers(content),
-          toolArtifacts: msg.toolArtifacts,
-          usedTools: msg.usedTools,
-          attachments: msg.attachments,
-        }),
-        providerOptions: {
-          glass: {
-            privateHistory: buildPrivateAgentHistoryMetadata({
-              toolArtifacts: msg.toolArtifacts,
-              usedTools: msg.usedTools,
-              attachments: msg.attachments,
-            }),
-          },
-        },
+        content: stripConfidenceMarkers(content),
+        ...(privateHistory
+          ? { providerOptions: { glass: { privateHistory } } }
+          : {}),
       });
     }
   }
@@ -503,13 +490,11 @@ export const run = internalAction({
         return;
       }
 
-      // Load org
       const org = await ctx.runQuery(internal.orgs.getInternal, {
         id: args.orgId,
       });
       if (!org) throw new Error("Organization not found");
 
-      // ── Prompt injection guard ──
       const userMsgForGuard = await ctx.runQuery(
         internal.threads.getMessageInternal,
         {
@@ -540,31 +525,24 @@ export const run = internalAction({
 
       if (
         await runWebChatTaskControl(ctx, {
-          orgId: args.orgId,
           threadId: args.threadId,
           agentMessageId: agentMsgId,
           userMessageId: args.userMessageId,
           messageText: text,
-          threadMessages: controlState.threadMessages,
         })
       ) {
         await scheduleThreadHistoryCompaction(ctx, args.threadId);
         return;
       }
 
-      const requestedPolicyIds = new Set<string>(
-        (userMsgForGuard?.referencedPolicyIds as string[] | undefined) ?? [],
+      const requestedPolicyIds = new Set(
+        userMsgForGuard?.referencedPolicyIds ?? [],
       );
-      const selectedRequirementIds = new Set<string>(
-        (userMsgForGuard?.referencedRequirementIds as string[] | undefined) ??
-          [],
+      const selectedRequirementIds = new Set(
+        userMsgForGuard?.referencedRequirementIds ?? [],
       );
-      const referencedMailboxIds =
-        (userMsgForGuard?.referencedMailboxIds as
-          | Id<"connectedEmailAccounts">[]
-          | undefined) ?? [];
+      const referencedMailboxIds = userMsgForGuard?.referencedMailboxIds ?? [];
 
-      // Get sender name
       const user = await ctx.runQuery(internal.users.getInternal, {
         id: args.userId,
       });
@@ -586,7 +564,7 @@ export const run = internalAction({
           }
         : undefined;
 
-      const scope = (await ctx.runQuery(
+      const scope = await ctx.runQuery(
         internal.lib.agentScope.resolveForAction,
         {
           orgId: args.orgId,
@@ -595,7 +573,7 @@ export const run = internalAction({
           operatorInitiatedUserMessageId: args.userMessageId,
           slackActorId: args.slackActorId,
         },
-      )) as AgentScope;
+      );
       const operatorCopyUser = scope.operatorInitiated
         ? await ctx.runQuery(internal.users.getPrimaryOrgAdminInternal, {
             orgId: args.orgId,
@@ -613,7 +591,6 @@ export const run = internalAction({
           : requesterCopyEmail
         : undefined;
 
-      // Build system prompt. Broker orgs use an internal portfolio prompt.
       const systemPrompt =
         scope.mode === "broker_portfolio"
           ? buildBrokerPortfolioSystemPrompt({
@@ -635,21 +612,11 @@ export const run = internalAction({
 
       const allMessages = boundedHistory.messages;
 
-      // Find the latest user message for context
       const latestUserMsg = allMessages
-        .filter((m: Record<string, unknown>) => m.role === "user")
+        .filter((message) => message.role === "user")
         .pop();
       const latestUserContent = latestUserMsg?.content ?? "";
-      const latestUserAttachments = (
-        (latestUserMsg?.attachments as
-          | Array<{
-              filename: string;
-              contentType: string;
-              size: number;
-              fileId?: Id<"_storage">;
-            }>
-          | undefined) ?? []
-      ).filter(
+      const latestUserAttachments = (latestUserMsg?.attachments ?? []).filter(
         (
           attachment,
         ): attachment is typeof attachment & {
@@ -666,7 +633,10 @@ export const run = internalAction({
         requirementImportResolution.authorization === "auto"
           ? requirementImportResolution.attachments
           : [];
-      const requirementImportDefaultScope = requirementImportResolution.scope;
+      const requirementImportDefaultScope =
+        requirementImportResolution.authorization === "none"
+          ? undefined
+          : requirementImportResolution.scope;
       const policyFocusIds = await validatePolicyFocusIds(
         ctx,
         scope,
@@ -675,31 +645,27 @@ export const run = internalAction({
             (message) =>
               message._id !== agentMsgId && message._id !== args.userMessageId,
           ),
-          [...requestedPolicyIds] as Id<"policies">[],
+          [...requestedPolicyIds],
         ),
       );
       const explicitSelectedPolicyIds = new Set(
-        policyFocusIds
-          .map(String)
-          .filter((policyId) => requestedPolicyIds.has(policyId)),
+        policyFocusIds.filter((policyId) => requestedPolicyIds.has(policyId)),
       );
       const policyFocusBlock = formatPolicyFocusHints(policyFocusIds);
       const selectedRequirements =
         selectedRequirementIds.size > 0
           ? (
-              (await ctx.runQuery(
+              await ctx.runQuery(
                 internal.compliance.listRequirementsInternal,
-                {
-                  orgId: args.orgId,
-                },
-              )) as Array<Record<string, unknown>>
+                { orgId: args.orgId },
+              )
             ).filter((requirement) =>
-              selectedRequirementIds.has(String(requirement._id)),
+              selectedRequirementIds.has(requirement._id),
             )
           : [];
       const selectedMailboxes =
         referencedMailboxIds.length > 0
-          ? ((
+          ? (
               await Promise.all(
                 referencedMailboxIds.map((accountId) =>
                   ctx.runQuery(internal.connectedEmail.getAccessibleInternal, {
@@ -709,7 +675,7 @@ export const run = internalAction({
                   }),
                 ),
               )
-            ).filter(Boolean) as Array<Record<string, unknown>>)
+            ).filter((mailbox) => mailbox !== null)
           : [];
       const selectedSteeringBlock =
         selectedRequirements.length > 0 || selectedMailboxes.length > 0
@@ -717,7 +683,7 @@ export const run = internalAction({
               selectedRequirements.length
                 ? `Requirements:\n${selectedRequirements
                     .map(
-                      (requirement: any) =>
+                      (requirement) =>
                         `- ${requirement.title} (scope:${requirement.scope ?? "vendors"}, kind:${requirement.kind ?? "coverage"}${requirement.lineOfBusiness ? `, line:${requirement.lineOfBusiness} ${lobLabel(requirement.lineOfBusiness)}` : ""}, ID:${requirement._id}): ${String(requirement.requirementText ?? "").slice(0, 500)}`,
                     )
                     .join("\n")}`
@@ -725,7 +691,7 @@ export const run = internalAction({
               selectedMailboxes.length
                 ? `Mailboxes:\n${selectedMailboxes
                     .map(
-                      (mailbox: any) =>
+                      (mailbox) =>
                         `- ${mailbox.label || mailbox.emailAddress} (${mailbox.emailAddress}, ID:${mailbox._id})`,
                     )
                     .join("\n")}`
@@ -740,25 +706,23 @@ export const run = internalAction({
       const { history: messageHistory, latestAttachmentNames } =
         await buildMessageHistoryWithAttachmentContext(
           ctx,
-          allMessages as Array<Record<string, unknown>>,
+          allMessages,
           latestUserMsg?._id ? String(latestUserMsg._id) : undefined,
         );
       const hasImageInput = messageHistoryHasImageInput(messageHistory);
 
-      // Detect thread type
       const thread = await ctx.runQuery(internal.threads.getInternal, {
         id: args.threadId,
       });
       const hasEmailMessages = allMessages.some(
-        (m: Record<string, unknown>) => m.channel === "email",
+        (message) => message.channel === "email",
       );
       const isMixedThread =
         hasEmailMessages || thread?.originChannel === "email";
       const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
       const canSendEmail = emailIdentity.canSend;
 
-      // Web chat addendum — adjust email flow based on autoSendEmails setting
-      const autoSend = org.autoSendEmails === true; // default false (require confirmation)
+      const autoSend = org.autoSendEmails === true;
       const webChatAddendum = buildChannelInstructions({
         platform: surface,
         isMixedThread,
@@ -766,7 +730,6 @@ export const run = internalAction({
         autoSendEmails: autoSend,
       });
 
-      // Page context
       let pageContextBlock = "";
       if (thread?.initialContext) {
         const ic = thread.initialContext;
@@ -782,15 +745,12 @@ export const run = internalAction({
         ? `\n\nOPERATOR IMPERSONATION CONTEXT: This web chat message was initiated by ${scope.operatorInitiated.displayLabel} under an audited operator support/testing session. Treat the request as coming from that operator on behalf of the organization; do not imply that an end customer personally sent it. When drafting or sending email from this chat, copy the primary org admin${requesterCopyLabel ? ` (${requesterCopyLabel})` : ""}; do not CC or BCC the operator email unless the user explicitly asks for it.`
         : "";
 
-      // Attachment context note
       let attachmentNote = "";
       if (latestUserMsg?.attachments?.length) {
         const filenames = (
           latestAttachmentNames.length > 0
             ? latestAttachmentNames
-            : (latestUserMsg.attachments as Array<{ filename: string }>).map(
-                (a) => a.filename,
-              )
+            : latestUserMsg.attachments.map(({ filename }) => filename)
         ).join(", ");
         attachmentNote = `\n\nATTACHMENTS: The user's message includes ${latestUserMsg.attachments.length} attachment(s): ${filenames}. The content has been provided to you as file, image, or text content parts. Reference relevant information from attachments in your response when applicable.`;
       }
@@ -808,53 +768,33 @@ export const run = internalAction({
         buildThreadHistoryToolInstructions() +
         buildThreadContinuityPrompt(boundedHistory.summary);
 
-      const orgMembers = (await ctx.runQuery(internal.users.listByOrgInternal, {
+      const orgMembers = await ctx.runQuery(internal.users.listByOrgInternal, {
         orgId: args.orgId,
-      })) as Array<Doc<"users">>;
+      });
       const orgMemberEmails = orgMembers
+        .filter((member) => member !== null)
         .map((member) => member.email)
         .filter((email): email is string => Boolean(email));
       const baseAllowedRecipients = collectAllowedRecipients(
-        allMessages as Parameters<typeof collectAllowedRecipients>[0],
+        allMessages,
         orgMemberEmails,
       );
       const allowedRecipients = brokerIdentity?.contactEmail
         ? [...new Set([...baseAllowedRecipients, brokerIdentity.contactEmail])]
         : baseAllowedRecipients;
       const availableAttachments = allMessages.flatMap(
-        (m: Record<string, unknown>) =>
-          (
-            (m.attachments as
-              | Array<{
-                  filename: string;
-                  contentType: string;
-                  size: number;
-                  fileId?: Id<"_storage">;
-                  kind?: string;
-                }>
-              | undefined) ?? []
-          )
-            .filter((att) => att.fileId)
-            .filter((att) => m.role !== "agent" || att.kind !== "coi")
-            .map((att) => ({
-              filename: att.filename,
-              contentType: att.contentType,
-              size: att.size,
-              fileId: att.fileId!,
-            })),
+        (message) =>
+          (message.attachments ?? []).flatMap((attachment) =>
+            attachment.fileId &&
+            (message.role !== "agent" || attachment.kind !== "coi")
+              ? [{ ...attachment, fileId: attachment.fileId }]
+              : [],
+          ),
       );
-      const currentDraftEmails = (await ctx.runQuery(
+      const currentDraftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId: args.threadId, orgId: args.orgId },
-      )) as Array<{
-        recipientEmail?: string;
-        ccAddresses?: string[];
-        bccAddresses?: string[];
-        subject?: string;
-        body?: string;
-        emailBody?: string;
-        attachments?: Array<{ filename: string }>;
-      }>;
+      );
       const currentDraftContext =
         currentDraftEmails.length > 0
           ? [
@@ -875,7 +815,7 @@ export const run = internalAction({
                     : null,
                   `Subject: ${draft.subject}`,
                   draft.attachments?.length
-                    ? `Attachments: ${draft.attachments.map((a: { filename: string }) => a.filename).join(", ")}`
+                    ? `Attachments: ${draft.attachments.map(({ filename }) => filename).join(", ")}`
                     : null,
                   "",
                   draft.emailBody,
@@ -892,9 +832,9 @@ export const run = internalAction({
       const citedSections = new Set<string>();
       const citedCoverageNames = new Set<string>();
       const citedSourceSpanIds = new Set<string>();
-      const presentedPolicyIds = new Set<string>();
+      const presentedPolicyIds = new Set<Id<"policies">>();
       const emailReferencedPolicyIds = policyFocusIds.filter((policyId) =>
-        explicitSelectedPolicyIds.has(String(policyId)),
+        explicitSelectedPolicyIds.has(policyId),
       );
       const toolArtifacts: Array<{ type: string; data: unknown }> = [];
       const responseAttachments: Array<{
@@ -922,7 +862,7 @@ export const run = internalAction({
             ? args.userMessageId
             : undefined,
           onPolicyPresented: (policyId) => {
-            presentedPolicyIds.add(String(policyId));
+            presentedPolicyIds.add(policyId);
           },
           onPolicyReferenced: (policyId) => {
             if (!emailReferencedPolicyIds.some((id) => id === policyId)) {
@@ -991,7 +931,7 @@ export const run = internalAction({
                   if (!input.confirmed) {
                     return "Ask the user to confirm before creating a new iMessage group chat.";
                   }
-                  return await ctx.runAction(
+                  return ctx.runAction(
                     internal.actions.createOutboundImessageGroup
                       .createOutboundImessageGroupInternal,
                     {
@@ -1020,7 +960,7 @@ export const run = internalAction({
                 }),
                 execute: async () =>
                   await ctx.runMutation(
-                    (internal as any).slack.requestHandoffFromAgent,
+                    internal.slack.requestHandoffFromAgent,
                     {
                       threadId: args.threadId,
                       slackActorId,
@@ -1206,8 +1146,6 @@ export const run = internalAction({
 
       if (await isAgentResponseCancelled(true)) return;
 
-      // Publish one complete reply after the run finishes. Web chat observes
-      // only the processing state before this atomic final update.
       content = stripInternalAgentActivity(content);
       const emailResult = emailToolResult.current;
       if (!content && !emailResult) {
@@ -1219,7 +1157,7 @@ export const run = internalAction({
         content,
         referencedPolicyIds:
           presentedPolicyIds.size > 0
-            ? ([...presentedPolicyIds] as Id<"policies">[])
+            ? [...presentedPolicyIds]
             : undefined,
         citedSections: citedSections.size > 0 ? [...citedSections] : undefined,
         citedCoverageNames:
@@ -1249,11 +1187,7 @@ export const run = internalAction({
             id: emailResult.pendingEmailId,
           });
           if (draft?.status === "draft") {
-            const fingerprint = await pendingEmailDraftFingerprint(draft);
-            const multipleCoiAttachments =
-              countCoiAttachments(
-                draft.attachments as EmailAttachmentLike[] | undefined,
-              ) > 1;
+            const confirmation = await buildPendingEmailConfirmation(draft);
             const statusMessageId = await ctx.runMutation(
               internal.threads.insertWorkflowStatusMessage,
               {
@@ -1261,10 +1195,11 @@ export const run = internalAction({
                 threadId: args.threadId,
                 sourceThreadMessageId: agentMsgId,
                 pendingEmailId: draft._id,
-                dedupeKey: `email-confirmation:${String(draft._id)}:${fingerprint}`,
-                content: multipleCoiAttachments
-                  ? `Confirm this exact COI batch for ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}. This authorizes the attachment set; use Send after authorization.`
-                  : `Confirm this exact draft to ${draft.recipientEmail} with subject “${draft.subject}” to send it.`,
+                dedupeKey: `email-confirmation:${String(draft._id)}:${confirmation.fingerprint}`,
+                content:
+                  confirmation.payload.kind === "coi_batch_delivery"
+                    ? `Confirm this exact COI batch for ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}. This authorizes the attachment set; use Send after authorization.`
+                    : `Confirm this exact draft to ${draft.recipientEmail} with subject “${draft.subject}” to send it.`,
               },
             );
             await ctx.runMutation(
@@ -1274,76 +1209,39 @@ export const run = internalAction({
                 threadId: args.threadId,
                 actor: { kind: "user", userId: args.userId },
                 promptMessageId: statusMessageId,
-                payload: multipleCoiAttachments
-                  ? {
-                      kind: "coi_batch_delivery",
-                      pendingEmailId: draft._id,
-                      recipientEmail: draft.recipientEmail.trim().toLowerCase(),
-                      fileIds: (draft.attachments ?? []).map(
-                        (attachment) => attachment.fileId,
-                      ),
-                      draftFingerprint: fingerprint,
-                    }
-                  : {
-                      kind: "email_send",
-                      pendingEmailIds: [draft._id],
-                      draftFingerprints: [fingerprint],
-                    },
+                payload: confirmation.payload,
               },
             );
           }
         }
       }
 
-      if (
-        !emailResult &&
-        requirementImportResolution.authorization === "confirmation" &&
-        requirementImportResolution.scope &&
-        requirementImportResolution.decision
-      ) {
-        const decision = requirementImportResolution.decision;
-        const statusMessageId = await ctx.runMutation(
-          internal.threads.insertWorkflowStatusMessage,
-          {
-            orgId: args.orgId,
-            threadId: args.threadId,
-            sourceThreadMessageId: agentMsgId,
-            dedupeKey: `requirement-import-confirmation:${String(args.userMessageId)}`,
-            content: `Confirm importing ${requirementImportResolution.attachments.map((attachment) => attachment.filename).join(", ")} as ${requirementImportResolution.scope === "vendors" ? "vendor" : "your organization's"} insurance requirements.`,
-          },
+      if (!emailResult) {
+        const confirmation = buildRequirementImportConfirmation(
+          requirementImportResolution,
         );
-        await ctx.runMutation(
-          internal.threadActionConfirmations.createInternal,
-          {
-            orgId: args.orgId,
-            threadId: args.threadId,
-            actor: { kind: "user", userId: args.userId },
-            promptMessageId: statusMessageId,
-            payload: {
-              kind: "requirement_import",
-              fileIds: requirementImportResolution.attachments.map(
-                (attachment) => attachment.fileId,
-              ),
-              classifications: requirementImportResolution.attachments.map(
-                (attachment) => {
-                  const classification = decision.documents.find(
-                    (document) => document.fileId === String(attachment.fileId),
-                  );
-                  return {
-                    fileId: attachment.fileId,
-                    filename: attachment.filename,
-                    contentType: attachment.contentType,
-                    documentClass: "insurance_requirements" as const,
-                    confidence: classification?.confidence ?? 0,
-                  };
-                },
-              ),
-              scope: requirementImportResolution.scope,
-              confidence: decision.confidence,
-              intentEvidence: decision.intentEvidence,
+        if (confirmation) {
+          const statusMessageId = await ctx.runMutation(
+            internal.threads.insertWorkflowStatusMessage,
+            {
+              orgId: args.orgId,
+              threadId: args.threadId,
+              sourceThreadMessageId: agentMsgId,
+              dedupeKey: `requirement-import-confirmation:${String(args.userMessageId)}`,
+              content: confirmation.message,
             },
-          },
-        );
+          );
+          await ctx.runMutation(
+            internal.threadActionConfirmations.createInternal,
+            {
+              orgId: args.orgId,
+              threadId: args.threadId,
+              actor: { kind: "user", userId: args.userId },
+              promptMessageId: statusMessageId,
+              payload: confirmation.payload,
+            },
+          );
+        }
       }
 
       await scheduleThreadHistoryCompaction(ctx, args.threadId);

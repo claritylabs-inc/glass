@@ -1,4 +1,4 @@
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 import {
   formatEmailDraftBlockers,
   getEmailDraftBlockers,
@@ -16,6 +16,17 @@ type DraftLike = Pick<
   | "sendBlockedReason"
 >;
 
+const SHOW_MORE_EMAIL_DRAFT_REQUESTS = new Set([
+  "more",
+  "show more",
+  "show all",
+  "list drafts",
+  "show drafts",
+  "show email drafts",
+  "show all drafts",
+  "list email drafts",
+]);
+
 function truncate(value: string | undefined, max: number) {
   const text = (value ?? "").replace(/\s+/g, " ").trim();
   if (text.length <= max) return text;
@@ -30,17 +41,7 @@ function formatAttachmentSummary(draft: DraftLike) {
 }
 
 export function isShowMoreEmailDraftIntent(text: string) {
-  const normalized = text.trim().toLowerCase();
-  return new Set([
-    "more",
-    "show more",
-    "show all",
-    "list drafts",
-    "show drafts",
-    "show email drafts",
-    "show all drafts",
-    "list email drafts",
-  ]).has(normalized);
+  return SHOW_MORE_EMAIL_DRAFT_REQUESTS.has(text.trim().toLowerCase());
 }
 
 export function buildEmailDraftTextSummary(
@@ -112,8 +113,4 @@ export function buildEmailDraftTextSummary(
   }
 
   return lines.join("\n");
-}
-
-export function getEmailDraftIds(drafts: DraftLike[]) {
-  return drafts.map((draft) => draft._id as Id<"pendingEmails">);
 }

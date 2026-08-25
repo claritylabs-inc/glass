@@ -2,7 +2,6 @@ import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
 
 export type EmailAttachmentLike = {
   filename: string;
-  fileId?: string;
   kind?: "coi" | "original_policy" | "uploaded_file" | "generated_document";
 };
 
@@ -54,27 +53,13 @@ export function countCoiAttachments(
   ).length;
 }
 
-export function shouldBlockUnapprovedCoiAttachmentBatch(params: {
-  attachments?: EmailAttachmentLike[];
-  hasExactBatchAuthorization: boolean;
-}): boolean {
-  return (
-    countCoiAttachments(params.attachments) > 1 &&
-    !params.hasExactBatchAuthorization
-  );
-}
-
 export function resolveRequestedCoiAttachmentsForRecipient(input: {
-  request: string;
   to?: string;
-  recipientName?: string;
   defaultTo?: string;
-  defaultRecipientName?: string;
   attachments?: RequestedEmailAttachment[];
 }): {
   attachments: RequestedEmailAttachment[];
   requiresCoiBatchConfirmation: boolean;
-  warning?: string;
 } {
   const recipient = normalizeEmailAddress(
     extractEmailAddress(input.to) ?? extractEmailAddress(input.defaultTo) ?? "",
@@ -95,8 +80,5 @@ export function resolveRequestedCoiAttachmentsForRecipient(input: {
   return {
     attachments,
     requiresCoiBatchConfirmation,
-    warning: requiresCoiBatchConfirmation
-      ? MULTIPLE_COI_SINGLE_RECIPIENT_WARNING
-      : undefined,
   };
 }

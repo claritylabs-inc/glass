@@ -1,11 +1,12 @@
 import type { JSONValue, ModelMessage } from "ai";
+import { parseWorkflowOutcome } from "./workflows/types";
 
 export type AgentToolSurface = "web" | "email" | "imessage" | "slack" | "mcp";
 
-export type AgentHistoryContinuityMode = "thread_long" | "task_scoped";
+type AgentHistoryContinuityMode = "thread_long" | "task_scoped";
 
-export const AGENT_HISTORY_MAX_USER_TURNS = 24;
-export const AGENT_HISTORY_MAX_ESTIMATED_TOKENS = 32_000;
+const AGENT_HISTORY_MAX_USER_TURNS = 24;
+const AGENT_HISTORY_MAX_ESTIMATED_TOKENS = 32_000;
 export const AGENT_HISTORY_PAGE_SIZE = 64;
 export const AGENT_HISTORY_MAX_SCANNED_MESSAGES = 256;
 export const IMESSAGE_TASK_INACTIVITY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -25,21 +26,17 @@ export function shouldStartNewImessageTask(
 export const AGENT_CHANNEL_HISTORY_POLICY = {
   web: { continuityMode: "thread_long" },
   email: { continuityMode: "thread_long" },
-  imessage: {
-    continuityMode: "task_scoped",
-    inactivityMs: IMESSAGE_TASK_INACTIVITY_MS,
-  },
+  imessage: { continuityMode: "task_scoped" },
   slack: { continuityMode: "thread_long" },
   mcp: { continuityMode: "thread_long" },
 } as const satisfies Record<
   AgentToolSurface,
   {
     continuityMode: AgentHistoryContinuityMode;
-    inactivityMs?: number;
   }
 >;
 
-export type AgentHistoryMessage = {
+type AgentHistoryMessage = {
   _id: string;
   _creationTime: number;
   role: "user" | "agent" | "system";
@@ -56,14 +53,14 @@ export type AgentHistoryMessage = {
   usedTools?: unknown;
 };
 
-export type PrivateAgentHistoryMetadata = {
+type PrivateAgentHistoryMetadata = {
   tools: string[];
   workflowOutcomes: JSONValue[];
   attachmentNames: string[];
   attachmentFailures: string[];
 };
 
-export type SelectedAgentHistory<T extends AgentHistoryMessage> = {
+type SelectedAgentHistory<T extends AgentHistoryMessage> = {
   messages: T[];
   userTurnCount: number;
   estimatedTokenCount: number;
@@ -72,7 +69,7 @@ export type SelectedAgentHistory<T extends AgentHistoryMessage> = {
 
 const textEncoder = new TextEncoder();
 
-export function estimateAgentHistoryTokens(value: string): number {
+function estimateAgentHistoryTokens(value: string): number {
   return Math.max(1, Math.ceil(textEncoder.encode(value).byteLength / 3));
 }
 
@@ -215,13 +212,10 @@ export function buildTextModelHistory(
     return [
       {
         role: "assistant",
-        content: buildAssistantMessageContentWithArtifacts({
-          content: message.content,
-          toolArtifacts: message.toolArtifacts,
-          usedTools: message.usedTools,
-          attachments: message.attachments,
-        }),
-        providerOptions: { glass: { privateHistory } },
+        content: message.content,
+        ...(privateHistory
+          ? { providerOptions: { glass: { privateHistory } } }
+          : {}),
       },
     ];
   });
@@ -269,44 +263,33 @@ export function formatMessagesForThreadSummary(
     .join("\n\n");
 }
 
-export function buildAssistantMessageContentWithArtifacts(args: {
-  content: string;
-  toolArtifacts?: unknown;
-  usedTools?: unknown;
-  attachments?: unknown;
-}): string {
-  return args.content;
-}
-
 export function buildPrivateAgentHistoryMetadata(args: {
   toolArtifacts?: unknown;
   usedTools?: unknown;
   attachments?: unknown;
-}): PrivateAgentHistoryMetadata {
+}): PrivateAgentHistoryMetadata | undefined {
   const workflowOutcomes = Array.isArray(args.toolArtifacts)
     ? args.toolArtifacts.flatMap((artifact) => {
         const record = objectRecord(artifact);
-        return record?.type === "workflow_outcome" && isJsonValue(record.data)
-          ? [record.data]
-          : [];
+        if (record?.type !== "workflow_outcome") return [];
+        const outcome = parseWorkflowOutcome(record.data);
+        return outcome && isJsonValue(outcome) ? [outcome] : [];
       })
     : [];
-  return {
+  const metadata = {
     tools: dedupeStrings(stringArray(args.usedTools)),
     workflowOutcomes,
     attachmentNames: dedupeStrings(attachmentNames(args.attachments)),
     attachmentFailures: collectAttachmentFailureNames(args.toolArtifacts),
   };
+  return Object.values(metadata).some((values) => values.length > 0)
+    ? metadata
+    : undefined;
 }
 
 const LEGACY_TOOL_ACTIVITY_TRAILER_PATTERN =
   /(?:\r?\n){2}\[tool activity:[^\r\n]*\][ \t]*(?:\r?\n)*$/i;
 
-/**
- * Tool activity trailers are private model-history context. A model may echo
- * that plain-text context into a later answer, so every customer-facing
- * channel removes it again before persistence or delivery.
- */
 export function stripInternalAgentActivity(content: string): string {
   if (!LEGACY_TOOL_ACTIVITY_TRAILER_PATTERN.test(content)) return content;
   return content.replace(LEGACY_TOOL_ACTIVITY_TRAILER_PATTERN, "").trimEnd();

@@ -120,16 +120,6 @@ describe("iMessage agent context helpers", () => {
     expect(messages[0]).toEqual({
       role: "assistant",
       content: "Certificate follow-up is on hold.",
-      providerOptions: {
-        glass: {
-          privateHistory: {
-            tools: [],
-            workflowOutcomes: [],
-            attachmentNames: [],
-            attachmentFailures: [],
-          },
-        },
-      },
     });
     expect(messages[1]).toEqual({
       role: "user",

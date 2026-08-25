@@ -53,7 +53,7 @@ import {
   normalizedSearchText,
   uniqueSearchTerms,
 } from "./searchTokenizer";
-import type { WorkflowOutcome } from "./workflows/types";
+import { importRequirementSources } from "./requirementAttachmentIntent";
 
 const COMPANY_CONTEXT_QUERY_STOP_WORDS = new Set([
   "about",
@@ -461,8 +461,9 @@ export function buildAgentToolExecutors(
           contentType: attachment.contentType,
           size: attachment.size,
         });
-        return await readStoredThreadAttachment(ctx, {
+        return readStoredThreadAttachment(ctx, {
           orgId: options.orgId,
+          surface: options.surface,
           threadId: options.threadId,
           messageId: attachment.messageId,
           filename: attachment.filename,
@@ -797,75 +798,13 @@ export function buildAgentToolExecutors(
                   "import compliance requirements",
                 );
               }
-              const imports = [];
-              for (const attachment of options.requirementImportAttachments ??
-                []) {
-                const imported = await ctx.runAction(
-                  internal.actions.complianceRequirements
-                    .importRequirementsInternal,
-                  {
-                    orgId: options.orgId,
-                    userId: options.userId,
-                    fileId: attachment.fileId,
-                    fileName: attachment.filename,
-                    contentType: attachment.contentType,
-                    sourceName: attachment.filename,
-                    scope: options.requirementImportDefaultScope,
-                  },
-                );
-                imports.push({
-                  filename: attachment.filename,
-                  sourceDocumentId: imported.sourceDocumentId,
-                  requirementIds: imported.requirementIds,
-                  createdCount: imported.createdCount,
+              const { imports, createdCount, workflowOutcome } =
+                await importRequirementSources(ctx, {
+                  orgId: options.orgId,
+                  userId: options.userId,
+                  attachments: options.requirementImportAttachments ?? [],
+                  scope: options.requirementImportDefaultScope,
                 });
-              }
-              const createdCount = imports.reduce(
-                (total, imported) => total + imported.createdCount,
-                0,
-              );
-              const workflowOutcome: WorkflowOutcome<"requirement_import"> = {
-                workflowKind: "requirement_import",
-                status: "completed",
-                nextAction: "review_imported_requirements",
-                requiredSlots: [],
-                forbiddenQuestions: [],
-                forbiddenClaims: [
-                  "import_completed_without_import_completed_side_effect",
-                ],
-                sideEffects: imports.flatMap((imported) => [
-                  {
-                    kind: "import_completed" as const,
-                    targetType: "requirementSourceDocument",
-                    targetId: String(imported.sourceDocumentId),
-                  },
-                  ...imported.requirementIds.map((requirementId) => ({
-                    kind: "record_created" as const,
-                    targetType: "insuranceRequirement",
-                    targetId: String(requirementId),
-                  })),
-                ]),
-                artifacts: imports.flatMap((imported) => [
-                  {
-                    type: "requirement_source_document",
-                    id: String(imported.sourceDocumentId),
-                  },
-                  ...imported.requirementIds.map((requirementId) => ({
-                    type: "insurance_requirement",
-                    id: String(requirementId),
-                  })),
-                ]),
-                comms: {
-                  headline: `${imports.length} requirement source${imports.length === 1 ? " was" : "s were"} imported.`,
-                },
-                audit: [
-                  {
-                    step: "requirement_import",
-                    decision: "completed",
-                    detail: `${createdCount} requirements created`,
-                  },
-                ],
-              };
               return {
                 status: "imported" as const,
                 message: `${imports.length} requirement source${imports.length === 1 ? " was" : "s were"} saved and ${createdCount} new insurance requirement${createdCount === 1 ? " was" : "s were"} extracted. Use lookup_compliance_requirements before answering the compliance question.`,
@@ -912,8 +851,7 @@ export function buildAgentToolExecutors(
           await ctx.scheduler
             .runAfter(
               0,
-              (internal as any).actions.policyExtraction
-                .ensurePolicyV3SourceTree,
+              internal.actions.policyExtraction.ensurePolicyV3SourceTree,
               {
                 policyId: resolved.policy._id,
                 reason: "agent_policy_section_lookup",

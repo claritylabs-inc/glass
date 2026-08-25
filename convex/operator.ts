@@ -96,7 +96,7 @@ async function assertNoActiveOperatorImpersonationForPolicyWrite(
 ) {
   const activeImpersonation = await ctx.db
     .query("operatorImpersonationSessions")
-    .withIndex("by_operator_status", (q) =>
+    .withIndex("operator_status", (q) =>
       q.eq("operatorUserId", operatorUserId).eq("status", "active"),
     )
     .first();
@@ -211,11 +211,11 @@ async function deleteRemovedProgramAdminOrgData(
   let deleted = 0;
   const memberships = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .withIndex("organization", (q) => q.eq("orgId", orgId))
     .collect();
   const invitations = await ctx.db
     .query("orgInvitations")
-    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .withIndex("organization", (q) => q.eq("orgId", orgId))
     .collect();
   for (const row of [...memberships, ...invitations]) {
     await ctx.db.delete(row._id);
@@ -224,11 +224,11 @@ async function deleteRemovedProgramAdminOrgData(
 
   const brokerAssignments = await ctx.db
     .query("brokerClientAssignments")
-    .withIndex("by_orgId_clientOrgId", (q) => q.eq("orgId", orgId))
+    .withIndex("organization_client", (q) => q.eq("orgId", orgId))
     .collect();
   const clientAssignments = await ctx.db
     .query("brokerClientAssignments")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", orgId))
+    .withIndex("client", (q) => q.eq("clientOrgId", orgId))
     .collect();
   for (const assignment of [...brokerAssignments, ...clientAssignments]) {
     await ctx.db.delete(assignment._id);
@@ -237,11 +237,11 @@ async function deleteRemovedProgramAdminOrgData(
 
   const clientRelationships = await ctx.db
     .query("connectedOrgRelationships")
-    .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", orgId))
+    .withIndex("client", (q) => q.eq("clientOrgId", orgId))
     .collect();
   const vendorRelationships = await ctx.db
     .query("connectedOrgRelationships")
-    .withIndex("by_vendorOrgId", (q) => q.eq("vendorOrgId", orgId))
+    .withIndex("vendor", (q) => q.eq("vendorOrgId", orgId))
     .collect();
   for (const relationship of [...clientRelationships, ...vendorRelationships]) {
     await ctx.db.delete(relationship._id);
@@ -250,7 +250,7 @@ async function deleteRemovedProgramAdminOrgData(
 
   const clientInvitations = await ctx.db
     .query("clientInvitations")
-    .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", orgId))
+    .withIndex("broker", (q) => q.eq("brokerOrgId", orgId))
     .collect();
   for (const invitation of clientInvitations) {
     await ctx.db.delete(invitation._id);
@@ -267,7 +267,7 @@ async function clearOperatorExtractionQueue(
 ) {
   const rows = await ctx.db
     .query("policyExtractionQueue")
-    .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+    .withIndex("policy", (q) => q.eq("policyId", policyId))
     .collect();
   for (const row of rows) await ctx.db.delete(row._id);
 }
@@ -278,7 +278,7 @@ async function clearOperatorExtractionArtifacts(
 ) {
   const artifacts = await ctx.db
     .query("policyExtractionArtifacts")
-    .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+    .withIndex("policy", (q) => q.eq("policyId", policyId))
     .collect();
   for (const artifact of artifacts) {
     await ctx.storage.delete(artifact.storageId).catch(() => {});
@@ -394,14 +394,14 @@ async function policyWithOperatorCoverageContext(
     coverageNodeIds.map(async (nodeId) => {
       const node = await ctx.db
         .query("sourceNodes")
-        .withIndex("by_policyId_nodeId", (q) =>
+        .withIndex("policy_node", (q) =>
           q.eq("policyId", policy._id).eq("nodeId", nodeId),
         )
         .first();
       const children = node
         ? await ctx.db
             .query("sourceNodes")
-            .withIndex("by_policyId_parentNodeId", (q) =>
+            .withIndex("policy_parent", (q) =>
               q.eq("policyId", policy._id).eq("parentNodeId", node.nodeId),
             )
             .collect()
@@ -447,7 +447,7 @@ function roleForBootstrapEmail(email: string): "operator" | "owner" {
 async function countBrokerClients(ctx: QueryCtx, brokerOrgId: Id<"organizations">) {
   const clients = await ctx.db
     .query("organizations")
-    .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+    .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
     .take(500);
   return clients.length;
 }
@@ -455,7 +455,7 @@ async function countBrokerClients(ctx: QueryCtx, brokerOrgId: Id<"organizations"
 async function getOrgAdmin(ctx: QueryCtx, orgId: Id<"organizations">) {
   const memberships = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+    .withIndex("organization", (q) => q.eq("orgId", orgId))
     .take(20);
   const adminMembership = memberships.find((membership) => membership.role === "admin");
   return adminMembership ? await ctx.db.get(adminMembership.userId) : null;
@@ -477,7 +477,7 @@ export const bootstrapViewer = mutation({
 
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
     if (memberships) {
       throwUserFacingError(
@@ -490,7 +490,7 @@ export const bootstrapViewer = mutation({
     const role = roleForBootstrapEmail(email);
     const existing = await ctx.db
       .query("operatorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .first();
     await ctx.db.patch(userId, {
       accountKind: "operator",
@@ -528,7 +528,7 @@ export const current = query({
     const operator = await requireOperator(ctx);
     const activeImpersonation = await ctx.db
       .query("operatorImpersonationSessions")
-      .withIndex("by_operator_status", (q) =>
+      .withIndex("operator_status", (q) =>
         q.eq("operatorUserId", operator.userId).eq("status", "active"),
       )
       .first();
@@ -592,7 +592,7 @@ export const listBrokers = query({
     const search = args.search?.trim().toLowerCase();
     const brokers = await ctx.db
       .query("organizations")
-      .withIndex("by_type", (q) => q.eq("type", "broker"))
+      .withIndex("type", (q) => q.eq("type", "broker"))
       .take(200);
     const filtered = search
       ? brokers.filter((broker) =>
@@ -605,7 +605,7 @@ export const listBrokers = query({
       filtered.map(async (broker) => {
         const memberships = await ctx.db
           .query("orgMemberships")
-          .withIndex("by_orgId", (q) => q.eq("orgId", broker._id))
+          .withIndex("organization", (q) => q.eq("orgId", broker._id))
           .take(20);
         const adminMembership = memberships.find((membership) => membership.role === "admin");
         const admin = adminMembership ? await ctx.db.get(adminMembership.userId) : null;
@@ -631,7 +631,7 @@ export const listBrokers = query({
 async function listOperatorClientRows(ctx: QueryCtx) {
   const clients = await ctx.db
     .query("organizations")
-    .withIndex("by_type", (q) => q.eq("type", "client"))
+    .withIndex("type", (q) => q.eq("type", "client"))
     .take(500);
   return await Promise.all(
     clients.map(async (client) => {
@@ -699,7 +699,7 @@ export const listPublicDemoSalesTranscripts = query({
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 500));
     return await ctx.db
       .query("publicDemoSalesTranscripts")
-      .withIndex("by_lastUpdatedAt")
+      .withIndex("updated")
       .order("desc")
       .take(limit);
   },
@@ -714,7 +714,7 @@ export const getPublicDemoSalesTranscript = query({
     const conversation = await ctx.db.get(transcript.conversationId);
     const logs = await ctx.db
       .query("publicDemoChatLogs")
-      .withIndex("by_conversationId_createdAt", (q) =>
+      .withIndex("conversation_created", (q) =>
         q.eq("conversationId", transcript.conversationId),
       )
       .order("asc")
@@ -738,7 +738,7 @@ export const listExtractionTraces = query({
     const sessions = args.policyId
       ? await ctx.db
         .query("policyExtractionTraceSessions")
-        .withIndex("by_policyId_startedAt", (q) => {
+        .withIndex("policy_started", (q) => {
           const byPolicy = q.eq("policyId", args.policyId!);
           if (args.dateFrom !== undefined && args.dateTo !== undefined) return byPolicy.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
           if (args.dateFrom !== undefined) return byPolicy.gte("startedAt", args.dateFrom);
@@ -750,7 +750,7 @@ export const listExtractionTraces = query({
       : args.orgId
       ? await ctx.db
         .query("policyExtractionTraceSessions")
-        .withIndex("by_orgId_startedAt", (q) => {
+        .withIndex("organization_started", (q) => {
           const byOrg = q.eq("orgId", args.orgId!);
           if (args.dateFrom !== undefined && args.dateTo !== undefined) return byOrg.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
           if (args.dateFrom !== undefined) return byOrg.gte("startedAt", args.dateFrom);
@@ -762,7 +762,7 @@ export const listExtractionTraces = query({
       : args.status
         ? await ctx.db
           .query("policyExtractionTraceSessions")
-          .withIndex("by_status_startedAt", (q) => {
+          .withIndex("status_started", (q) => {
             const byStatus = q.eq("status", args.status!);
             if (args.dateFrom !== undefined && args.dateTo !== undefined) return byStatus.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
             if (args.dateFrom !== undefined) return byStatus.gte("startedAt", args.dateFrom);
@@ -773,7 +773,7 @@ export const listExtractionTraces = query({
           .take(limit)
         : await ctx.db
           .query("policyExtractionTraceSessions")
-          .withIndex("by_startedAt", (q) => {
+          .withIndex("started", (q) => {
             if (args.dateFrom !== undefined && args.dateTo !== undefined) return q.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
             if (args.dateFrom !== undefined) return q.gte("startedAt", args.dateFrom);
             if (args.dateTo !== undefined) return q.lte("startedAt", args.dateTo);
@@ -863,47 +863,47 @@ export const getPolicyExtractionOperations = query({
     ] = await Promise.all([
       ctx.db
         .query("policyExtractionRuns")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .first(),
       ctx.db
         .query("policyExtractionQueue")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .first(),
       ctx.db
         .query("policyExtractionPreviewQueue")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .first(),
       ctx.db
         .query("sourceSpans")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .take(takeCount),
       ctx.db
         .query("sourceNodes")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .take(takeCount),
       ctx.db
         .query("documentChunks")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .take(takeCount),
       ctx.db
         .query("sourceChunks")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .take(takeCount),
       ctx.db
         .query("policyFiles")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .take(takeCount),
       ctx.db
         .query("policyExtractionArtifacts")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .take(takeCount),
       ctx.db
         .query("policyVersions")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .take(takeCount),
       ctx.db
         .query("policyExtractionTraceSessions")
-        .withIndex("by_policyId_startedAt", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy_started", (q) => q.eq("policyId", args.policyId))
         .order("desc")
         .first(),
     ]);
@@ -965,7 +965,7 @@ export const getExtractionTrace = query({
     await requireOperator(ctx);
     const session = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
+      .withIndex("trace", (q) => q.eq("traceId", args.traceId))
       .first();
     if (!session) return null;
     const [org, rawPolicy, eventsWithExtra] = await Promise.all([
@@ -973,7 +973,7 @@ export const getExtractionTrace = query({
       ctx.db.get(session.policyId),
       ctx.db
         .query("policyExtractionTraceEvents")
-        .withIndex("by_traceId_timestamp", (q) => q.eq("traceId", args.traceId))
+        .withIndex("trace_time", (q) => q.eq("traceId", args.traceId))
         .order("asc")
         .take(OPERATOR_TRACE_EVENT_LIMIT + 1),
     ]);
@@ -1122,7 +1122,7 @@ export const stopExtraction = mutation({
     const operator = await requireOperator(ctx);
     const session = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
+      .withIndex("trace", (q) => q.eq("traceId", args.traceId))
       .first();
     if (!session) throw new Error("Extraction trace not found");
     await assertNoActiveOperatorImpersonationForPolicyWrite(
@@ -1137,7 +1137,7 @@ export const stopExtraction = mutation({
     const policy = await ctx.db.get(session.policyId);
     const run = await ctx.db
       .query("policyExtractionRuns")
-      .withIndex("by_policyId", (q) => q.eq("policyId", session.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", session.policyId))
       .first();
 
     if (run) {
@@ -1227,7 +1227,7 @@ export const checkBrokerSetupIdentifiers = query({
           }
           const slugOrg = await ctx.db
             .query("organizations")
-            .withIndex("by_slug", (q) => q.eq("slug", slug))
+            .withIndex("slug", (q) => q.eq("slug", slug))
             .first();
           if (!slugOrg) return { available: true, normalized: slug, mode: "available" as const };
           slugOrgId = slugOrg._id;
@@ -1257,7 +1257,7 @@ export const checkBrokerSetupIdentifiers = query({
           }
           const existingByHandle = await ctx.db
             .query("organizations")
-            .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
+            .withIndex("handle", (q) => q.eq("agentHandle", agentHandle))
             .first();
           if (!existingByHandle) {
             return { available: true, normalized: agentHandle, mode: "available" as const };
@@ -1558,7 +1558,7 @@ export const updateBrokerSettings = mutation({
       }
       const existingBySlug = await ctx.db
         .query("organizations")
-        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .withIndex("slug", (q) => q.eq("slug", slug))
         .first();
       if (existingBySlug && existingBySlug._id !== args.brokerOrgId) {
         throw new Error("Slug is already taken");
@@ -1744,7 +1744,7 @@ export const startImpersonation = mutation({
     const now = dayjs().valueOf();
     const active = await ctx.db
       .query("operatorImpersonationSessions")
-      .withIndex("by_operator_status", (q) =>
+      .withIndex("operator_status", (q) =>
         q.eq("operatorUserId", operator.userId).eq("status", "active"),
       )
       .collect();
@@ -1792,7 +1792,7 @@ export const stopImpersonation = mutation({
     const now = dayjs().valueOf();
     const active = await ctx.db
       .query("operatorImpersonationSessions")
-      .withIndex("by_operator_status", (q) =>
+      .withIndex("operator_status", (q) =>
         q.eq("operatorUserId", operator.userId).eq("status", "active"),
       )
       .collect();
@@ -1957,7 +1957,7 @@ export const requireOperatorPolicyWriteForUserInternal = internalQuery({
     );
     const run = await ctx.db
       .query("policyExtractionRuns")
-      .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
       .first();
     return {
       userId: operator.userId,
@@ -2030,7 +2030,7 @@ export const upsertBrokerInternal = internalMutation({
     }
     const existingBySlug = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .withIndex("slug", (q) => q.eq("slug", slug))
       .first();
     if (existingBySlug && existingBySlug.type !== "broker") {
       throw new Error("Slug is already used by a non-broker org");
@@ -2040,7 +2040,7 @@ export const upsertBrokerInternal = internalMutation({
     if (agentHandle) {
       const existingByHandle = await ctx.db
         .query("organizations")
-        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
+        .withIndex("handle", (q) => q.eq("agentHandle", agentHandle))
         .first();
       if (existingByHandle && existingByHandle._id !== existingBySlug?._id) {
         throw new Error("Agent handle is already taken");
@@ -2061,14 +2061,14 @@ export const upsertBrokerInternal = internalMutation({
 
     const existingAdminMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
+      .withIndex("organization_user", (q) =>
         q.eq("orgId", brokerOrgId).eq("userId", args.adminUserId),
       )
       .first();
     if (!existingAdminMembership) {
       const otherMembership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_userId", (q) => q.eq("userId", args.adminUserId))
+        .withIndex("user", (q) => q.eq("userId", args.adminUserId))
         .first();
       if (otherMembership) throw new Error("Broker admin already belongs to another organization");
       await ctx.db.insert("orgMemberships", {
@@ -2132,7 +2132,7 @@ export const createSoloClientInternal = internalMutation({
     }
     const otherMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_userId", (q) => q.eq("userId", args.adminUserId))
+      .withIndex("user", (q) => q.eq("userId", args.adminUserId))
       .first();
     if (otherMembership) throw new Error("Client admin already belongs to another organization");
 
@@ -2197,7 +2197,7 @@ export const getBrokerLaunchContextInternal = internalQuery({
     if (!broker || broker.type !== "broker") return null;
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.brokerOrgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.brokerOrgId))
       .collect();
     const adminMembership = memberships.find((membership) => membership.role === "admin");
     const admin = adminMembership ? await ctx.db.get(adminMembership.userId) : null;
@@ -2222,7 +2222,7 @@ export const getSoloClientLaunchContextInternal = internalQuery({
     if (!client || client.type !== "client") return null;
     const memberships = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.clientOrgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.clientOrgId))
       .take(200);
     const adminMembership = args.adminUserId
       ? memberships.find(

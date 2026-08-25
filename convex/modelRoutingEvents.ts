@@ -236,7 +236,7 @@ export const listRecent = query({
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 500));
     return await ctx.db
       .query("modelRoutingEvents")
-      .withIndex("by_timestamp")
+      .withIndex("time")
       .order("desc")
       .take(limit);
   },
@@ -250,7 +250,7 @@ export const listPaginated = query({
     await requireOperator(ctx);
     return await ctx.db
       .query("modelRoutingEvents")
-      .withIndex("by_timestamp")
+      .withIndex("time")
       .order("desc")
       .paginate(args.paginationOpts);
   },
@@ -267,7 +267,7 @@ export const sweepExpired = internalMutation({
     );
     const expired = await ctx.db
       .query("modelRoutingEvents")
-      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", dayjs().valueOf()))
+      .withIndex("expiration", (q) => q.lt("expiresAt", dayjs().valueOf()))
       .take(limit);
     for (const event of expired) await ctx.db.delete(event._id);
     const continuationScheduled = expired.length === limit;

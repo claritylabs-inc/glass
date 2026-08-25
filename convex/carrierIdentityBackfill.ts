@@ -68,7 +68,7 @@ export async function recordCarrierIdentityBackfillResult(
 ) {
   const existing = await ctx.db
     .query("carrierIdentityBackfillResults")
-    .withIndex("by_policyId", (query) => query.eq("policyId", policyId))
+    .withIndex("policy", (query) => query.eq("policyId", policyId))
     .first();
   const value = {
     policyId,
@@ -92,7 +92,7 @@ export const scheduleRebuildRetryInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("carrierIdentityBackfillResults")
-      .withIndex("by_policyId", (query) =>
+      .withIndex("policy", (query) =>
         query.eq("policyId", args.policyId)
       )
       .first();
@@ -128,7 +128,7 @@ export const recordRebuildFailureInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("carrierIdentityBackfillResults")
-      .withIndex("by_policyId", (query) =>
+      .withIndex("policy", (query) =>
         query.eq("policyId", args.policyId)
       )
       .first();
@@ -157,7 +157,7 @@ export const retryPending = internalMutation({
     const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
     const page = await ctx.db
       .query("carrierIdentityBackfillResults")
-      .withIndex("by_outcome", (query) => query.eq("outcome", "pending"))
+      .withIndex("outcome", (query) => query.eq("outcome", "pending"))
       .paginate({
         cursor: args.cursor ?? null,
         numItems: limit,
@@ -192,7 +192,7 @@ export const listPolicyIdsPageInternal = internalQuery({
     const page = args.orgId
       ? await ctx.db
           .query("policies")
-          .withIndex("by_orgId", (query) =>
+          .withIndex("organization", (query) =>
             query.eq("orgId", args.orgId!)
           )
           .paginate({
@@ -236,7 +236,7 @@ export const listSourceSpansPageInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("sourceSpans")
-      .withIndex("by_policyId", (query) =>
+      .withIndex("policy", (query) =>
         query.eq("policyId", args.policyId)
       )
       .paginate({
@@ -253,7 +253,7 @@ export const listSourceNodesPageInternal = internalQuery({
   handler: async (ctx, args) => {
     const page = await ctx.db
       .query("sourceNodes")
-      .withIndex("by_policyId", (query) =>
+      .withIndex("policy", (query) =>
         query.eq("policyId", args.policyId)
       )
       .paginate({

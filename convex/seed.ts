@@ -245,7 +245,7 @@ async function ensureMembership(
 ) {
   const existing = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId_userId", (query) =>
+    .withIndex("organization_user", (query) =>
       query.eq("orgId", orgId).eq("userId", userId),
     )
     .first();
@@ -472,7 +472,7 @@ export const removeLegacyDemoFixture = internalMutation({
     for (const user of users) {
       const remainingMembership = await ctx.db
         .query("orgMemberships")
-        .withIndex("by_userId", (query) => query.eq("userId", user._id))
+        .withIndex("user", (query) => query.eq("userId", user._id))
         .first();
       if (!remainingMembership) await ctx.db.delete(user._id);
     }
@@ -495,7 +495,7 @@ export const insertLocalFixture = internalMutation({
     });
     const operatorProfile = await ctx.db
       .query("operatorProfiles")
-      .withIndex("by_userId", (query) => query.eq("userId", operatorUserId))
+      .withIndex("user", (query) => query.eq("userId", operatorUserId))
       .first();
     if (operatorProfile) {
       await ctx.db.patch(operatorProfile._id, {
@@ -528,13 +528,13 @@ export const insertLocalFixture = internalMutation({
     });
     const existingBrokerBySlug = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (query) => query.eq("slug", LOCAL_FIXTURE.broker.slug))
+      .withIndex("slug", (query) => query.eq("slug", LOCAL_FIXTURE.broker.slug))
       .first();
     const existingBroker =
       existingBrokerBySlug ??
       (await ctx.db
         .query("organizations")
-        .withIndex("by_slug", (query) => query.eq("slug", "release"))
+        .withIndex("slug", (query) => query.eq("slug", "release"))
         .first());
     const brokerFields = {
       name: LOCAL_FIXTURE.broker.name,
@@ -563,7 +563,7 @@ export const insertLocalFixture = internalMutation({
     });
     const existingClient = await ctx.db
       .query("organizations")
-      .withIndex("by_agentHandle", (query) =>
+      .withIndex("handle", (query) =>
         query.eq("agentHandle", LOCAL_FIXTURE.client.agentHandle),
       )
       .first();
@@ -594,7 +594,7 @@ export const insertLocalFixture = internalMutation({
 
     const existingAssignment = await ctx.db
       .query("brokerClientAssignments")
-      .withIndex("by_orgId_clientOrgId", (query) =>
+      .withIndex("organization_client", (query) =>
         query.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId),
       )
       .first();
@@ -619,7 +619,7 @@ export const insertLocalFixture = internalMutation({
 
     const policies = await ctx.db
       .query("policies")
-      .withIndex("by_orgId", (query) => query.eq("orgId", clientOrgId))
+      .withIndex("organization", (query) => query.eq("orgId", clientOrgId))
       .collect();
     const existingPolicy = policies.find(
       (policy) => policy.policyNumber === LOCAL_FIXTURE.policy.policyNumber,

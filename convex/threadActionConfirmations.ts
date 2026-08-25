@@ -4,33 +4,35 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalMutation,
   internalQuery,
-  mutation,
   type MutationCtx,
 } from "./_generated/server";
-import { requireCurrentOrgAccess } from "./lib/access";
 import { pendingEmailDraftFingerprint } from "./lib/actionConfirmationFingerprint";
 import {
+  threadActionActorsMatch,
   threadActionActorValidator,
   threadActionConfirmationPayloadValidator,
 } from "./lib/threadActionConfirmationValidators";
 
 const CONFIRMATION_TTL_HOURS = 24;
 
-export type ThreadActionConfirmationResult =
+type ThreadActionConfirmationResult =
   | "completed"
   | "stale"
   | "expired"
   | "needs_refresh";
 
-type ConfirmationActor = Doc<"threadActionConfirmations">["actor"];
-
-function actorsMatch(left: ConfirmationActor, right: ConfirmationActor) {
-  return (
-    left.kind === right.kind &&
-    left.userId === right.userId &&
-    left.address === right.address &&
-    left.slackActorId === right.slackActorId
-  );
+function markStale(
+  ctx: MutationCtx,
+  confirmation: Doc<"threadActionConfirmations">,
+  reason: string,
+  now = dayjs().valueOf(),
+) {
+  return ctx.db.patch(confirmation._id, {
+    status: "stale",
+    invalidatedAt: now,
+    invalidationReason: reason,
+    updatedAt: now,
+  });
 }
 
 async function invalidate(
@@ -38,14 +40,28 @@ async function invalidate(
   confirmation: Doc<"threadActionConfirmations">,
   reason: string,
 ): Promise<"stale"> {
-  const now = dayjs().valueOf();
-  await ctx.db.patch(confirmation._id, {
-    status: "stale",
-    invalidatedAt: now,
-    invalidationReason: reason,
-    updatedAt: now,
-  });
+  await markStale(ctx, confirmation, reason);
   return "stale";
+}
+
+export async function invalidatePendingConfirmations(
+  ctx: MutationCtx,
+  threadId: Id<"threads">,
+  reason: string,
+  matches?: (confirmation: Doc<"threadActionConfirmations">) => boolean,
+) {
+  const now = dayjs().valueOf();
+  const pending = await ctx.db
+    .query("threadActionConfirmations")
+    .withIndex("thread_status", (query) =>
+      query.eq("threadId", threadId).eq("status", "pending"),
+    )
+    .collect();
+  const selected = matches ? pending.filter(matches) : pending;
+  for (const confirmation of selected) {
+    await markStale(ctx, confirmation, reason, now);
+  }
+  return selected.length;
 }
 
 async function currentDraftFingerprints(
@@ -54,16 +70,15 @@ async function currentDraftFingerprints(
 ) {
   const drafts = await Promise.all(ids.map((id) => ctx.db.get(id)));
   if (
-    drafts.some(
-      (draft) =>
-        !draft || (draft.status !== "draft" && draft.status !== "pending"),
+    !drafts.every(
+      (draft): draft is Doc<"pendingEmails"> =>
+        draft !== null &&
+        (draft.status === "draft" || draft.status === "pending"),
     )
   ) {
     return undefined;
   }
-  return await Promise.all(
-    drafts.map((draft) => pendingEmailDraftFingerprint(draft!)),
-  );
+  return Promise.all(drafts.map(pendingEmailDraftFingerprint));
 }
 
 async function confirmationMatchesCurrentState(
@@ -127,24 +142,11 @@ export const createInternal = internalMutation({
     }
     const state = await ctx.db
       .query("threadContextStates")
-      .withIndex("by_threadId", (query) => query.eq("threadId", args.threadId))
+      .withIndex("thread", (query) => query.eq("threadId", args.threadId))
       .unique();
+    await invalidatePendingConfirmations(ctx, args.threadId, "superseded");
     const now = dayjs().valueOf();
-    const pending = await ctx.db
-      .query("threadActionConfirmations")
-      .withIndex("by_threadId_and_status", (query) =>
-        query.eq("threadId", args.threadId).eq("status", "pending"),
-      )
-      .collect();
-    for (const previous of pending) {
-      await ctx.db.patch(previous._id, {
-        status: "stale",
-        invalidatedAt: now,
-        invalidationReason: "superseded",
-        updatedAt: now,
-      });
-    }
-    return await ctx.db.insert("threadActionConfirmations", {
+    return ctx.db.insert("threadActionConfirmations", {
       ...args,
       taskEpoch: state?.taskEpoch ?? 0,
       status: "pending",
@@ -177,23 +179,23 @@ export const consumeInternal = internalMutation({
       });
       return "expired";
     }
-    if (!actorsMatch(confirmation.actor, args.actor)) {
+    if (!threadActionActorsMatch(confirmation.actor, args.actor)) {
       return "needs_refresh";
     }
     const state = await ctx.db
       .query("threadContextStates")
-      .withIndex("by_threadId", (query) =>
+      .withIndex("thread", (query) =>
         query.eq("threadId", confirmation.threadId),
       )
       .unique();
     if ((state?.taskEpoch ?? 0) !== confirmation.taskEpoch) {
-      return await invalidate(ctx, confirmation, "task_reset");
+      return invalidate(ctx, confirmation, "task_reset");
     }
     if (args.requireAdjacentPrompt) {
       if (!args.currentMessageId) return "needs_refresh";
       const messages = await ctx.db
         .query("threadMessages")
-        .withIndex("by_threadId", (query) =>
+        .withIndex("thread", (query) =>
           query.eq("threadId", confirmation.threadId),
         )
         .order("desc")
@@ -206,55 +208,11 @@ export const consumeInternal = internalMutation({
         persistedTurnMessages[0]?._id !== args.currentMessageId ||
         persistedTurnMessages[1]?._id !== confirmation.promptMessageId
       ) {
-        return await invalidate(ctx, confirmation, "intervening_message");
+        return invalidate(ctx, confirmation, "intervening_message");
       }
     }
     if (!(await confirmationMatchesCurrentState(ctx, confirmation))) {
-      return await invalidate(ctx, confirmation, "content_changed");
-    }
-    await ctx.db.patch(confirmation._id, {
-      status: "completed",
-      completedAt: now,
-      updatedAt: now,
-    });
-    if (confirmation.payload.kind === "coi_batch_delivery") {
-      await ctx.db.patch(confirmation.payload.pendingEmailId, {
-        coiBatchAuthorization: {
-          recipientEmail: confirmation.payload.recipientEmail,
-          fileIds: confirmation.payload.fileIds,
-          draftFingerprint: confirmation.payload.draftFingerprint,
-          confirmedBy: confirmation.actor,
-          confirmationId: confirmation._id,
-          confirmedAt: now,
-        },
-      });
-    }
-    return "completed";
-  },
-});
-
-export const authorizeExplicit = mutation({
-  args: { id: v.id("threadActionConfirmations") },
-  handler: async (ctx, args): Promise<ThreadActionConfirmationResult> => {
-    const { orgId, userId } = await requireCurrentOrgAccess(ctx);
-    const confirmation = await ctx.db.get(args.id);
-    if (!confirmation || confirmation.orgId !== orgId) return "needs_refresh";
-    if (!actorsMatch(confirmation.actor, { kind: "user", userId })) {
-      return "needs_refresh";
-    }
-    const now = dayjs().valueOf();
-    if (confirmation.status !== "pending") return "needs_refresh";
-    if (confirmation.expiresAt <= now) {
-      await ctx.db.patch(confirmation._id, {
-        status: "expired",
-        invalidatedAt: now,
-        invalidationReason: "expired",
-        updatedAt: now,
-      });
-      return "expired";
-    }
-    if (!(await confirmationMatchesCurrentState(ctx, confirmation))) {
-      return await invalidate(ctx, confirmation, "content_changed");
+      return invalidate(ctx, confirmation, "content_changed");
     }
     await ctx.db.patch(confirmation._id, {
       status: "completed",
@@ -280,39 +238,23 @@ export const authorizeExplicit = mutation({
 export const invalidatePendingForThread = internalMutation({
   args: { threadId: v.id("threads"), reason: v.string() },
   handler: async (ctx, args) => {
-    const now = dayjs().valueOf();
-    const pending = await ctx.db
-      .query("threadActionConfirmations")
-      .withIndex("by_threadId_and_status", (query) =>
-        query.eq("threadId", args.threadId).eq("status", "pending"),
-      )
-      .collect();
-    for (const confirmation of pending) {
-      await ctx.db.patch(confirmation._id, {
-        status: "stale",
-        invalidatedAt: now,
-        invalidationReason: args.reason,
-        updatedAt: now,
-      });
-    }
-    return pending.length;
+    return invalidatePendingConfirmations(ctx, args.threadId, args.reason);
   },
 });
 
 export const latestPendingInternal = internalQuery({
   args: { threadId: v.id("threads") },
-  handler: async (ctx, args) => {
-    return await ctx.db
+  handler: (ctx, args) =>
+    ctx.db
       .query("threadActionConfirmations")
-      .withIndex("by_threadId_and_status", (query) =>
+      .withIndex("thread_status", (query) =>
         query.eq("threadId", args.threadId).eq("status", "pending"),
       )
       .order("desc")
-      .first();
-  },
+      .first(),
 });
 
 export const getInternal = internalQuery({
   args: { id: v.id("threadActionConfirmations") },
-  handler: async (ctx, args) => await ctx.db.get(args.id),
+  handler: (ctx, args) => ctx.db.get(args.id),
 });

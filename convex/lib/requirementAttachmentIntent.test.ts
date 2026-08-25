@@ -39,7 +39,27 @@ describe("requirement attachment decisions", () => {
     });
   });
 
-  it("requires confirmation for mixed or ambiguous scope", () => {
+  it("confirms low-confidence exact scope and rejects mixed scope", () => {
+    expect(
+      validateRequirementAttachmentDecision(
+        {
+          intent: "import_new_requirements",
+          intentEvidence: "import the attached requirements",
+          scope: "vendors",
+          selectedFileIds: ["requirements"],
+          documents: [
+            {
+              fileId: "requirements",
+              classification: "insurance_requirements",
+              confidence: 0.95,
+            },
+          ],
+          confidence: 0.85,
+        },
+        [file("Requirements.pdf", "requirements")],
+      ).authorization,
+    ).toBe("confirmation");
+
     expect(
       validateRequirementAttachmentDecision(
         {
@@ -58,7 +78,7 @@ describe("requirement attachment decisions", () => {
         },
         [file("Requirements.pdf", "requirements")],
       ).authorization,
-    ).toBe("confirmation");
+    ).toBe("none");
   });
 
   it("never selects a policy classified as a requirement source", () => {

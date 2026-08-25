@@ -31,7 +31,7 @@ export const getByNormalizedNameInternal = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("carrierBrands")
-      .withIndex("by_normalizedName", (query) =>
+      .withIndex("name", (query) =>
         query.eq("normalizedName", args.normalizedName),
       )
       .first();
@@ -150,7 +150,7 @@ export const upsertInternal = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("carrierBrands")
-      .withIndex("by_normalizedName", (query) =>
+      .withIndex("name", (query) =>
         query.eq("normalizedName", args.normalizedName),
       )
       .first();

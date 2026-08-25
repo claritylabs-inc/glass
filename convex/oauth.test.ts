@@ -97,7 +97,7 @@ async function getAuthCodeRecord(t: OAuthTestHandle, codeRaw: string) {
   return t.run(async (ctx) =>
     ctx.db
       .query("oauthAuthCodes")
-      .withIndex("by_codeHash", (q) => q.eq("codeHash", codeHash))
+      .withIndex("code", (q) => q.eq("codeHash", codeHash))
       .first(),
   );
 }

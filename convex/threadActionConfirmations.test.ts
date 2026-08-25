@@ -271,7 +271,7 @@ describe("thread action confirmations", () => {
     await reset.t.run(async (ctx) => {
       const state = await ctx.db
         .query("threadContextStates")
-        .withIndex("by_threadId", (query) =>
+        .withIndex("thread", (query) =>
           query.eq("threadId", reset.threadId),
         )
         .unique();

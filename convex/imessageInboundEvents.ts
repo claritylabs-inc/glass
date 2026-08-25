@@ -24,7 +24,7 @@ export const claim = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("imessageInboundEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", args.eventKey))
       .first();
 
     if (existing) {
@@ -64,7 +64,7 @@ export const attachPrivacyContext = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("imessageInboundEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", args.eventKey))
       .unique();
     if (!existing) return;
     await ctx.db.patch(existing._id, {
@@ -84,7 +84,7 @@ export const complete = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("imessageInboundEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", args.eventKey))
       .first();
     if (!existing) return;
 
@@ -106,7 +106,7 @@ export const fail = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("imessageInboundEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", args.eventKey))
       .first();
     if (!existing) return;
 

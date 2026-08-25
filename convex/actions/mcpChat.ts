@@ -24,9 +24,8 @@ import {
   buildTextModelHistory,
   buildThreadContinuityPrompt,
   buildThreadHistoryToolInstructions,
-  stripInternalAgentActivity,
 } from "../lib/agentMessageHistory";
-import { stripConfidenceMarkers } from "../lib/confidence";
+import { cleanAgentMarkdownForTransport } from "../lib/transportRenderers";
 import {
   loadBoundedAgentHistory,
   scheduleThreadHistoryCompaction,
@@ -45,7 +44,6 @@ import {
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
-import type { AgentScope } from "../lib/agentScope";
 import {
   buildTitlePromptContent,
   fallbackTitle,
@@ -136,14 +134,11 @@ export const run = internalAction({
       },
     );
 
-    const scope = (await ctx.runQuery(
-      (internal as any).lib.agentScope.resolveForAction,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        surface: "mcp",
-      },
-    )) as AgentScope;
+    const scope = await ctx.runQuery(internal.lib.agentScope.resolveForAction, {
+      orgId: args.orgId,
+      userId: args.userId,
+      surface: "mcp",
+    });
 
     const history = await loadBoundedAgentHistory(ctx, {
       threadId,
@@ -490,8 +485,8 @@ MCP MODE:
           )
         : undefined;
     return {
-      threadId: threadId as string,
-      response: stripConfidenceMarkers(stripInternalAgentActivity(content)),
+      threadId,
+      response: cleanAgentMarkdownForTransport(content),
       attachments,
     };
   },

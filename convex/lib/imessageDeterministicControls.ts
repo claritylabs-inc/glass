@@ -10,6 +10,10 @@ import { executeEmailCommand } from "./emailCommandExecutor";
 import type { ImessageHistoryMessage } from "./imessageAgentContext";
 import { runImessageSlashCommand } from "./imessageSlashCommands";
 import {
+  confirmedRequirementImportMessage,
+  importConfirmedRequirementSources,
+} from "./requirementAttachmentIntent";
+import {
   isContextualConfirmation,
   resolveTextChannelEmailControl,
 } from "./textChannelControls";
@@ -101,7 +105,6 @@ export async function runImessageDeterministicControls(
 
   const slashCommandResult = await runImessageSlashCommand(ctx, {
     messageText: args.messageText,
-    orgId: args.orgId,
     userId: args.userId,
     orgName: args.orgName,
     userName: args.userName,
@@ -121,7 +124,7 @@ export async function runImessageDeterministicControls(
         chatGuid: args.chatGuid,
       });
     }
-    return await reply(slashCommandResult.response, {
+    return reply(slashCommandResult.response, {
       leaveGroup: slashCommandResult.leaveGroup,
       draftSnapshot: slashCommandResult.draftSnapshot,
     });
@@ -155,42 +158,24 @@ export async function runImessageDeterministicControls(
         },
       );
       if (outcome !== "completed") {
-        return await reply(
+        return reply(
           outcome === "expired"
             ? "That confirmation expired. Use /drafts and confirm again."
             : "That draft changed or is no longer the latest confirmation. Use /drafts and confirm again.",
         );
       }
       if (confirmation.payload.kind === "coi_batch_delivery") {
-        return await reply(
+        return reply(
           "The exact COI attachment set is authorized. Use /send 1 to deliver it.",
         );
       }
       if (confirmation.payload.kind === "requirement_import") {
-        const imports = [];
-        for (const document of confirmation.payload.classifications) {
-          if (document.documentClass !== "insurance_requirements") continue;
-          const imported = await ctx.runAction(
-            internal.actions.complianceRequirements.importRequirementsInternal,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              fileId: document.fileId,
-              fileName: document.filename,
-              contentType: document.contentType,
-              sourceName: document.filename,
-              scope: confirmation.payload.scope,
-            },
-          );
-          imports.push(imported);
-        }
-        const createdCount = imports.reduce(
-          (total, imported) => total + imported.createdCount,
-          0,
-        );
-        return await reply(
-          `Imported ${createdCount} insurance requirement${createdCount === 1 ? "" : "s"} from the confirmed source${imports.length === 1 ? "" : "s"}.`,
-        );
+        const imported = await importConfirmedRequirementSources(ctx, {
+          orgId: args.orgId,
+          userId: args.userId,
+          payload: confirmation.payload,
+        });
+        return reply(confirmedRequirementImportMessage(imported));
       }
       if (confirmation.payload.kind === "email_send") {
         const result = await executeEmailCommand(
@@ -204,7 +189,7 @@ export async function runImessageDeterministicControls(
             sendConfirmationId: confirmation._id,
           },
         );
-        return await reply(result.responseBody);
+        return reply(result.responseBody);
       }
       if (confirmation.payload.kind === "email_cancel") {
         const draftIds = new Set(args.draftEmails.map((draft) => draft._id));
@@ -216,7 +201,7 @@ export async function runImessageDeterministicControls(
             : { kind: "cancel_pending_emails", emailIds },
           { draftEmails: args.draftEmails },
         );
-        return await reply(result.responseBody);
+        return reply(result.responseBody);
       }
     }
   }
@@ -243,7 +228,7 @@ export async function runImessageDeterministicControls(
         : result.kind === "request_pending_cancel_confirmation"
           ? args.pendingEmails
           : undefined;
-    return await reply(result.responseBody, { cancelTargets });
+    return reply(result.responseBody, { cancelTargets });
   }
 
   return null;

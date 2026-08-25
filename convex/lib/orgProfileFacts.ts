@@ -370,7 +370,7 @@ async function activeOrgProfileFacts(
   for (const group of PROFILE_FIELD_GROUPS) {
     const facts = await ctx.db
       .query("policyDeclarationFacts")
-      .withIndex("by_orgId_fieldGroup", (q) => q.eq("orgId", orgId).eq("fieldGroup", group))
+      .withIndex("organization_group", (q) => q.eq("orgId", orgId).eq("fieldGroup", group))
       .collect();
     rows.push(...facts.filter((fact) => fact.active) as DeclarationFactDoc[]);
   }

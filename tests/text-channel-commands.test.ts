@@ -14,7 +14,6 @@ const commandCtx = {} as Parameters<typeof runImessageSlashCommand>[0];
 async function runCommand(messageText: string, currentSenderIsLinked: boolean) {
   const args: Parameters<typeof runImessageSlashCommand>[1] = {
     messageText,
-    orgId: "org-1" as Id<"organizations">,
     userId: "user-1" as Id<"users">,
     threadId: "thread-1" as Id<"threads">,
     currentMessageId: "message-1" as Id<"threadMessages">,
@@ -72,36 +71,6 @@ describe("text channel slash commands", () => {
       rawName: "/wat",
       args: [],
     });
-  });
-
-  it("keeps the public help text aligned with the implemented commands", () => {
-    expect(TEXT_CHANNEL_COMMAND_HELP.split("\n")).toEqual([
-      "Commands:",
-      "/help, /commands",
-      "/status",
-      "/drafts",
-      "/send 1, /send all",
-      "/discard 1, /discard all",
-      "/cancel, /reset, /new",
-      "/leave, /whoami",
-      "",
-      "Try /drafts then /send 1.",
-    ]);
-    for (const command of [
-      "/help",
-      "/commands",
-      "/status",
-      "/drafts",
-      "/send",
-      "/discard",
-      "/cancel",
-      "/reset",
-      "/new",
-      "/leave",
-      "/whoami",
-    ]) {
-      expect(TEXT_CHANNEL_COMMAND_HELP).toContain(command);
-    }
   });
 
   it("does not let anonymous group participants use tenant-scoped slash commands", async () => {

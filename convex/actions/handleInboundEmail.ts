@@ -29,7 +29,6 @@ import {
   validatePolicyFocusIds,
 } from "../lib/agentPolicyFocus";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { AgentScope } from "../lib/agentScope";
 import {
   sendResendEmail,
   getAgentDomain,
@@ -65,8 +64,8 @@ import {
   buildTextModelHistory,
   buildThreadContinuityPrompt,
   buildThreadHistoryToolInstructions,
-  stripInternalAgentActivity,
 } from "../lib/agentMessageHistory";
+import { cleanAgentMarkdownForTransport } from "../lib/transportRenderers";
 import {
   loadBoundedAgentHistory,
   scheduleThreadHistoryCompaction,
@@ -75,7 +74,10 @@ import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import { buildEmailDraftTextSummary } from "../lib/emailDraftSummary";
 import { runInboundEmailDeterministicControls } from "../lib/inboundEmailDeterministicControls";
 import {
+  buildRequirementImportConfirmation,
+  confirmedRequirementImportMessage,
   decideRequirementAttachmentImport,
+  importConfirmedRequirementSources,
   requiredRequirementImportStep,
 } from "../lib/requirementAttachmentIntent";
 import {
@@ -84,23 +86,19 @@ import {
   parseInboundEmail,
   resolveForwardReplyAddress,
   storedInboundEmailContent,
-  type ParsedInboundEmail,
 } from "../lib/inboundEmailParser";
 import { decideForwardReplyDirection } from "../lib/forwardReplyDirection";
-import {
-  executeEmailCommand,
-  type EmailCommandDraft,
-} from "../lib/emailCommandExecutor";
+import { executeEmailCommand } from "../lib/emailCommandExecutor";
 import { isContextualConfirmation } from "../lib/textChannelControls";
 import {
   isPendingEmailCancelConfirmation,
   isPendingEmailCancelIntent,
 } from "../lib/emailCancelIntent";
-import { pendingEmailDraftFingerprint } from "../lib/actionConfirmationFingerprint";
 import {
-  countCoiAttachments,
-  type EmailAttachmentLike,
-} from "../lib/coiAttachmentGuards";
+  buildPendingEmailConfirmation,
+  pendingEmailDraftFingerprint,
+} from "../lib/actionConfirmationFingerprint";
+import { extractEmailAddress } from "../lib/emailAddress";
 
 const GLASS_PUBLIC_URL = getClientPortalUrl();
 const GLASS_PENDING_MESSAGE_ID_RE = /<?glass-pending-([^@\s>]+)@[^>\s]+>?/gi;
@@ -188,12 +186,6 @@ interface ReceivedEmailContent {
   headers?: unknown;
 }
 
-function extractEmailAddress(raw: string | undefined): string {
-  if (!raw) return "";
-  const match = raw.match(/<([^>]+)>/);
-  return match ? match[1].toLowerCase() : raw.toLowerCase().trim();
-}
-
 function extractName(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   const match = raw.match(/^"?([^"<]+)"?\s*</);
@@ -203,12 +195,11 @@ function extractName(raw: string | undefined): string | undefined {
 function parseAddressList(raw: string | string[] | undefined): string[] {
   if (!raw) return [];
   if (Array.isArray(raw)) {
-    return raw.map((a) => extractEmailAddress(a)).filter(Boolean);
+    return raw.flatMap((address) => extractEmailAddress(address) ?? []);
   }
   return raw
     .split(",")
-    .map((a) => extractEmailAddress(a.trim()))
-    .filter(Boolean);
+    .flatMap((address) => extractEmailAddress(address) ?? []);
 }
 
 function findAgentHandle(
@@ -301,13 +292,6 @@ interface DownloadedAttachment {
   size: number;
   buffer: Buffer;
 }
-
-type ToolSentEmail = {
-  responseBody: string;
-  responseTo: string;
-  responseCc?: string[];
-  responseMessageId?: string;
-};
 
 type PendingEmailConfirmationPrompt = {
   content: string;
@@ -412,9 +396,9 @@ async function fetchEmailContent(
       console.error("Both APIs failed. Proceeding without body.", errorText);
       return {};
     }
-    return await fallback.json();
+    return fallback.json();
   }
-  return await res.json();
+  return res.json();
 }
 
 async function hasPriorParticipantEvidence(
@@ -441,46 +425,6 @@ async function getPendingEmailFromCapturedId(
   } catch {
     return null;
   }
-}
-
-function storedInboundEmailForThread(
-  parsed: ParsedInboundEmail,
-): NonNullable<Doc<"threadMessages">["emailContent"]> {
-  const stored = storedInboundEmailContent(parsed);
-  const base = {
-    rawText: stored.rawText,
-    rawHtml: stored.rawHtml,
-    quotedText: stored.quotedText,
-    parserVersion: stored.parserVersion,
-    parseInputTruncated: stored.parseInputTruncated,
-  };
-  const forwardedEmail = stored.forwarded?.email;
-  if (!forwardedEmail) return base;
-
-  const withAddress = (
-    mailbox: { address?: string; name?: string } | undefined,
-  ) => {
-    if (!mailbox?.address) return undefined;
-    return { address: mailbox.address, name: mailbox.name };
-  };
-
-  return {
-    ...base,
-    forwarded: {
-      email: {
-        ...forwardedEmail,
-        from: withAddress(forwardedEmail.from),
-        to: forwardedEmail.to.flatMap((mailbox) => {
-          const normalized = withAddress(mailbox);
-          return normalized ? [normalized] : [];
-        }),
-        cc: forwardedEmail.cc.flatMap((mailbox) => {
-          const normalized = withAddress(mailbox);
-          return normalized ? [normalized] : [];
-        }),
-      },
-    },
-  };
 }
 
 async function resolveInboundThread(
@@ -516,11 +460,11 @@ async function resolveInboundThread(
     if (!pending || pending.orgId !== args.orgId) continue;
     correlatedPendingEmailId = pending._id;
     if (pending.threadMessageId) {
-      matchedParentEmailMessage = (await ctx
+      matchedParentEmailMessage = await ctx
         .runQuery(internal.threads.getMessageInternal, {
           id: pending.threadMessageId,
         })
-        .catch(() => null)) as Doc<"threadMessages"> | null;
+        .catch(() => null);
     }
     if (pending.threadId) {
       existingThreadId = pending.threadId;
@@ -534,10 +478,10 @@ async function resolveInboundThread(
 
   for (const candidate of [...new Set(replyMessageIdCandidates)]) {
     if (matchedParentEmailMessage) break;
-    const matched = (await ctx.runQuery(
+    const matched = await ctx.runQuery(
       internal.threads.findEmailMessageByMessageId,
       { orgId: args.orgId, messageId: candidate },
-    )) as Doc<"threadMessages"> | null;
+    );
     if (!matched) continue;
     matchedParentEmailMessage = matched;
     existingThreadId = matched.threadId;
@@ -643,7 +587,7 @@ export const processInbound = internalAction({
       }
     }
 
-    const fromEmail = extractEmailAddress(data.from);
+    const fromEmail = extractEmailAddress(data.from) ?? "";
     const fromName = extractName(data.from);
     const toAddresses = parseAddressList(data.to);
     const ccAddresses = parseAddressList(data.cc);
@@ -757,18 +701,20 @@ export const processInbound = internalAction({
       );
     }
 
-    // Get all org members for domain detection and primary contact resolution
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, {
       orgId,
     });
     const memberEmails = orgMembers
-      .map((m: any) => m.user?.email)
-      .filter(Boolean) as string[];
-    const firstAdmin = orgMembers.find((m: any) => m.role === "admin");
+      .flatMap((membership) =>
+        membership.user?.email ? [membership.user.email] : [],
+      );
+    const firstAdmin = orgMembers.find(
+      (membership) => membership.role === "admin",
+    );
 
-    // Match sender to an org member by email — so the right user is attributed
     const senderMember = orgMembers.find(
-      (m: any) => m.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
+      (membership) =>
+        membership.user?.email?.toLowerCase() === fromEmail.toLowerCase(),
     );
     const primaryUserId =
       senderMember?.userId ??
@@ -912,7 +858,8 @@ export const processInbound = internalAction({
       filename: string;
       contentType: string;
       size: number;
-      fileId?: string;
+      fileId?: Id<"_storage">;
+      kind: "uploaded_file";
     }[] = [];
 
     for (const att of attachments) {
@@ -926,6 +873,7 @@ export const processInbound = internalAction({
           contentType: att.content_type,
           size: att.size,
           fileId,
+          kind: "uploaded_file",
         });
       } catch (err) {
         console.warn(`Failed to store attachment ${att.filename}:`, err);
@@ -934,6 +882,7 @@ export const processInbound = internalAction({
           filename: att.filename,
           contentType: att.content_type,
           size: att.size,
+          kind: "uploaded_file",
         });
       }
     }
@@ -963,11 +912,10 @@ export const processInbound = internalAction({
         subject,
         content: body,
         contentHtml: bodyHtml,
-        emailContent: storedInboundEmailForThread(parsedInboundEmail),
+        emailContent: storedInboundEmailContent(parsedInboundEmail),
         messageId,
         resendEmailId: resendEmailId || undefined,
-        attachments:
-          attachmentRecords.length > 0 ? (attachmentRecords as any) : undefined,
+        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
         pendingEmailId:
           matchedParentEmailMessage?.pendingEmailId ?? correlatedPendingEmailId,
       },
@@ -1052,7 +1000,7 @@ export const processInbound = internalAction({
     }
 
     try {
-      const scope = (await ctx.runQuery(
+      const scope = await ctx.runQuery(
         internal.lib.agentScope.resolveForAction,
         {
           orgId,
@@ -1061,7 +1009,7 @@ export const processInbound = internalAction({
           allowBrokerPortfolio:
             org.type === "broker" && isInternal && effectiveMode === "direct",
         },
-      )) as AgentScope;
+      );
 
       const siteUrl = getClientPortalUrl();
 
@@ -1234,8 +1182,9 @@ export const processInbound = internalAction({
         }
       }
 
-      let toolSentEmail: ToolSentEmail | null = null;
-      let emailResult: EmailSubagentResult | null = null;
+      const emailToolState: { result: EmailSubagentResult | null } = {
+        result: null,
+      };
       const generatedCoiAttachments: EmailAttachmentMeta[] = [];
       const emailToolArtifacts: Array<{ type: string; data: unknown }> = [];
       const availableEmailAttachments = attachmentRecords
@@ -1247,6 +1196,7 @@ export const processInbound = internalAction({
           contentType: rec.contentType,
           size: rec.size,
           fileId: rec.fileId,
+          kind: rec.kind,
         }));
       const availableFileIds = new Set(
         availableEmailAttachments.map((attachment) =>
@@ -1264,7 +1214,10 @@ export const processInbound = internalAction({
         requirementImportResolution.authorization === "auto"
           ? requirementImportResolution.attachments
           : [];
-      const requirementImportDefaultScope = requirementImportResolution.scope;
+      const requirementImportDefaultScope =
+        requirementImportResolution.authorization === "none"
+          ? undefined
+          : requirementImportResolution.scope;
 
       const emailTools = {
         ...buildAgentToolExecutors(ctx, {
@@ -1289,6 +1242,7 @@ export const processInbound = internalAction({
               contentType: attachment.contentType,
               size: attachment.size,
               fileId: attachment.fileId,
+              kind: attachment.kind,
             });
           },
           onToolArtifact: (artifact) => {
@@ -1359,15 +1313,7 @@ export const processInbound = internalAction({
                   bodyForAgent,
                 ].join("\n\n"),
                 onResult: (result: EmailSubagentResult) => {
-                  emailResult = result;
-                  if (result.status === "sent" || result.status === "pending") {
-                    toolSentEmail = {
-                      responseBody: result.responseBody,
-                      responseTo: result.responseTo ?? "",
-                      responseCc: result.responseCc,
-                      responseMessageId: result.responseMessageId,
-                    };
-                  }
+                  emailToolState.result = result;
                 },
               }),
             }
@@ -1611,10 +1557,10 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
       }
 
       systemContext += attachmentToolHint;
-      const currentDraftEmails = (await ctx.runQuery(
+      const currentDraftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
         { threadId: unifiedThreadId, orgId },
-      )) as Array<Doc<"pendingEmails">>;
+      );
       if (currentDraftEmails.length > 0) {
         systemContext += `\n\nCURRENT EMAIL DRAFTS:\n${buildEmailDraftTextSummary(
           currentDraftEmails,
@@ -1672,45 +1618,23 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
               ctx,
               { kind: "send_draft_emails", emailIds },
               {
-                draftEmails: currentDraftEmails as EmailCommandDraft[],
+                draftEmails: currentDraftEmails,
                 sendConfirmationId: latestConfirmation._id,
               },
             );
             confirmationControlResponse = result.responseBody;
           } else if (latestConfirmation.payload.kind === "requirement_import") {
-            const imports = [];
-            for (const document of latestConfirmation.payload.classifications) {
-              if (document.documentClass !== "insurance_requirements") continue;
-              imports.push(
-                await ctx.runAction(
-                  internal.actions.complianceRequirements
-                    .importRequirementsInternal,
-                  {
-                    orgId,
-                    userId: primaryUserId,
-                    fileId: document.fileId,
-                    fileName: document.filename,
-                    contentType: document.contentType,
-                    sourceName: document.filename,
-                    scope: latestConfirmation.payload.scope,
-                  },
-                ),
-              );
-            }
-            const createdCount = imports.reduce(
-              (total, imported) => total + imported.createdCount,
-              0,
-            );
+            const imported = await importConfirmedRequirementSources(ctx, {
+              orgId,
+              userId: primaryUserId,
+              payload: latestConfirmation.payload,
+            });
             emailToolArtifacts.push({
               type: "workflow_outcome",
-              data: {
-                workflowKind: "requirement_import",
-                status: "completed",
-                sourceDocumentIds: imports.map((item) => item.sourceDocumentId),
-                requirementIds: imports.flatMap((item) => item.requirementIds),
-              },
+              data: imported.workflowOutcome,
             });
-            confirmationControlResponse = `Imported ${createdCount} insurance requirement${createdCount === 1 ? "" : "s"} from the confirmed source${imports.length === 1 ? "" : "s"}.`;
+            confirmationControlResponse =
+              confirmedRequirementImportMessage(imported);
           } else if (latestConfirmation.payload.kind === "email_cancel") {
             const result = await executeEmailCommand(
               ctx,
@@ -1718,7 +1642,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
                 kind: "cancel_draft_emails",
                 emailIds: latestConfirmation.payload.pendingEmailIds,
               },
-              { draftEmails: currentDraftEmails as EmailCommandDraft[] },
+              { draftEmails: currentDraftEmails },
             );
             confirmationControlResponse = result.responseBody;
           }
@@ -1788,21 +1712,23 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         responseBody = turn.text;
       }
 
-      responseBody = stripInternalAgentActivity(responseBody);
+      responseBody = cleanAgentMarkdownForTransport(responseBody);
       if (!responseBody) {
         responseBody =
           "I couldn't format that response. Please try again in a moment.";
       }
 
-      const sentByTool = toolSentEmail as ToolSentEmail | null;
-      if (sentByTool) {
+      const resolvedEmailResult = emailToolState.result;
+      if (
+        resolvedEmailResult?.status === "sent" ||
+        resolvedEmailResult?.status === "pending"
+      ) {
         await scheduleThreadHistoryCompaction(ctx, unifiedThreadId);
         return;
       }
 
       let pendingConfirmationPrompt: PendingEmailConfirmationPrompt | null =
         null;
-      const resolvedEmailResult = emailResult as EmailSubagentResult | null;
       if (
         resolvedEmailResult?.pendingEmailId &&
         (resolvedEmailResult.status === "draft" ||
@@ -1812,36 +1738,21 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           id: resolvedEmailResult.pendingEmailId,
         });
         if (draft?.status === "draft") {
-          const fingerprint = await pendingEmailDraftFingerprint(draft);
-          const multipleCoiAttachments =
-            countCoiAttachments(
-              draft.attachments as EmailAttachmentLike[] | undefined,
-            ) > 1;
-          pendingConfirmationPrompt = multipleCoiAttachments
-            ? {
-                content: `Reply “yes” to authorize and send this exact COI batch to ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}.`,
-                dedupeKey: `email-coi-batch-confirmation:${String(draft._id)}:${fingerprint}`,
-                pendingEmailId: draft._id,
-                payload: {
-                  kind: "coi_batch_delivery",
+          const confirmation = await buildPendingEmailConfirmation(draft);
+          pendingConfirmationPrompt =
+            confirmation.payload.kind === "coi_batch_delivery"
+              ? {
+                  content: `Reply “yes” to authorize and send this exact COI batch to ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}.`,
+                  dedupeKey: `email-coi-batch-confirmation:${String(draft._id)}:${confirmation.fingerprint}`,
                   pendingEmailId: draft._id,
-                  recipientEmail: draft.recipientEmail.trim().toLowerCase(),
-                  fileIds: (draft.attachments ?? []).map(
-                    (attachment) => attachment.fileId,
-                  ),
-                  draftFingerprint: fingerprint,
-                },
-              }
-            : {
-                content: `Reply “yes” to send this exact draft to ${draft.recipientEmail} with subject “${draft.subject}”.`,
-                dedupeKey: `email-send-confirmation:${String(draft._id)}:${fingerprint}`,
-                pendingEmailId: draft._id,
-                payload: {
-                  kind: "email_send",
-                  pendingEmailIds: [draft._id],
-                  draftFingerprints: [fingerprint],
-                },
-              };
+                  payload: confirmation.payload,
+                }
+              : {
+                  content: `Reply “yes” to send this exact draft to ${draft.recipientEmail} with subject “${draft.subject}”.`,
+                  dedupeKey: `email-send-confirmation:${String(draft._id)}:${confirmation.fingerprint}`,
+                  pendingEmailId: draft._id,
+                  payload: confirmation.payload,
+                };
         }
       } else if (!handledConfirmation && cancelRequestTargets.length > 0) {
         pendingConfirmationPrompt = {
@@ -1857,41 +1768,17 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             ),
           },
         };
-      } else if (
-        !resolvedEmailResult &&
-        !handledConfirmation &&
-        requirementImportResolution.authorization === "confirmation" &&
-        requirementImportResolution.scope &&
-        requirementImportResolution.decision
-      ) {
-        const decision = requirementImportResolution.decision;
-        pendingConfirmationPrompt = {
-          content: `Reply “yes” to import ${requirementImportResolution.attachments.map((attachment) => attachment.filename).join(", ")} as ${requirementImportResolution.scope === "vendors" ? "vendor" : "your organization's"} insurance requirements.`,
-          dedupeKey: `email-requirement-import-confirmation:${String(inboundMessageId)}`,
-          payload: {
-            kind: "requirement_import",
-            fileIds: requirementImportResolution.attachments.map(
-              (attachment) => attachment.fileId,
-            ),
-            classifications: requirementImportResolution.attachments.map(
-              (attachment) => {
-                const classification = decision.documents.find(
-                  (document) => document.fileId === String(attachment.fileId),
-                );
-                return {
-                  fileId: attachment.fileId,
-                  filename: attachment.filename,
-                  contentType: attachment.contentType,
-                  documentClass: "insurance_requirements" as const,
-                  confidence: classification?.confidence ?? 0,
-                };
-              },
-            ),
-            scope: requirementImportResolution.scope,
-            confidence: decision.confidence,
-            intentEvidence: decision.intentEvidence,
-          },
-        };
+      } else if (!resolvedEmailResult && !handledConfirmation) {
+        const confirmation = buildRequirementImportConfirmation(
+          requirementImportResolution,
+        );
+        if (confirmation) {
+          pendingConfirmationPrompt = {
+            content: `Reply “yes”. ${confirmation.message}`,
+            dedupeKey: `email-requirement-import-confirmation:${String(inboundMessageId)}`,
+            payload: confirmation.payload,
+          };
+        }
       }
 
       // Domain guard: strip internal URLs from customer-facing replies
@@ -1907,8 +1794,6 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         );
       }
 
-      // Build reply with signature through the shared delivery renderer. Keep
-      // workflow status separate in history while including it in the email.
       const deliveryResponseBody = pendingConfirmationPrompt
         ? `${responseBody.trim()}\n\n${pendingConfirmationPrompt.content}`
         : responseBody;

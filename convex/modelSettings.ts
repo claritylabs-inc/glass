@@ -413,7 +413,7 @@ export const get = query({
     const { brokerOrgId } = await requireCurrentBrokerAdmin(ctx);
     const settings = await ctx.db
       .query("brokerModelSettings")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
       .first();
 
     return {
@@ -446,7 +446,7 @@ export const updateRoutes = mutation({
 
     const existing = await ctx.db
       .query("brokerModelSettings")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
       .first();
     const providerKeys = existing?.providerKeys ?? {};
 
@@ -492,7 +492,7 @@ export const updateProviderKey = mutation({
     const { userId, brokerOrgId } = await requireCurrentBrokerAdmin(ctx);
     const existing = await ctx.db
       .query("brokerModelSettings")
-      .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
       .first();
     const providerKeys = { ...(existing?.providerKeys ?? {}) };
     const nextKey = args.apiKey?.trim() ?? "";
@@ -522,7 +522,7 @@ export const getGlobal = query({
     await requireOperator(ctx);
     const settings = await ctx.db
       .query("globalModelSettings")
-      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .withIndex("key", (q) => q.eq("key", "default"))
       .first();
 
     return {
@@ -564,7 +564,7 @@ export const updateGlobalRoutes = mutation({
     const operator = await requireOperator(ctx);
     const existing = await ctx.db
       .query("globalModelSettings")
-      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .withIndex("key", (q) => q.eq("key", "default"))
       .first();
 
     for (const [task, route] of Object.entries(args.routes)) {
@@ -627,7 +627,7 @@ export const updateGlobalWebRetrieval = mutation({
 
     const existing = await ctx.db
       .query("globalModelSettings")
-      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .withIndex("key", (q) => q.eq("key", "default"))
       .first();
     const now = dayjs().valueOf();
     const webRetrieval = normalizeWebRetrieval(args.webRetrieval);
@@ -658,12 +658,12 @@ export const resolveForOrg = internalQuery({
 
     const globalSettings = await ctx.db
       .query("globalModelSettings")
-      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .withIndex("key", (q) => q.eq("key", "default"))
       .first();
     const settings = brokerOrgId
       ? await ctx.db
         .query("brokerModelSettings")
-        .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+        .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
         .first()
       : null;
 
@@ -734,7 +734,7 @@ export const resolvePublicDefaults = internalQuery({
   handler: async (ctx) => {
     const globalSettings = await ctx.db
       .query("globalModelSettings")
-      .withIndex("by_key", (q) => q.eq("key", "default"))
+      .withIndex("key", (q) => q.eq("key", "default"))
       .first();
     const globalRoutes = explicitGlobalRoutes(globalSettings);
     const routes = {} as Record<ModelRouteId, ModelRoute>;

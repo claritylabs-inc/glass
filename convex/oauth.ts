@@ -71,7 +71,7 @@ export const getClientByClientId = internalQuery({
   handler: async (ctx, args) => {
     return ctx.db
       .query("oauthClients")
-      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .withIndex("client", (q) => q.eq("clientId", args.clientId))
       .first();
   },
 });
@@ -87,7 +87,7 @@ export const exchangeAuthCode = internalMutation({
     const codeHash = await sha256Hex(args.codeRaw);
     const codeRecord = await ctx.db
       .query("oauthAuthCodes")
-      .withIndex("by_codeHash", (q) => q.eq("codeHash", codeHash))
+      .withIndex("code", (q) => q.eq("codeHash", codeHash))
       .first();
 
     if (!codeRecord) throw new Error("invalid_grant");
@@ -143,7 +143,7 @@ export const validateAccessToken = internalQuery({
   handler: async (ctx, args) => {
     const token = await ctx.db
       .query("oauthTokens")
-      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash))
+      .withIndex("token", (q) => q.eq("tokenHash", args.tokenHash))
       .first();
 
     if (!token) return null;
@@ -163,7 +163,7 @@ export const validateAccessTokenWithScopes = internalQuery({
   handler: async (ctx, args) => {
     const token = await ctx.db
       .query("oauthTokens")
-      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash))
+      .withIndex("token", (q) => q.eq("tokenHash", args.tokenHash))
       .first();
 
     if (!token) return null;
@@ -189,7 +189,7 @@ export const refreshAccessToken = internalMutation({
     const refreshHash = await sha256Hex(args.refreshTokenRaw);
     const token = await ctx.db
       .query("oauthTokens")
-      .withIndex("by_refreshTokenHash", (q) =>
+      .withIndex("refresh_token", (q) =>
         q.eq("refreshTokenHash", refreshHash),
       )
       .first();
@@ -237,7 +237,7 @@ export const revokeTokenInternal = internalMutation({
   handler: async (ctx, args) => {
     const token = await ctx.db
       .query("oauthTokens")
-      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash))
+      .withIndex("token", (q) => q.eq("tokenHash", args.tokenHash))
       .first();
     if (token && !token.revokedAt) {
       await ctx.db.patch(token._id, { revokedAt: dayjs().valueOf() });
@@ -258,7 +258,7 @@ export const getClientInfo = query({
 
     const client = await ctx.db
       .query("oauthClients")
-      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .withIndex("client", (q) => q.eq("clientId", args.clientId))
       .first();
 
     if (!client) return null;
@@ -287,7 +287,7 @@ export const createAuthorizationCode = mutation({
     // Verify client exists and redirect_uri matches
     const client = await ctx.db
       .query("oauthClients")
-      .withIndex("by_clientId", (q) => q.eq("clientId", args.clientId))
+      .withIndex("client", (q) => q.eq("clientId", args.clientId))
       .first();
 
     if (!client) throw new Error("Invalid client");
@@ -323,7 +323,7 @@ export const listConnectedApps = query({
 
     const tokens = await ctx.db
       .query("oauthTokens")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .collect();
 
     // Group by clientId, show only active (non-revoked) tokens
@@ -350,7 +350,7 @@ export const listConnectedApps = query({
     for (const [clientId, info] of activeByClient) {
       const client = await ctx.db
         .query("oauthClients")
-        .withIndex("by_clientId", (q) => q.eq("clientId", clientId))
+        .withIndex("client", (q) => q.eq("clientId", clientId))
         .first();
       apps.push({
         tokenId: info.tokenId,
@@ -372,7 +372,7 @@ export const revokeApp = mutation({
     // Revoke all tokens for this user + client
     const tokens = await ctx.db
       .query("oauthTokens")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .withIndex("user", (q) => q.eq("userId", userId))
       .collect();
 
     const now = dayjs().valueOf();

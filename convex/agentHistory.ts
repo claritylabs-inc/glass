@@ -8,7 +8,6 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   internalMutation,
   internalQuery,
-  type MutationCtx,
 } from "./_generated/server";
 import {
   AGENT_CHANNEL_HISTORY_POLICY,
@@ -17,6 +16,7 @@ import {
   selectBoundedAgentHistory,
   shouldStartNewImessageTask,
 } from "./lib/agentMessageHistory";
+import { invalidatePendingConfirmations } from "./threadActionConfirmations";
 
 const surfaceValidator = v.union(
   v.literal("web"),
@@ -27,28 +27,6 @@ const surfaceValidator = v.union(
 );
 
 const SUMMARY_SOURCE_BATCH_SIZE = 48;
-
-async function invalidatePendingConfirmations(
-  ctx: MutationCtx,
-  threadId: Id<"threads">,
-  reason: string,
-  now: number,
-) {
-  const confirmations = await ctx.db
-    .query("threadActionConfirmations")
-    .withIndex("by_threadId_and_status", (query) =>
-      query.eq("threadId", threadId).eq("status", "pending"),
-    )
-    .collect();
-  for (const confirmation of confirmations) {
-    await ctx.db.patch(confirmation._id, {
-      status: "stale",
-      invalidatedAt: now,
-      invalidationReason: reason,
-      updatedAt: now,
-    });
-  }
-}
 
 function deriveLegacyTaskStart(
   messages: Doc<"threadMessages">[],
@@ -82,7 +60,7 @@ export const prepareForTurn = internalMutation({
       ctx.db.get(args.currentMessageId),
       ctx.db
         .query("threadContextStates")
-        .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+        .withIndex("thread", (q) => q.eq("threadId", args.threadId))
         .unique(),
     ]);
     if (!thread || !currentMessage || currentMessage.threadId !== thread._id) {
@@ -95,7 +73,7 @@ export const prepareForTurn = internalMutation({
     if (!existing) {
       const recentMessages = await ctx.db
         .query("threadMessages")
-        .withIndex("by_threadId", (q) => q.eq("threadId", thread._id))
+        .withIndex("thread", (q) => q.eq("threadId", thread._id))
         .order("desc")
         .take(256);
       const taskStartedAt =
@@ -115,7 +93,7 @@ export const prepareForTurn = internalMutation({
         createdAt: now,
         updatedAt: now,
       });
-      return await ctx.db.get(stateId);
+      return ctx.db.get(stateId);
     }
 
     const inactiveReset =
@@ -130,7 +108,6 @@ export const prepareForTurn = internalMutation({
         ctx,
         args.threadId,
         "task_epoch_changed",
-        now,
       );
     }
     await ctx.db.patch(existing._id, {
@@ -154,7 +131,7 @@ export const prepareForTurn = internalMutation({
         : {}),
       updatedAt: now,
     });
-    return await ctx.db.get(existing._id);
+    return ctx.db.get(existing._id);
   },
 });
 
@@ -169,14 +146,14 @@ export const resetTask = internalMutation({
       ctx.db.get(args.currentMessageId),
       ctx.db
         .query("threadContextStates")
-        .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+        .withIndex("thread", (q) => q.eq("threadId", args.threadId))
         .unique(),
     ]);
     if (!thread || !currentMessage || currentMessage.threadId !== thread._id) {
       throw new Error("Thread history turn not found");
     }
     const now = dayjs().valueOf();
-    await invalidatePendingConfirmations(ctx, args.threadId, "task_reset", now);
+    await invalidatePendingConfirmations(ctx, args.threadId, "task_reset");
     if (!existing) {
       await ctx.db.insert("threadContextStates", {
         threadId: thread._id,
@@ -212,10 +189,10 @@ export const resetTask = internalMutation({
 
 export const getContextState = internalQuery({
   args: { threadId: v.id("threads") },
-  handler: async (ctx, args) =>
-    await ctx.db
+  handler: (ctx, args) =>
+    ctx.db
       .query("threadContextStates")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .unique(),
 });
 
@@ -226,9 +203,9 @@ export const getMessagePage = internalQuery({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    return await ctx.db
+    return ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => {
+      .withIndex("thread", (q) => {
         const threadQuery = q.eq("threadId", args.threadId);
         return args.taskStartedAt === undefined
           ? threadQuery
@@ -244,7 +221,7 @@ export const getLatestUserMessage = internalQuery({
   handler: async (ctx, args) => {
     const messages = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .order("desc")
       .take(16);
     return messages.find((message) => message.role === "user") ?? null;
@@ -257,7 +234,7 @@ export const getRecentControlMessages = internalQuery({
     (
       await ctx.db
         .query("threadMessages")
-        .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+        .withIndex("thread", (q) => q.eq("threadId", args.threadId))
         .order("desc")
         .take(32)
     ).reverse(),
@@ -268,7 +245,7 @@ export const scheduleCompaction = internalMutation({
   handler: async (ctx, args) => {
     const state = await ctx.db
       .query("threadContextStates")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .unique();
     if (!state || state.status === "scheduled") return;
     await ctx.db.patch(state._id, {
@@ -290,7 +267,7 @@ export const getSummaryCutoff = internalQuery({
   handler: async (ctx, args) => {
     const recent = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) =>
+      .withIndex("thread", (q) =>
         q
           .eq("threadId", args.threadId)
           .gte("_creationTime", args.taskStartedAt),
@@ -304,9 +281,9 @@ export const getSummaryCutoff = internalQuery({
       return null;
     }
     const earliestSelectedAt = selected.messages[0]._creationTime;
-    return await ctx.db
+    return ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) =>
+      .withIndex("thread", (q) =>
         q
           .eq("threadId", args.threadId)
           .gte("_creationTime", args.taskStartedAt)
@@ -327,7 +304,7 @@ export const getSummarySourceBatch = internalQuery({
   handler: async (ctx, args) => {
     const rows = await ctx.db
       .query("threadMessages")
-      .withIndex("by_threadId", (q) => {
+      .withIndex("thread", (q) => {
         const threadQuery = q.eq("threadId", args.threadId);
         return args.afterCreatedAt === undefined
           ? threadQuery
@@ -360,7 +337,7 @@ export const commitSummary = internalMutation({
   handler: async (ctx, args) => {
     const state = await ctx.db
       .query("threadContextStates")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .unique();
     if (
       !state ||
@@ -402,7 +379,7 @@ export const finishCompactionWithoutChanges = internalMutation({
   handler: async (ctx, args) => {
     const state = await ctx.db
       .query("threadContextStates")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .unique();
     if (
       !state ||
@@ -434,7 +411,7 @@ export const recordCompactionFailure = internalMutation({
   handler: async (ctx, args) => {
     const state = await ctx.db
       .query("threadContextStates")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .unique();
     if (
       !state ||
@@ -501,7 +478,7 @@ export const searchThreadHistory = internalQuery({
     if (!normalizedQuery) return [];
     const rows = await ctx.db
       .query("threadMessages")
-      .withSearchIndex("search_content", (q) =>
+      .withSearchIndex("content", (q) =>
         q.search("content", normalizedQuery).eq("threadId", args.threadId),
       )
       .take(limit * 2);

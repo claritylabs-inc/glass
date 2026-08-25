@@ -82,6 +82,8 @@ Certificate holder edits in the shared detail drawer target the selected certifi
 
 Global router freeze control lives on `/operator/routing` through `clRouterOperations.setGlobalFreeze`. Keep the admin secret server-side, require an active operator, include the operator ID in the router's immutable reason, and target the healthy router configured by `CL_ROUTER_URL` without a separate Glass/router environment lock. Normal deployments keep `CL_ROUTER_FROZEN` and `CL_ROUTER_SHADOW` off; the environment freeze remains a panic switch that the UI cannot override.
 
+- Email-address syntax: `convex/lib/emailAddress.ts` owns shared address extraction, validation, and normalization for inbound and outbound mail paths.
+
 ## Known Cleanup Targets
 
 Requirement-backed certificate generation uses `components/certificates/certificate-generate-panel.tsx` as the shared policy-first, optional-requirements drawer across global, managed-client, operator-client, and policy-scoped surfaces. `convex/lib/certificateRequirementPlan.ts` maps met or expiring-soon requirements to unique final-policy targets while retaining the chosen primary policy and reporting unmet/no-final-policy gaps. `convex/certificates.ts` persists immutable requirement snapshots and a batch ID on versions and holds; requirement revisions change the reuse signature. Shared `generate_coi` and direct MCP/REST calls use this batch path, and web, Slack, iMessage, MCP chat, and email return every generated PDF without claiming gaps are satisfied.

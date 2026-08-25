@@ -6,7 +6,6 @@ import {
   remarkConfidence,
   remarkRestoreStreamingConfidenceMarkers,
   stripConfidenceMarkers,
-  summarizeConfidence,
 } from "./confidence";
 
 describe("confidence marker compatibility", () => {
@@ -43,13 +42,6 @@ describe("confidence marker compatibility", () => {
 
     expect(hasConfidenceMarkers(source)).toBe(false);
     expect(stripConfidenceMarkers(source)).toBe(source);
-  });
-
-  it("summarizes parsed visible content rather than marker syntax", () => {
-    expect(summarizeConfidence("[[g:four]] [[i:two]] [[u:x]]")).toEqual({
-      score: 5.5 / 8,
-      counts: { grounded: 1, inferred: 1, unverified: 1 },
-    });
   });
 
   it("protects complex markers while Markdown streaming parses them", () => {

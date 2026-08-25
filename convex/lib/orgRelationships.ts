@@ -18,7 +18,7 @@ export async function assertBrokerOfClient(
 ): Promise<void> {
   const assignment = await ctx.db
     .query("brokerClientAssignments")
-    .withIndex("by_orgId_clientOrgId", (q) =>
+    .withIndex("organization_client", (q) =>
       q.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId),
     )
     .first();
@@ -44,7 +44,7 @@ export async function hasBrokerClientRelationship(
 ): Promise<boolean> {
   const assignment = await ctx.db
     .query("brokerClientAssignments")
-    .withIndex("by_orgId_clientOrgId", (q) =>
+    .withIndex("organization_client", (q) =>
       q.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId),
     )
     .first();

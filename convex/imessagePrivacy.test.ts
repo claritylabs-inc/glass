@@ -91,7 +91,6 @@ describe("personal iMessage privacy inventory", () => {
           kind: "preview",
           status: "preparing",
           generationCutoff: 0,
-          inventoryComplete: false,
           threadCount: 0,
           messageCount: 0,
           fileCount: 0,
@@ -111,7 +110,7 @@ describe("personal iMessage privacy inventory", () => {
       (
         await ctx.db
           .query("imessageHistoryDeletionTargets")
-          .withIndex("by_jobId_and_status", (q) => q.eq("jobId", jobId))
+          .withIndex("job_status", (q) => q.eq("jobId", jobId))
           .collect()
       ).map((target) => target.threadId),
     );
@@ -126,7 +125,7 @@ describe("personal iMessage privacy inventory", () => {
       const now = dayjs().valueOf();
       const privacyState = await ctx.db
         .query("imessagePrivacyStates")
-        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .withIndex("user", (q) => q.eq("userId", userId))
         .unique();
       if (!privacyState) throw new Error("Expected privacy state");
       await ctx.db.patch(privacyState._id, { historyGeneration: 1 });
@@ -135,7 +134,6 @@ describe("personal iMessage privacy inventory", () => {
         kind: "preview",
         status: "ready",
         generationCutoff: 1,
-        inventoryComplete: true,
         threadCount: 2,
         messageCount: 0,
         fileCount: 0,
@@ -168,7 +166,7 @@ describe("personal iMessage privacy inventory", () => {
     await t.run(async (ctx) => {
       const lease = await ctx.db
         .query("imessageAgentRunLeases")
-        .withIndex("by_leaseKey", (q) => q.eq("leaseKey", "active-turn"))
+        .withIndex("lease", (q) => q.eq("leaseKey", "active-turn"))
         .unique();
       if (lease) await ctx.db.delete(lease._id);
     });
@@ -182,7 +180,7 @@ describe("personal iMessage privacy inventory", () => {
       async (ctx) =>
         await ctx.db
           .query("imessagePrivacyStates")
-          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .withIndex("user", (q) => q.eq("userId", userId))
           .unique(),
     );
     expect(state?.historyGeneration).toBe(2);
@@ -194,7 +192,7 @@ describe("personal iMessage privacy inventory", () => {
       const oldThread = await ctx.db
         .query("threads")
         .withIndex(
-          "by_createdBy_and_originChannel_and_visibility_and_imessageHistoryGeneration",
+          "private_history",
           (q) =>
             q
               .eq("createdBy", userId)
@@ -203,7 +201,7 @@ describe("personal iMessage privacy inventory", () => {
         )
         .first();
       if (!oldThread) throw new Error("Expected old thread");
-      return await ctx.db.insert("threads", {
+      return ctx.db.insert("threads", {
         orgId: oldThread.orgId,
         title: "Fresh generation",
         createdBy: userId,
@@ -221,7 +219,7 @@ describe("personal iMessage privacy inventory", () => {
       async (ctx) =>
         await ctx.db
           .query("imessageHistoryDeletionTargets")
-          .withIndex("by_jobId_and_threadId", (q) =>
+          .withIndex("job_thread", (q) =>
             q.eq("jobId", deletionJobId).eq("threadId", freshThreadId),
           )
           .unique(),
@@ -291,7 +289,6 @@ describe("personal iMessage privacy inventory", () => {
         kind: "preview",
         status: "ready",
         generationCutoff: 0,
-        inventoryComplete: true,
         threadCount: 2,
         messageCount: 1,
         fileCount: 2,

@@ -7,7 +7,7 @@ export const threadMessageKindValidator = v.union(
 );
 
 const parsedEmailAddressValidator = v.object({
-  address: v.string(),
+  address: v.optional(v.string()),
   name: v.optional(v.string()),
 });
 

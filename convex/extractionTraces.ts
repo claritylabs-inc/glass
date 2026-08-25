@@ -209,7 +209,7 @@ async function appendProgressLog(
 ) {
   const run = await ctx.db
     .query("policyExtractionRuns")
-    .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+    .withIndex("policy", (q) => q.eq("policyId", policyId))
     .first();
   if (!run) return;
   const existing = Array.isArray(run.pipelineLog) ? run.pipelineLog : [];
@@ -240,7 +240,7 @@ export const startSession = internalMutation({
     const timestamp = nowMs();
     const existing = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId))
+      .withIndex("trace", (q) => q.eq("traceId", args.traceId))
       .first();
 
     const session = {
@@ -321,7 +321,7 @@ export const recordEvent = internalMutation({
     if (!args.traceId) return false;
     const session = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId!))
+      .withIndex("trace", (q) => q.eq("traceId", args.traceId!))
       .first();
     if (!session) return false;
 
@@ -421,7 +421,7 @@ export const completeSession = internalMutation({
     if (args.status === "running") return false;
     const session = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId!))
+      .withIndex("trace", (q) => q.eq("traceId", args.traceId!))
       .first();
     if (!session) return false;
     return await completeSessionDoc(ctx, session, args.status, args.error);
@@ -436,7 +436,7 @@ export const getSessionCounters = internalQuery({
     if (!args.traceId) return null;
     const session = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_traceId", (q) => q.eq("traceId", args.traceId!))
+      .withIndex("trace", (q) => q.eq("traceId", args.traceId!))
       .first();
     if (!session) return null;
     return {
@@ -457,7 +457,7 @@ export const getLatestRouterRequestForTaskKind = internalQuery({
   handler: async (ctx, args) => {
     const events = await ctx.db
       .query("policyExtractionTraceEvents")
-      .withIndex("by_traceId_timestamp", (q) => q
+      .withIndex("trace_time", (q) => q
         .eq("traceId", args.traceId)
         .lte("timestamp", args.beforeTimestamp))
       .order("desc")
@@ -475,7 +475,7 @@ export const reconcileTerminalPolicy = internalMutation({
       ctx.db.get(args.policyId),
       ctx.db
         .query("policyExtractionRuns")
-        .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", args.policyId))
         .first(),
     ]);
     const pipelineStatus = run?.pipelineStatus ?? policy?.pipelineStatus;
@@ -486,7 +486,7 @@ export const reconcileTerminalPolicy = internalMutation({
     const status = traceStatusFromPipeline(pipelineStatus, error);
     const sessions = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_policyId_startedAt", (q) => q.eq("policyId", args.policyId))
+      .withIndex("policy_started", (q) => q.eq("policyId", args.policyId))
       .collect();
     const closed: string[] = [];
     for (const session of sessions) {
@@ -512,7 +512,7 @@ export const reconcileTerminalRunningSessions = internalMutation({
     const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 100), 500));
     const sessions = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_status_startedAt", (q) => q.eq("status", "running"))
+      .withIndex("status_started", (q) => q.eq("status", "running"))
       .order("asc")
       .take(batchSize);
     const closed: string[] = [];
@@ -523,7 +523,7 @@ export const reconcileTerminalRunningSessions = internalMutation({
         ctx.db.get(session.policyId),
         ctx.db
           .query("policyExtractionRuns")
-          .withIndex("by_policyId", (q) => q.eq("policyId", session.policyId))
+          .withIndex("policy", (q) => q.eq("policyId", session.policyId))
           .first(),
       ]);
       const pipelineStatus = run?.pipelineStatus ?? policy?.pipelineStatus;
@@ -563,11 +563,11 @@ export const sweepExpired = internalMutation({
     const cutoff = nowMs();
     const sessions = await ctx.db
       .query("policyExtractionTraceSessions")
-      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", cutoff))
+      .withIndex("expiration", (q) => q.lt("expiresAt", cutoff))
       .take(batchSize);
     const events = await ctx.db
       .query("policyExtractionTraceEvents")
-      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", cutoff))
+      .withIndex("expiration", (q) => q.lt("expiresAt", cutoff))
       .take(batchSize * 5);
     for (const event of events) await ctx.db.delete(event._id);
     for (const session of sessions) await ctx.db.delete(session._id);

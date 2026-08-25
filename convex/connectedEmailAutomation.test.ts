@@ -269,7 +269,7 @@ describe("connected email automation ledger", () => {
     const item = await t.run(async (ctx) => {
       const items = await ctx.db
         .query("connectedEmailAutomationItems")
-        .withIndex("by_accountId_messageKey", (query: any) =>
+        .withIndex("account_message", (query) =>
           query.eq("accountId", accountId).eq("messageKey", "unreadable-key"),
         )
         .first();

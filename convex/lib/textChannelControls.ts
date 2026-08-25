@@ -3,9 +3,7 @@ import {
   isPendingEmailCancelIntent,
   isPendingEmailRestoreIntent,
 } from "./emailCancelIntent";
-import {
-  isShowMoreEmailDraftIntent,
-} from "./emailDraftSummary";
+import { isShowMoreEmailDraftIntent } from "./emailDraftSummary";
 import { parseStandaloneEmailAddress } from "./emailAddress";
 import type { EmailCommand } from "./emailWorkflow";
 
@@ -21,12 +19,6 @@ export function isContextualConfirmation(text: string) {
   return CONTEXTUAL_CONFIRMATIONS.has(normalized);
 }
 
-export type TextChannelEmailControl<EmailId> = EmailCommand<EmailId>;
-
-function extractStandaloneEmailAddress(text: string): string | null {
-  return parseStandaloneEmailAddress(text);
-}
-
 export function resolveTextChannelEmailControl<EmailId>(args: {
   messageText: string;
   isCancelConfirmationContext: boolean;
@@ -37,7 +29,7 @@ export function resolveTextChannelEmailControl<EmailId>(args: {
   allowDraftApproval?: boolean;
   allowDraftList?: boolean;
   maxControlTextLength?: number;
-}): TextChannelEmailControl<EmailId> | null {
+}): EmailCommand<EmailId> | null {
   const text = args.messageText.trim();
   if (text.length >= (args.maxControlTextLength ?? 100)) return null;
 
@@ -49,7 +41,7 @@ export function resolveTextChannelEmailControl<EmailId>(args: {
   }
 
   if (args.draftEmailIds.length > 0) {
-    const correctedRecipient = extractStandaloneEmailAddress(text);
+    const correctedRecipient = parseStandaloneEmailAddress(text);
     if (correctedRecipient && args.draftEmailIds.length === 1) {
       return {
         kind: "update_single_draft_recipient",

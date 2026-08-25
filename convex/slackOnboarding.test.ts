@@ -385,7 +385,7 @@ describe("Slack Connect onboarding action", () => {
       binding: await ctx.db.get(bindingId),
       connection: await ctx.db
         .query("slackWorkspaceConnections")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", clientOrgId).eq("status", "active"),
         )
         .first(),
@@ -567,7 +567,7 @@ describe("Slack Connect onboarding action", () => {
     const records = await t.run(async (ctx) => ({
       connection: await ctx.db
         .query("slackWorkspaceConnections")
-        .withIndex("by_clientOrgId_and_status", (q) =>
+        .withIndex("client_status", (q) =>
           q.eq("clientOrgId", clientOrgId).eq("status", "active"),
         )
         .first(),

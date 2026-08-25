@@ -252,7 +252,7 @@ export const getNonce = internalQuery({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("operatorAuthNonces")
-      .withIndex("by_nonce", (q) => q.eq("nonce", args.nonce))
+      .withIndex("nonce", (q) => q.eq("nonce", args.nonce))
       .first();
     if (!existing) return null;
     if (existing.expiresAt < dayjs().valueOf()) return null;
@@ -270,13 +270,13 @@ export const recordNonce = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("operatorAuthNonces")
-      .withIndex("by_nonce", (q) => q.eq("nonce", args.nonce))
+      .withIndex("nonce", (q) => q.eq("nonce", args.nonce))
       .first();
     if (existing && existing.expiresAt >= now) throw new Error("Operator request nonce has already been used");
 
     const expired = await ctx.db
       .query("operatorAuthNonces")
-      .withIndex("by_expiresAt", (q) => q.lt("expiresAt", now))
+      .withIndex("expiration", (q) => q.lt("expiresAt", now))
       .take(100);
     for (const row of expired) await ctx.db.delete(row._id);
 
@@ -326,7 +326,7 @@ export const upsertProvisionedBroker = internalMutation({
 
     const existingBySlug = await ctx.db
       .query("organizations")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .withIndex("slug", (q) => q.eq("slug", slug))
       .first();
     if (existingBySlug && existingBySlug.type !== "broker") {
       throw new Error(`Slug ${slug} is already used by a non-broker org`);
@@ -335,7 +335,7 @@ export const upsertProvisionedBroker = internalMutation({
     if (agentHandle) {
       const existingByHandle = await ctx.db
         .query("organizations")
-        .withIndex("by_agentHandle", (q) => q.eq("agentHandle", agentHandle))
+        .withIndex("handle", (q) => q.eq("agentHandle", agentHandle))
         .first();
       if (existingByHandle && existingByHandle._id !== existingBySlug?._id) {
         throw new Error(`Agent handle ${agentHandle} is already taken`);
@@ -368,7 +368,7 @@ export const upsertProvisionedBroker = internalMutation({
 
     const existingMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", brokerOrgId).eq("userId", args.adminUserId))
+      .withIndex("organization_user", (q) => q.eq("orgId", brokerOrgId).eq("userId", args.adminUserId))
       .first();
     await assertCustomerUser(ctx, args.adminUserId);
     const adminMembershipId = existingMembership?._id ?? await ctx.db.insert("orgMemberships", {
@@ -400,7 +400,7 @@ export const upsertProvisionedBroker = internalMutation({
 
       const brokerClients = await ctx.db
         .query("organizations")
-        .withIndex("by_brokerOrgId", (q) => q.eq("brokerOrgId", brokerOrgId))
+        .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
         .collect();
       const existingClient = brokerClients.find((org) => {
         if (org.type !== "client") return false;
@@ -426,7 +426,7 @@ export const upsertProvisionedBroker = internalMutation({
 
       const assignment = await ctx.db
         .query("brokerClientAssignments")
-        .withIndex("by_orgId_clientOrgId", (q) => q.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId))
+        .withIndex("organization_client", (q) => q.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId))
         .first();
       if (!assignment) {
         await ctx.db.insert("brokerClientAssignments", {

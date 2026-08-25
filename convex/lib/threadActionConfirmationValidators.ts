@@ -1,26 +1,32 @@
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
-export const threadActionActorValidator = v.object({
-  kind: v.union(
-    v.literal("user"),
-    v.literal("email"),
-    v.literal("imessage"),
-    v.literal("slack"),
-  ),
-  userId: v.optional(v.id("users")),
-  address: v.optional(v.string()),
-  slackActorId: v.optional(v.id("slackActors")),
-});
+export const threadActionActorValidator = v.union(
+  v.object({ kind: v.literal("user"), userId: v.id("users") }),
+  v.object({ kind: v.literal("email"), address: v.string() }),
+);
+
+type ThreadActionActor = Infer<typeof threadActionActorValidator>;
+
+export function threadActionActorsMatch(
+  left: ThreadActionActor,
+  right: ThreadActionActor,
+) {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "user" && right.kind === "user") {
+    return left.userId === right.userId;
+  }
+  return (
+    left.kind === "email" &&
+    right.kind === "email" &&
+    left.address === right.address
+  );
+}
 
 const requirementClassificationValidator = v.object({
   fileId: v.id("_storage"),
   filename: v.string(),
   contentType: v.string(),
-  documentClass: v.union(
-    v.literal("insurance_requirements"),
-    v.literal("mixed"),
-    v.literal("not_requirements"),
-  ),
+  documentClass: v.literal("insurance_requirements"),
   confidence: v.number(),
 });
 

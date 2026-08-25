@@ -54,7 +54,7 @@ export const listInbox = query({
 
     const rows = await ctx.db
       .query("notifications")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         args.status
           ? q.eq("orgId", args.orgId).eq("status", args.status)
           : q.eq("orgId", args.orgId)
@@ -100,7 +100,7 @@ export const list = query({
     if (args.status) {
       results = await ctx.db
         .query("notifications")
-        .withIndex("by_orgId_status", (idx) =>
+        .withIndex("organization_status", (idx) =>
           idx.eq("orgId", orgId).eq("status", args.status!)
         )
         .order("desc")
@@ -108,7 +108,7 @@ export const list = query({
     } else if (args.type) {
       results = await ctx.db
         .query("notifications")
-        .withIndex("by_orgId_type", (idx) =>
+        .withIndex("organization_type", (idx) =>
           idx.eq("orgId", orgId).eq("type", args.type! as Doc<"notifications">["type"])
         )
         .order("desc")
@@ -116,7 +116,7 @@ export const list = query({
     } else {
       results = await ctx.db
         .query("notifications")
-        .withIndex("by_orgId", (idx) => idx.eq("orgId", orgId))
+        .withIndex("organization", (idx) => idx.eq("orgId", orgId))
         .order("desc")
         .take(effectiveLimit);
     }
@@ -135,7 +135,7 @@ export const unreadCount = query({
 
     const unread = await ctx.db
       .query("notifications")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         q.eq("orgId", orgId).eq("status", "unread")
       )
       .take(100);
@@ -173,7 +173,7 @@ export const markAllRead = mutation({
 
     const unread = await ctx.db
       .query("notifications")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         q.eq("orgId", orgId).eq("status", "unread")
       )
       .collect();
@@ -258,7 +258,7 @@ export const listInternal = internalQuery({
     const limit = args.limit ?? 50;
     const rows = await ctx.db
       .query("notifications")
-      .withIndex("by_orgId", (idx) => idx.eq("orgId", args.orgId))
+      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
       .order("desc")
       .take(limit * 2); // over-fetch to filter dismissed
     return filterVisibleNotifications(rows, args.userId).slice(0, limit);
@@ -309,7 +309,7 @@ export const sweepStale = internalMutation({
     // Fetch unread info-level notifications older than 30 days
     const old = await ctx.db
       .query("notifications")
-      .withIndex("by_orgId_status", (q) =>
+      .withIndex("organization_status", (q) =>
         // We scan all unread and filter by severity and age in JS
         // since Convex doesn't support multi-field range in one index
         q.gt("orgId", "" as unknown as Id<"organizations">)

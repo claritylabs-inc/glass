@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalQuery, mutation } from "./_generated/server";
+import { internalQuery, mutation, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getOrgAccess } from "./lib/access";
 import {
@@ -29,8 +29,7 @@ function matchesPerson(user: Doc<"users"> | null, token: string): boolean {
   const normalized = normalizedToken(token);
   if (!normalized) return false;
   return [user.name, user.email, user.title]
-    .filter(Boolean)
-    .some((value) => normalizedToken(value!).includes(normalized));
+    .some((value) => value && normalizedToken(value).includes(normalized));
 }
 
 function matchesOrg(org: Doc<"organizations"> | null, token: string): boolean {
@@ -38,25 +37,30 @@ function matchesOrg(org: Doc<"organizations"> | null, token: string): boolean {
   const normalized = normalizedToken(token);
   if (!normalized) return false;
   return [org.name, org.website, org.primaryContactName, org.primaryContactEmail]
-    .filter(Boolean)
-    .some((value) => normalizedToken(value!).includes(normalized));
+    .some((value) => value && normalizedToken(value).includes(normalized));
 }
 
-async function listOrgUsers(ctx: any, orgId: Id<"organizations">) {
+type ReadCtx = Pick<QueryCtx, "db">;
+type OrgUser = {
+  membership: Doc<"orgMemberships">;
+  user: Doc<"users">;
+};
+
+async function listOrgUsers(ctx: ReadCtx, orgId: Id<"organizations">) {
   const memberships = await ctx.db
     .query("orgMemberships")
-    .withIndex("by_orgId", (q: any) => q.eq("orgId", orgId))
+    .withIndex("organization", (q) => q.eq("orgId", orgId))
     .collect();
   const rows = await Promise.all(
-    memberships.map(async (membership: Doc<"orgMemberships">) => ({
+    memberships.map(async (membership) => ({
       membership,
       user: await ctx.db.get(membership.userId),
     })),
   );
-  return rows.filter((row) => !!row.user);
+  return rows.filter((row): row is OrgUser => row.user !== null);
 }
 
-async function firstContactForOrg(ctx: any, orgId: Id<"organizations">) {
+async function firstContactForOrg(ctx: ReadCtx, orgId: Id<"organizations">) {
   const org = await ctx.db.get(orgId);
   if (!org) return null;
   if (org.primaryInsuranceContactId) {
@@ -64,15 +68,24 @@ async function firstContactForOrg(ctx: any, orgId: Id<"organizations">) {
     if (user?.phone) return { org, user };
   }
   const users = await listOrgUsers(ctx, orgId);
-  const admin = users.find((row) => row.membership.role === "admin" && row.user?.phone);
-  const fallback = admin ?? users.find((row) => row.user?.phone);
-  return fallback?.user ? { org, user: fallback.user } : null;
+  const admin = users.find(
+    (row) => row.membership.role === "admin" && row.user.phone,
+  );
+  const fallback = admin ?? users.find((row) => row.user.phone);
+  return fallback ? { org, user: fallback.user } : null;
 }
 
-async function brokerContactForClient(ctx: any, clientOrg: Doc<"organizations">) {
+async function brokerContactForClient(
+  ctx: ReadCtx,
+  clientOrg: Doc<"organizations">,
+) {
   if (!clientOrg.brokerOrgId) return null;
   const brokerIdentity = await resolveBrokerIdentityForClient(ctx, clientOrg);
-  if (brokerIdentity.brokerOrgId && brokerIdentity.contactUserId && brokerIdentity.contactPhone) {
+  if (
+    brokerIdentity.brokerOrgId &&
+    brokerIdentity.contactUserId &&
+    brokerIdentity.contactPhone
+  ) {
     const [brokerOrg, contactUser] = await Promise.all([
       ctx.db.get(brokerIdentity.brokerOrgId),
       ctx.db.get(brokerIdentity.contactUserId),
@@ -89,7 +102,7 @@ async function brokerContactForClient(ctx: any, clientOrg: Doc<"organizations">)
       };
     }
   }
-  return await firstContactForOrg(ctx, clientOrg.brokerOrgId);
+  return firstContactForOrg(ctx, clientOrg.brokerOrgId);
 }
 
 function participantFromUser(params: {
@@ -145,24 +158,36 @@ export const resolveRecipients = internalQuery({
       participants.set(address, { ...participant, address });
     };
 
-    addParticipant(participantFromUser({ user, orgId: args.orgId, displayName: user.name ?? "You" }));
+    addParticipant(
+      participantFromUser({
+        user,
+        orgId: args.orgId,
+        displayName: user.name ?? "You",
+      }),
+    );
 
     const team = await listOrgUsers(ctx, args.orgId);
-    const relatedOrgs: Array<{ org: Doc<"organizations">; kind: "broker" | "client" | "vendor" }> = [];
+    const relatedOrgs: Array<{
+      org: Doc<"organizations">;
+      kind: "broker" | "client" | "vendor";
+    }> = [];
     if (org.brokerOrgId) {
       const broker = await ctx.db.get(org.brokerOrgId);
       if (broker) relatedOrgs.push({ org: broker, kind: "broker" });
     }
-    const clientOrgs = org.type === "broker"
-      ? await ctx.db
-          .query("organizations")
-          .withIndex("by_brokerOrgId", (q: any) => q.eq("brokerOrgId", args.orgId))
-          .collect()
-      : [];
-    for (const clientOrg of clientOrgs) relatedOrgs.push({ org: clientOrg, kind: "client" });
+    const clientOrgs =
+      org.type === "broker"
+        ? await ctx.db
+            .query("organizations")
+            .withIndex("broker", (q) => q.eq("brokerOrgId", args.orgId))
+            .collect()
+        : [];
+    for (const clientOrg of clientOrgs) {
+      relatedOrgs.push({ org: clientOrg, kind: "client" });
+    }
     const vendorRelationships = await ctx.db
       .query("connectedOrgRelationships")
-      .withIndex("by_clientOrgId_status", (q: any) =>
+      .withIndex("client_status", (q) =>
         q.eq("clientOrgId", args.orgId).eq("status", "active"),
       )
       .collect();
@@ -199,35 +224,50 @@ export const resolveRecipients = internalQuery({
       const personMatches: ResolvedImessageParticipant[] = [];
       for (const row of team) {
         if (matchesPerson(row.user, recipient)) {
-          personMatches.push(participantFromUser({ user: row.user!, orgId: args.orgId })!);
+          const participant = participantFromUser({
+            user: row.user,
+            orgId: args.orgId,
+          });
+          if (participant) personMatches.push(participant);
         }
       }
 
       for (const related of relatedOrgs) {
-        if (matchesOrg(related.org, recipient) || normalized === related.kind || normalized === `my ${related.kind}`) {
-          const contact = related.kind === "broker"
-            ? await brokerContactForClient(ctx, org)
-            : await firstContactForOrg(ctx, related.org._id);
+        if (
+          matchesOrg(related.org, recipient) ||
+          normalized === related.kind ||
+          normalized === `my ${related.kind}`
+        ) {
+          const contact =
+            related.kind === "broker"
+              ? await brokerContactForClient(ctx, org)
+              : await firstContactForOrg(ctx, related.org._id);
           if (contact?.user) {
-            personMatches.push(participantFromUser({
+            const participant = participantFromUser({
               user: contact.user,
               orgId: contact.org._id,
               displayName: contact.user.name ?? contact.org.name,
-            })!);
+            });
+            if (participant) personMatches.push(participant);
           }
         }
         const relatedUsers = await listOrgUsers(ctx, related.org._id);
         for (const row of relatedUsers) {
           if (matchesPerson(row.user, recipient)) {
-            personMatches.push(participantFromUser({ user: row.user!, orgId: related.org._id })!);
+            const participant = participantFromUser({
+              user: row.user,
+              orgId: related.org._id,
+            });
+            if (participant) personMatches.push(participant);
           }
         }
       }
 
-      const validMatches = personMatches.filter(Boolean);
-      const uniqueByAddress = new Map(validMatches.map((match) => [match.address, match]));
+      const uniqueByAddress = new Map(
+        personMatches.map((match) => [match.address, match]),
+      );
       if (uniqueByAddress.size === 1) {
-        addParticipant([...uniqueByAddress.values()][0]!);
+        addParticipant(uniqueByAddress.values().next().value ?? null);
       } else if (uniqueByAddress.size > 1) {
         ambiguous.push({
           input: recipient,
@@ -247,7 +287,10 @@ export const resolveRecipients = internalQuery({
     });
     const title = buildImessageGroupMemberTitle(resolvedParticipants);
     return {
-      ok: unresolved.length === 0 && ambiguous.length === 0 && resolvedParticipants.length >= 2,
+      ok:
+        unresolved.length === 0 &&
+        ambiguous.length === 0 &&
+        resolvedParticipants.length >= 2,
       reason:
         resolvedParticipants.length < 2
           ? "At least one other person with a phone number is required."
@@ -269,23 +312,26 @@ export const setPrimaryBrokerContactForClient = mutation({
   },
   handler: async (ctx, args) => {
     const clientOrg = await ctx.db.get(args.clientOrgId);
-    if (!clientOrg?.brokerOrgId) throw new Error("Client is not connected to a broker org");
-    const brokerAccess = await getOrgAccess(ctx, clientOrg.brokerOrgId);
+    const brokerOrgId = clientOrg?.brokerOrgId;
+    if (!brokerOrgId) {
+      throw new Error("Client is not connected to a broker org");
+    }
+    const brokerAccess = await getOrgAccess(ctx, brokerOrgId);
     if (brokerAccess.accessType !== "member" || brokerAccess.role !== "admin") {
       throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
     }
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) =>
-        q.eq("orgId", clientOrg.brokerOrgId!).eq("userId", args.producerId),
+      .withIndex("organization_user", (q) =>
+        q.eq("orgId", brokerOrgId).eq("userId", args.producerId),
       )
       .first();
     if (!membership) throw new Error("Producer must be a broker org member");
 
     const assignments = await ctx.db
       .query("brokerClientAssignments")
-      .withIndex("by_orgId_clientOrgId", (q) =>
-        q.eq("orgId", clientOrg.brokerOrgId!).eq("clientOrgId", args.clientOrgId),
+      .withIndex("organization_client", (q) =>
+        q.eq("orgId", brokerOrgId).eq("clientOrgId", args.clientOrgId),
       )
       .collect();
     for (const assignment of assignments) {
@@ -293,9 +339,13 @@ export const setPrimaryBrokerContactForClient = mutation({
         role: assignment.producerId === args.producerId ? "primary" : "secondary",
       });
     }
-    if (!assignments.some((assignment) => assignment.producerId === args.producerId)) {
+    if (
+      !assignments.some(
+        (assignment) => assignment.producerId === args.producerId,
+      )
+    ) {
       await ctx.db.insert("brokerClientAssignments", {
-        orgId: clientOrg.brokerOrgId,
+        orgId: brokerOrgId,
         clientOrgId: args.clientOrgId,
         producerId: args.producerId,
         role: "primary",

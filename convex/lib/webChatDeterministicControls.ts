@@ -9,7 +9,14 @@ import {
   executeEmailCommand,
   type EmailCommandDraft,
 } from "./emailCommandExecutor";
-import { taskControlResponse } from "./taskControlIntent";
+import {
+  parseTaskControlCommand,
+  taskControlResponse,
+} from "./taskControlIntent";
+import {
+  confirmedRequirementImportMessage,
+  importConfirmedRequirementSources,
+} from "./requirementAttachmentIntent";
 import {
   isContextualConfirmation,
   resolveTextChannelEmailControl,
@@ -41,25 +48,25 @@ export async function loadWebChatDeterministicControlState(
     userMessageId: Id<"threadMessages">;
   },
 ): Promise<WebChatDeterministicControlState> {
-  const pendingEmails = (await ctx.runQuery(
+  const pendingEmails = await ctx.runQuery(
     internal.pendingEmails.findPendingByThread,
     { threadId: args.threadId },
-  )) as WebChatEmailControlRecord[];
-  const draftEmails = (await ctx.runQuery(
+  );
+  const draftEmails = await ctx.runQuery(
     internal.pendingEmails.listDraftsInternal,
     { threadId: args.threadId, orgId: args.orgId },
-  )) as EmailCommandDraft[];
-  const latestCancelledEmail = (await ctx.runQuery(
+  );
+  const latestCancelledEmail = await ctx.runQuery(
     internal.pendingEmails.findLatestCancelledByThread,
     { threadId: args.threadId, orgId: args.orgId },
-  )) as WebChatEmailControlRecord | null;
+  );
   const userMessage = await ctx.runQuery(internal.threads.getMessageInternal, {
     id: args.userMessageId,
   });
-  const threadMessages = (await ctx.runQuery(
+  const threadMessages = await ctx.runQuery(
     internal.agentHistory.getRecentControlMessages,
     { threadId: args.threadId },
-  )) as WebChatControlMessage[];
+  );
 
   return {
     messageText: userMessage?.content.trim() ?? "",
@@ -125,39 +132,18 @@ export async function runWebChatEmailControls(
         return true;
       }
       if (confirmation.payload.kind === "requirement_import") {
-        const imports = [];
-        for (const document of confirmation.payload.classifications) {
-          if (document.documentClass !== "insurance_requirements") continue;
-          const imported = await ctx.runAction(
-            internal.actions.complianceRequirements.importRequirementsInternal,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              fileId: document.fileId,
-              fileName: document.filename,
-              contentType: document.contentType,
-              sourceName: document.filename,
-              scope: confirmation.payload.scope,
-            },
-          );
-          imports.push(imported);
-        }
-        const createdCount = imports.reduce(
-          (total, imported) => total + imported.createdCount,
-          0,
-        );
+        const imported = await importConfirmedRequirementSources(ctx, {
+          orgId: args.orgId,
+          userId: args.userId,
+          payload: confirmation.payload,
+        });
         await ctx.runMutation(internal.threads.updateAgentMessage, {
           id: args.agentMessageId,
-          content: `Imported ${createdCount} insurance requirement${createdCount === 1 ? "" : "s"} from the confirmed source${imports.length === 1 ? "" : "s"}.`,
+          content: confirmedRequirementImportMessage(imported),
           toolArtifacts: [
             {
               type: "workflow_outcome",
-              data: {
-                workflowKind: "requirement_import",
-                status: "completed",
-                sourceDocumentIds: imports.map((item) => item.sourceDocumentId),
-                requirementIds: imports.flatMap((item) => item.requirementIds),
-              },
+              data: imported.workflowOutcome,
             },
           ],
         });
@@ -284,21 +270,13 @@ export async function runWebChatEmailControls(
 export async function runWebChatTaskControl(
   ctx: ActionCtx,
   args: {
-    orgId: Id<"organizations">;
     threadId: Id<"threads">;
     agentMessageId: Id<"threadMessages">;
     userMessageId: Id<"threadMessages">;
     messageText: string;
-    threadMessages: WebChatControlMessage[];
   },
 ): Promise<boolean> {
-  const command = args.messageText.trim().toLowerCase();
-  const taskControlIntent =
-    command === "/cancel"
-      ? ("cancel_task" as const)
-      : command === "/reset" || command === "/new"
-        ? ("reset_task" as const)
-        : null;
+  const taskControlIntent = parseTaskControlCommand(args.messageText);
   if (!taskControlIntent) return false;
 
   await ctx.runMutation(internal.agentHistory.resetTask, {

@@ -137,7 +137,7 @@ describe("broker policy detail editing", () => {
       const policy = await ctx.db.get(ids.policyId);
       const audits = await ctx.db
         .query("policyAuditLog")
-        .withIndex("by_policyId", (query) => query.eq("policyId", ids.policyId))
+        .withIndex("policy", (query) => query.eq("policyId", ids.policyId))
         .collect();
       return { policy, audits };
     });

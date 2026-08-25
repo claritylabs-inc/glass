@@ -3,14 +3,14 @@
 import { stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { internal } from "../_generated/api";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import dayjs from "dayjs";
 import { generateAgentTextForOrg } from "./models";
 import { buildAgentToolExecutors } from "./agentToolExecutors";
 import type { AgentScope } from "./agentScope";
 import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
-import { stripInternalAgentActivity } from "./agentMessageHistory";
+import { cleanAgentMarkdownForTransport } from "./transportRenderers";
 import {
   queueEmailDraftArtifact,
   upsertEmailDraftArtifact,
@@ -66,28 +66,50 @@ export type EmailSubagentResult = {
   workflowOutcome?: WorkflowOutcome<"email_delivery">;
 };
 
+const EMAIL_WORKFLOW_STATE = {
+  sent: {
+    status: "completed",
+    nextAction: "email_delivered",
+    sideEffectKind: "email_sent",
+  },
+  pending: {
+    status: "running",
+    nextAction: "await_email_delivery",
+    sideEffectKind: "draft_created",
+  },
+  draft: {
+    status: "needs_input",
+    nextAction: "confirm_exact_draft",
+    sideEffectKind: "draft_created",
+  },
+  needs_confirmation: {
+    status: "needs_input",
+    nextAction: "confirm_exact_draft",
+    sideEffectKind: "draft_created",
+  },
+  error: {
+    status: "failed_recoverably",
+    nextAction: "review_email_failure",
+    sideEffectKind: undefined,
+  },
+} as const satisfies Record<EmailSubagentResult["status"], object>;
+
 function withEmailWorkflowOutcome(
   result: EmailSubagentResult,
 ): EmailSubagentResult {
-  const completed = result.status === "sent" || result.status === "pending";
-  const drafted =
+  const needsConfirmation =
     result.status === "draft" || result.status === "needs_confirmation";
-  const targetId = result.pendingEmailId
-    ? String(result.pendingEmailId)
-    : result.responseMessageId;
+  const target = result.responseMessageId
+    ? { type: "emailMessage", id: result.responseMessageId }
+    : result.pendingEmailId
+      ? { type: "pendingEmail", id: String(result.pendingEmailId) }
+      : undefined;
+  const outcomeState = EMAIL_WORKFLOW_STATE[result.status];
   const workflowOutcome: WorkflowOutcome<"email_delivery"> = {
     workflowKind: "email_delivery",
-    status: completed
-      ? "completed"
-      : drafted
-        ? "needs_input"
-        : "failed_recoverably",
-    nextAction: completed
-      ? "email_delivered"
-      : drafted
-        ? "confirm_exact_draft"
-        : "review_email_failure",
-    requiredSlots: drafted
+    status: outcomeState.status,
+    nextAction: outcomeState.nextAction,
+    requiredSlots: needsConfirmation
       ? [
           {
             key: "sendConfirmation",
@@ -99,12 +121,12 @@ function withEmailWorkflowOutcome(
       : [],
     forbiddenQuestions: [],
     forbiddenClaims: ["email_sent_without_email_sent_side_effect"],
-    sideEffects: targetId
+    sideEffects: target && outcomeState.sideEffectKind
       ? [
           {
-            kind: completed ? "email_sent" : "draft_created",
-            targetType: "pendingEmail",
-            targetId,
+            kind: outcomeState.sideEffectKind,
+            targetType: target.type,
+            targetId: target.id,
           },
         ]
       : [],
@@ -131,7 +153,7 @@ function withEmailWorkflowOutcome(
       {
         step: "email_delivery",
         decision: result.status,
-        detail: targetId,
+        detail: target?.id,
       },
     ],
   };
@@ -320,11 +342,8 @@ async function runEmailSubagent(
     ? context.brokerRecipientName
     : context.defaultRecipientName;
   const safeRequestedAttachments = resolveRequestedCoiAttachmentsForRecipient({
-    request: input.request,
     to: input.to,
-    recipientName: input.recipientName,
     defaultTo: directedDefaultTo,
-    defaultRecipientName: directedRecipientName,
     attachments: input.attachments,
   });
   const hasStructuredCoiRequest = safeRequestedAttachments.attachments.some(
@@ -337,30 +356,32 @@ async function runEmailSubagent(
         : [],
     ),
   );
-  const sourcePolicyIds = new Set(
-    (context.referencedPolicyIds ?? []).map(String),
+  const sourcePolicyIds = new Set<Id<"policies">>(
+    context.referencedPolicyIds ?? [],
   );
   const savedThreadAttachments = context.threadId
-    ? ((await ctx.runQuery(internal.threads.listThreadAttachmentsInternal, {
+    ? await ctx.runQuery(internal.threads.listThreadAttachmentsInternal, {
         threadId: context.threadId,
         orgId: context.orgId,
         excludeEmailArtifacts: true,
         excludeAgentCoiAttachments: hasStructuredCoiRequest,
-      })) as EmailAttachmentMeta[])
+      })
     : [];
   const availableAttachments = uniqueAttachments([
     ...(context.availableAttachments ?? []),
     ...savedThreadAttachments,
   ]);
-  const allowedAttachmentIds = new Set(
-    availableAttachments.map((att) => String(att.fileId)),
-  );
   const attachedOriginalPolicyIds = new Set<string>();
   const attachedUploadedFileIds = new Set<string>();
   const attachedCoiKeys = new Set<string>();
-
-  const addAttachment = (attachment: EmailAttachmentMeta) => {
-    preparedAttachments.push(attachment);
+  const singleOrgScope: AgentScope = {
+    mode: "client",
+    surface: context.channel,
+    primaryOrgId: context.orgId,
+    readOrgIds: [context.orgId],
+    writableOrgIds: [context.orgId],
+    orgs: [],
+    brokerInternal: false,
   };
 
   const attachOriginalPolicy = async (policyId: string): Promise<string> => {
@@ -376,15 +397,6 @@ async function runEmailSubagent(
     }
     let resolvedPolicyId: Id<"policies"> | undefined;
     let policyAttachment: EmailAttachmentMeta | undefined;
-    const singleOrgScope: AgentScope = {
-      mode: "client",
-      surface: context.channel,
-      primaryOrgId: context.orgId,
-      readOrgIds: [context.orgId],
-      writableOrgIds: [context.orgId],
-      orgs: [],
-      brokerInternal: false,
-    };
     const executors = buildAgentToolExecutors(ctx, {
       surface: context.channel,
       orgId: context.orgId,
@@ -392,7 +404,7 @@ async function runEmailSubagent(
       scope: singleOrgScope,
       onPolicyReferenced: (referencedPolicyId) => {
         resolvedPolicyId = referencedPolicyId;
-        sourcePolicyIds.add(String(referencedPolicyId));
+        sourcePolicyIds.add(referencedPolicyId);
       },
       onResponseAttachment: (attachment) => {
         if (!attachment.fileId) return;
@@ -413,26 +425,28 @@ async function runEmailSubagent(
     attachedOriginalPolicyIds.add(requestPolicyKey);
     if (resolvedPolicyId)
       attachedOriginalPolicyIds.add(String(resolvedPolicyId));
-    addAttachment({ ...policyAttachment, kind: "original_policy" });
+    preparedAttachments.push({
+      ...policyAttachment,
+      kind: "original_policy",
+    });
     return `Attached original policy document: ${policyAttachment.filename}`;
   };
 
   const attachUploadedFile = (fileId: string, filename?: string): string => {
-    if (!allowedAttachmentIds.has(fileId)) {
-      return "That uploaded file is not available in this conversation.";
-    }
     if (attachedUploadedFileIds.has(fileId)) {
       return "Uploaded file is already attached.";
     }
     const found = availableAttachments.find(
       (att) => String(att.fileId) === fileId,
     );
-    if (!found) return "Uploaded file not found.";
+    if (!found) {
+      return "That uploaded file is not available in this conversation.";
+    }
     if (hasStructuredCoiRequest && found.kind !== "coi") {
       return "Skipped uploaded file because COI delivery requests should attach only the generated COI.";
     }
     attachedUploadedFileIds.add(fileId);
-    addAttachment({
+    preparedAttachments.push({
       ...found,
       filename: filename ?? found.filename,
       kind: "uploaded_file",
@@ -470,15 +484,6 @@ async function runEmailSubagent(
     }
     let resolvedPolicyId: Id<"policies"> | undefined;
     const generatedAttachments: EmailAttachmentMeta[] = [];
-    const singleOrgScope: AgentScope = {
-      mode: "client",
-      surface: context.channel,
-      primaryOrgId: context.orgId,
-      readOrgIds: [context.orgId],
-      writableOrgIds: [context.orgId],
-      orgs: [],
-      brokerInternal: false,
-    };
     const executors = buildAgentToolExecutors(ctx, {
       surface: context.channel,
       orgId: context.orgId,
@@ -486,7 +491,7 @@ async function runEmailSubagent(
       scope: singleOrgScope,
       onPolicyReferenced: (referencedPolicyId) => {
         resolvedPolicyId = referencedPolicyId;
-        sourcePolicyIds.add(String(referencedPolicyId));
+        sourcePolicyIds.add(referencedPolicyId);
       },
       onResponseAttachment: (attachment) => {
         if (!attachment.fileId) return;
@@ -522,7 +527,7 @@ async function runEmailSubagent(
       attachedCoiKeys.add(requestCoiKey);
       attachedCoiKeys.add(resolvedCoiKey);
       for (const generatedAttachment of generatedAttachments) {
-        addAttachment({ ...generatedAttachment, kind: "coi" });
+        preparedAttachments.push({ ...generatedAttachment, kind: "coi" });
       }
       return `Attached ${generatedAttachments.length} COI${generatedAttachments.length === 1 ? "" : "s"}.`;
     }
@@ -537,24 +542,13 @@ async function runEmailSubagent(
         const resolvedCoiKey = `${resolvedPolicyId ?? policyId}:${holderKey}`;
         attachedCoiKeys.add(requestCoiKey);
         attachedCoiKeys.add(resolvedCoiKey);
-        addAttachment({ ...output.attachment, kind: "coi" });
+        preparedAttachments.push({ ...output.attachment, kind: "coi" });
         return "Attached COI.";
       }
       if (output.message) return output.message;
     }
     return "COI request completed.";
   };
-
-  if (
-    safeRequestedAttachments.warning &&
-    safeRequestedAttachments.attachments.length === 0
-  ) {
-    return {
-      status: "needs_confirmation",
-      responseBody: safeRequestedAttachments.warning,
-      confirmationReason: safeRequestedAttachments.warning,
-    };
-  }
 
   for (const requested of safeRequestedAttachments.attachments) {
     if (requested.kind === "original_policy" && requested.policyId) {
@@ -590,7 +584,7 @@ async function runEmailSubagent(
   const policies = await ctx.runQuery(internal.policies.listAllInternal, {
     orgId: context.orgId,
   });
-  const availablePolicies = (policies as Doc<"policies">[])
+  const availablePolicies = policies
     .slice(0, 25)
     .map((policy) => ({
       id: policy._id,
@@ -639,7 +633,9 @@ async function runEmailSubagent(
       context.subjectHint ??
       ""
     ).trim();
-    const body = stripInternalAgentActivity(params.body ?? input.body ?? "");
+    const body = cleanAgentMarkdownForTransport(
+      params.body ?? input.body ?? "",
+    );
     const cc = [
       ...new Set(
         [...(params.cc ?? []), ...defaultCc]
@@ -663,12 +659,9 @@ async function runEmailSubagent(
       ),
     ];
     const attachments = uniqueAttachments(preparedAttachments);
-    const approvedToSend = false;
     const autoSend = context.autoSendEmails === true && !brokerRequested;
     const referencedPolicyIds =
-      sourcePolicyIds.size > 0
-        ? ([...sourcePolicyIds] as Id<"policies">[])
-        : undefined;
+      sourcePolicyIds.size > 0 ? [...sourcePolicyIds] : undefined;
 
     const uncertainty: string[] = [];
     if (safeRequestedAttachments.requiresCoiBatchConfirmation) {
@@ -688,7 +681,10 @@ async function runEmailSubagent(
         (email) =>
           allowedRecipients.length > 0 && !allowedRecipients.includes(email),
       );
-    if ((context.requireKnownRecipient || brokerRequested) && unknownRecipients.length > 0) {
+    if (
+      (context.requireKnownRecipient || brokerRequested) &&
+      unknownRecipients.length > 0
+    ) {
       const message =
         context.unknownRecipientMessage ??
         "I cannot use that recipient because it is not a known contact in Glass. Add the contact in settings or provide the correct recipient explicitly.";
@@ -699,13 +695,13 @@ async function runEmailSubagent(
       };
       return finalResult;
     }
-    if (unknownRecipients.length > 0 && !approvedToSend) {
+    if (unknownRecipients.length > 0) {
       uncertainty.push(
         `Confirm that ${unknownRecipients.join(", ")} ${unknownRecipients.length === 1 ? "is" : "are"} the intended recipient${unknownRecipients.length === 1 ? "" : "s"}.`,
       );
     }
 
-    if (uncertainty.length > 0 || (!autoSend && !approvedToSend)) {
+    if (uncertainty.length > 0 || !autoSend) {
       const status = uncertainty.length > 0 ? "needs_confirmation" : "draft";
       const sendBlockedReason =
         uncertainty.length > 0 ? uncertainty.join(" ") : undefined;
@@ -837,10 +833,10 @@ async function runEmailSubagent(
           authorization: { kind: "organization_auto_send" },
         },
       );
-      const sentDraft = (await ctx.runQuery(
+      const sentDraft = await ctx.runQuery(
         internal.pendingEmails.getInternal,
         { id: persistedDraftId },
-      )) as Doc<"pendingEmails"> | null;
+      );
       const sentResult: EmailSubagentResult = {
         status: "sent",
         responseBody: `Email sent to ${sendTo}${cc.length > 0 ? ` (CC: ${cc.join(", ")})` : ""}.`,
@@ -959,7 +955,10 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
               : undefined,
           },
           requestedAttachments: input.attachments ?? [],
-          attachmentSafetyWarning: safeRequestedAttachments.warning,
+          attachmentSafetyWarning:
+            safeRequestedAttachments.requiresCoiBatchConfirmation
+              ? MULTIPLE_COI_SINGLE_RECIPIENT_WARNING
+              : undefined,
           preparedAttachments: preparedAttachments.map((att) => ({
             filename: att.filename,
             contentType: att.contentType,
@@ -1085,7 +1084,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
   return {
     status: "draft",
     responseBody:
-      stripInternalAgentActivity(subagentResult.text) ||
+      cleanAgentMarkdownForTransport(subagentResult.text) ||
       "I drafted the email, but need confirmation before sending.",
   };
 }

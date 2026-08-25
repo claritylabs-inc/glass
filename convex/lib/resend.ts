@@ -1,3 +1,5 @@
+import { extractEmailAddress } from "./emailAddress";
+
 const RESEND_API = "https://api.resend.com/emails";
 const DEFAULT_AGENT_DOMAIN = "glass.insure";
 const DEFAULT_NOTIFICATION_EMAIL_DOMAIN = "notifications.glass.insure";
@@ -55,11 +57,6 @@ export function getNotificationFromAddress(fromName: string): string {
   return `${fromName} <notifications@${getNotificationEmailDomain()}>`;
 }
 
-function extractEmailAddress(value: string): string {
-  const match = value.match(/<([^>]+)>/);
-  return (match?.[1] ?? value).trim();
-}
-
 function sanitizeFromName(value: string): string {
   return value.replace(/[\r\n<>]/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -67,7 +64,9 @@ function sanitizeFromName(value: string): string {
 export function getAuthFromAddress(fromName?: string): string {
   const fallback = `${DEFAULT_AUTH_EMAIL_FROM_NAME} <noreply@${getAuthEmailDomain()}>`;
   const configured = process.env.AUTH_EMAIL_FROM;
-  const address = extractEmailAddress(configured ?? fallback);
+  const address =
+    extractEmailAddress(configured ?? fallback) ??
+    `noreply@${getAuthEmailDomain()}`;
   const displayName = sanitizeFromName(fromName ?? DEFAULT_AUTH_EMAIL_FROM_NAME);
   return `${displayName} <${address}>`;
 }
@@ -101,7 +100,7 @@ function splitCsv(value: string | undefined): string[] {
 }
 
 function normalizeEmail(value: string): string {
-  return extractEmailAddress(value).toLowerCase();
+  return extractEmailAddress(value) ?? "";
 }
 
 function normalizeRecipients(value: string | string[] | undefined): string[] {

@@ -1,10 +1,12 @@
 "use node";
 
 import { z } from "zod";
-import type { Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { generateObjectForOrg } from "./models";
 import type { RequirementScope } from "./complianceTypes";
+import type { WorkflowOutcome } from "./workflows/types";
 
 type AttachmentCandidate = {
   filename: string;
@@ -22,7 +24,7 @@ const REQUIREMENT_DOCUMENT_EXTENSIONS = new Set([
   "json",
 ]);
 
-export const RequirementAttachmentDecisionSchema = z.object({
+const RequirementAttachmentDecisionSchema = z.object({
   intent: z.enum([
     "import_new_requirements",
     "analyze_new_requirements",
@@ -50,16 +52,38 @@ export const RequirementAttachmentDecisionSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
-export type RequirementAttachmentDecision = z.infer<
+type RequirementAttachmentDecision = z.infer<
   typeof RequirementAttachmentDecisionSchema
 >;
 
-export type RequirementImportResolution<T extends AttachmentCandidate> = {
-  authorization: "auto" | "confirmation" | "none";
-  attachments: Array<T & { fileId: Id<"_storage"> }>;
-  scope?: RequirementScope;
-  decision?: RequirementAttachmentDecision;
+type RequirementImportResolution<T extends AttachmentCandidate> =
+  | {
+      authorization: "none";
+      attachments: [];
+      decision?: RequirementAttachmentDecision;
+    }
+  | {
+      authorization: "auto" | "confirmation";
+      attachments: Array<T & { fileId: Id<"_storage"> }>;
+      scope: RequirementScope;
+      decision: RequirementAttachmentDecision;
+    };
+
+type ImportableRequirementAttachment = AttachmentCandidate & {
+  fileId: Id<"_storage">;
 };
+
+type RequirementImportResult = {
+  filename: string;
+  sourceDocumentId: Id<"requirementSourceDocuments">;
+  requirementIds: Id<"insuranceRequirements">[];
+  createdCount: number;
+};
+
+type RequirementImportConfirmationPayload = Extract<
+  Doc<"threadActionConfirmations">["payload"],
+  { kind: "requirement_import" }
+>;
 
 function supportedRequirementCandidate(attachment: AttachmentCandidate) {
   const extension = attachment.filename.toLowerCase().split(".").pop() ?? "";
@@ -115,14 +139,17 @@ export function validateRequirementAttachmentDecision<
     decision.scope === "vendors" || decision.scope === "own_org"
       ? decision.scope
       : undefined;
+  if (!scope) {
+    return { authorization: "none", attachments: [], decision };
+  }
   const selectedConfidence = Math.min(
     ...selected.map(
-      (attachment) => classifications.get(String(attachment.fileId))!.confidence,
+      (attachment) =>
+        classifications.get(String(attachment.fileId))?.confidence ?? 0,
     ),
   );
   const autoAuthorized =
     Boolean(decision.intentEvidence.trim()) &&
-    Boolean(scope) &&
     decision.confidence >= 0.9 &&
     selectedConfidence >= 0.9;
 
@@ -178,24 +205,157 @@ Return structured evidence only. Distinguish agreements, leases, contracts, insu
   }
 }
 
+export function buildRequirementImportConfirmation(
+  resolution: RequirementImportResolution<AttachmentCandidate>,
+):
+  | {
+      message: string;
+      payload: RequirementImportConfirmationPayload;
+    }
+  | undefined {
+  if (resolution.authorization !== "confirmation") {
+    return undefined;
+  }
+  const { decision } = resolution;
+  return {
+    message: `Confirm importing ${resolution.attachments.map(({ filename }) => filename).join(", ")} as ${resolution.scope === "vendors" ? "vendor" : "your organization's"} insurance requirements.`,
+    payload: {
+      kind: "requirement_import",
+      fileIds: resolution.attachments.map(({ fileId }) => fileId),
+      classifications: resolution.attachments.map((attachment) => ({
+        fileId: attachment.fileId,
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        documentClass: "insurance_requirements",
+        confidence:
+          decision.documents.find(
+            (document) => document.fileId === String(attachment.fileId),
+          )?.confidence ?? 0,
+      })),
+      scope: resolution.scope,
+      confidence: decision.confidence,
+      intentEvidence: decision.intentEvidence,
+    },
+  };
+}
+
+export async function importRequirementSources(
+  ctx: ActionCtx,
+  args: {
+    orgId: Id<"organizations">;
+    userId: Id<"users">;
+    attachments: ImportableRequirementAttachment[];
+    scope?: RequirementScope;
+  },
+) {
+  const imports: RequirementImportResult[] = [];
+  for (const attachment of args.attachments) {
+    const imported = await ctx.runAction(
+      internal.actions.complianceRequirements.importRequirementsInternal,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        fileId: attachment.fileId,
+        fileName: attachment.filename,
+        contentType: attachment.contentType,
+        sourceName: attachment.filename,
+        scope: args.scope,
+      },
+    );
+    imports.push({ filename: attachment.filename, ...imported });
+  }
+  const createdCount = imports.reduce(
+    (total, imported) => total + imported.createdCount,
+    0,
+  );
+  const workflowOutcome: WorkflowOutcome<"requirement_import"> = {
+    workflowKind: "requirement_import",
+    status: "completed",
+    nextAction: "review_imported_requirements",
+    requiredSlots: [],
+    forbiddenQuestions: [],
+    forbiddenClaims: [
+      "import_completed_without_import_completed_side_effect",
+    ],
+    sideEffects: imports.flatMap((imported) => [
+      {
+        kind: "import_completed" as const,
+        targetType: "requirementSourceDocument",
+        targetId: String(imported.sourceDocumentId),
+      },
+      ...imported.requirementIds.map((requirementId) => ({
+        kind: "record_created" as const,
+        targetType: "insuranceRequirement",
+        targetId: String(requirementId),
+      })),
+    ]),
+    artifacts: imports.flatMap((imported) => [
+      {
+        type: "requirement_source_document",
+        id: String(imported.sourceDocumentId),
+      },
+      ...imported.requirementIds.map((requirementId) => ({
+        type: "insurance_requirement",
+        id: String(requirementId),
+      })),
+    ]),
+    comms: {
+      headline: `${imports.length} requirement source${imports.length === 1 ? " was" : "s were"} imported.`,
+    },
+    audit: [
+      {
+        step: "requirement_import",
+        decision: "completed",
+        detail: `${createdCount} requirements created`,
+      },
+    ],
+  };
+  return { imports, createdCount, workflowOutcome };
+}
+
+export function importConfirmedRequirementSources(
+  ctx: ActionCtx,
+  args: {
+    orgId: Id<"organizations">;
+    userId: Id<"users">;
+    payload: RequirementImportConfirmationPayload;
+  },
+) {
+  return importRequirementSources(ctx, {
+    orgId: args.orgId,
+    userId: args.userId,
+    attachments: args.payload.classifications.map((document) => ({
+      fileId: document.fileId,
+      filename: document.filename,
+      contentType: document.contentType,
+    })),
+    scope: args.payload.scope,
+  });
+}
+
+export function confirmedRequirementImportMessage(result: {
+  imports: RequirementImportResult[];
+  createdCount: number;
+}) {
+  return `Imported ${result.createdCount} insurance requirement${result.createdCount === 1 ? "" : "s"} from the confirmed source${result.imports.length === 1 ? "" : "s"}.`;
+}
+
+const REQUIRED_REQUIREMENT_TOOLS = [
+  "import_requirement_attachments",
+  "lookup_compliance_requirements",
+] as const;
+
 export function requiredRequirementImportStep(
   stepNumber: number,
   hasAuthorizedRequirementAttachments: boolean,
 ) {
-  if (
-    !hasAuthorizedRequirementAttachments ||
-    stepNumber < 0 ||
-    stepNumber > 1
-  ) {
-    return undefined;
-  }
+  if (!hasAuthorizedRequirementAttachments) return undefined;
+  const toolName = REQUIRED_REQUIREMENT_TOOLS[stepNumber];
+  if (!toolName) return undefined;
   return {
     toolChoice: {
       type: "tool" as const,
-      toolName:
-        stepNumber === 0
-          ? ("import_requirement_attachments" as const)
-          : ("lookup_compliance_requirements" as const),
+      toolName,
     },
   };
 }

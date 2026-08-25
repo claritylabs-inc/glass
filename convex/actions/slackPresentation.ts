@@ -17,6 +17,7 @@ import {
 import { MAX_POLICY_CARDS_PER_TURN } from "../lib/agentPolicyPresentation";
 import { renderSlackStreamingMarkdown } from "../lib/transportRenderers";
 
+// Break the generated API's recursive reference to this action module.
 const internalApi = internal as any;
 const WORKER_TIMEOUT_MS = 30_000;
 
@@ -388,7 +389,7 @@ export const finish = internalAction({
 
     const deliver = async (blocks: SlackBlock[]) => {
       let providerMessageId = presentation.providerMessageId;
-      const renderedText = formatSlackAnswerText(message.content);
+      const mrkdwnText = formatSlackAnswerText(message.content);
       if (providerMessageId && presentation.mode === "stream") {
         const markdownText = renderSlackStreamingMarkdown(message.content);
         await workerRequest("/stream/stop", {
@@ -396,7 +397,6 @@ export const finish = internalAction({
           channelId: target.channelId,
           messageTs: providerMessageId,
           markdownText,
-          text: markdownText,
           blocks,
         });
       } else if (providerMessageId) {
@@ -404,8 +404,7 @@ export const finish = internalAction({
           teamId: target.teamId,
           channelId: target.channelId,
           messageTs: providerMessageId,
-          mrkdwnText: renderedText,
-          text: renderedText,
+          mrkdwnText,
           blocks,
         });
       } else {
@@ -414,8 +413,7 @@ export const finish = internalAction({
           teamId: target.teamId,
           channelId: target.channelId,
           threadTs: presentation.threadTs,
-          mrkdwnText: renderedText,
-          text: renderedText,
+          mrkdwnText,
           blocks,
         });
         providerMessageId = sent.messageId;

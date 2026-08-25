@@ -1,11 +1,22 @@
+import { z } from "zod";
+
+const standaloneEmailAddressSchema = z.string().trim().toLowerCase().email();
+
 export function normalizeEmailAddress(email: string): string {
   return email.toLowerCase().trim();
 }
 
 export function extractEmailAddress(value: string | undefined): string | null {
   if (!value) return null;
-  const match = value.match(/[\w.+-]+@[\w.-]+\.\w+/);
-  return match ? normalizeEmailAddress(match[0]) : null;
+  const trimmed = value.trim();
+  const openingBracket = trimmed.lastIndexOf("<");
+  const closingBracket = trimmed.indexOf(">", openingBracket + 1);
+  const candidate =
+    openingBracket >= 0 && closingBracket > openingBracket
+      ? trimmed.slice(openingBracket + 1, closingBracket)
+      : trimmed;
+  const parsed = standaloneEmailAddressSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 export function parseStandaloneEmailAddress(value: string): string | null {
@@ -19,6 +30,3 @@ export function parseStandaloneEmailAddress(value: string): string | null {
   const parsed = standaloneEmailAddressSchema.safeParse(candidate);
   return parsed.success ? parsed.data : null;
 }
-import { z } from "zod";
-
-const standaloneEmailAddressSchema = z.string().trim().toLowerCase().email();

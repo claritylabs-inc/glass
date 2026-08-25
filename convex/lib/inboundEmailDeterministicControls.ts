@@ -1,6 +1,5 @@
 "use node";
 
-import type { Doc } from "../_generated/dataModel";
 import {
   executeEmailCommand,
   type EmailCommandDraft,
@@ -12,17 +11,7 @@ export type InboundEmailDeterministicControlResult = {
   responseBody: string;
 };
 
-export type InboundEmailDraftControl = Pick<
-  Doc<"pendingEmails">,
-  | "_id"
-  | "recipientEmail"
-  | "subject"
-  | "emailBody"
-  | "attachments"
-  | "ccAddresses"
-  | "bccAddresses"
-  | "sendBlockedReason"
->;
+export type InboundEmailDraftControl = EmailCommandDraft;
 
 type InboundEmailControlCtx = EmailCommandExecutionCtx;
 
@@ -54,7 +43,7 @@ export async function runInboundEmailDeterministicControls(
   }
 
   const result = await executeEmailCommand(ctx, command, {
-    draftEmails: args.draftEmails as EmailCommandDraft[],
+    draftEmails: args.draftEmails,
     includeBodyPreview: true,
     continueOnSendFailure: true,
   });

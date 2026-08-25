@@ -222,7 +222,7 @@ describe("Slack channel state and authorization", () => {
     const state = await t.run(async (ctx) => ({
       actor: await ctx.db
         .query("slackActors")
-        .withIndex("by_connectionId_and_teamId_and_slackUserId", (q) =>
+        .withIndex("slack_identity", (q) =>
           q
             .eq("connectionId", connectionId)
             .eq("teamId", "T-GLASS")
@@ -232,7 +232,7 @@ describe("Slack channel state and authorization", () => {
       thread: await ctx.db
         .query("threads")
         .withIndex(
-          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          "slack_thread",
           (q) =>
             q
               .eq("slackConnectionId", connectionId)
@@ -327,7 +327,7 @@ describe("Slack channel state and authorization", () => {
       ctx.db
         .query("threads")
         .withIndex(
-          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          "slack_thread",
           (q) =>
             q
               .eq("slackConnectionId", connectionId)
@@ -555,7 +555,7 @@ describe("Slack channel state and authorization", () => {
       const thread = await ctx.db
         .query("threads")
         .withIndex(
-          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          "slack_thread",
           (q) =>
             q
               .eq("slackConnectionId", connectionId)
@@ -568,7 +568,7 @@ describe("Slack channel state and authorization", () => {
         messages: thread
           ? await ctx.db
               .query("threadMessages")
-              .withIndex("by_threadId", (q) => q.eq("threadId", thread._id))
+              .withIndex("thread", (q) => q.eq("threadId", thread._id))
               .collect()
           : [],
       };
@@ -828,7 +828,7 @@ describe("Slack channel state and authorization", () => {
       );
       const message = await ctx.db
         .query("threadMessages")
-        .withIndex("by_slackTeamId_and_slackMessageTs", (q) =>
+        .withIndex("team_message", (q) =>
           q.eq("slackTeamId", "T-CUSTOMER").eq("slackMessageTs", messageTs),
         )
         .first();
@@ -1022,7 +1022,7 @@ describe("Slack channel state and authorization", () => {
       thread: await ctx.db
         .query("threads")
         .withIndex(
-          "by_slackConnectionId_and_slackChannelId_and_slackThreadTs",
+          "slack_thread",
           (q) =>
             q
               .eq("slackConnectionId", connectionId)
@@ -1060,7 +1060,7 @@ describe("Slack setup and outbound durability", () => {
     await t.run(async (ctx) => {
       const row = await ctx.db
         .query("slackOAuthStates")
-        .withIndex("by_stateHash")
+        .withIndex("state")
         .filter((q) => q.eq(q.field("usedAt"), undefined))
         .first();
       if (!row) throw new Error("OAuth state fixture is missing");

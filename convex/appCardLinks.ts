@@ -271,7 +271,7 @@ export const getByToken = query({
     const tokenHash = await sha256Hex(token);
     const link = await ctx.db
       .query("appCardAccessLinks")
-      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", tokenHash))
+      .withIndex("token", (q) => q.eq("tokenHash", tokenHash))
       .unique();
     if (!link) return null;
 

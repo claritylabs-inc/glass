@@ -8,14 +8,14 @@ import { convert } from "html-to-text";
 
 const MAX_INBOUND_TEXT_PARSE_CHARS = 256 * 1024;
 const MAX_INBOUND_HTML_PARSE_CHARS = 256 * 1024;
-export const INBOUND_EMAIL_PARSER_VERSION = "reply-2.3.9_forward-1.8.3";
+const INBOUND_EMAIL_PARSER_VERSION = "reply-2.3.9_forward-1.8.3";
 
-export type ParsedInboundMailbox = {
+type ParsedInboundMailbox = {
   address?: string;
   name?: string;
 };
 
-export type ParsedForwardedEmail = {
+type ParsedForwardedEmail = {
   from?: ParsedInboundMailbox;
   to: ParsedInboundMailbox[];
   cc: ParsedInboundMailbox[];
@@ -24,7 +24,7 @@ export type ParsedForwardedEmail = {
   body?: string;
 };
 
-export type ParsedInboundEmail = {
+type ParsedInboundEmail = {
   currentText: string;
   rawText?: string;
   rawHtml?: string;
@@ -68,11 +68,14 @@ function normalizeMailboxList(
   });
 }
 
-function htmlToPlainText(html: string): string {
+export function htmlToPlainText(
+  html: string,
+  maxInputLength = MAX_INBOUND_HTML_PARSE_CHARS,
+): string {
   return convert(html, {
     wordwrap: false,
     limits: {
-      maxInputLength: MAX_INBOUND_HTML_PARSE_CHARS,
+      maxInputLength,
     },
     selectors: [
       { selector: "script", format: "skip" },
@@ -82,11 +85,6 @@ function htmlToPlainText(html: string): string {
   });
 }
 
-/**
- * Parse one inbound message at the server boundary. Raw source remains separate
- * from the current sender's text so callers never need to reconstruct message
- * semantics with client-side or route-specific regular expressions.
- */
 export function parseInboundEmail(input: {
   subject?: string;
   text?: string;

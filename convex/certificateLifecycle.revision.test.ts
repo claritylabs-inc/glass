@@ -202,7 +202,7 @@ describe("certificate holder revision", () => {
         revisedHolderLinks: certificate
           ? await ctx.db
               .query("certificateHolderPolicyLinks")
-              .withIndex("by_holderId", (q) => q.eq("holderId", certificate.holderId))
+              .withIndex("holder", (q) => q.eq("holderId", certificate.holderId))
               .collect()
           : [],
         oldVersion: await ctx.db.get(ids.oldVersionId),

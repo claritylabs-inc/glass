@@ -40,7 +40,7 @@ function normalizeEmail(value?: string) {
 async function nextVersionNumber(ctx: MutationCtx, certificateId: Id<"policyCertificates">) {
   const latest = await ctx.db
     .query("certificateVersions")
-    .withIndex("by_certificateId_versionNumber", (q) => q.eq("certificateId", certificateId))
+    .withIndex("certificate_version", (q) => q.eq("certificateId", certificateId))
     .order("desc")
     .first();
   return (latest?.versionNumber ?? 0) + 1;
@@ -63,7 +63,7 @@ async function createWorkflowJob(ctx: MutationCtx, args: {
 }) {
   const existing = await ctx.db
     .query("certificateWorkflowJobs")
-    .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", args.idempotencyKey))
+    .withIndex("idempotency", (q) => q.eq("idempotencyKey", args.idempotencyKey))
     .first();
   if (existing) return { jobId: existing._id, created: false, status: existing.status };
   const now = dayjs().valueOf();
@@ -141,13 +141,13 @@ export const createRenewalJobsForPolicyInternal = internalMutation({
     const clientOverride = org.type === "client"
       ? await ctx.db
           .query("certificateWorkflowSettings")
-          .withIndex("by_clientOrgId", (q) => q.eq("clientOrgId", args.orgId))
+          .withIndex("client", (q) => q.eq("clientOrgId", args.orgId))
           .first()
       : null;
     const brokerDefault = brokerOrgId
       ? await ctx.db
           .query("certificateWorkflowSettings")
-          .withIndex("by_brokerOrgId_clientOrgId", (q) =>
+          .withIndex("broker_client", (q) =>
             q.eq("brokerOrgId", brokerOrgId).eq("clientOrgId", undefined),
           )
           .first()
@@ -156,7 +156,7 @@ export const createRenewalJobsForPolicyInternal = internalMutation({
     if (settings?.renewalReissueEnabled === false) return { created: 0, jobs: [] };
     const certificates = await ctx.db
       .query("policyCertificates")
-      .withIndex("by_policyId_status", (q) => q.eq("policyId", args.policyId).eq("status", "active"))
+      .withIndex("policy_status", (q) => q.eq("policyId", args.policyId).eq("status", "active"))
       .collect();
     const jobs = [];
     for (const certificate of certificates) {
@@ -196,12 +196,12 @@ export const listForOrg = query({
     const rows = args.policyId
       ? await ctx.db
           .query("certificateWorkflowJobs")
-          .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId!))
+          .withIndex("policy", (q) => q.eq("policyId", args.policyId!))
           .order("desc")
           .collect()
       : await ctx.db
           .query("certificateWorkflowJobs")
-          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+          .withIndex("organization", (q) => q.eq("orgId", args.orgId))
           .order("desc")
           .collect();
     const enriched = await Promise.all(
@@ -237,11 +237,11 @@ export const listForOrgInternal = internalQuery({
     const rows = args.policyId
       ? await ctx.db
           .query("certificateWorkflowJobs")
-          .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId!))
+          .withIndex("policy", (q) => q.eq("policyId", args.policyId!))
           .collect()
       : await ctx.db
           .query("certificateWorkflowJobs")
-          .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+          .withIndex("organization", (q) => q.eq("orgId", args.orgId))
           .collect();
     const enriched = await Promise.all(
       rows

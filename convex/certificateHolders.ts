@@ -56,7 +56,7 @@ async function findExistingHolder(ctx: ReadCtx, args: {
   if (args.normalizedEmail) {
     const byEmail = await ctx.db
       .query("certificateHolders")
-      .withIndex("by_orgId_normalizedEmail", (q) =>
+      .withIndex("organization_email", (q) =>
         q.eq("orgId", args.orgId).eq("normalizedEmail", args.normalizedEmail),
       )
       .first();
@@ -65,7 +65,7 @@ async function findExistingHolder(ctx: ReadCtx, args: {
 
   const named = await ctx.db
     .query("certificateHolders")
-    .withIndex("by_orgId_normalizedName", (q) =>
+    .withIndex("organization_name", (q) =>
       q.eq("orgId", args.orgId).eq("normalizedName", args.normalizedName),
     )
     .collect();
@@ -87,7 +87,7 @@ export const listForOrg = query({
     await getOrgAccess(ctx, args.orgId);
     const holders = await ctx.db
       .query("certificateHolders")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     const needle = normalizeCertificateHolderName(args.query ?? "");
     if (!needle) return holders.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -110,7 +110,7 @@ export const listForOrgInternal = internalQuery({
   handler: async (ctx, args) => {
     const holders = await ctx.db
       .query("certificateHolders")
-      .withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     const needle = normalizeCertificateHolderName(args.query ?? "");
     const filtered = needle
@@ -288,7 +288,7 @@ async function upsertPolicyLink(ctx: MutationCtx, args: {
 }) {
   const existing = await ctx.db
     .query("certificateHolderPolicyLinks")
-    .withIndex("by_policyId", (q) => q.eq("policyId", args.policyId))
+    .withIndex("policy", (q) => q.eq("policyId", args.policyId))
     .collect();
   const match = existing.find((link) =>
     link.holderId === args.holderId

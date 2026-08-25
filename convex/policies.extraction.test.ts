@@ -496,7 +496,7 @@ describe("policies.updateExtractionInternal", () => {
     const artifacts = await t.run((ctx) =>
       ctx.db
         .query("policyExtractionArtifacts")
-        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .withIndex("policy", (q) => q.eq("policyId", policyId))
         .collect());
 
     expect(artifacts.map((artifact) => artifact._id)).toEqual(
@@ -961,7 +961,7 @@ describe("policies.updateExtractionInternal", () => {
       fact: await ctx.db.get(ids.factId),
       run: await ctx.db
         .query("policyExtractionRuns")
-        .withIndex("by_policyId", (q) => q.eq("policyId", ids.policyId))
+        .withIndex("policy", (q) => q.eq("policyId", ids.policyId))
         .first(),
     }));
     expect(result.policy).toMatchObject({
@@ -1040,7 +1040,7 @@ describe("policies.updateExtractionInternal", () => {
       policy: await ctx.db.get(policyId),
       run: await ctx.db
         .query("policyExtractionRuns")
-        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .withIndex("policy", (q) => q.eq("policyId", policyId))
         .first(),
     }));
     expect(result.policy?.pipelineStatus).toBe("complete");
@@ -1129,7 +1129,7 @@ describe("policies.updateExtractionInternal", () => {
       policy: await ctx.db.get(policyId),
       run: await ctx.db
         .query("policyExtractionRuns")
-        .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+        .withIndex("policy", (q) => q.eq("policyId", policyId))
         .first(),
     }));
     expect(result.policy?.pipelineStatus).toBe("complete");
@@ -1206,7 +1206,7 @@ describe("policies.updateExtractionInternal", () => {
         policy: await ctx.db.get(policyId),
         run: await ctx.db
           .query("policyExtractionRuns")
-          .withIndex("by_policyId", (q) => q.eq("policyId", policyId))
+          .withIndex("policy", (q) => q.eq("policyId", policyId))
           .first(),
       }));
       expect(result.policy).toMatchObject({

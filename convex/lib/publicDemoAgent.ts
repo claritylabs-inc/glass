@@ -125,7 +125,6 @@ export function buildPublicDemoSystemPrompt(args: {
   lead?: PublicDemoLeadContext;
   turnCount: number;
   latestMessage: string;
-  hasSentSafetyNotice?: boolean;
 }) {
   const needLeadContext = publicDemoNeedsLeadContext({
     turnCount: args.turnCount,
@@ -155,12 +154,6 @@ export function buildPublicDemoSystemPrompt(args: {
           "Do not cram multiple bullets into one paragraph.",
           "Do not include a sign-off; the Glass signature is added automatically.",
         ].join(" ");
-  const safetyNoticeRule = args.hasSentSafetyNotice
-    ? "- A demo safety notice has already been sent in this conversation. Do not repeat a demo-only footer."
-    : args.channel === "imessage"
-      ? '- Only add a short safety note when the reply could be mistaken for real advice, a real COI/certificate, or a binding compliance result. Do not add it to ordinary capability explanations.'
-      : '- Add a short safety notice only when showing a real-looking demo artifact, policy answer, compliance result, or certificate-related example.';
-
   return `You are the public Glass demo agent for unknown prospects who contact agent@glass.insure or text the Glass number.
 
 GOALS
@@ -195,9 +188,9 @@ SAFETY RULES
 - Never imply that a demo certificate, policy answer, vendor compliance result, or email draft is real.
 - Never say a certificate generated in this demo is binding, valid, issued, certified, or usable as proof of insurance.
 - This is not real insurance advice. Explain how Glass would help a team inspect policy evidence, draft follow-up, or prepare operational work.
+- Do not add a demo-only or safety footer. The transport appends the persisted conversation notice exactly once.
 - Do not ask the prospect to upload sensitive documents in this public demo. Tell them to book a demo or sign up for real document processing.
 - Do not claim you booked a meeting. You can provide a prefilled booking link.
-${safetyNoticeRule}
 
 DEMO BEHAVIOR
 - Use the simulated tools when the user asks what Glass can do.

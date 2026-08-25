@@ -40,7 +40,7 @@ function automationItemByMessageKey(
 ) {
   return ctx.db
     .query("connectedEmailAutomationItems")
-    .withIndex("by_accountId_messageKey", (query) =>
+    .withIndex("account_message", (query) =>
       query.eq("accountId", accountId).eq("messageKey", messageKey),
     )
     .first();
@@ -54,7 +54,7 @@ export const getScanStateInternal = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("connectedEmailScanStates")
-      .withIndex("by_accountId_mailbox", (query) =>
+      .withIndex("account_mailbox", (query) =>
         query.eq("accountId", args.accountId).eq("mailbox", args.mailbox),
       )
       .first(),
@@ -104,7 +104,7 @@ export const reviewForThread = query({
     }
     const items = await ctx.db
       .query("connectedEmailAutomationItems")
-      .withIndex("by_threadId", (q) => q.eq("threadId", args.threadId))
+      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
     const reviewItems = items.filter(
       (item) =>
@@ -175,7 +175,7 @@ export const resolveReview = mutation({
     }
     const item = await ctx.db
       .query("connectedEmailAutomationItems")
-      .withIndex("by_threadId_and_emailRef", (q) =>
+      .withIndex("thread_email", (q) =>
         q.eq("threadId", args.threadId).eq("emailRef", args.emailRef),
       )
       .unique();
@@ -219,7 +219,7 @@ export const recordScanAttemptInternal = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("connectedEmailScanStates")
-      .withIndex("by_accountId_mailbox", (query) =>
+      .withIndex("account_mailbox", (query) =>
         query.eq("accountId", args.accountId).eq("mailbox", args.mailbox),
       )
       .first();
@@ -258,7 +258,7 @@ export const recordScanSuccessInternal = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("connectedEmailScanStates")
-      .withIndex("by_accountId_mailbox", (query) =>
+      .withIndex("account_mailbox", (query) =>
         query.eq("accountId", args.accountId).eq("mailbox", args.mailbox),
       )
       .first();
@@ -294,7 +294,7 @@ export const recordScanFailureInternal = internalMutation({
     const now = dayjs().valueOf();
     const existing = await ctx.db
       .query("connectedEmailScanStates")
-      .withIndex("by_accountId_mailbox", (query) =>
+      .withIndex("account_mailbox", (query) =>
         query.eq("accountId", args.accountId).eq("mailbox", args.mailbox),
       )
       .first();

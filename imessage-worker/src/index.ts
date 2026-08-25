@@ -24,7 +24,7 @@ import {
   parseTerminalIdentityCommand,
   terminalIdentityLabel,
 } from "./terminalIdentity.js";
-import { imessageMarkdownSource, imessagePlainText } from "./outboundText.js";
+import { imessagePlainText } from "./outboundText.js";
 import {
   deliverImessageResponse,
   splitImessageResponse,
@@ -36,7 +36,7 @@ import {
 } from "./inboundNormalization.js";
 
 function imessageMarkdown(value: string) {
-  return markdown(imessageMarkdownSource(value));
+  return markdown(value);
 }
 
 type MiniAppLayout = {
@@ -59,19 +59,12 @@ type CustomizedMiniAppMessage = {
   url: string;
 };
 
-type AdvancedImessageClient = {
+type AdvancedImessageClient = InboundRecoveryClient & {
   attachments?: {
     upload(input: {
       data: Buffer;
       fileName: string;
     }): Promise<{ attachment: { guid: string } }>;
-    downloadStream(
-      attachmentGuid: string,
-    ): AsyncIterable<
-      | { type: "header" }
-      | { type: "primaryChunk"; data: Uint8Array }
-      | { type: "companionChunk"; data: Uint8Array }
-    >;
   };
   chats?: {
     get(chatGuid: string): Promise<{
@@ -105,18 +98,6 @@ type AdvancedImessageClient = {
     ): Promise<unknown>;
   };
   messages?: {
-    get(messageGuid: string): Promise<{
-      guid: string;
-      content: {
-        text?: string;
-        attachments: readonly {
-          guid: string;
-          fileName: string;
-          mimeType: string;
-          totalBytes?: number;
-        }[];
-      };
-    }>;
     sendAttachment(
       chatGuid: string,
       attachmentGuid: string,
@@ -216,7 +197,7 @@ if (
   process.exit(1);
 }
 
-export function imessageProcessingFallbackMessage(err: unknown): string {
+function imessageProcessingFallbackMessage(err: unknown): string {
   if (isImessageConvexTimeout(err)) {
     return "I'm still working on that. If I don't follow up here, check Glass for the draft.";
   }
@@ -1243,9 +1224,7 @@ async function main() {
         const normalizedTurn = await normalizeInboundTurn({
           message,
           recoverFromPhoton: TRANSPORT === "imessage",
-          client: getAdvancedImessageClient(app, space) as
-            | InboundRecoveryClient
-            | undefined,
+          client: getAdvancedImessageClient(app, space),
           readAttachment: readInboundAttachment,
         });
         const messageText = normalizedTurn.messageText;

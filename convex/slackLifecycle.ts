@@ -56,7 +56,7 @@ async function connectionByTeam(ctx: QueryCtx | MutationCtx, teamId: string) {
   for (const status of ["active", "revoked", "disconnected"] as const) {
     const connection = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_teamId_and_status", (q) =>
+      .withIndex("team_status", (q) =>
         q.eq("teamId", teamId).eq("status", status),
       )
       .order("desc")
@@ -73,7 +73,7 @@ async function bindingForConnection(
   for (const status of ["active", "unavailable"] as const) {
     const binding = await ctx.db
       .query("slackChannelBindings")
-      .withIndex("by_connectionId_and_status", (q) =>
+      .withIndex("connection_status", (q) =>
         q.eq("connectionId", connectionId).eq("status", status),
       )
       .order("desc")
@@ -97,7 +97,7 @@ async function bindingForEvent(
 
   const hostBinding = await ctx.db
     .query("slackChannelBindings")
-    .withIndex("by_hostTeamId_and_hostChannelId", (q) =>
+    .withIndex("host_channel", (q) =>
       q.eq("hostTeamId", teamId).eq("hostChannelId", channelId),
     )
     .order("desc")
@@ -149,7 +149,7 @@ async function terminalizeOutboundRows(
   for (const status of ["sending", "failed"] as const) {
     const rows = await ctx.db
       .query("slackOutboundSends")
-      .withIndex("by_connectionId_and_status_and_nextAttemptAt", (q) => {
+      .withIndex("retry_schedule", (q) => {
         const indexed = q.eq("connectionId", connectionId).eq("status", status);
         return status === "failed" ? indexed.gt("nextAttemptAt", 0) : indexed;
       })
@@ -267,7 +267,7 @@ async function processInstallationEvent(
     };
   const installation = await ctx.db
     .query("slackInstallations")
-    .withIndex("by_teamId_and_status", (q) =>
+    .withIndex("team_status", (q) =>
       q.eq("teamId", teamId).eq("status", "active"),
     )
     .first();
@@ -341,7 +341,7 @@ async function processInstallationEvent(
   });
   const bindings = await ctx.db
     .query("slackChannelBindings")
-    .withIndex("by_hostTeamId_and_hostChannelId", (q) =>
+    .withIndex("host_channel", (q) =>
       q.eq("hostTeamId", teamId),
     )
     .take(100);
@@ -389,13 +389,13 @@ async function remapCustomerChannel(
   if (!connection) return;
   const oldMembership = await ctx.db
     .query("slackChannelMemberships")
-    .withIndex("by_connectionId_and_channelId", (q) =>
+    .withIndex("connection_channel", (q) =>
       q.eq("connectionId", connection._id).eq("channelId", oldChannelId),
     )
     .first();
   const newMembership = await ctx.db
     .query("slackChannelMemberships")
-    .withIndex("by_connectionId_and_channelId", (q) =>
+    .withIndex("connection_channel", (q) =>
       q.eq("connectionId", connection._id).eq("channelId", newChannelId),
     )
     .first();
@@ -637,7 +637,7 @@ export const claim = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("slackLifecycleEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", args.eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", args.eventKey))
       .first();
     if (existing) {
       return {
@@ -715,7 +715,7 @@ export const listRecentForClient = internalQuery({
   handler: async (ctx, args) =>
     await ctx.db
       .query("slackLifecycleEvents")
-      .withIndex("by_clientOrgId_and_receivedAt", (q) =>
+      .withIndex("client_received", (q) =>
         q.eq("clientOrgId", args.clientOrgId),
       )
       .order("desc")
@@ -727,7 +727,7 @@ export const getHealthSummary = internalQuery({
   handler: async (ctx) => {
     const activeConnections = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_status_and_nextReconciliationAt", (q) =>
+      .withIndex("reconcile_schedule", (q) =>
         q.eq("status", "active"),
       )
       .take(500);
@@ -762,7 +762,7 @@ export const listDueReconciliationContexts = internalQuery({
   handler: async (ctx, args) => {
     const connections = await ctx.db
       .query("slackWorkspaceConnections")
-      .withIndex("by_status_and_nextReconciliationAt", (q) =>
+      .withIndex("reconcile_schedule", (q) =>
         q.eq("status", "active"),
       )
       .take(200);
@@ -855,7 +855,7 @@ export const recordProviderFailure = internalMutation({
     const eventKey = `provider:${sourceKey}:${args.providerErrorCode}`;
     const existing = await ctx.db
       .query("slackLifecycleEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", eventKey))
       .first();
     if (existing) return existing._id;
     const connection = await ctx.db.get(args.connectionId);
@@ -985,7 +985,7 @@ export const applyReconciliationResult = internalMutation({
     ].join(":");
     const existingEvent = await ctx.db
       .query("slackLifecycleEvents")
-      .withIndex("by_eventKey", (q) => q.eq("eventKey", eventKey))
+      .withIndex("event", (q) => q.eq("eventKey", eventKey))
       .first();
     if (existingEvent) return { applied: false, reason: "duplicate" };
 

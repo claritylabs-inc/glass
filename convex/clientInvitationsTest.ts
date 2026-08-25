@@ -51,7 +51,7 @@ export const getOrgMembership = internalQuery({
   handler: async (ctx, { orgId, userId }) => {
     return await ctx.db
       .query("orgMemberships")
-      .withIndex("by_orgId_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
+      .withIndex("organization_user", (q) => q.eq("orgId", orgId).eq("userId", userId))
       .first();
   },
 });

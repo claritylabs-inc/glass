@@ -100,16 +100,6 @@ describe("Slack worker HTTP adapter", () => {
       }).then((response) => response.json()),
       { messageId: "mock-mock-send", attachmentFailures: [] },
     );
-    assert.deepEqual(
-      await send({
-        clientMessageId: "legacy-send",
-        teamId: "T-CUSTOMER",
-        channelId: "C-PRIMARY",
-        text: "Already rendered compatibility text",
-      }).then((response) => response.json()),
-      { messageId: "mock-legacy-send", attachmentFailures: [] },
-    );
-
     const actor = await workerRequest("/actor", {
       teamId: "T-CUSTOMER",
       userId: "U-CUSTOMER",

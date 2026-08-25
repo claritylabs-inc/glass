@@ -325,7 +325,7 @@ describe("proactive conversation threads", () => {
     const messages = await t.run((ctx) =>
       ctx.db
         .query("threadMessages")
-        .withIndex("by_messageId", (q) =>
+        .withIndex("message", (q) =>
           q.eq("messageId", args.idempotencyKey),
         )
         .collect(),
