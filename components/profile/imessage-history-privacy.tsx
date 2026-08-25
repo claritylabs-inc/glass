@@ -13,7 +13,6 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import { StatusTag, type StatusTagTone } from "@/components/ui/status-tag";
 import { api } from "@/convex/_generated/api";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
@@ -36,29 +35,6 @@ export function useImessagePrivacy() {
   return { state, preparePreview, requestDeletion };
 }
 
-function jobLabel(state: ImessagePrivacyState): {
-  label: string;
-  tone: StatusTagTone;
-} {
-  const deletion = state.deletion;
-  if (deletion?.status === "queued" || deletion?.status === "running") {
-    return { label: "Deleting", tone: "warning" };
-  }
-  if (state.preview?.status === "preparing") {
-    return { label: "Inventorying", tone: "info" };
-  }
-  if (state.preview?.status === "ready") {
-    return { label: "Ready to review", tone: "warning" };
-  }
-  if (state.preview?.status === "failed" || deletion?.status === "failed") {
-    return { label: "Needs retry", tone: "danger" };
-  }
-  if (state.latestCompleted) {
-    return { label: "Last deletion complete", tone: "success" };
-  }
-  return { label: "Available", tone: "neutral" };
-}
-
 export function ImessagePrivacyPanel({
   state,
   busy,
@@ -70,64 +46,51 @@ export function ImessagePrivacyPanel({
   onPrepare: () => void;
   onReview: () => void;
 }) {
-  const status = state ? jobLabel(state) : null;
   const active =
     state?.deletion?.status === "queued" ||
     state?.deletion?.status === "running";
   const previewReady = state?.preview?.status === "ready";
   return (
     <OperationalPanel>
-      <OperationalPanelHeader
-        title="Personal iMessage history"
-        description="Manage direct conversations between your phone number and Glass."
-        action={
-          status ? (
-            <StatusTag tone={status.tone}>{status.label}</StatusTag>
-          ) : null
-        }
-      />
-      <OperationalPanelBody className="space-y-4">
-        <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-foreground">
-            <MessageSquareLock className="size-4" />
-          </span>
-          <div className="min-w-0">
-            <p className={`text-foreground ${typeStyle("body.medium")}`}>
-              Delete conversations stored by Glass
-            </p>
-            <p
-              className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              This does not delete messages from Apple Messages, group chats, or
-              business records such as policies, certificates, and delivery
-              outcomes.
-            </p>
-          </div>
-        </div>
-        {active && state?.deletion ? (
-          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-            {state.deletion.processedThreadCount} of{" "}
-            {state.deletion.threadCount} conversations processed. You can leave
-            this page while deletion continues.
+      <OperationalPanelHeader title="Personal iMessage history" />
+      <OperationalPanelBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className={`text-foreground ${typeStyle("body.medium")}`}>
+            Delete conversations stored by Glass
           </p>
-        ) : null}
-        <div>
-          <PillButton
-            variant="destructive"
-            disabled={busy || active || state === undefined}
-            onClick={previewReady ? onReview : onPrepare}
+          <p
+            className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
           >
-            {busy || state === undefined ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : null}
-            {previewReady
-              ? "Review deletion"
-              : state?.preview?.status === "failed" ||
-                  state?.deletion?.status === "failed"
-                ? "Prepare retry"
-                : "Delete iMessage history"}
-          </PillButton>
+            This does not delete messages from Apple Messages, group chats, or
+            business records such as policies, certificates, and delivery
+            outcomes.
+          </p>
+          {active && state?.deletion ? (
+            <p
+              className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
+            >
+              {state.deletion.processedThreadCount} of{" "}
+              {state.deletion.threadCount} conversations processed. You can
+              leave this page while deletion continues.
+            </p>
+          ) : null}
         </div>
+        <PillButton
+          className="self-start sm:self-center"
+          variant="destructive"
+          disabled={busy || active || state === undefined}
+          onClick={previewReady ? onReview : onPrepare}
+        >
+          {busy || state === undefined ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : null}
+          {previewReady
+            ? "Review deletion"
+            : state?.preview?.status === "failed" ||
+                state?.deletion?.status === "failed"
+              ? "Prepare retry"
+              : "Delete iMessage history"}
+        </PillButton>
       </OperationalPanelBody>
     </OperationalPanel>
   );
@@ -341,7 +304,7 @@ export function ProfileSectionTabs({
     <div
       role="tablist"
       aria-label="Profile sections"
-      className="mb-4 flex items-center gap-1 border-b border-border pb-2"
+      className="mb-4 flex items-center gap-1"
     >
       <PillButton
         variant={active === "profile" ? "primary" : "ghost"}
