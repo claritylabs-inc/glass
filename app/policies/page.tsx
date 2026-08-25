@@ -281,6 +281,15 @@ export default function PoliciesPage() {
       }
     >
       <div className="space-y-4">
+        {!showArchived && isViewerOrgLoading ? (
+          <div className="mb-6 sm:min-h-56" aria-hidden="true" />
+        ) : !showArchived ? (
+          <AgentContactCallout
+            broker={brokerForCallout}
+            fallbackAgentHandle={fallbackHandle}
+            dismissKey="glass:agent-contact-callout:policies"
+          />
+        ) : null}
         <Tabs
           value={showArchived ? "archived" : "active"}
           onValueChange={(value) =>
@@ -294,15 +303,6 @@ export default function PoliciesPage() {
             <TabsTrigger value="archived">Archived</TabsTrigger>
           </TabsList>
         </Tabs>
-        {!showArchived && isViewerOrgLoading ? (
-          <div className="mb-6 sm:min-h-56" aria-hidden="true" />
-        ) : !showArchived ? (
-          <AgentContactCallout
-            broker={brokerForCallout}
-            fallbackAgentHandle={fallbackHandle}
-            dismissKey="glass:agent-contact-callout:policies"
-          />
-        ) : null}
         {isLoading ? (
           <div className="min-h-32" aria-hidden="true" />
         ) : list.length === 0 && showArchived ? (
