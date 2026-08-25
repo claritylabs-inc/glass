@@ -29,6 +29,7 @@ import {
   shouldUseClRouterForTask,
   withClRouterDirectFallback,
   type ClRouterGenerateRequest,
+  type ClRouterFailureAttempt,
   type ClRouterMessage,
   type ClRouterResponseMetadata,
   type ClRouterSettingsSnapshot,
@@ -196,6 +197,7 @@ type RoutedGenerateTextResult = AiGenerateTextResult & {
   routeSource?: string;
   transport?: ModelTransport;
   clRouter?: ClRouterResponseMetadata;
+  clRouterFailure?: ClRouterFailureMetadata;
   fallback?: AgentModelFallback;
 };
 export type AgentModelFallback = {
@@ -256,6 +258,7 @@ export type AgentModelRunOptions = {
 export type ResolvedAgentLanguageModel = ResolvedModelRoute & {
   transport: ModelTransport;
   routerResponses: ClRouterResponseMetadata[];
+  routerFailures: ClRouterFailureMetadata[];
 };
 type RoutedGenerateObjectResult<T> = Omit<
   AiGenerateTextResult,
@@ -907,6 +910,55 @@ function errorRecords(error: unknown): Array<Record<string, unknown>> {
   return records;
 }
 
+type ClRouterFailureMetadata = {
+  message: string;
+  requestId?: string;
+  routerCode?: string;
+  status?: number;
+  retryable?: boolean;
+  executionStarted?: boolean;
+  attempts: readonly ClRouterFailureAttempt[];
+};
+
+function clRouterFailureMetadata(error: unknown): ClRouterFailureMetadata | undefined {
+  let failure: ClRouterRequestError | undefined;
+  for (const record of errorRecords(error)) {
+    if (record instanceof ClRouterRequestError) {
+      failure = record;
+      break;
+    }
+  }
+  if (!failure) return undefined;
+  return {
+    message: failure.message,
+    ...(failure.requestId ? { requestId: failure.requestId } : {}),
+    ...(failure.routerCode ? { routerCode: failure.routerCode } : {}),
+    ...(failure.status === undefined ? {} : { status: failure.status }),
+    ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+    ...(failure.executionStarted === undefined
+      ? {}
+      : { executionStarted: failure.executionStarted }),
+    attempts: failure.attempts,
+  };
+}
+
+function routerFailureTelemetryFields(failure: ClRouterFailureMetadata | undefined) {
+  if (!failure) return {};
+  return {
+    ...(failure.routerCode ? { routerCode: failure.routerCode } : {}),
+    ...(failure.status === undefined ? {} : { routerStatus: failure.status }),
+    ...(failure.retryable === undefined
+      ? {}
+      : { routerRetryable: failure.retryable }),
+    ...(failure.executionStarted === undefined
+      ? {}
+      : { routerExecutionStarted: failure.executionStarted }),
+    ...(failure.attempts.length
+      ? { failureAttempts: [...failure.attempts] }
+      : {}),
+  };
+}
+
 /**
  * Availability failures may use the configured fallback only before a model
  * step completes or a tool begins. Callers own that execution boundary; this
@@ -1471,6 +1523,7 @@ function agentLanguageModel(
     );
   }
   const routerResponses: ClRouterResponseMetadata[] = [];
+  const routerFailures: ClRouterFailureMetadata[] = [];
   return {
     ...resolved,
     model: createClRouterLanguageModel({
@@ -1494,10 +1547,15 @@ function agentLanguageModel(
         routerResponses.push(response);
         await run.onResponse?.(response, step);
       },
-      onDirectFallback: run.onDirectFallback,
+      onDirectFallback: async (error, step) => {
+        const failure = clRouterFailureMetadata(error);
+        if (failure) routerFailures.push(failure);
+        await run.onDirectFallback?.(error, step);
+      },
     }),
     transport: "cl-router",
     routerResponses,
+    routerFailures,
   };
 }
 
@@ -1533,6 +1591,7 @@ function withAgentRoutingTelemetry(
   orgId: Id<"organizations"> | undefined,
   task: ModelTask,
   run: AgentModelRunOptions,
+  directFallback: Pick<ResolvedModelRoute, "route" | "routeSource">,
 ): AgentModelRunOptions {
   const eventRun = routingEventRun(orgId, task, run);
   return {
@@ -1545,9 +1604,27 @@ function withAgentRoutingTelemetry(
       await run.onResponse?.(response, step);
     },
     onDirectFallback: async (error, step) => {
+      const failure = clRouterFailureMetadata(error);
+      const failedAttempt = failure?.attempts.at(-1);
       await ctx.runMutation(
         internal.modelRoutingEvents.recordFallbackInternal,
-        { run: eventRun, error: errorText(error), ...step },
+        {
+          run: eventRun,
+          error: errorText(error),
+          ...step,
+          ...(failure?.requestId ? { requestId: failure.requestId } : {}),
+          ...routerFailureTelemetryFields(failure),
+          ...(failedAttempt
+            ? {
+                provider: failedAttempt.provider,
+                model: failedAttempt.model,
+              }
+            : {}),
+          fallbackProvider: directFallback.route.provider,
+          fallbackModel: directFallback.route.model,
+          routeSource: directFallback.routeSource,
+          transport: "direct",
+        },
       );
       await run.onDirectFallback?.(error, step);
     },
@@ -1640,6 +1717,7 @@ async function recordAgentRun(
   routerResponseOverride?: ClRouterResponseMetadata,
   routeOverride?: AgentModelRouteTelemetry,
   maxOutputTokens?: number,
+  routerFailureOverride?: ClRouterFailureMetadata,
 ) {
   const audit =
     auditOverride ??
@@ -1652,9 +1730,20 @@ async function recordAgentRun(
           workflowOutcomes: [],
         });
   const completion = agentRunCompletionTelemetry(result, audit, error);
+  const routerFailure = error
+    ? clRouterFailureMetadata(error) ?? routerFailureOverride
+    : result?.clRouterFailure ?? routerFailureOverride;
+  const failedAttempt = routerFailure?.attempts.at(-1);
   const requestId =
-    routerResponseOverride?.requestId ?? result?.clRouter?.requestId;
-  const route = result?.route ?? routeOverride?.route;
+    routerFailure?.requestId ??
+    routerResponseOverride?.requestId ??
+    result?.clRouter?.requestId;
+  const route = result?.route ??
+    (failedAttempt
+      ? { provider: failedAttempt.provider, model: failedAttempt.model }
+      : routerFailure
+        ? undefined
+        : routeOverride?.route);
   const routeSource = result?.routeSource ?? routeOverride?.routeSource;
   const transport = result?.transport ?? routeOverride?.transport;
   const fallback = result?.fallback ?? routeOverride?.fallback;
@@ -1692,6 +1781,7 @@ async function recordAgentRun(
         ? {}
         : { cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens }),
       ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+      ...routerFailureTelemetryFields(routerFailure),
       ...(completion.finishReason
         ? { finishReason: completion.finishReason }
         : {}),
@@ -1811,7 +1901,12 @@ export async function getAgentLanguageModelForOrg(
   assertAgentModelRunOptions(run);
   if (!shouldUseClRouterForCall(task, run.taskKind)) {
     const resolved = await getModelAndRouteForOrg(ctx, orgId, task);
-    return { ...resolved, transport: "direct", routerResponses: [] };
+    return {
+      ...resolved,
+      transport: "direct",
+      routerResponses: [],
+      routerFailures: [],
+    };
   }
   const settings = await resolveClRouterSettingsForOrg(ctx, orgId);
   const resolved = getModelAndRouteForSettingsSnapshot(settings, task);
@@ -1820,7 +1915,7 @@ export async function getAgentLanguageModelForOrg(
     String(orgId),
     settings,
     resolved,
-    withAgentRoutingTelemetry(ctx, orgId, task, run),
+    withAgentRoutingTelemetry(ctx, orgId, task, run, resolved),
   );
 }
 
@@ -1832,7 +1927,12 @@ export async function getAgentLanguageModelForPublicTask(
   assertAgentModelRunOptions(run);
   if (!shouldUseClRouterForCall(task, run.taskKind)) {
     const resolved = await getModelAndRouteForPublicTask(ctx, task);
-    return { ...resolved, transport: "direct", routerResponses: [] };
+    return {
+      ...resolved,
+      transport: "direct",
+      routerResponses: [],
+      routerFailures: [],
+    };
   }
   const settings = await clRouterSettingsForPublicTask(ctx);
   const resolved = getModelAndRouteForPublicSettingsSnapshot(settings, task);
@@ -1841,7 +1941,7 @@ export async function getAgentLanguageModelForPublicTask(
     undefined,
     settings,
     resolved,
-    withAgentRoutingTelemetry(ctx, undefined, task, run),
+    withAgentRoutingTelemetry(ctx, undefined, task, run, resolved),
   );
 }
 
@@ -1899,11 +1999,24 @@ async function generateAgentTextForResolvedModel(
 
   try {
     const result = await run(resolved.model, resolved.route, primaryOptions);
+    const routerFailure = resolved.routerFailures.at(-1);
+    const failedAttempt = routerFailure?.attempts.at(-1);
+    const directFallback = routerFailure
+      ? {
+          from: failedAttempt
+            ? { provider: failedAttempt.provider, model: failedAttempt.model }
+            : resolved.route,
+          to: resolved.route,
+          reason: routerFailure.message,
+        }
+      : undefined;
     return {
       ...result,
       route: resolved.route,
-      routeSource: resolved.routeSource,
-      transport: resolved.transport,
+      routeSource: directFallback ? "fallback" : resolved.routeSource,
+      transport: directFallback ? "direct" : resolved.transport,
+      ...(directFallback ? { fallback: directFallback } : {}),
+      ...(routerFailure ? { clRouterFailure: routerFailure } : {}),
       ...(resolved.routerResponses.length > 0
         ? { clRouter: resolved.routerResponses.at(-1) }
         : {}),
@@ -1957,6 +2070,9 @@ async function generateAgentTextForResolvedModel(
       routeSource: "fallback",
       transport: "direct",
       fallback,
+      ...(resolved.routerFailures.length > 0
+        ? { clRouterFailure: resolved.routerFailures.at(-1) }
+        : {}),
     };
   }
 }
@@ -2029,6 +2145,7 @@ export async function generateAgentTextForOrg(
           }
         : undefined,
       options.maxOutputTokens,
+      resolved?.routerFailures.at(-1),
     );
     throw error;
   }
@@ -2100,6 +2217,7 @@ export async function generateAgentTextForPublicTask(
           }
         : undefined,
       options.maxOutputTokens,
+      resolved?.routerFailures.at(-1),
     );
     throw error;
   }
