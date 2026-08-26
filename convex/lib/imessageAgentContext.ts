@@ -24,6 +24,8 @@ export type ImessageHistoryMessage = {
   content: string;
   userName?: string;
   responseMessageId?: string;
+  routerRequestId?: string;
+  feedbackPromptedAt?: number;
   messageKind?: "conversation" | "workflow_status" | "channel_sync";
   toolArtifacts?: Array<{ type: string; data: unknown }>;
   usedTools?: string[];

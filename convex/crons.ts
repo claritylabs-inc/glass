@@ -41,6 +41,13 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  "retry response rating signals",
+  { minutes: 10 },
+  internalApi.actions.agentResponseFeedback.retryPending,
+  {},
+);
+
 crons.cron(
   "sweep extraction traces",
   "30 3 * * *",
@@ -52,6 +59,13 @@ crons.cron(
   "sweep model routing events",
   "45 3 * * *",
   internal.modelRoutingEvents.sweepExpired,
+  {},
+);
+
+crons.cron(
+  "sweep requirement extraction runs",
+  "50 3 * * *",
+  internalApi.requirementExtractionRuns.sweepExpired,
   {},
 );
 

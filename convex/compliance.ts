@@ -1635,6 +1635,7 @@ export const createRequirementSourceDocumentInternal = internalMutation({
   args: {
     orgId: v.id("organizations"),
     userId: v.id("users"),
+    extractionRunId: v.optional(v.string()),
     fileId: v.optional(v.id("_storage")),
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
@@ -1696,6 +1697,7 @@ export const createRequirementSourceDocumentInternal = internalMutation({
     const certificateHolderId = certificateHolderIds[0];
     return await ctx.db.insert("requirementSourceDocuments", {
       orgId: args.orgId,
+      extractionRunId: args.extractionRunId,
       certificateHolderId,
       certificateHolderIds:
         certificateHolderIds.length > 0 ? certificateHolderIds : undefined,

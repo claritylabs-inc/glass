@@ -1153,6 +1153,7 @@ export const run = internalAction({
       await ctx.runMutation(internal.threads.updateAgentMessage, {
         id: agentMsgId,
         content,
+        routerRequestId: turn.routerRequestId,
         referencedPolicyIds:
           presentedPolicyIds.size > 0
             ? [...presentedPolicyIds]

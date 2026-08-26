@@ -33,16 +33,15 @@ type RouterHealth = {
 };
 type Candidate = Route & {
   rank: number;
-  role: "primary" | "challenger" | "quarantined";
+  role: "primary" | "challenger" | "fallback" | "quarantined";
   trafficPct: number;
-  rollingScore: number | null;
-  onlineCallCount: number;
+  ratingScore?: number;
+  ratingCount?: number;
 };
 type Policy = {
   id: string;
   version: number;
   taskFamily: string;
-  qualityBar: number;
   explorationPct: number;
   frozen: boolean;
   frozenRoute: Route | null;
@@ -58,7 +57,8 @@ type Rollup = {
   fallbackCount: number;
   providerErrorCount: number;
   cacheHitCount: number;
-  feedbackCount: number;
+  positiveRatingCount?: number;
+  negativeRatingCount?: number;
   latencyP50Ms: number;
   latencyP95Ms: number;
   pricedCallCount: number;
@@ -823,7 +823,10 @@ export function RoutingTab({
           fallbacks: sum.fallbacks + row.fallbackCount,
           errors: sum.errors + row.providerErrorCount,
           cacheHits: sum.cacheHits + row.cacheHitCount,
-          feedback: sum.feedback + row.feedbackCount,
+          positiveRatings:
+            sum.positiveRatings + (row.positiveRatingCount ?? 0),
+          negativeRatings:
+            sum.negativeRatings + (row.negativeRatingCount ?? 0),
           pricedCalls: sum.pricedCalls + row.pricedCallCount,
           weightedP50: sum.weightedP50 + row.latencyP50Ms * row.callCount,
           peakP95: Math.max(sum.peakP95, row.latencyP95Ms),
@@ -835,7 +838,8 @@ export function RoutingTab({
           fallbacks: 0,
           errors: 0,
           cacheHits: 0,
-          feedback: 0,
+          positiveRatings: 0,
+          negativeRatings: 0,
           pricedCalls: 0,
           weightedP50: 0,
           peakP95: 0,
@@ -913,9 +917,10 @@ export function RoutingTab({
       description: "Weighted hourly median / highest hourly p95.",
     },
     {
-      label: "Quality feedback",
-      value: totals.feedback.toLocaleString(),
-      description: "Review or workflow quality signals attached to calls.",
+      label: "Human ratings",
+      value: `${totals.positiveRatings.toLocaleString()} up / ${totals.negativeRatings.toLocaleString()} down`,
+      description:
+        "Explicit user and operator ratings attached to exact model requests.",
     },
     {
       label: "Workflow failures",
@@ -1119,7 +1124,7 @@ export function RoutingTab({
           <OperationalPanel>
             <OperationalPanelHeader
               title="Task policies"
-              description="The provider and model each task executes, plus any challenger routes under evaluation."
+              description="The active route, rating-based challengers, and reserved static fallback for each task."
             />
             {dashboard?.policy.error ? (
               <OperationalPanelBody
@@ -1165,7 +1170,12 @@ export function RoutingTab({
                       <th
                         className={`px-4 py-2.5 ${typeStyle("caption.default")}`}
                       >
-                        Score / calls
+                        Static fallback
+                      </th>
+                      <th
+                        className={`px-4 py-2.5 ${typeStyle("caption.default")}`}
+                      >
+                        Primary rating / votes
                       </th>
                     </tr>
                   </thead>
@@ -1177,6 +1187,35 @@ export function RoutingTab({
                       const challengers = policy.candidates.filter(
                         (candidate) => candidate.role === "challenger",
                       );
+                      const fallback = policy.candidates.find(
+                        (candidate) => candidate.role === "fallback",
+                      );
+                      const primaryRatingCounts = (
+                        dashboard?.rollups.data ?? []
+                      )
+                        .filter(
+                          (row) =>
+                            row.taskFamily === policy.taskFamily &&
+                            row.provider === primary?.provider &&
+                            row.model === primary?.model,
+                        )
+                        .reduce(
+                          (counts, row) => ({
+                            positive:
+                              counts.positive +
+                              (row.positiveRatingCount ?? 0),
+                            negative:
+                              counts.negative +
+                              (row.negativeRatingCount ?? 0),
+                          }),
+                          { positive: 0, negative: 0 },
+                        );
+                      const primaryRatingCount =
+                        primaryRatingCounts.positive +
+                        primaryRatingCounts.negative;
+                      const primaryRatingScore =
+                        (primaryRatingCounts.positive + 5) /
+                        (primaryRatingCount + 10);
                       return (
                         <tr key={policy.id}>
                           <td
@@ -1197,12 +1236,14 @@ export function RoutingTab({
                               : "None"}
                           </td>
                           <td className="px-4 py-3 text-muted-foreground">
-                            {primary?.rollingScore === null ||
-                            primary?.rollingScore === undefined
+                            {routeLabel(fallback)}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {!primary
                               ? "Unscored"
-                              : formatPercent(primary.rollingScore)}
+                              : formatPercent(primaryRatingScore)}
                             {" · "}
-                            {(primary?.onlineCallCount ?? 0).toLocaleString()}
+                            {primaryRatingCount.toLocaleString()}
                           </td>
                         </tr>
                       );
