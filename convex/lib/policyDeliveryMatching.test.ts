@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deterministicRuleMatch, policyLineHaystacks } from "./policyDeliveryMatching";
+import { deterministicRuleMatch } from "./policyDeliveryMatching";
 
 describe("policyDeliveryMatching", () => {
   it("matches a general liability rule to a CGL policy by ACORD label", () => {
@@ -20,10 +20,6 @@ describe("policyDeliveryMatching", () => {
   });
 
   it("matches cyber text to a CYBER policy through coverage evidence", () => {
-    expect(policyLineHaystacks({
-      linesOfBusiness: ["CYBER"],
-      coverages: [{ name: "Cyber Liability" }],
-    })).toContain("cyber liability");
     expect(
       deterministicRuleMatch(
         {

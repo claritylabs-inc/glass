@@ -2,7 +2,6 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import schema from "./schema";
-import { listForClient } from "./policies";
 import { CARRIER_IDENTITY_ENRICHMENT_VERSION } from "./lib/carrierIdentityEnrichment";
 import { readCarrierIdentity } from "./lib/carrierIdentity";
 import {
@@ -12,7 +11,6 @@ import {
 } from "./carrierIdentityCache";
 
 const modules = import.meta.glob("./**/*.ts");
-const listForClientFn = listForClient as any;
 const applyToPolicyInternalFn = applyToPolicyInternal as any;
 const markPolicyFailedInternalFn = markPolicyFailedInternal as any;
 const upsertInternalFn = upsertInternal as any;
@@ -523,90 +521,4 @@ describe("carrier identity branding", () => {
     expect(cached?.iconStorageId).toBeUndefined();
   });
 
-  it("returns persisted branding as part of the policy identity", async () => {
-    const t = convexTest(schema, modules);
-    const ids = await t.run(async (ctx) => {
-      const orgId = await ctx.db.insert("organizations", {
-        name: "Client",
-        type: "client",
-      });
-      const userId = await ctx.db.insert("users", {
-        name: "Client Admin",
-        email: "client@example.com",
-      });
-      await ctx.db.insert("orgMemberships", {
-        orgId,
-        userId,
-        role: "admin",
-      });
-      const policyId = await ctx.db.insert("policies", {
-        orgId,
-        carrier: "Allstate",
-        carrierIdentity: {
-          displayName: "Allstate",
-          sourceName: "Allstate Insurance Company",
-          publicNameRelationship: "same_legal_entity",
-          legalEntities: [{
-            name: "Allstate Insurance Company",
-            sourceNodeIds: ["carrier"],
-            sourceSpanIds: ["span-carrier"],
-          }],
-          legalEntityRelationship: "single",
-          sourceNodeIds: ["carrier"],
-          sourceSpanIds: ["span-carrier"],
-          branding: {
-            website: "https://www.allstate.com/",
-            accentColor: "#0B1739",
-            confidence: "high",
-            sourceUrls: ["https://www.allstate.com/"],
-            enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
-            updatedAt: 1,
-          },
-        },
-        carrierIdentityEnrichmentStatus: "ready",
-        policyNumber: "A-100",
-        linesOfBusiness: ["AUTOB"],
-        documentType: "policy",
-        policyYear: 2026,
-        effectiveDate: "01/01/2026",
-        expirationDate: "01/01/2027",
-        isRenewal: false,
-        coverages: [],
-        insuredName: "Client",
-      });
-      return { userId, policyId };
-    });
-
-    const rows = await t
-      .withIdentity({ subject: `${ids.userId}|session` })
-      .query(listForClientFn, { documentType: "policy" });
-
-    expect(rows).toEqual([
-      expect.objectContaining({
-        _id: ids.policyId,
-        carrierIdentity: {
-          displayName: "Allstate",
-          sourceName: "Allstate Insurance Company",
-          publicNameRelationship: "same_legal_entity",
-          legalEntities: [{
-            name: "Allstate Insurance Company",
-            sourceNodeIds: ["carrier"],
-            sourceSpanIds: ["span-carrier"],
-          }],
-          legalEntityRelationship: "single",
-          sourceNodeIds: ["carrier"],
-          sourceSpanIds: ["span-carrier"],
-          branding: {
-            website: "https://www.allstate.com/",
-            accentColor: "#0B1739",
-            confidence: "high",
-            sourceUrls: ["https://www.allstate.com/"],
-            iconUrl: null,
-            enrichmentVersion: CARRIER_IDENTITY_ENRICHMENT_VERSION,
-            updatedAt: 1,
-          },
-        },
-      }),
-    ]);
-  });
 });

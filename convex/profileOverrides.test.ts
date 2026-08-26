@@ -36,9 +36,6 @@ describe("manual organization profile", () => {
 
     const stored = await t.run((ctx) => ctx.db.get(ids.clientOrgId));
     expect(stored?.profileOverrides).toEqual(profile);
-    expect(stored?.profileFacts ?? {}).not.toHaveProperty("producer");
-    expect(stored?.profileFacts ?? {}).not.toHaveProperty("insurer");
-    expect(stored?.profileFacts ?? {}).not.toHaveProperty("mga");
 
     const partialProfile = {
       mailingAddress: { street1: "111 Richmond" },

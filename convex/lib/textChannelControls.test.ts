@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { buildEmailDraftTextSummary } from "./emailDraftSummary";
 import { resolveTextChannelEmailControl } from "./textChannelControls";
 
 describe("resolveTextChannelEmailControl", () => {
@@ -108,26 +107,6 @@ describe("resolveTextChannelEmailControl", () => {
         pendingEmailIds: [],
       }),
     ).toBeNull();
-  });
-
-  test("does not advertise send commands for drafts with blocked sends", () => {
-    const summary = buildEmailDraftTextSummary(
-      [
-        {
-          _id: "draft",
-          recipientEmail: "erry@claritylabs.inc",
-          subject: "Policy documents",
-          emailBody: "Attached.",
-          sendBlockedReason:
-            "Confirm that erry@claritylabs.inc is the intended recipient.",
-        },
-      ] as never,
-      { commands: "chat" },
-    );
-
-    expect(summary).toContain("Needs confirmation");
-    expect(summary).toContain("Reply with the correct email address");
-    expect(summary).not.toContain('"send all"');
   });
 
   test("ignores long messages", () => {

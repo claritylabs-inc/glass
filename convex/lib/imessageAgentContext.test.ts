@@ -24,7 +24,7 @@ describe("iMessage agent context helpers", () => {
     expect(
       imessageAgentTaskForAttachments([
         {
-          filename: "contact-card.png",
+          filename: "image.png",
           contentType: "image/png",
           size: 5,
           buffer: Buffer.from("image"),

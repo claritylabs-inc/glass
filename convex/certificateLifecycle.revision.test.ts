@@ -7,10 +7,76 @@ import { internal } from "./_generated/api";
 import { policyCertificateDedupeKey } from "./lib/certificateIdentity";
 
 const modules = import.meta.glob("./**/*.ts");
+const generateForOrg = internal.certificates.generateForOrg as any;
 const recordIssuedVersion =
   internal.certificateLifecycle.recordIssuedVersionInternal as any;
 
 describe("certificate holder revision", () => {
+  test("generates idempotently and preserves holder country across reissue", async () => {
+    const t = convexTest(schema, modules);
+    const { orgId, policyId } = await t.run(async (ctx) => {
+      const orgId = await ctx.db.insert("organizations", {
+        name: "Client",
+        type: "client",
+      });
+      const policyId = await ctx.db.insert("policies", {
+        orgId,
+        carrier: "Carrier",
+        policyNumber: "COUNTRY-1",
+        linesOfBusiness: ["CGL"],
+        documentType: "policy",
+        policyYear: 2026,
+        effectiveDate: "2026-01-01",
+        expirationDate: "2027-01-01",
+        isRenewal: false,
+        coverages: [],
+        insuredName: "Client",
+        pipelineStatus: "complete",
+        extractionDataStage: "final",
+      });
+      return { orgId, policyId };
+    });
+    const request = {
+      orgId,
+      policyId,
+      holderName: "Certificate Holder",
+      addressLine1: "100 Main Street",
+      city: "San Francisco",
+      state: "CA",
+      postalCode: "94105",
+      country: "United States",
+      source: "api" as const,
+    };
+
+    await expect(t.action(generateForOrg, request)).resolves.toMatchObject({
+      status: "generated",
+      versionNumber: 1,
+    });
+    await expect(t.action(generateForOrg, request)).resolves.toMatchObject({
+      status: "existing",
+      versionNumber: 1,
+    });
+    await expect(
+      t.action(generateForOrg, { ...request, forceReissue: true }),
+    ).resolves.toMatchObject({ status: "generated", versionNumber: 2 });
+
+    const { holder, versions } = await t.run(async (ctx) => ({
+      holder: (await ctx.db.query("certificateHolders").collect())[0],
+      versions: await ctx.db.query("certificateVersions").collect(),
+    }));
+    expect(holder?.address?.country).toBe("United States");
+    expect(versions).toHaveLength(2);
+    expect(versions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          holderSnapshot: expect.objectContaining({
+            address: expect.objectContaining({ country: "United States" }),
+          }),
+        }),
+      ]),
+    );
+  });
+
   test("forks shared holder details while preserving other certificates and prior snapshots", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {

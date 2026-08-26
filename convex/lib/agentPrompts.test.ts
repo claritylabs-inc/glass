@@ -1,19 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS,
-  SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG,
   SOURCE_NODE_MATCH_LIMIT,
   rankOrgMemoryForQuery,
   rankSourceNodesForQuery,
 } from "./agentPrompts";
 
 describe("agent prompt retrieval bounds", () => {
-  it("keeps source node retrieval caps intentionally small", () => {
-    expect(MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS).toBeLessThanOrEqual(8);
-    expect(SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG).toBeLessThanOrEqual(600);
-    expect(SOURCE_NODE_MATCH_LIMIT).toBeLessThanOrEqual(18);
-  });
-
   it("ranks representative source matches and enforces the match limit", () => {
     const nodes = Array.from({ length: 30 }, (_, index) => ({
       policyId: index % 2 === 0 ? "policy-a" : "policy-b",

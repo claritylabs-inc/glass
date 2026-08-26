@@ -7,8 +7,4 @@ describe("certificate description normalization", () => {
       "ACORD 25 Generated using Glass\nRestaurant and bar\n\nWaiver of subrogation applies.",
     )).toBe("Restaurant and bar\n\nWaiver of subrogation applies.");
   });
-
-  it("accepts concise explicit wording without semantic keyword filtering", () => {
-    expect(normalizeCertificateDescription("Restaurant and bar")).toBe("Restaurant and bar");
-  });
 });

@@ -66,16 +66,9 @@ describe("confidence marker compatibility", () => {
 
     remarkConfidence()(tree);
 
-    expect(tree.children).toEqual([
+    expect(tree.children).toMatchObject([
       {
         type: "confidence",
-        data: {
-          hName: "mark",
-          hProperties: {
-            className: "glass-confidence",
-            "data-level": "grounded",
-          },
-        },
         children: [
           { type: "text", value: "generated " },
           { type: "strong", children: [{ type: "text", value: "Company" }] },

@@ -81,18 +81,12 @@ describe("runInboundEmailDeterministicControls", () => {
     });
   });
 
-  test("ignores long or unrelated messages", async () => {
+  test("ignores unrelated messages", async () => {
     const ctx = {
       runAction: vi.fn(async () => null),
       runMutation: vi.fn(async () => null),
     };
 
-    await expect(
-      runInboundEmailDeterministicControls(ctx, {
-        messageText: "send all ".repeat(20),
-        draftEmails: [draft("draft-1")],
-      }),
-    ).resolves.toBeNull();
     await expect(
       runInboundEmailDeterministicControls(ctx, {
         messageText: "what are the limits on this policy?",

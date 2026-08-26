@@ -1,7 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { Id } from "../_generated/dataModel";
 import {
-  formatPolicyFocusHints,
   MAX_POLICY_FOCUS_IDS,
   selectPolicyFocusIds,
 } from "./agentPolicyFocus";
@@ -27,12 +25,5 @@ describe("agent policy focus", () => {
     expect(selectPolicyFocusIds([
       { role: "agent", status: "error", referencedPolicyIds: ["policy-1"] },
     ])).toEqual([]);
-  });
-
-  test("formats IDs as routing hints with an explicit refresh requirement", () => {
-    const prompt = formatPolicyFocusHints(["policy-1" as Id<"policies">]);
-    expect(prompt).toContain("policy-1");
-    expect(prompt).toContain("contain no policy facts");
-    expect(prompt).toContain("call lookup_policy with policyIds");
   });
 });

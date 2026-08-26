@@ -7,12 +7,15 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import {
   archiveRequirement,
+  createRequirementSourceDocumentInternal,
   listRequirements,
   upsertRequirement,
 } from "./compliance";
 
 const modules = import.meta.glob("./**/*.ts");
 const archiveRequirementFn = archiveRequirement as any;
+const createRequirementSourceDocumentFn =
+  createRequirementSourceDocumentInternal as any;
 const listRequirementsFn = listRequirements as any;
 const upsertRequirementFn = upsertRequirement as any;
 
@@ -53,6 +56,56 @@ async function seedOperatorComplianceFixture() {
 }
 
 describe("operator client compliance management", () => {
+  test("keeps ordered certificate-holder contacts on an imported source", async () => {
+    const fixture = await seedOperatorComplianceFixture();
+    const sourceDocumentId = (await fixture.t
+      .withIdentity({ subject: `${fixture.operatorUserId}|session` })
+      .mutation(
+        createRequirementSourceDocumentFn,
+        {
+          orgId: fixture.clientOrgId,
+          userId: fixture.operatorUserId,
+          sourceType: "client_contract",
+          title: "Insurance requirements",
+          holders: [
+            {
+              displayName: "Primary Holder",
+              contactName: "Primary Contact",
+              email: "primary@example.test",
+            },
+            {
+              displayName: "Secondary Holder",
+              email: "secondary@example.test",
+            },
+          ],
+        },
+      )) as Id<"requirementSourceDocuments">;
+
+    const result = await fixture.t.run(async (ctx) => {
+      const source = await ctx.db.get(sourceDocumentId);
+      const holders = await Promise.all(
+        (source?.certificateHolderIds ?? []).map((id) => ctx.db.get(id)),
+      );
+      return { source, holders };
+    });
+
+    expect(result.source?.certificateHolderIds).toHaveLength(2);
+    expect(result.source?.certificateHolderId).toBe(
+      result.source?.certificateHolderIds?.[0],
+    );
+    expect(result.holders).toMatchObject([
+      {
+        displayName: "Primary Holder",
+        contactName: "Primary Contact",
+        email: "primary@example.test",
+      },
+      {
+        displayName: "Secondary Holder",
+        email: "secondary@example.test",
+      },
+    ]);
+  });
+
   test("lists, adds, edits, archives, and audits client requirements", async () => {
     const fixture = await seedOperatorComplianceFixture();
     const operator = fixture.t.withIdentity({

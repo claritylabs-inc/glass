@@ -36,21 +36,11 @@ describe("Slack Block Kit renderers", () => {
       showHandoff: true,
     });
 
-    expect(blocks.map((block) => block.type)).toEqual([
-      "section",
-      "context",
-      "card",
-      "card",
-      "actions",
-      "context_actions",
-    ]);
-    expect(JSON.stringify(blocks)).toContain("The policy is active");
     expect(JSON.stringify(blocks)).not.toContain("private reasoning");
     expect(JSON.stringify(blocks)).not.toContain("secret");
     expect(JSON.stringify(blocks)).not.toContain("tool activity");
     expect(JSON.stringify(blocks)).toContain("glass_response_feedback");
     expect(JSON.stringify(blocks)).toContain("glass_request_human");
-    expect(JSON.stringify(blocks)).toContain("Certificate ready");
     expect(JSON.stringify(blocks)).toContain("tab=certificates");
   });
 

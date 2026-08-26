@@ -103,7 +103,7 @@ const RequirementSchema = z.object({
   sourcePageEnd: z.number().int().positive().nullable(),
 });
 
-export const RequirementImportSchema = z.object({
+const RequirementImportSchema = z.object({
   certificateHolders: z.array(CertificateHolderSchema).max(20),
   requirements: z.array(RequirementSchema).max(32),
 });
@@ -174,7 +174,7 @@ function optionalNumber(value: number | null | undefined) {
     : undefined;
 }
 
-export function normalizeImportedCertificateHolder(
+function normalizeImportedCertificateHolder(
   holder: ImportedCertificateHolder,
 ): RequirementSourceHolderInput {
   const address = holder.address
