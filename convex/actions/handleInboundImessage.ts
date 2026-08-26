@@ -633,7 +633,6 @@ export const processInbound = internalAction({
           platform: "imessage",
           canSendEmail: emailIdentity.canSend,
           emailUnavailableReason: emailIdentity.reason,
-          autoSendEmails: org.autoSendEmails === true,
         }) +
         "\n\n" +
         buildImessageRosterContext({
@@ -800,6 +799,7 @@ export const processInbound = internalAction({
                 orgId,
                 userId: user._id,
                 threadId,
+                sourceUserMessageId: inboundThreadMessageId,
                 routingParentId: `${eventKey}:agent`,
                 channel: "imessage",
                 fromHeader: emailIdentity.fromHeader,
@@ -823,7 +823,6 @@ export const processInbound = internalAction({
                 allowedRecipients,
                 availableAttachments: availableEmailAttachments,
                 referencedPolicyIds: emailReferencedPolicyIds,
-                autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 conversationContext:
                   recentConversationContext +
@@ -895,6 +894,7 @@ export const processInbound = internalAction({
         const visibleEmailResponseBody = cleanAgentMarkdownForTransport(
           emailResult.responseBody,
         );
+        responseText = visibleEmailResponseBody;
         pendingEmailIdForResponse = emailResult.pendingEmailId;
         if (
           emailResult.status === "draft" ||
@@ -922,7 +922,6 @@ export const processInbound = internalAction({
               pendingEmailId: draft._id,
               payload: confirmation.payload,
             };
-            if (!responseText.trim()) responseText = visibleEmailResponseBody;
           }
         }
         if (emailResult.status === "pending") {
@@ -933,6 +932,7 @@ export const processInbound = internalAction({
           });
           if (sent) {
             responseAlreadySent = true;
+            responseText = "";
             await ctx.runMutation(internal.threads.insertImessageMessage, {
               threadId,
               orgId,

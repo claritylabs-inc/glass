@@ -73,6 +73,7 @@ export async function restoreCancelledEmailAsDraft(
     status: "draft",
     scheduledSendTime: 0,
     sentMessageId: undefined,
+    explicitSendAuthorization: undefined,
     coiBatchAuthorization: undefined,
   });
   await invalidateDraftConfirmations(ctx, pending, "draft_restored");
@@ -116,7 +117,10 @@ export async function cancelDraftOrPendingEmail(
     return false;
   }
 
-  await ctx.db.patch(id, { status: "cancelled" });
+  await ctx.db.patch(id, {
+    status: "cancelled",
+    explicitSendAuthorization: undefined,
+  });
   await invalidateDraftConfirmations(ctx, pending, "draft_cancelled");
 
   if (pending.threadMessageId) {

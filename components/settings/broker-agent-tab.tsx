@@ -20,7 +20,6 @@ import { typeStyle } from "@/lib/typography";
 
 type AgentSettingsArgs = {
   chatEmailNotifications: boolean;
-  autoSendEmails: boolean;
   bccRequesterOnAgentEmails: boolean;
   emailSendDelay: number;
 };
@@ -63,14 +62,12 @@ export function BrokerAgentTab() {
   const org = viewerOrg?.org as
     | {
         chatEmailNotifications?: boolean;
-        autoSendEmails?: boolean;
         bccRequesterOnAgentEmails?: boolean;
         emailSendDelay?: number;
       }
     | undefined;
 
   const [chatEmailNotifications, setChatEmailNotifications] = useState(false);
-  const [autoSendEmails, setAutoSendEmails] = useState(false);
   const [bccRequesterOnAgentEmails, setBccRequesterOnAgentEmails] =
     useState(true);
   const [emailSendDelay, setEmailSendDelay] = useState<number>(5);
@@ -81,7 +78,6 @@ export function BrokerAgentTab() {
   useEffect(() => {
     if (org && !hydratedRef.current) {
       setChatEmailNotifications(org.chatEmailNotifications ?? false);
-      setAutoSendEmails(org.autoSendEmails ?? false);
       setBccRequesterOnAgentEmails(org.bccRequesterOnAgentEmails ?? true);
       setEmailSendDelay(org.emailSendDelay ?? 5);
       hydratedRef.current = true;
@@ -93,16 +89,10 @@ export function BrokerAgentTab() {
     () =>
       JSON.stringify({
         chatEmailNotifications,
-        autoSendEmails,
         bccRequesterOnAgentEmails,
         emailSendDelay,
       }),
-    [
-      autoSendEmails,
-      bccRequesterOnAgentEmails,
-      chatEmailNotifications,
-      emailSendDelay,
-    ],
+    [bccRequesterOnAgentEmails, chatEmailNotifications, emailSendDelay],
   );
 
   const saveAgentSettings = useCallback(
@@ -116,7 +106,6 @@ export function BrokerAgentTab() {
     mutationName: "settings.agent.updateOrg",
     args: {
       chatEmailNotifications,
-      autoSendEmails,
       bccRequesterOnAgentEmails,
       emailSendDelay,
     },
@@ -149,13 +138,6 @@ export function BrokerAgentTab() {
             checked={chatEmailNotifications}
             onCheckedChange={() => setChatEmailNotifications((v) => !v)}
             label="Toggle email notifications for chat responses"
-          />
-          <AgentSwitchRow
-            title="Auto-send emails"
-            description="When off, drafted emails require confirmation before sending."
-            checked={autoSendEmails}
-            onCheckedChange={() => setAutoSendEmails((v) => !v)}
-            label="Toggle auto-send emails"
           />
           <AgentSwitchRow
             title="BCC requester"

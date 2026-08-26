@@ -559,7 +559,9 @@ export default defineSchema({
     primaryInsuranceContactId: v.optional(v.id("users")),
     // Agent settings
     chatEmailNotifications: v.optional(v.boolean()), // send email notifications for chat responses in email threads
-    autoSendEmails: v.optional(v.boolean()), // when false, drafted emails from chat require confirmation before sending
+    // Deprecated widening field. Remove after runLegacyAutoSendEmailsCleanup
+    // completes on every deployed environment.
+    autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()), // default true: BCC requesting team member on outbound agent emails
     emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
     featureFlags: v.optional(v.record(v.string(), v.boolean())),
@@ -4147,6 +4149,12 @@ export default defineSchema({
     scheduledSendTime: v.number(), // timestamp when it should actually send
     sentMessageId: v.optional(v.string()), // Resend message ID after send
     sendBlockedReason: v.optional(v.string()),
+    explicitSendAuthorization: v.optional(
+      v.object({
+        actorUserId: v.id("users"),
+        sourceMessageId: v.id("threadMessages"),
+      }),
+    ),
     // For updating the chat message after send
     chatMessageId: v.optional(v.id("threadMessages")),
     threadMessageId: v.optional(v.id("threadMessages")),

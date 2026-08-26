@@ -1158,7 +1158,6 @@ export const processInbound = internalAction({
         systemPrompt +
         buildChannelInstructions({
           platform: "email",
-          autoSendEmails: org.autoSendEmails === true,
           effectiveMode,
         }) +
         buildPolicyToolInstructions(10) +
@@ -1255,6 +1254,7 @@ export const processInbound = internalAction({
                 orgId,
                 userId: primaryUserId,
                 threadId: unifiedThreadId,
+                sourceUserMessageId: inboundMessageId,
                 routingParentId: String(inboundMessageId),
                 channel: "email",
                 fromHeader,
@@ -1305,7 +1305,6 @@ export const processInbound = internalAction({
                 ],
                 availableAttachments: availableEmailAttachments,
                 referencedPolicyIds: emailReferencedPolicyIds,
-                autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 conversationContext: [
                   `Inbound email from ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,

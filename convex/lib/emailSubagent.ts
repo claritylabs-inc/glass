@@ -10,6 +10,10 @@ import { generateAgentTextForOrg } from "./models";
 import { buildAgentToolExecutors } from "./agentToolExecutors";
 import type { AgentScope } from "./agentScope";
 import { extractEmailAddress, normalizeEmailAddress } from "./emailAddress";
+import {
+  isActorBoundExplicitEmailSendSource,
+  sourceExplicitlyNamesEmailAddress,
+} from "./emailSendIntent";
 import { cleanAgentMarkdownForTransport } from "./transportRenderers";
 import {
   queueEmailDraftArtifact,
@@ -164,6 +168,7 @@ type EmailExpertContext = {
   orgId: Id<"organizations">;
   userId?: Id<"users">;
   threadId?: Id<"threads">;
+  sourceUserMessageId?: Id<"threadMessages">;
   chatMessageId?: Id<"threadMessages">;
   routingParentId: string;
   channel: "web" | "email" | "imessage" | "slack" | "mcp";
@@ -188,7 +193,6 @@ type EmailExpertContext = {
   unknownRecipientMessage?: string;
   availableAttachments?: EmailAttachmentMeta[];
   referencedPolicyIds?: Id<"policies">[];
-  autoSendEmails?: boolean;
   emailSendDelay?: number;
   conversationContext?: string;
   onResult?: (result: EmailSubagentResult) => void;
@@ -259,6 +263,11 @@ export function buildEmailExpertTool(
         .string()
         .optional()
         .describe("Email body if already drafted or approved."),
+      deliveryIntent: z
+        .enum(["draft", "send"])
+        .describe(
+          "Use send only when the current user message affirmatively asks Glass to send, email, forward, or deliver now. Use draft for draft-only requests, questions about sending, negated sends, and uncertain intent.",
+        ),
       cc: z.array(z.string()).optional().describe("CC email addresses."),
       bcc: z.array(z.string()).optional().describe("BCC email addresses."),
       recipientDirection: z
@@ -302,7 +311,7 @@ export function buildEmailExpertTool(
         )
         .optional()
         .describe(
-          "Documents the user explicitly asked to attach. For certificate/COI requests, use kind 'coi' only; do not include original_policy unless the user separately asked for the original/full policy PDF.",
+          "Documents the user explicitly asked to attach. Use uploaded_file for a PDF already generated or attached in this conversation, including follow-ups like 'send that'. Use coi only when a new certificate must be generated. Do not include original_policy unless the user separately asked for the original/full policy PDF.",
         ),
     }),
     execute: async (input): Promise<EmailSubagentResult> => {
@@ -324,6 +333,7 @@ async function runEmailSubagent(
     recipientName?: string;
     subject?: string;
     body?: string;
+    deliveryIntent: "draft" | "send";
     cc?: string[];
     bcc?: string[];
     recipientDirection?: "requester" | "broker" | "explicit";
@@ -331,6 +341,29 @@ async function runEmailSubagent(
     attachments?: RequestedEmailAttachment[];
   },
 ): Promise<EmailSubagentResult> {
+  const sourceUserMessage = context.sourceUserMessageId
+    ? await ctx.runQuery(internal.threads.getMessageInternal, {
+        id: context.sourceUserMessageId,
+      })
+    : null;
+  const explicitSendAuthorization =
+    input.deliveryIntent === "send" &&
+    context.userId &&
+    context.threadId &&
+    context.sourceUserMessageId &&
+    isActorBoundExplicitEmailSendSource({
+      message: sourceUserMessage,
+      orgId: context.orgId,
+      threadId: context.threadId,
+      actorUserId: context.userId,
+      actorEmail: context.senderEmail,
+    })
+      ? {
+          actorUserId: context.userId,
+          sourceMessageId: context.sourceUserMessageId,
+        }
+      : undefined;
+  const explicitSendRequested = explicitSendAuthorization !== undefined;
   const preparedAttachments: EmailAttachmentMeta[] = [];
   const brokerRequested =
     input.recipientDirection === "broker" &&
@@ -659,7 +692,6 @@ async function runEmailSubagent(
       ),
     ];
     const attachments = uniqueAttachments(preparedAttachments);
-    const autoSend = context.autoSendEmails === true && !brokerRequested;
     const referencedPolicyIds =
       sourcePolicyIds.size > 0 ? [...sourcePolicyIds] : undefined;
 
@@ -679,7 +711,13 @@ async function runEmailSubagent(
       .filter((email): email is string => !!email)
       .filter(
         (email) =>
-          allowedRecipients.length > 0 && !allowedRecipients.includes(email),
+          allowedRecipients.length > 0 &&
+          !allowedRecipients.includes(email) &&
+          !(
+            explicitSendRequested &&
+            sourceUserMessage &&
+            sourceExplicitlyNamesEmailAddress(sourceUserMessage.content, email)
+          ),
       );
     if (
       (context.requireKnownRecipient || brokerRequested) &&
@@ -701,7 +739,11 @@ async function runEmailSubagent(
       );
     }
 
-    if (uncertainty.length > 0 || !autoSend) {
+    if (
+      uncertainty.length > 0 ||
+      brokerRequested ||
+      !explicitSendAuthorization
+    ) {
       const status = uncertainty.length > 0 ? "needs_confirmation" : "draft";
       const sendBlockedReason =
         uncertainty.length > 0 ? uncertainty.join(" ") : undefined;
@@ -773,6 +815,7 @@ async function runEmailSubagent(
         attachments,
         referencedPolicyIds,
         scheduledSendTime,
+        explicitSendAuthorization,
       });
       const pendingEmailId =
         persistedDraftId ??
@@ -795,6 +838,7 @@ async function runEmailSubagent(
           renderedHtml: emailPayload.html,
           attachments: attachments.length > 0 ? attachments : undefined,
           referencedPolicyIds,
+          explicitSendAuthorization,
         }));
       await ctx.scheduler.runAfter(
         sendDelay * 1000,
@@ -830,7 +874,10 @@ async function runEmailSubagent(
         internal.actions.sendPendingEmail.sendDraftInternal,
         {
           id: persistedDraftId,
-          authorization: { kind: "organization_auto_send" },
+          authorization: {
+            kind: "channel_explicit_action",
+            ...explicitSendAuthorization,
+          },
         },
       );
       const sentDraft = await ctx.runQuery(
@@ -916,8 +963,9 @@ Be careful by default:
 - Never invent broker, carrier, underwriter, General Agent, client, or vendor recipient emails. If a requested recipient is not supplied or present in known contacts/context, ask for the missing contact information instead.
 - If the request says "email me", "send me", or "email this to me", use the supplied default recipient as the recipient.
 - If the subject, body, or requested attachments are ambiguous, do not send.
-- If auto-send is disabled, always draft first. A separate stateful confirmation path owns user approval.
+- Respect deliveryIntent. An affirmative current-turn send request may send the generated draft; draft-only, negated, advisory, or uncertain requests must remain drafts. The final sender independently validates the persisted user message.
 - Attach original policy PDFs or generated COIs when requested. Never claim an attachment is included unless you used an attachment tool or it was already attached.
+- If the requested document is already listed in availableUploadedAttachments, attach that exact saved file. For follow-ups like "send that" after Glass generated a COI, reuse the matching saved COI instead of generating another certificate.
 - Available uploaded attachments may include files saved from connected mailboxes, including .eml exports of source emails. If the user asks to attach the email itself or proof from an email body, attach the saved .eml export with attach_uploaded_file.
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
 - When drafting COIs for multiple recipients, each recipient's email must include only that recipient's generated COI, not the full batch of generated COIs.
@@ -942,6 +990,7 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
             defaultRecipientName: directedRecipientName,
             subject: input.subject ?? context.subjectHint,
             body: input.body,
+            deliveryIntent: input.deliveryIntent,
             cc: defaultCc,
             bcc: defaultBcc,
             recipientDirection: input.recipientDirection,

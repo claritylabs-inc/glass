@@ -979,7 +979,6 @@ export const updateOrg = mutation({
       ),
     ),
     chatEmailNotifications: v.optional(v.boolean()),
-    autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()),
     emailSendDelay: v.optional(v.number()),
     allowedEmails: v.optional(v.array(v.string())),
@@ -1884,6 +1883,22 @@ export const getInternal = internalQuery({
   args: { id: v.id("organizations") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.id);
+  },
+});
+
+export const verifyLegacyAutoSendEmailsCleanup = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const remaining = await ctx.db
+      .query("organizations")
+      .filter((query) =>
+        query.neq(query.field("autoSendEmails"), undefined),
+      )
+      .first();
+    return {
+      complete: remaining === null,
+      remainingSampleId: remaining?._id,
+    };
   },
 });
 
