@@ -15,6 +15,8 @@ import {
 } from "../convex/lib/models";
 import {
   EXTRACTION_QUALITY_MODEL,
+  LANGUAGE_MODEL_CATALOG,
+  MODEL_DISPLAY_NAMES,
   OPERATOR_MODEL_ROUTE_GROUPS,
   OPERATOR_WEB_RETRIEVAL_PROVIDERS,
   defaultModelRouteForId,
@@ -99,6 +101,41 @@ describe("model routing", () => {
       }),
     ).toBe(true);
     expect(isRetiredModelRoute(MODEL_ROUTING.extraction)).toBe(false);
+  });
+
+  test("offers the current Fireworks query-reason challengers as explicit routes", () => {
+    const museGlimmer = FIREWORKS_MODEL_IDS.museGlimmer30B;
+    const inkling = FIREWORKS_MODEL_IDS.inkling;
+
+    expect(LANGUAGE_MODEL_CATALOG.fireworks).toEqual(
+      expect.arrayContaining([museGlimmer, inkling]),
+    );
+    expect(MODEL_DISPLAY_NAMES[museGlimmer]).toBe("Muse Glimmer 30B");
+    expect(MODEL_DISPLAY_NAMES[inkling]).toBe("Inkling");
+    expect(
+      modelRouteSupportsTask("chat", {
+        provider: "fireworks",
+        model: museGlimmer,
+      }),
+    ).toBe(true);
+    expect(
+      modelRouteSupportsTask("chat", {
+        provider: "fireworks",
+        model: inkling,
+      }),
+    ).toBe(true);
+    expect(
+      modelRouteSupportsTask("chat_vision", {
+        provider: "fireworks",
+        model: museGlimmer,
+      }),
+    ).toBe(true);
+    expect(
+      modelRouteSupportsTask("chat_vision", {
+        provider: "fireworks",
+        model: inkling,
+      }),
+    ).toBe(true);
   });
 
   test("normalizes generated text from root and step-level results", () => {

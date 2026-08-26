@@ -22,8 +22,6 @@ import {
 } from "../lib/complianceTypes";
 import { ACORD_LOB_LABELS, isLobCode } from "../lib/linesOfBusiness";
 
-const internalApi = internal as any;
-
 const COMMON_COMMERCIAL_LOBS = [
   "CGL",
   "AUTOB",
@@ -421,7 +419,7 @@ async function runRequirementImport(
   const trigger = titlePrefix === "Mailbox requirements"
     ? "mailbox_import" as const
     : "web_import" as const;
-  await ctx.runMutation(internalApi.requirementExtractionRuns.start, {
+  await ctx.runMutation(internal.requirementExtractionRuns.start, {
     runId,
     orgId: args.orgId,
     userId: context.userId,
@@ -435,7 +433,7 @@ async function runRequirementImport(
   const failRun = async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     try {
-      await ctx.runMutation(internalApi.requirementExtractionRuns.fail, {
+      await ctx.runMutation(internal.requirementExtractionRuns.fail, {
         runId,
         error: message,
       });
@@ -468,7 +466,7 @@ async function runRequirementImport(
     await failRun(error);
     throw error;
   }
-  await ctx.runMutation(internalApi.requirementExtractionRuns.recordSource, {
+  await ctx.runMutation(internal.requirementExtractionRuns.recordSource, {
     runId,
     parserBackend: fileExtraction?.parserBackend ?? "plain_text",
     sourceCharacterCount: sourceText.length,
@@ -539,7 +537,7 @@ async function runRequirementImport(
   const normalizedRequirements = result.object.requirements
     .map((requirement) => normalizeImportedRequirement(requirement, scope))
     .filter(isCheckableCoverageRequirement);
-  await ctx.runMutation(internalApi.requirementExtractionRuns.recordExtraction, {
+  await ctx.runMutation(internal.requirementExtractionRuns.recordExtraction, {
     runId,
     extractedRequirementCount: result.object.requirements.length,
     checkableRequirementCount: normalizedRequirements.length,
@@ -648,7 +646,7 @@ async function runRequirementImport(
     throw error;
   }
 
-  await ctx.runMutation(internalApi.requirementExtractionRuns.complete, {
+  await ctx.runMutation(internal.requirementExtractionRuns.complete, {
     runId,
     sourceDocumentId,
     createdRequirementCount: requirementIds.length,
