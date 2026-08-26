@@ -156,7 +156,6 @@ export function buildSlackFinalBlocks(args: {
   actionToken: string;
   revision: number;
   showHandoff: boolean;
-  includeAnswer?: boolean;
 }): SlackBlock[] {
   const completedTools = (args.message.agentSteps ?? [])
     .filter(
@@ -166,20 +165,20 @@ export function buildSlackFinalBlocks(args: {
         step.name !== SLACK_REACTION_TOOL_NAME,
     )
     .slice(-4);
-  const blocks: SlackBlock[] = [];
-  if (args.includeAnswer !== false) {
-    blocks.push({
+  const blocks: SlackBlock[] = [
+    {
       type: "section",
       block_id: blockId("glass-answer", args.message._id, args.revision),
       text: {
         type: "mrkdwn",
         text: truncate(
-          formatSlackAnswerText(args.message.content.trim()) || "I couldn't complete that request.",
+          formatSlackAnswerText(args.message.content.trim()) ||
+            "I couldn't complete that request.",
           3000,
         ),
       },
-    });
-  }
+    },
+  ];
 
   if (completedTools.length) {
     blocks.push({
@@ -287,22 +286,25 @@ export function buildSlackClassicFinalBlocks(args: {
   actionToken: string;
   revision: number;
   showHandoff: boolean;
-  includeAnswer?: boolean;
 }): SlackBlock[] {
-  const blocks: SlackBlock[] = [];
-  if (args.includeAnswer !== false) {
-    blocks.push({
+  const blocks: SlackBlock[] = [
+    {
       type: "section",
-      block_id: blockId("glass-classic-answer", args.message._id, args.revision),
+      block_id: blockId(
+        "glass-classic-answer",
+        args.message._id,
+        args.revision,
+      ),
       text: {
         type: "mrkdwn",
         text: truncate(
-          formatSlackAnswerText(args.message.content.trim()) || "I couldn't complete that request.",
+          formatSlackAnswerText(args.message.content.trim()) ||
+            "I couldn't complete that request.",
           3000,
         ),
       },
-    });
-  }
+    },
+  ];
 
   for (const [index, policy] of args.policies.slice(0, 3).entries()) {
     blocks.push(

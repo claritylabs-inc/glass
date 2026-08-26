@@ -186,6 +186,65 @@ describe("Slack presentation lifecycle", () => {
     });
   });
 
+  test("finalizes an existing stream with a mrkdwn answer block", async () => {
+    const t = convexTest(schema, modules);
+    const fixture = await seedPresentation(t);
+    vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example");
+    vi.stubEnv("SLACK_WORKER_SECRET", "test-secret");
+    const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const path = new URL(String(input)).pathname;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        calls.push({ path, body });
+        if (path === "/reaction/add") return Response.json({ ok: true });
+        if (path === "/stream/stop") {
+          return Response.json({ messageId: "1800.stream" });
+        }
+        throw new Error(`Unexpected worker path ${path}`);
+      }),
+    );
+
+    const started = await t.action(startFn, {
+      orgId: fixture.orgId,
+      connectionId: fixture.connectionId,
+      threadId: fixture.threadId,
+      threadMessageId: fixture.messageId,
+      channelId: "C-PRIMARY",
+      threadTs: "1800.0",
+    });
+    await t.run(async (ctx) => {
+      const presentation = await ctx.db
+        .query("slackMessagePresentations")
+        .withIndex("message", (q) => q.eq("threadMessageId", fixture.messageId))
+        .unique();
+      if (!presentation) throw new Error("Missing Slack presentation");
+      await ctx.db.patch(presentation._id, {
+        mode: "stream",
+        providerMessageId: "1800.stream",
+      });
+    });
+
+    await t.action(finishFn, {
+      threadMessageId: fixture.messageId,
+      actionToken: started?.actionToken,
+    });
+
+    const stop = calls.find((call) => call.path === "/stream/stop")?.body;
+    expect(stop).not.toHaveProperty("markdownText");
+    expect(stop?.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: {
+            type: "mrkdwn",
+            text: "*The policy is active.*",
+          },
+        }),
+      ]),
+    );
+  });
+
   test("persists definitive provider failures and suspends the primary channel", async () => {
     const t = convexTest(schema, modules);
     const fixture = await seedPresentation(t);

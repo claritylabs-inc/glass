@@ -3,7 +3,6 @@ import {
   renderAgentMarkdownHtml,
   renderAgentMarkdownText,
   renderSlackMrkdwn,
-  renderSlackStreamingMarkdown,
 } from "./transportRenderers";
 
 describe("transport renderers", () => {
@@ -35,17 +34,11 @@ describe("transport renderers", () => {
     expect(renderSlackMrkdwn(source)).toBe(
       "&lt;@U123&gt; &lt;!channel&gt; &lt;#C123|private&gt; *done*",
     );
-    expect(renderSlackStreamingMarkdown(source)).toBe(
-      "&lt;@U123&gt; &lt;!channel&gt; &lt;#C123|private&gt; **done**",
-    );
   });
 
   it("strips nested confidence annotations without losing Markdown", () => {
     const source = "[[g:**Confirmed [[i:likely]] result**]]";
 
     expect(renderSlackMrkdwn(source)).toBe("*Confirmed likely result*");
-    expect(renderSlackStreamingMarkdown(source)).toBe(
-      "**Confirmed likely result**",
-    );
   });
 });

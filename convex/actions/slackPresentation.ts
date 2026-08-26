@@ -15,7 +15,6 @@ import {
   type SlackBlock,
 } from "../lib/slackBlocks";
 import { MAX_POLICY_CARDS_PER_TURN } from "../lib/agentPolicyPresentation";
-import { renderSlackStreamingMarkdown } from "../lib/transportRenderers";
 
 // Break the generated API's recursive reference to this action module.
 const internalApi = internal as any;
@@ -350,8 +349,6 @@ export const finish = internalAction({
     const policies = await policyCards(ctx, message);
     const token = args.actionToken;
     const revision = presentation.revision + 1;
-    const includeAnswer =
-      presentation.mode !== "stream" || !presentation.providerMessageId;
     const richBlocks = token
       ? buildSlackFinalBlocks({
           message,
@@ -359,20 +356,17 @@ export const finish = internalAction({
           actionToken: token,
           revision,
           showHandoff: presentation.threadTs !== undefined,
-          includeAnswer,
         })
-      : includeAnswer
-        ? [
-            {
-              type: "section",
-              block_id: `glass-answer-${message._id}-${revision}`,
-              text: {
-                type: "mrkdwn",
-                text: formatSlackAnswerText(message.content).slice(0, 3000),
-              },
+      : [
+          {
+            type: "section",
+            block_id: `glass-answer-${message._id}-${revision}`,
+            text: {
+              type: "mrkdwn",
+              text: formatSlackAnswerText(message.content).slice(0, 3000),
             },
-          ]
-        : ([] satisfies SlackBlock[]);
+          },
+        ];
     const classicBlocks = token
       ? buildSlackClassicFinalBlocks({
           message,
@@ -380,7 +374,6 @@ export const finish = internalAction({
           actionToken: token,
           revision,
           showHandoff: presentation.threadTs !== undefined,
-          includeAnswer,
         })
       : richBlocks;
     let finalBlocks = richBlocks;
@@ -391,12 +384,10 @@ export const finish = internalAction({
       let providerMessageId = presentation.providerMessageId;
       const mrkdwnText = formatSlackAnswerText(message.content);
       if (providerMessageId && presentation.mode === "stream") {
-        const markdownText = renderSlackStreamingMarkdown(message.content);
         await workerRequest("/stream/stop", {
           teamId: target.teamId,
           channelId: target.channelId,
           messageTs: providerMessageId,
-          markdownText,
           blocks,
         });
       } else if (providerMessageId) {
