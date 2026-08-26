@@ -47,8 +47,6 @@ Guidance for any coding agent working in this repository: Codex, Claude Code, Cu
 
 - `npx convex run migrations:backfillPolicyDeliverySettingOwners '{"dryRun":true}'`, then the corresponding rule/job/attempt owner migrations — dry-run the client-owned policy-delivery widening phases. After all four reports pass on the approved target, run `migrations:runPolicyDeliveryOwnerBackfill`, verify `policyDelivery:verifyDeliveryOwnerBackfill` reports zero missing owners, and only then ship a later schema-narrowing release. See `docs/deployment/slack.md`.
 - `npx convex run migrations:unsetLegacyCoiAttachmentAuthorization '{"dryRun":true}'` — audit the widening-phase cleanup of legacy `pendingEmails.allowMultipleCoiAttachments`. After review, run `migrations:runLegacyCoiAttachmentAuthorizationCleanup`, then require `pendingEmails:verifyLegacyCoiAttachmentAuthorizationCleanup` to report `complete: true` before removing the optional legacy field in a later schema-narrowing release.
-- `npx convex run migrations:unsetLegacyAutoSendEmails '{"dryRun":true}'` — audit removal of the retired `organizations.autoSendEmails` setting. Production deployment only publishes this migration; it does not run it. On the explicitly approved target, add `--prod` to dry-run, then run `npx convex run migrations:runLegacyAutoSendEmailsCleanup --prod` and require `npx convex run orgs:verifyLegacyAutoSendEmailsCleanup --prod` to report `complete: true` before removing the deprecated optional schema field in a later narrowing release.
-
 ## DevOps Environment Map
 
 Source control:

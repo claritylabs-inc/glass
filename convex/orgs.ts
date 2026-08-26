@@ -1886,22 +1886,6 @@ export const getInternal = internalQuery({
   },
 });
 
-export const verifyLegacyAutoSendEmailsCleanup = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const remaining = await ctx.db
-      .query("organizations")
-      .filter((query) =>
-        query.neq(query.field("autoSendEmails"), undefined),
-      )
-      .first();
-    return {
-      complete: remaining === null,
-      remainingSampleId: remaining?._id,
-    };
-  },
-});
-
 export const getMembersInternal = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
