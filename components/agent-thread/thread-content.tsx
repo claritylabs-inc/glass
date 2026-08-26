@@ -467,7 +467,11 @@ function buildThreadMessageRenderPlan(
 
   messages.forEach((message) => {
     if (message.status === "processing") return;
-    if (message.messageKind === "channel_sync") {
+    // Email cards already own review and send; keep their confirmation cue persisted without duplicating it in the thread.
+    if (
+      message.messageKind === "channel_sync" ||
+      (message.messageKind === "workflow_status" && message.pendingEmailId)
+    ) {
       hiddenStatusMessageIds.add(message._id);
       return;
     }
