@@ -10,6 +10,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { generateObjectForOrg } from "../lib/models";
+import { ClRouterRequestError } from "../lib/clRouterClient";
 import { tryBuildParsedPdfText } from "../lib/liteparsePreprocessor";
 import {
   REQUIREMENT_LIMIT_KINDS,
@@ -20,6 +21,8 @@ import {
   type RequirementScope,
 } from "../lib/complianceTypes";
 import { ACORD_LOB_LABELS, isLobCode } from "../lib/linesOfBusiness";
+
+const internalApi = internal as any;
 
 const COMMON_COMMERCIAL_LOBS = [
   "CGL",
@@ -408,29 +411,68 @@ async function runRequirementImport(
   requirementIds: Id<"insuranceRequirements">[];
   sourceDocumentId: Id<"requirementSourceDocuments">;
 }> {
-  let sourceText = args.pastedText?.trim() ?? "";
-  let fileExtraction: ExtractedFileText | undefined;
-  if (args.fileId) {
-    const blob = await ctx.storage.get(args.fileId);
-    if (!blob) throw new Error("Requirement document not found");
-    fileExtraction = await extractFileText({
-      buffer: await blob.arrayBuffer(),
-      fileName: args.fileName,
-      contentType: args.contentType,
-    });
-    sourceText = [sourceText, fileExtraction.text].filter(Boolean).join("\n\n");
-  }
-
-  sourceText = truncateSource(sourceText);
-  if (!sourceText) {
-    throw new Error("Paste text or upload a requirement document first");
-  }
+  const runId = crypto.randomUUID();
   const sourceType = args.sourceType ?? inferRequirementSourceType(args.fileName);
   const scope = scopeFromArgs(args);
   const sourceDocumentName =
     args.sourceName?.trim() ||
     args.fileName ||
     `${titlePrefix} ${dayjs().format("YYYY-MM-DD HH:mm")}`;
+  const trigger = titlePrefix === "Mailbox requirements"
+    ? "mailbox_import" as const
+    : "web_import" as const;
+  await ctx.runMutation(internalApi.requirementExtractionRuns.start, {
+    runId,
+    orgId: args.orgId,
+    userId: context.userId,
+    trigger,
+    sourceName: sourceDocumentName,
+    sourceType,
+    scope,
+    fileName: args.fileName,
+    contentType: args.contentType,
+  });
+  const failRun = async (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await ctx.runMutation(internalApi.requirementExtractionRuns.fail, {
+        runId,
+        error: message,
+      });
+    } catch (telemetryError) {
+      console.warn("Failed to record requirement extraction error", telemetryError);
+    }
+  };
+
+  let sourceText = args.pastedText?.trim() ?? "";
+  let fileExtraction: ExtractedFileText | undefined;
+  try {
+    if (args.fileId) {
+      const blob = await ctx.storage.get(args.fileId);
+      if (!blob) throw new Error("Requirement document not found");
+      fileExtraction = await extractFileText({
+        buffer: await blob.arrayBuffer(),
+        fileName: args.fileName,
+        contentType: args.contentType,
+      });
+      sourceText = [sourceText, fileExtraction.text].filter(Boolean).join("\n\n");
+    }
+  } catch (error) {
+    await failRun(error);
+    throw error;
+  }
+
+  sourceText = truncateSource(sourceText);
+  if (!sourceText) {
+    const error = new Error("Paste text or upload a requirement document first");
+    await failRun(error);
+    throw error;
+  }
+  await ctx.runMutation(internalApi.requirementExtractionRuns.recordSource, {
+    runId,
+    parserBackend: fileExtraction?.parserBackend ?? "plain_text",
+    sourceCharacterCount: sourceText.length,
+  });
 
   const abortSignal = AbortSignal.timeout(REQUIREMENT_EXTRACTION_TIMEOUT_MS);
   let result;
@@ -448,6 +490,43 @@ async function runRequirementImport(
       }),
     });
   } catch (error) {
+    await failRun(error);
+    try {
+      const routerError =
+        error instanceof ClRouterRequestError ? error : undefined;
+      await ctx.runMutation(internal.modelRoutingEvents.recordRunInternal, {
+        run: {
+          runId,
+          sessionKey: `requirement:${runId}`,
+          orgId: args.orgId,
+          task: "requirement_extraction",
+          taskKind: "requirement_extraction",
+          channel: trigger === "mailbox_import" ? "mailbox" : "web",
+          label: "Compliance requirement extraction",
+          phase: "extracting_requirements",
+        },
+        status: "error",
+        requestId: routerError?.requestId,
+        routerCode: routerError?.routerCode,
+        routerStatus: routerError?.status,
+        routerRetryable: routerError?.retryable,
+        routerExecutionStarted: routerError?.executionStarted,
+        failureAttempts: routerError?.attempts
+          ? [...routerError.attempts]
+          : undefined,
+        toolCallCount: 0,
+        completedToolCount: 0,
+        toolNames: [],
+        workflowOutcomeCount: 0,
+        workflowFailureCount: 0,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } catch (telemetryError) {
+      console.warn(
+        "Failed to record requirement model routing error",
+        telemetryError,
+      );
+    }
     if (abortSignal.aborted) {
       throw new Error(
         "Requirement extraction took too long. Try the import again in a moment.",
@@ -456,16 +535,84 @@ async function runRequirementImport(
     throw error;
   }
 
+  const usage = result.totalUsage ?? result.usage;
+  const normalizedRequirements = result.object.requirements
+    .map((requirement) => normalizeImportedRequirement(requirement, scope))
+    .filter(isCheckableCoverageRequirement);
+  await ctx.runMutation(internalApi.requirementExtractionRuns.recordExtraction, {
+    runId,
+    extractedRequirementCount: result.object.requirements.length,
+    checkableRequirementCount: normalizedRequirements.length,
+    extractedHolderCount: result.object.certificateHolders.length,
+    ...(result.clRouter?.requestId
+      ? { requestId: result.clRouter.requestId }
+      : {}),
+    provider: result.route.provider,
+    model: result.route.model,
+    ...(result.routeSource ? { routeSource: result.routeSource } : {}),
+    ...(result.transport ? { transport: result.transport } : {}),
+    ...(usage.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens }),
+    ...(usage.outputTokens === undefined ? {} : { outputTokens: usage.outputTokens }),
+    ...(result.clRouter ? { costUsd: result.clRouter.costUsd } : {}),
+  });
+  try {
+    await ctx.runMutation(internal.modelRoutingEvents.recordRunInternal, {
+      run: {
+        runId,
+        sessionKey: `requirement:${runId}`,
+        orgId: args.orgId,
+        task: "requirement_extraction",
+        taskKind: "requirement_extraction",
+        channel: trigger === "mailbox_import" ? "mailbox" : "web",
+        label: "Compliance requirement extraction",
+        phase: "extracting_requirements",
+      },
+      status: "complete",
+      ...(result.clRouter?.requestId
+        ? { requestId: result.clRouter.requestId }
+        : {}),
+      provider: result.route.provider,
+      model: result.route.model,
+      ...(result.routeSource ? { routeSource: result.routeSource } : {}),
+      ...(result.transport ? { transport: result.transport } : {}),
+      ...(usage.inputTokens === undefined ? {} : { inputTokens: usage.inputTokens }),
+      ...(usage.outputTokens === undefined ? {} : { outputTokens: usage.outputTokens }),
+      ...(usage.outputTokenDetails?.reasoningTokens === undefined
+        ? {}
+        : { reasoningTokens: usage.outputTokenDetails.reasoningTokens }),
+      ...(usage.inputTokenDetails?.cacheReadTokens === undefined
+        ? {}
+        : { cachedInputTokens: usage.inputTokenDetails.cacheReadTokens }),
+      ...(usage.inputTokenDetails?.cacheWriteTokens === undefined
+        ? {}
+        : { cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens }),
+      maxOutputTokens: 3_000,
+      finishReason: result.finishReason,
+      hitOutputLimit: result.finishReason === "length",
+      visibleTextLength: JSON.stringify(result.object).length,
+      toolCallCount: 0,
+      completedToolCount: 0,
+      toolNames: [],
+      workflowOutcomeCount: 0,
+      workflowFailureCount: 0,
+    });
+  } catch (telemetryError) {
+    console.warn("Failed to record requirement model routing event", telemetryError);
+  }
+
   // Do not leave a completed-looking source behind when extraction fails. A
   // successful import still records the source even when every extracted row
   // is an exact duplicate, preserving that audit trail without creating an
   // orphan for model errors or timeouts.
-  const sourceDocumentId: Id<"requirementSourceDocuments"> =
-    await ctx.runMutation(
+  let sourceDocumentId: Id<"requirementSourceDocuments">;
+  let requirementIds: Id<"insuranceRequirements">[];
+  try {
+    sourceDocumentId = await ctx.runMutation(
       internal.compliance.createRequirementSourceDocumentInternal,
       {
         orgId: args.orgId,
         userId: context.userId,
+        extractionRunId: runId,
         fileId: args.fileId,
         fileName: args.fileName,
         contentType: args.contentType,
@@ -484,20 +631,32 @@ async function runRequirementImport(
       },
     );
 
-  const requirementIds: Id<"insuranceRequirements">[] = await ctx.runMutation(
-    internal.compliance.createRequirementsInternal,
-    {
-      orgId: args.orgId,
-      userId: context.userId,
-      scope,
-      sourceDocumentId,
-      sourceDocumentName,
-      sourceType,
-      requirements: result.object.requirements
-        .map((requirement) => normalizeImportedRequirement(requirement, scope))
-        .filter(isCheckableCoverageRequirement),
-    },
-  );
+    requirementIds = await ctx.runMutation(
+      internal.compliance.createRequirementsInternal,
+      {
+        orgId: args.orgId,
+        userId: context.userId,
+        scope,
+        sourceDocumentId,
+        sourceDocumentName,
+        sourceType,
+        requirements: normalizedRequirements,
+      },
+    );
+  } catch (error) {
+    await failRun(error);
+    throw error;
+  }
+
+  await ctx.runMutation(internalApi.requirementExtractionRuns.complete, {
+    runId,
+    sourceDocumentId,
+    createdRequirementCount: requirementIds.length,
+    duplicateRequirementCount: Math.max(
+      0,
+      normalizedRequirements.length - requirementIds.length,
+    ),
+  });
 
   return { createdCount: requirementIds.length, requirementIds, sourceDocumentId };
 }

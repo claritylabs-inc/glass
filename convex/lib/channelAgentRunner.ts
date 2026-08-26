@@ -92,11 +92,11 @@ async function synthesizeCompletedToolResults(
   ctx: ActionCtx,
   args: RunAgentTurnArgs,
   result: Awaited<ReturnType<typeof generateAgentTextForOrg>>,
-): Promise<string> {
-  if (!Array.isArray(args.options.messages)) return "";
+): Promise<{ text: string; routerRequestId?: string }> {
+  if (!Array.isArray(args.options.messages)) return { text: "" };
   const responseMessages = result.response?.messages;
   if (!Array.isArray(responseMessages) || responseMessages.length === 0) {
-    return "";
+    return { text: "" };
   }
 
   try {
@@ -126,10 +126,15 @@ async function synthesizeCompletedToolResults(
         },
       },
     );
-    return generatedTextFromResult(synthesis);
+    return {
+      text: generatedTextFromResult(synthesis),
+      ...(synthesis.clRouter?.requestId
+        ? { routerRequestId: synthesis.clRouter.requestId }
+        : {}),
+    };
   } catch (error) {
     console.warn("[agent-turn] Completed-tool synthesis failed", error);
-    return "";
+    return { text: "" };
   }
 }
 
@@ -177,16 +182,21 @@ export async function runAgentTurn(ctx: ActionCtx, args: RunAgentTurnArgs) {
   );
   const audit = filterAudit(collectToolAudit(result), args.auditExcludedTools);
   let text = generatedTextFromResult(result);
+  let routerRequestId = result.clRouter?.requestId;
 
   if (
     audit.completedTools.length > 0 &&
     (!text.trim() || result.finishReason === "length")
   ) {
-    text = await synthesizeCompletedToolResults(ctx, args, result);
+    const synthesis = await synthesizeCompletedToolResults(ctx, args, result);
+    text = synthesis.text;
+    routerRequestId = synthesis.text.trim()
+      ? synthesis.routerRequestId
+      : undefined;
   }
 
   if (!(await evidenceDecision) || hasCompletedPolicyEvidence(audit)) {
-    return { audit, text };
+    return { audit, text, routerRequestId };
   }
 
   const canRetry = audit.usedTools.every((name) => REPLAY_SAFE_TOOLS.has(name));
@@ -230,6 +240,9 @@ export async function runAgentTurn(ctx: ActionCtx, args: RunAgentTurnArgs) {
       text: hasCompletedPolicyEvidence(retryAudit)
         ? generatedTextFromResult(retryResult)
         : POLICY_EVIDENCE_UNAVAILABLE_MESSAGE,
+      ...(hasCompletedPolicyEvidence(retryAudit) && retryResult.clRouter?.requestId
+        ? { routerRequestId: retryResult.clRouter.requestId }
+        : {}),
     };
   } catch (error) {
     console.warn("[agent-turn] Policy evidence retry failed", error);

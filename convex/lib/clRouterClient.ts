@@ -179,7 +179,9 @@ export type ClRouterFeedbackRequest = {
   requestId: string;
   tenantId?: string;
   idempotencyKey: string;
+  source?: "web" | "slack" | "imessage" | "operator_extraction" | "system";
   signals: {
+    rating?: "up" | "down";
     reviewCorrectionCount?: number;
     reviewedFieldCount?: number;
     ungroundedStripCount?: number;

@@ -952,6 +952,8 @@ export const updateAgentMessage = internalMutation({
   args: {
     id: v.id("threadMessages"),
     content: v.string(),
+    routerRequestId: v.optional(v.string()),
+    feedbackPromptedAt: v.optional(v.number()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     citedSections: v.optional(v.array(v.string())),
     citedCoverageNames: v.optional(v.array(v.string())),
@@ -1003,6 +1005,8 @@ export const updateAgentMessage = internalMutation({
     if (existing?.status === "cancelled") return;
     await ctx.db.patch(args.id, {
       content: args.content,
+      routerRequestId: args.routerRequestId,
+      feedbackPromptedAt: args.feedbackPromptedAt,
       status: args.status ?? undefined,
       referencedPolicyIds: args.referencedPolicyIds,
       citedSections: args.citedSections,
@@ -1656,6 +1660,8 @@ export const insertImessageMessage = internalMutation({
     imessageSenderAddress: v.optional(v.string()),
     imessageParticipantLabel: v.optional(v.string()),
     content: v.string(),
+    routerRequestId: v.optional(v.string()),
+    feedbackPromptedAt: v.optional(v.number()),
     messageId: v.optional(v.string()),
     responseMessageId: v.optional(v.string()),
     attachments: v.optional(
@@ -1713,6 +1719,8 @@ export const insertImessageMessage = internalMutation({
       imessageSenderAddress: args.imessageSenderAddress,
       imessageParticipantLabel: args.imessageParticipantLabel,
       content: args.content,
+      routerRequestId: args.routerRequestId,
+      feedbackPromptedAt: args.feedbackPromptedAt,
       messageId: args.messageId,
       responseMessageId: args.responseMessageId,
       attachments: args.attachments,

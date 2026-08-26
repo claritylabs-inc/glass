@@ -9,6 +9,7 @@
  */
 
 import type * as acordTaxonomyBackfillBatches from "../acordTaxonomyBackfillBatches.js";
+import type * as actions_agentResponseFeedback from "../actions/agentResponseFeedback.js";
 import type * as actions_archiveNonCoverageRequirements from "../actions/archiveNonCoverageRequirements.js";
 import type * as actions_backfillAcordTaxonomy from "../actions/backfillAcordTaxonomy.js";
 import type * as actions_backfillCarrierIdentity from "../actions/backfillCarrierIdentity.js";
@@ -28,6 +29,7 @@ import type * as actions_enrichCarrierIdentity from "../actions/enrichCarrierIde
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
 import type * as actions_extractFromUpload from "../actions/extractFromUpload.js";
 import type * as actions_extractSupplementary from "../actions/extractSupplementary.js";
+import type * as actions_extractionReviews from "../actions/extractionReviews.js";
 import type * as actions_extractionIntegrityAudit from "../actions/extractionIntegrityAudit.js";
 import type * as actions_generateCoi from "../actions/generateCoi.js";
 import type * as actions_handleInboundEmail from "../actions/handleInboundEmail.js";
@@ -62,6 +64,7 @@ import type * as actions_updateDocumentChunk from "../actions/updateDocumentChun
 import type * as actions_vendorComplianceMonitor from "../actions/vendorComplianceMonitor.js";
 import type * as agentChannels from "../agentChannels.js";
 import type * as agentHistory from "../agentHistory.js";
+import type * as agentResponseFeedback from "../agentResponseFeedback.js";
 import type * as agentTargets from "../agentTargets.js";
 import type * as apiAuditLog from "../apiAuditLog.js";
 import type * as appCardLinks from "../appCardLinks.js";
@@ -94,6 +97,7 @@ import type * as emailDeliveryAttempts from "../emailDeliveryAttempts.js";
 import type * as emailDraftReviewLinks from "../emailDraftReviewLinks.js";
 import type * as externalExtractionPayload from "../externalExtractionPayload.js";
 import type * as extractionIntegrityAudit from "../extractionIntegrityAudit.js";
+import type * as extractionReviews from "../extractionReviews.js";
 import type * as extractionTraces from "../extractionTraces.js";
 import type * as http from "../http.js";
 import type * as imessageChats from "../imessageChats.js";
@@ -277,6 +281,7 @@ import type * as memoryMaintenance from "../memoryMaintenance.js";
 import type * as migrations from "../migrations.js";
 import type * as modelConfig from "../modelConfig.js";
 import type * as modelRoutingEvents from "../modelRoutingEvents.js";
+import type * as requirementExtractionRuns from "../requirementExtractionRuns.js";
 import type * as modelSettings from "../modelSettings.js";
 import type * as notificationPreferences from "../notificationPreferences.js";
 import type * as notificationSlack from "../notificationSlack.js";
@@ -316,6 +321,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   acordTaxonomyBackfillBatches: typeof acordTaxonomyBackfillBatches;
+  "actions/agentResponseFeedback": typeof actions_agentResponseFeedback;
   "actions/archiveNonCoverageRequirements": typeof actions_archiveNonCoverageRequirements;
   "actions/backfillAcordTaxonomy": typeof actions_backfillAcordTaxonomy;
   "actions/backfillCarrierIdentity": typeof actions_backfillCarrierIdentity;
@@ -335,6 +341,7 @@ declare const fullApi: ApiFromModules<{
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
   "actions/extractFromUpload": typeof actions_extractFromUpload;
   "actions/extractSupplementary": typeof actions_extractSupplementary;
+  "actions/extractionReviews": typeof actions_extractionReviews;
   "actions/extractionIntegrityAudit": typeof actions_extractionIntegrityAudit;
   "actions/generateCoi": typeof actions_generateCoi;
   "actions/handleInboundEmail": typeof actions_handleInboundEmail;
@@ -369,6 +376,7 @@ declare const fullApi: ApiFromModules<{
   "actions/vendorComplianceMonitor": typeof actions_vendorComplianceMonitor;
   agentChannels: typeof agentChannels;
   agentHistory: typeof agentHistory;
+  agentResponseFeedback: typeof agentResponseFeedback;
   agentTargets: typeof agentTargets;
   apiAuditLog: typeof apiAuditLog;
   appCardLinks: typeof appCardLinks;
@@ -401,6 +409,7 @@ declare const fullApi: ApiFromModules<{
   emailDraftReviewLinks: typeof emailDraftReviewLinks;
   externalExtractionPayload: typeof externalExtractionPayload;
   extractionIntegrityAudit: typeof extractionIntegrityAudit;
+  extractionReviews: typeof extractionReviews;
   extractionTraces: typeof extractionTraces;
   http: typeof http;
   imessageChats: typeof imessageChats;
@@ -584,6 +593,7 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   modelConfig: typeof modelConfig;
   modelRoutingEvents: typeof modelRoutingEvents;
+  requirementExtractionRuns: typeof requirementExtractionRuns;
   modelSettings: typeof modelSettings;
   notificationPreferences: typeof notificationPreferences;
   notificationSlack: typeof notificationSlack;

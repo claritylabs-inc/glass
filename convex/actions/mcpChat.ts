@@ -421,6 +421,7 @@ MCP MODE:
     await ctx.runMutation(internal.threads.updateAgentMessage, {
       id: agentMsgId,
       content,
+      routerRequestId: turn.routerRequestId,
       usedTools:
         turn.audit.usedTools.length > 0 ? turn.audit.usedTools : undefined,
       toolCalls:

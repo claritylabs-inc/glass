@@ -399,21 +399,44 @@ export const upsertFeedback = internalMutation({
           .eq("slackActorId", actor._id),
       )
       .first();
+    const message = await ctx.db.get(presentation.threadMessageId);
+    if (!message || message.role !== "agent") {
+      throw new Error("Slack feedback message is invalid");
+    }
     const now = dayjs().valueOf();
     if (existing) {
-      await ctx.db.patch(existing._id, { rating: args.rating, updatedAt: now });
-      return existing._id;
+      if (!existing.routerRequestId && message.routerRequestId) {
+        await ctx.db.patch(existing._id, {
+          routerRequestId: message.routerRequestId,
+          routerSignalStatus: "pending",
+          routerSignalAttempts: existing.routerSignalAttempts ?? 0,
+          updatedAt: now,
+        });
+      }
+      return {
+        id: existing._id,
+        routerRequestId: existing.routerRequestId ?? message.routerRequestId,
+        shouldSubmit:
+          Boolean(existing.routerRequestId ?? message.routerRequestId) &&
+          existing.routerSignalStatus !== "submitted",
+      };
     }
-    return await ctx.db.insert("agentResponseFeedback", {
+    const id = await ctx.db.insert("agentResponseFeedback", {
       orgId: presentation.orgId,
       threadId: presentation.threadId,
       threadMessageId: presentation.threadMessageId,
+      routerRequestId: message.routerRequestId,
       source: "slack",
       slackActorId: actor._id,
       rating: args.rating,
+      routerSignalStatus: message.routerRequestId
+        ? "pending"
+        : "not_applicable",
+      routerSignalAttempts: 0,
       createdAt: now,
       updatedAt: now,
     });
+    return { id, routerRequestId: message.routerRequestId, shouldSubmit: true };
   },
 });
 
@@ -461,20 +484,28 @@ export const submitFeedbackComment = internalMutation({
     const now = dayjs().valueOf();
     const comment = args.comment?.trim().slice(0, 2000);
     if (feedback) {
+      if (feedback.rating !== "negative") {
+        throw new Error("Slack response rating is already recorded");
+      }
       await ctx.db.patch(feedback._id, {
-        rating: "negative",
         comment: comment || undefined,
         updatedAt: now,
       });
     } else {
+      const message = await ctx.db.get(presentation.threadMessageId);
       await ctx.db.insert("agentResponseFeedback", {
         orgId: presentation.orgId,
         threadId: presentation.threadId,
         threadMessageId: presentation.threadMessageId,
+        routerRequestId: message?.routerRequestId,
         source: "slack",
         slackActorId: actor._id,
         rating: "negative",
         comment: comment || undefined,
+        routerSignalStatus: message?.routerRequestId
+          ? "pending"
+          : "not_applicable",
+        routerSignalAttempts: 0,
         createdAt: now,
         updatedAt: now,
       });

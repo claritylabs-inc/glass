@@ -16,6 +16,7 @@ import {
   type SlackEmailDraftCard,
 } from "../lib/slackBlocks";
 import { MAX_POLICY_CARDS_PER_TURN } from "../lib/agentPolicyPresentation";
+import { sendClRouterFeedback } from "../lib/clRouterClient";
 
 // Break the generated API's recursive reference to this action module.
 const internalApi = internal as any;
@@ -543,11 +544,40 @@ export const processInteraction = internalAction({
       if (interaction.actionId.startsWith("glass_response_feedback")) {
         const rating =
           interaction.value === "negative" ? "negative" : "positive";
-        await ctx.runMutation(internalApi.slackPresentation.upsertFeedback, {
+        const feedback = await ctx.runMutation(internalApi.slackPresentation.upsertFeedback, {
           presentationId: presentation._id,
           slackActorId: actor._id,
           rating,
         });
+        if (feedback.shouldSubmit && feedback.routerRequestId) {
+          try {
+            await sendClRouterFeedback({
+              requestId: feedback.routerRequestId,
+              idempotencyKey: `agent-response:${presentation.threadMessageId}:${actor._id}`,
+              source: "slack",
+              signals: { rating: rating === "positive" ? "up" : "down" },
+              trace: {
+                traceId: String(presentation.threadMessageId),
+                channel: "slack",
+                taskKind: "query_reason",
+              },
+            });
+            await ctx.runMutation(
+              internalApi.agentResponseFeedback.markRouterSignalInternal,
+              { feedbackId: feedback.id, status: "submitted" },
+            );
+          } catch (error) {
+            console.warn("[slack] Could not submit response rating to cl-router", error);
+            await ctx.runMutation(
+              internalApi.agentResponseFeedback.markRouterSignalInternal,
+              {
+                feedbackId: feedback.id,
+                status: "error",
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
+          }
+        }
         if (rating === "negative" && args.feedbackModalOpened) {
           await ctx.runMutation(
             internalApi.slackPresentation.completeInteraction,

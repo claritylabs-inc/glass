@@ -255,9 +255,6 @@ describe("Convex cl-router generation integration", () => {
           ...routerResponse("Acme policy found."),
           requestId: "request-2",
         }),
-      )
-      .mockImplementationOnce(async () =>
-        Response.json({ accepted: true, duplicate: false }),
       );
     vi.stubGlobal("fetch", fetchMock);
     const execute = vi.fn(async () => ({ carrier: "Acme" }));
@@ -291,7 +288,7 @@ describe("Convex cl-router generation integration", () => {
 
     expect(result.text).toBe("Acme policy found.");
     expect(execute).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const firstRequest = JSON.parse(
       String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
     );
@@ -304,13 +301,6 @@ describe("Convex cl-router generation integration", () => {
       allowFallback: false,
     });
     expect(secondRequest.trace.parentRequestId).toBe("request-1");
-    const feedbackRequest = JSON.parse(
-      String((fetchMock.mock.calls[2]?.[1] as RequestInit).body),
-    );
-    expect(feedbackRequest.signals).toMatchObject({
-      qualityScore: 1,
-      escalationCount: 0,
-    });
   });
 
   test("records the failing router request and final attempted route after a later tool-loop failure", async () => {

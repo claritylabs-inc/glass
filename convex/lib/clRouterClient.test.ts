@@ -303,7 +303,12 @@ describe("cl-router requests", () => {
     await sendClRouterFeedback({
       requestId: "request-1",
       idempotencyKey: "review-1",
-      signals: { reviewCorrectionCount: 2, reviewedFieldCount: 8 },
+      source: "operator_extraction",
+      signals: {
+        rating: "down",
+        reviewCorrectionCount: 2,
+        reviewedFieldCount: 8,
+      },
       trace: { parentRequestId: "parent-1" },
     }, { environment, fetch: fetchMock });
 
@@ -312,6 +317,8 @@ describe("cl-router requests", () => {
       tenantId: "glass",
       requestId: "request-1",
       idempotencyKey: "review-1",
+      source: "operator_extraction",
+      signals: { rating: "down" },
       trace: { parentRequestId: "parent-1" },
     });
   });

@@ -1548,6 +1548,7 @@ export default defineSchema({
 
   requirementSourceDocuments: defineTable({
     orgId: v.id("organizations"),
+    extractionRunId: v.optional(v.string()),
     certificateHolderId: v.optional(v.id("certificateHolders")),
     certificateHolderIds: v.optional(v.array(v.id("certificateHolders"))),
     dealName: v.optional(v.string()),
@@ -1585,6 +1586,99 @@ export default defineSchema({
     .index("holder", ["certificateHolderId"])
     .index("organization_status", ["orgId", "status"])
     .index("file", ["fileId"]),
+
+  requirementExtractionRuns: defineTable({
+    runId: v.string(),
+    orgId: v.id("organizations"),
+    userId: v.id("users"),
+    trigger: v.union(v.literal("web_import"), v.literal("mailbox_import")),
+    sourceName: v.string(),
+    sourceType: v.union(
+      v.literal("lease_agreement"),
+      v.literal("client_contract"),
+      v.literal("vendor_requirements"),
+      v.literal("other"),
+    ),
+    scope: v.union(v.literal("vendors"), v.literal("own_org")),
+    fileName: v.optional(v.string()),
+    contentType: v.optional(v.string()),
+    status: v.union(v.literal("running"), v.literal("complete"), v.literal("error")),
+    phase: v.optional(v.string()),
+    parserBackend: v.optional(
+      v.union(
+        v.literal("liteparse"),
+        v.literal("pdfjs"),
+        v.literal("mammoth"),
+        v.literal("plain_text"),
+      ),
+    ),
+    sourceCharacterCount: v.optional(v.number()),
+    requestId: v.optional(v.string()),
+    provider: v.optional(modelProviderValidator),
+    model: v.optional(v.string()),
+    routeSource: v.optional(v.string()),
+    transport: v.optional(v.union(v.literal("direct"), v.literal("cl-router"))),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    costUsd: v.optional(v.union(v.number(), v.null())),
+    extractedRequirementCount: v.optional(v.number()),
+    checkableRequirementCount: v.optional(v.number()),
+    extractedHolderCount: v.optional(v.number()),
+    createdRequirementCount: v.optional(v.number()),
+    duplicateRequirementCount: v.optional(v.number()),
+    sourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
+    error: v.optional(v.string()),
+    startedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    totalDurationMs: v.optional(v.number()),
+    expiresAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("run", ["runId"])
+    .index("organization_started", ["orgId", "startedAt"])
+    .index("started", ["startedAt"])
+    .index("expiration", ["expiresAt"]),
+
+  extractionReviews: defineTable({
+    targetKind: v.union(
+      v.literal("policy_extraction"),
+      v.literal("requirement_extraction"),
+    ),
+    targetId: v.string(),
+    targetKey: v.string(),
+    orgId: v.id("organizations"),
+    operatorUserId: v.id("users"),
+    policyId: v.optional(v.id("policies")),
+    rating: v.union(v.literal("positive"), v.literal("negative")),
+    category: v.optional(
+      v.union(
+        v.literal("incorrect"),
+        v.literal("missing"),
+        v.literal("ungrounded"),
+        v.literal("unsafe"),
+        v.literal("other"),
+      ),
+    ),
+    fieldPath: v.optional(v.string()),
+    expectedValue: v.optional(v.string()),
+    comment: v.optional(v.string()),
+    routerRequestId: v.optional(v.string()),
+    taskKind: v.optional(v.string()),
+    provider: v.optional(modelProviderValidator),
+    model: v.optional(v.string()),
+    routerSignalStatus: v.union(
+      v.literal("not_applicable"),
+      v.literal("pending"),
+      v.literal("submitted"),
+      v.literal("error"),
+    ),
+    routerSignalError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("target_operator", ["targetKey", "operatorUserId"])
+    .index("organization_created", ["orgId", "createdAt"])
+    .index("operator_created", ["operatorUserId", "createdAt"]),
 
   insuranceRequirements: defineTable({
     orgId: v.id("organizations"),
@@ -3545,6 +3639,8 @@ export default defineSchema({
       ),
     ),
     // Agent response metadata
+    routerRequestId: v.optional(v.string()),
+    feedbackPromptedAt: v.optional(v.number()),
     replyToMessageId: v.optional(v.id("threadMessages")),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     referencedRequirementIds: v.optional(
@@ -3950,10 +4046,27 @@ export default defineSchema({
     orgId: v.id("organizations"),
     threadId: v.id("threads"),
     threadMessageId: v.id("threadMessages"),
-    source: v.literal("slack"),
-    slackActorId: v.id("slackActors"),
+    routerRequestId: v.optional(v.string()),
+    source: v.union(
+      v.literal("web"),
+      v.literal("slack"),
+      v.literal("imessage"),
+    ),
+    userId: v.optional(v.id("users")),
+    slackActorId: v.optional(v.id("slackActors")),
+    imessageSenderAddress: v.optional(v.string()),
     rating: v.union(v.literal("positive"), v.literal("negative")),
     comment: v.optional(v.string()),
+    routerSignalStatus: v.optional(
+      v.union(
+        v.literal("not_applicable"),
+        v.literal("pending"),
+        v.literal("submitted"),
+        v.literal("error"),
+      ),
+    ),
+    routerSignalAttempts: v.optional(v.number()),
+    routerSignalError: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -3961,6 +4074,9 @@ export default defineSchema({
       "threadMessageId",
       "slackActorId",
     ])
+    .index("message_user", ["threadMessageId", "userId"])
+    .index("message_sender", ["threadMessageId", "imessageSenderAddress"])
+    .index("router_signal", ["routerSignalStatus", "createdAt"])
     .index("organization_created", ["orgId", "createdAt"]),
 
   slackHandoffs: defineTable({

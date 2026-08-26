@@ -24,7 +24,6 @@ import {
   ClRouterRequestError,
   clRouterGenerate,
   clRouterTranscribe,
-  sendClRouterFeedback,
   shouldUseClRouterForCall,
   shouldUseClRouterForTask,
   withClRouterDirectFallback,
@@ -1637,28 +1636,6 @@ function workflowOutcomeStatus(value: unknown): string | undefined {
   return typeof status === "string" ? status : undefined;
 }
 
-function workflowQualityScore(outcomes: unknown[]): number | undefined {
-  if (outcomes.length === 0) return undefined;
-  const scores: number[] = outcomes.map((outcome) => {
-    switch (workflowOutcomeStatus(outcome)) {
-      case "completed":
-        return 1;
-      case "needs_input":
-      case "held":
-        return 0.75;
-      case "running":
-        return 0.5;
-      case "failed_recoverably":
-        return 0.25;
-      case "failed_terminal":
-        return 0;
-      default:
-        return 0.5;
-    }
-  });
-  return scores.reduce((sum, score) => sum + score, 0) / scores.length;
-}
-
 function workflowFailureCount(outcomes: unknown[]) {
   return outcomes.filter((outcome) => {
     const status = workflowOutcomeStatus(outcome);
@@ -1804,37 +1781,6 @@ async function recordAgentRun(
     );
   }
 
-  if (!requestId) return;
-  const qualityScore =
-    error || completion.completionIssue || fallback
-      ? 0
-      : workflowQualityScore(audit.workflowOutcomes) ??
-        (audit.completedTools.length > 0 && completion.visibleTextLength > 0
-          ? 1
-          : undefined);
-  if (qualityScore === undefined) return;
-  try {
-    await sendClRouterFeedback({
-      requestId,
-      idempotencyKey: `agent-workflow:${run.trace.traceId}:${requestId}`,
-      signals: {
-        qualityScore,
-        escalationCount:
-          completion.workflowFailureCount +
-          (error || completion.completionIssue || fallback ? 1 : 0),
-      },
-      trace: {
-        ...run.trace,
-        task,
-        taskKind: run.taskKind,
-      },
-    });
-  } catch (feedbackError) {
-    console.warn(
-      "[cl-router] Failed to submit agent workflow feedback",
-      feedbackError,
-    );
-  }
 }
 
 export async function recordAgentRoutingRun(

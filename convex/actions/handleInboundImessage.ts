@@ -1,5 +1,7 @@
 "use node";
 
+import { createHash } from "node:crypto";
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
@@ -81,6 +83,7 @@ import {
   decideRequirementAttachmentImport,
   requiredRequirementImportStep,
 } from "../lib/requirementAttachmentIntent";
+import { sendClRouterFeedback } from "../lib/clRouterClient";
 
 export { buildFallbackImessageChatGuid } from "../lib/imessageIngress";
 
@@ -122,6 +125,20 @@ function appendAttachmentFailureNotice(responseText: string): string {
 
 const VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE =
   "I couldn't transcribe that voice memo. Please try sending it again or send the request as text.";
+
+const internalApi = internal as any;
+const IMESSAGE_RATING_PROMPT = "Was this helpful? Reply 👍 or 👎.";
+
+function imessageRating(messageText: string): "positive" | "negative" | null {
+  const normalized = messageText.trim();
+  if (normalized === "👍") return "positive";
+  if (normalized === "👎") return "negative";
+  return null;
+}
+
+function shouldPromptForImessageRating(eventKey: string): boolean {
+  return createHash("sha256").update(eventKey).digest()[0]! < 26;
+}
 
 export const processInbound = internalAction({
   args: {
@@ -542,6 +559,59 @@ export const processInbound = internalAction({
       });
       const recentConversationContext =
         buildRecentImessageTextContext(historyForContext);
+
+      const inboundRating = imessageRating(inboundMessageText);
+      const ratingTarget = inboundRating
+        ? historyForContext.at(-1)
+        : undefined;
+      if (
+        inboundRating &&
+        ratingTarget &&
+        ratingTarget.role === "agent" &&
+        ratingTarget.feedbackPromptedAt &&
+        !isGroup &&
+        currentSenderIsLinked
+      ) {
+        const feedback = await ctx.runMutation(
+          internalApi.agentResponseFeedback.recordImessageInternal,
+          {
+            messageId: ratingTarget._id,
+            senderAddress,
+            rating: inboundRating,
+          },
+        );
+        if (feedback.shouldSubmit && feedback.routerRequestId) {
+          try {
+            await sendClRouterFeedback({
+              requestId: feedback.routerRequestId,
+              idempotencyKey: `agent-response:${ratingTarget._id}:${createHash("sha256").update(senderAddress).digest("hex")}`,
+              source: "imessage",
+              signals: { rating: inboundRating === "positive" ? "up" : "down" },
+              trace: {
+                traceId: String(ratingTarget._id),
+                channel: "imessage",
+                taskKind: "query_reason",
+              },
+            });
+            await ctx.runMutation(
+              internalApi.agentResponseFeedback.markRouterSignalInternal,
+              { feedbackId: feedback.id, status: "submitted" },
+            );
+          } catch (error) {
+            console.warn("Could not submit iMessage response rating to cl-router", error);
+            await ctx.runMutation(
+              internalApi.agentResponseFeedback.markRouterSignalInternal,
+              {
+                feedbackId: feedback.id,
+                status: "error",
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
+          }
+        }
+        await scheduleThreadHistoryCompaction(ctx, threadId);
+        return await finish("Thanks — that helps improve future responses.");
+      }
 
       const draftEmails = await ctx.runQuery(
         internal.pendingEmails.listDraftsInternal,
@@ -965,6 +1035,20 @@ export const processInbound = internalAction({
           "I couldn't format that response. Please try again in a moment.";
       }
 
+      const feedbackPromptedAt =
+        !isGroup &&
+        currentSenderIsLinked &&
+        !responseAlreadySent &&
+        !emailConfirmationPrompt &&
+        requirementImportResolution.authorization !== "confirmation" &&
+        Boolean(turn.routerRequestId) &&
+        shouldPromptForImessageRating(eventKey)
+          ? dayjs().valueOf()
+          : undefined;
+      if (feedbackPromptedAt) {
+        responseText = `${responseText.trim()}\n\n${IMESSAGE_RATING_PROMPT}`;
+      }
+
       const responseAttachments: Array<{
         url: string;
         filename: string;
@@ -1027,6 +1111,8 @@ export const processInbound = internalAction({
             orgId,
             role: "agent",
             content: responseText,
+            routerRequestId: turn.routerRequestId,
+            feedbackPromptedAt,
             responseMessageId: `${eventKey}:response`,
             referencedPolicyIds:
               runState.presentedPolicyIds.length > 0

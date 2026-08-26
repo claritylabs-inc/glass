@@ -65,6 +65,10 @@ import {
 } from "@/lib/date-format";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { typeStyle } from "@/lib/typography";
+import {
+  ExtractionReviewPanel,
+  type ExtractionReviewModelStep,
+} from "@/components/operator/extraction-review-panel";
 
 type ExtractionOperations = FunctionReturnType<
   typeof api.operator.getPolicyExtractionOperations
@@ -1180,6 +1184,32 @@ function TraceInspection({ traceId }: { traceId: string }) {
   }
 
   const timelineRows = buildTimelineRows(detail.events, detail.session);
+  const reviewModelSteps = detail.events.reduce<ExtractionReviewModelStep[]>(
+    (steps, event) => {
+      if (
+        event.kind !== "model_call" ||
+        !event.routerRequestId ||
+        event.error ||
+        event.status === "error" ||
+        steps.some((step) => step.requestId === event.routerRequestId)
+      ) {
+        return steps;
+      }
+      steps.push({
+        requestId: event.routerRequestId,
+        label: [
+          event.taskKind ?? event.label ?? event.task ?? "Model call",
+          event.provider && event.model
+            ? `${event.provider}/${event.model}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      });
+      return steps;
+    },
+    [],
+  );
 
   return (
     <Tabs defaultValue="overview" className="gap-4">
@@ -1188,6 +1218,11 @@ function TraceInspection({ traceId }: { traceId: string }) {
         <TabsTrigger value="logs">Logs</TabsTrigger>
       </TabsList>
       <TabsContent value="overview" className="space-y-4">
+        <ExtractionReviewPanel
+          targetKind="policy_extraction"
+          targetId={detail.session.traceId}
+          modelSteps={reviewModelSteps}
+        />
         <OperationalPanel>
           <dl>
             <OperationalLabelValueRow
