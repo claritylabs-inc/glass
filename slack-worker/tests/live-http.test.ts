@@ -348,6 +348,12 @@ describe("native Slack worker HTTP adapter", () => {
   test("passes transport-ready message and stream formats through unchanged", async () => {
     const mrkdwnText = "*Coverage:* `A:B` and :literal_status:";
     const markdownText = "**Coverage:** `A:B` and :literal_status:";
+    const finalBlocks = [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text: mrkdwnText },
+      },
+    ];
 
     assert.equal(
       (
@@ -377,7 +383,7 @@ describe("native Slack worker HTTP adapter", () => {
           teamId: "T-CUSTOMER",
           channelId: "C-CUSTOMER",
           messageTs: "1800000000.100",
-          markdownText,
+          blocks: finalBlocks,
         })
       ).status,
       200,
@@ -405,7 +411,7 @@ describe("native Slack worker HTTP adapter", () => {
       {
         channel: "C-CUSTOMER",
         ts: "1800000000.100",
-        markdown_text: markdownText,
+        blocks: finalBlocks,
       },
     );
   });

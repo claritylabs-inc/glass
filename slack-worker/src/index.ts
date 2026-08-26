@@ -53,7 +53,6 @@ type StreamAppendRequest = {
   }>;
 };
 type StreamStopRequest = StreamAppendRequest & {
-  markdownText: string;
   blocks?: SlackBlock[];
 };
 type EphemeralRequest = {
@@ -680,13 +679,20 @@ async function stopSlackStream(input: StreamStopRequest) {
   if (mode === "mock") return { messageId: input.messageTs };
   const installation = await slackInstallation(input.teamId);
   const taskChunks = streamTaskChunks(input.tasks);
+  if (
+    !input.markdownText?.trim() &&
+    !input.blocks?.length &&
+    taskChunks.length === 0
+  ) {
+    throw new Error("markdownText, blocks, or tasks are required");
+  }
   const stopped = await slackApi<SlackResponse & { ts?: string }>(
     "chat.stopStream",
     installation.botToken,
     {
       channel: input.channelId,
       ts: input.messageTs,
-      ...(input.markdownText.trim()
+      ...(input.markdownText?.trim()
         ? { markdown_text: input.markdownText }
         : {}),
       ...(input.blocks?.length ? { blocks: input.blocks } : {}),

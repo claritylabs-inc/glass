@@ -115,36 +115,6 @@ class SlackMrkdwnRenderer extends Renderer {
   }
 }
 
-class SlackStreamingRenderer extends SlackMrkdwnRenderer {
-  override heading({ tokens, depth }: Tokens.Heading) {
-    return `${"#".repeat(depth)} ${this.parser.parseInline(tokens)}\n`;
-  }
-
-  override strong({ tokens }: Tokens.Strong) {
-    return `**${this.parser.parseInline(tokens)}**`;
-  }
-
-  override em({ tokens }: Tokens.Em) {
-    return `*${this.parser.parseInline(tokens)}*`;
-  }
-
-  override del({ tokens }: Tokens.Del) {
-    return `~~${this.parser.parseInline(tokens)}~~`;
-  }
-
-  override link({ href, tokens }: Tokens.Link) {
-    const label = this.parser.parseInline(tokens);
-    const safeHref = safeLink(href);
-    return safeHref ? `[${label}](${safeHref})` : label;
-  }
-
-  override image({ href, text }: Tokens.Image) {
-    const safeHref = safeLink(href);
-    const label = escapeSlackText(text || "image");
-    return safeHref ? `![${label}](${safeHref})` : label;
-  }
-}
-
 function renderWith(renderer: Renderer, markdown: string): string {
   return String(
     marked.parse(cleanAgentMarkdownForTransport(markdown), {
@@ -157,12 +127,6 @@ function renderWith(renderer: Renderer, markdown: string): string {
 
 export function renderSlackMrkdwn(markdown: string): string {
   return renderWith(new SlackMrkdwnRenderer(), markdown)
-    .replace(EMOJI_SEQUENCE, "")
-    .trim();
-}
-
-export function renderSlackStreamingMarkdown(markdown: string): string {
-  return renderWith(new SlackStreamingRenderer(), markdown)
     .replace(EMOJI_SEQUENCE, "")
     .trim();
 }
