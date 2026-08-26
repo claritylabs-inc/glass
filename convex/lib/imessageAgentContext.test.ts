@@ -15,10 +15,34 @@ vi.mock("./models", () => ({
 import {
   buildImessageModelMessages,
   buildRecentImessageTextContext,
+  imessageAgentTaskForAttachments,
   transcribeImessageVoiceMemos,
 } from "./imessageAgentContext";
 
 describe("iMessage agent context helpers", () => {
+  test("routes image attachments through the vision-capable chat task", () => {
+    expect(
+      imessageAgentTaskForAttachments([
+        {
+          filename: "contact-card.png",
+          contentType: "image/png",
+          size: 5,
+          buffer: Buffer.from("image"),
+        },
+      ]),
+    ).toBe("chat_vision");
+    expect(
+      imessageAgentTaskForAttachments([
+        {
+          filename: "requirements.pdf",
+          contentType: "application/pdf",
+          size: 3,
+          buffer: Buffer.from("pdf"),
+        },
+      ]),
+    ).toBe("chat");
+  });
+
   test("turns a voice memo into labeled text for the existing chat pipeline", async () => {
     transcribeAudioForOrgMock.mockResolvedValueOnce({
       text: "Please compare my current liability limits.",

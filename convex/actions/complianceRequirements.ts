@@ -54,6 +54,25 @@ const sourceDocumentTypeValidator = v.union(
 
 const ScopeSchema = z.enum(REQUIREMENT_SCOPES);
 
+const CertificateHolderSchema = z.object({
+  displayName: z.string().min(1).max(240),
+  contactName: z.string().max(240).nullable(),
+  email: z.string().max(320).nullable(),
+  phone: z.string().max(80).nullable(),
+  address: z
+    .object({
+      line1: z.string().max(240).nullable(),
+      line2: z.string().max(240).nullable(),
+      city: z.string().max(120).nullable(),
+      state: z.string().max(120).nullable(),
+      postalCode: z.string().max(40).nullable(),
+      country: z.string().max(120).nullable(),
+      formatted: z.string().max(600).nullable(),
+    })
+    .nullable(),
+  sourceExcerpt: z.string().min(1).max(1200),
+});
+
 const RequirementSchema = z.object({
   scope: ScopeSchema.nullable(),
   title: z.string().min(1).max(120),
@@ -84,11 +103,13 @@ const RequirementSchema = z.object({
   sourcePageEnd: z.number().int().positive().nullable(),
 });
 
-const RequirementImportSchema = z.object({
+export const RequirementImportSchema = z.object({
+  certificateHolders: z.array(CertificateHolderSchema).max(20),
   requirements: z.array(RequirementSchema).max(32),
 });
 
 type ImportedRequirement = z.infer<typeof RequirementSchema>;
+type ImportedCertificateHolder = z.infer<typeof CertificateHolderSchema>;
 type ExistingRequirement = {
   kind: string;
   scope: string;
@@ -151,6 +172,30 @@ function optionalNumber(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+export function normalizeImportedCertificateHolder(
+  holder: ImportedCertificateHolder,
+): RequirementSourceHolderInput {
+  const address = holder.address
+    ? {
+        line1: optionalString(holder.address.line1),
+        line2: optionalString(holder.address.line2),
+        city: optionalString(holder.address.city),
+        state: optionalString(holder.address.state),
+        postalCode: optionalString(holder.address.postalCode),
+        country: optionalString(holder.address.country),
+        formatted: optionalString(holder.address.formatted),
+      }
+    : undefined;
+  return {
+    displayName: holder.displayName.trim(),
+    contactName: optionalString(holder.contactName),
+    email: optionalString(holder.email),
+    phone: optionalString(holder.phone),
+    address:
+      address && Object.values(address).some(Boolean) ? address : undefined,
+  };
 }
 
 function scopeFromArgs(args: {
@@ -297,11 +342,18 @@ function buildPrompt({
     (code) => `${code}: ${ACORD_LOB_LABELS[code]}`,
   ).join("\n");
 
-  return `Extract policy coverage requirements from the source text as a concise, source-backed rule set.
+  return `Extract certificate-holder contacts and policy coverage requirements from the source text as a concise, source-backed record.
 
 Default scope: ${scope}. Use "vendors" for requirements vendors/contractors must satisfy. Use "own_org" for requirements this organization must satisfy.
 
 Only extract coverage requirements: rules that can be checked against a structured insurance policy (line of business, limits, deductibles, coverage form, provisions, endorsement forms).
+
+Separately extract every explicitly identified certificate holder or certificate recipient into certificateHolders[]. A holder is the company or person requesting proof of insurance, not the named insured, insurer, broker, vendor being evaluated, or additional insured unless the source explicitly identifies that party as the certificate holder/recipient.
+- Preserve the complete company/person display name.
+- Capture the attention/contact name, email, phone, and postal address when stated.
+- Split multiple holder companies or recipients into separate entries and keep source order.
+- sourceExcerpt is required and must be the shortest exact source language supporting the identity and contact details.
+- Return an empty certificateHolders array when the source does not explicitly identify one. Do not invent missing contact details.
 
 Skip everything that is not a policy coverage requirement, including:
 - carrier/insurer standards such as AM Best rating, financial size, or admitted/licensed status
@@ -423,6 +475,9 @@ async function runRequirementImport(
         parserBackend: fileExtraction?.parserBackend,
         parsedAt: fileExtraction?.parsedAt,
         holder: args.holder,
+        holders: result.object.certificateHolders.map(
+          normalizeImportedCertificateHolder,
+        ),
         dealName: args.dealName,
         dealType: args.dealType,
         internalNotes: args.internalNotes,

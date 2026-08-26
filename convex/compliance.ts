@@ -84,6 +84,24 @@ const requirementSourceHolderValidator = v.object({
   address: v.optional(certificateHolderAddressValidator),
 });
 
+async function requirementSourceHolders(
+  ctx: Pick<QueryCtx, "db">,
+  source: Doc<"requirementSourceDocuments">,
+) {
+  const holderIds = [
+    source.certificateHolderId,
+    ...(source.certificateHolderIds ?? []),
+  ].filter(
+    (holderId, index, values): holderId is Id<"certificateHolders"> =>
+      Boolean(holderId) &&
+      values.findIndex((candidate) => String(candidate) === String(holderId)) ===
+        index,
+  );
+  return (
+    await Promise.all(holderIds.map((holderId) => ctx.db.get(holderId)))
+  ).filter((holder): holder is Doc<"certificateHolders"> => Boolean(holder));
+}
+
 const evidenceValidator = v.object({
   note: v.optional(v.string()),
   fileId: v.optional(v.id("_storage")),
@@ -455,9 +473,7 @@ async function listRequirementsVisibleToOrg(
     sourceIds.map(async (sourceId) => {
       const source = await ctx.db.get(sourceId);
       if (!source || source.archivedAt) return [sourceId, null] as const;
-      const holder = source.certificateHolderId
-        ? await ctx.db.get(source.certificateHolderId)
-        : null;
+      const holders = await requirementSourceHolders(ctx, source);
       return [
         sourceId,
         {
@@ -465,14 +481,22 @@ async function listRequirementsVisibleToOrg(
           sourceType: source.sourceType,
           dealName: source.dealName,
           dealType: source.dealType,
-          holder: holder
+          holder: holders[0]
             ? {
-                displayName: holder.displayName,
-                contactName: holder.contactName,
-                email: holder.email,
-                address: holder.address,
+                displayName: holders[0].displayName,
+                contactName: holders[0].contactName,
+                email: holders[0].email,
+                phone: holders[0].phone,
+                address: holders[0].address,
               }
             : null,
+          holders: holders.map((holder) => ({
+            displayName: holder.displayName,
+            contactName: holder.contactName,
+            email: holder.email,
+            phone: holder.phone,
+            address: holder.address,
+          })),
         },
       ] as const;
     }),
@@ -527,12 +551,11 @@ async function enrichRequirementSource(
   source: Doc<"requirementSourceDocuments">,
   requirements: Doc<"insuranceRequirements">[],
 ) {
-  const holder = source.certificateHolderId
-    ? await ctx.db.get(source.certificateHolderId)
-    : null;
+  const holders = await requirementSourceHolders(ctx, source);
   return {
     ...source,
-    holder,
+    holder: holders[0] ?? null,
+    holders,
     requirementCount: requirements.filter(
       (requirement) => requirement.sourceDocumentId === source._id,
     ).length,
@@ -567,11 +590,13 @@ export const listCertificateRequirementSources = query({
       const connectedClientOrg = sourceRequirements.find(
         (requirement) => "clientRequirementSource" in requirement,
       )?.clientRequirementSource.clientOrg;
-      const holder = source.certificateHolderId
-        ? await ctx.db.get(source.certificateHolderId)
+      const storedHolders = await requirementSourceHolders(ctx, source);
+      const holders = storedHolders.length > 0
+        ? storedHolders
         : connectedClientOrg
-          ? { displayName: connectedClientOrg.name }
-          : null;
+          ? [{ displayName: connectedClientOrg.name }]
+          : [];
+      const holder = holders[0] ?? null;
       if (source.orgId !== args.orgId) {
         return {
           _id: source._id,
@@ -584,6 +609,7 @@ export const listCertificateRequirementSources = query({
           createdAt: source.createdAt,
           updatedAt: source.updatedAt,
           holder,
+          holders,
           requirementCount: sourceRequirements.length,
           requirements: sourceRequirements.map((requirement) => ({
             requirementId: requirement._id,
@@ -597,6 +623,7 @@ export const listCertificateRequirementSources = query({
       return {
         ...source,
         holder,
+        holders,
         requirementCount: sourceRequirements.length,
         requirements: sourceRequirements.map((requirement) => ({
           requirementId: requirement._id,
@@ -761,7 +788,7 @@ export const updateRequirementSource = mutation({
     if (args.holder !== undefined) {
       const displayName = args.holder.displayName.trim();
       if (!displayName) throw new Error("Certificate holder name is required");
-      sourcePatch.certificateHolderId = await upsertCertificateHolder(ctx, {
+      const certificateHolderId = await upsertCertificateHolder(ctx, {
         orgId: args.orgId,
         displayName,
         contactName: args.holder.contactName,
@@ -774,6 +801,15 @@ export const updateRequirementSource = mutation({
         createdByUserId: access.userId,
         updatedByUserId: access.userId,
       });
+      sourcePatch.certificateHolderId = certificateHolderId;
+      sourcePatch.certificateHolderIds = [
+        certificateHolderId,
+        ...(source.certificateHolderIds ?? []).filter(
+          (holderId) =>
+            String(holderId) !== String(source.certificateHolderId) &&
+            String(holderId) !== String(certificateHolderId),
+        ),
+      ];
     }
     if (args.dealName !== undefined) sourcePatch.dealName = cleanOptionalString(args.dealName);
     if (args.dealType !== undefined) sourcePatch.dealType = cleanOptionalString(args.dealType);
@@ -1222,9 +1258,7 @@ export const getCertificateRequirementSourcePlanInternal = internalQuery({
     if (!source || source.archivedAt || sourceRequirements.length === 0) {
       throw new Error("Certificate requirement source not found.");
     }
-    const storedHolder = source.certificateHolderId
-      ? await ctx.db.get(source.certificateHolderId)
-      : null;
+    const storedHolder = (await requirementSourceHolders(ctx, source))[0] ?? null;
     const selectedForHolder = requestedRequirement ?? sourceRequirements[0];
     const connectedClientOrg = selectedForHolder && "clientRequirementSource" in selectedForHolder
       ? (selectedForHolder as {
@@ -1617,6 +1651,7 @@ export const createRequirementSourceDocumentInternal = internalMutation({
     ),
     parsedAt: v.optional(v.number()),
     holder: v.optional(requirementSourceHolderValidator),
+    holders: v.optional(v.array(requirementSourceHolderValidator)),
     dealName: v.optional(v.string()),
     dealType: v.optional(v.string()),
     internalNotes: v.optional(v.string()),
@@ -1629,25 +1664,41 @@ export const createRequirementSourceDocumentInternal = internalMutation({
       "Admin role required",
     );
     const now = dayjs().valueOf();
-    const holderName = args.holder?.displayName.trim();
-    const certificateHolderId = holderName
-      ? await upsertCertificateHolder(ctx, {
+    const holderInputs = [
+      ...(args.holder ? [args.holder] : []),
+      ...(args.holders ?? []),
+    ];
+    const certificateHolderIds: Id<"certificateHolders">[] = [];
+    for (const [index, holder] of holderInputs.entries()) {
+      const holderName = holder.displayName.trim();
+      if (!holderName) continue;
+      const holderId = await upsertCertificateHolder(ctx, {
           orgId: args.orgId,
           displayName: holderName,
-          contactName: args.holder?.contactName,
-          email: args.holder?.email,
-          phone: args.holder?.phone,
-          address: args.holder?.address,
-          source: "agent",
+          contactName: holder.contactName,
+          email: holder.email,
+          phone: holder.phone,
+          address: holder.address,
+          source: index === 0 && args.holder ? "agent" : "extraction",
           sourceRef: args.title,
           notes: args.internalNotes,
           createdByUserId: args.userId,
           updatedByUserId: args.userId,
-        })
-      : undefined;
+        });
+      if (
+        !certificateHolderIds.some(
+          (candidate) => String(candidate) === String(holderId),
+        )
+      ) {
+        certificateHolderIds.push(holderId);
+      }
+    }
+    const certificateHolderId = certificateHolderIds[0];
     return await ctx.db.insert("requirementSourceDocuments", {
       orgId: args.orgId,
       certificateHolderId,
+      certificateHolderIds:
+        certificateHolderIds.length > 0 ? certificateHolderIds : undefined,
       dealName: cleanOptionalString(args.dealName),
       dealType: cleanOptionalString(args.dealType),
       internalNotes: cleanOptionalString(args.internalNotes),

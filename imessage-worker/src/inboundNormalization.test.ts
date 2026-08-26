@@ -73,6 +73,53 @@ describe("normalizeInboundTurn", () => {
     expect(turn.recoveryFailure).toBeUndefined();
   });
 
+  test("recovers a Photon attachment when Spectrum exposes metadata without a reader", async () => {
+    const client: InboundRecoveryClient = {
+      messages: {
+        get: vi.fn().mockResolvedValue({
+          guid: "message-photo",
+          content: {
+            text: "Certificate holder contact",
+            attachments: [
+              {
+                guid: "photo-1",
+                fileName: "contact-card.png",
+                mimeType: "image/png",
+              },
+            ],
+          },
+        }),
+      },
+      attachments: {
+        downloadStream: () => stream("image-bytes"),
+      },
+    };
+
+    const turn = await normalizeInboundTurn({
+      message: {
+        id: "message-photo",
+        content: {
+          type: "attachment",
+          id: "photo-1",
+          name: "contact-card.png",
+          mimeType: "image/png",
+        },
+      },
+      recoverFromPhoton: true,
+      client,
+      readAttachment,
+    });
+
+    expect(turn.messageText).toBe("Certificate holder contact");
+    expect(turn.attachments).toEqual([
+      {
+        data: Buffer.from("image-bytes").toString("base64"),
+        mimeType: "image/png",
+        name: "contact-card.png",
+      },
+    ]);
+  });
+
   test("combines Spectrum group text and deduplicates attachment identifiers", async () => {
     const turn = await normalizeInboundTurn({
       message: {

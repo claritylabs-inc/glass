@@ -108,7 +108,7 @@ export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
   chat:
     "Interactive assistant route for web chat, MCP/CLI chat, iMessage/SMS, broker portfolio Q&A, retrieval orchestration, and tool calls.",
   chat_vision:
-    "Image-capable web chat route for reading user image attachments while preserving normal chat tools and side effects.",
+    "Image-capable web and iMessage route for reading user image attachments while preserving normal chat tools and side effects.",
   voice_transcription:
     "Speech-to-text route for bounded iMessage voice memos before the transcript enters the normal tool-capable chat workflow.",
   email_draft:
