@@ -161,17 +161,6 @@ export const unsetLegacyCoiAttachmentAuthorization = migrations.define({
   },
 });
 
-export const unsetLegacyAutoSendEmails = migrations.define({
-  table: "organizations",
-  batchSize: 100,
-  migrateOne: async (ctx, organization) => {
-    if (organization.autoSendEmails === undefined) return;
-    await ctx.db.patch(organization._id, {
-      autoSendEmails: undefined,
-    });
-  },
-});
-
 export const runDeclarationFactsBackfill = migrations.runner([
   internal.migrations.backfillDeclarationFacts,
   internal.migrations.syncDeclarationFactProfiles,
@@ -190,8 +179,4 @@ export const runPolicyDeliveryOwnerBackfill = migrations.runner([
 
 export const runLegacyCoiAttachmentAuthorizationCleanup = migrations.runner([
   internal.migrations.unsetLegacyCoiAttachmentAuthorization,
-]);
-
-export const runLegacyAutoSendEmailsCleanup = migrations.runner([
-  internal.migrations.unsetLegacyAutoSendEmails,
 ]);

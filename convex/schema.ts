@@ -559,9 +559,6 @@ export default defineSchema({
     primaryInsuranceContactId: v.optional(v.id("users")),
     // Agent settings
     chatEmailNotifications: v.optional(v.boolean()), // send email notifications for chat responses in email threads
-    // Deprecated widening field. Remove after runLegacyAutoSendEmailsCleanup
-    // completes on every deployed environment.
-    autoSendEmails: v.optional(v.boolean()),
     bccRequesterOnAgentEmails: v.optional(v.boolean()), // default true: BCC requesting team member on outbound agent emails
     emailSendDelay: v.optional(v.number()), // seconds before sending emails (default 5, 0 = instant)
     featureFlags: v.optional(v.record(v.string(), v.boolean())),
