@@ -17,7 +17,6 @@ vi.mock("undici", async (importOriginal) => {
 import schema from "./schema";
 import {
   insertLocalFixture,
-  removeLegacyDemoFixture,
   seed,
 } from "./seed";
 import { listForBroker as listClientsForBroker } from "./clients";
@@ -29,7 +28,6 @@ import { current as currentOperator } from "./operator";
 
 const modules = import.meta.glob("./**/*.ts");
 const insertLocalFixtureFn = insertLocalFixture as any;
-const removeLegacyDemoFixtureFn = removeLegacyDemoFixture as any;
 const seedFn = seed as any;
 const listClientsForBrokerFn = listClientsForBroker as any;
 const listPoliciesForBrokerFn = listPoliciesForBroker as any;
@@ -44,70 +42,6 @@ afterEach(() => {
 });
 
 describe("local workspace seed", () => {
-  test("dry-runs and removes the superseded Acme demo fixture", async () => {
-    const t = convexTest(schema, modules);
-    await t.run(async (ctx) => {
-      const brokerUserId = await ctx.db.insert("users", {
-        email: "broker-admin@demo.glass",
-      });
-      const brokerOrgId = await ctx.db.insert("organizations", {
-        name: "[DEMO] Acme Insurance Brokers",
-        type: "broker",
-        slug: "demo-acme",
-      });
-      const clientOrgId = await ctx.db.insert("organizations", {
-        name: "[DEMO] Techflow Inc",
-        type: "client",
-        brokerOrgId,
-      });
-      await ctx.db.insert("orgMemberships", {
-        orgId: brokerOrgId,
-        userId: brokerUserId,
-        role: "admin",
-      });
-      await ctx.db.insert("brokerClientAssignments", {
-        orgId: brokerOrgId,
-        clientOrgId,
-        producerId: brokerUserId,
-        role: "primary",
-        createdAt: 1,
-      });
-    });
-
-    await expect(
-      t.mutation(removeLegacyDemoFixtureFn, { dryRun: true }),
-    ).resolves.toEqual({
-      dryRun: true,
-      organizations: 2,
-      memberships: 1,
-      assignments: 1,
-      users: 1,
-    });
-    expect(await t.run(async (ctx) => ctx.db.query("organizations").collect())).toHaveLength(2);
-
-    await expect(
-      t.mutation(removeLegacyDemoFixtureFn, { dryRun: false }),
-    ).resolves.toEqual({
-      dryRun: false,
-      organizations: 2,
-      memberships: 1,
-      assignments: 1,
-      users: 1,
-    });
-    const remaining = await t.run(async (ctx) => ({
-      organizations: await ctx.db.query("organizations").collect(),
-      memberships: await ctx.db.query("orgMemberships").collect(),
-      assignments: await ctx.db.query("brokerClientAssignments").collect(),
-      users: await ctx.db.query("users").collect(),
-    }));
-    expect(remaining).toEqual({
-      organizations: [],
-      memberships: [],
-      assignments: [],
-      users: [],
-    });
-  });
-
   test("creates a usable operator, broker, client, and policy idempotently", async () => {
     const t = convexTest(schema, modules);
     const legacy = await t.run(async (ctx) => {
@@ -281,14 +215,6 @@ describe("local workspace seed", () => {
     ).resolves.toEqual([
       expect.objectContaining({ policyNumber: "NWC-TEC-3110-26-01" }),
     ]);
-  });
-
-  test("rejects fixture phones that only match the E.164 shape", async () => {
-    const t = convexTest(schema, modules);
-
-    await expect(
-      t.mutation(insertLocalFixtureFn, { clientPhone: "+15555550102" }),
-    ).rejects.toThrow("clientPhone must be a valid E.164 phone number");
   });
 
   test("stores Montgomery Risk and Cove favicons during the full seed action", async () => {

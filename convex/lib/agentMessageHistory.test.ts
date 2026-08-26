@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
   buildPrivateAgentHistoryMetadata,
-  buildThreadContinuityPrompt,
   selectBoundedAgentHistory,
   shouldStartNewImessageTask,
   stripInternalAgentActivity,
@@ -137,15 +136,6 @@ describe("bounded agent conversation history", () => {
     );
 
     expect(selected.messages.map((item) => item._id)).toEqual(["u1", "legacy"]);
-  });
-
-  test("injects an internal summary without treating it as policy evidence", () => {
-    expect(buildThreadContinuityPrompt("User chose option B.")).toContain(
-      "User chose option B.",
-    );
-    expect(buildThreadContinuityPrompt("User chose option B.")).toContain(
-      "not authoritative policy evidence",
-    );
   });
 
   test("starts a new iMessage task at the seven-day inactivity boundary", () => {

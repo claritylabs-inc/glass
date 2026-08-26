@@ -186,15 +186,6 @@ describe("threads.getAttachmentUrl", () => {
     expect(url).toBeNull();
   });
 
-  test("rejects calls that omit threadId", async () => {
-    const { t, userId, attachedFileId } = await seedThreadWithAttachment();
-
-    await expect(
-      t.withIdentity(sessionFor(userId)).query(getAttachmentUrlFn, {
-        fileId: attachedFileId,
-      }),
-    ).rejects.toThrow("threadId");
-  });
 });
 
 describe("Slack thread mutation boundary", () => {

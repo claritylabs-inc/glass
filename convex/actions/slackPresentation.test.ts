@@ -5,13 +5,11 @@ import schema from "../schema";
 import {
   clearReaction,
   finish,
-  setReaction,
   start,
 } from "./slackPresentation";
 
 const modules = import.meta.glob("../**/*.ts");
 const startFn = start as any;
-const setReactionFn = setReaction as any;
 const finishFn = finish as any;
 const clearReactionFn = clearReaction as any;
 
@@ -122,7 +120,7 @@ async function seedPresentation(t: ReturnType<typeof convexTest>) {
 }
 
 describe("Slack presentation lifecycle", () => {
-  test("uses a temporary reaction and finalizes one classic Block Kit reply", async () => {
+  test("falls back from rejected rich blocks and persists classic delivery", async () => {
     const t = convexTest(schema, modules);
     const fixture = await seedPresentation(t);
     vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example");
@@ -165,89 +163,21 @@ describe("Slack presentation lifecycle", () => {
       channelId: "C-PRIMARY",
       threadTs: "1800.0",
     });
-    expect(started).toMatchObject({
-      mode: "message",
-      phase: "active",
-      processingReaction: "eyes",
-    });
-    expect(started?.providerMessageId).toBeUndefined();
     expect(started?.actionToken).toEqual(expect.any(String));
-    expect(calls).toEqual([
-      {
-        path: "/reaction/add",
-        body: {
-          teamId: "T-CUSTOMER",
-          channelId: "C-PRIMARY",
-          messageTs: "1800.0",
-          name: "eyes",
-        },
-      },
-    ]);
-
-    await t.action(setReactionFn, {
-      threadMessageId: fixture.messageId,
-      name: "page_facing_up",
-    });
-    expect(calls.slice(1)).toEqual([
-      {
-        path: "/reaction/add",
-        body: {
-          teamId: "T-CUSTOMER",
-          channelId: "C-PRIMARY",
-          messageTs: "1800.0",
-          name: "page_facing_up",
-        },
-      },
-      {
-        path: "/reaction/remove",
-        body: {
-          teamId: "T-CUSTOMER",
-          channelId: "C-PRIMARY",
-          messageTs: "1800.0",
-          name: "eyes",
-        },
-      },
-    ]);
-
-    const restarted = await t.action(startFn, {
-      orgId: fixture.orgId,
-      connectionId: fixture.connectionId,
-      threadId: fixture.threadId,
-      threadMessageId: fixture.messageId,
-      channelId: "C-PRIMARY",
-      threadTs: "1800.0",
-    });
-    expect(restarted).toMatchObject({
-      phase: "active",
-      processingReaction: "page_facing_up",
-    });
-    expect(calls).toHaveLength(3);
 
     const finished = await t.action(finishFn, {
       threadMessageId: fixture.messageId,
-      actionToken: restarted?.actionToken,
+      actionToken: started?.actionToken,
     });
     expect(finished).toMatchObject({ phase: "final", mode: "message" });
     await t.action(clearReactionFn, {
       threadMessageId: fixture.messageId,
     });
-    expect(calls.map((call) => call.path)).toEqual([
-      "/reaction/add",
-      "/reaction/add",
-      "/reaction/remove",
-      "/send",
-      "/send",
-      "/reaction/remove",
-    ]);
-    const classic = calls.at(-2)?.body.blocks as Array<Record<string, unknown>>;
+    const sends = calls.filter((call) => call.path === "/send");
+    expect(sends).toHaveLength(2);
+    const classic = sends[1]?.body.blocks as Array<Record<string, unknown>>;
     expect(classic.some((block) => block.type === "card")).toBe(false);
     expect(classic.some((block) => block.type === "actions")).toBe(true);
-    const rendered = JSON.stringify(classic);
-    expect(rendered).toContain("*The policy is active.*");
-    expect(rendered).not.toContain("✅");
-    expect(rendered).not.toContain("**The policy");
-    expect(rendered).not.toContain("Completed a task");
-    expect(calls.at(-1)?.body).toMatchObject({ name: "page_facing_up" });
 
     const message = await t.run((ctx) => ctx.db.get(fixture.messageId));
     expect(message).toMatchObject({

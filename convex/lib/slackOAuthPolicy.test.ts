@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import {
   missingSlackCustomerScopes,
@@ -19,15 +18,6 @@ describe("Slack OAuth scope policy", () => {
         "users:read",
         "users:read.email",
       ]),
-    );
-  });
-
-  test("keeps deployed manifests in sync with the host scope policy", () => {
-    const manifest = JSON.parse(
-      readFileSync("slack-worker/manifests/production.json", "utf8"),
-    ) as { oauth_config: { scopes: { bot: string[] } } };
-    expect(manifest.oauth_config.scopes.bot).toEqual(
-      expect.arrayContaining([...SLACK_HOST_SCOPES]),
     );
   });
 

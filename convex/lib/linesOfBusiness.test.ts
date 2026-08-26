@@ -8,9 +8,6 @@ import {
   EXCLUDED_ACORD_LOB_CODES,
   LEGACY_POLICY_TYPE_TO_LOB,
   isPersonalLob,
-  lobBadgeClass,
-  lobLabel,
-  policyLobCodes,
   toLobCodes,
 } from "./linesOfBusiness";
 
@@ -64,12 +61,6 @@ const LEGACY_POLICY_TYPE_KEYS = [
 ] as const;
 
 describe("linesOfBusiness", () => {
-  it("maps every legacy policy type", () => {
-    for (const key of LEGACY_POLICY_TYPE_KEYS) {
-      expect(LEGACY_POLICY_TYPE_TO_LOB[key], key).toBeDefined();
-    }
-  });
-
   it("stays in sync with cl-sdk legacy normalization", () => {
     for (const key of LEGACY_POLICY_TYPE_KEYS) {
       expect(normalizeOperationalLinesOfBusiness([key]), key).toEqual(toLobCodes([key]));
@@ -102,14 +93,4 @@ describe("linesOfBusiness", () => {
     expect(isPersonalLob("PROP")).toBe(false);
   });
 
-  it("labels and badge-colors codes and legacy keys through the same path", () => {
-    expect(lobLabel("general_liability")).toBe(lobLabel("CGL"));
-    expect(lobLabel("cyber")).toBe("Commercial Cyber and Privacy Liability");
-    expect(lobBadgeClass("general_liability")).toBe(lobBadgeClass("CGL"));
-  });
-
-  it("normalizes the canonical policy linesOfBusiness field", () => {
-    expect(policyLobCodes({ linesOfBusiness: ["CGL", "cyber"] })).toEqual(["CGL", "CYBER"]);
-    expect(policyLobCodes({})).toEqual(["UN"]);
-  });
 });

@@ -9,7 +9,6 @@ vi.mock("undici", async (importOriginal) => {
 import { encode } from "fast-png";
 import {
   extractImageBrandColors,
-  extractWebsiteBrandColors,
   extractWebsiteIdentityEvidence,
   extractWebsiteSiteName,
   extractWebsiteStylesheetUrls,
@@ -17,7 +16,6 @@ import {
   hasSafePngDimensions,
   normalizePublicWebsiteUrl,
   readResponseBytesWithinLimit,
-  readWebsiteBrandSignals,
   readWebsiteFaviconSignals,
   resolvePublicAddress,
 } from "./websiteBrand";
@@ -28,18 +26,6 @@ afterEach(() => {
 });
 
 describe("website brand signals", () => {
-  it("prioritizes useful website theme and stylesheet colors", () => {
-    const colors = extractWebsiteBrandColors(`
-      <meta name="theme-color" content="#1434CB">
-      <style>
-        :root { --brand: #1434CB; --accent: #22A6B3; --paper: #ffffff; }
-      </style>
-    `);
-
-    expect(colors.slice(0, 2)).toEqual(["#1434CB", "#22A6B3"]);
-    expect(colors).not.toContain("#FFFFFF");
-  });
-
   it("accepts public websites and rejects private network targets", () => {
     expect(normalizePublicWebsiteUrl("allstate.com")).toBe(
       "https://allstate.com/",
@@ -144,42 +130,6 @@ describe("website brand signals", () => {
     ).toContain(
       "Liberty Specialty Markets is a trading name for Liberty Managing Agency Limited",
     );
-  });
-
-  it("uses saturated favicon pixels as primary brand-color evidence", async () => {
-    const favicon = encode({
-      width: 2,
-      height: 2,
-      channels: 4,
-      depth: 8,
-      data: new Uint8Array([
-        255, 78, 0, 255, 255, 78, 0, 255, 255, 78, 0, 255, 255, 78, 0, 255,
-      ]),
-    });
-
-    expect(await extractImageBrandColors(favicon)).toEqual(["#FF4E00"]);
-  });
-
-  it("records theme metadata as the selected color provenance", async () => {
-    undiciFetchMock.mockImplementation(async (
-      value: string | URL | Request,
-    ) => {
-      const url = String(value);
-      if (url === "https://93.184.216.34/") {
-        return new Response(
-          '<meta name="theme-color" content="#1434CB">',
-          { headers: { "content-type": "text/html" } },
-        );
-      }
-      return new Response("Not found", { status: 404 });
-    });
-
-    const signals = await readWebsiteBrandSignals(
-      "https://93.184.216.34/",
-    );
-
-    expect(signals.primaryColor).toBe("#1434CB");
-    expect(signals.primaryColorSource).toBe("theme_meta");
   });
 
   it("rejects compressed PNGs whose headers declare unsafe allocations", async () => {

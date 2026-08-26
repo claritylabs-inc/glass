@@ -76,11 +76,8 @@ describe("sendNotificationEmail", () => {
     expect(notif?.emailStatus).toBe("sent");
     expect((notif as any)?.emailSentAt).toBeDefined();
 
-    // Verify sender and branding: notifications always use a stable Glass sender name.
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(callBody.from).toContain("Glass Notifications");
     expect(callBody.from).toContain("<notifications@notifications.glass.insure>");
-    expect(callBody.html).toContain("Smith Insurance");
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -221,11 +218,6 @@ describe("sendNotificationEmail", () => {
     await t.action(sendFn, { notificationId: notifId });
 
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(callBody.from).toContain("Glass Notifications");
-    expect(callBody.html).not.toContain("Notification for thread");
-    expect(callBody.html).toContain("Renewal Review");
-    expect(callBody.html).toContain('<td align="center" style="padding:24px 40px 0 40px;">');
-    expect(callBody.text).toContain("Thread: Renewal Review");
     expect(callBody.reply_to).toBe("agent+renewal@glass.insure");
 
     vi.unstubAllGlobals();

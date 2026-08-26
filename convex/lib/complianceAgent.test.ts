@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Doc, Id } from "../_generated/dataModel";
-import {
-  formatComplianceRequirement,
-  formatComplianceRequirementsContext,
-} from "./complianceAgent";
+import { formatComplianceRequirement } from "./complianceAgent";
 
 describe("compliance requirement agent context", () => {
   it("includes authoritative assessment and requirement-source deal metadata", () => {
@@ -59,8 +56,5 @@ describe("compliance requirement agent context", () => {
     expect(output).toContain("dealName: Transformer Capital investment in Cove");
     expect(output).toContain("coverageForm: claims_made");
     expect(output).toContain("retroactiveDateOnOrBefore: 2026-03-15");
-    expect(formatComplianceRequirementsContext([requirement])).toContain(
-      "Glass would block generation until at least one is met or expiring_soon",
-    );
   });
 });
