@@ -1099,6 +1099,7 @@ export const processInbound = internalAction({
       }
 
       const appCards = await mintImessageAppCards(ctx, {
+        org,
         threadId,
         sourceThreadMessageId: agentResponseMessageId,
         createdByUserId: user._id,
