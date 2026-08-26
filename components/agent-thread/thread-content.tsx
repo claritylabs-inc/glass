@@ -777,7 +777,7 @@ function MessageFooterActions({
             <>
               <MessageMetaTag
                 icon={<LogoIcon size={12} static className="h-3 w-3" />}
-                label="Background agents"
+                label="Mailbox tasks"
                 count={backgroundMailboxIndexes.length}
                 isActive={isMailboxExpanded}
                 onClick={() => setIsMailboxExpanded((value) => !value)}
@@ -1277,11 +1277,8 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
     return (
       <div
         role="status"
-        className="flex w-full items-start gap-2.5 rounded-lg border border-border/50 bg-muted/25 px-3 py-2"
+        className="w-full rounded-lg border border-border/50 bg-muted/25 px-3 py-2"
       >
-        <StatusTag tone="info" className="mt-0.5 shrink-0">
-          Workflow
-        </StatusTag>
         <p className={`min-w-0 text-muted-foreground ${typeStyle("body.default")}`}>
           {msg.content}
         </p>
@@ -2319,11 +2316,11 @@ export function UnifiedThreadContent({
               <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
                 Continue this conversation in Slack.
               </p>
-              <p className={`mt-0.5 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
-                {thread.visibility === "user_private"
-                  ? "Only you can see this thread in Glass."
-                  : "New Slack replies stay synced to this client record."}
-              </p>
+              {thread.visibility !== "user_private" ? (
+                <p className={`mt-0.5 text-muted-foreground/55 ${typeStyle("caption.default")}`}>
+                  New Slack replies stay synced to this client record.
+                </p>
+              ) : null}
             </div>
             {slackUrl ? (
               <PillButton

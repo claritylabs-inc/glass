@@ -2,7 +2,6 @@
 
 import { AlertTriangle, Copy, FileLock2, Mail } from "lucide-react";
 import { PillButton } from "@/components/ui/pill-button";
-import { StatusTag } from "@/components/ui/status-tag";
 import { typeStyle } from "@/lib/typography";
 
 type CertificateHoldArtifact = {
@@ -99,14 +98,9 @@ export function CertificateHoldArtifacts({
               <div className="flex items-start gap-2">
                 <FileLock2 className="mt-0.5 size-4 shrink-0 text-amber-600" />
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className={`text-foreground/90 ${typeStyle("body.medium")}`}>
-                      Certificate on hold
-                    </p>
-                    <StatusTag tone="warning" className={`${typeStyle("label.tag")}`}>
-                      broker review
-                    </StatusTag>
-                  </div>
+                  <p className={`text-foreground/90 ${typeStyle("body.medium")}`}>
+                    Certificate on hold
+                  </p>
                   <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
                     {message}
                   </p>

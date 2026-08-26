@@ -416,6 +416,10 @@ export function EmailStackCard({
     [orderedMessages],
   );
   const draftCount = draftPendingEmailIds.length;
+  const stackLabel =
+    draftCount === orderedMessages.length
+      ? `${orderedMessages.length} email drafts`
+      : `${orderedMessages.length} emails`;
 
   async function handleSendAll(event: MouseEvent) {
     event.stopPropagation();
@@ -454,15 +458,9 @@ export function EmailStackCard({
   return (
     <div className="w-full max-w-md overflow-hidden rounded-md border border-input bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2">
-        <div className="min-w-0">
-          <p className={`text-muted-foreground/55 ${typeStyle("caption.medium")}`}>
-            Email drafts
-          </p>
-          <p className={`truncate text-foreground/90 ${typeStyle("body.large")}`}>
-            {orderedMessages.length} email
-            {orderedMessages.length === 1 ? "" : "s"}
-          </p>
-        </div>
+        <p className={`min-w-0 truncate text-foreground/90 ${typeStyle("body.large")}`}>
+          {stackLabel}
+        </p>
         {draftCount > 1 ? (
           <PillButton
             type="button"
