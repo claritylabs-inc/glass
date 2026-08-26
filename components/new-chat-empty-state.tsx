@@ -144,7 +144,6 @@ export function NewChatEmptyState({
 
   return (
     <div className="mx-auto w-full max-w-3xl pt-10 pb-8">
-      <p className={`mb-4 text-muted-foreground/60 ${typeStyle("body.default")}`}>Some ideas...</p>
       <div className="border-t border-border-emphasized">
         {prompts.map((item) => (
           <button

@@ -9,7 +9,6 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
 import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
-import { scientistSurnameFor } from "../scientist-surnames";
 import type { ToolArtifactData } from "../types";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import {
@@ -26,9 +25,6 @@ export function normalizeMailboxTask(data: unknown): {
   title?: string;
   status?: string;
   summary?: string;
-  steps: string[];
-  text?: string;
-  toolCalls: string[];
   searches: Array<{
     accountEmail?: string;
     mailbox: string;
@@ -62,19 +58,13 @@ export function normalizeMailboxTask(data: unknown): {
   }>;
 } {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return { steps: [], toolCalls: [], searches: [], emails: [] };
+    return { searches: [], emails: [] };
   }
   const record = data as Record<string, unknown>;
   const plan =
     record.plan && typeof record.plan === "object" && !Array.isArray(record.plan)
       ? (record.plan as Record<string, unknown>)
       : undefined;
-  const steps = Array.isArray(plan?.steps)
-    ? plan.steps.filter((step): step is string => typeof step === "string" && step.trim().length > 0)
-    : [];
-  const toolCalls = Array.isArray(record.toolCalls)
-    ? record.toolCalls.filter((toolCall): toolCall is string => typeof toolCall === "string" && toolCall.trim().length > 0)
-    : [];
   const searches = Array.isArray(record.searches)
     ? record.searches
         .filter((search): search is Record<string, unknown> => !!search && typeof search === "object" && !Array.isArray(search))
@@ -132,9 +122,6 @@ export function normalizeMailboxTask(data: unknown): {
     title: typeof record.title === "string" ? record.title : undefined,
     status: typeof record.status === "string" ? record.status : undefined,
     summary: typeof plan?.summary === "string" ? plan.summary : undefined,
-    steps,
-    text: typeof record.text === "string" ? record.text : undefined,
-    toolCalls,
     searches,
     emails,
   };
@@ -241,14 +228,14 @@ function MailboxTaskSummaryCard({
 
   if (artifact.type !== "mailbox_task") return null;
   const task = normalizeMailboxTask(artifact.data);
-  if (!task.summary && task.steps.length === 0 && task.toolCalls.length === 0 && task.searches.length === 0) return null;
+  if (!task.summary && task.searches.length === 0 && task.emails.length === 0) return null;
   const isRunning = task.status === "running";
   const needsReview = task.status === "needs_review";
   const statusLabel = isRunning
     ? "Running"
     : needsReview
       ? "Needs review"
-      : "Background agent";
+      : undefined;
 
   async function handlePolicyImport(email: MailboxTaskEmail, index: number) {
     if (!email.emailRef) return;
@@ -422,43 +409,17 @@ function MailboxTaskSummaryCard({
             ) : null}
           </span>
         </div>
-        <span className="flex shrink-0 items-center gap-2">
-          <StatusTag tone={isRunning ? "info" : needsReview ? "warning" : "neutral"}>
+        {statusLabel ? (
+          <StatusTag tone={isRunning ? "info" : "warning"}>
             {statusLabel}
           </StatusTag>
-        </span>
+        ) : null}
       </div>
       <div className={flat ? "space-y-4" : "space-y-3 px-3 py-3"}>
         {task.summary ? (
           <p className={`text-muted-foreground/75 ${typeStyle("caption.default")}`}>
             {task.summary}
           </p>
-        ) : null}
-        {task.steps.length > 0 ? (
-          <div>
-            <p className={`mb-1.5 text-muted-foreground/35 ${typeStyle("label.eyebrow")}`}>
-              Plan
-            </p>
-            <ol className="space-y-1.5">
-              {task.steps.map((step, index) => (
-                <li key={`${step}-${index}`} className={`flex gap-2 text-muted-foreground/70 ${typeStyle("caption.default")}`}>
-                  <span className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-input text-muted-foreground/50 ${typeStyle("caption.default")}`}>
-                    {index + 1}
-                  </span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        ) : null}
-        {task.toolCalls.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {task.toolCalls.map((toolCall, index) => (
-              <Badge key={`${toolCall}-${index}`} variant="outline" className={`h-5 border-input px-1.5 text-muted-foreground/55 ${typeStyle("label.tag")}`}>
-                {scientistSurnameFor(`mailbox-tool:${toolCall}`, index)}
-              </Badge>
-            ))}
-          </div>
         ) : null}
         <MailboxSearchAudit searches={task.searches} />
         {task.emails.length > 0 ? (
@@ -660,16 +621,21 @@ export function MailboxTaskSidebar({
     ? "Running"
     : task.status === "needs_review"
       ? "Needs review"
-      : "Background agent";
+      : undefined;
   const displayName = mailboxTaskDisplayName(task);
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-input bg-background">
       <div className="flex h-12 items-center justify-between gap-3 border-b border-input px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h2 className={`truncate text-foreground ${typeStyle("heading.micro")}`}>{displayName}</h2>
-          <StatusTag tone={isRunning ? "info" : "neutral"} className="shrink-0">
-            {statusLabel}
-          </StatusTag>
+          {statusLabel ? (
+            <StatusTag
+              tone={isRunning ? "info" : "warning"}
+              className="shrink-0"
+            >
+              {statusLabel}
+            </StatusTag>
+          ) : null}
         </div>
         <PillButton size="compact" variant="icon" onClick={onClose} label="Close mailbox search">
           <X className="h-4 w-4" />
