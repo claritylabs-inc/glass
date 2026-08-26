@@ -741,6 +741,18 @@ export const deleteTargetBatch = internalMutation({
           });
         }
         if (rows.length) await scheduleDeleteTarget(ctx, target._id);
+        else await advance("email_draft_links");
+        return;
+      }
+      if (stage === "email_draft_links") {
+        const rows = await ctx.db
+          .query("emailDraftReviewLinks")
+          .withIndex("thread", (q) =>
+            q.eq("sourceThreadId", target.threadId),
+          )
+          .take(DELETE_BATCH_SIZE);
+        for (const row of rows) await ctx.db.delete(row._id);
+        if (rows.length) await scheduleDeleteTarget(ctx, target._id);
         else await advance("pending_email");
         return;
       }

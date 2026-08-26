@@ -1,7 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { mintImessageAppCards } from "./imessageAppCards";
+import {
+  mintImessageAppCards,
+  mintImessageEmailDraftReviewCard,
+} from "./imessageAppCards";
 
 function appCardContext(createUrl: string) {
   const runMutation = vi.fn().mockResolvedValue({ url: createUrl });
@@ -50,6 +53,33 @@ describe("iMessage app card delivery", () => {
         url: "https://glass.test/card",
       },
     ]);
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  test("mints email draft cards without the policy-card beta flag", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      _id: "draft-1",
+      status: "draft",
+      threadId: appCardArgs.threadId,
+      recipientEmail: "recipient@example.com",
+      subject: "Certificate of insurance",
+    });
+    const runMutation = vi.fn().mockResolvedValue({
+      url: "https://glass.test/share/email/token",
+    });
+    const ctx = { runQuery, runMutation } as unknown as ActionCtx;
+
+    await expect(
+      mintImessageEmailDraftReviewCard(ctx, {
+        pendingEmailId: "draft-1" as Id<"pendingEmails">,
+        threadId: appCardArgs.threadId,
+      }),
+    ).resolves.toEqual({
+      title: "Email draft",
+      subtitle: "To recipient@example.com",
+      summary: "Certificate of insurance",
+      url: "https://glass.test/share/email/token",
+    });
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 });

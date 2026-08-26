@@ -93,4 +93,31 @@ describe("iMessage response delivery", () => {
     });
     expect(sendChat).not.toHaveBeenCalled();
   });
+
+  it("retries the complete response when the provider rejects rich data detection before delivery", async () => {
+    const sendChat = vi.fn(async () => undefined);
+    const error = new Error(
+      "enable_data_detection is not supported by the provider",
+    );
+    const segments = ["Draft ready.", "Review the link."];
+
+    await expect(
+      deliverImessageResponse({
+        segments,
+        replyAll: async () => {
+          throw error;
+        },
+        sendChat,
+        canFallbackAfterReplyError: (value) =>
+          value instanceof Error && value.message.includes("enable_data_detection"),
+      }),
+    ).resolves.toEqual({
+      mode: "chat",
+      deliveredSegments: 2,
+      expectedSegments: 2,
+      complete: true,
+      error,
+    });
+    expect(sendChat.mock.calls.map(([segment]) => segment)).toEqual(segments);
+  });
 });

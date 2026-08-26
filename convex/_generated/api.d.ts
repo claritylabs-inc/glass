@@ -22,6 +22,7 @@ import type * as actions_complianceReview from "../actions/complianceReview.js";
 import type * as actions_connectedEmail from "../actions/connectedEmail.js";
 import type * as actions_connectedEmailScan from "../actions/connectedEmailScan.js";
 import type * as actions_createOutboundImessageGroup from "../actions/createOutboundImessageGroup.js";
+import type * as actions_emailDraftReview from "../actions/emailDraftReview.js";
 import type * as actions_emailDrafts from "../actions/emailDrafts.js";
 import type * as actions_enrichCarrierIdentity from "../actions/enrichCarrierIdentity.js";
 import type * as actions_extractCompanyInfo from "../actions/extractCompanyInfo.js";
@@ -90,6 +91,7 @@ import type * as declarationFacts from "../declarationFacts.js";
 import type * as devClear from "../devClear.js";
 import type * as documentChunks from "../documentChunks.js";
 import type * as emailDeliveryAttempts from "../emailDeliveryAttempts.js";
+import type * as emailDraftReviewLinks from "../emailDraftReviewLinks.js";
 import type * as externalExtractionPayload from "../externalExtractionPayload.js";
 import type * as extractionIntegrityAudit from "../extractionIntegrityAudit.js";
 import type * as extractionTraces from "../extractionTraces.js";
@@ -196,6 +198,7 @@ import type * as lib_imessageDeterministicControls from "../lib/imessageDetermin
 import type * as lib_imessageGroupResolution from "../lib/imessageGroupResolution.js";
 import type * as lib_imessageIngress from "../lib/imessageIngress.js";
 import type * as lib_imessageOutbound from "../lib/imessageOutbound.js";
+import type * as lib_magicLinkTokens from "../lib/magicLinkTokens.js";
 import type * as lib_imessageSlashCommands from "../lib/imessageSlashCommands.js";
 import type * as lib_inboundEmailDeterministicControls from "../lib/inboundEmailDeterministicControls.js";
 import type * as lib_inboundEmailParser from "../lib/inboundEmailParser.js";
@@ -326,6 +329,7 @@ declare const fullApi: ApiFromModules<{
   "actions/connectedEmail": typeof actions_connectedEmail;
   "actions/connectedEmailScan": typeof actions_connectedEmailScan;
   "actions/createOutboundImessageGroup": typeof actions_createOutboundImessageGroup;
+  "actions/emailDraftReview": typeof actions_emailDraftReview;
   "actions/emailDrafts": typeof actions_emailDrafts;
   "actions/enrichCarrierIdentity": typeof actions_enrichCarrierIdentity;
   "actions/extractCompanyInfo": typeof actions_extractCompanyInfo;
@@ -394,6 +398,7 @@ declare const fullApi: ApiFromModules<{
   devClear: typeof devClear;
   documentChunks: typeof documentChunks;
   emailDeliveryAttempts: typeof emailDeliveryAttempts;
+  emailDraftReviewLinks: typeof emailDraftReviewLinks;
   externalExtractionPayload: typeof externalExtractionPayload;
   extractionIntegrityAudit: typeof extractionIntegrityAudit;
   extractionTraces: typeof extractionTraces;
@@ -500,6 +505,7 @@ declare const fullApi: ApiFromModules<{
   "lib/imessageGroupResolution": typeof lib_imessageGroupResolution;
   "lib/imessageIngress": typeof lib_imessageIngress;
   "lib/imessageOutbound": typeof lib_imessageOutbound;
+  "lib/magicLinkTokens": typeof lib_magicLinkTokens;
   "lib/imessageSlashCommands": typeof lib_imessageSlashCommands;
   "lib/inboundEmailDeterministicControls": typeof lib_inboundEmailDeterministicControls;
   "lib/inboundEmailParser": typeof lib_inboundEmailParser;

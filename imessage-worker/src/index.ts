@@ -474,8 +474,10 @@ async function sendResponseText(
       return replies.length;
     },
     sendChat: async (segment) => {
-      await space.send(imessageMarkdown(segment));
+      await space.send(imessagePlainText(segment));
     },
+    canFallbackAfterReplyError: (error) =>
+      errorMessage(error).includes("enable_data_detection"),
   });
   if (!delivery.complete) {
     console.warn("[glass-imessage] Threaded response delivery was incomplete", {

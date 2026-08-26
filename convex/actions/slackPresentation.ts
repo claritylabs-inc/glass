@@ -13,6 +13,7 @@ import {
   SLACK_DEFAULT_PROCESSING_REACTION,
   SLACK_PROCESSING_REACTIONS,
   type SlackBlock,
+  type SlackEmailDraftCard,
 } from "../lib/slackBlocks";
 import { MAX_POLICY_CARDS_PER_TURN } from "../lib/agentPolicyPresentation";
 
@@ -175,6 +176,43 @@ async function policyCards(
   return policies.filter((policy): policy is Doc<"policies"> =>
     Boolean(policy && !policy.deletedAt && policy.orgId === message.orgId),
   );
+}
+
+async function emailDraftCard(
+  ctx: ActionCtx,
+  message: Doc<"threadMessages">,
+): Promise<SlackEmailDraftCard | undefined> {
+  if (!message.pendingEmailId) return undefined;
+  const draft = (await ctx.runQuery(internalApi.pendingEmails.getInternal, {
+    id: message.pendingEmailId,
+  })) as Doc<"pendingEmails"> | null;
+  if (
+    !draft ||
+    draft.status !== "draft" ||
+    draft.orgId !== message.orgId ||
+    draft.threadId !== message.threadId
+  ) {
+    return undefined;
+  }
+  try {
+    const link = await ctx.runMutation(
+      internalApi.emailDraftReviewLinks.createInternal,
+      {
+        pendingEmailId: draft._id,
+        channel: "slack",
+        sourceThreadMessageId: message._id,
+      },
+    );
+    return {
+      recipientEmail: draft.recipientEmail,
+      subject: draft.subject,
+      attachmentCount: draft.attachments?.length ?? 0,
+      reviewUrl: link.url,
+    };
+  } catch (error) {
+    console.warn("[slack] Could not create email draft review link", error);
+    return undefined;
+  }
 }
 
 async function currentPresentation(
@@ -346,13 +384,17 @@ export const finish = internalAction({
     ]);
     if (!presentation || !message?.content.trim()) return null;
     if (presentation.phase === "final") return presentation;
-    const policies = await policyCards(ctx, message);
+    const [policies, emailDraft] = await Promise.all([
+      policyCards(ctx, message),
+      emailDraftCard(ctx, message),
+    ]);
     const token = args.actionToken;
     const revision = presentation.revision + 1;
     const richBlocks = token
       ? buildSlackFinalBlocks({
           message,
           policies,
+          emailDraft,
           actionToken: token,
           revision,
           showHandoff: presentation.threadTs !== undefined,
@@ -371,6 +413,7 @@ export const finish = internalAction({
       ? buildSlackClassicFinalBlocks({
           message,
           policies,
+          emailDraft,
           actionToken: token,
           revision,
           showHandoff: presentation.threadTs !== undefined,
