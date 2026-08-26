@@ -2,6 +2,11 @@ import { internal } from "../_generated/api";
 import type { Id, TableNames } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { MAX_POLICY_CARDS_PER_TURN } from "./agentPolicyPresentation";
+import {
+  isFeatureEnabled,
+  type FeatureFlagMap,
+  type FeatureFlagOrgType,
+} from "./featureFlags";
 
 export type ImessageAppCard = {
   url: string;
@@ -126,6 +131,10 @@ export function dedupeImessageAppCardRequests(
 export async function mintImessageAppCards(
   ctx: ActionCtx,
   args: {
+    org: {
+      type?: FeatureFlagOrgType;
+      featureFlags?: FeatureFlagMap;
+    };
     threadId: Id<"threads">;
     sourceThreadMessageId?: Id<"threadMessages">;
     createdByUserId: Id<"users">;
@@ -133,6 +142,8 @@ export async function mintImessageAppCards(
     artifacts: ToolArtifact[];
   },
 ): Promise<ImessageAppCard[]> {
+  if (!isFeatureEnabled(args.org, "imessage_app_cards")) return [];
+
   const requests = dedupeImessageAppCardRequests(
     buildImessageAppCardRequests({
       policyIds: args.presentedPolicyIds,

@@ -1132,6 +1132,7 @@ export const setFeatureFlag = mutation({
     flagId: v.union(
       v.literal("connect_features"),
       v.literal("coverage_recovery_v2"),
+      v.literal("imessage_app_cards"),
     ),
     enabled: v.boolean(),
   },
