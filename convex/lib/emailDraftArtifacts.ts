@@ -178,7 +178,13 @@ export async function upsertEmailDraftArtifact(
 export async function queueEmailDraftArtifact(
   ctx: ActionCtx,
   context: EmailDraftArtifactContext,
-  params: EmailDraftArtifactParams & { scheduledSendTime: number },
+  params: EmailDraftArtifactParams & {
+    scheduledSendTime: number;
+    explicitSendAuthorization?: {
+      actorUserId: Id<"users">;
+      sourceMessageId: Id<"threadMessages">;
+    };
+  },
 ): Promise<Id<"pendingEmails"> | undefined> {
   const pendingEmailId = await upsertEmailDraftArtifact(ctx, context, params);
   if (!pendingEmailId) return undefined;
@@ -186,6 +192,7 @@ export async function queueEmailDraftArtifact(
   await ctx.runMutation(internal.pendingEmails.scheduleDraftInternal, {
     id: pendingEmailId,
     scheduledSendTime: params.scheduledSendTime,
+    explicitSendAuthorization: params.explicitSendAuthorization,
   });
   return pendingEmailId;
 }

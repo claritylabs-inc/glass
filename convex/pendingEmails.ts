@@ -74,6 +74,12 @@ export const create = internalMutation({
     attachments: v.optional(v.array(pendingEmailAttachmentValidator)),
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
+    explicitSendAuthorization: v.optional(
+      v.object({
+        actorUserId: v.id("users"),
+        sourceMessageId: v.id("threadMessages"),
+      }),
+    ),
     sendBlockedReason: v.optional(v.string()),
     status: v.optional(v.union(v.literal("draft"), v.literal("pending"))),
   },
@@ -166,6 +172,7 @@ export const updateDraftInternal = internalMutation({
       status: "draft",
       scheduledSendTime: 0,
       sendBlockedReason: args.sendBlockedReason,
+      explicitSendAuthorization: undefined,
       coiBatchAuthorization: undefined,
     });
   },
@@ -185,6 +192,12 @@ export const scheduleDraftInternal = internalMutation({
   args: {
     id: v.id("pendingEmails"),
     scheduledSendTime: v.number(),
+    explicitSendAuthorization: v.optional(
+      v.object({
+        actorUserId: v.id("users"),
+        sourceMessageId: v.id("threadMessages"),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     const pending = await ctx.db.get(args.id);
@@ -214,6 +227,7 @@ export const scheduleDraftInternal = internalMutation({
       status: "pending",
       scheduledSendTime: args.scheduledSendTime,
       sendBlockedReason: undefined,
+      explicitSendAuthorization: args.explicitSendAuthorization,
     });
     return args.id;
   },
@@ -228,6 +242,7 @@ export const markSent = internalMutation({
     await ctx.db.patch(args.id, {
       status: "sent",
       sentMessageId: args.sentMessageId,
+      explicitSendAuthorization: undefined,
     });
   },
 });

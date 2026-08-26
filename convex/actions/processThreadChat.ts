@@ -722,12 +722,10 @@ export const run = internalAction({
       const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
       const canSendEmail = emailIdentity.canSend;
 
-      const autoSend = org.autoSendEmails === true;
       const webChatAddendum = buildChannelInstructions({
         platform: surface,
         isMixedThread,
         canSendEmail,
-        autoSendEmails: autoSend,
       });
 
       let pageContextBlock = "";
@@ -1038,6 +1036,7 @@ export const run = internalAction({
                 orgId: args.orgId,
                 userId: args.userId,
                 threadId: args.threadId,
+                sourceUserMessageId: args.userMessageId,
                 chatMessageId: agentMsgId,
                 routingParentId: String(agentMsgId),
                 channel: surface,
@@ -1069,7 +1068,6 @@ export const run = internalAction({
                 allowedRecipients,
                 availableAttachments,
                 referencedPolicyIds: emailReferencedPolicyIds,
-                autoSendEmails: org.autoSendEmails === true,
                 emailSendDelay: org.emailSendDelay,
                 conversationContext:
                   recentConversationContext +

@@ -27,6 +27,7 @@ import {
   userFacingErrorCodes,
 } from "../lib/userFacingErrors";
 import { threadActionActorsMatch } from "../lib/threadActionConfirmationValidators";
+import { isActorBoundExplicitEmailSendSource } from "../lib/emailSendIntent";
 
 type SendEmailResult = { recipientEmail: string } | null;
 type BulkDraftSendResult = {
@@ -40,13 +41,22 @@ const draftSendAuthorizationValidator = v.union(
     confirmationId: v.id("threadActionConfirmations"),
   }),
   v.object({ kind: v.literal("scheduled") }),
-  v.object({ kind: v.literal("organization_auto_send") }),
+  v.object({
+    kind: v.literal("channel_explicit_action"),
+    actorUserId: v.id("users"),
+    sourceMessageId: v.id("threadMessages"),
+  }),
   v.object({ kind: v.literal("mcp_explicit_action") }),
 );
 
 type DraftSendAuthorization =
   | Infer<typeof draftSendAuthorizationValidator>
   | { kind: "authenticated_user_action" };
+
+type ChannelExplicitSendAuthorization = {
+  actorUserId: Id<"users">;
+  sourceMessageId: Id<"threadMessages">;
+};
 
 function isCurrentCompletedConfirmation(
   confirmation: Doc<"threadActionConfirmations"> | null,
@@ -103,6 +113,38 @@ async function authorizeExplicitCoiBatches(
   }
 }
 
+async function assertChannelExplicitSendAuthorization(
+  ctx: ActionCtx,
+  pending: Doc<"pendingEmails">,
+  authorization: ChannelExplicitSendAuthorization,
+  expectedStatus: "draft" | "pending",
+) {
+  if (!pending.threadId || pending.status !== expectedStatus) {
+    throw new Error("Explicit send requires a current thread email.");
+  }
+  const [sourceMessage, actor] = await Promise.all([
+    ctx.runQuery(internal.threads.getMessageInternal, {
+      id: authorization.sourceMessageId,
+    }),
+    ctx.runQuery(internal.users.getInternal, {
+      id: authorization.actorUserId,
+    }),
+  ]);
+  if (
+    !isActorBoundExplicitEmailSendSource({
+      message: sourceMessage,
+      orgId: pending.orgId,
+      threadId: pending.threadId,
+      actorUserId: authorization.actorUserId,
+      actorEmail: actor?.email,
+    })
+  ) {
+    throw new Error(
+      "The current user message does not authorize sending this email.",
+    );
+  }
+}
+
 async function assertDraftSendAuthorization(
   ctx: ActionCtx,
   pending: Doc<"pendingEmails">,
@@ -114,15 +156,23 @@ async function assertDraftSendAuthorization(
         "Scheduled email authorization is not valid for this draft.",
       );
     }
+    if (pending.explicitSendAuthorization) {
+      await assertChannelExplicitSendAuthorization(
+        ctx,
+        pending,
+        pending.explicitSendAuthorization,
+        "pending",
+      );
+    }
     return;
   }
-  if (authorization.kind === "organization_auto_send") {
-    const org = await ctx.runQuery(internal.orgs.getInternal, {
-      id: pending.orgId,
-    });
-    if (org?.autoSendEmails !== true) {
-      throw new Error("Organization auto-send is not enabled.");
-    }
+  if (authorization.kind === "channel_explicit_action") {
+    await assertChannelExplicitSendAuthorization(
+      ctx,
+      pending,
+      authorization,
+      "draft",
+    );
     return;
   }
   if (
