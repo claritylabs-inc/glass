@@ -271,6 +271,29 @@ describe("personal iMessage privacy inventory", () => {
         status: "succeeded",
         createdAt: dayjs().valueOf(),
       });
+      const pendingEmailId = await ctx.db.insert("pendingEmails", {
+        orgId: orgA,
+        threadId: directA,
+        status: "draft",
+        emailPayload: "{}",
+        scheduledSendTime: 0,
+        recipientEmail: "recipient@example.com",
+        subject: "Draft",
+        emailBody: "Private draft",
+      });
+      const reviewLinkId = await ctx.db.insert("emailDraftReviewLinks", {
+        orgId: orgA,
+        pendingEmailId,
+        tokenHash: "private-review-token-hash",
+        channel: "imessage",
+        draftFingerprint: "draft-fingerprint",
+        actor: { kind: "user", userId },
+        sourceThreadId: directA,
+        expiresAt: dayjs().add(1, "hour").valueOf(),
+        sendAttempts: 0,
+        createdAt: dayjs().valueOf(),
+        updatedAt: dayjs().valueOf(),
+      });
       await ctx.db.insert("requirementSourceDocuments", {
         orgId: orgA,
         fileId: businessFileId,
@@ -303,6 +326,7 @@ describe("personal iMessage privacy inventory", () => {
       return {
         previewJobId,
         auditId,
+        reviewLinkId,
         chatOnlyFileId,
         businessFileId,
       };
@@ -320,6 +344,7 @@ describe("personal iMessage privacy inventory", () => {
       job: await ctx.db.get(deletionJobId),
       thread: await ctx.db.get(directA),
       audit: await ctx.db.get(fixture.auditId),
+      reviewLink: await ctx.db.get(fixture.reviewLinkId),
       chatOnlyFile: await ctx.db.system.get("_storage", fixture.chatOnlyFileId),
       businessFile: await ctx.db.system.get("_storage", fixture.businessFileId),
     }));
@@ -332,6 +357,7 @@ describe("personal iMessage privacy inventory", () => {
     expect(outcome.audit?.threadId).toBeUndefined();
     expect(outcome.audit?.input).toBeUndefined();
     expect(outcome.audit?.output).toBeUndefined();
+    expect(outcome.reviewLink).toBeNull();
     expect(outcome.chatOnlyFile).toBeNull();
     expect(outcome.businessFile).not.toBeNull();
     expect(outcome.job?.deletedFileCount).toBe(1);

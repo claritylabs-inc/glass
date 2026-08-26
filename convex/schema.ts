@@ -3715,6 +3715,7 @@ export default defineSchema({
         v.literal("audit"),
         v.literal("outbound"),
         v.literal("app_cards"),
+        v.literal("email_draft_links"),
         v.literal("pending_email"),
         v.literal("delivery_attempt"),
         v.literal("inbound_event"),
@@ -4093,6 +4094,35 @@ export default defineSchema({
     .index("change", ["policyChangeCaseId"])
     .index("thread", ["sourceThreadId"])
     .index("source_message", ["sourceThreadMessageId"]),
+
+  emailDraftReviewLinks: defineTable({
+    orgId: v.id("organizations"),
+    pendingEmailId: v.id("pendingEmails"),
+    tokenHash: v.string(),
+    channel: v.union(
+      v.literal("imessage"),
+      v.literal("slack"),
+      v.literal("email"),
+      v.literal("other"),
+    ),
+    draftFingerprint: v.string(),
+    confirmationId: v.optional(v.id("threadActionConfirmations")),
+    actor: threadActionActorValidator,
+    sourceThreadId: v.id("threads"),
+    sourceThreadMessageId: v.optional(v.id("threadMessages")),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    sendStartedAt: v.optional(v.number()),
+    sendCompletedAt: v.optional(v.number()),
+    sendAttempts: v.number(),
+    sendLastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("token", ["tokenHash"])
+    .index("draft_channel", ["pendingEmailId", "channel"])
+    .index("thread", ["sourceThreadId"])
+    .index("expiration", ["expiresAt"]),
 
   imessageChats: defineTable({
     chatGuid: v.string(),

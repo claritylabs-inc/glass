@@ -5,6 +5,12 @@ import { resolvePolicyCarrierDisplay } from "./policyPartyContext";
 import { renderSlackMrkdwn } from "./transportRenderers";
 
 export type SlackBlock = Record<string, unknown>;
+export type SlackEmailDraftCard = {
+  recipientEmail: string;
+  subject: string;
+  attachmentCount: number;
+  reviewUrl: string;
+};
 type SlackAgentStep = NonNullable<Doc<"threadMessages">["agentSteps"]>[number];
 type SlackToolStep = Extract<SlackAgentStep, { type: "tool" }>;
 
@@ -153,6 +159,7 @@ export function buildSlackFinalBlocks(args: {
     "_id" | "content" | "agentSteps" | "status" | "attachments"
   >;
   policies: Doc<"policies">[];
+  emailDraft?: SlackEmailDraftCard;
   actionToken: string;
   revision: number;
   showHandoff: boolean;
@@ -193,6 +200,36 @@ export function buildSlackFinalBlocks(args: {
               .join(" · ")}`,
             2000,
           ),
+        },
+      ],
+    });
+  }
+
+  if (args.emailDraft) {
+    const attachmentLabel =
+      args.emailDraft.attachmentCount > 0
+        ? ` · ${args.emailDraft.attachmentCount} attachment${args.emailDraft.attachmentCount === 1 ? "" : "s"}`
+        : "";
+    blocks.push({
+      type: "card",
+      block_id: blockId("glass-email-draft", args.message._id, args.revision),
+      title: { type: "plain_text", text: "Email draft" },
+      subtitle: {
+        type: "plain_text",
+        text: truncate(`To ${args.emailDraft.recipientEmail}`, 150),
+      },
+      body: {
+        type: "plain_text",
+        text: truncate(`${args.emailDraft.subject}${attachmentLabel}`, 200),
+      },
+      actions: [
+        {
+          type: "button",
+          action_id: "glass_open_email_draft",
+          value: args.actionToken,
+          url: args.emailDraft.reviewUrl,
+          text: { type: "plain_text", text: "Review draft" },
+          accessibility_label: `Review email draft to ${args.emailDraft.recipientEmail}`,
         },
       ],
     });
@@ -283,6 +320,7 @@ export function buildSlackClassicFinalBlocks(args: {
     "_id" | "content" | "agentSteps" | "status" | "attachments"
   >;
   policies: Doc<"policies">[];
+  emailDraft?: SlackEmailDraftCard;
   actionToken: string;
   revision: number;
   showHandoff: boolean;
@@ -305,6 +343,45 @@ export function buildSlackClassicFinalBlocks(args: {
       },
     },
   ];
+
+  if (args.emailDraft) {
+    const attachmentLabel =
+      args.emailDraft.attachmentCount > 0
+        ? `\n${args.emailDraft.attachmentCount} attachment${args.emailDraft.attachmentCount === 1 ? "" : "s"}`
+        : "";
+    blocks.push(
+      {
+        type: "section",
+        block_id: blockId(
+          "glass-classic-email-draft",
+          args.message._id,
+          args.revision,
+        ),
+        text: {
+          type: "mrkdwn",
+          text: `*Email draft*\nTo ${escapeMrkdwn(args.emailDraft.recipientEmail)}\n${escapeMrkdwn(args.emailDraft.subject)}${attachmentLabel}`,
+        },
+      },
+      {
+        type: "actions",
+        block_id: blockId(
+          "glass-classic-email-action",
+          args.message._id,
+          args.revision,
+        ),
+        elements: [
+          {
+            type: "button",
+            action_id: "glass_open_email_draft",
+            value: args.actionToken,
+            url: args.emailDraft.reviewUrl,
+            text: { type: "plain_text", text: "Review draft" },
+            accessibility_label: `Review email draft to ${args.emailDraft.recipientEmail}`,
+          },
+        ],
+      },
+    );
+  }
 
   for (const [index, policy] of args.policies.slice(0, 3).entries()) {
     blocks.push(

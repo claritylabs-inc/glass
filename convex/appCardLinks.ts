@@ -8,27 +8,15 @@ import { getClientPortalUrl } from "./lib/domains";
 import { lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
 import { resolveCarrierIdentity } from "./lib/carrierIdentityProjection";
 import { resolvePolicyCarrierDisplay } from "./lib/policyPartyContext";
+import {
+  createMagicLinkToken,
+  hashMagicLinkToken,
+} from "./lib/magicLinkTokens";
 
 const appCardKindValidator = v.union(
   v.literal("policy"),
   v.literal("certificate"),
 );
-
-async function sha256Hex(token: string): Promise<string> {
-  const encoded = new TextEncoder().encode(token);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function randomToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function policyTitle(policy: Pick<Doc<"policies">, "policyNumber" | "linesOfBusiness" | "fileName">) {
   if (policy.policyNumber) return `Policy ${policy.policyNumber}`;
@@ -240,11 +228,11 @@ export const createInternal = internalMutation({
       throw new Error("App card resource does not belong to the requested organization.");
     }
 
-    const token = randomToken();
+    const token = createMagicLinkToken();
     const now = dayjs().valueOf();
     await ctx.db.insert("appCardAccessLinks", {
       orgId: resolvedOrgId,
-      tokenHash: await sha256Hex(token),
+      tokenHash: await hashMagicLinkToken(token),
       kind: args.kind,
       policyId: args.policyId,
       certificateId: args.certificateId,
@@ -268,7 +256,7 @@ export const getByToken = query({
   handler: async (ctx, args) => {
     const token = args.token.trim();
     if (!token) return null;
-    const tokenHash = await sha256Hex(token);
+    const tokenHash = await hashMagicLinkToken(token);
     const link = await ctx.db
       .query("appCardAccessLinks")
       .withIndex("token", (q) => q.eq("tokenHash", tokenHash))

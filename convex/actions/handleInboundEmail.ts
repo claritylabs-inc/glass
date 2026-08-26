@@ -1780,6 +1780,29 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         }
       }
 
+      let pendingEmailReviewLinkId: Id<"emailDraftReviewLinks"> | undefined;
+      let pendingEmailReviewUrl: string | undefined;
+      if (
+        effectiveMode === "direct" &&
+        pendingConfirmationPrompt?.pendingEmailId
+      ) {
+        try {
+          const reviewLink = await ctx.runMutation(
+            internal.emailDraftReviewLinks.createInternal,
+            {
+              pendingEmailId: pendingConfirmationPrompt.pendingEmailId,
+              channel: "email",
+              actor: { kind: "email", address: normalizedEmailActor },
+              sourceThreadMessageId: inboundMessageId,
+            },
+          );
+          pendingEmailReviewLinkId = reviewLink.id;
+          pendingEmailReviewUrl = reviewLink.url;
+        } catch (error) {
+          console.warn("Could not create email draft review link:", error);
+        }
+      }
+
       // Domain guard: strip internal URLs from customer-facing replies
       if (effectiveMode === "cc" || effectiveMode === "forward") {
         const escapedSiteUrl = siteUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1793,9 +1816,15 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         );
       }
 
-      const deliveryResponseBody = pendingConfirmationPrompt
-        ? `${responseBody.trim()}\n\n${pendingConfirmationPrompt.content}`
-        : responseBody;
+      const deliveryResponseBody = [
+        responseBody.trim(),
+        pendingConfirmationPrompt?.content,
+        pendingEmailReviewUrl
+          ? `Review and send this draft: ${pendingEmailReviewUrl}`
+          : undefined,
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join("\n\n");
       const plainTextBody = stripMarkdown(deliveryResponseBody);
       const signature = buildSignature(agentAddress, brokerBranding);
       const fullReplyText = plainTextBody + signature.text;
@@ -1920,7 +1949,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             dedupeKey: pendingConfirmationPrompt.dedupeKey,
           },
         );
-        await ctx.runMutation(
+        const confirmationId = await ctx.runMutation(
           internal.threadActionConfirmations.createInternal,
           {
             orgId,
@@ -1930,6 +1959,19 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
             payload: pendingConfirmationPrompt.payload,
           },
         );
+        if (pendingEmailReviewLinkId) {
+          try {
+            await ctx.runMutation(
+              internal.emailDraftReviewLinks.bindConfirmationInternal,
+              {
+                id: pendingEmailReviewLinkId,
+                confirmationId,
+              },
+            );
+          } catch (error) {
+            console.warn("Could not bind email draft review link:", error);
+          }
+        }
       }
       await scheduleThreadHistoryCompaction(ctx, unifiedThreadId);
 

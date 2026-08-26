@@ -81,12 +81,14 @@ export type ImessageResponseDeliveryResult = {
 /**
  * Attempts every response bubble in one reply operation so the provider
  * binds them all to the same source message. Ordinary chat delivery is used
- * only when the reply operation reports that it sent zero bubbles.
+ * when the reply operation reports that it sent zero bubbles, or when the
+ * caller recognizes a provider rejection that happened before delivery.
  */
 export async function deliverImessageResponse(args: {
   segments: string[];
   replyAll: (segments: string[]) => Promise<number>;
   sendChat: (segment: string) => Promise<void>;
+  canFallbackAfterReplyError?: (error: unknown) => boolean;
 }): Promise<ImessageResponseDeliveryResult> {
   const expectedSegments = args.segments.length;
   if (expectedSegments === 0) {
@@ -105,6 +107,18 @@ export async function deliverImessageResponse(args: {
       Math.min(expectedSegments, await args.replyAll(args.segments)),
     );
   } catch (error) {
+    if (args.canFallbackAfterReplyError?.(error)) {
+      for (const segment of args.segments) {
+        await args.sendChat(segment);
+      }
+      return {
+        mode: "chat",
+        deliveredSegments: expectedSegments,
+        expectedSegments,
+        complete: true,
+        error,
+      };
+    }
     return {
       mode: "thread",
       deliveredSegments: 0,

@@ -51,6 +51,7 @@ import {
 } from "../lib/agentPolicyFocus";
 import {
   mintImessageAppCards,
+  mintImessageEmailDraftReviewCard,
   type ImessageAppCard,
 } from "../lib/imessageAppCards";
 import { runImessageDeterministicControls } from "../lib/imessageDeterministicControls";
@@ -1098,14 +1099,25 @@ export const processInbound = internalAction({
         responseText = `${responseText.trim()}\n\n${requirementConfirmation.message}`;
       }
 
-      const appCards = await mintImessageAppCards(ctx, {
-        org,
-        threadId,
-        sourceThreadMessageId: agentResponseMessageId,
-        createdByUserId: user._id,
-        presentedPolicyIds: runState.presentedPolicyIds,
-        artifacts: imessageToolArtifacts,
-      });
+      const emailDraftCard =
+        emailConfirmationPrompt && agentResponseMessageId
+          ? await mintImessageEmailDraftReviewCard(ctx, {
+              pendingEmailId: emailConfirmationPrompt.pendingEmailId,
+              threadId,
+              sourceThreadMessageId: agentResponseMessageId,
+            })
+          : null;
+      const appCards = [
+        ...(emailDraftCard ? [emailDraftCard] : []),
+        ...(await mintImessageAppCards(ctx, {
+          org,
+          threadId,
+          sourceThreadMessageId: agentResponseMessageId,
+          createdByUserId: user._id,
+          presentedPolicyIds: runState.presentedPolicyIds,
+          artifacts: imessageToolArtifacts,
+        })),
+      ];
       await scheduleThreadHistoryCompaction(ctx, threadId);
 
       return await finish(

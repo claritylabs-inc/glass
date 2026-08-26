@@ -55,4 +55,11 @@ crons.cron(
   {},
 );
 
+crons.cron(
+  "sweep email draft review links",
+  "0 4 * * *",
+  internalApi.emailDraftReviewLinks.sweepExpired,
+  {},
+);
+
 export default crons;
