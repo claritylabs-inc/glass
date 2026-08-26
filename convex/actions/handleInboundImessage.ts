@@ -39,6 +39,7 @@ import { runWebRetrieval, type WebRetrievalInput } from "../lib/webRetrieval";
 import {
   buildImessageModelMessages,
   buildRecentImessageTextContext,
+  imessageAgentTaskForAttachments,
   isImessageStatusCue,
   transcribeImessageVoiceMemos,
   type ImessageHistoryMessage,
@@ -601,6 +602,7 @@ export const processInbound = internalAction({
         attachmentRecords,
         currentMessageId: inboundThreadMessageId,
       });
+      const chatTask = imessageAgentTaskForAttachments(attachmentRecords);
 
       const brokerIdentity =
         org.type === "client"
@@ -842,7 +844,7 @@ export const processInbound = internalAction({
 
       const turn = await runAgentTurn(ctx, {
         orgId,
-        task: "chat",
+        task: chatTask,
         messageText: inboundMessageText,
         recentConversationContext,
         currentAttachmentNames: attachmentRecords.map(

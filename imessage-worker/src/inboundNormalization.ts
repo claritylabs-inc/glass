@@ -55,6 +55,7 @@ function collectSpectrumParts(message: unknown) {
     content: SpectrumAttachmentContent;
   }> = [];
   const sourceIds: string[] = [];
+  let hasAttachmentPart = false;
 
   const visit = (value: unknown) => {
     const item = objectRecord(value);
@@ -66,6 +67,9 @@ function collectSpectrumParts(message: unknown) {
         texts.push(content.text.trim());
       }
       return;
+    }
+    if (content.type === "attachment") {
+      hasAttachmentPart = true;
     }
     if (
       content.type === "attachment" &&
@@ -90,6 +94,7 @@ function collectSpectrumParts(message: unknown) {
   return {
     text: texts.join("\n"),
     attachments,
+    hasAttachmentPart,
     sourceMessageId:
       typeof rootMessage?.id === "string" ? rootMessage.id : sourceIds[0],
   };
@@ -142,7 +147,7 @@ export async function normalizeInboundTurn(args: {
 
   if (
     args.recoverFromPhoton &&
-    spectrum.attachments.length > 0 &&
+    spectrum.hasAttachmentPart &&
     spectrum.sourceMessageId &&
     args.client?.messages?.get
   ) {

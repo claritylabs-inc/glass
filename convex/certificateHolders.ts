@@ -184,7 +184,8 @@ export async function upsertCertificateHolder(ctx: MutationCtx, args: {
   });
   const now = dayjs().valueOf();
   const preserveExistingOptionalFields =
-    Boolean(existing) && args.source === "certificate_generation";
+    Boolean(existing) &&
+    (args.source === "certificate_generation" || args.source === "extraction");
   const patch = {
     displayName,
     normalizedName,

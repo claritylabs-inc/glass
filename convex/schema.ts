@@ -1550,6 +1550,7 @@ export default defineSchema({
   requirementSourceDocuments: defineTable({
     orgId: v.id("organizations"),
     certificateHolderId: v.optional(v.id("certificateHolders")),
+    certificateHolderIds: v.optional(v.array(v.id("certificateHolders"))),
     dealName: v.optional(v.string()),
     dealType: v.optional(v.string()),
     internalNotes: v.optional(v.string()),
