@@ -173,6 +173,39 @@ describe("cl-router embedding callbacks", () => {
     )("one")).resolves.toEqual(embedding);
   });
 
+  test("chunks routed embedding batches below the Convex response value limit", async () => {
+    vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
+    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
+    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
+    const texts = Array.from({ length: 131 }, (_, index) => `text-${index}`);
+    const embedding = Array.from({ length: 1536 }, () => 0.25);
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(init?.body as string) as { texts: string[] };
+      return Response.json(embeddingResponse(request.texts.map(() => embedding)));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const ctx = embeddingContext();
+
+    const result = await makeEmbedTexts(
+      ctx as never,
+      "org-1" as Id<"organizations">,
+    )(texts);
+
+    expect(result).toHaveLength(131);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const requests = fetchMock.mock.calls.map(([, init]) =>
+      JSON.parse((init as RequestInit).body as string) as {
+        texts: string[];
+        trace: { batchIndex: number; batchCount: number };
+      });
+    expect(requests.map((request) => request.texts.length)).toEqual([130, 1]);
+    expect(requests.map((request) => request.trace)).toEqual([
+      expect.objectContaining({ batchIndex: 1, batchCount: 2 }),
+      expect.objectContaining({ batchIndex: 2, batchCount: 2 }),
+    ]);
+    expect(ctx.runQuery).toHaveBeenCalledOnce();
+  });
+
   test("does not hide router client errors behind direct fallback", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
@@ -221,6 +254,7 @@ describe("cl-router generation callbacks", () => {
         extractorName: "sourceTree",
       },
       providerOptions: {
+        pdfUrl: "https://storage.example.test/document.pdf",
         pdfBytes: new Uint8Array([1, 2, 3]),
         mimeType: "application/pdf",
         images: [{ imageBase64: "image-data", mimeType: "image/png" }],
@@ -267,7 +301,15 @@ describe("cl-router generation callbacks", () => {
     const messageParts = request.messages[0].content as Array<Record<string, unknown>>;
     expect(messageParts).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "image", image: "image-data", mediaType: "image/png" }),
-      expect.objectContaining({ type: "file", data: "AQID", mediaType: "application/pdf" }),
+      expect.objectContaining({
+        type: "file",
+        source: {
+          url: "https://storage.example.test/document.pdf",
+          mediaType: "application/pdf",
+          filename: "document.pdf",
+          sizeBytes: 3,
+        },
+      }),
     ]));
     expect(messageParts.find((part) => part.type === "text")?.text).toBe(
       "Return effectiveDate and expirationDate.",

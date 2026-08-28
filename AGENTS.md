@@ -213,6 +213,8 @@ Certificate holder edits in the shared detail drawer target the selected certifi
 
 ## Current Model Routing
 
+Convex cl-router calls keep small generation inputs inline, send HTTPS files and images as bounded asset references, stage transcription audio in temporary Convex storage for the JSON transcription contract, and chunk embeddings so each response contains at most 200,000 numeric values. The extraction worker sends the original storage-backed PDF URL while retaining inline page images.
+
 Direct-fallback model routes, capability budgets, provider normalization, static challenger/fallback candidates, and rating thresholds come from exact-pinned `@claritylabs/cl-router-policy`. [convex/lib/modelCatalog.ts](convex/lib/modelCatalog.ts) layers Glass-only UI labels, selectable model catalogs, and route groups over that package. The extraction worker imports the same package directly, so enabled cl-router calls and disabled-task direct fallback share one versioned policy vocabulary. cl-router has no active offline benchmark or quality-bar path: explicit human ratings use a 5-up/5-down prior, challengers need at least 25 ratings and a 0.03 advantage, and cost only breaks an exact score tie. Technical failures affect availability and fallback telemetry, not quality.
 
 The `query_reason` candidate set keeps OpenAI `gpt-5.6-terra` plus Fireworks `accounts/fireworks/models/muse-glimmer-30b` and `accounts/fireworks/models/inkling` as rating-based challengers that share the family's single 5% exploration budget. Muse Glimmer and Inkling are also available as explicit Fireworks text-route selections in the centralized Glass catalog. Extraction challenger policy remains separate and unchanged.

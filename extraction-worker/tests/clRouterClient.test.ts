@@ -47,7 +47,7 @@ test("task flags support full extraction, preview, exact tasks, and wildcard", (
   assert.equal(isClRouterTaskEnabled(parseClRouterTaskFlags(""), "extraction"), false);
 });
 
-test("request builder forwards schema, snapshot, and base64 assets without mutation", () => {
+test("request builder forwards schema, snapshot, and referenced PDF assets without mutation", () => {
   const schema = { type: "object", properties: { policyNumber: { type: "string" } } };
   const settings = {
     routes: { extraction: { provider: "openai", model: "gpt-5.4-mini" } },
@@ -64,6 +64,7 @@ test("request builder forwards schema, snapshot, and base64 assets without mutat
     schema,
     maxTokens: 4096,
     assets: {
+      pdfUrl: "https://storage.example.test/policy.pdf",
       pdfBytes: Uint8Array.from([1, 2, 3]),
       images: [{ imageBase64: "image-data", mimeType: "image/png" }],
     },
@@ -74,9 +75,12 @@ test("request builder forwards schema, snapshot, and base64 assets without mutat
   assert.equal(request.messages?.[0]?.content[0]?.type, "image");
   assert.deepEqual(request.messages?.[0]?.content[1], {
     type: "file",
-    data: "AQID",
-    mediaType: "application/pdf",
-    filename: "document.pdf",
+    source: {
+      url: "https://storage.example.test/policy.pdf",
+      mediaType: "application/pdf",
+      filename: "document.pdf",
+      sizeBytes: 3,
+    },
   });
 });
 

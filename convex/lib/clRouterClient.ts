@@ -71,10 +71,61 @@ export type ClRouterFailureAttempt = {
   errorCode?: string;
 };
 
+export type ClRouterAssetReference = {
+  url: string;
+  mediaType: string;
+  filename?: string;
+  sizeBytes: number;
+  sha256?: string;
+};
+
+export async function clRouterAssetReferenceFromUrl(options: {
+  url: URL;
+  mediaType: string;
+  filename?: string;
+  sizeBytes?: number;
+  fetch?: typeof globalThis.fetch;
+}): Promise<ClRouterAssetReference> {
+  if (options.url.protocol !== "https:") {
+    throw new ClRouterRequestError(
+      "configuration",
+      "Referenced router assets require HTTPS URLs",
+    );
+  }
+  let sizeBytes = options.sizeBytes;
+  if (sizeBytes === undefined) {
+    const response = await (options.fetch ?? globalThis.fetch)(options.url, {
+      method: "HEAD",
+      redirect: "manual",
+    });
+    if (!response.ok) {
+      throw new ClRouterRequestError(
+        "connection",
+        `Unable to inspect referenced router asset (${response.status})`,
+      );
+    }
+    sizeBytes = Number(response.headers.get("content-length"));
+  }
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) {
+    throw new ClRouterRequestError(
+      "configuration",
+      "Referenced router assets require a positive content length",
+    );
+  }
+  return {
+    url: options.url.toString(),
+    mediaType: options.mediaType,
+    ...(options.filename ? { filename: options.filename } : {}),
+    sizeBytes,
+  };
+}
+
 export type ClRouterMessagePart =
   | { type: "text"; text: string }
   | { type: "image"; image: string; mediaType?: string }
+  | { type: "image"; source: ClRouterAssetReference }
   | { type: "file"; data: string; mediaType: string; filename?: string }
+  | { type: "file"; source: ClRouterAssetReference }
   | { type: "tool-call"; toolCallId: string; toolName: string; input: unknown }
   | { type: "tool-result"; toolCallId: string; toolName: string; output: unknown };
 
@@ -163,9 +214,7 @@ export type ClRouterTranscribeRequest = {
   tenantId?: string;
   orgId?: string;
   settings?: ClRouterSettingsSnapshot | null;
-  data: Uint8Array;
-  filename: string;
-  mediaType: string;
+  audio: ClRouterAssetReference;
   prompt?: string;
   trace?: ClRouterTraceMetadata;
 };
@@ -967,27 +1016,9 @@ export async function clRouterTranscribe(
   request: ClRouterTranscribeRequest,
   options: ClRouterClientOptions = {},
 ): Promise<ClRouterTranscribeResponse> {
-  const metadata = {
-    tenantId: request.tenantId ?? CL_ROUTER_TENANT_ID,
-    ...(request.orgId ? { orgId: request.orgId } : {}),
-    ...(request.settings ? { settings: request.settings } : {}),
-    ...(request.prompt ? { prompt: request.prompt } : {}),
-    filename: request.filename,
-    mediaType: request.mediaType,
-    ...(request.trace ? { trace: request.trace } : {}),
-  };
-  const form = new FormData();
-  form.append("request", JSON.stringify(metadata));
-  const fileBytes = new Uint8Array(request.data.byteLength);
-  fileBytes.set(request.data);
-  form.append(
-    "file",
-    new Blob([fileBytes.buffer], { type: request.mediaType }),
-    request.filename,
-  );
-  const payload = await clRouterFetch(
+  const payload = await postJson(
     "/v1/transcribe",
-    { method: "POST", body: form },
+    requestPayload(request),
     options,
   );
   if (!isRecord(payload)) {

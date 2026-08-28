@@ -272,30 +272,36 @@ describe("cl-router requests", () => {
     )).resolves.toMatchObject({ embeddings: [[0.1, 0.2], [0.3, 0.4]] });
   });
 
-  test("sends transcription metadata separately from file bytes", async () => {
+  test("sends JSON transcription metadata with an audio asset reference", async () => {
     const fetchMock = vi.fn(async () => Response.json({
       ...responseMetadata(),
       text: "Bound policy transcript.",
     }));
     await clRouterTranscribe({
       orgId: "org-1",
-      data: new Uint8Array([1, 2, 3]),
-      filename: "memo.m4a",
-      mediaType: "audio/mp4",
+      audio: {
+        url: "https://storage.example.test/memo.m4a",
+        filename: "memo.m4a",
+        mediaType: "audio/mp4",
+        sizeBytes: 3,
+      },
       trace: { parentRequestId: "parent-1" },
     }, { environment, fetch: fetchMock });
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://router.example.test/v1/transcribe");
-    const form = init.body as FormData;
-    expect(JSON.parse(String(form.get("request")))).toMatchObject({
+    expect(init.headers).toMatchObject({ "Content-Type": "application/json" });
+    expect(JSON.parse(init.body as string)).toMatchObject({
       tenantId: "glass",
       orgId: "org-1",
-      filename: "memo.m4a",
-      mediaType: "audio/mp4",
+      audio: {
+        url: "https://storage.example.test/memo.m4a",
+        filename: "memo.m4a",
+        mediaType: "audio/mp4",
+        sizeBytes: 3,
+      },
       trace: { parentRequestId: "parent-1" },
     });
-    expect((form.get("file") as File).name).toBe("memo.m4a");
   });
 
   test("sends idempotent feedback against the originating router request", async () => {

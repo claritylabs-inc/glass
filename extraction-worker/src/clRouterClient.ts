@@ -9,10 +9,20 @@ export type ClRouterSettingsSnapshot = {
   providerKeys?: Record<string, string | undefined>;
 };
 
+export type ClRouterAssetReference = {
+  url: string;
+  mediaType: string;
+  filename?: string;
+  sizeBytes: number;
+  sha256?: string;
+};
+
 export type ClRouterMessagePart =
   | { type: "text"; text: string }
   | { type: "image"; image: string; mediaType?: string }
-  | { type: "file"; data: string; mediaType: string; filename?: string };
+  | { type: "image"; source: ClRouterAssetReference }
+  | { type: "file"; data: string; mediaType: string; filename?: string }
+  | { type: "file"; source: ClRouterAssetReference };
 
 export type ClRouterMessage = {
   role: "user";
@@ -20,6 +30,7 @@ export type ClRouterMessage = {
 };
 
 export type ClRouterProviderAssets = {
+  pdfUrl?: string;
   pdfBase64?: string;
   pdfBytes?: Uint8Array;
   mimeType?: string;
@@ -256,7 +267,17 @@ function requestInput(
   const pdfBase64 = assets?.pdfBytes
     ? Buffer.from(assets.pdfBytes).toString("base64")
     : assets?.pdfBase64?.replace(/\s/g, "");
-  if (images.length > 0 || pdfBase64) {
+  const pdfSizeBytes = assets?.pdfBytes?.byteLength
+    ?? (pdfBase64 ? Buffer.from(pdfBase64, "base64").byteLength : undefined);
+  const pdfReference = assets?.pdfUrl && pdfSizeBytes
+    ? {
+        url: assets.pdfUrl,
+        mediaType: assets.mimeType ?? "application/pdf",
+        filename: "document.pdf",
+        sizeBytes: pdfSizeBytes,
+      }
+    : undefined;
+  if (images.length > 0 || pdfBase64 || pdfReference) {
     return {
       messages: [{
         role: "user",
@@ -266,7 +287,9 @@ function requestInput(
             image: image.imageBase64,
             ...(image.mimeType ? { mediaType: image.mimeType } : {}),
           })),
-          ...(pdfBase64
+          ...(pdfReference
+            ? [{ type: "file" as const, source: pdfReference }]
+            : pdfBase64
             ? [{
                 type: "file" as const,
                 data: pdfBase64,
