@@ -328,6 +328,7 @@ export const claimInbound = internalMutation({
     teamId: v.string(),
     channelId: v.string(),
     threadTs: v.string(),
+    replyThreadTs: v.optional(v.string()),
     messageTs: v.string(),
     senderTeamId: v.optional(v.string()),
     senderUserId: v.string(),
@@ -633,6 +634,8 @@ export const prepareBatch = internalMutation({
           userMessageId: Id<"threadMessages">;
           agentMessageId: Id<"threadMessages">;
           actorId: Id<"slackActors">;
+          channelId: string;
+          threadTs?: string;
         }
       | undefined;
     const now = dayjs().valueOf();
@@ -887,6 +890,8 @@ export const prepareBatch = internalMutation({
           userMessageId: messageId,
           agentMessageId,
           actorId: actor._id,
+          channelId: event.channelId,
+          threadTs: isDirectMessage ? event.replyThreadTs : event.threadTs,
         };
       }
       await ctx.db.patch(event._id, { status: "completed", updatedAt: now });
@@ -898,8 +903,6 @@ export const prepareBatch = internalMutation({
           orgId: connection.clientOrgId,
           serviceUserId: connection.serviceUserId,
           connectionId: connection._id,
-          channelId: first.channelId,
-          threadTs: first.isDirectMessage ? undefined : first.threadTs,
         }
       : null;
   },

@@ -13,6 +13,7 @@ export type SlackInboundPayload = {
   teamId: string;
   channelId: string;
   threadTs: string;
+  replyThreadTs?: string;
   messageTs: string;
   senderTeamId?: string;
   senderUserId: string;
@@ -236,6 +237,11 @@ export function parseSlackEventPayload(
   ].join(":");
   const channelType = string(outerEvent?.channel_type)?.toLowerCase();
   const isDirectMessage = channelType === "im" || channelId.startsWith("D");
+  const explicitThreadTs = string(message?.thread_ts);
+  const replyThreadTs =
+    isDirectMessage && explicitThreadTs && explicitThreadTs !== messageTs
+      ? explicitThreadTs
+      : undefined;
 
   return {
     eventKey,
@@ -245,10 +251,12 @@ export function parseSlackEventPayload(
     teamId,
     channelId,
     // Slack App Home is one continuous 1:1 conversation. Use the DM channel
-    // as its stable Glass conversation key and send responses at the top level.
+    // as its stable Glass conversation key while preserving an explicit Slack
+    // thread root as the delivery target for replies made inside a thread.
     threadTs: isDirectMessage
       ? channelId
-      : (string(message?.thread_ts) ?? messageTs),
+      : (explicitThreadTs ?? messageTs),
+    ...(replyThreadTs ? { replyThreadTs } : {}),
     messageTs,
     ...(string(message?.user_team ?? outerEvent?.user_team)
       ? { senderTeamId: string(message?.user_team ?? outerEvent?.user_team) }

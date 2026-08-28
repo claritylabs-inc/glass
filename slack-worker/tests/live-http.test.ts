@@ -118,10 +118,15 @@ before(async () => {
       return respond(response, {
         ok: true,
         upload_url: `${providerOrigin}/upload`,
-        file_id: "F-POLICY",
+        file_id:
+          body.filename === "delayed-share.pdf" ? "F-DELAYED" : "F-POLICY",
       });
     }
     if (request.url === "/api/files.completeUploadExternal") {
+      const files = body.files as Array<{ id?: string }> | undefined;
+      if (files?.[0]?.id === "F-DELAYED") {
+        return respond(response, { ok: true, files: [{ id: "F-DELAYED" }] });
+      }
       return respond(response, {
         ok: true,
         files: [
@@ -140,6 +145,9 @@ before(async () => {
           "application/x-www-form-urlencoded",
         )
       ) {
+        return respond(response, { ok: false, error: "file_not_found" });
+      }
+      if (body.file === "F-DELAYED") {
         return respond(response, { ok: false, error: "file_not_found" });
       }
       return respond(response, {
@@ -448,6 +456,38 @@ describe("native Slack worker HTTP adapter", () => {
       apiCalls.find((call) => call.path === "/api/files.getUploadURLExternal")
         ?.body,
       { filename: "policy.pdf", length: "6" },
+    );
+  });
+
+  test("does not retry a completed file share while its timestamp propagates", async () => {
+    const completeCallsBefore = apiCalls.filter(
+      (call) => call.path === "/api/files.completeUploadExternal",
+    ).length;
+    const request = {
+      clientMessageId: "native-delayed-file-1",
+      teamId: "T-CUSTOMER",
+      channelId: "C-CUSTOMER",
+      mrkdwnText: "",
+      attachments: [
+        {
+          url: `${providerOrigin}/source.pdf`,
+          filename: "delayed-share.pdf",
+          contentType: "application/pdf",
+        },
+      ],
+    };
+
+    assert.deepEqual(await (await workerRequest("/send", request)).json(), {
+      attachmentFailures: [],
+    });
+    assert.deepEqual(await (await workerRequest("/send", request)).json(), {
+      attachmentFailures: [],
+    });
+    assert.equal(
+      apiCalls.filter(
+        (call) => call.path === "/api/files.completeUploadExternal",
+      ).length,
+      completeCallsBefore + 1,
     );
   });
 

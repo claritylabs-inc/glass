@@ -168,11 +168,26 @@ export const claim = internalMutation({
       if (!channelMatches) {
         throw new Error("Slack send target does not match the thread channel");
       }
-      if (thread.slackConversationKind === "direct_message") {
-        if (args.threadTs !== undefined) {
-          throw new Error("Slack DM replies must be sent at the top level");
+      if (
+        thread.slackConversationKind === "direct_message" &&
+        args.threadTs !== undefined
+      ) {
+        const replyRoot = await ctx.db
+          .query("threadMessages")
+          .withIndex("thread_message", (q) =>
+            q.eq("threadId", thread._id).eq("slackMessageTs", args.threadTs),
+          )
+          .first();
+        if (!replyRoot) {
+          throw new Error(
+            "Slack DM reply target does not belong to the conversation",
+          );
         }
-      } else if (thread.slackThreadTs !== args.threadTs) {
+      }
+      if (
+        thread.slackConversationKind !== "direct_message" &&
+        thread.slackThreadTs !== args.threadTs
+      ) {
         throw new Error(
           "Slack send target does not match the thread timestamp",
         );

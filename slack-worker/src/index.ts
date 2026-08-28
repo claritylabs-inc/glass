@@ -477,16 +477,20 @@ async function uploadSlackFile(args: {
   );
   const completedTs = slackFileMessageTs(completedFile, args.channelId);
   if (completedTs) return completedTs;
-  const info = await slackFormApi<SlackResponse & { file?: SlackFile }>(
-    "files.info",
-    args.token,
-    { file: upload.file_id },
-  );
-  const messageTs = slackFileMessageTs(info.file, args.channelId);
-  if (!messageTs) {
-    throw new Error("Slack did not return the uploaded file message timestamp");
+  // Completing the external upload is the provider's commit point. Slack can
+  // populate file shares asynchronously, so a missing message timestamp here
+  // must not turn a successful share into a retry that uploads the file again.
+  try {
+    const info = await slackFormApi<SlackResponse & { file?: SlackFile }>(
+      "files.info",
+      args.token,
+      { file: upload.file_id },
+    );
+    return slackFileMessageTs(info.file, args.channelId);
+  } catch (error) {
+    console.warn("Slack file share metadata is not available yet", error);
+    return undefined;
   }
-  return messageTs;
 }
 
 async function sendSlack(input: SendRequest): Promise<SendResult> {
