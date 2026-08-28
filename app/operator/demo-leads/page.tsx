@@ -1,31 +1,40 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
-import { Mail, MessageCircle } from "lucide-react";
+import { Loader2, Mail, MessageCircle, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { OperatorSidebar } from "../operator-sidebar";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { ActionSurfaceButton } from "@/components/ui/action-surface";
+import { ActionSurface } from "@/components/ui/action-surface";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { FadeIn } from "@/components/ui/fade-in";
+import { PillButton } from "@/components/ui/pill-button";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import {
   useCachedOperatorDemoSalesTranscriptDetail,
   useCachedOperatorDemoSalesTranscripts,
 } from "@/lib/sync/operator-cached-queries";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
-type TranscriptRow = {
-  _id: string;
-  channel: "email" | "imessage";
-  senderContact?: string;
-  leadName?: string;
-  leadCompany?: string;
-  leadEmail?: string;
-  lastUpdatedAt: number;
-};
+type TranscriptRow = FunctionReturnType<
+  typeof api.operator.listPublicDemoSalesTranscripts
+>[number];
 
 type TimelineLog = {
   _id: string;
@@ -135,12 +144,35 @@ function Timeline({
 
 export default function OperatorDemoLeadsPage() {
   const transcripts = useCachedOperatorDemoSalesTranscripts();
-  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(null);
+  const deleteTranscript = useMutation(
+    api.operator.deletePublicDemoSalesTranscript,
+  );
+  const [selectedTranscriptId, setSelectedTranscriptId] =
+    useState<Id<"publicDemoSalesTranscripts"> | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<TranscriptRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const transcriptDetail =
     useCachedOperatorDemoSalesTranscriptDetail(selectedTranscriptId);
-  const selectedTranscript = transcriptDetail?.transcript as
-    | TranscriptRow
-    | undefined;
+  const selectedTranscript = transcriptDetail?.transcript;
+
+  async function deleteLead() {
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteTranscript({ id: pendingDelete._id });
+      if (selectedTranscriptId === pendingDelete._id) {
+        setSelectedTranscriptId(null);
+      }
+      setPendingDelete(null);
+      toast.success("Demo lead deleted");
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not delete this demo lead."),
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const rightPanel = (
     <SettingsDrawer
@@ -187,30 +219,86 @@ export default function OperatorDemoLeadsPage() {
           </div>
         ) : (
           <div className="space-y-1">
-            {(transcripts ?? []).map((row: TranscriptRow) => {
+            {(transcripts ?? []).map((row) => {
+              const contact = formatContact(row.senderContact);
               return (
-                <ActionSurfaceButton
+                <ActionSurface
                   key={row._id}
-                  className="group flex w-full items-center gap-3 px-4 py-3"
-                  onClick={() => setSelectedTranscriptId(row._id)}
+                  className="flex items-center gap-1 p-1"
                 >
-                  <div className="shrink-0 text-muted-foreground/30">
-                    {channelIcon(row.channel)}
-                  </div>
-                  <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
-                    <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
-                      {formatContact(row.senderContact)}
-                    </p>
-                    <p className={`shrink-0 text-muted-foreground/40 ${typeStyle("caption.default")}`}>
-                      {formatShortTime(row.lastUpdatedAt)}
-                    </p>
-                  </div>
-                </ActionSurfaceButton>
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized"
+                    onClick={() => setSelectedTranscriptId(row._id)}
+                  >
+                    <span className="shrink-0 text-muted-foreground/30">
+                      {channelIcon(row.channel)}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                      <span
+                        className={`truncate text-foreground ${typeStyle("body.medium")}`}
+                      >
+                        {contact}
+                      </span>
+                      <span
+                        className={`shrink-0 text-muted-foreground/40 ${typeStyle("caption.default")}`}
+                      >
+                        {formatShortTime(row.lastUpdatedAt)}
+                      </span>
+                    </span>
+                  </button>
+                  <PillButton
+                    variant="destructive"
+                    size="compact"
+                    iconOnly
+                    label={`Delete lead ${contact}`}
+                    className="mr-1"
+                    onClick={() => setPendingDelete(row)}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </PillButton>
+                </ActionSurface>
               );
             })}
           </div>
         )}
       </FadeIn>
+
+      <Dialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null);
+        }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete demo lead</DialogTitle>
+            <DialogDescription>
+              Permanently delete{" "}
+              <strong>{formatContact(pendingDelete?.senderContact)}</strong>,
+              including the transcript and full chat history? This cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <PillButton
+              variant="secondary"
+              disabled={deleting}
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </PillButton>
+            <PillButton
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void deleteLead()}
+            >
+              {deleting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {deleting ? "Deleting…" : "Delete lead"}
+            </PillButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

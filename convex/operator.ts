@@ -723,6 +723,50 @@ export const getPublicDemoSalesTranscript = query({
   },
 });
 
+export const deletePublicDemoSalesTranscript = mutation({
+  args: { id: v.id("publicDemoSalesTranscripts") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const transcript = await ctx.db.get(args.id);
+    if (!transcript) return { deleted: false, deletedLogs: 0 };
+
+    const [logs, transcripts] = await Promise.all([
+      ctx.db
+        .query("publicDemoChatLogs")
+        .withIndex("conversation_created", (q) =>
+          q.eq("conversationId", transcript.conversationId),
+        )
+        .collect(),
+      ctx.db
+        .query("publicDemoSalesTranscripts")
+        .withIndex("conversation", (q) =>
+          q.eq("conversationId", transcript.conversationId),
+        )
+        .collect(),
+    ]);
+
+    for (const log of logs) await ctx.db.delete(log._id);
+    for (const relatedTranscript of transcripts) {
+      await ctx.db.delete(relatedTranscript._id);
+    }
+    const conversation = await ctx.db.get(transcript.conversationId);
+    if (conversation) await ctx.db.delete(conversation._id);
+
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "demo_lead_deleted",
+      summary: "Deleted a public demo lead and its chat history",
+      metadata: {
+        conversationId: transcript.conversationId,
+        transcriptId: transcript._id,
+        deletedLogs: logs.length,
+      },
+    });
+
+    return { deleted: true, deletedLogs: logs.length };
+  },
+});
+
 export const listExtractionTraces = query({
   args: {
     status: v.optional(extractionTraceStatusValidator),
