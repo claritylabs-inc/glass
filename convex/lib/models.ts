@@ -27,6 +27,7 @@ import {
   shouldUseClRouterForCall,
   shouldUseClRouterForTask,
   withClRouterDirectFallback,
+  type ClRouterAssetReference,
   type ClRouterGenerateRequest,
   type ClRouterFailureAttempt,
   type ClRouterMessage,
@@ -558,6 +559,38 @@ type AudioTranscriptionInput = {
   prompt?: string;
 };
 
+async function withTemporaryAudioReference<T>(
+  ctx: ActionCtx,
+  input: AudioTranscriptionInput,
+  callback: (audio: ClRouterAssetReference) => Promise<T>,
+): Promise<T> {
+  const bytes = new Uint8Array(input.data);
+  const storageId = await ctx.storage.store(
+    new Blob([bytes], { type: input.mediaType }),
+  );
+  try {
+    const url = await ctx.storage.getUrl(storageId);
+    if (!url) {
+      throw new ClRouterRequestError(
+        "configuration",
+        "Unable to create a temporary audio reference for cl-router",
+      );
+    }
+    return await callback({
+      url,
+      mediaType: input.mediaType,
+      filename: transcriptionFilename(input.filename, input.mediaType),
+      sizeBytes: bytes.byteLength,
+    });
+  } finally {
+    try {
+      await ctx.storage.delete(storageId);
+    } catch {
+      console.warn("[cl-router] Failed to delete temporary transcription audio");
+    }
+  }
+}
+
 type AudioTranscriptionResult = {
   text: string;
   route: ModelRoute;
@@ -772,13 +805,11 @@ export async function transcribeAudioForOrg(
   if (!shouldUseClRouterForTask(AUDIO_TRANSCRIPTION_TASK)) return direct();
   const settings = await resolveClRouterSettingsForOrg(ctx, orgId);
   return withClRouterDirectFallback({
-    router: async () => {
+    router: () => withTemporaryAudioReference(ctx, input, async (audio) => {
       const response = await clRouterTranscribe({
         orgId,
         settings,
-        data: new Uint8Array(input.data),
-        filename: transcriptionFilename(input.filename, input.mediaType),
-        mediaType: input.mediaType,
+        audio,
         prompt: input.prompt,
         trace: { label: "convex.models.transcribeAudioForOrg" },
       });
@@ -803,7 +834,7 @@ export async function transcribeAudioForOrg(
         transport: "cl-router" as const,
         clRouter: response,
       };
-    },
+    }),
     direct: () => direct(settings),
     onFallback: (error) => warnClRouterFallback(AUDIO_TRANSCRIPTION_TASK, error),
   });
@@ -822,12 +853,10 @@ export async function transcribeAudioForPublicTask(
   if (!shouldUseClRouterForTask(AUDIO_TRANSCRIPTION_TASK)) return direct();
   const settings = await clRouterSettingsForPublicTask(ctx);
   return withClRouterDirectFallback({
-    router: async () => {
+    router: () => withTemporaryAudioReference(ctx, input, async (audio) => {
       const response = await clRouterTranscribe({
         settings,
-        data: new Uint8Array(input.data),
-        filename: transcriptionFilename(input.filename, input.mediaType),
-        mediaType: input.mediaType,
+        audio,
         prompt: input.prompt,
         trace: { label: "convex.models.transcribeAudioForPublicTask" },
       });
@@ -849,7 +878,7 @@ export async function transcribeAudioForPublicTask(
         transport: "cl-router" as const,
         clRouter: response,
       };
-    },
+    }),
     direct: () => direct(settings),
     onFallback: (error) => warnClRouterFallback(AUDIO_TRANSCRIPTION_TASK, error),
   });

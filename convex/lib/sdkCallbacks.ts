@@ -48,6 +48,7 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import {
   ClRouterRequestError,
+  clRouterAssetReferenceFromUrl,
   clRouterEmbed,
   clRouterGenerate,
   shouldUseClRouterForCall,
@@ -561,30 +562,50 @@ function resolveRouterGenerationPlan(
   return plan;
 }
 
-function clRouterDataContent(data: URL | Uint8Array | string): string {
-  if (data instanceof URL) return data.toString();
+function clRouterDataContent(data: Uint8Array | string): string {
   return typeof data === "string" ? data : Buffer.from(data).toString("base64");
 }
 
-function buildClRouterPromptInput(
+function knownPdfSize(providerOptions?: Record<string, unknown>): number | undefined {
+  const options = providerOptions as ExtractionProviderOptions | undefined;
+  if (options?.pdfBytes instanceof Uint8Array) return options.pdfBytes.byteLength;
+  if (typeof options?.pdfBase64 === "string") {
+    return Buffer.from(options.pdfBase64.replace(/\s/g, ""), "base64").byteLength;
+  }
+  return undefined;
+}
+
+async function buildClRouterPromptInput(
   prompt: string,
   providerOptions?: Record<string, unknown>,
-): Pick<Parameters<typeof clRouterGenerate>[0], "messages" | "prompt"> {
+): Promise<Pick<Parameters<typeof clRouterGenerate>[0], "messages" | "prompt">> {
   const input = buildPromptInput(prompt, providerOptions);
   if ("prompt" in input) return { prompt: input.prompt };
-  const messages: ClRouterMessage[] = input.messages.map((message) => ({
+  const pdfSize = knownPdfSize(providerOptions);
+  const messages: ClRouterMessage[] = await Promise.all(input.messages.map(async (message) => ({
     role: message.role,
-    content: message.content.map((part): ClRouterMessagePart => {
+    content: await Promise.all(message.content.map(async (part): Promise<ClRouterMessagePart> => {
       if (part.type === "text") return part;
       if (part.type === "image") return part;
+      if (part.data instanceof URL) {
+        return {
+          type: "file",
+          source: await clRouterAssetReferenceFromUrl({
+            url: part.data,
+            mediaType: part.mediaType,
+            filename: part.filename,
+            sizeBytes: pdfSize,
+          }),
+        };
+      }
       return {
         type: "file",
         data: clRouterDataContent(part.data),
         mediaType: part.mediaType,
         filename: part.filename,
       };
-    }),
-  }));
+    })),
+  })));
   return { messages };
 }
 
@@ -789,10 +810,10 @@ export function makeGenerateText(
                 orgId: routing?.orgId ? String(routing.orgId) : undefined,
                 settings,
                 system,
-                ...buildClRouterPromptInput(
+                ...(await buildClRouterPromptInput(
                   prompt,
                   providerOptions as Record<string, unknown> | undefined,
-                ),
+                )),
                 maxTokens: effectiveMaxTokens,
                 sessionKey: routing?.traceId ?? (
                   routing?.tracePolicyId ? String(routing.tracePolicyId) : undefined
@@ -1018,10 +1039,10 @@ export function makeGenerateObject(
                 orgId: routing?.orgId ? String(routing.orgId) : undefined,
                 settings,
                 system,
-                ...buildClRouterPromptInput(
+                ...(await buildClRouterPromptInput(
                   prompt,
                   providerOptions as Record<string, unknown> | undefined,
-                ),
+                )),
                 schema: z.toJSONSchema(schema) as Record<string, unknown>,
                 schemaDialect: "https://json-schema.org/draft/2020-12/schema",
                 maxTokens: effectiveMaxTokens,
@@ -1309,6 +1330,8 @@ function warnEmbeddingRouterFallback(error: { kind: string; status?: number }): 
 
 export type EmbedTexts = (texts: string[]) => Promise<number[][]>;
 
+const MAX_CL_ROUTER_EMBEDDING_VALUES = 200_000;
+
 /**
  * Create an embedding callback. Broker overrides are resolved once per callback
  * instance, then reused across all single or batched embedding requests.
@@ -1346,13 +1369,30 @@ export function makeEmbedTexts(
     if (!shouldUseClRouterForTask("embeddings")) return direct();
     const settings = await getRouterSettings();
     return withClRouterDirectFallback({
-      router: async () => (await clRouterEmbed({
-        orgId,
-        settings,
-        texts,
-        dimensions: EMBEDDING_DIMENSIONS,
-        trace: { label: "convex.sdkCallbacks.makeEmbedTexts" },
-      })).embeddings,
+      router: async () => {
+        const maxTextsPerRequest = Math.max(
+          1,
+          Math.floor(MAX_CL_ROUTER_EMBEDDING_VALUES / EMBEDDING_DIMENSIONS),
+        );
+        const batchCount = Math.ceil(texts.length / maxTextsPerRequest);
+        const embeddings: number[][] = [];
+        for (let offset = 0; offset < texts.length; offset += maxTextsPerRequest) {
+          const batchIndex = Math.floor(offset / maxTextsPerRequest) + 1;
+          const response = await clRouterEmbed({
+            orgId,
+            settings,
+            texts: texts.slice(offset, offset + maxTextsPerRequest),
+            dimensions: EMBEDDING_DIMENSIONS,
+            trace: {
+              label: "convex.sdkCallbacks.makeEmbedTexts",
+              batchIndex,
+              batchCount,
+            },
+          });
+          embeddings.push(...response.embeddings);
+        }
+        return embeddings;
+      },
       direct: () => direct(settings),
       onFallback: warnEmbeddingRouterFallback,
     });

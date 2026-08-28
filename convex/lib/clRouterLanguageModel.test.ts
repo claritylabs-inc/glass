@@ -160,6 +160,50 @@ describe("cl-router LanguageModelV3 adapter", () => {
     vi.restoreAllMocks();
   });
 
+  test("sends HTTPS image URLs as bounded asset references", async () => {
+    const fetchMock = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(null, {
+        headers: { "content-length": "321" },
+      }))
+      .mockResolvedValueOnce(generatedResponse("Image inspected."));
+    const directModel = new MockLanguageModelV3();
+    const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
+
+    await model.doGenerate({
+      prompt: [{
+        role: "user",
+        content: [{
+          type: "file",
+          data: new URL("https://storage.example.test/policy.png"),
+          mediaType: "image/png",
+          filename: "policy.png",
+        }],
+      }],
+    });
+
+    expect(model.supportedUrls).toEqual({ "*/*": [/^https:\/\/.*$/] });
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "HEAD",
+      redirect: "manual",
+    });
+    const request = JSON.parse(
+      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
+    );
+    expect(request.messages).toEqual([{
+      role: "user",
+      content: [{
+        type: "image",
+        source: {
+          url: "https://storage.example.test/policy.png",
+          mediaType: "image/png",
+          filename: "policy.png",
+          sizeBytes: 321,
+        },
+      }],
+    }]);
+  });
+
   test("preserves the AI SDK tool loop across router model steps", async () => {
     const execute = vi.fn(async ({ policyNumber }: { policyNumber: string }) => ({
       carrier: "Acme",

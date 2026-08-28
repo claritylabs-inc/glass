@@ -2,6 +2,14 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
 import { transcribeAudioForOrg } from "./models";
 
+function routerStorage() {
+  return {
+    store: vi.fn(async () => "storage-audio-1"),
+    getUrl: vi.fn(async () => "https://merry-platypus-82.convex.cloud/api/storage/audio"),
+    delete: vi.fn(async () => undefined),
+  };
+}
+
 describe("audio transcription routing", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -103,6 +111,7 @@ describe("audio transcription routing", () => {
       routeSources: { voice_transcription: "broker" },
       providerKeys: { openai: "test-openai-key" },
     }));
+    const storage = routerStorage();
     const fetchMock = vi.fn(async () => Response.json({
       requestId: "request-1",
       model: { provider: "openai", model: "gpt-4o-mini-transcribe" },
@@ -124,7 +133,7 @@ describe("audio transcription routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await transcribeAudioForOrg(
-      { runQuery } as never,
+      { runQuery, storage } as never,
       "org-1" as Id<"organizations">,
       {
         data: Buffer.from("voice"),
@@ -143,6 +152,16 @@ describe("audio transcription routing", () => {
     expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
       "https://router.example.test/v1/transcribe",
     );
+    const request = JSON.parse(
+      (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    );
+    expect(request.audio).toEqual({
+      url: "https://merry-platypus-82.convex.cloud/api/storage/audio",
+      mediaType: "audio/mp4",
+      filename: "Audio Message.m4a",
+      sizeBytes: 5,
+    });
+    expect(storage.delete).toHaveBeenCalledWith("storage-audio-1");
   });
 
   test("falls back to direct transcription after a typed pre-execution production outage", async () => {
@@ -160,6 +179,7 @@ describe("audio transcription routing", () => {
       routeSources: { voice_transcription: "broker" },
       providerKeys: { openai: "test-openai-key" },
     }));
+    const storage = routerStorage();
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(Response.json({
@@ -175,7 +195,7 @@ describe("audio transcription routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await transcribeAudioForOrg(
-      { runQuery } as never,
+      { runQuery, storage } as never,
       "org-1" as Id<"organizations">,
       {
         data: Buffer.from("voice"),
@@ -193,5 +213,6 @@ describe("audio transcription routing", () => {
       "https://api.openai.com/v1/audio/transcriptions",
     ]);
     expect(runQuery).toHaveBeenCalledOnce();
+    expect(storage.delete).toHaveBeenCalledWith("storage-audio-1");
   });
 });

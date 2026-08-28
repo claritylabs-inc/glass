@@ -1324,7 +1324,10 @@ async function recordTraceEvent(job: Pick<ClaimedJob, "state">, event: {
   }
 }
 
-function clRouterAssets(providerOptions: Record<string, unknown>): ClRouterProviderAssets | undefined {
+function clRouterAssets(
+  providerOptions: Record<string, unknown>,
+  pdfUrl?: string,
+): ClRouterProviderAssets | undefined {
   const options = providerOptions as ExtractionProviderOptions;
   const images = Array.isArray(options.images)
     ? options.images.filter(
@@ -1339,6 +1342,7 @@ function clRouterAssets(providerOptions: Record<string, unknown>): ClRouterProvi
     return undefined;
   }
   return {
+    ...(pdfUrl ? { pdfUrl } : {}),
     ...(typeof options.pdfBase64 === "string" ? { pdfBase64: options.pdfBase64 } : {}),
     ...(options.pdfBytes instanceof Uint8Array ? { pdfBytes: options.pdfBytes } : {}),
     ...(typeof options.mimeType === "string" ? { mimeType: options.mimeType } : {}),
@@ -1417,7 +1421,7 @@ async function generateObjectWithClRouter<T>(opts: {
       schema: opts.schema,
       maxTokens: opts.maxOutputTokens,
       sessionKey: opts.job.state.traceId ?? opts.job.policyId,
-      assets: clRouterAssets(opts.providerOptions),
+      assets: clRouterAssets(opts.providerOptions, opts.job.fileUrl),
       trace: stripUndefined({
         traceId: opts.job.state.traceId,
         label: opts.label,

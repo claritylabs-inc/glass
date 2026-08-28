@@ -15,6 +15,7 @@ import type {
 } from "@ai-sdk/provider";
 import {
   ClRouterRequestError,
+  clRouterAssetReferenceFromUrl,
   clRouterGenerate,
   clRouterGenerateStream,
   isClRouterDirectFallbackError,
@@ -124,14 +125,14 @@ export class ClRouterVisibleOutputError extends Error {
   }
 }
 
-function dataContent(data: Uint8Array | string | URL): string {
-  if (data instanceof URL) return data.toString();
+function dataContent(data: Uint8Array | string): string {
   return typeof data === "string" ? data : Buffer.from(data).toString("base64");
 }
 
-function messageParts(
+async function messageParts(
   content: Exclude<LanguageModelV3Prompt[number]["content"], string>,
-): ClRouterMessagePart[] {
+  fetchImpl: typeof globalThis.fetch,
+): Promise<ClRouterMessagePart[]> {
   const parts: ClRouterMessagePart[] = [];
   for (const part of content) {
     switch (part.type) {
@@ -139,6 +140,18 @@ function messageParts(
         parts.push({ type: "text", text: part.text });
         break;
       case "file": {
+        if (part.data instanceof URL) {
+          const source = await clRouterAssetReferenceFromUrl({
+            url: part.data,
+            mediaType: part.mediaType,
+            filename: part.filename,
+            fetch: fetchImpl,
+          });
+          parts.push(part.mediaType.startsWith("image/")
+            ? { type: "image", source }
+            : { type: "file", source });
+          break;
+        }
         const data = dataContent(part.data);
         parts.push(part.mediaType.startsWith("image/")
           ? { type: "image", image: data, mediaType: part.mediaType }
@@ -179,13 +192,19 @@ function messageParts(
   return parts;
 }
 
-export function clRouterMessagesFromPrompt(prompt: LanguageModelV3Prompt): ClRouterMessage[] {
-  return prompt.map((message): ClRouterMessage => {
+export async function clRouterMessagesFromPrompt(
+  prompt: LanguageModelV3Prompt,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): Promise<ClRouterMessage[]> {
+  return Promise.all(prompt.map(async (message): Promise<ClRouterMessage> => {
     if (message.role === "system") {
       return { role: "system", content: message.content };
     }
-    return { role: message.role, content: messageParts(message.content) };
-  });
+    return {
+      role: message.role,
+      content: await messageParts(message.content, fetchImpl),
+    };
+  }));
 }
 
 function clRouterTools(
@@ -245,14 +264,14 @@ function unsupportedWarnings(options: LanguageModelV3CallOptions): SharedV3Warni
     }));
 }
 
-function requestForCall(
+async function requestForCall(
   adapter: ClRouterLanguageModelOptions,
   options: LanguageModelV3CallOptions,
   parentRequestId?: string,
   selectedRoute?: ModelRoute,
   allowFallback = true,
   executionBudgetMs?: number,
-): ClRouterGenerateRequest {
+): Promise<ClRouterGenerateRequest> {
   const responseFormat = options.responseFormat;
   const schema =
     responseFormat?.type === "json" && responseFormat.schema
@@ -265,7 +284,10 @@ function requestForCall(
     ...(adapter.taskKind ? { taskKind: adapter.taskKind } : {}),
     ...(adapter.orgId ? { orgId: adapter.orgId } : {}),
     settings: adapter.settings,
-    messages: clRouterMessagesFromPrompt(options.prompt),
+    messages: await clRouterMessagesFromPrompt(
+      options.prompt,
+      adapter.client?.fetch ?? globalThis.fetch,
+    ),
     ...(schema
       ? {
         schema,
@@ -596,24 +618,24 @@ export function createClRouterLanguageModel(
     specificationVersion: "v3",
     provider: "cl-router",
     modelId: `cl-router/${adapter.task}`,
-    supportedUrls: {},
+    supportedUrls: { "*/*": [/^https:\/\/.*$/] },
 
     async doGenerate(options): Promise<LanguageModelV3GenerateResult> {
       if (useDirectForRun) {
         return directGenerateWithContract(adapter.directModel, options);
       }
       const step = stepContext(options);
-      const request = requestForCall(
-        adapter,
-        options,
-        parentRequestId,
-        selectedRoute,
-        successfulRouterSteps === 0,
-        successfulRouterSteps === 0
-          ? adapter.initialExecutionBudgetMs
-          : undefined,
-      );
       try {
+        const request = await requestForCall(
+          adapter,
+          options,
+          parentRequestId,
+          selectedRoute,
+          successfulRouterSteps === 0,
+          successfulRouterSteps === 0
+            ? adapter.initialExecutionBudgetMs
+            : undefined,
+        );
         const response = await clRouterGenerate(
           request,
           clientOptions(options.abortSignal, successfulRouterSteps === 0),
@@ -665,18 +687,18 @@ export function createClRouterLanguageModel(
         return directStreamWithContract(adapter.directModel, options);
       }
       const step = stepContext(options);
-      const request = requestForCall(
-        adapter,
-        options,
-        parentRequestId,
-        selectedRoute,
-        successfulRouterSteps === 0,
-        successfulRouterSteps === 0
-          ? adapter.initialExecutionBudgetMs
-          : undefined,
-      );
       let response: Awaited<ReturnType<typeof clRouterGenerateStream>>;
       try {
+        const request = await requestForCall(
+          adapter,
+          options,
+          parentRequestId,
+          selectedRoute,
+          successfulRouterSteps === 0,
+          successfulRouterSteps === 0
+            ? adapter.initialExecutionBudgetMs
+            : undefined,
+        );
         response = await clRouterGenerateStream(
           request,
           clientOptions(options.abortSignal, successfulRouterSteps === 0),
