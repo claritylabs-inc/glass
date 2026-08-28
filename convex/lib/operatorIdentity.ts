@@ -118,6 +118,7 @@ export async function writeOperatorAudit(
       | "impersonation_started"
       | "impersonation_stopped"
       | "impersonation_chat_message"
+      | "demo_lead_deleted"
       | "memory_cleared"
       | "setup_write";
     targetOrgId?: Id<"organizations">;

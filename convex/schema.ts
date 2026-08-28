@@ -761,6 +761,7 @@ export default defineSchema({
       v.literal("impersonation_started"),
       v.literal("impersonation_stopped"),
       v.literal("impersonation_chat_message"),
+      v.literal("demo_lead_deleted"),
       v.literal("memory_cleared"),
       v.literal("setup_write"),
     ),
