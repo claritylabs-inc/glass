@@ -227,6 +227,32 @@ describe("Slack Events API webhook", () => {
     });
   });
 
+  test("preserves a DM thread root separately from its conversation key", async () => {
+    const t = convexTest(schema, modules);
+    await seedConnection(t);
+    const dmReply = messagePayload({
+      type: "message",
+      channel: "D-DIRECT",
+      channel_type: "im",
+      ts: "1800000000.300",
+      thread_ts: "1800000000.100",
+      text: "continue in this thread",
+    });
+
+    expect(await (await signedRequest(t, dmReply)).json()).toMatchObject({
+      ok: true,
+    });
+    const event = await t.run((ctx) =>
+      ctx.db.query("slackInboundEvents").first(),
+    );
+    expect(event).toMatchObject({
+      channelId: "D-DIRECT",
+      threadTs: "D-DIRECT",
+      replyThreadTs: "1800000000.100",
+      messageTs: "1800000000.300",
+    });
+  });
+
   test("records a signed installation revocation and preserves preferences", async () => {
     const t = convexTest(schema, modules);
     const { connectionId } = await seedConnection(t);

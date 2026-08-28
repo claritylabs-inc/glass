@@ -3855,6 +3855,7 @@ export default defineSchema({
     teamId: v.string(),
     channelId: v.string(),
     threadTs: v.string(),
+    replyThreadTs: v.optional(v.string()),
     messageTs: v.string(),
     senderTeamId: v.optional(v.string()),
     senderUserId: v.string(),

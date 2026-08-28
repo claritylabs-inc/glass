@@ -167,7 +167,14 @@ describe("Slack webhook payload narrowing", () => {
       isDirectMessage: true,
       channelId: "D-PRIVATE",
       threadTs: "D-PRIVATE",
+      replyThreadTs: "1800000000.000",
     });
+    const topLevelDm = payload({ thread_ts: undefined });
+    topLevelDm.event.channel = "D-PRIVATE";
+    topLevelDm.event.channel_type = "im";
+    expect(parseSlackEventPayload(topLevelDm)).not.toHaveProperty(
+      "replyThreadTs",
+    );
     expect(
       parseSlackEventPayload(
         payload({ channel: "G-PRIVATE", channel_type: "group" }),

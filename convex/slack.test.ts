@@ -146,6 +146,7 @@ async function ingest(
     eventKey: string;
     content: string;
     threadTs?: string;
+    replyThreadTs?: string;
     messageTs?: string;
     channelId?: string;
     senderTeamId?: string;
@@ -164,6 +165,7 @@ async function ingest(
     teamId: "T-CUSTOMER",
     channelId: args.channelId ?? "C-PRIMARY",
     threadTs: args.threadTs ?? "1800000000.000",
+    replyThreadTs: args.replyThreadTs,
     messageTs: args.messageTs ?? args.eventKey,
     senderTeamId: args.senderTeamId ?? "T-CUSTOMER",
     senderUserId: args.senderUserId ?? "U-CUSTOMER",
@@ -396,7 +398,7 @@ describe("Slack channel state and authorization", () => {
 
   test("treats an App Home DM as one private, mention-free conversation", async () => {
     const t = convexTest(schema, modules);
-    const { clientOrgId } = await seedSlack(t);
+    const { clientOrgId, connectionId } = await seedSlack(t);
     const glassUserId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         name: "Cove Admin",
@@ -442,6 +444,44 @@ describe("Slack channel state and authorization", () => {
     });
     expect(second.prepared).not.toBeNull();
 
+    const threaded = await ingest(t, {
+      eventKey: "dm-thread-reply",
+      channelId: "D-COVE-ADMIN",
+      threadTs: "D-COVE-ADMIN",
+      replyThreadTs: "1800000001.100",
+      messageTs: "1800000003.100",
+      senderDisplayName: "Cove Admin",
+      senderEmail: "admin@cove.test",
+      content: "Generate a certificate for them",
+      isDirectMessage: true,
+    });
+    expect(threaded.prepared).toMatchObject({
+      channelId: "D-COVE-ADMIN",
+      threadTs: "1800000001.100",
+    });
+    await expect(
+      t.mutation(claimOutboundFn, {
+        idempotencyKey: "dm-threaded-reply",
+        orgId: clientOrgId,
+        connectionId,
+        threadId: threaded.prepared!.threadId,
+        channelId: "D-COVE-ADMIN",
+        threadTs: "1800000001.100",
+        content: "Continuing in the Slack thread",
+      }),
+    ).resolves.toMatchObject({ send: true });
+    await expect(
+      t.mutation(claimOutboundFn, {
+        idempotencyKey: "dm-wrong-thread",
+        orgId: clientOrgId,
+        connectionId,
+        threadId: threaded.prepared!.threadId,
+        channelId: "D-COVE-ADMIN",
+        threadTs: "1900000000.999",
+        content: "Do not cross Slack conversations",
+      }),
+    ).rejects.toThrow("does not belong to the conversation");
+
     const state = await t.run(async (ctx) => ({
       threads: await ctx.db.query("threads").collect(),
       actors: await ctx.db.query("slackActors").collect(),
@@ -461,7 +501,7 @@ describe("Slack channel state and authorization", () => {
     expect(state.actors[0]).toMatchObject({ glassUserId });
     expect(
       state.messages.filter((message) => message.role === "user"),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     expect(
       state.messages
         .filter((message) => message.role === "user")

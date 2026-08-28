@@ -535,6 +535,56 @@ describe("agent channel settings", () => {
     expect(overview.setup).toBeNull();
   });
 
+  test("requires reinstall when an active Slack connection lacks reaction scope", async () => {
+    const t = convexTest(schema, modules);
+    const { clientOrgId, operatorUserId } = await t.run(async (ctx) => {
+      const clientOrgId = await ctx.db.insert("organizations", {
+        name: "Legacy Slack Client",
+        type: "client",
+      });
+      const operatorUserId = await ctx.db.insert("users", {
+        email: "operator@glass.insure",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId: operatorUserId,
+        email: "operator@glass.insure",
+        role: "operator",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const serviceUserId = await ctx.db.insert("users", {
+        accountKind: "customer",
+        serviceAccountKind: "slack",
+      });
+      await ctx.db.insert("slackWorkspaceConnections", {
+        clientOrgId,
+        teamId: "T-LEGACY",
+        teamName: "Legacy workspace",
+        grantedScopes: SLACK_CUSTOMER_SCOPES.filter(
+          (scope) => scope !== "reactions:write",
+        ),
+        status: "active",
+        serviceUserId,
+        thirdPartyVisibilityAcknowledged: true,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { clientOrgId, operatorUserId };
+    });
+
+    const overview = await t
+      .withIdentity({ subject: `${operatorUserId}|session` })
+      .query(getForOperatorFn, { clientOrgId });
+    expect(overview.slackHealth).toMatchObject({
+      status: "degraded",
+      reasonCode: "missing_required_scopes",
+      recoveryAction: "reinstall",
+    });
+    expect(overview.slackHealth.reasonSummary).toContain("reactions:write");
+  });
+
   test("cancels a reinstall without changing the working Slack configuration", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, operatorUserId, connectionId, bindingId } =

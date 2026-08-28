@@ -142,6 +142,7 @@ http.route({
       teamId: payload.teamId,
       channelId: payload.channelId,
       threadTs: payload.threadTs,
+      replyThreadTs: payload.replyThreadTs,
       messageTs: payload.messageTs,
       senderTeamId: payload.senderTeamId,
       senderUserId: payload.senderUserId,

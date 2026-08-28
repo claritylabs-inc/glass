@@ -283,6 +283,17 @@ async function channelOverview(
         lastHealthyAt: connection.lastHealthyAt ?? null,
       };
     }
+    const missingScopes = missingSlackCustomerScopes(connection.grantedScopes);
+    if (missingScopes.length > 0) {
+      return {
+        status: "degraded" as const,
+        reasonCode: "missing_required_scopes",
+        reasonSummary: `Reinstall Glass in Slack to authorize ${missingScopes.join(", ")}.`,
+        recoveryAction: "reinstall" as const,
+        lastVerifiedAt: connection.lastVerifiedAt ?? null,
+        lastHealthyAt: connection.lastHealthyAt ?? null,
+      };
+    }
     if (connection.healthStatus === "degraded") {
       return {
         status: "degraded" as const,

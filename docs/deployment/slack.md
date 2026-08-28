@@ -249,11 +249,12 @@ edit revisions, and retained inbound event payloads without running the agent.
 
 The App Home Messages tab provides one continuous direct conversation between
 Glass and each customer workspace member. DMs do not require an `@Glass`
-mention, are keyed by the Slack DM channel rather than each message timestamp,
-and receive top-level replies. `users.info` returns the profile email under the
-required `users:read.email` scope. When that email matches a current Glass user
-with membership in the connected client org, Convex records the web mirror as
-`visibility: "user_private"` with that user as `createdBy`; otherwise the DM
+mention and are keyed by the Slack DM channel rather than each message timestamp.
+Top-level messages receive top-level replies; when a user replies inside a Slack
+thread, the answer and its files stay in that thread. `users.info` returns the
+profile email under the required `users:read.email` scope. When that email matches
+a current Glass user with membership in the connected client org, Convex records
+the web mirror as `visibility: "user_private"` with that user as `createdBy`; otherwise the DM
 continues in Slack but remains absent from the shared web tenant. Multiparty DMs
 remain unsupported.
 
