@@ -1340,11 +1340,13 @@ export default defineSchema({
     classification: v.union(
       v.literal("customer_member"),
       v.literal("spot_operator"),
+      v.literal("glass_operator"),
       v.literal("external"),
       v.literal("bot"),
     ),
     operatorUserId: v.optional(v.id("users")),
     spotUserId: v.optional(v.id("users")),
+    glassUserId: v.optional(v.id("users")),
     displayName: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),

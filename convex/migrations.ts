@@ -175,6 +175,27 @@ export const backfillSlackInboundEventMentionsSpot = migrations.define({
   },
 });
 
+export const backfillSlackActorSpotIdentity = migrations.define({
+  table: "slackActors",
+  batchSize: 100,
+  migrateOne: async (ctx, actor) => {
+    if (
+      actor.classification !== "glass_operator" &&
+      actor.glassUserId === undefined
+    ) {
+      return;
+    }
+    await ctx.db.patch(actor._id, {
+      classification:
+        actor.classification === "glass_operator"
+          ? "spot_operator"
+          : actor.classification,
+      spotUserId: actor.spotUserId ?? actor.glassUserId,
+      glassUserId: undefined,
+    });
+  },
+});
+
 export const runDeclarationFactsBackfill = migrations.runner([
   internal.migrations.backfillDeclarationFacts,
   internal.migrations.syncDeclarationFactProfiles,
@@ -197,4 +218,8 @@ export const runLegacyCoiAttachmentAuthorizationCleanup = migrations.runner([
 
 export const runSlackInboundEventMentionsSpotBackfill = migrations.runner([
   internal.migrations.backfillSlackInboundEventMentionsSpot,
+]);
+
+export const runSlackActorSpotIdentityBackfill = migrations.runner([
+  internal.migrations.backfillSlackActorSpotIdentity,
 ]);

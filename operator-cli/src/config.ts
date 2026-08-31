@@ -9,6 +9,7 @@ export type OperatorConfig = {
 };
 
 const configRoot = join(homedir(), ".spot", "operator");
+const legacyConfigRoot = join(homedir(), ".glass", "operator");
 
 export function resolveProfile(profile?: string): string {
   return profile || process.env.SPOT_OPERATOR_PROFILE || "default";
@@ -18,12 +19,23 @@ function configPath(profile: string) {
   return join(configRoot, `${profile}.json`);
 }
 
+function legacyConfigPath(profile: string) {
+  return join(legacyConfigRoot, `${profile}.json`);
+}
+
 export async function loadConfig(profile: string): Promise<OperatorConfig> {
   let stored: OperatorConfig = {};
   try {
     stored = JSON.parse(await readFile(configPath(profile), "utf8")) as OperatorConfig;
   } catch {
-    stored = {};
+    try {
+      stored = JSON.parse(
+        await readFile(legacyConfigPath(profile), "utf8"),
+      ) as OperatorConfig;
+      await saveConfig(profile, stored);
+    } catch {
+      stored = {};
+    }
   }
 
   return {

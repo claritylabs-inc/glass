@@ -13,6 +13,10 @@ import {
   isSlackBindingReachable,
   isSlackConnectionHealthy,
 } from "./lib/slackAvailability";
+import {
+  isSlackOperatorClassification,
+  slackActorUserId,
+} from "./lib/slackInteractions";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -47,6 +51,25 @@ export const verifyInboundEventMentionsSpotBackfill = internalQuery({
         query.or(
           query.eq(query.field("mentionsSpot"), undefined),
           query.neq(query.field("mentionsGlass"), undefined),
+        ),
+      )
+      .first();
+    return {
+      complete: remaining === null,
+      remainingSampleId: remaining?._id,
+    };
+  },
+});
+
+export const verifySlackActorSpotIdentityBackfill = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const remaining = await ctx.db
+      .query("slackActors")
+      .filter((query) =>
+        query.or(
+          query.eq(query.field("classification"), "glass_operator"),
+          query.neq(query.field("glassUserId"), undefined),
         ),
       )
       .first();
@@ -132,9 +155,13 @@ async function resolveActor(
   if (
     classification === "customer_member" &&
     !event.senderEmail &&
-    existing?.spotUserId
+    existing &&
+    slackActorUserId(existing)
   ) {
-    const existingSpotUserId = existing.spotUserId;
+    const existingSpotUserId = slackActorUserId(existing);
+    if (!existingSpotUserId) {
+      throw new Error("Slack actor user identity could not be resolved");
+    }
     const membership = await ctx.db
       .query("orgMemberships")
       .withIndex("organization_user", (q) =>
@@ -624,7 +651,7 @@ export const authorizeBatch = internalMutation({
       const actor = await resolveActor(ctx, connection, event);
       if (
         actor.classification !== "customer_member" &&
-        actor.classification !== "spot_operator"
+        !isSlackOperatorClassification(actor.classification)
       ) {
         await ctx.db.patch(event._id, {
           status: "ignored",
@@ -741,7 +768,8 @@ export const prepareBatch = internalMutation({
       }
 
       const authorizedCustomer = actor.classification === "customer_member";
-      const operator = actor.classification === "spot_operator";
+      const operator = isSlackOperatorClassification(actor.classification);
+      const actorUserId = slackActorUserId(actor);
       const isDirectMessage = event.isDirectMessage === true;
       const mentionedBotUserId =
         event.mentionedBotUserId ?? connection.botUserId;
@@ -775,7 +803,7 @@ export const prepareBatch = internalMutation({
       const privateOwnerId =
         !isDirectMessage && existingThread?.visibility === "user_private"
           ? existingThread.createdBy
-          : (actor.spotUserId ?? connection.serviceUserId);
+          : (actorUserId ?? connection.serviceUserId);
 
       let thread = existingThread;
       if (!thread) {
@@ -846,8 +874,8 @@ export const prepareBatch = internalMutation({
         channel: "slack",
         role: "user",
         userId:
-          isDirectMessage && actor.spotUserId
-            ? actor.spotUserId
+          isDirectMessage && actorUserId
+            ? actorUserId
             : connection.serviceUserId,
         userName: actor.displayName,
         slackActorId: actor._id,

@@ -6,6 +6,7 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
+import { isSlackOperatorClassification } from "./lib/slackInteractions";
 
 const ACTION_TOKEN_TTL_DAYS = 30;
 
@@ -43,7 +44,7 @@ async function interactionActor(
   if (
     !actor ||
     (actor.classification !== "customer_member" &&
-      actor.classification !== "spot_operator")
+      !isSlackOperatorClassification(actor.classification))
   ) {
     throw new Error("Slack actor is not authorized for this interaction");
   }
@@ -387,7 +388,7 @@ export const upsertFeedback = internalMutation({
       !actor ||
       actor.connectionId !== presentation.connectionId ||
       (actor.classification !== "customer_member" &&
-        actor.classification !== "spot_operator")
+        !isSlackOperatorClassification(actor.classification))
     ) {
       throw new Error("Slack feedback context is invalid");
     }
