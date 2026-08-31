@@ -10,7 +10,8 @@ const defaultBaseUrl = "https://app.spot.insure";
 const legacyClientId = "glass-cli";
 
 function normalizeConfig(config: SpotConfig): SpotConfig {
-  const configuredBaseUrl = process.env.SPOT_BASE_URL ?? config.baseUrl;
+  const configuredBaseUrl =
+    process.env.SPOT_BASE_URL ?? process.env.GLASS_BASE_URL ?? config.baseUrl;
   const baseUrl = [
     "https://glass.claritylabs.inc",
     "https://app.glass.insure",
@@ -35,7 +36,12 @@ export async function loadConfig(): Promise<SpotConfig> {
       await saveConfig(migrated);
       return migrated;
     } catch {
-      return { baseUrl: process.env.SPOT_BASE_URL ?? defaultBaseUrl };
+      return {
+        baseUrl:
+          process.env.SPOT_BASE_URL ??
+          process.env.GLASS_BASE_URL ??
+          defaultBaseUrl,
+      };
     }
   }
 }

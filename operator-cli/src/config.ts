@@ -39,9 +39,21 @@ export async function loadConfig(profile: string): Promise<OperatorConfig> {
   }
 
   return {
-    convexUrl: process.env.SPOT_CONVEX_URL ?? process.env.CONVEX_URL ?? stored.convexUrl,
-    token: process.env.SPOT_OPERATOR_TOKEN ?? process.env.OPERATOR_PROVISIONING_SECRET ?? stored.token,
-    tokenId: process.env.SPOT_OPERATOR_TOKEN_ID ?? process.env.OPERATOR_PROVISIONING_TOKEN_ID ?? stored.tokenId,
+    convexUrl:
+      process.env.SPOT_CONVEX_URL ??
+      process.env.GLASS_CONVEX_URL ??
+      process.env.CONVEX_URL ??
+      stored.convexUrl,
+    token:
+      process.env.SPOT_OPERATOR_TOKEN ??
+      process.env.GLASS_OPERATOR_TOKEN ??
+      process.env.OPERATOR_PROVISIONING_SECRET ??
+      stored.token,
+    tokenId:
+      process.env.SPOT_OPERATOR_TOKEN_ID ??
+      process.env.GLASS_OPERATOR_TOKEN_ID ??
+      process.env.OPERATOR_PROVISIONING_TOKEN_ID ??
+      stored.tokenId,
   };
 }
 
