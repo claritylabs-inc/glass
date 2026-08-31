@@ -105,7 +105,7 @@ describe("iMessage agent context helpers", () => {
           content: "You have one active policy.",
         },
       ]),
-    ).toBe("Terry: Show my policies\nGlass: You have one active policy.");
+    ).toBe("Terry: Show my policies\nSpot: You have one active policy.");
   });
 
   test("keeps non-workflow artifacts out of private history and skips current echo", async () => {
@@ -182,7 +182,7 @@ describe("iMessage agent context helpers", () => {
         role: "assistant",
         content: "COI generated and attached.",
         providerOptions: {
-          glass: {
+          spot: {
             privateHistory: {
               tools: ["generate_coi"],
               workflowOutcomes: [],

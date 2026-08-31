@@ -18,7 +18,7 @@ import {
 type ImageParams = { token: string };
 const BRAND_BLUE = "#A0D2FA";
 
-export const alt = "Glass shared record";
+export const alt = "Spot shared record";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -27,7 +27,7 @@ function kindLabel(kind: AppCardView["kind"]) {
 }
 
 function heroTitle(view: AppCardView) {
-  return truncate(view.title, 82) ?? "Glass record";
+  return truncate(view.title, 82) ?? "Spot record";
 }
 
 function heroSubtitle(view: AppCardView) {
@@ -70,12 +70,12 @@ function globeDataUri(size: number, color = BRAND_BLUE): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(globeSvg(size, color))}`;
 }
 
-function GlassMark({ color = "#000000" }: { color?: string }) {
+function SpotMark({ color = "#000000" }: { color?: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
       <img src={globeDataUri(34, color)} alt="" width={34} height={34} />
       <div style={{ fontSize: 28, fontWeight: 500, color, letterSpacing: 0 }}>
-        Glass
+        Spot
       </div>
     </div>
   );
@@ -94,7 +94,7 @@ function FallbackImage() {
         fontFamily: "Geist",
       }}
     >
-      <GlassMark />
+      <SpotMark />
     </div>
   );
 }
@@ -209,7 +209,7 @@ function BrandedPolicyImage({ policy, orgName }: { policy: Policy; orgName: stri
     >
       <PolicyPattern variant={patternVariant} color={textColor} />
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <GlassMark color={textColor} />
+        <SpotMark color={textColor} />
         <div style={{ fontSize: 23, color: textColor, opacity: 0.65 }}>Policy</div>
       </div>
       <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 18, marginTop: 48 }}>
@@ -274,7 +274,7 @@ function BrandedPolicyImage({ policy, orgName }: { policy: Policy; orgName: stri
       </div>
       <div style={{ position: "relative", display: "flex", justifyContent: "space-between", marginTop: 24, fontSize: 17, color: textColor, opacity: 0.48 }}>
         <div>{truncate(orgName, 70)}</div>
-        <div>app.glass.insure</div>
+        <div>app.spot.insure</div>
       </div>
     </div>
   );
@@ -329,7 +329,7 @@ export default async function Image({
             width: "100%",
           }}
         >
-          <GlassMark />
+          <SpotMark />
           <div style={{ fontSize: 24, color: "#737373", fontWeight: 500 }}>
             {kindLabel(view.kind)}
           </div>
@@ -387,7 +387,7 @@ export default async function Image({
           }}
         >
           <div>{truncate(view.orgName, 70)}</div>
-          <div>app.glass.insure</div>
+          <div>app.spot.insure</div>
         </div>
       </div>
     ),

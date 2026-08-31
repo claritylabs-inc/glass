@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   getAgentDomain,
   getAgentDomains,
+  getAgentRecipientAddresses,
   getEmailDeliveryMode,
   isLocalEmailCaptureEnabled,
   logLocalEmailCapture,
@@ -15,27 +16,42 @@ describe("agent email domains", () => {
     vi.unstubAllEnvs();
   });
 
-  test("uses glass.insure when the configured agent domain is legacy", () => {
-    vi.stubEnv("AGENT_DOMAIN", "glass.claritylabs.inc");
+  test("uses spot.insure when the configured agent domain is legacy", () => {
+    vi.stubEnv("AGENT_DOMAIN", "spot.claritylabs.inc");
 
-    expect(getAgentDomain()).toBe("glass.insure");
+    expect(getAgentDomain()).toBe("spot.insure");
     expect(getAgentDomains()).toEqual([
+      "spot.insure",
       "glass.insure",
       "glass.claritylabs.inc",
+      "spot.claritylabs.inc",
       "dev.claritylabs.inc",
     ]);
   });
 
-  test("always accepts glass.insure alongside custom legacy aliases", () => {
+  test("always accepts spot.insure alongside custom legacy aliases", () => {
     vi.stubEnv("AGENT_EMAIL_DOMAIN", "agents.example.com");
-    vi.stubEnv("LEGACY_AGENT_DOMAINS", "glass.claritylabs.inc, old.example.com");
+    vi.stubEnv("LEGACY_AGENT_DOMAINS", "spot.claritylabs.inc, old.example.com");
 
     expect(getAgentDomain()).toBe("agents.example.com");
     expect(getAgentDomains()).toEqual([
-      "glass.insure",
+      "spot.insure",
       "agents.example.com",
-      "glass.claritylabs.inc",
+      "spot.claritylabs.inc",
       "old.example.com",
+    ]);
+  });
+
+  test("recognizes canonical and legacy recipients for inbound mode detection", () => {
+    vi.stubEnv("LEGACY_AGENT_DOMAINS", "glass.insure,spot.claritylabs.inc");
+
+    expect(getAgentRecipientAddresses("broker", "thread-1")).toEqual([
+      "broker@spot.insure",
+      "broker+thread-1@spot.insure",
+      "broker@glass.insure",
+      "broker+thread-1@glass.insure",
+      "broker@spot.claritylabs.inc",
+      "broker+thread-1@spot.claritylabs.inc",
     ]);
   });
 });
@@ -56,16 +72,16 @@ describe("email delivery modes", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubGlobal("fetch", mockFetch);
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
 
     const result = await sendResendEmail({
-      from: "Glass <noreply@example.com>",
+      from: "Spot <noreply@example.com>",
       to: ["person@example.com", "Team <team@example.com>"],
       cc: "cc@example.com",
       bcc: "secret@example.com",
       subject: "Sign-in code 123456",
-      text: "Your Glass code is 654321.",
-      html: "<p>Your Glass code is <strong>654321</strong>.</p>",
+      text: "Your Spot code is 654321.",
+      html: "<p>Your Spot code is <strong>654321</strong>.</p>",
       attachments: [
         {
           filename: "welcome.pdf",
@@ -81,8 +97,8 @@ describe("email delivery modes", () => {
     expect(isLocalEmailCaptureEnabled()).toBe(true);
 
     const block = String(logSpy.mock.calls[0]?.[0] ?? "");
-    expect(block).toContain("[glass:local-email-capture]");
-    expect(block).toContain("from: Glass <noreply@example.com>");
+    expect(block).toContain("[spot:local-email-capture]");
+    expect(block).toContain("from: Spot <noreply@example.com>");
     expect(block).toContain("to: person@example.com, team@example.com");
     expect(block).toContain("cc: cc@example.com");
     expect(block).toContain("bcc: secret@example.com");
@@ -92,20 +108,20 @@ describe("email delivery modes", () => {
     expect(block).toContain('"filename":"welcome.pdf"');
     expect(block).toContain('"contentType":"application/pdf"');
     expect(block).not.toContain("raw-base64-secret");
-    expect(block).toContain("text:\nYour Glass code is 654321.");
-    expect(block).toContain("html:\n<p>Your Glass code is <strong>654321</strong>.</p>");
+    expect(block).toContain("text:\nYour Spot code is 654321.");
+    expect(block).toContain("html:\n<p>Your Spot code is <strong>654321</strong>.</p>");
   });
 
   test("does not treat email template colors as OTP candidates", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     const { html } = buildOtpEmail("110588");
 
     await sendResendEmail({
-      from: "Glass <noreply@example.com>",
+      from: "Spot <noreply@example.com>",
       to: "person@example.com",
-      subject: "Your Glass sign-in code",
+      subject: "Your Spot sign-in code",
       html,
     });
 
@@ -120,10 +136,10 @@ describe("email delivery modes", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubGlobal("fetch", mockFetch);
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "dev");
+    vi.stubEnv("SPOT_ENV", "dev");
 
     const result = await sendResendEmail({
-      from: "Glass <noreply@example.com>",
+      from: "Spot <noreply@example.com>",
       to: "person@example.com",
       subject: "Test",
       text: "secret text body",
@@ -144,7 +160,7 @@ describe("email delivery modes", () => {
   test("suppressed invite OTP helper logs only in local capture", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
 
     const logged = logLocalEmailCapture({
       kind: "suppressed-invite-otp",
@@ -159,7 +175,7 @@ describe("email delivery modes", () => {
     expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("to: invitee@example.com");
     expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("codeCandidates: 112233");
 
-    vi.stubEnv("GLASS_ENV", "dev");
+    vi.stubEnv("SPOT_ENV", "dev");
     expect(
       logLocalEmailCapture({
         kind: "suppressed-invite-otp",
@@ -179,11 +195,11 @@ describe("email delivery modes", () => {
     vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
     vi.stubEnv("EMAIL_DELIVERY_MODE", "restricted");
     vi.stubEnv("EMAIL_REDIRECT_TO", "capture@claritylabs.inc");
-    vi.stubEnv("GLASS_ENV", "dev");
+    vi.stubEnv("SPOT_ENV", "dev");
     vi.stubEnv("EMAIL_SUBJECT_PREFIX", "[DEV]");
 
     const result = await sendResendEmail({
-      from: "Glass <noreply@example.com>",
+      from: "Spot <noreply@example.com>",
       to: ["person@example.com", "admin@outside.test"],
       cc: "cc@example.com",
       bcc: "secret@example.com",
@@ -197,8 +213,8 @@ describe("email delivery modes", () => {
     expect(callBody.cc).toBeUndefined();
     expect(callBody.bcc).toBeUndefined();
     expect(callBody.subject).toBe("[DEV] Policy update");
-    expect(callBody.headers["X-Glass-Original-To"]).toContain("person@example.com");
-    expect(callBody.headers["X-Glass-Environment"]).toBe("dev");
+    expect(callBody.headers["X-Spot-Original-To"]).toContain("person@example.com");
+    expect(callBody.headers["X-Spot-Environment"]).toBe("dev");
   });
 
   test("allows restricted email to allowlisted domains", async () => {
@@ -210,11 +226,11 @@ describe("email delivery modes", () => {
     vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
     vi.stubEnv("EMAIL_DELIVERY_MODE", "restricted");
     vi.stubEnv("EMAIL_ALLOWED_RECIPIENT_DOMAINS", "claritylabs.inc");
-    vi.stubEnv("GLASS_ENV", "dev");
+    vi.stubEnv("SPOT_ENV", "dev");
     vi.stubEnv("EMAIL_SUBJECT_PREFIX", "[DEV]");
 
     const result = await sendResendEmail({
-      from: "Glass <noreply@example.com>",
+      from: "Spot <noreply@example.com>",
       to: "terry@claritylabs.inc",
       subject: "Allowed",
       text: "hello",

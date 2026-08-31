@@ -403,7 +403,7 @@ export const finish = internalAction({
       : [
           {
             type: "section",
-            block_id: `glass-answer-${message._id}-${revision}`,
+            block_id: `spot-answer-${message._id}-${revision}`,
             text: {
               type: "mrkdwn",
               text: formatSlackAnswerText(message.content).slice(0, 3000),
@@ -541,7 +541,7 @@ export const processInteraction = internalAction({
     const { interaction, presentation, actor } = context;
     let confirmation = "Done.";
     try {
-      if (interaction.actionId.startsWith("glass_response_feedback")) {
+      if (interaction.actionId.startsWith("spot_response_feedback")) {
         const rating =
           interaction.value === "negative" ? "negative" : "positive";
         const feedback = await ctx.runMutation(internalApi.slackPresentation.upsertFeedback, {
@@ -592,7 +592,7 @@ export const processInteraction = internalAction({
           rating === "positive"
             ? "Thanks — your feedback was recorded."
             : "Thanks — I recorded that this response needs work.";
-      } else if (interaction.actionId === "glass_request_human") {
+      } else if (interaction.actionId === "spot_request_human") {
         const result = await ctx.runMutation(
           internalApi.slack.requestHandoffFromAgent,
           {
@@ -602,9 +602,9 @@ export const processInteraction = internalAction({
         );
         confirmation =
           result.status === "continue_in_primary_channel"
-            ? "Please ask for a human in your shared Glass support channel."
-            : "A Glass service team member has been requested.";
-      } else if (interaction.actionId.startsWith("glass_open_")) {
+            ? "Please ask for a human in your shared Spot support channel."
+            : "A Spot service team member has been requested.";
+      } else if (interaction.actionId.startsWith("spot_open_")) {
         await ctx.runMutation(
           internalApi.slackPresentation.completeInteraction,
           {

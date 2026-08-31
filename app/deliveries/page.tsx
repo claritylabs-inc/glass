@@ -118,7 +118,7 @@ function actionLabel(action: string) {
   const normalized = action.trim().toLowerCase();
   if (normalized === "do_not_send" || normalized === "suppress") return "Do not deliver";
   if (normalized === "broker_review" || normalized === "review") return "Needs review";
-  if (normalized === "service_review") return "Needs Glass service review";
+  if (normalized === "service_review") return "Needs Spot service review";
   if (normalized === "auto_send") return "Send automatically";
   return normalized
     .split("_")

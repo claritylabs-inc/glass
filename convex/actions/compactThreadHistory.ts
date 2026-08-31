@@ -13,7 +13,7 @@ import {
   generatedTextFromResult,
 } from "../lib/models";
 
-const SUMMARY_SYSTEM_PROMPT = `Compress older messages from one Glass conversation into concise continuity notes for a later assistant turn.
+const SUMMARY_SYSTEM_PROMPT = `Compress older messages from one Spot conversation into concise continuity notes for a later assistant turn.
 
 Retain only:
 - the user's goals and explicit constraints;

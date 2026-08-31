@@ -2,7 +2,7 @@
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
 
 preview_urls = [
-  { name = "Glass", url = "http://localhost:$CONDUCTOR_PORT" },
+  { name = "Spot", url = "http://localhost:$CONDUCTOR_PORT" },
 ]
 
 [scripts]

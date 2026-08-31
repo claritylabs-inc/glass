@@ -11,8 +11,8 @@ import { Loader2 } from "lucide-react";
 import {
   useCachedShell,
   useCacheShellRecord,
-  useGlassSync,
-} from "@/lib/sync/glass-sync";
+  useSpotSync,
+} from "@/lib/sync/spot-sync";
 import { OperatorSidebar } from "@/app/operator/operator-sidebar";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
@@ -21,7 +21,7 @@ import {
 } from "@/lib/operator-impersonation-stop-state";
 import { typeStyle } from "@/lib/typography";
 
-const BOOT_STATE_KEY = "glass:boot-state";
+const BOOT_STATE_KEY = "spot:boot-state";
 
 type BootState = {
   accountKind?: "customer" | "operator";
@@ -33,7 +33,7 @@ type BootState = {
 
 declare global {
   interface Window {
-    __GLASS_BOOT__?: BootState;
+    __SPOT_BOOT__?: BootState;
   }
 }
 
@@ -42,7 +42,7 @@ function subscribeToBootStateSnapshot() {
 }
 
 function getBootStateSnapshot() {
-  return window.__GLASS_BOOT__ ?? null;
+  return window.__SPOT_BOOT__ ?? null;
 }
 
 function getServerBootStateSnapshot() {
@@ -174,7 +174,7 @@ function PendingLiveScreen() {
             Workspace is being prepared
           </h1>
           <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
-            Your Glass workspace is not live yet. You will receive an email when
+            Your Spot workspace is not live yet. You will receive an email when
             it is ready.
           </p>
         </div>
@@ -192,7 +192,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     setOnboardingComplete,
     clearCache: clearOnboardingCache,
   } = useOnboardingCache();
-  const { scope, updateScope, clearScope } = useGlassSync();
+  const { scope, updateScope, clearScope } = useSpotSync();
   const cachedShell = useCachedShell();
   const cacheShellRecord = useCacheShellRecord();
   const acceptInvitation = useMutation(api.orgs.acceptInvitation);

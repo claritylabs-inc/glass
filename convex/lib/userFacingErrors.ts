@@ -27,8 +27,8 @@ const defaultMessages: Record<UserFacingErrorCode, string> = {
   ORG_ADMIN_REQUIRED: "Only an organization admin can perform this action.",
   BROKER_ADMIN_REQUIRED: "Only a broker admin can perform this action.",
   CLIENT_ADMIN_REQUIRED: "Only a client admin can perform this action.",
-  OPERATOR_REQUIRED: "This action is available only to Glass operators.",
-  OPERATOR_OWNER_REQUIRED: "Only a Glass operator owner can perform this action.",
+  OPERATOR_REQUIRED: "This action is available only to Spot operators.",
+  OPERATOR_OWNER_REQUIRED: "Only a Spot operator owner can perform this action.",
   READ_ONLY_ACCESS: "You have read-only access and can’t make this change.",
   IMPERSONATION_READ_ONLY:
     "Live-organization impersonation is read-only. Exit operator mode to make this change from an authorized organization account.",

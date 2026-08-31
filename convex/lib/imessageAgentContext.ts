@@ -39,7 +39,7 @@ type ImessageContentPart =
   | { type: "image"; image: string; mediaType: string };
 
 const VOICE_MEMO_TRANSCRIPTION_PROMPT =
-  "This voice memo is addressed to Glass, an insurance intelligence assistant. Preserve names, email addresses, policy numbers, dates, insurance terminology, and explicit user instructions verbatim.";
+  "This voice memo is addressed to Spot, an insurance intelligence assistant. Preserve names, email addresses, policy numbers, dates, insurance terminology, and explicit user instructions verbatim.";
 
 export type ImessageVoiceMemoInput = {
   messageText: string;
@@ -151,7 +151,7 @@ export function buildRecentImessageTextContext(
     .filter((msg) => !isImessageStatusCue(msg))
     .slice(-8)
     .map((msg) => {
-      const speaker = msg.role === "user" ? (msg.userName ?? "User") : "Glass";
+      const speaker = msg.role === "user" ? (msg.userName ?? "User") : "Spot";
       return `${speaker}: ${msg.content}`;
     })
     .join("\n");
@@ -199,7 +199,7 @@ export async function buildImessageModelMessages(args: {
         role: "assistant",
         content: msg.content,
         ...(privateHistory
-          ? { providerOptions: { glass: { privateHistory } } }
+          ? { providerOptions: { spot: { privateHistory } } }
           : {}),
       });
     }

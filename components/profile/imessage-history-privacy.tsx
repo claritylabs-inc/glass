@@ -131,7 +131,7 @@ function ImessagePrivacyPanel({
       <OperationalPanelBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className={`text-foreground ${typeStyle("body.medium")}`}>
-            Delete conversations stored by Glass
+            Delete conversations stored by Spot
           </p>
           <p
             className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
@@ -151,7 +151,7 @@ function ImessagePrivacyPanel({
             <p
               className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
             >
-              Glass couldn’t check your iMessage history. Try again.
+              Spot couldn’t check your iMessage history. Try again.
             </p>
           ) : null}
         </div>
@@ -233,7 +233,7 @@ function ImessagePrivacyDialog({
               <strong>{countLabel(preview.threadCount, "conversation")}</strong>
               , <strong>{countLabel(preview.messageCount, "message")}</strong>,
               and <strong>{countLabel(preview.fileCount, "file")}</strong> will
-              be permanently deleted from Glass.
+              be permanently deleted from Spot.
               {blocked
                 ? " Wait for the active iMessage response to finish, then try again."
                 : null}

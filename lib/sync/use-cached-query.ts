@@ -32,7 +32,7 @@ function collectionFor<TValue>(name: string) {
     >;
   }
   const collection = defineCollection<CachedQueryRecord<TValue>, string>({
-    name: `glass.query.${name}`,
+    name: `spot.query.${name}`,
     persist: true,
   });
   collections.set(

@@ -37,7 +37,7 @@ describe("Slack installation credentials", () => {
         teamId: "T-CUSTOMER",
         teamName: "Customer",
         kind: "customer",
-        botUserId: "U-GLASS",
+        botUserId: "U-SPOT",
         encryptedBotToken: encryptSlackCredential(
           "xoxe.xoxb-old",
           "T-CUSTOMER",
@@ -62,7 +62,7 @@ describe("Slack installation credentials", () => {
             access_token: "xoxe.xoxb-new",
             refresh_token: "xoxe-refresh-new",
             expires_in: 43_200,
-            bot_user_id: "U-GLASS",
+            bot_user_id: "U-SPOT",
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
@@ -74,7 +74,7 @@ describe("Slack installation credentials", () => {
     ).resolves.toMatchObject({
       teamId: "T-CUSTOMER",
       botToken: "xoxe.xoxb-new",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
     });
     const installation = await t.run((ctx) => ctx.db.get(installationId));
     expect(

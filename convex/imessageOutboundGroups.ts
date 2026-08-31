@@ -143,7 +143,7 @@ export const resolveRecipients = internalQuery({
     if (!user.phone) {
       return {
         ok: false,
-        reason: "Your profile needs a phone number before Glass can start an iMessage group.",
+        reason: "Your profile needs a phone number before Spot can start an iMessage group.",
         participants: [],
         unresolved: args.recipients,
       };

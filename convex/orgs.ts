@@ -1209,7 +1209,7 @@ export const sendMemberInvitation = action({
     const orgName = context.org.name;
     const inviterName = context.invitedBy.name ?? context.invitedBy.email ?? "A team member";
     const roleLabel = context.invitation.role === "admin" ? "admin" : "member";
-    const subject = `${inviterName} invited you to join ${orgName} on Glass`;
+    const subject = `${inviterName} invited you to join ${orgName} on Spot`;
     const escapedOrgName = escapeHtml(orgName);
     const escapedInviterName = escapeHtml(inviterName);
     const escapedInviteUrl = escapeHtml(inviteUrl);
@@ -1223,24 +1223,24 @@ export const sendMemberInvitation = action({
       : getBrandingContext();
     const bodyHtml = `
 <tr><td style="padding:28px 40px 0 40px;">
-  <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    <strong>${escapedInviterName}</strong> invited you to join <strong>${escapedOrgName}</strong> on Glass as a ${roleLabel}.
+  <p class="spot-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
+    <strong>${escapedInviterName}</strong> invited you to join <strong>${escapedOrgName}</strong> on Spot as a ${roleLabel}.
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapedInviteUrl}" class="glass-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
+  <a href="${escapedInviteUrl}" class="spot-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Accept invitation</a>
 </td></tr>
 <tr><td style="padding:20px 40px 0 40px;">
-  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
+  <p class="spot-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
     Sign in or create an account with ${escapedEmail}. You can also copy this link:<br>
-    <a href="${escapedInviteUrl}" class="glass-email-link" style="color:#6b7280;word-break:break-all;">${escapedInviteUrl}</a>
+    <a href="${escapedInviteUrl}" class="spot-email-link" style="color:#6b7280;word-break:break-all;">${escapedInviteUrl}</a>
   </p>
 </td></tr>
 <tr><td style="padding:16px 40px 32px 40px;">
-  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 7 days.</p>
+  <p class="spot-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 7 days.</p>
 </td></tr>`;
     const html = buildEmailShell({ title: subject, bodyHtml, branding, siteUrl });
-    const text = `${inviterName} invited you to join ${orgName} on Glass as a ${roleLabel}.\n\nAccept invitation:\n${inviteUrl}\n\nSign in or create an account with ${invitedEmail}. This invitation expires in 7 days.`;
+    const text = `${inviterName} invited you to join ${orgName} on Spot as a ${roleLabel}.\n\nAccept invitation:\n${inviteUrl}\n\nSign in or create an account with ${invitedEmail}. This invitation expires in 7 days.`;
 
     const result = await sendResendEmail(
       {

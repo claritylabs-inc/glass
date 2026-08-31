@@ -31,8 +31,8 @@ export function ensureNode24() {
     return;
   }
 
-  if (process.env.GLASS_NODE_24_BOOTSTRAPPED === "1") {
-    throw new Error(`Glass requires Node 24.x; found ${process.version}`);
+  if (process.env.SPOT_NODE_24_BOOTSTRAPPED === "1") {
+    throw new Error(`Spot requires Node 24.x; found ${process.version}`);
   }
 
   const brewPrefix = spawnSync("brew", ["--prefix", "node@24"], {
@@ -68,7 +68,7 @@ export function ensureNode24() {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      GLASS_NODE_24_BOOTSTRAPPED: "1",
+      SPOT_NODE_24_BOOTSTRAPPED: "1",
       PATH: `${nodeBin}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     stdio: "inherit",
@@ -314,7 +314,7 @@ export function workspaceSlug(workspacePath = repoRoot) {
 }
 
 export function conductorImageTag(workerName, workspacePath = repoRoot) {
-  return `glass-${workerName}:conductor-${workspaceSlug(workspacePath)}`;
+  return `spot-${workerName}:conductor-${workspaceSlug(workspacePath)}`;
 }
 
 export function conductorImageTags(workspacePath = repoRoot) {
@@ -328,11 +328,11 @@ export function conductorContainerName(
   port,
   workspacePath = repoRoot,
 ) {
-  return `glass-${workerName}-${workspaceSlug(workspacePath)}-${port}`;
+  return `spot-${workerName}-${workspaceSlug(workspacePath)}-${port}`;
 }
 
 export function conductorContainerNamesOnPort(containers, workerName, port) {
-  const prefix = `glass-${workerName}-`;
+  const prefixes = [`spot-${workerName}-`, `glass-${workerName}-`];
   const suffix = `-${port}`;
   const names = new Set();
 
@@ -340,7 +340,7 @@ export function conductorContainerNamesOnPort(containers, workerName, port) {
     for (const name of [container?.id, container?.configuration?.id]) {
       if (
         typeof name === "string" &&
-        name.startsWith(prefix) &&
+        prefixes.some((prefix) => name.startsWith(prefix)) &&
         name.endsWith(suffix)
       ) {
         names.add(name);

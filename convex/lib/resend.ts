@@ -1,11 +1,16 @@
 import { extractEmailAddress } from "./emailAddress";
 
 const RESEND_API = "https://api.resend.com/emails";
-const DEFAULT_AGENT_DOMAIN = "glass.insure";
-const DEFAULT_NOTIFICATION_EMAIL_DOMAIN = "notifications.glass.insure";
-const DEFAULT_AUTH_EMAIL_DOMAIN = "auth.glass.insure";
-const DEFAULT_AUTH_EMAIL_FROM_NAME = "Glass";
-const DEFAULT_LEGACY_AGENT_DOMAINS = ["glass.claritylabs.inc", "dev.claritylabs.inc"];
+const DEFAULT_AGENT_DOMAIN = "spot.insure";
+const DEFAULT_NOTIFICATION_EMAIL_DOMAIN = "notifications.spot.insure";
+const DEFAULT_AUTH_EMAIL_DOMAIN = "auth.spot.insure";
+const DEFAULT_AUTH_EMAIL_FROM_NAME = "Spot";
+const DEFAULT_LEGACY_AGENT_DOMAINS = [
+  "glass.insure",
+  "glass.claritylabs.inc",
+  "spot.claritylabs.inc",
+  "dev.claritylabs.inc",
+];
 
 function normalizeDomain(domain: string): string {
   return domain.trim().toLowerCase().replace(/^@/, "");
@@ -35,6 +40,16 @@ export function getAgentDomains(): string[] {
   return uniqueDomains([DEFAULT_AGENT_DOMAIN, getAgentDomain(), ...getLegacyAgentDomains()]);
 }
 
+export function getAgentRecipientAddresses(
+  handle: string,
+  threadSuffix?: string,
+): string[] {
+  return getAgentDomains().flatMap((domain) => [
+    `${handle}@${domain}`,
+    ...(threadSuffix ? [`${handle}+${threadSuffix}@${domain}`] : []),
+  ]);
+}
+
 export function getNotificationEmailDomain(): string {
   return process.env.NOTIFICATION_EMAIL_DOMAIN ?? DEFAULT_NOTIFICATION_EMAIL_DOMAIN;
 }
@@ -43,7 +58,7 @@ export function getAuthEmailDomain(): string {
   return process.env.AUTH_EMAIL_DOMAIN ?? DEFAULT_AUTH_EMAIL_DOMAIN;
 }
 
-export function isGlassOutboundAddress(address: string): boolean {
+export function isSpotOutboundAddress(address: string): boolean {
   const domain = normalizeDomain(address.split("@").pop() ?? "");
   return uniqueDomains([
     getAgentDomain(),
@@ -187,7 +202,7 @@ function formatRecipientList(value: string | string[] | undefined): string {
 }
 
 export function isLocalEmailCaptureEnabled(): boolean {
-  return process.env.GLASS_ENV?.trim().toLowerCase() === "local" && getEmailDeliveryMode() === "capture";
+  return process.env.SPOT_ENV?.trim().toLowerCase() === "local" && getEmailDeliveryMode() === "capture";
 }
 
 export function logLocalEmailCapture(details: LocalEmailCaptureLog): boolean {
@@ -205,7 +220,7 @@ export function logLocalEmailCapture(details: LocalEmailCaptureLog): boolean {
 
   console.log(
     [
-      "[glass:local-email-capture]",
+      "[spot:local-email-capture]",
       `kind: ${details.kind ?? "email"}`,
       `from: ${details.from ?? "(none)"}`,
       `to: ${formatRecipientList(details.to)}`,
@@ -264,14 +279,14 @@ function withOriginalRecipientHeaders(
     ...payload,
     headers: {
       ...payload.headers,
-      "X-Glass-Original-To": recipients.to.join(", "),
+      "X-Spot-Original-To": recipients.to.join(", "),
       ...(recipients.cc.length
-        ? { "X-Glass-Original-Cc": recipients.cc.join(", ") }
+        ? { "X-Spot-Original-Cc": recipients.cc.join(", ") }
         : {}),
       ...(recipients.bcc.length
-        ? { "X-Glass-Original-Bcc": recipients.bcc.join(", ") }
+        ? { "X-Spot-Original-Bcc": recipients.bcc.join(", ") }
         : {}),
-      ...(process.env.GLASS_ENV ? { "X-Glass-Environment": process.env.GLASS_ENV } : {}),
+      ...(process.env.SPOT_ENV ? { "X-Spot-Environment": process.env.SPOT_ENV } : {}),
     },
   };
 }
@@ -309,7 +324,7 @@ function preparePayloadForDelivery(
         subject: prefixSubject(payload.subject),
         headers: {
           ...payload.headers,
-          ...(process.env.GLASS_ENV ? { "X-Glass-Environment": process.env.GLASS_ENV } : {}),
+          ...(process.env.SPOT_ENV ? { "X-Spot-Environment": process.env.SPOT_ENV } : {}),
         },
       },
     };

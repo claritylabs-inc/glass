@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { URL } from "node:url";
-import { GlassConfig } from "./types.js";
+import dayjs from "dayjs";
+import { SpotConfig } from "./types.js";
 
 function b64url(input: Buffer) {
   return input.toString("base64url");
@@ -15,7 +16,30 @@ type TokenResponse = {
   scope?: string;
 };
 
-const CLI_CLIENT_ID = "glass-cli";
+type ClientRegistrationResponse = {
+  client_id: string;
+};
+
+async function registerClient(baseUrl: string, redirectUri: string): Promise<string> {
+  const response = await fetch(`${baseUrl}/oauth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_name: "Spot CLI",
+      redirect_uris: [redirectUri],
+      token_endpoint_auth_method: "none",
+    }),
+  });
+  const json = (await response.json().catch(() => ({}))) as Partial<ClientRegistrationResponse> & {
+    error?: string;
+    error_description?: string;
+  };
+  if (!response.ok || !json.client_id) {
+    const message = json.error_description ?? json.error ?? `OAuth client registration failed (${response.status})`;
+    throw new Error(message);
+  }
+  return json.client_id;
+}
 
 async function exchangeCodeForToken(params: {
   baseUrl: string;
@@ -51,15 +75,18 @@ async function exchangeCodeForToken(params: {
   return json;
 }
 
-export async function refreshAccessToken(config: GlassConfig): Promise<Partial<GlassConfig>> {
+export async function refreshAccessToken(config: SpotConfig): Promise<Partial<SpotConfig>> {
   if (!config.refreshToken) {
-    throw new Error("Session expired. Run: glass auth:login");
+    throw new Error("Session expired. Run: spot auth:login");
+  }
+  if (!config.clientId) {
+    throw new Error("This session predates Spot OAuth registration. Run: spot auth:login");
   }
 
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: config.refreshToken,
-    client_id: CLI_CLIENT_ID,
+    client_id: config.clientId,
   });
 
   const response = await fetch(`${config.baseUrl}/oauth/token`, {
@@ -75,27 +102,28 @@ export async function refreshAccessToken(config: GlassConfig): Promise<Partial<G
 
   if (!response.ok || !json.access_token) {
     const message = json.error_description ?? json.error ?? `OAuth refresh failed (${response.status})`;
-    throw new Error(`${message}. Run: glass auth:login`);
+    throw new Error(`${message}. Run: spot auth:login`);
   }
 
   return {
     accessToken: json.access_token,
     refreshToken: json.refresh_token ?? config.refreshToken,
-    expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
+    expiresAt: dayjs().valueOf() + (json.expires_in ?? 3600) * 1000,
   };
 }
 
-export async function loginWithBrowser(config: GlassConfig): Promise<Partial<GlassConfig>> {
+export async function loginWithBrowser(config: SpotConfig): Promise<Partial<SpotConfig>> {
   const state = b64url(randomBytes(16));
   const codeVerifier = b64url(randomBytes(32));
   const codeChallenge = createHash("sha256").update(codeVerifier).digest("base64url");
 
   const port = 8917;
   const redirectUri = `http://127.0.0.1:${port}/callback`;
+  const clientId = await registerClient(config.baseUrl, redirectUri);
 
   const authUrl = new URL(`${config.baseUrl}/oauth/authorize`);
   authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("client_id", CLI_CLIENT_ID);
+  authUrl.searchParams.set("client_id", clientId);
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("code_challenge", codeChallenge);
@@ -148,14 +176,15 @@ export async function loginWithBrowser(config: GlassConfig): Promise<Partial<Gla
   const token = await exchangeCodeForToken({
     baseUrl: config.baseUrl,
     code: authCode,
-    clientId: CLI_CLIENT_ID,
+    clientId,
     redirectUri,
     codeVerifier,
   });
 
   return {
+    clientId,
     accessToken: token.access_token,
     refreshToken: token.refresh_token,
-    expiresAt: Date.now() + (token.expires_in ?? 3600) * 1000,
+    expiresAt: dayjs().valueOf() + (token.expires_in ?? 3600) * 1000,
   };
 }

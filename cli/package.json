@@ -1,8 +1,8 @@
 {
-  "name": "@claritylabs/glass-cli",
+  "name": "@claritylabs/spot-cli",
   "version": "0.1.1",
   "private": false,
-  "description": "Command line interface for Glass",
+  "description": "Command line interface for Spot",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {
@@ -10,11 +10,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/claritylabs-inc/glass.git",
+    "url": "git+https://github.com/claritylabs-inc/spot.git",
     "directory": "cli"
   },
   "bin": {
-    "glass": "dist/index.js"
+    "spot": "dist/index.js"
   },
   "publishConfig": {
     "access": "public"
@@ -29,7 +29,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "commander": "^14.0.1"
+    "commander": "^14.0.1",
+    "dayjs": "^1.11.20"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

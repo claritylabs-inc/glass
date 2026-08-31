@@ -488,7 +488,7 @@ export const bootstrapViewer = mutation({
     if (!user || !email || !isBootstrapOperatorEmail(email)) {
       throwUserFacingError(
         userFacingErrorCodes.operatorRequired,
-        "This account is not authorized for Glass operator access.",
+        "This account is not authorized for Spot operator access.",
       );
     }
 
@@ -1754,27 +1754,27 @@ export const launchBroker = action({
     const loginUrl: string = launch.slug
       ? `${siteUrl}/login/${launch.slug}?email=${encodeURIComponent(launch.adminEmail)}`
       : `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
-    const subject = `${launch.name} is ready on Glass`;
+    const subject = `${launch.name} is ready on Spot`;
     const bodyHtml = `
 <tr><td style="padding:28px 40px 0 40px;">
-  <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    Your Glass workspace for <strong>${escapeHtml(launch.name)}</strong> is ready.
+  <p class="spot-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
+    Your Spot workspace for <strong>${escapeHtml(launch.name)}</strong> is ready.
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapeHtml(loginUrl)}" class="glass-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Open Glass</a>
+  <a href="${escapeHtml(loginUrl)}" class="spot-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Open Spot</a>
 </td></tr>
 <tr><td style="padding:20px 40px 32px 40px;">
-  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
+  <p class="spot-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
     Sign in with ${escapeHtml(launch.adminEmail)}. You can also copy this link:<br>
-    <a href="${escapeHtml(loginUrl)}" class="glass-email-link" style="color:#6b7280;word-break:break-all;">${escapeHtml(loginUrl)}</a>
+    <a href="${escapeHtml(loginUrl)}" class="spot-email-link" style="color:#6b7280;word-break:break-all;">${escapeHtml(loginUrl)}</a>
   </p>
 </td></tr>`;
     const html = buildEmailShell({ title: subject, bodyHtml, siteUrl });
-    const text = `Your Glass workspace for ${launch.name} is ready.\n\nOpen Glass:\n${loginUrl}\n\nSign in with ${launch.adminEmail}.`;
+    const text = `Your Spot workspace for ${launch.name} is ready.\n\nOpen Spot:\n${loginUrl}\n\nSign in with ${launch.adminEmail}.`;
     const result = await sendResendEmail(
       {
-        from: getAuthFromAddress("Glass"),
+        from: getAuthFromAddress("Spot"),
         to: launch.adminName
           ? `${launch.adminName} <${launch.adminEmail}>`
           : launch.adminEmail,
@@ -1825,27 +1825,27 @@ export const launchSoloClient = action({
 
     const siteUrl = getAuthSiteUrl();
     const loginUrl = `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
-    const subject = `${launch.name} is ready on Glass`;
+    const subject = `${launch.name} is ready on Spot`;
     const bodyHtml = `
 <tr><td style="padding:28px 40px 0 40px;">
-  <p class="glass-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    Your Glass workspace for <strong>${escapeHtml(launch.name)}</strong> is ready.
+  <p class="spot-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
+    Your Spot workspace for <strong>${escapeHtml(launch.name)}</strong> is ready.
   </p>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapeHtml(loginUrl)}" class="glass-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Open Glass</a>
+  <a href="${escapeHtml(loginUrl)}" class="spot-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Open Spot</a>
 </td></tr>
 <tr><td style="padding:20px 40px 32px 40px;">
-  <p class="glass-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
+  <p class="spot-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
     Sign in with ${escapeHtml(launch.adminEmail)}. You can also copy this link:<br>
-    <a href="${escapeHtml(loginUrl)}" class="glass-email-link" style="color:#6b7280;word-break:break-all;">${escapeHtml(loginUrl)}</a>
+    <a href="${escapeHtml(loginUrl)}" class="spot-email-link" style="color:#6b7280;word-break:break-all;">${escapeHtml(loginUrl)}</a>
   </p>
 </td></tr>`;
     const html = buildEmailShell({ title: subject, bodyHtml, siteUrl });
-    const text = `Your Glass workspace for ${launch.name} is ready.\n\nOpen Glass:\n${loginUrl}\n\nSign in with ${launch.adminEmail}.`;
+    const text = `Your Spot workspace for ${launch.name} is ready.\n\nOpen Spot:\n${loginUrl}\n\nSign in with ${launch.adminEmail}.`;
     const result = await sendResendEmail(
       {
-        from: getAuthFromAddress("Glass"),
+        from: getAuthFromAddress("Spot"),
         to: launch.adminName
           ? `${launch.adminName} <${launch.adminEmail}>`
           : launch.adminEmail,

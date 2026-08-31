@@ -266,8 +266,8 @@ async function channelOverview(
         reasonCode: connection.healthReason ?? "authorization_revoked",
         reasonSummary:
           connection.healthReason === "app_uninstalled"
-            ? "The Glass app was uninstalled from this workspace."
-            : "Glass no longer has valid Slack authorization for this workspace.",
+            ? "The Spot app was uninstalled from this workspace."
+            : "Spot no longer has valid Slack authorization for this workspace.",
         recoveryAction: "reinstall" as const,
         lastVerifiedAt: connection.lastVerifiedAt ?? null,
         lastHealthyAt: connection.lastHealthyAt ?? null,
@@ -277,7 +277,7 @@ async function channelOverview(
       return {
         status: "disconnected" as const,
         reasonCode: "operator_disconnected",
-        reasonSummary: "Slack was disconnected in Glass.",
+        reasonSummary: "Slack was disconnected in Spot.",
         recoveryAction: "reinstall" as const,
         lastVerifiedAt: connection.lastVerifiedAt ?? null,
         lastHealthyAt: connection.lastHealthyAt ?? null,
@@ -288,7 +288,7 @@ async function channelOverview(
       return {
         status: "degraded" as const,
         reasonCode: "missing_required_scopes",
-        reasonSummary: `Reinstall Glass in Slack to authorize ${missingScopes.join(", ")}.`,
+        reasonSummary: `Reinstall Spot in Slack to authorize ${missingScopes.join(", ")}.`,
         recoveryAction: "reinstall" as const,
         lastVerifiedAt: connection.lastVerifiedAt ?? null,
         lastHealthyAt: connection.lastHealthyAt ?? null,
@@ -300,7 +300,7 @@ async function channelOverview(
         reasonCode: connection.healthReason ?? "verification_failed",
         reasonSummary:
           connection.providerErrorSummary ??
-          "Glass could not verify the Slack connection. Delivery is paused while verification retries.",
+          "Spot could not verify the Slack connection. Delivery is paused while verification retries.",
         recoveryAction: null,
         lastVerifiedAt: connection.lastVerifiedAt ?? null,
         lastHealthyAt: connection.lastHealthyAt ?? null,
@@ -424,7 +424,7 @@ async function deactivateConnection(
     connectionId: connection._id,
     reason:
       status === "disconnected"
-        ? "Slack was disconnected in Glass"
+        ? "Slack was disconnected in Spot"
         : "Slack authorization is revoked",
   });
   if (status === "disconnected") {
@@ -717,7 +717,7 @@ export const finishSlackSetup = mutation({
       missingSlackCustomerScopes(connection.grantedScopes).length > 0
     ) {
       throw new Error(
-        "Install or update Glass in Slack before finishing setup",
+        "Install or update Spot in Slack before finishing setup",
       );
     }
     if (
@@ -820,7 +820,7 @@ export const setOperatorSlackIdentity = mutation({
       )
       .first();
     if (collision && collision._id !== operator.profile._id) {
-      throw new Error("This Slack identity belongs to another Glass operator");
+      throw new Error("This Slack identity belongs to another Spot operator");
     }
     await ctx.db.patch(operator.profile._id, {
       slackTeamId: teamId,
@@ -1335,7 +1335,7 @@ async function upsertNativeSlackInstallation(
     )
     .first();
   if (active && active.kind !== args.kind) {
-    throw new Error("This Slack workspace already has a different Glass role");
+    throw new Error("This Slack workspace already has a different Spot role");
   }
   const reusable =
     active ??
@@ -1352,7 +1352,7 @@ async function upsertNativeSlackInstallation(
       )
       .first());
   if (reusable && reusable.kind !== args.kind) {
-    throw new Error("This Slack workspace already has a different Glass role");
+    throw new Error("This Slack workspace already has a different Spot role");
   }
   const now = dayjs().valueOf();
   if (reusable) {
@@ -1472,7 +1472,7 @@ export const upsertSlackConnection = internalMutation({
       });
     } else {
       const serviceUserId = await ctx.db.insert("users", {
-        name: `Glass Slack (${args.teamName})`,
+        name: `Spot Slack (${args.teamName})`,
         accountKind: "customer",
         serviceAccountKind: "slack",
         onboardingComplete: true,
@@ -1888,7 +1888,7 @@ export const syncSlackChannelMembershipsInternal = internalMutation({
           healthSource: "reconciliation",
           providerErrorSummary: mappedChannel
             ? "The selected customer channel is no longer shared."
-            : "The selected customer channel is no longer visible to Glass.",
+            : "The selected customer channel is no longer visible to Spot.",
           lastVerifiedAt: now,
           updatedAt: now,
         });
@@ -1939,7 +1939,7 @@ export const selectAutomaticSlackChannelInternal = internalMutation({
       )
       .first();
     if (!membership || membership.status !== "active") {
-      throw new Error("Select a Slack channel that Glass has joined");
+      throw new Error("Select a Slack channel that Spot has joined");
     }
     const now = dayjs().valueOf();
     await ctx.db.patch(connection._id, {
@@ -1982,7 +1982,7 @@ export const recordSlackChannelJoinedInternal = internalMutation({
       operatorUserId: args.actorUserId,
       type: "setup_write",
       targetOrgId: args.clientOrgId,
-      summary: `Added Glass to #${args.channelName}`,
+      summary: `Added Spot to #${args.channelName}`,
       metadata: {
         connectionId: args.connectionId,
         channelId: args.channelId,
@@ -2017,7 +2017,7 @@ export const recordSlackChannelLeftInternal = internalMutation({
       operatorUserId: args.actorUserId,
       type: "setup_write",
       targetOrgId: args.clientOrgId,
-      summary: `Removed Glass from #${args.channelName}`,
+      summary: `Removed Spot from #${args.channelName}`,
       metadata: {
         connectionId: args.connectionId,
         channelId: args.channelId,

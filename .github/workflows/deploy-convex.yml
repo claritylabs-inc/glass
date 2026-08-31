@@ -1,4 +1,4 @@
-name: Release Glass
+name: Release Spot
 
 on:
   push:
@@ -150,18 +150,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RAILWAY_STATUS_CONTEXTS: |
-            Glass - glass-extraction-worker
-            Glass - imessage-worker
-            Glass - slack-worker
-            Glass - glass-mailbox-scan-worker
+            Spot - spot-extraction-worker
+            Spot - imessage-worker
+            Spot - slack-worker
+            Spot - spot-mailbox-scan-worker
 
       - name: Check deployed service compatibility
         run: node scripts/check-agent-deployment-health.mjs --env production
         env:
           AGENT_HEALTH_ATTEMPTS: 30
           AGENT_HEALTH_RETRY_DELAY_MS: 10000
-          GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL }}
-          GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL }}
+          SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL }}
+          SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL }}
 
       - name: Verify release is still the branch head
         env:

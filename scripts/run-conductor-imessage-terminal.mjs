@@ -33,7 +33,7 @@ const terminalEnvironment = {
   ...process.env,
   ...workerEnv,
   CONVEX_SITE_URL: site,
-  GLASS_ENV: "local",
+  SPOT_ENV: "local",
   IMESSAGE_ENABLED: "false",
   SPECTRUM_PROVIDER: "terminal",
   PORT: String(imessage),

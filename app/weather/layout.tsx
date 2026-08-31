@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { getClientPortalUrl } from "@/convex/lib/domains";
 
-const TITLE = "Glass from Clarity Labs";
-const DESCRIPTION = "AI Weather Report — current model routing across Glass.";
+const TITLE = "Spot from Clarity Labs";
+const DESCRIPTION = "AI Weather Report — current model routing across Spot.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(getClientPortalUrl()),

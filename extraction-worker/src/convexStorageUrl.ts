@@ -1,7 +1,7 @@
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 type ResolveConvexStorageUrlOptions = {
-  glassEnv: string;
+  spotEnv: string;
   convexUrl: string;
 };
 
@@ -13,7 +13,7 @@ export function resolveConvexStorageUrl(
   storageUrl: string,
   options: ResolveConvexStorageUrlOptions,
 ): string {
-  if (options.glassEnv !== "local") return storageUrl;
+  if (options.spotEnv !== "local") return storageUrl;
 
   let source: URL;
   let target: URL;

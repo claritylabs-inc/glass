@@ -289,7 +289,7 @@ async function buildAttachmentParts(
       ) {
         parts.push({
           type: "text",
-          text: `--- Unsupported spreadsheet attachment: ${att.filename} ---\nThis spreadsheet was not read. Glass currently reads .xlsx and text-based CSV/TSV attachments for chat context; please re-upload this file as .xlsx, .csv, or .tsv.\n--- End unsupported spreadsheet attachment ---`,
+          text: `--- Unsupported spreadsheet attachment: ${att.filename} ---\nThis spreadsheet was not read. Spot currently reads .xlsx and text-based CSV/TSV attachments for chat context; please re-upload this file as .xlsx, .csv, or .tsv.\n--- End unsupported spreadsheet attachment ---`,
         });
         names.push(att.filename);
       } else if (isDocxAttachment(att.filename, att.contentType)) {
@@ -412,7 +412,7 @@ async function buildMessageHistoryWithAttachmentContext(
         role: "assistant",
         content: stripConfidenceMarkers(content),
         ...(privateHistory
-          ? { providerOptions: { glass: { privateHistory } } }
+          ? { providerOptions: { spot: { privateHistory } } }
           : {}),
       });
     }
@@ -948,7 +948,7 @@ export const run = internalAction({
           ? {
               request_human_service: {
                 description:
-                  "Pause the Slack AI thread and request help from a Glass human operator. Use when the customer explicitly asks for a human or the task requires human service.",
+                  "Pause the Slack AI thread and request help from a Spot human operator. Use when the customer explicitly asks for a human or the task requires human service.",
                 inputSchema: z.object({
                   reason: z
                     .string()
@@ -1053,7 +1053,7 @@ export const run = internalAction({
                 missingRecipientMessage:
                   "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
                 unknownRecipientMessage:
-                  "I cannot use that broker recipient because it is not the configured broker contact in Glass. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
+                  "I cannot use that broker recipient because it is not the configured broker contact in Spot. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && requesterCopyEmail
                     ? [requesterCopyEmail]
@@ -1287,8 +1287,8 @@ export const run = internalAction({
               : "New chat";
           const subject =
             threadLabel !== "New chat"
-              ? `Glass reply: ${threadLabel}`
-              : "Glass reply";
+              ? `Spot reply: ${threadLabel}`
+              : "Spot reply";
           const plainText = `Thread: ${threadLabel}\n\n${stripMarkdown(content)}\n\nView thread: ${threadUrl}`;
           const htmlBody = markdownToHtml(content);
           const html = buildEmailShell({
@@ -1296,18 +1296,18 @@ export const run = internalAction({
             siteUrl,
             bodyHtml: `
 <tr><td align="left" style="padding:28px 40px 0 40px;">
-  <p class="glass-email-text-primary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;color:#000000;line-height:1.4;">${escapeHtml(threadLabel)}</p>
+  <p class="spot-email-text-primary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;font-weight:600;color:#000000;line-height:1.4;">${escapeHtml(threadLabel)}</p>
 </td></tr>
 <tr><td style="padding:22px 40px 0 40px;">
-  <div class="glass-email-text-secondary" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#374151;line-height:1.6;">${htmlBody}</div>
+  <div class="spot-email-text-secondary" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#374151;line-height:1.6;">${htmlBody}</div>
 </td></tr>
 <tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapeHtml(threadUrl)}" class="glass-email-button" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">View thread</a>
+  <a href="${escapeHtml(threadUrl)}" class="spot-email-button" style="display:inline-block;background:#000000;color:#ffffff;text-decoration:none;border-radius:999px;padding:11px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;font-weight:600;">View thread</a>
 </td></tr>`,
           });
 
           const notification = await sendResendEmail({
-            from: getNotificationFromAddress("Glass Notifications"),
+            from: getNotificationFromAddress("Spot Notifications"),
             to: user.email,
             subject,
             text: plainText,

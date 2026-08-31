@@ -116,7 +116,7 @@ function Timeline({
               className={`mb-1 flex items-center gap-2 ${isInbound ? "justify-end" : ""}`}
             >
               <span className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
-                {isInbound ? "Prospect" : "Glass"}
+                {isInbound ? "Prospect" : "Spot"}
               </span>
               <span className="text-muted-foreground/20">·</span>
               <span className={`text-muted-foreground/25 ${typeStyle("caption.default")}`}>

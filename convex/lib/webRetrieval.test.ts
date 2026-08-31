@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 describe("Parallel web retrieval", () => {
-  test("uses Parallel Search by default and maps excerpts into Glass sources", async () => {
+  test("uses Parallel Search by default and maps excerpts into Spot sources", async () => {
     vi.stubEnv("PARALLEL_API_KEY", "parallel-test-key");
     vi.stubEnv("EXA_API_KEY", "");
     const fetchMock = vi.fn().mockResolvedValue(

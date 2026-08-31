@@ -511,7 +511,7 @@ export function CertificateGeneratePanel({
               <div>
                 <p className={`text-foreground ${typeStyle("body.medium")}`}>Requirements source</p>
                 <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
-                  The source supplies both the certificate holder and the coverage requirements. Glass may issue separate certificates from several policies.
+                  The source supplies both the certificate holder and the coverage requirements. Spot may issue separate certificates from several policies.
                 </p>
               </div>
               <SearchableSelect

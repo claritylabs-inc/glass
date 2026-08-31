@@ -133,20 +133,20 @@ function feedbackBlock(args: {
 }): SlackBlock {
   return {
     type: "context_actions",
-    block_id: blockId("glass-feedback", args.messageId, args.revision),
+    block_id: blockId("spot-feedback", args.messageId, args.revision),
     elements: [
       {
         type: "feedback_buttons",
-        action_id: "glass_response_feedback",
+        action_id: "spot_response_feedback",
         positive_button: {
           text: { type: "plain_text", text: "Helpful" },
           value: `positive:${args.actionToken}`,
-          accessibility_label: "Mark this Glass response as helpful",
+          accessibility_label: "Mark this Spot response as helpful",
         },
         negative_button: {
           text: { type: "plain_text", text: "Needs work" },
           value: `negative:${args.actionToken}`,
-          accessibility_label: "Mark this Glass response as needing work",
+          accessibility_label: "Mark this Spot response as needing work",
         },
       },
     ],
@@ -175,7 +175,7 @@ export function buildSlackFinalBlocks(args: {
   const blocks: SlackBlock[] = [
     {
       type: "section",
-      block_id: blockId("glass-answer", args.message._id, args.revision),
+      block_id: blockId("spot-answer", args.message._id, args.revision),
       text: {
         type: "mrkdwn",
         text: truncate(
@@ -190,7 +190,7 @@ export function buildSlackFinalBlocks(args: {
   if (completedTools.length) {
     blocks.push({
       type: "context",
-      block_id: blockId("glass-trace", args.message._id, args.revision),
+      block_id: blockId("spot-trace", args.message._id, args.revision),
       elements: [
         {
           type: "mrkdwn",
@@ -212,7 +212,7 @@ export function buildSlackFinalBlocks(args: {
         : "";
     blocks.push({
       type: "card",
-      block_id: blockId("glass-email-draft", args.message._id, args.revision),
+      block_id: blockId("spot-email-draft", args.message._id, args.revision),
       title: { type: "plain_text", text: "Email draft" },
       subtitle: {
         type: "plain_text",
@@ -225,7 +225,7 @@ export function buildSlackFinalBlocks(args: {
       actions: [
         {
           type: "button",
-          action_id: "glass_open_email_draft",
+          action_id: "spot_open_email_draft",
           value: args.actionToken,
           url: args.emailDraft.reviewUrl,
           text: { type: "plain_text", text: "Review draft" },
@@ -238,21 +238,21 @@ export function buildSlackFinalBlocks(args: {
   for (const [index, policy] of args.policies.slice(0, 3).entries()) {
     blocks.push({
       type: "card",
-      block_id: blockId("glass-policy", policy._id, args.revision, index),
+      block_id: blockId("spot-policy", policy._id, args.revision, index),
       title: { type: "plain_text", text: truncate(policyTitle(policy), 150) },
       subtitle: {
         type: "plain_text",
         text: policy.extractionDataStage === "preview" ? "Preliminary policy details" : "Policy details",
       },
-      body: { type: "plain_text", text: policyBody(policy) || "Open this policy in Glass." },
+      body: { type: "plain_text", text: policyBody(policy) || "Open this policy in Spot." },
       actions: [
         {
           type: "button",
-          action_id: "glass_open_policy",
+          action_id: "spot_open_policy",
           value: args.actionToken,
           url: slackPolicyUrl(policy._id),
           text: { type: "plain_text", text: "Open policy" },
-          accessibility_label: `Open ${policyTitle(policy)} in Glass`,
+          accessibility_label: `Open ${policyTitle(policy)} in Spot`,
         },
       ],
     });
@@ -263,7 +263,7 @@ export function buildSlackFinalBlocks(args: {
     .entries()) {
     blocks.push({
       type: "card",
-      block_id: blockId("glass-certificate", args.message._id, args.revision, index),
+      block_id: blockId("spot-certificate", args.message._id, args.revision, index),
       title: { type: "plain_text", text: "Certificate ready" },
       subtitle: { type: "plain_text", text: "Attached in this Slack conversation" },
       body: {
@@ -273,11 +273,11 @@ export function buildSlackFinalBlocks(args: {
       actions: [
         {
           type: "button",
-          action_id: "glass_open_certificate",
+          action_id: "spot_open_certificate",
           value: args.actionToken,
           url: slackCertificateUrl(args.policies[0]?._id),
           text: { type: "plain_text", text: "View certificates" },
-          accessibility_label: "Open certificates in Glass",
+          accessibility_label: "Open certificates in Spot",
         },
       ],
     });
@@ -287,16 +287,16 @@ export function buildSlackFinalBlocks(args: {
   if (args.showHandoff) {
     actionElements.push({
       type: "button",
-      action_id: "glass_request_human",
+      action_id: "spot_request_human",
       value: args.actionToken,
       text: { type: "plain_text", text: "Ask a human" },
-      accessibility_label: "Request help from a Glass service team member",
+      accessibility_label: "Request help from a Spot service team member",
     });
   }
   if (actionElements.length) {
     blocks.push({
       type: "actions",
-      block_id: blockId("glass-actions", args.message._id, args.revision),
+      block_id: blockId("spot-actions", args.message._id, args.revision),
       elements: actionElements,
     });
   }
@@ -329,7 +329,7 @@ export function buildSlackClassicFinalBlocks(args: {
     {
       type: "section",
       block_id: blockId(
-        "glass-classic-answer",
+        "spot-classic-answer",
         args.message._id,
         args.revision,
       ),
@@ -353,7 +353,7 @@ export function buildSlackClassicFinalBlocks(args: {
       {
         type: "section",
         block_id: blockId(
-          "glass-classic-email-draft",
+          "spot-classic-email-draft",
           args.message._id,
           args.revision,
         ),
@@ -365,14 +365,14 @@ export function buildSlackClassicFinalBlocks(args: {
       {
         type: "actions",
         block_id: blockId(
-          "glass-classic-email-action",
+          "spot-classic-email-action",
           args.message._id,
           args.revision,
         ),
         elements: [
           {
             type: "button",
-            action_id: "glass_open_email_draft",
+            action_id: "spot_open_email_draft",
             value: args.actionToken,
             url: args.emailDraft.reviewUrl,
             text: { type: "plain_text", text: "Review draft" },
@@ -387,23 +387,23 @@ export function buildSlackClassicFinalBlocks(args: {
     blocks.push(
       {
         type: "section",
-        block_id: blockId("glass-classic-policy", policy._id, args.revision, index),
+        block_id: blockId("spot-classic-policy", policy._id, args.revision, index),
         text: {
           type: "mrkdwn",
-          text: `*${escapeMrkdwn(policyTitle(policy))}*\n${escapeMrkdwn(policyBody(policy) || "Open this policy in Glass.")}`,
+          text: `*${escapeMrkdwn(policyTitle(policy))}*\n${escapeMrkdwn(policyBody(policy) || "Open this policy in Spot.")}`,
         },
       },
       {
         type: "actions",
-        block_id: blockId("glass-classic-policy-action", policy._id, args.revision, index),
+        block_id: blockId("spot-classic-policy-action", policy._id, args.revision, index),
         elements: [
           {
             type: "button",
-            action_id: "glass_open_policy",
+            action_id: "spot_open_policy",
             value: args.actionToken,
             url: slackPolicyUrl(policy._id),
             text: { type: "plain_text", text: "Open policy" },
-            accessibility_label: `Open ${policyTitle(policy)} in Glass`,
+            accessibility_label: `Open ${policyTitle(policy)} in Spot`,
           },
         ],
       },
@@ -415,18 +415,18 @@ export function buildSlackClassicFinalBlocks(args: {
     .entries()) {
     blocks.push({
       type: "section",
-      block_id: blockId("glass-classic-certificate", args.message._id, args.revision, index),
+      block_id: blockId("spot-classic-certificate", args.message._id, args.revision, index),
       text: {
         type: "mrkdwn",
         text: `*Certificate ready*\n${escapeMrkdwn(truncate(attachment.filename, 200))}\nAttached in this Slack conversation.`,
       },
       accessory: {
         type: "button",
-        action_id: "glass_open_certificate",
+        action_id: "spot_open_certificate",
         value: args.actionToken,
         url: slackCertificateUrl(args.policies[0]?._id),
         text: { type: "plain_text", text: "View certificates" },
-        accessibility_label: "Open certificates in Glass",
+        accessibility_label: "Open certificates in Spot",
       },
     });
   }
@@ -434,31 +434,31 @@ export function buildSlackClassicFinalBlocks(args: {
   const finalActions: SlackBlock[] = [
     {
       type: "button",
-      action_id: "glass_response_feedback_positive",
+      action_id: "spot_response_feedback_positive",
       value: `positive:${args.actionToken}`,
       text: { type: "plain_text", text: "Helpful" },
-      accessibility_label: "Mark this Glass response as helpful",
+      accessibility_label: "Mark this Spot response as helpful",
     },
     {
       type: "button",
-      action_id: "glass_response_feedback_negative",
+      action_id: "spot_response_feedback_negative",
       value: `negative:${args.actionToken}`,
       text: { type: "plain_text", text: "Needs work" },
-      accessibility_label: "Mark this Glass response as needing work",
+      accessibility_label: "Mark this Spot response as needing work",
     },
   ];
   if (args.showHandoff) {
     finalActions.push({
       type: "button",
-      action_id: "glass_request_human",
+      action_id: "spot_request_human",
       value: args.actionToken,
       text: { type: "plain_text", text: "Ask a human" },
-      accessibility_label: "Request help from a Glass service team member",
+      accessibility_label: "Request help from a Spot service team member",
     });
   }
   blocks.push({
     type: "actions",
-    block_id: blockId("glass-classic-actions", args.message._id, args.revision),
+    block_id: blockId("spot-classic-actions", args.message._id, args.revision),
     elements: finalActions,
   });
   return blocks.slice(0, 50);

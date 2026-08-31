@@ -1038,7 +1038,7 @@ function validateAdditionalInsuredEligibility(
     if (!node) return null;
     return {
       category: "Scheduled Additional Insureds",
-      condition: "A person or company must be scheduled, named, added, or endorsed as a Scheduled Additional Insured before Glass treats them as already added.",
+      condition: "A person or company must be scheduled, named, added, or endorsed as a Scheduled Additional Insured before Spot treats them as already added.",
       summary: "Scheduled Additional Insured status requires endorsement-backed scheduling/naming in the policy evidence.",
       sourceNodeIds: [node.id],
       sourceSpanIds: node.sourceSpanIds,
@@ -1249,7 +1249,7 @@ async function classifyInsuranceExtractability(params: {
   const result = await generateGateObject({
     schema: extractionGateSchema,
     maxTokens: 600,
-    system: `You are a strict intake gate for Glass post-binding insurance extraction.
+    system: `You are a strict intake gate for Spot post-binding insurance extraction.
 
 Decide whether an uploaded PDF should be processed by a bound-policy extractor. Allow extraction when the document is clearly an already-bound insurance policy, binder, declarations page, renewal policy, insurance schedule, policy wording, endorsement, or post-binding supplement that contains bound policy terms.
 
@@ -1306,7 +1306,7 @@ async function notifyExtractionReviewRequired(
     orgId: args.orgId,
     type: "incomplete_extraction",
     title: "Policy extraction needs review",
-    body: `Glass finished extracting ${label}, but ${args.questionCount} coverage ${args.questionCount === 1 ? "term needs" : "terms need"} review.`,
+    body: `Spot finished extracting ${label}, but ${args.questionCount} coverage ${args.questionCount === 1 ? "term needs" : "terms need"} review.`,
     severity: "warning",
     actionType: "view_policy",
     actionPayload: { policyId: args.policyId, tab: "review" },

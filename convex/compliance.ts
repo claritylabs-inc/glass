@@ -2022,7 +2022,7 @@ export const recordOwnComplianceRunInternal = internalMutation({
       return [{
         type: "own_compliance_resolved",
         title: "Your insurance requirements are now met",
-        body: `${orgName} now meets all ${args.checks.length} active insurance requirements in Glass.`,
+        body: `${orgName} now meets all ${args.checks.length} active insurance requirements in Spot.`,
         severity: "info",
         orgId: args.orgId,
         orgName,

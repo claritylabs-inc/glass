@@ -7,6 +7,7 @@ import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 const REQUEST_TIMEOUT_MS = 15_000;
+const SPOT_ROUTER_TENANT_ID = "glass";
 
 function configuredEnv(value: string | undefined) {
   const trimmed = value?.trim();
@@ -128,7 +129,7 @@ export const getDashboard = action({
     const [health, policy, rollups] = await Promise.all([
       fetchJson(`${url}/health`),
       adminSecret
-        ? fetchJson(`${url}/admin/policy?tenantId=glass`, {
+        ? fetchJson(`${url}/admin/policy?tenantId=${SPOT_ROUTER_TENANT_ID}`, {
             secret: adminSecret,
           })
         : Promise.resolve({
@@ -136,7 +137,7 @@ export const getDashboard = action({
             error: "CL_ROUTER_ADMIN_SECRET is not configured",
           }),
       adminSecret
-        ? fetchJson(`${url}/admin/rollups?tenantId=glass`, {
+        ? fetchJson(`${url}/admin/rollups?tenantId=${SPOT_ROUTER_TENANT_ID}`, {
             secret: adminSecret,
           })
         : Promise.resolve({
@@ -183,14 +184,14 @@ export const setGlobalFreeze = action({
       throw new Error(availability.error ?? "Router controls are unavailable");
     }
 
-    const reason = `Glass operator ${String(userId)} ${
+    const reason = `Spot operator ${String(userId)} ${
       args.frozen ? "enabled" : "disabled"
     } the global routing freeze`;
     const result = await fetchJson(`${url}/admin/freeze`, {
       secret: adminSecret,
       method: "POST",
       body: {
-        tenantId: "glass",
+        tenantId: SPOT_ROUTER_TENANT_ID,
         frozen: args.frozen,
         reason,
       },

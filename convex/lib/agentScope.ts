@@ -6,6 +6,7 @@ import {
   userFacingErrorCodes,
 } from "./userFacingErrors";
 import type { ActorRef } from "./actorRef";
+import { isSlackOperatorClassification } from "./slackInteractions";
 
 type AgentSurface =
   | "web"
@@ -155,7 +156,7 @@ export const resolveForAction = internalQuery({
         connection.clientOrgId !== args.orgId ||
         connection.serviceUserId !== args.userId ||
         (actor.classification !== "customer_member" &&
-          actor.classification !== "glass_operator") ||
+          !isSlackOperatorClassification(actor.classification)) ||
         settings?.slackEnabled !== true
       ) {
         throwUserFacingError(userFacingErrorCodes.orgAccessRequired);

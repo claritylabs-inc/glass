@@ -249,12 +249,12 @@ describe("proactive conversation threads", () => {
       orgId,
       userId,
       title: "Mailbox items needing attention",
-      content: "Glass found one policy document.",
+      content: "Spot found one policy document.",
     });
     const threadId = result.threadId as Id<"threads">;
     const thread = await t.run((ctx) => ctx.db.get(threadId));
 
-    expect(result.threadEmail).toMatch(/^acme\+[a-z0-9]{8}@glass\.insure$/);
+    expect(result.threadEmail).toMatch(/^acme\+[a-z0-9]{8}@spot\.insure$/);
     expect(thread?.threadEmail).toBe(result.threadEmail);
   });
 
@@ -277,7 +277,7 @@ describe("proactive conversation threads", () => {
       userId,
       visibility: "user_private",
       title: "Mailbox automation update",
-      content: "Glass imported one document.",
+      content: "Spot imported one document.",
     });
     const threadId = result.threadId as Id<"threads">;
     const thread = await t.run((ctx) => ctx.db.get(threadId));
@@ -307,7 +307,7 @@ describe("proactive conversation threads", () => {
       userId,
       userName: "Alice",
       phone: "+14155550123",
-      content: "Glass found a mailbox item that needs attention.",
+      content: "Spot found a mailbox item that needs attention.",
       idempotencyKey: "notification-imessage:test:alice",
     };
 
@@ -495,7 +495,7 @@ describe("user-private thread access", () => {
       const privateThreadId = await ctx.db.insert("threads", {
         orgId: clientOrgId,
         title: "Owner mailbox activity",
-        threadEmail: "acme+private@glass.insure",
+        threadEmail: "acme+private@spot.insure",
         createdBy: ownerId,
         lastMessageAt: dayjs().valueOf(),
         originChannel: "chat",

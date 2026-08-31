@@ -10,12 +10,12 @@ async function seedClientTeam() {
   const t = convexTest(schema, modules);
   const fixture = await t.run(async (ctx) => {
     const operatorUserId = await ctx.db.insert("users", {
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       accountKind: "operator",
     });
     await ctx.db.insert("operatorProfiles", {
       userId: operatorUserId,
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       role: "operator",
       status: "active",
       createdAt: 1,
@@ -107,7 +107,7 @@ describe("operator client activation", () => {
       clientOrgId: fixture.clientOrgId,
       adminUserId: fixture.memberUserId,
     };
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
 

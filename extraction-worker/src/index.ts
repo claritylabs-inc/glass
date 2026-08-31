@@ -365,8 +365,8 @@ const actions = {
 
 const CONVEX_URL = requiredEnv("CONVEX_URL");
 const SECRET = requiredEnv("EXTRACTION_WORKER_SECRET");
-const GLASS_ENV =
-  process.env.GLASS_ENV ??
+const SPOT_ENV =
+  process.env.SPOT_ENV ??
   process.env.RAILWAY_ENVIRONMENT_NAME ??
   "local";
 const WORKER_ID = process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${process.pid}`;
@@ -399,6 +399,8 @@ const CL_ROUTER_TIMEOUT_MS = readBoundedIntEnv(
   5_000,
   15 * 60_000,
 );
+// Keep the original opaque tenant key so the rebrand does not fork learned
+// routing state from existing production policy history and telemetry.
 const CL_ROUTER_TENANT_ID = cleanEnv(process.env.CL_ROUTER_TENANT_ID) ?? "glass";
 const clRouter = CL_ROUTER_TASK_FLAGS.size > 0
   ? createClRouterClient({
@@ -1461,7 +1463,7 @@ async function generateObjectWithClRouter<T>(opts: {
     });
     return { object, usage, route };
   } catch (error) {
-    const canUseDirectFallback = shouldFallBackFromClRouter(error, { GLASS_ENV });
+    const canUseDirectFallback = shouldFallBackFromClRouter(error, { SPOT_ENV });
     await recordTraceEvent(opts.job, {
       kind: "model_call",
       label: opts.label,
@@ -1761,7 +1763,7 @@ async function logJob(
 
 async function fetchPdfBytes(fileUrl: string): Promise<Uint8Array> {
   const response = await fetch(resolveConvexStorageUrl(fileUrl, {
-    glassEnv: GLASS_ENV,
+    spotEnv: SPOT_ENV,
     convexUrl: CONVEX_URL,
   }));
   if (!response.ok) {
@@ -1872,7 +1874,7 @@ function startHttpServer(): { close: () => void } | null {
     if (req.method === "GET" && url.pathname === "/health") {
       jsonResponse(res, 200, {
         ok: true,
-        glassEnv: GLASS_ENV,
+        spotEnv: SPOT_ENV,
         workerId: WORKER_ID,
         workerVersion: WORKER_VERSION,
         workerProtocolVersion: WORKER_PROTOCOL_VERSION,
@@ -1960,7 +1962,7 @@ async function uploadCompletionPayload(
         secret: SECRET,
       });
       const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
-        glassEnv: GLASS_ENV,
+        spotEnv: SPOT_ENV,
         convexUrl: CONVEX_URL,
       }), {
         method: "POST",
@@ -2028,7 +2030,7 @@ async function uploadExtractionArtifact(
         { secret: SECRET },
       );
       const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
-        glassEnv: GLASS_ENV,
+        spotEnv: SPOT_ENV,
         convexUrl: CONVEX_URL,
       }), {
         method: "POST",
@@ -2067,7 +2069,7 @@ async function uploadExtractionArtifact(
 
 async function loadExtractionArtifact(url: string): Promise<unknown> {
   const response = await fetch(resolveConvexStorageUrl(url, {
-    glassEnv: GLASS_ENV,
+    spotEnv: SPOT_ENV,
     convexUrl: CONVEX_URL,
   }));
   if (!response.ok) {
@@ -3190,7 +3192,7 @@ async function runPreviewLoop(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log(
-    `Glass extraction worker ${WORKER_ID} env=${GLASS_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} pdfWorkMaxActive=${PDF_WORK_MAX_ACTIVE} pdfWorkMaxFullActive=${PDF_WORK_MAX_FULL_ACTIVE} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
+    `Spot extraction worker ${WORKER_ID} env=${SPOT_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} pdfWorkMaxActive=${PDF_WORK_MAX_ACTIVE} pdfWorkMaxFullActive=${PDF_WORK_MAX_FULL_ACTIVE} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
   if (!RUNTIME_ACCESS.jobsEnabled) {

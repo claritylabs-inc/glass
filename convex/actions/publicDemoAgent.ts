@@ -126,7 +126,7 @@ function transcriptSummary(args: {
   const useCase = args.lead.useCase
     ? ` They are exploring ${args.lead.useCase}.`
     : "";
-  return `${who} contacted the public Glass demo agent. Stage: ${args.stage}. CTA: ${args.ctaStatus}.${useCase} Latest user message: ${args.latestMessage.slice(0, 240)}`;
+  return `${who} contacted the public Spot demo agent. Stage: ${args.stage}. CTA: ${args.ctaStatus}.${useCase} Latest user message: ${args.latestMessage.slice(0, 240)}`;
 }
 
 function nextStep(stage: PublicDemoLeadStage, ctaStatus: PublicDemoCtaStatus) {
@@ -176,7 +176,7 @@ function formatPublicDemoEmail(args: {
   body: string;
   agentAddress?: string;
 }): { text: string; html: string } {
-  const signature = buildEmailSignature(args.agentAddress ?? "agent@glass.insure");
+  const signature = buildEmailSignature(args.agentAddress ?? "agent@spot.insure");
   const text = stripMarkdown(args.body) + signature.text;
   const html = buildAgentEmailHtmlBody(args.body, signature);
   return { text, html };
@@ -307,7 +307,7 @@ export const respond = internalAction({
           channel === "imessage"
             ? {
                 summary:
-                  "Glass would pull the policy details and answer from the evidence.",
+                  "Spot would pull the policy details and answer from the evidence.",
                 example:
                   "Clarity Labs has example GL and Cyber policies in the demo data.",
                 note: "Demo data only.",
@@ -329,14 +329,14 @@ export const respond = internalAction({
           channel === "imessage"
             ? {
                 summary:
-                  "Glass would check the vendor evidence and flag missing cyber plus AI wording.",
+                  "Spot would check the vendor evidence and flag missing cyber plus AI wording.",
                 note: "Demo data only.",
               }
             : {
                 vendor: PUBLIC_DEMO_EXAMPLE_DATA.vendor.name,
                 status: PUBLIC_DEMO_EXAMPLE_DATA.vendor.status,
                 gaps: PUBLIC_DEMO_EXAMPLE_DATA.vendor.gaps,
-                note: "Simulated demo result only. Glass would use connected vendor policies and saved requirements for a real customer.",
+                note: "Simulated demo result only. Spot would use connected vendor policies and saved requirements for a real customer.",
               },
       }),
       draft_example_certificate_email: tool({
@@ -350,7 +350,7 @@ export const respond = internalAction({
           channel === "imessage"
             ? {
                 summary:
-                  "Glass can draft the COI request and broker follow-up.",
+                  "Spot can draft the COI request and broker follow-up.",
                 note: "Demo data only. No COI is issued.",
               }
             : {
@@ -358,7 +358,7 @@ export const respond = internalAction({
                 body: [
                   `Hi ${input.recipient ?? "there"},`,
                   "",
-                  "This is a simulated Glass demo email. In a real workspace, Glass would prepare the certificate request from policy evidence, flag endorsements that need review, and route the draft for send confirmation.",
+                  "This is a simulated Spot demo email. In a real workspace, Spot would prepare the certificate request from policy evidence, flag endorsements that need review, and route the draft for send confirmation.",
                   "",
                   "Demo note: no certificate was issued or attached.",
                 ].join("\n"),
@@ -366,7 +366,7 @@ export const respond = internalAction({
       }),
       explain_mailbox_agent: tool({
         description:
-          "Explain how the Glass mailbox agent can search insurance emails and coordinate follow-up.",
+          "Explain how the Spot mailbox agent can search insurance emails and coordinate follow-up.",
         inputSchema: z.object({
           task: z.string().optional(),
         }),
@@ -374,14 +374,14 @@ export const respond = internalAction({
           channel === "imessage"
             ? {
                 summary:
-                  "Glass can find policy emails, pull key details, and draft the follow-up.",
+                  "Spot can find policy emails, pull key details, and draft the follow-up.",
               }
             : {
                 workflow: [
                   "Search connected insurance mailboxes for policies, renewals, endorsements, and requirement packets.",
                   "Read bounded message and attachment content.",
                   "Import selected documents into first-class policy or compliance workflows after user confirmation.",
-                  "Draft follow-up with evidence and send confirmation visible in Glass.",
+                  "Draft follow-up with evidence and send confirmation visible in Spot.",
                 ],
               },
       }),
@@ -596,7 +596,7 @@ export const respond = internalAction({
       objections: extractObjections(latestLogs),
       nextStep: nextStep(nextStage, ctaStatus),
       curatedTurns: latestLogs.slice(-8).map((log) => ({
-        speaker: log.direction === "inbound" ? "Prospect" : "Glass demo agent",
+        speaker: log.direction === "inbound" ? "Prospect" : "Spot demo agent",
         content: stripMarkdown(log.content).slice(0, 1200),
         at: log.createdAt,
       })),

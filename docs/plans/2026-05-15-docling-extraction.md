@@ -1,6 +1,6 @@
 # Docling Two-Stage Extraction Plan
 
-Glass now supports a staged Docling parsing path for policy PDFs. The implementation keeps `@claritylabs/cl-sdk` as the schema mapper while replacing enabled PDF vision inputs with markdown parsed by the Railway `docling-service`.
+Spot now supports a staged Docling parsing path for policy PDFs. The implementation keeps `@claritylabs/cl-sdk` as the schema mapper while replacing enabled PDF vision inputs with markdown parsed by the Railway `docling-service`.
 
 - Service root: `docling-service/`
 - Convex flags: global `DOCLING_ENABLED`, overridden by `organizations.featureFlags.docling`

@@ -4,7 +4,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { searchPolicyDocument } from "./aiUtils";
-import type { GlassSourceSpan } from "./pdfSourceSpans";
+import type { SpotSourceSpan } from "./pdfSourceSpans";
 import { preparePdfTextWithParserFallback } from "./liteparsePreprocessor";
 import { formatSourceSpanLabel } from "./policyDocumentStructure";
 import {
@@ -203,7 +203,7 @@ function sourceNodeOnlyResults(nodes: Array<SourceNodeDoc & { score: number }>, 
     }));
 }
 
-function toSourceSpanDoc(span: GlassSourceSpan): SourceSpanDoc {
+function toSourceSpanDoc(span: SpotSourceSpan): SourceSpanDoc {
   const metadataSourceUnit = typeof span.metadata?.sourceUnit === "string"
     ? span.metadata.sourceUnit
     : undefined;

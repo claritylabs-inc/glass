@@ -17,19 +17,19 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { AGENT_TEXT_NUMBER } from "@/lib/imessage-config";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import {
   useCachedPolicyList,
   useCachedViewerOrg,
   useViewerCacheActions,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { typeStyle } from "@/lib/typography";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
-const GLASS_IMESSAGE_NUMBER =
-  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ?? "";
+const SPOT_IMESSAGE_NUMBER = AGENT_TEXT_NUMBER;
 
 function companyNameFromEmail(email?: string | null): string {
   if (!email) return "";
@@ -72,7 +72,7 @@ type Step = 0 | 1 | 2 | 3;
 
 const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
   {
-    label: "Welcome to Glass",
+    label: "Welcome to Spot",
     subtitle: "Start by telling us a little about yourself.",
   },
   {
@@ -522,7 +522,7 @@ export default function ClientOnboardingSetupPage() {
         {
           label: "You're connected",
           subtitle:
-            "Your client can now review the insurance records you choose to keep in Glass.",
+            "Your client can now review the insurance records you choose to keep in Spot.",
         },
       ] satisfies ReadonlyArray<{ label: string; subtitle?: string }>)
     : STEPS;
@@ -604,7 +604,7 @@ export default function ClientOnboardingSetupPage() {
                   ) : shouldCheckPhone && phoneAvailability?.available ? (
                     "Phone number is available for iMessage."
                   ) : (
-                    "Used for iMessage access to your Glass agent."
+                    "Used for iMessage access to your Spot agent."
                   )}
                 </p>
               </div>
@@ -793,7 +793,7 @@ export default function ClientOnboardingSetupPage() {
                   to get instant answers about your insurance coverage.
                 </span>
               </li>
-              {GLASS_IMESSAGE_NUMBER ? (
+              {SPOT_IMESSAGE_NUMBER ? (
                 <li>
                   <span className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}>
                     5.
@@ -804,13 +804,13 @@ export default function ClientOnboardingSetupPage() {
                       type="button"
                       onClick={() => {
                         void navigator.clipboard
-                          .writeText(GLASS_IMESSAGE_NUMBER)
+                          .writeText(SPOT_IMESSAGE_NUMBER)
                           .then(() => toast.success("Copied to clipboard"))
                           .catch(() => toast.error("Couldn't copy"));
                       }}
                       className={`mx-1 inline-flex items-center gap-1 text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors ${typeStyle("control.button")}`}
                     >
-                      {GLASS_IMESSAGE_NUMBER}
+                      {SPOT_IMESSAGE_NUMBER}
                       <Copy className="h-3.5 w-3.5" />
                     </button>{" "}
                     via iMessage to ask questions from your phone.

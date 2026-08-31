@@ -8,8 +8,8 @@ import {
 } from "@claritylabs/cl-sdk";
 import {
   buildPdfSourceSpans,
-  type GlassSourceChunk,
-  type GlassSourceSpan,
+  type SpotSourceChunk,
+  type SpotSourceSpan,
 } from "./pdfSourceSpans";
 
 type ParsedPdfSourceKind =
@@ -24,8 +24,8 @@ export type PdfPreparationResult = {
   parserVersion?: string;
   parsedAt: number;
   parsingMs?: number;
-  sourceSpans: Array<SourceSpan | GlassSourceSpan>;
-  sourceChunks: Array<SourceChunk | GlassSourceChunk>;
+  sourceSpans: Array<SourceSpan | SpotSourceSpan>;
+  sourceChunks: Array<SourceChunk | SpotSourceChunk>;
   pageScreenshots?: PageScreenshot[];
 };
 
@@ -78,7 +78,7 @@ function workerUrl(): string | undefined {
 }
 
 function sourceTextFromSpans(
-  sourceSpans: Array<SourceSpan | GlassSourceSpan>,
+  sourceSpans: Array<SourceSpan | SpotSourceSpan>,
 ): string {
   const pageSpans = sourceSpans.filter(
     (span) =>

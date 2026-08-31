@@ -4,14 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import {
-  GlassPromptInput,
-  type GlassPromptInputHandle,
-} from "@/components/glass-prompt-input";
+  SpotPromptInput,
+  type SpotPromptInputHandle,
+} from "@/components/spot-prompt-input";
 import { usePageContext } from "@/hooks/use-page-context";
 import type { PageContext } from "@/hooks/use-page-context";
 import { useStartAgentThread } from "@/hooks/use-start-agent-thread";
 
-export const OPEN_COMMAND_PALETTE_EVENT = "glass:open-command-palette";
+export const OPEN_COMMAND_PALETTE_EVENT = "spot:open-command-palette";
 
 export function openCommandPalette() {
   if (typeof window === "undefined") return;
@@ -51,7 +51,7 @@ export function CommandPalette() {
   const { startAgentThread, viewerOrg } = useStartAgentThread("commandPalette");
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
-  const promptRef = useRef<GlassPromptInputHandle>(null);
+  const promptRef = useRef<SpotPromptInputHandle>(null);
   const defaultReference = pageContextReference(pageContext);
 
   const close = useCallback(() => {
@@ -131,10 +131,10 @@ export function CommandPalette() {
               }
             }}
           >
-            <GlassPromptInput
+            <SpotPromptInput
               ref={promptRef}
               onSubmit={handleSubmit}
-              placeholder="Ask Glass anything..."
+              placeholder="Ask Spot anything..."
               defaultReferences={
                 defaultReference ? [defaultReference] : undefined
               }

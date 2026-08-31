@@ -1,17 +1,18 @@
-import { ApiError, GlassConfig, MeResponse } from "./types.js";
+import dayjs from "dayjs";
+import { ApiError, SpotConfig, MeResponse } from "./types.js";
 import { refreshAccessToken } from "./auth.js";
 import { saveConfig } from "./config.js";
 
 type ListResponse<T> = { data: T[]; next_cursor: string | null };
 
-export class GlassApi {
-  async askGlass(message: string, threadId?: string) {
+export class SpotApi {
+  async askSpot(message: string, threadId?: string) {
     return this.post<{ threadId: string; response: string }>("/mcp/ask", { message, threadId });
   }
 
   async createPolicyDraft(input: Record<string, unknown>) {
     const prompt = `Create a new policy record using this JSON payload: ${JSON.stringify(input)}. If data is missing, ask concise follow-up questions.`;
-    return this.askGlass(prompt);
+    return this.askSpot(prompt);
   }
 
   async generateCoi(
@@ -56,9 +57,9 @@ export class GlassApi {
 
   async runUploadPipeline(filePath: string) {
     const prompt = `Run the policy upload pipeline for file path: ${filePath}. If direct file access is unavailable, explain required upload handoff steps.`;
-    return this.askGlass(prompt);
+    return this.askSpot(prompt);
   }
-  constructor(private readonly config: GlassConfig) {}
+  constructor(private readonly config: SpotConfig) {}
 
   async me() {
     return this.request<MeResponse>("/api/v1/me");
@@ -124,7 +125,7 @@ export class GlassApi {
 
   private async request<T>(path: string): Promise<T> {
     await this.ensureAccessToken();
-    if (!this.config.orgId && !path.endsWith("/me")) throw new Error("No org selected. Run: glass auth:whoami --set-org <orgId>");
+    if (!this.config.orgId && !path.endsWith("/me")) throw new Error("No org selected. Run: spot auth:whoami --set-org <orgId>");
 
     let response = await fetch(`${this.config.baseUrl}${path}`, {
       headers: {
@@ -152,9 +153,9 @@ export class GlassApi {
   }
 
   private async ensureAccessToken(force = false): Promise<void> {
-    if (!this.config.accessToken) throw new Error("Not authenticated. Run: glass auth:login");
+    if (!this.config.accessToken) throw new Error("Not authenticated. Run: spot auth:login");
     const expiresAt = this.config.expiresAt;
-    if (!force && (!expiresAt || expiresAt - Date.now() > 60_000)) return;
+    if (!force && (!expiresAt || expiresAt - dayjs().valueOf() > 60_000)) return;
 
     const next = await refreshAccessToken(this.config);
     Object.assign(this.config, next);

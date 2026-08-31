@@ -77,7 +77,7 @@ export function MainSidebarContent({
   onToggleCollapse,
   onToggleNotifications,
   onCloseNotifications,
-  onAskGlass,
+  onAskSpot,
   onArchiveThread,
   onSignOut,
 }: {
@@ -103,7 +103,7 @@ export function MainSidebarContent({
   onToggleCollapse: () => void;
   onToggleNotifications: () => void;
   onCloseNotifications: () => void;
-  onAskGlass?: () => void;
+  onAskSpot?: () => void;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
   onSignOut: () => void;
 }) {
@@ -192,7 +192,7 @@ export function MainSidebarContent({
             pinnedConversations={pinnedConversations}
             archivedThreadCount={archivedThreadCount}
             pathname={pathname}
-            onAskGlass={onAskGlass}
+            onAskSpot={onAskSpot}
             onArchiveThread={onArchiveThread}
           />
         ) : (
@@ -201,7 +201,7 @@ export function MainSidebarContent({
             pinnedConversations={pinnedConversations}
             archivedThreadCount={archivedThreadCount}
             pathname={pathname}
-            onAskGlass={onAskGlass}
+            onAskSpot={onAskSpot}
           />
         )}
       </nav>
@@ -249,14 +249,14 @@ function ExpandedThreadList({
   pinnedConversations,
   archivedThreadCount,
   pathname,
-  onAskGlass,
+  onAskSpot,
   onArchiveThread,
 }: {
   agentConversations: ConversationItem[];
   pinnedConversations: ConversationItem[];
   archivedThreadCount: number;
   pathname: string;
-  onAskGlass?: () => void;
+  onAskSpot?: () => void;
   onArchiveThread: (threadId: string, active: boolean) => Promise<void>;
 }) {
   return (
@@ -272,7 +272,7 @@ function ExpandedThreadList({
             icon={List}
             active={pathname === "/agent/threads"}
           />
-          {onAskGlass ? (
+          {onAskSpot ? (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -282,7 +282,7 @@ function ExpandedThreadList({
                     variant="icon"
                     label="New Chat"
                     title=""
-                    onClick={onAskGlass}
+                    onClick={onAskSpot}
                   >
                     <Plus className="size-3.5" />
                   </PillButton>
@@ -424,13 +424,13 @@ function CollapsedThreadList({
   pinnedConversations,
   archivedThreadCount,
   pathname,
-  onAskGlass,
+  onAskSpot,
 }: {
   agentConversations: ConversationItem[];
   pinnedConversations: ConversationItem[];
   archivedThreadCount: number;
   pathname: string;
-  onAskGlass?: () => void;
+  onAskSpot?: () => void;
 }) {
   return (
     <>
@@ -487,9 +487,9 @@ function CollapsedThreadList({
         active={pathname === "/agent/threads"}
         collapsed
       />
-      {onAskGlass ? (
+      {onAskSpot ? (
         <SidebarMenuItem
-          onClick={onAskGlass}
+          onClick={onAskSpot}
           label="New Chat"
           icon={Plus}
           active={false}

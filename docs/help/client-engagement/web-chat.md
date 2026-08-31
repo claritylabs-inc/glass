@@ -1,12 +1,12 @@
 # Web chat
 
-Web chat is the fullest Glass experience. Use it when you want to inspect
+Web chat is the fullest Spot experience. Use it when you want to inspect
 sources, attach several documents, compare records, or complete a multi-step
 service request.
 
 ## Start a conversation
 
-1. Sign in at [app.glass.insure](https://app.glass.insure) and select the
+1. Sign in at [app.spot.insure](https://app.spot.insure) and select the
    correct organization.
 2. Start a new agent conversation from the app navigation.
 3. Ask a specific question or describe the outcome you need.
@@ -23,7 +23,7 @@ Useful prompts include:
 
 ## Attachments
 
-Use the attachment control or drag files into the composer. Glass can read these
+Use the attachment control or drag files into the composer. Spot can read these
 common formats as chat context:
 
 - PDF;
@@ -37,7 +37,7 @@ as `.xlsx`, `.csv`, or `.tsv` first. Large documents or several long
 attachments may be truncated to the content most relevant to the current
 conversation.
 
-An attachment in a chat is context for that thread. If you want Glass to create
+An attachment in a chat is context for that thread. If you want Spot to create
 or update a durable policy or requirement record, say so explicitly.
 
 ## Answers, sources, and actions
@@ -62,15 +62,15 @@ Use **All threads** to reopen active conversations and **Archive** for threads
 you deliberately set aside. A new message arriving from an external channel can
 restore its archived thread so current activity is not hidden.
 
-Glass also mirrors supported external conversations:
+Spot also mirrors supported external conversations:
 
 - Email threads retain the email participants and message history.
 - Direct iMessage threads are marked **Private**; replies sent from the web are
   delivered back to iMessage.
-- Slack threads show **Open in Slack** and cannot be replied to from Glass.
+- Slack threads show **Open in Slack** and cannot be replied to from Spot.
 
 Generated PDFs can be previewed or downloaded. When an answer contains several
-files, Glass can download them together as a ZIP.
+files, Spot can download them together as a ZIP.
 
 ## Good practices
 
@@ -87,11 +87,11 @@ files, Glass can download them together as a ZIP.
 
 ### The answer says the policy is still processing
 
-Glass has enough preliminary information for a summary but not enough finalized
+Spot has enough preliminary information for a summary but not enough finalized
 evidence for the requested action. Wait for processing to complete, or open the
 policy to see whether extraction needs review.
 
-### Glass did not read a spreadsheet
+### Spot did not read a spreadsheet
 
 Convert `.xls` or `.xlsm` files to `.xlsx`, `.csv`, or `.tsv`, then attach the
 new file. If the workbook is very large, include the sheet name and rows that

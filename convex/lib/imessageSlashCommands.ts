@@ -40,7 +40,7 @@ type KnownTextChannelCommand = Extract<
 >;
 
 export const IMESSAGE_LINKED_SENDER_REQUIRED =
-  "Only a linked Glass user in this chat can do that.";
+  "Only a linked Spot user in this chat can do that.";
 
 function truncate(text: string | undefined, max: number) {
   const value = (text ?? "").replace(/\s+/g, " ").trim();
@@ -217,7 +217,7 @@ function whoamiText(args: {
   isGroup: boolean;
   scopeMode: AgentScope["mode"];
 }) {
-  const identity = args.userName || args.userEmail || "your linked Glass user";
+  const identity = args.userName || args.userEmail || "your linked Spot user";
   const chatKind = args.isGroup ? "group chat" : "direct chat";
   const scope =
     args.scopeMode === "broker_portfolio" ? "broker portfolio" : "single org";
@@ -328,7 +328,7 @@ async function runKnownCommand(
         if (!snapshot) {
           return {
             response:
-              "Use /drafts immediately before /send so Glass can verify the exact displayed draft snapshot.",
+              "Use /drafts immediately before /send so Spot can verify the exact displayed draft snapshot.",
           };
         }
         if (snapshot.outcome !== "completed") {
@@ -357,7 +357,7 @@ async function runKnownCommand(
         if (!snapshot) {
           return {
             response:
-              "Use /drafts immediately before /discard so Glass can verify the exact displayed draft snapshot.",
+              "Use /drafts immediately before /discard so Spot can verify the exact displayed draft snapshot.",
           };
         }
         if (snapshot.outcome !== "completed") {

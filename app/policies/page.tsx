@@ -19,7 +19,7 @@ import { getPublicAgentDomain } from "@/lib/domains";
 import {
   useCachedPolicyList,
   useCachedViewerOrg,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import {
   showPolicyExtractionQueuedToast,
   showPolicyExtractionReadyToast,
@@ -287,7 +287,7 @@ export default function PoliciesPage() {
           <AgentContactCallout
             broker={brokerForCallout}
             fallbackAgentHandle={fallbackHandle}
-            dismissKey="glass:agent-contact-callout:policies"
+            dismissKey="spot:agent-contact-callout:policies"
           />
         ) : null}
         <Tabs

@@ -185,7 +185,7 @@ describe("sdkCallbacks PDF inputs", () => {
   });
 
   test("falls back to the original direct callback only for eligible router failures", async () => {
-    vi.stubEnv("GLASS_ENV", "production");
+    vi.stubEnv("SPOT_ENV", "production");
     vi.stubEnv("CL_ROUTER_TASKS", "extraction");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
@@ -229,7 +229,7 @@ describe("sdkCallbacks PDF inputs", () => {
   });
 
   test("reuses one settings snapshot for router and direct embedding fallback", async () => {
-    vi.stubEnv("GLASS_ENV", "production");
+    vi.stubEnv("SPOT_ENV", "production");
     vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");

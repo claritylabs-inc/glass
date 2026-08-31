@@ -16,7 +16,7 @@ import {
 const environment = {
   CL_ROUTER_URL: "https://router.example.test/",
   CL_ROUTER_SECRET: "router-secret",
-  GLASS_ENV: "production",
+  SPOT_ENV: "production",
 };
 
 function responseMetadata() {
@@ -344,7 +344,7 @@ describe("cl-router direct fallback boundary", () => {
       environment,
     )).toBe(true);
     expect(isClRouterDirectFallbackError(unavailable, environment)).toBe(true);
-    expect(isClRouterDirectFallbackError(unavailable, { GLASS_ENV: "local" })).toBe(false);
+    expect(isClRouterDirectFallbackError(unavailable, { SPOT_ENV: "local" })).toBe(false);
     expect(isClRouterDirectFallbackError(new ClRouterRequestError("timeout", "slow"), environment)).toBe(false);
     expect(isClRouterDirectFallbackError(
       new ClRouterRequestError("server", "bad", { status: 503 }),

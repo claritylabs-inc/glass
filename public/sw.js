@@ -1,4 +1,4 @@
-const CACHE_NAME = "glass-static-v1";
+const CACHE_NAME = "spot-static-v1";
 const STATIC_PATH_PREFIXES = ["/_next/static/"];
 const PUBLIC_ASSET_EXTENSIONS = [
   ".avif",

@@ -360,7 +360,7 @@ export const MODEL_TASK_GROUPS = [
     id: "agent_communication",
     label: "Agent communication",
     description:
-      "Routes used when Glass is talking to users or coordinating mailbox workflows.",
+      "Routes used when Spot is talking to users or coordinating mailbox workflows.",
     tasks: [
       "chat",
       "chat_vision",

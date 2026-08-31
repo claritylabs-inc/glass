@@ -250,7 +250,7 @@ function confidenceNode(
     type: "confidence",
     data: {
       hName: "mark",
-      hProperties: { className: "glass-confidence", "data-level": level },
+      hProperties: { className: "spot-confidence", "data-level": level },
     },
     children,
   };

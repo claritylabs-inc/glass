@@ -20,7 +20,7 @@ The thread route is intentionally thin. Reusable message UI and artifact surface
 
 Web chat follows a messaging contract rather than an execution-console contract:
 
-- While Glass is working, render one compact thinking bubble. Do not stream partial answer text, model reasoning, tool labels, tool input/output, or subagent logs into the conversation.
+- While Spot is working, render one compact thinking bubble. Do not stream partial answer text, model reasoning, tool labels, tool input/output, or subagent logs into the conversation.
 - Show `Delivered` on the viewer's latest web message after Convex acknowledges it, and `Read` only after the linked agent run has started. Older receipts stay hidden to keep the thread quiet.
 - Publish the agent's response as one complete message. Keep source links, files, delivery status, and actionable artifacts because they change what the user can verify or do next.
 - Tool audit data may remain available to internal telemetry and channel adapters, but model reasoning stays private and the customer-facing thread does not disclose either.

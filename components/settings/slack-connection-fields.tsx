@@ -131,12 +131,12 @@ export function SlackConnectionFields({
       setChannels(result.channels);
       const active = result.channels.filter((channel) => channel.isMember);
       if (active.length === 1) setSelectedChannelId(active[0].id);
-      toast.success(`Glass added to #${result.channel.name}`);
+      toast.success(`Spot added to #${result.channel.name}`);
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
           error,
-          "Glass could not be added to the channel",
+          "Spot could not be added to the channel",
         ),
       );
     } finally {
@@ -153,12 +153,12 @@ export function SlackConnectionFields({
         const active = result.channels.filter((channel) => channel.isMember);
         setSelectedChannelId(active[0]?.id ?? "");
       }
-      toast.success(`Glass removed from #${result.channel.name}`);
+      toast.success(`Spot removed from #${result.channel.name}`);
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(
           error,
-          "Glass could not be removed from the channel",
+          "Spot could not be removed from the channel",
         ),
       );
     } finally {
@@ -255,7 +255,7 @@ export function SlackConnectionFields({
                       type="button"
                       onClick={() => void removeChannel(channel.id)}
                       disabled={changingChannelId !== null}
-                      aria-label={`Remove Glass from #${channel.name}`}
+                      aria-label={`Remove Spot from #${channel.name}`}
                       className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-emphasized disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {changingChannelId === channel.id ? (

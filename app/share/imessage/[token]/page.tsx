@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { FileText } from "lucide-react";
 import { BrandIcon } from "@/components/ui/brand-icon";
-import { GlassWordmark } from "@/components/ui/glass-wordmark";
+import { SpotWordmark } from "@/components/ui/spot-wordmark";
 import {
   OperationalLabelValueList,
   OperationalLabelValueRow,
@@ -31,7 +31,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { token } = await params;
   const view = await loadAppCardView(token).catch(() => null);
-  if (!view) return { title: { absolute: "Glass" } };
+  if (!view) return { title: { absolute: "Spot" } };
   const description = metadataDescription(view);
   const image = `/share/imessage/${token}/opengraph-image`;
   return {
@@ -40,7 +40,7 @@ export async function generateMetadata({
     openGraph: {
       title: view.title,
       description,
-      siteName: "Glass",
+      siteName: "Spot",
       type: "website",
       images: [
         {
@@ -182,7 +182,7 @@ export default async function ImessageSharePage({
     return (
       <main className="min-h-screen bg-background px-5 py-7 text-foreground sm:px-8 sm:py-10">
         <div className="mx-auto max-w-3xl">
-          <GlassWordmark />
+          <SpotWordmark />
           <h1 className={`mt-5 ${typeStyle("heading.micro")}`}>
             Link unavailable
           </h1>
@@ -203,7 +203,7 @@ export default async function ImessageSharePage({
       <div className="mx-auto max-w-5xl">
         <header className="border-b border-border pb-7">
           <div className="flex items-center justify-between gap-4">
-            <GlassWordmark />
+            <SpotWordmark />
             <p className={`truncate text-muted-foreground ${typeStyle("body.default")}`}>{view.orgName}</p>
           </div>
           <div className="mt-8 flex max-w-3xl flex-col items-start gap-3">

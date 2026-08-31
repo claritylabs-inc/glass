@@ -67,7 +67,7 @@ const runEnvironment = {
 };
 delete runEnvironment.NO_COLOR;
 
-console.log(`Glass web:              http://localhost:${web}`);
+console.log(`Spot web:              http://localhost:${web}`);
 console.log(`Extraction worker:      http://localhost:${extraction}/health`);
 console.log(`Slack mock worker:       http://localhost:${slack}/health`);
 console.log(`Convex:                  http://127.0.0.1:${convexCloud}`);

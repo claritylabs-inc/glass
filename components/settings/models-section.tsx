@@ -386,12 +386,12 @@ export function ModelsSection() {
         <OperationalPanel as="div" className={`px-4 py-3 text-muted-foreground/65 ${typeStyle("caption.default")}`}>
           <div className="flex items-center justify-between gap-3">
             <span>
-              Glass managed defaults are active for every workflow. Add a
+              Spot managed defaults are active for every workflow. Add a
               provider key to customize routing.
             </span>
             <span
               className={`inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
-              title="Glass automatically picks the best model for every task. Add a provider key to override."
+              title="Spot automatically picks the best model for every task. Add a provider key to override."
             >
               <LogoIcon size={12} static className="text-muted-foreground" />
               Auto
@@ -449,7 +449,7 @@ export function ModelsSection() {
                               {task.label}
                             </p>
                             <span className={`rounded-full bg-muted/55 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}>
-                              {route ? "Broker override" : "Glass default"}
+                              {route ? "Broker override" : "Spot default"}
                             </span>
                           </div>
                           <p className={`mt-0.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
@@ -485,7 +485,7 @@ export function ModelsSection() {
                                   ) : (
                                     <span className="flex items-center gap-2 text-muted-foreground">
                                       <LogoIcon size={14} static />
-                                      <span>Glass default</span>
+                                      <span>Spot default</span>
                                     </span>
                                   )}
                                 </SelectValue>
@@ -493,7 +493,7 @@ export function ModelsSection() {
                               <SelectContent>
                                 <SelectItem value={DEFAULT_VALUE}>
                                   <span className="text-muted-foreground">
-                                    Reset to Glass default
+                                    Reset to Spot default
                                   </span>
                                 </SelectItem>
                                 <SelectSeparator />

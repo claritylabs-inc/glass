@@ -27,7 +27,7 @@ export function mailboxTaskOutcome(result: Record<string, unknown>): WorkflowOut
       ? [{
           key: "connectedMailbox",
           label: "Connected mailbox",
-          prompt: "Connect a mailbox in Settings, or select an accessible mailbox before asking Glass to search.",
+          prompt: "Connect a mailbox in Settings, or select an accessible mailbox before asking Spot to search.",
           required: true,
         }]
       : [],

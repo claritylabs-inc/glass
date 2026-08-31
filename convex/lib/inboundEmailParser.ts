@@ -9,6 +9,8 @@ import { convert } from "html-to-text";
 const MAX_INBOUND_TEXT_PARSE_CHARS = 256 * 1024;
 const MAX_INBOUND_HTML_PARSE_CHARS = 256 * 1024;
 const INBOUND_EMAIL_PARSER_VERSION = "reply-2.3.9_forward-1.8.3";
+const PENDING_MESSAGE_ID_RE = /<?(?:spot|glass)-pending-([^@\s>]+)@[^>\s]+>?/gi;
+const MAX_CAPTURED_PENDING_EMAIL_ID_LENGTH = 128;
 
 type ParsedInboundMailbox = {
   address?: string;
@@ -34,6 +36,25 @@ type ParsedInboundEmail = {
   };
   parseInputTruncated: boolean;
 };
+
+export function extractPendingEmailIdsFromHeaders(
+  values: Array<string | undefined>,
+): string[] {
+  const ids = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    for (const match of value.matchAll(PENDING_MESSAGE_ID_RE)) {
+      const pendingEmailId = match[1]?.trim();
+      if (
+        pendingEmailId &&
+        pendingEmailId.length <= MAX_CAPTURED_PENDING_EMAIL_ID_LENGTH
+      ) {
+        ids.add(pendingEmailId);
+      }
+    }
+  }
+  return [...ids];
+}
 
 export function storedInboundEmailContent(parsed: ParsedInboundEmail) {
   return {

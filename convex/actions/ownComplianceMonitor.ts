@@ -9,7 +9,7 @@ import type { OwnComplianceAssessment, OwnComplianceEvent } from "../compliance"
 export function buildOwnComplianceThreadContent(event: OwnComplianceEvent) {
   if (event.type === "own_compliance_resolved") {
     return [
-      `${event.orgName} now meets every active insurance requirement tracked in Glass.`,
+      `${event.orgName} now meets every active insurance requirement tracked in Spot.`,
       "",
       "Resolved requirements:",
       ...event.issueLines.map((line) => `- ${line}`),
@@ -19,7 +19,7 @@ export function buildOwnComplianceThreadContent(event: OwnComplianceEvent) {
   }
 
   return [
-    `Glass found ${event.issueLines.length} insurance ${event.issueLines.length === 1 ? "requirement" : "requirements"} that need attention for ${event.orgName}.`,
+    `Spot found ${event.issueLines.length} insurance ${event.issueLines.length === 1 ? "requirement" : "requirements"} that need attention for ${event.orgName}.`,
     "",
     "What needs attention:",
     ...event.issueLines.map((line) => `- ${line}`),

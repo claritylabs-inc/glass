@@ -6,11 +6,12 @@ import {
 } from "../convex/lib/emailCancelIntent";
 import { resolveEmailAgentIdentity } from "../convex/lib/emailSubagent";
 import { getAuthSiteUrl, getPortalUrlForOrg } from "../convex/lib/domains";
+import { isManagedSpotHost } from "../lib/domains";
 import {
   getAgentDomains,
   getAuthFromAddress,
   getNotificationFromAddress,
-  isGlassOutboundAddress,
+  isSpotOutboundAddress,
 } from "../convex/lib/resend";
 
 function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
@@ -43,23 +44,26 @@ describe("directed email safety", () => {
 
     expect(identity).toMatchObject({
       canSend: true,
-      agentAddress: "agent@glass.insure",
+      agentAddress: "agent@spot.insure",
     });
-    expect(identity.fromHeader).toContain("<agent@glass.insure>");
+    expect(identity.fromHeader).toContain("<agent@spot.insure>");
   });
 
   it("separates sending domains while retaining legacy inbound aliases", () => {
-    expect(getNotificationFromAddress("Glass Notifications")).toContain(
-      "<notifications@notifications.glass.insure>",
+    expect(getNotificationFromAddress("Spot Notifications")).toContain(
+      "<notifications@notifications.spot.insure>",
     );
-    expect(getAuthFromAddress()).toBe("Glass <noreply@auth.glass.insure>");
+    expect(getAuthFromAddress()).toBe("Spot <noreply@auth.spot.insure>");
     expect(getAgentDomains()).toEqual([
+      "spot.insure",
       "glass.insure",
       "glass.claritylabs.inc",
+      "spot.claritylabs.inc",
       "dev.claritylabs.inc",
     ]);
-    expect(isGlassOutboundAddress("agent@glass.claritylabs.inc")).toBe(true);
-    expect(isGlassOutboundAddress("noreply@auth.glass.insure")).toBe(true);
+    expect(isSpotOutboundAddress("agent@spot.claritylabs.inc")).toBe(true);
+    expect(isSpotOutboundAddress("agent@glass.insure")).toBe(true);
+    expect(isSpotOutboundAddress("noreply@auth.spot.insure")).toBe(true);
   });
 
   it("normalizes configured legacy development domains", () => {
@@ -69,27 +73,31 @@ describe("directed email safety", () => {
         AGENT_EMAIL_DOMAIN: undefined,
         NOTIFICATION_EMAIL_DOMAIN: "dev.claritylabs.inc",
         AUTH_EMAIL_DOMAIN: "dev.claritylabs.inc",
-        AUTH_EMAIL_FROM: "Glass Login <noreply@dev.claritylabs.inc>",
+        AUTH_EMAIL_FROM: "Spot Login <noreply@dev.claritylabs.inc>",
       },
       () => {
-        expect(getAgentDomains()).toContain("glass.insure");
-        expect(getNotificationFromAddress("Glass Notifications")).toContain(
+        expect(getAgentDomains()).toContain("spot.insure");
+        expect(getNotificationFromAddress("Spot Notifications")).toContain(
           "<notifications@dev.claritylabs.inc>",
         );
         expect(getAuthFromAddress()).toContain("<noreply@dev.claritylabs.inc>");
-        expect(isGlassOutboundAddress("agent@dev.claritylabs.inc")).toBe(true);
+        expect(isSpotOutboundAddress("agent@dev.claritylabs.inc")).toBe(true);
       },
     );
   });
 
   it("uses the shared browser host for auth and tenant portals", () => {
-    expect(getAuthSiteUrl()).toBe("https://app.glass.insure");
+    expect(getAuthSiteUrl()).toBe("https://app.spot.insure");
     expect(getPortalUrlForOrg({ type: "broker" } as never)).toBe(
-      "https://app.glass.insure",
+      "https://app.spot.insure",
     );
     expect(getPortalUrlForOrg({ type: "client" } as never)).toBe(
-      "https://app.glass.insure",
+      "https://app.spot.insure",
     );
+    expect(isManagedSpotHost("app.spot.insure")).toBe(true);
+    expect(isManagedSpotHost("app.glass.insure")).toBe(true);
+    expect(isManagedSpotHost("glass.claritylabs.inc")).toBe(true);
+    expect(isManagedSpotHost("auth.glass.insure")).toBe(true);
   });
 
   it("distinguishes draft cancellation from insurance-document requests", () => {

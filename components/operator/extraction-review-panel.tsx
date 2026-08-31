@@ -162,7 +162,7 @@ export function ExtractionReviewPanel({
     <OperationalPanel>
       <OperationalPanelHeader
         title="Operator quality review"
-        description="Rate the extraction. Specific corrections stay in Glass; only a verified up/down signal is sent to routing."
+        description="Rate the extraction. Specific corrections stay in Spot; only a verified up/down signal is sent to routing."
       />
       <OperationalPanelBody className="space-y-4">
         {modelSteps.length > 0 ? (

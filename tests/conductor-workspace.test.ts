@@ -41,7 +41,7 @@ describe("Conductor workspace identity", () => {
       const expectedSlug = path.basename(repoRoot).toLowerCase();
       expect(workspaceSlug()).toBe(expectedSlug);
       expect(conductorImageTag("extraction-worker")).toBe(
-        `glass-extraction-worker:conductor-${expectedSlug}`,
+        `spot-extraction-worker:conductor-${expectedSlug}`,
       );
     } finally {
       if (originalWorkspaceName === undefined) {
@@ -53,44 +53,46 @@ describe("Conductor workspace identity", () => {
   });
 
   it("sanitizes a worktree directory for container tags", () => {
-    expect(workspaceSlug("/tmp/Glass Feature + QA")).toBe(
-      "glass-feature-qa",
+    expect(workspaceSlug("/tmp/Spot Feature + QA")).toBe(
+      "spot-feature-qa",
     );
   });
 
   it("enumerates every workspace-scoped Apple Container resource", () => {
-    const workspace = "/tmp/Glass Feature + QA";
+    const workspace = "/tmp/Spot Feature + QA";
 
     expect(conductorContainerName("extraction", 8081, workspace)).toBe(
-      "glass-extraction-glass-feature-qa-8081",
+      "spot-extraction-spot-feature-qa-8081",
     );
     expect(conductorImageTags(workspace)).toEqual([
-      "glass-extraction-worker:conductor-glass-feature-qa",
-      "glass-imessage-worker:conductor-glass-feature-qa",
-      "glass-slack-worker:conductor-glass-feature-qa",
-      "glass-mailbox-scan-worker:conductor-glass-feature-qa",
+      "spot-extraction-worker:conductor-spot-feature-qa",
+      "spot-imessage-worker:conductor-spot-feature-qa",
+      "spot-slack-worker:conductor-spot-feature-qa",
+      "spot-mailbox-scan-worker:conductor-spot-feature-qa",
     ]);
   });
 
-  it("finds Glass worker containers occupying an allocated workspace port", () => {
+  it("finds Spot and legacy Glass worker containers on an allocated port", () => {
     const containers = [
       { id: "buildkit" },
-      { id: "glass-extraction-old-workspace-55061" },
+      { id: "spot-extraction-old-workspace-55061" },
+      { id: "glass-extraction-legacy-workspace-55061" },
       {
         id: "opaque-runtime-id",
         configuration: {
-          id: "glass-extraction-current-workspace-55061",
+          id: "spot-extraction-current-workspace-55061",
         },
       },
-      { id: "glass-extraction-other-workspace-55071" },
+      { id: "spot-extraction-other-workspace-55071" },
       { id: "unrelated-service-55061" },
     ];
 
     expect(
       conductorContainerNamesOnPort(containers, "extraction", 55061),
     ).toEqual([
-      "glass-extraction-old-workspace-55061",
-      "glass-extraction-current-workspace-55061",
+      "spot-extraction-old-workspace-55061",
+      "glass-extraction-legacy-workspace-55061",
+      "spot-extraction-current-workspace-55061",
     ]);
   });
 
@@ -189,7 +191,7 @@ describe("Conductor local Convex selection", () => {
     const repaired = localConvexSelectionContents(
       [
         "API_KEY=kept",
-        "CONVEX_DEPLOYMENT=dev:acoustic-caiman-755 # team: claritylabs, project: glass",
+        "CONVEX_DEPLOYMENT=dev:acoustic-caiman-755 # team: claritylabs, project: spot",
         "NEXT_PUBLIC_CONVEX_URL=https://acoustic-caiman-755.convex.cloud",
         "NEXT_PUBLIC_CONVEX_SITE_URL=https://acoustic-caiman-755.convex.site",
         "CONVEX_SELF_HOSTED_URL=http://example.test",
@@ -211,7 +213,7 @@ describe("Conductor local Convex selection", () => {
   });
 
   it("repairs an existing workspace env file once", () => {
-    const workspace = mkdtempSync(path.join(tmpdir(), "glass-conductor-"));
+    const workspace = mkdtempSync(path.join(tmpdir(), "spot-conductor-"));
     const configDirectory = path.join(
       workspace,
       ".convex",
@@ -246,7 +248,7 @@ describe("Conductor local Convex selection", () => {
   });
 
   it("recovers the workspace port namespace for standalone helper commands", () => {
-    const workspace = mkdtempSync(path.join(tmpdir(), "glass-conductor-"));
+    const workspace = mkdtempSync(path.join(tmpdir(), "spot-conductor-"));
     const configDirectory = path.join(
       workspace,
       ".convex",
@@ -314,7 +316,7 @@ describe("Conductor Convex bootstrap", () => {
   it("does not treat project keys or malformed values as deployment keys", () => {
     expect(
       convexDeploymentNameFromDeployKey(
-        "project:glass|secret-token-material",
+        "project:spot|secret-token-material",
       ),
     ).toBeUndefined();
     expect(convexDeploymentNameFromDeployKey("not-a-key")).toBeUndefined();

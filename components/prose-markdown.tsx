@@ -129,7 +129,7 @@ const STREAMING_ALLOWED_TAGS = { mark: ["className", "dataLevel"] };
 const STREAMING_REMEND_OPTIONS = {
   handlers: [
     {
-      name: "glass-confidence",
+      name: "spot-confidence",
       priority: 1,
       handle: protectConfidenceMarkersForStreaming,
     },
@@ -137,7 +137,7 @@ const STREAMING_REMEND_OPTIONS = {
 };
 
 /**
- * Unified markdown renderer used across Glass.
+ * Unified markdown renderer used across Spot.
  *
  * Handles table styling, heading sizes, list spacing, code blocks, etc.
  * in one place so every surface stays consistent.

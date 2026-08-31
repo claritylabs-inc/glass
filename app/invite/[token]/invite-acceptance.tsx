@@ -10,7 +10,7 @@ import {
   AuthMinimalShell,
   BrandWordmark,
   PartnerWordmark,
-  PoweredByGlassWordmark,
+  PoweredBySpotWordmark,
 } from "@/components/auth-shell";
 import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
@@ -180,7 +180,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
 
   if (fetching) {
     return (
-      <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+      <AuthMinimalShell footer={<PoweredBySpotWordmark />}>
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </AuthMinimalShell>
     );
@@ -188,7 +188,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
 
   if (fetchError && !inviteData) {
     return (
-      <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+      <AuthMinimalShell footer={<PoweredBySpotWordmark />}>
         <AuthCard
           title="Invitation unavailable"
           subtitle={fetchError}
@@ -206,9 +206,9 @@ export default function InviteAcceptance({ token }: { token: string }) {
   const whiteLabelingEnabled = inviteData?.whiteLabelingEnabled !== false;
   const isAutoFlow = !!inviteData?.primaryContactEmail;
   const title = isAutoFlow
-    ? `${brokerName} invited you to Glass`
+    ? `${brokerName} invited you to Spot`
     : step === "details"
-      ? `${brokerName} invited you to Glass`
+      ? `${brokerName} invited you to Spot`
       : "Verify your email";
   const subtitle =
     isAutoFlow || step === "details"
@@ -216,7 +216,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
       : undefined;
 
   return (
-    <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+    <AuthMinimalShell footer={<PoweredBySpotWordmark />}>
       <AuthCard
         title={title}
         subtitle={subtitle}

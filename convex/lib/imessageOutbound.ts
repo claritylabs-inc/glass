@@ -76,10 +76,10 @@ export function formatWebChatUserMirrorText(args: {
 }): string {
   const sender = args.userName?.trim() || "A user";
   const body = truncateImessageText(args.content);
-  if (body) return `${sender} from Glass web chat: ${body}`;
+  if (body) return `${sender} from Spot web chat: ${body}`;
   return args.hasAttachments
-    ? `${sender} shared attachment(s) from Glass web chat.`
-    : `${sender} sent a message from Glass web chat.`;
+    ? `${sender} shared attachment(s) from Spot web chat.`
+    : `${sender} sent a message from Spot web chat.`;
 }
 
 export function formatWebChatAgentMirrorText(args: {
@@ -87,10 +87,10 @@ export function formatWebChatAgentMirrorText(args: {
   hasAttachments: boolean;
 }): string {
   const body = truncateImessageText(args.content);
-  if (body) return `Glass replied in web chat: ${body}`;
+  if (body) return `Spot replied in web chat: ${body}`;
   return args.hasAttachments
-    ? "Glass added attachment(s) in web chat."
-    : "Glass replied in web chat.";
+    ? "Spot added attachment(s) in web chat."
+    : "Spot replied in web chat.";
 }
 
 export async function storedAttachmentsToImessageOutbound(
@@ -151,9 +151,9 @@ async function sendOutboundImessageWithResult(params: {
   const message =
     params.message.trim() ||
     (appCards.length > 0
-      ? "Glass shared a link."
+      ? "Spot shared a link."
         : attachments.length > 0
-          ? "Glass shared attachment(s)."
+          ? "Spot shared attachment(s)."
           : "");
   if (!message) return { ok: false, attachmentFailures: [] };
 

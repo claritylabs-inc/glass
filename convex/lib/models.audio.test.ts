@@ -165,7 +165,7 @@ describe("audio transcription routing", () => {
   });
 
   test("falls back to direct transcription after a typed pre-execution production outage", async () => {
-    vi.stubEnv("GLASS_ENV", "production");
+    vi.stubEnv("SPOT_ENV", "production");
     vi.stubEnv("CL_ROUTER_TASKS", "voice_transcription");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");

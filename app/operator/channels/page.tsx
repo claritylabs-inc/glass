@@ -232,7 +232,7 @@ function OperatorChannelsContent({
   async function installHost() {
     const oauthTab = openOAuthTab();
     if (!oauthTab) {
-      toast.error("Allow pop-ups for Glass to connect Slack in a new tab");
+      toast.error("Allow pop-ups for Spot to connect Slack in a new tab");
       return;
     }
 
@@ -338,7 +338,7 @@ function OperatorChannelsContent({
         }}
       >
         <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-          This changes the Slack identity for the signed-in Glass account{" "}
+          This changes the Slack identity for the signed-in Spot account{" "}
           <span className={`text-foreground ${typeStyle("body.medium")}`}>{operatorEmail}</span>
           {workspaceName ? (
             <>
@@ -479,7 +479,7 @@ function OperatorChannelsContent({
                         Operator Slack identities
                       </h2>
                       <p className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}>
-                        Glass uses these links to recognize which operator
+                        Spot uses these links to recognize which operator
                         replied in Slack.
                       </p>
                     </div>
@@ -501,7 +501,7 @@ function OperatorChannelsContent({
 
                       <div className="border-t border-border">
                         <p className={`pt-3 text-muted-foreground ${typeStyle("caption.medium")}`}>
-                          Other Glass operators
+                          Other Spot operators
                         </p>
                         {otherOperators === undefined ? (
                           <div className="flex min-h-16 items-center justify-center">
@@ -519,7 +519,7 @@ function OperatorChannelsContent({
                           </div>
                         ) : (
                           <p className={`py-3 text-muted-foreground ${typeStyle("body.default")}`}>
-                            No other Glass operators.
+                            No other Spot operators.
                           </p>
                         )}
                       </div>

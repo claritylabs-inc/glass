@@ -28,11 +28,11 @@ if (!signingSecret) {
 const now = dayjs();
 const messageTs = `${now.unix()}.${String(now.millisecond()).padStart(3, "0")}`;
 const threadTs = option("thread", messageTs);
-const text = option("text", "<@U-GLASS> summarize my current policy");
+const text = option("text", "<@U-SPOT> summarize my current policy");
 const payload = {
   type: "event_callback",
   team_id: option("team", "T-COVE-FIXTURE"),
-  api_app_id: "A-GLASS-FIXTURE",
+  api_app_id: "A-SPOT-FIXTURE",
   event_id: `fixture-${randomUUID()}`,
   event_time: now.unix(),
   event: {

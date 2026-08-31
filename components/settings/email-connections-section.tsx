@@ -197,7 +197,7 @@ export function EmailConnectionsSection() {
     <OperationalPanel>
       <OperationalPanelHeader
         title="Connected mailboxes"
-        description="Glass can import policies, track insurance requirements, and learn company context from connected mailboxes."
+        description="Spot can import policies, track insurance requirements, and learn company context from connected mailboxes."
         className="px-5 py-3.5"
       />
       {connectedEmailAccounts === undefined ? (
@@ -257,7 +257,7 @@ export function EmailConnectionsSection() {
             Connect your first mailbox
           </h3>
           <p className={`mt-1 max-w-sm text-muted-foreground ${typeStyle("body.default")}`}>
-            Glass can monitor a personal or shared mailbox without manual forwarding.
+            Spot can monitor a personal or shared mailbox without manual forwarding.
           </p>
           <PillButton
             size="compact"

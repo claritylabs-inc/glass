@@ -66,7 +66,7 @@ import {
   useCachedPolicyDetail,
   useCachedPolicySummary,
   useCachedViewerOrg,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
   formatDisplayDateTime,
@@ -1038,7 +1038,7 @@ export function PolicyDetailBody({
         {isArchived && (
           <div className="mb-4 flex items-center gap-3 rounded-lg border border-input bg-foreground/[0.025] px-4 py-2.5">
             <p className={`flex-1 text-muted-foreground ${typeStyle("body.default")}`}>
-              This policy is archived and excluded from active Glass workflows.
+              This policy is archived and excluded from active Spot workflows.
             </p>
             {!readOnly ? (
               <PillButton
@@ -1063,7 +1063,7 @@ export function PolicyDetailBody({
             <DialogTitle>Archive policy</DialogTitle>
             <DialogDescription>
               Archive <strong>{policyNumber}</strong>? It will be excluded from
-              active policy lists, compliance, search, and Glass tools until
+              active policy lists, compliance, search, and Spot tools until
               restored.
             </DialogDescription>
           </DialogHeader>

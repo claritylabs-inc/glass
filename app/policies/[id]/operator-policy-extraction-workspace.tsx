@@ -1484,7 +1484,7 @@ export function OperatorPolicyExtractionPanel({
           <DialogHeader>
             <DialogTitle>Rerun the complete extraction?</DialogTitle>
             <DialogDescription>
-              Glass will reparse the original PDF and replace the current
+              Spot will reparse the original PDF and replace the current
               extracted fields, source tree, chunks, and operational profile
               when the run completes. Existing policy history remains intact.
             </DialogDescription>

@@ -6,7 +6,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import {
   useCachedAgentTargets,
   useCachedConnectedVendors,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { typeStyle } from "@/lib/typography";
 
 type ExamplePrompt = {

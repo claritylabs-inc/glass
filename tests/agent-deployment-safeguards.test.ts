@@ -26,7 +26,7 @@ function writeJson(res: ServerResponse, payload: unknown) {
 function convexHealth(expectedClSdkVersion: string) {
   return {
     ok: true,
-    glassEnv: "production",
+    spotEnv: "production",
     emailDeliveryMode: "live",
     checks: {
       extractionWorkerModeExternal: true,
@@ -50,8 +50,8 @@ function convexHealth(expectedClSdkVersion: string) {
 function imessageHealth() {
   return {
     ok: true,
-    service: "glass-imessage-worker",
-    glassEnv: "production",
+    service: "spot-imessage-worker",
+    spotEnv: "production",
     transport: "imessage",
     imessageEnabled: true,
     convexSiteConfigured: true,
@@ -64,7 +64,7 @@ function imessageHealth() {
 function extractionWorkerHealth(clSdkVersion: string) {
   return {
     ok: true,
-    glassEnv: "production",
+    spotEnv: "production",
     workerProtocolVersion: "source-tree-v1",
     clSdkVersion,
   };
@@ -83,8 +83,8 @@ function clRouterHealth() {
 function slackWorkerHealth() {
   return {
     ok: true,
-    service: "glass-slack-worker",
-    glassEnv: "production",
+    service: "spot-slack-worker",
+    spotEnv: "production",
     mode: "slack",
     workerSecretConfigured: true,
     tokenBrokerConfigured: true,
@@ -115,11 +115,11 @@ async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
         ...process.env,
         AGENT_HEALTH_ATTEMPTS: "1",
         AGENT_HEALTH_RETRY_DELAY_MS: "1",
-        GLASS_CONVEX_AGENT_HEALTH_URL: `${healthBaseUrl}${convexPath}`,
-        GLASS_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/imessage`,
-        GLASS_EXTRACTION_WORKER_HEALTH_URL: `${healthBaseUrl}/extraction-worker`,
-        GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL: `${healthBaseUrl}/slack-worker`,
-        GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL: `${healthBaseUrl}${clRouterPath}`,
+        SPOT_CONVEX_AGENT_HEALTH_URL: `${healthBaseUrl}${convexPath}`,
+        SPOT_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/imessage`,
+        SPOT_EXTRACTION_WORKER_HEALTH_URL: `${healthBaseUrl}/extraction-worker`,
+        SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL: `${healthBaseUrl}/slack-worker`,
+        SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL: `${healthBaseUrl}${clRouterPath}`,
       },
       timeout: 10_000,
     },

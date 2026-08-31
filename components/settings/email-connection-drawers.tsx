@@ -365,7 +365,7 @@ export function AddMailboxDrawer({
           <div>
             <p className={`text-foreground ${typeStyle("body.medium")}`}>Start monitoring</p>
             <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-              Glass will monitor all three sources by default.
+              Spot will monitor all three sources by default.
             </p>
           </div>
           <AutomationToggleRows
@@ -524,7 +524,7 @@ export function MailboxSettingsDrawer({
       toast.success(parts.join(" · "), {
         description: result.truncated
           ? `The date range matched ${result.matchedCount} emails; the newest ${result.scannedCount} were scanned.`
-          : "Results appear in a Glass thread when there is something to review.",
+          : "Results appear in a Spot thread when there is something to review.",
       });
       setScanDialogOpen(false);
     } catch (error) {
@@ -616,8 +616,8 @@ export function MailboxSettingsDrawer({
                 Disconnect this mailbox?
               </p>
               <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
-                Glass will stop searching and monitoring it. Imported documents and
-                saved company context remain in Glass.
+                Spot will stop searching and monitoring it. Imported documents and
+                saved company context remain in Spot.
               </p>
             </div>
           </div>
@@ -689,7 +689,7 @@ export function MailboxSettingsDrawer({
             <DialogTitle>Scan mailbox</DialogTitle>
             <DialogDescription>
               Choose a date range to scan in{" "}
-              <strong>{account.emailAddress}</strong>. Glass uses the saved
+              <strong>{account.emailAddress}</strong>. Spot uses the saved
               monitoring settings and skips emails it has already processed.
             </DialogDescription>
           </DialogHeader>

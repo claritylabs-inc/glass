@@ -60,12 +60,12 @@ describe("Slack channel routing", () => {
         {
           customerChannelId: "C-LEGACY-CUSTOMER",
           hostChannelId: "C-LEGACY-HOST",
-          channelName: "glass-cove",
+          channelName: "spot-cove",
         },
       ),
     ).toEqual({
       channelId: "C-LEGACY-CUSTOMER",
-      channelName: "glass-cove",
+      channelName: "spot-cove",
     });
   });
 });

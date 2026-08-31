@@ -1,7 +1,8 @@
 export type OutputFormat = "json" | "table";
 
-export type GlassConfig = {
+export type SpotConfig = {
   baseUrl: string;
+  clientId?: string;
   accessToken?: string;
   refreshToken?: string;
   expiresAt?: number;

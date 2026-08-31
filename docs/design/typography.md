@@ -1,6 +1,6 @@
-# Glass typography
+# Spot typography
 
-Glass browser typography is a typed semantic system. The owner is
+Spot browser typography is a typed semantic system. The owner is
 [`lib/typography.ts`](../../lib/typography.ts); React callsites select a role
 with `typeStyle(role)` and keep color, spacing, alignment, truncation, and
 layout local. Generated social images, transactional email HTML, and PDF
@@ -131,7 +131,7 @@ directly at a callsite.
 Assets were copied from `claritylabs-inc/clarity-landing` commit
 `9e5184f5fa78da52c99be7fc62a8b33fdfece429`.
 
-| Upstream path | Glass path | SHA-256 |
+| Upstream path | Spot path | SHA-256 |
 | --- | --- | --- |
 | `src/app/fonts/redaction/Redaction-Regular.woff2` | `app/fonts/redaction/Redaction-Regular.woff2` | `01a800a24bda48886fd1893f2aa20cab80db05ef2cdbb4025048438429ad5779` |
 | `src/app/fonts/redaction/Redaction-Italic.woff2` | `app/fonts/redaction/Redaction-Italic.woff2` | `7a4422a14b1defb5a4027e8bfd9b8d70098bfda9eea4437721d2878215954ece` |

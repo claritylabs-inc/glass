@@ -15,7 +15,7 @@ import {
   OperationalLabelValueRow,
 } from "@/components/ui/operational-panel";
 import { usePdf } from "@/components/pdf-context";
-import { useCachedPolicyDetail } from "@/lib/sync/glass-cached-queries";
+import { useCachedPolicyDetail } from "@/lib/sync/spot-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
   evidenceSpansForIds,

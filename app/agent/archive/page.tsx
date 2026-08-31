@@ -14,7 +14,7 @@ import { Id } from "@/convex/_generated/dataModel";
 import {
   useArchivedThreadCacheActions,
   useCachedArchivedThreads,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 

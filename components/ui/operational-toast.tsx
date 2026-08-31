@@ -90,7 +90,7 @@ function OperationalStatusToast({
   return (
     <div
       className={cn(
-        "glass-operational-toast grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5",
+        "spot-operational-toast grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5",
         className,
       )}
       aria-label={accessibleLabel}

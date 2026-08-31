@@ -10,7 +10,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { PageContext } from "@/hooks/use-page-context";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
-import { useThreadCacheActions } from "@/lib/sync/glass-cached-queries";
+import { useThreadCacheActions } from "@/lib/sync/spot-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {

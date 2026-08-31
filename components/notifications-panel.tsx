@@ -11,7 +11,7 @@ import { X } from "lucide-react";
 import {
   useCachedNotifications,
   useNotificationCacheActions,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { typeStyle } from "@/lib/typography";
 
 dayjs.extend(relativeTime);

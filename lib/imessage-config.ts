@@ -1,7 +1,10 @@
 export const AGENT_TEXT_NUMBER =
-  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER?.trim() ?? "";
+  process.env.NEXT_PUBLIC_SPOT_IMESSAGE_NUMBER?.trim() ??
+  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER?.trim() ??
+  "";
 
 export const AGENT_TEXT_NUMBER_DISPLAY =
+  process.env.NEXT_PUBLIC_SPOT_IMESSAGE_NUMBER_DISPLAY?.trim() ??
   process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER_DISPLAY?.trim() ??
   AGENT_TEXT_NUMBER;
 

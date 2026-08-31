@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { GlassApi } from "./api.js";
+import { SpotApi } from "./api.js";
 import { loginWithBrowser } from "./auth.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { print } from "./output.js";
 import { OutputFormat } from "./types.js";
 
 const program = new Command();
-program.name("glass").description("Glass CLI").version("0.1.0");
+program.name("spot").description("Spot CLI").version("0.1.1");
 program.option("--json", "output JSON");
 
 function getFormat(options: { json?: boolean }): OutputFormat {
@@ -16,7 +16,7 @@ function getFormat(options: { json?: boolean }): OutputFormat {
 
 program
   .command("auth:login")
-  .description("Authenticate with Glass")
+  .description("Authenticate with Spot")
   .action(async () => {
     const config = await loadConfig();
     const next = await loginWithBrowser(config);
@@ -43,28 +43,28 @@ program
       console.log(`Default org set to ${options.setOrg}`);
       return;
     }
-    const api = new GlassApi(config);
+    const api = new SpotApi(config);
     const me = await api.me();
     print(me, getFormat(program.opts()));
   });
 
-program.command("me").action(async () => print(await new GlassApi(await loadConfig()).me(), getFormat(program.opts())));
-program.command("org").action(async () => print(await new GlassApi(await loadConfig()).org(), getFormat(program.opts())));
+program.command("me").action(async () => print(await new SpotApi(await loadConfig()).me(), getFormat(program.opts())));
+program.command("org").action(async () => print(await new SpotApi(await loadConfig()).org(), getFormat(program.opts())));
 program.command("policies:list").option("--limit <n>", "page size", "25").action(async (opts) => {
-  const res = await new GlassApi(await loadConfig()).policies(Number(opts.limit));
+  const res = await new SpotApi(await loadConfig()).policies(Number(opts.limit));
   print(res.data, getFormat(program.opts()));
 });
-program.command("policies:get <id>").action(async (id) => print(await new GlassApi(await loadConfig()).policy(id), getFormat(program.opts())));
+program.command("policies:get <id>").action(async (id) => print(await new SpotApi(await loadConfig()).policy(id), getFormat(program.opts())));
 program.command("notifications:list").option("--limit <n>", "page size", "25").action(async (opts) => {
-  const res = await new GlassApi(await loadConfig()).notifications(Number(opts.limit));
+  const res = await new SpotApi(await loadConfig()).notifications(Number(opts.limit));
   print(res.data, getFormat(program.opts()));
 });
 program.command("activity:list").option("--limit <n>", "page size", "25").action(async (opts) => {
-  const res = await new GlassApi(await loadConfig()).activity(Number(opts.limit));
+  const res = await new SpotApi(await loadConfig()).activity(Number(opts.limit));
   print(res.data, getFormat(program.opts()));
 });
 program.command("clients:list").option("--limit <n>", "page size", "25").action(async (opts) => {
-  const res = await new GlassApi(await loadConfig()).clients(Number(opts.limit));
+  const res = await new SpotApi(await loadConfig()).clients(Number(opts.limit));
   print(res.data, getFormat(program.opts()));
 });
 
@@ -72,7 +72,7 @@ program.command("clients:list").option("--limit <n>", "page size", "25").action(
 program.command("query:ask <message>")
   .option("--thread-id <threadId>", "continue an existing thread")
   .action(async (message, opts) => {
-    const res = await new GlassApi(await loadConfig()).askGlass(message, opts.threadId);
+    const res = await new SpotApi(await loadConfig()).askSpot(message, opts.threadId);
     print(res, getFormat(program.opts()));
   });
 
@@ -89,7 +89,7 @@ program.command("policies:create")
       ...(opts.lineOfBusiness ?? []),
       ...(opts.policyType ?? []),
     ];
-    const res = await new GlassApi(await loadConfig()).createPolicyDraft({
+    const res = await new SpotApi(await loadConfig()).createPolicyDraft({
       carrier: opts.carrier,
       policyNumber: opts.policyNumber,
       insuredName: opts.insuredName,
@@ -103,7 +103,7 @@ program.command("policies:create")
 program.command("policies:upload <filePath>")
   .description("Trigger the policy upload/extraction pipeline via the agent")
   .action(async (filePath) => {
-    const res = await new GlassApi(await loadConfig()).runUploadPipeline(filePath);
+    const res = await new SpotApi(await loadConfig()).runUploadPipeline(filePath);
     print(res, getFormat(program.opts()));
   });
 
@@ -116,7 +116,7 @@ program.command("coi:generate")
   .option("--holder-address <holderAddress>")
   .option("--reissue", "force a new certificate version for this holder/current policy version")
   .action(async (opts) => {
-    const res = await new GlassApi(await loadConfig()).generateCoi(
+    const res = await new SpotApi(await loadConfig()).generateCoi(
       opts.policyId,
       opts.holderName,
       opts.holderAddress,
@@ -131,19 +131,19 @@ program.command("coi:generate")
 program.command("coi:holders")
   .option("--query <query>")
   .action(async (opts) => {
-    const res = await new GlassApi(await loadConfig()).certificateHolders(opts.query);
+    const res = await new SpotApi(await loadConfig()).certificateHolders(opts.query);
     print(res.data, getFormat(program.opts()));
   });
 
 program.command("policies:versions <policyId>")
   .action(async (policyId) => {
-    const res = await new GlassApi(await loadConfig()).policyVersions(policyId);
+    const res = await new SpotApi(await loadConfig()).policyVersions(policyId);
     print(res.data, getFormat(program.opts()));
   });
 
 program.command("coi:versions <policyId>")
   .action(async (policyId) => {
-    const res = await new GlassApi(await loadConfig()).certificateVersions(policyId);
+    const res = await new SpotApi(await loadConfig()).certificateVersions(policyId);
     print(res.data, getFormat(program.opts()));
   });
 
@@ -151,7 +151,7 @@ program.command("coi:review-jobs")
   .option("--policy-id <policyId>")
   .option("--status <status>")
   .action(async (opts) => {
-    const res = await new GlassApi(await loadConfig()).certificateReviewJobs(opts.policyId, opts.status);
+    const res = await new SpotApi(await loadConfig()).certificateReviewJobs(opts.policyId, opts.status);
     print(res.data, getFormat(program.opts()));
   });
 

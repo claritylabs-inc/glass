@@ -31,7 +31,7 @@ import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { ThemeModeSelector } from "@/components/ui/theme-mode-selector";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
-import { useViewerCacheActions } from "@/lib/sync/glass-cached-queries";
+import { useViewerCacheActions } from "@/lib/sync/spot-cached-queries";
 import {
   cachedQueryArgsKey,
   cachedQueryCollectionFor,
@@ -364,7 +364,7 @@ export default function ProfilePage() {
                       ) : shouldCheckPhone && phoneAvailability?.available ? (
                         "Phone number is available"
                       ) : (
-                        "Used for iMessage access to your Glass agent."
+                        "Used for iMessage access to your Spot agent."
                       )}
                     </p>
                   </div>

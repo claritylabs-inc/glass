@@ -1,44 +1,44 @@
-# Glass CLI
+# Spot CLI
 
-Command line access to Glass for terminal workflows, scripts, and local automation.
+Command line access to Spot for terminal workflows, scripts, and local automation.
 
 ## Install
 
 ```sh
-npm install -g @claritylabs/glass-cli
+npm install -g @claritylabs/spot-cli
 ```
 
 ## Authenticate
 
 ```sh
-glass auth:login
-glass auth:whoami
-glass auth:whoami --set-org <orgId>
+spot auth:login
+spot auth:whoami
+spot auth:whoami --set-org <orgId>
 ```
 
-The CLI targets production by default. For preview or local environments, set `GLASS_BASE_URL`:
+The CLI targets production by default. For preview or local environments, set `SPOT_BASE_URL`:
 
 ```sh
-GLASS_BASE_URL=http://localhost:8080 glass auth:login
+SPOT_BASE_URL=http://localhost:8080 spot auth:login
 ```
 
 ## Examples
 
 ```sh
-glass me
-glass org
-glass policies:list
-glass policies:get <policyId>
-glass query:ask "What policies expire next month?"
+spot me
+spot org
+spot policies:list
+spot policies:get <policyId>
+spot query:ask "What policies expire next month?"
 ```
 
 
 ## Broker workspaces
 
-Select a broker org with `glass auth:whoami --set-org <brokerOrgId>` before running broker portfolio queries. `glass query:ask` sends the selected `X-Org-Id` on POST requests, so asking from a broker org can answer across managed client organizations with client-labeled results, for example:
+Select a broker org with `spot auth:whoami --set-org <brokerOrgId>` before running broker portfolio queries. `spot query:ask` sends the selected `X-Org-Id` on POST requests, so asking from a broker org can answer across managed client organizations with client-labeled results, for example:
 
 ```sh
-glass query:ask "Which clients have general liability policies expiring next month?"
+spot query:ask "Which clients have general liability policies expiring next month?"
 ```
 
-Use `glass clients:list` to inspect broker-visible clients before asking portfolio-level questions.
+Use `spot clients:list` to inspect broker-visible clients before asking portfolio-level questions.

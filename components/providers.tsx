@@ -4,7 +4,7 @@ import { ConvexAuthNextjsProvider } from "@convex-dev/auth/nextjs";
 import { ConvexReactClient } from "convex/react";
 import { ReactNode, useEffect } from "react";
 import { ThemeProvider } from "@/hooks/use-theme";
-import { GlassSyncProvider } from "@/lib/sync/glass-sync";
+import { SpotSyncProvider } from "@/lib/sync/spot-sync";
 
 const convex = new ConvexReactClient(
   process.env.NEXT_PUBLIC_CONVEX_URL ?? "https://placeholder.convex.cloud"
@@ -22,7 +22,11 @@ function StaticAssetServiceWorker() {
         void caches.keys().then((keys) =>
           Promise.all(
             keys
-              .filter((key) => key.startsWith("glass-static-"))
+              .filter(
+                (key) =>
+                  key.startsWith("spot-static-") ||
+                  key.startsWith("glass-static-"),
+              )
               .map((key) => caches.delete(key)),
           ),
         );
@@ -41,10 +45,10 @@ function StaticAssetServiceWorker() {
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   return (
     <ConvexAuthNextjsProvider client={convex}>
-      <GlassSyncProvider>
+      <SpotSyncProvider>
         <StaticAssetServiceWorker />
         <ThemeProvider>{children}</ThemeProvider>
-      </GlassSyncProvider>
+      </SpotSyncProvider>
     </ConvexAuthNextjsProvider>
   );
 }

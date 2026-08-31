@@ -50,7 +50,7 @@ export default function AgentThreadsPage() {
           <EmptyStateCard
             icon={<MessageSquare className="h-5 w-5" />}
             title="No threads yet"
-            description="Start a conversation with Glass about your policies, requirements, or connected email."
+            description="Start a conversation with Spot about your policies, requirements, or connected email."
             actionLabel="Start a thread"
             onAction={openCommandPalette}
           />

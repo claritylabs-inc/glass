@@ -1,6 +1,6 @@
 // convex/lib/access.ts
 //
-// Dual-org permission layer for Glass.
+// Dual-org permission layer for Spot.
 // Every public Convex function that takes an orgId calls getOrgAccess()
 // then one or more assertCan* helpers before touching any data.
 

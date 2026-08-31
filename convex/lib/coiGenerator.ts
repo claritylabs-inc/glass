@@ -22,7 +22,7 @@ import { resolvePolicyPartyContext } from "./policyPartyContext";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * COI data mapping Glass's rich policy fields to ACORD certificate fields.
+ * COI data mapping Spot's rich policy fields to ACORD certificate fields.
  * All monetary values should be pre-formatted strings (e.g. "$1,000,000").
  * Canonical shape lives in ./acordForms/types.
  */
@@ -34,7 +34,7 @@ export type CoverageLine = CertificateCoverageLine;
 // ─── Mapping helpers ──────────────────────────────────────────────────────────
 
 /**
- * Map a Glass policy document to CoiData.
+ * Map a Spot policy document to CoiData.
  * Produces one CoverageLine per detected coverage type.
  */
 

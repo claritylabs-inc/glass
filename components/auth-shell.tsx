@@ -1,10 +1,10 @@
 import { type ReactNode } from "react";
-import { GlassWordmark } from "@/components/ui/glass-wordmark";
+import { SpotWordmark } from "@/components/ui/spot-wordmark";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { typeStyle } from "@/lib/typography";
 
 export function BrandWordmark() {
-  return <GlassWordmark />;
+  return <SpotWordmark />;
 }
 
 export function PartnerWordmark({
@@ -19,7 +19,7 @@ export function PartnerWordmark({
   const normalizedName = name?.trim();
 
   if (!normalizedName) {
-    return <GlassWordmark />;
+    return <SpotWordmark />;
   }
 
   return (
@@ -37,11 +37,11 @@ export function PartnerWordmark({
   );
 }
 
-export function PoweredByGlassWordmark() {
+export function PoweredBySpotWordmark() {
   return (
     <div className={`flex items-center justify-center gap-2 text-muted-foreground ${typeStyle("caption.default")}`}>
       <span>Powered by</span>
-      <GlassWordmark />
+      <SpotWordmark />
     </div>
   );
 }

@@ -72,7 +72,7 @@ export async function resolvePolicyReferenceForOrg(ctx: ActionCtx, args: {
     return {
       ok: false,
       message:
-        "I could not match that to a policy in Glass. Ask me to list the policies first, then choose one from the list.",
+        "I could not match that to a policy in Spot. Ask me to list the policies first, then choose one from the list.",
     };
   }
 

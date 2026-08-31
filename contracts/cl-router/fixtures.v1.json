@@ -200,7 +200,7 @@
   ],
   "fixtures": [
     {
-      "name": "Glass structured generation request",
+      "name": "Spot structured generation request",
       "schema": "GenerateRequest",
       "value": {
         "task": "extraction",
@@ -244,7 +244,7 @@
       }
     },
     {
-      "name": "Glass structured generation response",
+      "name": "Spot structured generation response",
       "schema": "GenerateResponse",
       "value": {
         "output": {
@@ -288,7 +288,7 @@
       }
     },
     {
-      "name": "Glass streaming terminal event",
+      "name": "Spot streaming terminal event",
       "schema": "StreamEvent",
       "value": {
         "type": "done",
@@ -323,7 +323,7 @@
       }
     },
     {
-      "name": "Glass embedding request",
+      "name": "Spot embedding request",
       "schema": "EmbedRequest",
       "value": {
         "tenantId": "glass",
@@ -349,7 +349,7 @@
       }
     },
     {
-      "name": "Glass embedding response",
+      "name": "Spot embedding response",
       "schema": "EmbedResponse",
       "value": {
         "embeddings": [
@@ -389,7 +389,7 @@
       }
     },
     {
-      "name": "Glass transcription metadata",
+      "name": "Spot transcription metadata",
       "schema": "TranscribeMetadata",
       "value": {
         "tenantId": "glass",
@@ -414,7 +414,7 @@
       }
     },
     {
-      "name": "Glass transcription response",
+      "name": "Spot transcription response",
       "schema": "TranscribeResponse",
       "value": {
         "text": "Please send the certificate to the landlord.",
@@ -449,7 +449,7 @@
       }
     },
     {
-      "name": "Glass extraction feedback request",
+      "name": "Spot extraction feedback request",
       "schema": "FeedbackRequest",
       "value": {
         "requestId": "router_request_generation_fixture",
@@ -469,7 +469,7 @@
       }
     },
     {
-      "name": "Glass extraction feedback response",
+      "name": "Spot extraction feedback response",
       "schema": "FeedbackResponse",
       "value": {
         "accepted": true,

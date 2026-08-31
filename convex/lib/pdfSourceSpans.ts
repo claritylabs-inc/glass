@@ -2,12 +2,12 @@
 
 import { createHash } from "crypto";
 
-export type GlassSourceKind = "policy_pdf" | "email" | "attachment" | "manual_note";
+export type SpotSourceKind = "policy_pdf" | "email" | "attachment" | "manual_note";
 
-export interface GlassSourceSpan {
+export interface SpotSourceSpan {
   id: string;
   documentId: string;
-  sourceKind: GlassSourceKind;
+  sourceKind: SpotSourceKind;
   kind: "pdf_text" | "plain_text";
   pageStart?: number;
   pageEnd?: number;
@@ -29,7 +29,7 @@ export interface GlassSourceSpan {
   metadata?: Record<string, unknown>;
 }
 
-export interface GlassSourceChunk {
+export interface SpotSourceChunk {
   id: string;
   documentId: string;
   sourceSpanIds: string[];
@@ -54,14 +54,14 @@ function idPart(value: string): string {
 
 function buildSpan(input: {
   documentId: string;
-  sourceKind: GlassSourceKind;
+  sourceKind: SpotSourceKind;
   pageNumber?: number;
   text: string;
   index: number;
   sectionId?: string;
   formNumber?: string;
   metadata?: Record<string, string>;
-}): GlassSourceSpan | undefined {
+}): SpotSourceSpan | undefined {
   const text = normalizeWhitespace(input.text);
   if (!text) return undefined;
   const textHash = hashText(text);
@@ -117,12 +117,12 @@ function splitPageIntoSectionCandidates(text: string): Array<{ title: string; te
     .filter((section) => section.text.length >= 120);
 }
 
-export function chunkGlassSourceSpans(
-  sourceSpans: GlassSourceSpan[],
+export function chunkSpotSourceSpans(
+  sourceSpans: SpotSourceSpan[],
   maxChars = 6000,
-): GlassSourceChunk[] {
-  const chunks: GlassSourceChunk[] = [];
-  let current: GlassSourceSpan[] = [];
+): SpotSourceChunk[] {
+  const chunks: SpotSourceChunk[] = [];
+  let current: SpotSourceSpan[] = [];
   let currentLength = 0;
 
   const flush = () => {
@@ -156,8 +156,8 @@ export function chunkGlassSourceSpans(
 export async function buildPdfSourceSpans(params: {
   pdfBytes: Uint8Array;
   documentId: string;
-  sourceKind?: GlassSourceKind;
-}): Promise<{ sourceSpans: GlassSourceSpan[]; sourceChunks: GlassSourceChunk[] }> {
+  sourceKind?: SpotSourceKind;
+}): Promise<{ sourceSpans: SpotSourceSpan[]; sourceChunks: SpotSourceChunk[] }> {
   try {
     const { getDocument, VerbosityLevel } = await import("pdfjs-dist/legacy/build/pdf.mjs");
     const loadingTask = getDocument({
@@ -168,7 +168,7 @@ export async function buildPdfSourceSpans(params: {
       verbosity: VerbosityLevel.ERRORS,
     });
     const doc = await loadingTask.promise;
-    const sourceSpans: GlassSourceSpan[] = [];
+    const sourceSpans: SpotSourceSpan[] = [];
 
     try {
       for (let index = 0; index < doc.numPages; index += 1) {
@@ -211,7 +211,7 @@ export async function buildPdfSourceSpans(params: {
 
     return {
       sourceSpans,
-      sourceChunks: chunkGlassSourceSpans(sourceSpans),
+      sourceChunks: chunkSpotSourceSpans(sourceSpans),
     };
   } catch (error) {
     console.warn(`PDF source span extraction failed: ${error instanceof Error ? error.message : String(error)}`);

@@ -54,7 +54,7 @@ before(async () => {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      GLASS_ENV: "local",
+      SPOT_ENV: "local",
       SLACK_WORKER_MODE: "mock",
       SLACK_WORKER_SECRET: "test-secret",
       PORT: String(port),
@@ -84,7 +84,7 @@ describe("Slack worker HTTP adapter", () => {
       channelInventoryEnabled: health.channelInventoryEnabled,
     }, {
       ok: true,
-      service: "glass-slack-worker",
+      service: "spot-slack-worker",
       mode: "mock",
       outboundEnabled: true,
       actorResolutionEnabled: true,
@@ -109,7 +109,7 @@ describe("Slack worker HTTP adapter", () => {
       userId: "U-CUSTOMER",
       displayName: "U-CUSTOMER",
       isBot: false,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
     });
   });
 
@@ -122,7 +122,7 @@ describe("Slack worker HTTP adapter", () => {
     const payload = await response.json();
     assert.deepEqual(payload, {
       teamId: "T-CUSTOMER",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       channels: [
         {
           id: "C-PRIMARY",
@@ -146,7 +146,7 @@ describe("Slack worker HTTP adapter", () => {
     const initial = await list({
       teamId: "T-LOCAL",
       currentChannelId: "C-LOCAL",
-      currentChannelName: "glass-local",
+      currentChannelName: "spot-local",
     });
     assert.deepEqual(
       initial.channels.map((channel: { id: string }) => channel.id),

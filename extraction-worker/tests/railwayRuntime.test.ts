@@ -17,7 +17,7 @@ test("keeps local and persistent Railway workers active", () => {
 test("makes retired, PR, and unknown Railway environments health-only", () => {
   for (const railwayEnvironment of [
     "staging",
-    "glass-pr-186",
+    "spot-pr-186",
     "preview",
     "qa",
   ]) {

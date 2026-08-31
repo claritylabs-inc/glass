@@ -34,6 +34,7 @@ import {
   normalizeInboundTurn,
   type InboundRecoveryClient,
 } from "./inboundNormalization.js";
+import { resolveContactCardPhone } from "./contactCard.js";
 
 function imessageMarkdown(value: string) {
   return markdown(value);
@@ -126,8 +127,8 @@ const PROJECT_ID = process.env.PHOTON_PROJECT_ID;
 const PROJECT_SECRET = process.env.PHOTON_PROJECT_SECRET;
 const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
 const WORKER_SECRET = process.env.IMESSAGE_WORKER_SECRET ?? "";
-const GLASS_ENV =
-  process.env.GLASS_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
+const SPOT_ENV =
+  process.env.SPOT_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
 const IMESSAGE_ENABLED = process.env.IMESSAGE_ENABLED === "true";
 const SPECTRUM_PROVIDER = process.env.SPECTRUM_PROVIDER;
 const USE_TERMINAL =
@@ -146,16 +147,13 @@ const TERMINAL_IDENTITIES = {
 };
 const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const TYPING_REFRESH_MS = 4_000;
-const CONTACT_CARD_NAME = "Glass from Clarity Labs";
+const CONTACT_CARD_NAME = "Spot from Clarity Labs";
 const CONTACT_CARD_EMAIL =
-  process.env.GLASS_AGENT_EMAIL ?? "agent@glass.insure";
-const CONTACT_CARD_PHONE =
-  process.env.GLASS_IMESSAGE_CONTACT_PHONE ??
-  process.env.NEXT_PUBLIC_GLASS_IMESSAGE_NUMBER ??
-  "";
-const CONTACT_CARD_URL = "https://glass.insure";
+  process.env.SPOT_AGENT_EMAIL ?? "agent@spot.insure";
+const CONTACT_CARD_PHONE = resolveContactCardPhone();
+const CONTACT_CARD_URL = "https://spot.insure";
 const CONTACT_CARD_NOTE =
-  "Glass is an insurance intelligence assistant from Clarity Labs for policies, certificates, renewals, and broker follow-ups.";
+  "Spot is an insurance intelligence assistant from Clarity Labs for policies, certificates, renewals, and broker follow-ups.";
 const SPECTRUM_MINI_APP = {
   appName: "Spectrum",
   extensionBundleId: "codes.photon.Spectrum.MessagesExtension",
@@ -183,7 +181,7 @@ if (!CONVEX_SITE_URL) {
 }
 if (TRANSPORT === "terminal" && !TERMINAL_FROM_PHONE) {
   console.error(
-    "IMESSAGE_TERMINAL_FROM_PHONE is required for terminal mode so Convex can route to a Glass user",
+    "IMESSAGE_TERMINAL_FROM_PHONE is required for terminal mode so Convex can route to a Spot user",
   );
   process.exit(1);
 }
@@ -199,7 +197,7 @@ if (
 
 function imessageProcessingFallbackMessage(err: unknown): string {
   if (isImessageConvexTimeout(err)) {
-    return "I'm still working on that. If I don't follow up here, check Glass for the draft.";
+    return "I'm still working on that. If I don't follow up here, check Spot for the draft.";
   }
   return "Sorry, something went wrong. Please try again.";
 }
@@ -349,7 +347,7 @@ async function downloadOutboundAttachment(
     const res = await fetch(att.url);
     if (!res.ok) {
       console.warn(
-        `[glass-imessage] Failed to download attachment ${att.filename}: ${res.status}`,
+        `[spot-imessage] Failed to download attachment ${att.filename}: ${res.status}`,
       );
       return {
         failure: {
@@ -361,7 +359,7 @@ async function downloadOutboundAttachment(
     return { buffer: Buffer.from(await res.arrayBuffer()) };
   } catch (err) {
     console.warn(
-      `[glass-imessage] Failed to download attachment ${att.filename}:`,
+      `[spot-imessage] Failed to download attachment ${att.filename}:`,
       err,
     );
     return {
@@ -394,7 +392,7 @@ async function sendOutboundAttachments(
       );
     } catch (err) {
       console.warn(
-        `[glass-imessage] Failed to send attachment ${att.filename}:`,
+        `[spot-imessage] Failed to send attachment ${att.filename}:`,
         err,
       );
       failures.push({
@@ -418,7 +416,7 @@ function appCardFallbackText(card: ImessageAppCard) {
 }
 
 function fallbackMiniAppLayout(card: ImessageAppCard): MiniAppLayout {
-  const caption = card.title?.trim() || "Glass";
+  const caption = card.title?.trim() || "Spot";
   const subcaption = card.subtitle?.trim() || undefined;
   return {
     caption,
@@ -441,7 +439,7 @@ async function buildSpectrumMiniApp(
     }
   } catch (err) {
     console.warn(
-      `[glass-imessage] Failed to build app card layout ${card.url}:`,
+      `[spot-imessage] Failed to build app card layout ${card.url}:`,
       err,
     );
   }
@@ -480,7 +478,7 @@ async function sendResponseText(
       errorMessage(error).includes("enable_data_detection"),
   });
   if (!delivery.complete) {
-    console.warn("[glass-imessage] Threaded response delivery was incomplete", {
+    console.warn("[spot-imessage] Threaded response delivery was incomplete", {
       deliveredSegments: delivery.deliveredSegments,
       expectedSegments: delivery.expectedSegments,
       error: delivery.error,
@@ -488,14 +486,14 @@ async function sendResponseText(
   }
 }
 
-async function sendGlassContactCard(space: Space): Promise<void> {
+async function sendSpotContactCard(space: Space): Promise<void> {
   if (TRANSPORT === "imessage") {
     try {
       await space.send(nativeContactCard());
       return;
     } catch (err) {
       console.warn(
-        "[glass-imessage] Native contact card send failed; falling back to vCard:",
+        "[spot-imessage] Native contact card send failed; falling back to vCard:",
         err,
       );
     }
@@ -529,7 +527,7 @@ async function withTypingIndicator<T>(
     try {
       await Promise.resolve(space.startTyping());
     } catch (err) {
-      console.warn("[glass-imessage] Failed to refresh typing indicator:", err);
+      console.warn("[spot-imessage] Failed to refresh typing indicator:", err);
     } finally {
       if (!stopped) {
         refreshTimer = setTimeout(() => {
@@ -547,7 +545,7 @@ async function withTypingIndicator<T>(
     if (refreshTimer) clearTimeout(refreshTimer);
     await activeRefresh;
     await Promise.resolve(space.stopTyping()).catch((err) => {
-      console.warn("[glass-imessage] Failed to stop typing indicator:", err);
+      console.warn("[spot-imessage] Failed to stop typing indicator:", err);
     });
   }
 }
@@ -563,7 +561,7 @@ async function sendOutboundAppCards(
       await space.send(content);
     } catch (err) {
       console.warn(
-        `[glass-imessage] Failed to send app card ${card.url}:`,
+        `[spot-imessage] Failed to send app card ${card.url}:`,
         err,
       );
       await space.send(imessageMarkdown(appCardFallbackText(card)));
@@ -581,7 +579,7 @@ async function sendAttachmentsThroughClient(
   if (!attachments?.length) return failures;
   if (!client.attachments?.upload || !client.messages?.sendAttachment) {
     console.warn(
-      "[glass-imessage] Attachment send by chat GUID is not available",
+      "[spot-imessage] Attachment send by chat GUID is not available",
     );
     return allAttachmentsFailed(
       attachments,
@@ -608,7 +606,7 @@ async function sendAttachmentsThroughClient(
       });
     } catch (err) {
       console.warn(
-        `[glass-imessage] Failed to send attachment ${att.filename}:`,
+        `[spot-imessage] Failed to send attachment ${att.filename}:`,
         err,
       );
       failures.push({
@@ -629,7 +627,7 @@ async function sendAppCardsThroughClient(
   if (!appCards?.length) return;
   if (!client.messages?.sendCustomizedMiniApp) {
     console.warn(
-      "[glass-imessage] Mini app send by chat GUID is not available",
+      "[spot-imessage] Mini app send by chat GUID is not available",
     );
     if (!client.messages?.sendText) return;
     for (const [index, card] of appCards.entries()) {
@@ -661,7 +659,7 @@ async function sendAppCardsThroughClient(
       );
     } catch (err) {
       console.warn(
-        `[glass-imessage] Failed to send mini app card ${card.url}:`,
+        `[spot-imessage] Failed to send mini app card ${card.url}:`,
         err,
       );
       if (!client.messages.sendText) continue;
@@ -720,7 +718,7 @@ async function sendByChatGuid(params: {
     return { sent: true, attachmentFailures };
   } catch (err) {
     console.warn(
-      `[glass-imessage] Failed to send by chat GUID ${params.chatGuid}:`,
+      `[spot-imessage] Failed to send by chat GUID ${params.chatGuid}:`,
       err,
     );
     return { sent: false, attachmentFailures: [] };
@@ -798,7 +796,7 @@ async function getChatSnapshot(app: SpectrumInstance, space: Space) {
     };
   } catch (err) {
     console.warn(
-      `[glass-imessage] Failed to fetch chat snapshot for ${chatGuid}:`,
+      `[spot-imessage] Failed to fetch chat snapshot for ${chatGuid}:`,
       err,
     );
     return {
@@ -839,7 +837,7 @@ async function startSpectrum(): Promise<SpectrumInstance> {
 
 async function main() {
   console.log(
-    `[glass-imessage] Connecting to Spectrum ${TRANSPORT} provider...`,
+    `[spot-imessage] Connecting to Spectrum ${TRANSPORT} provider...`,
   );
 
   const app = await startSpectrum();
@@ -847,7 +845,7 @@ async function main() {
   const activeSpacesByPhone = new Map<string, Space>();
   const activeSpacesByChatGuid = new Map<string, Space>();
 
-  console.log("[glass-imessage] Connected. Waiting for messages...");
+  console.log("[spot-imessage] Connected. Waiting for messages...");
 
   // ── Outbound HTTP server ──────────────────────────────────────────────────
   // POST /send { toPhone, message } — sends proactive text via the active
@@ -868,8 +866,8 @@ async function main() {
     if (req.method === "GET" && requestUrl.pathname === "/health") {
       sendJson(res, 200, {
         ok: true,
-        service: "glass-imessage-worker",
-        glassEnv: GLASS_ENV,
+        service: "spot-imessage-worker",
+        spotEnv: SPOT_ENV,
         transport: TRANSPORT,
         imessageEnabled: IMESSAGE_ENABLED,
         convexSiteConfigured: Boolean(CONVEX_SITE_URL),
@@ -923,9 +921,9 @@ async function main() {
     const messageText =
       payload.message?.trim() ||
       (payload.appCards?.length
-        ? "Glass shared a link."
+        ? "Spot shared a link."
         : payload.attachments?.length
-          ? "Glass shared attachment(s)."
+          ? "Spot shared attachment(s)."
           : "");
     if (
       (!payload.toPhone &&
@@ -1001,12 +999,12 @@ async function main() {
         });
         if (payload.appCards?.length) {
           console.warn(
-            "[glass-imessage] App cards are not available during new group creation",
+            "[spot-imessage] App cards are not available during new group creation",
           );
         }
         if (payload.attachments?.length) {
           console.warn(
-            "[glass-imessage] Attachment send is not available during new group creation",
+            "[spot-imessage] Attachment send is not available during new group creation",
           );
         }
         const attachmentFailures = allAttachmentsFailed(
@@ -1142,7 +1140,7 @@ async function main() {
       );
     } catch (err) {
       releaseSendIdempotencyKey(payload.clientMessageId);
-      console.error("[glass-imessage] Failed to send outbound message:", err);
+      console.error("[spot-imessage] Failed to send outbound message:", err);
       sendJson(res, 500, { error: "Failed to send message" });
     }
   };
@@ -1154,14 +1152,14 @@ async function main() {
   for (const { port, server } of httpServers) {
     server.listen(port, () => {
       console.log(
-        `[glass-imessage] Outbound HTTP server listening on port ${port}`,
+        `[spot-imessage] Outbound HTTP server listening on port ${port}`,
       );
     });
   }
 
   // Graceful shutdown
   const shutdown = async () => {
-    console.log("[glass-imessage] Shutting down...");
+    console.log("[spot-imessage] Shutting down...");
     for (const { server } of httpServers) {
       server.close();
     }
@@ -1177,7 +1175,7 @@ async function main() {
 
     const rawSenderId = message.sender?.id;
     if (!rawSenderId) {
-      console.warn("[glass-imessage] Ignoring inbound message without sender");
+      console.warn("[spot-imessage] Ignoring inbound message without sender");
       continue;
     }
     const senderId =
@@ -1185,7 +1183,7 @@ async function main() {
     const fromPhone = normalizePhone(senderId);
     activeSpacesByPhone.set(fromPhone, space);
     const chatSnapshot = await getChatSnapshot(app, space);
-    console.log("[glass-imessage] Received inbound message", {
+    console.log("[spot-imessage] Received inbound message", {
       fromPhone,
       chatGuid: chatSnapshot.chatGuid,
       isGroup: chatSnapshot.isGroup,
@@ -1233,14 +1231,14 @@ async function main() {
         const logicalSourceMessageId =
           normalizedTurn.sourceMessageId ?? sourceMessageId;
         if (normalizedTurn.recoveryFailure) {
-          console.warn("[glass-imessage] Inbound recovery degraded", {
+          console.warn("[spot-imessage] Inbound recovery degraded", {
             sourceMessageId: logicalSourceMessageId,
             stage: normalizedTurn.recoveryFailure.stage,
             error: normalizedTurn.recoveryFailure.error,
             fallbackAttachmentCount: normalizedTurn.attachments.length,
           });
         }
-        console.log("[glass-imessage] Inbound turn normalized", {
+        console.log("[spot-imessage] Inbound turn normalized", {
           sourceMessageId: logicalSourceMessageId,
           hasText: messageText !== "(attachment)",
           attachmentCount: normalizedTurn.attachments.length,
@@ -1312,10 +1310,10 @@ async function main() {
 
         if (result.sendContactCard) {
           try {
-            await sendGlassContactCard(space);
+            await sendSpotContactCard(space);
           } catch (err) {
             console.warn(
-              "[glass-imessage] Contact card delivery failed; continuing with response:",
+              "[spot-imessage] Contact card delivery failed; continuing with response:",
               err,
             );
           }
@@ -1346,13 +1344,13 @@ async function main() {
             activeSpacesByChatGuid.delete(result.chatGuid);
           } catch (err) {
             console.warn(
-              `[glass-imessage] Failed to leave group ${result.chatGuid}:`,
+              `[spot-imessage] Failed to leave group ${result.chatGuid}:`,
               err,
             );
           }
         }
       } catch (err) {
-        console.error("[glass-imessage] Error processing message:", err);
+        console.error("[spot-imessage] Error processing message:", err);
         // Attempt to send a fallback message
         try {
           await space.send(imessageProcessingFallbackMessage(err));
@@ -1365,6 +1363,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("[glass-imessage] Fatal error:", err);
+  console.error("[spot-imessage] Fatal error:", err);
   process.exit(1);
 });

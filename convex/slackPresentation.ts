@@ -6,6 +6,7 @@ import {
   type MutationCtx,
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
+import { isSlackOperatorClassification } from "./lib/slackInteractions";
 
 const ACTION_TOKEN_TTL_DAYS = 30;
 
@@ -43,7 +44,7 @@ async function interactionActor(
   if (
     !actor ||
     (actor.classification !== "customer_member" &&
-      actor.classification !== "glass_operator")
+      !isSlackOperatorClassification(actor.classification))
   ) {
     throw new Error("Slack actor is not authorized for this interaction");
   }
@@ -387,7 +388,7 @@ export const upsertFeedback = internalMutation({
       !actor ||
       actor.connectionId !== presentation.connectionId ||
       (actor.classification !== "customer_member" &&
-        actor.classification !== "glass_operator")
+        !isSlackOperatorClassification(actor.classification))
     ) {
       throw new Error("Slack feedback context is invalid");
     }
@@ -458,7 +459,7 @@ export const submitFeedbackComment = internalMutation({
       !presentation ||
       presentation.phase !== "final" ||
       presentation.teamId !== args.teamId ||
-      !interaction.actionId.startsWith("glass_response_feedback") ||
+      !interaction.actionId.startsWith("spot_response_feedback") ||
       interaction.value !== "negative" ||
       presentation.actionTokenExpiresAt < dayjs().valueOf()
     ) {

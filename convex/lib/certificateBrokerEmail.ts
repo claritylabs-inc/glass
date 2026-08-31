@@ -75,11 +75,11 @@ export function buildEndorsementRequestEmail(args: {
   const body = [
     greeting,
     "",
-    "Please review the following endorsement request so Glass can issue the certificate once the policy supports the requested wording.",
+    "Please review the following endorsement request so Spot can issue the certificate once the policy supports the requested wording.",
     context ? `\n${context}` : undefined,
     "",
     ...bullets,
-    reason ? `\nGlass hold reason: ${reason}` : undefined,
+    reason ? `\nSpot hold reason: ${reason}` : undefined,
     "",
     "Once the endorsement is issued, please send a copy so the certificate can be issued.",
     "",

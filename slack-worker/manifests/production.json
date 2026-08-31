@@ -3,7 +3,7 @@
     "major_version": 2
   },
   "display_information": {
-    "name": "Glass",
+    "name": "Spot",
     "description": "AI-native insurance management and expert support in Slack.",
     "background_color": "#171717"
   },
@@ -14,7 +14,7 @@
       "messages_tab_read_only_enabled": false
     },
     "bot_user": {
-      "display_name": "Glass",
+      "display_name": "Spot",
       "always_online": true
     }
   },

@@ -18,7 +18,7 @@ import { typeStyle } from "@/lib/typography";
 const AGENT_DOMAIN = getPublicAgentDomain();
 
 interface AgentContactCalloutProps {
-  /** Linked broker partner, when present. Falls back to a Glass-branded card otherwise. */
+  /** Linked broker partner, when present. Falls back to a Spot-branded card otherwise. */
   broker?: {
     name: string;
     iconUrl?: string | null;
@@ -44,7 +44,7 @@ export function AgentContactCallout({
   broker,
   fallbackAgentHandle,
   className,
-  dismissKey = "glass:agent-contact-callout:dismissed",
+  dismissKey = "spot:agent-contact-callout:dismissed",
 }: AgentContactCalloutProps) {
   const [dismissed, setDismissed] = useState(() => {
     try {

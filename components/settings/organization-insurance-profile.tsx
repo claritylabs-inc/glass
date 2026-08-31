@@ -15,7 +15,7 @@ import {
   normalizeIrsEntityType,
   type IrsEntityType,
 } from "@/convex/lib/entityTypes";
-import { patchCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
+import { patchCachedViewerOrg } from "@/lib/sync/spot-cached-queries";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { typeStyle } from "@/lib/typography";
 

@@ -480,7 +480,7 @@ function isSafeInitialFallbackError(
   environment: NodeJS.ProcessEnv | Record<string, string | undefined>,
   hasInitialExecutionBudget: boolean,
 ): boolean {
-  const isProduction = environment.GLASS_ENV === "production";
+  const isProduction = environment.SPOT_ENV === "production";
   return (isProduction && error instanceof ClRouterToolContractError) ||
     (isProduction && error instanceof ClRouterRequestError &&
       error.routerCode === "router_candidates_exhausted") ||

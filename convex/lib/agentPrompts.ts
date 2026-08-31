@@ -121,7 +121,7 @@ export async function buildDocumentContext(
     const fallback = buildFallbackContext(policies, queryText);
     return {
       ...fallback,
-      context: `${fallback.context}\n\nSOURCE TREE REBUILD REQUIRED: This workspace has legacy policy evidence but no v3 source-node index yet. Glass has queued source-tree rebuilds for policies with stored PDFs. For exact policy-wording answers, wait for sourceTreeStatus=ready and use source nodes/spans.`,
+      context: `${fallback.context}\n\nSOURCE TREE REBUILD REQUIRED: This workspace has legacy policy evidence but no v3 source-node index yet. Spot has queued source-tree rebuilds for policies with stored PDFs. For exact policy-wording answers, wait for sourceTreeStatus=ready and use source nodes/spans.`,
     };
   }
 

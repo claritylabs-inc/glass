@@ -5,11 +5,24 @@ import {
   rewrittenSubjectForwardFixture,
 } from "./__fixtures__/inboundEmailParser";
 import {
+  extractPendingEmailIdsFromHeaders,
   formatInboundEmailForAgent,
   hasEmailParticipantEvidence,
   parseInboundEmail,
   resolveForwardReplyAddress,
 } from "./inboundEmailParser";
+
+describe("extractPendingEmailIdsFromHeaders", () => {
+  test("keeps replies to pending emails sent before and after the rebrand", () => {
+    expect(
+      extractPendingEmailIdsFromHeaders([
+        "<glass-pending-legacy-draft@glass.insure>",
+        "<spot-pending-current-draft@spot.insure>",
+        "<glass-pending-legacy-draft@glass.insure>",
+      ]),
+    ).toEqual(["legacy-draft", "current-draft"]);
+  });
+});
 
 describe("parseInboundEmail", () => {
   test("separates a current Gmail reply from quoted history", () => {
@@ -91,7 +104,7 @@ describe("parseInboundEmail", () => {
   test("requires actual participant evidence for subject-only threading", () => {
     const messages = [
       {
-        fromEmail: "agent@glass.insure",
+        fromEmail: "agent@spot.insure",
         toAddresses: ["Existing.Participant@example.com"],
       },
     ];

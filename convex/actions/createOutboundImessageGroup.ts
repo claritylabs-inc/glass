@@ -83,7 +83,7 @@ export const createOutboundImessageGroupInternal = internalAction({
         participants: resolved.participants.map((participant) => participant.address),
         message: args.openingMessage,
         title: args.title ?? resolved.title,
-        clientMessageId: `glass-group-${args.orgId}-${dayjs().valueOf()}`,
+        clientMessageId: `spot-group-${args.orgId}-${dayjs().valueOf()}`,
       }),
     });
 

@@ -32,7 +32,7 @@ import {
 } from "@/components/app-sidebar/utils";
 import { useCachedQuery, useSetCachedQuery } from "@/lib/sync/use-cached-query";
 import { createClientMutationId } from "@/lib/sync/client-mutation-id";
-import { useArchivedThreadCacheActions } from "@/lib/sync/glass-cached-queries";
+import { useArchivedThreadCacheActions } from "@/lib/sync/spot-cached-queries";
 import { isFeatureEnabled } from "@/convex/lib/featureFlags";
 import {
   getSettingsNavigation,
@@ -77,11 +77,11 @@ function sidebarHeaderBranding({
 export function AppSidebar({
   mobileOpen,
   onMobileClose,
-  onAskGlass,
+  onAskSpot,
 }: {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
-  onAskGlass?: () => void;
+  onAskSpot?: () => void;
 }) {
   const reduceMotion = useReducedMotion();
   const pathname = usePathname();
@@ -337,7 +337,7 @@ export function AppSidebar({
         onToggleCollapse={toggleCollapse}
         onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
         onCloseNotifications={() => setNotificationsPanelOpen(false)}
-        onAskGlass={onAskGlass}
+        onAskSpot={onAskSpot}
         onArchiveThread={handleArchiveThread}
         onSignOut={() => {
           clearOnboardingCache();

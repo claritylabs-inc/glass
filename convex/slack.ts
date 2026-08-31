@@ -13,6 +13,10 @@ import {
   isSlackBindingReachable,
   isSlackConnectionHealthy,
 } from "./lib/slackAvailability";
+import {
+  isSlackOperatorClassification,
+  slackActorUserId,
+} from "./lib/slackInteractions";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -38,6 +42,44 @@ export const getActiveConnection = internalQuery({
   },
 });
 
+export const verifyInboundEventMentionsSpotBackfill = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const remaining = await ctx.db
+      .query("slackInboundEvents")
+      .filter((query) =>
+        query.or(
+          query.eq(query.field("mentionsSpot"), undefined),
+          query.neq(query.field("mentionsGlass"), undefined),
+        ),
+      )
+      .first();
+    return {
+      complete: remaining === null,
+      remainingSampleId: remaining?._id,
+    };
+  },
+});
+
+export const verifySlackActorSpotIdentityBackfill = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const remaining = await ctx.db
+      .query("slackActors")
+      .filter((query) =>
+        query.or(
+          query.eq(query.field("classification"), "glass_operator"),
+          query.neq(query.field("glassUserId"), undefined),
+        ),
+      )
+      .first();
+    return {
+      complete: remaining === null,
+      remainingSampleId: remaining?._id,
+    };
+  },
+});
+
 const attachmentValidator = v.object({
   providerFileId: v.string(),
   filename: v.string(),
@@ -47,7 +89,13 @@ const attachmentValidator = v.object({
 
 type SlackClassification = Doc<"slackActors">["classification"];
 
-async function resolveGlassUserId(
+function eventMentionsSpot(
+  event: Pick<Doc<"slackInboundEvents">, "mentionsSpot" | "mentionsGlass">,
+): boolean {
+  return event.mentionsSpot ?? event.mentionsGlass ?? false;
+}
+
+async function resolveSpotUserId(
   ctx: MutationCtx,
   connection: Doc<"slackWorkspaceConnections">,
   email: string | undefined,
@@ -95,35 +143,39 @@ async function resolveActor(
     event.senderIsBot === true || event.senderUserId === connection.botUserId
       ? "bot"
       : operator?.status === "active"
-        ? "glass_operator"
+        ? "spot_operator"
         : senderTeamId === connection.teamId
           ? "customer_member"
           : "external";
-  const resolvedGlassUserId =
+  const resolvedSpotUserId =
     classification === "customer_member"
-      ? await resolveGlassUserId(ctx, connection, event.senderEmail)
+      ? await resolveSpotUserId(ctx, connection, event.senderEmail)
       : undefined;
-  let glassUserId = resolvedGlassUserId;
+  let spotUserId = resolvedSpotUserId;
   if (
     classification === "customer_member" &&
     !event.senderEmail &&
-    existing?.glassUserId
+    existing &&
+    slackActorUserId(existing)
   ) {
-    const existingGlassUserId = existing.glassUserId;
+    const existingSpotUserId = slackActorUserId(existing);
+    if (!existingSpotUserId) {
+      throw new Error("Slack actor user identity could not be resolved");
+    }
     const membership = await ctx.db
       .query("orgMemberships")
       .withIndex("organization_user", (q) =>
-        q.eq("orgId", connection.clientOrgId).eq("userId", existingGlassUserId),
+        q.eq("orgId", connection.clientOrgId).eq("userId", existingSpotUserId),
       )
       .first();
-    glassUserId = membership ? existingGlassUserId : undefined;
+    spotUserId = membership ? existingSpotUserId : undefined;
   }
   const now = dayjs().valueOf();
   if (existing) {
     await ctx.db.patch(existing._id, {
       classification,
       operatorUserId: operator?.userId,
-      glassUserId,
+      spotUserId,
       ...(event.senderDisplayName
         ? { displayName: event.senderDisplayName }
         : {}),
@@ -133,7 +185,7 @@ async function resolveActor(
       ...existing,
       classification,
       operatorUserId: operator?.userId,
-      glassUserId,
+      spotUserId,
       displayName: event.senderDisplayName ?? existing.displayName,
     };
   }
@@ -144,7 +196,7 @@ async function resolveActor(
     slackUserId: event.senderUserId,
     classification,
     operatorUserId: operator?.userId,
-    glassUserId,
+    spotUserId,
     displayName: event.senderDisplayName,
     createdAt: now,
     updatedAt: now,
@@ -401,14 +453,14 @@ export const claimInbound = internalMutation({
     if (settings?.slackEnabled !== true) {
       return { duplicate: false, status: "disabled" as const };
     }
-    const mentionsGlass = connection.botUserId
+    const mentionsSpot = connection.botUserId
       ? args.content.includes(`<@${connection.botUserId}>`)
       : false;
     if (
       args.eventType !== "delete" &&
       !args.isDirectMessage &&
       !identity.isPrimaryChannel &&
-      !mentionsGlass
+      !mentionsSpot
     ) {
       const activeThread = await ctx.db
         .query("threads")
@@ -450,8 +502,8 @@ export const claimInbound = internalMutation({
       canonicalEventKey: logicalEventKey,
       connectionId: connection._id,
       isPrimaryChannel: identity.isPrimaryChannel,
-      mentionsGlass,
-      mentionedBotUserId: mentionsGlass ? connection.botUserId : undefined,
+      mentionsSpot,
+      mentionedBotUserId: mentionsSpot ? connection.botUserId : undefined,
       status: "queued",
       attemptCount: 0,
       scheduledFor,
@@ -554,8 +606,8 @@ export const enrichInboundActor = internalMutation({
         : {}),
       ...(args.senderEmail ? { senderEmail: args.senderEmail } : {}),
       senderIsBot: args.senderIsBot,
-      mentionsGlass:
-        event.mentionsGlass ||
+      mentionsSpot:
+        eventMentionsSpot(event) ||
         Boolean(
           args.installationBotUserId &&
           event.content.includes(`<@${args.installationBotUserId}>`),
@@ -599,7 +651,7 @@ export const authorizeBatch = internalMutation({
       const actor = await resolveActor(ctx, connection, event);
       if (
         actor.classification !== "customer_member" &&
-        actor.classification !== "glass_operator"
+        !isSlackOperatorClassification(actor.classification)
       ) {
         await ctx.db.patch(event._id, {
           status: "ignored",
@@ -716,7 +768,8 @@ export const prepareBatch = internalMutation({
       }
 
       const authorizedCustomer = actor.classification === "customer_member";
-      const operator = actor.classification === "glass_operator";
+      const operator = isSlackOperatorClassification(actor.classification);
+      const actorUserId = slackActorUserId(actor);
       const isDirectMessage = event.isDirectMessage === true;
       const mentionedBotUserId =
         event.mentionedBotUserId ?? connection.botUserId;
@@ -724,7 +777,7 @@ export const prepareBatch = internalMutation({
         ? authorizedCustomer
         : event.isPrimaryChannel
           ? true
-          : event.mentionsGlass || existingThread?.slackState === "active";
+          : eventMentionsSpot(event) || existingThread?.slackState === "active";
       if (!shouldRecord) {
         await ctx.db.patch(event._id, { status: "ignored", updatedAt: now });
         continue;
@@ -750,7 +803,7 @@ export const prepareBatch = internalMutation({
       const privateOwnerId =
         !isDirectMessage && existingThread?.visibility === "user_private"
           ? existingThread.createdBy
-          : (actor.glassUserId ?? connection.serviceUserId);
+          : (actorUserId ?? connection.serviceUserId);
 
       let thread = existingThread;
       if (!thread) {
@@ -779,7 +832,7 @@ export const prepareBatch = internalMutation({
               ? "active"
               : (actor.classification === "customer_member" ||
                     (!event.isPrimaryChannel && operator)) &&
-                  event.mentionsGlass
+                  eventMentionsSpot(event)
                 ? "active"
                 : "resolved",
         });
@@ -821,8 +874,8 @@ export const prepareBatch = internalMutation({
         channel: "slack",
         role: "user",
         userId:
-          isDirectMessage && actor.glassUserId
-            ? actor.glassUserId
+          isDirectMessage && actorUserId
+            ? actorUserId
             : connection.serviceUserId,
         userName: actor.displayName,
         slackActorId: actor._id,
@@ -839,13 +892,13 @@ export const prepareBatch = internalMutation({
         archivedAt: undefined,
       });
 
-      if (operator && (event.isPrimaryChannel || !event.mentionsGlass)) {
+      if (operator && (event.isPrimaryChannel || !eventMentionsSpot(event))) {
         if (trigger) await ctx.db.delete(trigger.agentMessageId);
         trigger = undefined;
         await ctx.db.patch(thread._id, { slackState: "human_paused" });
       } else if (
         authorizedCustomer &&
-        (isDirectMessage || event.mentionsGlass) &&
+        (isDirectMessage || eventMentionsSpot(event)) &&
         isResolveCommand(event.content, mentionedBotUserId)
       ) {
         if (trigger) await ctx.db.delete(trigger.agentMessageId);
@@ -871,7 +924,7 @@ export const prepareBatch = internalMutation({
       } else if (
         (authorizedCustomer || operator) &&
         (isDirectMessage ||
-          event.mentionsGlass ||
+          eventMentionsSpot(event) ||
           thread.slackState === "active")
       ) {
         await ctx.db.patch(thread._id, { slackState: "active" });

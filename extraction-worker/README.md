@@ -1,4 +1,4 @@
-# Glass Extraction Worker
+# Spot Extraction Worker
 
 Standalone worker for long-running `cl-sdk` policy extraction jobs. Convex stays the durable job ledger; this service claims extract-phase work, sends heartbeats, saves SDK checkpoints, and returns the extracted document/chunks to Convex for embedding and post-processing.
 
@@ -32,7 +32,7 @@ Routing is opt-in per task:
 CL_ROUTER_URL=https://cl-router-dev.up.railway.app
 CL_ROUTER_SECRET=shared-router-secret
 CL_ROUTER_TASKS=extraction,extraction_preview
-CL_ROUTER_TENANT_ID=glass
+CL_ROUTER_TENANT_ID=glass # Stable internal key retained across the Spot rebrand
 CL_ROUTER_TIMEOUT_MS=180000
 ```
 

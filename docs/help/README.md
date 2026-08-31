@@ -1,6 +1,6 @@
-# Glass client help
+# Spot client help
 
-These guides explain how client teams communicate with Glass and how information
+These guides explain how client teams communicate with Spot and how information
 moves between the app, email, iMessage, Slack, and connected mailboxes.
 
 Start with [Client engagement channels](client-engagement/README.md) for a
@@ -15,7 +15,7 @@ setup steps or troubleshooting:
 - [Notifications and policy delivery](client-engagement/notifications-and-policy-delivery.md)
 - [Common service requests](client-engagement/service-requests.md)
 
-The labels in these guides match the current Glass app. Some settings are
-available only to client administrators, broker administrators, or Glass
+The labels in these guides match the current Spot app. Some settings are
+available only to client administrators, broker administrators, or Spot
 operators. If a setting is read-only, contact the administrator named in your
 workspace.

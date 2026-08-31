@@ -134,7 +134,7 @@ function AutoSaveStatusProvider({ children }: { children: ReactNode }) {
         className="pointer-events-none fixed inset-x-0 z-[70] flex justify-center px-4"
         style={{
           bottom:
-            "calc(var(--glass-app-bottom-inset, 0px) + env(safe-area-inset-bottom) + 1.5rem)",
+            "calc(var(--spot-app-bottom-inset, 0px) + env(safe-area-inset-bottom) + 1.5rem)",
         }}
       >
         {status === "saving" ? (

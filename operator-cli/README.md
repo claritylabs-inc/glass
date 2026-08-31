@@ -1,6 +1,6 @@
-# Glass Operator CLI
+# Spot Operator CLI
 
-Private CLI for provisioning Glass broker accounts without using the web app.
+Private CLI for provisioning Spot broker accounts without using the web app.
 
 ## Install
 
@@ -8,7 +8,7 @@ From a private npm publish:
 
 ```sh
 printf '@claritylabs-inc:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}\n' > ~/.npmrc
-npm install -g @claritylabs-inc/glass-operator
+npm install -g @claritylabs-inc/spot-operator
 ```
 
 `GITHUB_PACKAGES_TOKEN` must be a GitHub token with `read:packages` access to
@@ -19,7 +19,7 @@ From a packed tarball:
 
 ```sh
 npm pack
-npm install -g claritylabs-inc-glass-operator-0.1.0.tgz
+npm install -g claritylabs-inc-spot-operator-0.1.0.tgz
 ```
 
 ## Auth
@@ -29,32 +29,38 @@ stores the operator token locally and signs requests with HMAC; the raw token is
 not sent to Convex.
 
 ```sh
-glass-operator auth:login \
+spot-operator auth:login \
   --convex-url https://your-deployment.convex.cloud \
   --token "$OPERATOR_PROVISIONING_SECRET"
 
-glass-operator auth:check
+spot-operator auth:check
 ```
 
 For agent runs, environment variables can replace local config:
 
 ```sh
-export GLASS_CONVEX_URL=https://your-deployment.convex.cloud
-export GLASS_OPERATOR_TOKEN=...
-glass-operator auth:check
+export SPOT_CONVEX_URL=https://your-deployment.convex.cloud
+export SPOT_OPERATOR_TOKEN=...
+spot-operator auth:check
 ```
 
 This repository's setup uses named profiles:
 
 ```sh
-glass-operator --profile dev auth:check
-glass-operator --profile prod auth:check
+spot-operator --profile dev auth:check
+spot-operator --profile prod auth:check
 ```
+
+Profiles are stored under `~/.spot/operator`. On first use, the Spot CLI copies
+an existing profile from `~/.glass/operator` without deleting it, preserving a
+rollback path for operators upgrading from the legacy CLI.
+`SPOT_OPERATOR_PROFILE` selects a profile for automation; during the rollout,
+the legacy `GLASS_OPERATOR_PROFILE` remains a lower-precedence fallback.
 
 ## Provision Broker
 
 ```sh
-glass-operator provision-broker \
+spot-operator provision-broker \
   --name "Acme Insurance" \
   --slug acme-insurance \
   --admin-email jane@acme.com \
@@ -67,7 +73,7 @@ glass-operator provision-broker \
 Seed draft clients:
 
 ```sh
-glass-operator provision-broker \
+spot-operator provision-broker \
   --name "Acme Insurance" \
   --admin-email jane@acme.com \
   --client "Example Co|risk@example.com|https://example.com"
@@ -76,5 +82,5 @@ glass-operator provision-broker \
 JSON input for Codex/Claude Code:
 
 ```sh
-glass-operator provision-broker --input broker.json --json
+spot-operator provision-broker --input broker.json --json
 ```

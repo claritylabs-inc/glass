@@ -23,7 +23,7 @@ beforeEach(() => {
   vi.stubEnv("SLACK_ENABLED", "true");
   vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example.test");
   vi.stubEnv("SLACK_WORKER_SECRET", "worker-secret");
-  vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-GLASS");
+  vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-SPOT");
 });
 
 afterEach(() => {
@@ -38,16 +38,16 @@ async function seedOperator(t: ReturnType<typeof convexTest>) {
       type: "client",
     });
     const operatorUserId = await ctx.db.insert("users", {
-      name: "Glass Operator",
-      email: "operator@glass.insure",
+      name: "Spot Operator",
+      email: "operator@spot.insure",
       accountKind: "operator",
     });
     await ctx.db.insert("operatorProfiles", {
       userId: operatorUserId,
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       role: "operator",
       status: "active",
-      slackTeamId: "T-GLASS",
+      slackTeamId: "T-SPOT",
       slackUserId: "U-OPERATOR",
       createdAt: 1,
       updatedAt: 1,
@@ -71,7 +71,7 @@ describe("Slack Connect onboarding action", () => {
       async (_input: string | URL | Request, _init?: RequestInit) =>
         jsonResponse({
           channelId: "C-HOST",
-          channelName: "glass-onboarding-client",
+          channelName: "spot-onboarding-client",
           inviteId: "INVITE-1",
         }),
     );
@@ -87,7 +87,7 @@ describe("Slack Connect onboarding action", () => {
     expect(result).toMatchObject({
       created: true,
       channelId: "C-HOST",
-      channelName: "glass-onboarding-client",
+      channelName: "spot-onboarding-client",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://slack-worker.example.test/connect-channel",
@@ -110,9 +110,9 @@ describe("Slack Connect onboarding action", () => {
     }));
     expect(records.binding).toMatchObject({
       clientOrgId,
-      hostTeamId: "T-GLASS",
+      hostTeamId: "T-SPOT",
       hostChannelId: "C-HOST",
-      channelName: "glass-onboarding-client",
+      channelName: "spot-onboarding-client",
       status: "active",
     });
     expect(records.audits).toMatchObject([
@@ -121,7 +121,7 @@ describe("Slack Connect onboarding action", () => {
         targetOrgId: clientOrgId,
         type: "setup_write",
         summary:
-          "Created #glass-onboarding-client as the primary Slack service channel",
+          "Created #spot-onboarding-client as the primary Slack service channel",
       },
     ]);
   });
@@ -133,21 +133,21 @@ describe("Slack Connect onboarding action", () => {
       for (const operator of [
         {
           name: "Unlinked Operator",
-          email: "unlinked@glass.insure",
+          email: "unlinked@spot.insure",
           status: "active" as const,
         },
         {
           name: "Mismatched Operator",
-          email: "mismatch@glass.insure",
+          email: "mismatch@spot.insure",
           status: "active" as const,
           slackTeamId: "T-OTHER",
           slackUserId: "U-MISMATCH",
         },
         {
           name: "Disabled Operator",
-          email: "disabled@glass.insure",
+          email: "disabled@spot.insure",
           status: "disabled" as const,
-          slackTeamId: "T-GLASS",
+          slackTeamId: "T-SPOT",
           slackUserId: "U-DISABLED",
         },
       ]) {
@@ -181,7 +181,7 @@ describe("Slack Connect onboarding action", () => {
         requestCount += 1;
         return jsonResponse({
           channelId: "C-HOST",
-          channelName: "glass-onboarding-client",
+          channelName: "spot-onboarding-client",
           reusedChannel: requestCount > 1,
           operatorInvites:
             requestCount === 1
@@ -214,13 +214,13 @@ describe("Slack Connect onboarding action", () => {
       manualSetupRequired: true,
       reason: "restricted_action",
       omittedOperators: [
-        { email: "unlinked@glass.insure", reason: "Not linked to Slack" },
+        { email: "unlinked@spot.insure", reason: "Not linked to Slack" },
         {
-          email: "mismatch@glass.insure",
+          email: "mismatch@spot.insure",
           reason: "Linked to a different workspace",
         },
         {
-          email: "disabled@glass.insure",
+          email: "disabled@spot.insure",
           reason: "Operator is disabled",
         },
       ],
@@ -249,7 +249,7 @@ describe("Slack Connect onboarding action", () => {
     );
     expect(retryBody).toMatchObject({
       existingChannelId: "C-HOST",
-      existingChannelName: "glass-onboarding-client",
+      existingChannelName: "spot-onboarding-client",
       operatorUserIds: ["U-OPERATOR"],
     });
     const retried = await t.run(async (ctx) => ({
@@ -289,10 +289,10 @@ describe("Slack Connect onboarding action", () => {
         connectionId,
         clientOrgId,
         kind: "primary",
-        hostTeamId: "T-GLASS",
+        hostTeamId: "T-SPOT",
         hostChannelId: "C-HOST",
         customerChannelId: "C-OLD",
-        channelName: "glass-client",
+        channelName: "spot-client",
         status: "active",
         createdAt: 1,
         updatedAt: 1,
@@ -303,7 +303,7 @@ describe("Slack Connect onboarding action", () => {
         channels: [
           {
             id: "C-OLD",
-            name: "glass-client",
+            name: "spot-client",
             isMember: true,
             isPrivate: true,
             isShared: true,
@@ -335,7 +335,7 @@ describe("Slack Connect onboarding action", () => {
       channels: [
         {
           id: "C-OLD",
-          name: "glass-client",
+          name: "spot-client",
           isMember: true,
           isPrivate: true,
           isShared: true,
@@ -377,7 +377,7 @@ describe("Slack Connect onboarding action", () => {
         body: JSON.stringify({
           teamId: "T-CUSTOMER",
           currentChannelId: "C-OLD",
-          currentChannelName: "glass-client",
+          currentChannelName: "spot-client",
         }),
       }),
     );
@@ -394,7 +394,7 @@ describe("Slack Connect onboarding action", () => {
     }));
     expect(records.binding).toMatchObject({
       customerChannelId: "C-OLD",
-      channelName: "glass-client",
+      channelName: "spot-client",
     });
     expect(records.connection).toMatchObject({
       automaticChannelId: "C-NEW",
@@ -413,13 +413,13 @@ describe("Slack Connect onboarding action", () => {
       .action(listAvailableChannelsFn, { clientOrgId });
     await expect(t.run((ctx) => ctx.db.get(bindingId))).resolves.toMatchObject({
       customerChannelId: "C-NEW",
-      channelName: "glass-client",
+      channelName: "spot-client",
       status: "unavailable",
       unavailableReason: "channel_unshared",
     });
   });
 
-  test("adds Glass to a public channel and syncs the joined inventory", async () => {
+  test("adds Spot to a public channel and syncs the joined inventory", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, operatorUserId } = await seedOperator(t);
     await t.run(async (ctx) => {
@@ -487,10 +487,10 @@ describe("Slack Connect onboarding action", () => {
     expect(records.memberships).toMatchObject([
       { channelId: "C-INSURANCE", channelName: "insurance", status: "active" },
     ]);
-    expect(records.audits.at(-1)?.summary).toBe("Added Glass to #insurance");
+    expect(records.audits.at(-1)?.summary).toBe("Added Spot to #insurance");
   });
 
-  test("removes Glass from a public channel and clears a removed default", async () => {
+  test("removes Spot from a public channel and clears a removed default", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, operatorUserId } = await seedOperator(t);
     await t.run(async (ctx) => {
@@ -579,7 +579,7 @@ describe("Slack Connect onboarding action", () => {
       { channelId: "C-INSURANCE", status: "removed" },
     ]);
     expect(records.audits.at(-1)?.summary).toBe(
-      "Removed Glass from #insurance",
+      "Removed Spot from #insurance",
     );
   });
 
@@ -632,7 +632,7 @@ describe("Slack Connect onboarding action", () => {
           clientSlug: "onboarding-client",
           inviteEmail: "admin@client.test",
         }),
-    ).rejects.toThrow("Glass operator");
+    ).rejects.toThrow("Spot operator");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

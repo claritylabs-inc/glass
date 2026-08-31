@@ -1,14 +1,14 @@
 # Slack workspace app and shared support channel
 
-Slack is Glass's privileged client support and collaboration surface. Email and
-iMessage remain AI-only. A Slack-enabled client installs Glass once in its
+Slack is Spot's privileged client support and collaboration surface. Email and
+iMessage remain AI-only. A Slack-enabled client installs Spot once in its
 workspace, then may add the app to any number of channels. Separately, Clarity
-Labs creates and invites the client to one private `#glass-<client-slug>` Slack
-Connect support channel hosted by `claritylabsinc.slack.com`. Glass operators
+Labs creates and invites the client to one private `#spot-<client-slug>` Slack
+Connect support channel hosted by `claritylabsinc.slack.com`. Spot operators
 answer there with their normal Slack identities. Convex stores the canonical
 conversation, agent actions, delivery evidence, retries, and failures.
 
-Glass owns one native Slack app:
+Spot owns one native Slack app:
 
 - `slack-worker/manifests/production.json` configures production app
   `A0BMW4TG7JB` against `merry-platypus-82`.
@@ -70,7 +70,7 @@ Customer OAuth requests the narrower set in
 creation and invitations. Enable app distribution before sending customer
 install links. Adding `channels:join` and `channels:write` requires applying the updated manifest and
 having existing installations, including the Clarity host installation,
-authorize the expanded scope before the web app can add Glass to or remove Glass
+authorize the expanded scope before the web app can add Spot to or remove Spot
 from public channels for customers.
 
 ## Request and credential boundaries
@@ -161,12 +161,12 @@ an audited rebind; canonical threads and automation preferences are preserved.
 - `users.info` to resolve a Slack Connect sender's native workspace before
   Convex authorizes that actor;
 - `conversations.list` to return every visible public channel plus private or
-  shared channels where Glass is already a member;
-- `conversations.join` to add Glass to a selected public workspace channel;
+  shared channels where Spot is already a member;
+- `conversations.join` to add Spot to a selected public workspace channel;
 - `conversations.create` and `conversations.inviteShared` using the separate
   Clarity-host installation.
 
-Private and Slack Connect channels cannot be joined from Glass. A Slack member
+Private and Slack Connect channels cannot be joined from Spot. A Slack member
 must add the app from Slack, after which the next channel inventory sync reports
 the membership. The worker exposes channel, Block Kit, message-update,
 assistant-status, streaming, and interaction-response capabilities in health
@@ -196,13 +196,13 @@ Convex requires:
 | `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret                              |
 | `NEXT_PUBLIC_APP_URL` or `APP_URL`        | Post-OAuth settings redirect                                     |
 
-The Railway worker requires `GLASS_ENV`, `SLACK_WORKER_MODE`,
+The Railway worker requires `SPOT_ENV`, `SLACK_WORKER_MODE`,
 `SLACK_WORKER_SECRET`, and `PORT`. Native live mode additionally requires
 `CONVEX_SITE_URL` and `SLACK_CLARITY_TEAM_ID`. The worker retrieves both host
 and customer installations through the token broker. The worker and Convex must
 use the same mode and worker secret.
 
-Use `GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
+Use `SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL` for release checks. Native worker
 health must report `tokenBrokerConfigured`, `outboundEnabled`,
 `actorResolutionEnabled`, `clarityTeamConfigured`, `channelInventoryEnabled`,
 `publicChannelJoinEnabled`, `blockKitEnabled`, `messageUpdatesEnabled`,
@@ -216,51 +216,51 @@ cannot prove that OAuth installation exists.
 
 1. An operator uses `/operator/channels` to OAuth-install the matching native app in
    the Clarity workspace, persisting its rotating credentials in Convex.
-2. A Glass operator records their Clarity `{teamId,userId}` identity.
-3. The operator creates `#glass-<client-slug>` and sends the Slack Connect
+2. A Spot operator records their Clarity `{teamId,userId}` identity.
+3. The operator creates `#spot-<client-slug>` and sends the Slack Connect
    invitation. Plan/policy failures fall back to audited manual binding.
 4. The operator sends the selected client contact the same lane's app-install
    invitation. The client accepts OAuth in their workspace; accepting the
    Connect invitation is not app install.
-5. In Glass, an operator or client admin may add the app to any visible public
+5. In Spot, an operator or client admin may add the app to any visible public
    workspace channel or remove it from one. For private and Slack Connect
-   channels, a Slack member manages the app in Slack and Glass discovers the
+   channels, a Slack member manages the app in Slack and Spot discovers the
    joined channel on sync.
 6. A channel sync verifies the selected customer-side support mirror by its
    persisted ID. Missing, unshared, ambiguous, or renamed channels never cause
    name-based reassociation; an operator must make an audited rebind when Slack
    cannot authoritatively update the ID.
 7. Designate the automatic alerts-and-delivery channel and confirm its health.
-   Glass still responds in every joined channel; this selection affects only
+   Spot still responds in every joined channel; this selection affects only
    automatic alerts and document delivery. Safe customer alerts and policy
    delivery default on; vendor alerts default off.
 
 Support-channel messages are canonical from connection onward. A mention starts
 or resumes AI, unmentioned customer replies continue an active thread, an
-operator reply pauses AI, and `@Glass resolve` closes the thread. Outside the
+operator reply pauses AI, and `@Spot resolve` closes the thread. Outside the
 support channel, only mentions and active-thread replies are retained. A human
 request posts only a content-free link notice into the support channel. Private
 non-support channels fail closed in the web mirror: the thread is visible only
-to the first mapped Glass member who starts it, or remains Slack-only when no
+to the first mapped Spot member who starts it, or remains Slack-only when no
 current client member can be mapped. A new inbound Slack message automatically
 restores an archived mirror so current activity cannot remain hidden.
 Slack message deletions scrub the mirrored message content, stored attachments,
 edit revisions, and retained inbound event payloads without running the agent.
 
 The App Home Messages tab provides one continuous direct conversation between
-Glass and each customer workspace member. DMs do not require an `@Glass`
+Spot and each customer workspace member. DMs do not require an `@Spot`
 mention and are keyed by the Slack DM channel rather than each message timestamp.
 Top-level messages receive top-level replies; when a user replies inside a Slack
 thread, the answer and its files stay in that thread. `users.info` returns the
 profile email under the required `users:read.email` scope. When that email matches
-a current Glass user with membership in the connected client org, Convex records
+a current Spot user with membership in the connected client org, Convex records
 the web mirror as `visibility: "user_private"` with that user as `createdBy`; otherwise the DM
 continues in Slack but remains absent from the shared web tenant. Multiparty DMs
 remain unsupported.
 
 The web app keeps the eight most recent Slack conversations pinned above
 ordinary web/email threads and provides an All threads page for every older
-active conversation. Slack-origin threads are read-only in Glass, link back to
+active conversation. Slack-origin threads are read-only in Spot, link back to
 Slack, and show a private affordance for `user_private` mirrors. Outbound agent
 messages expose retrying or terminal Slack delivery state instead of presenting
 an undelivered answer as successful.
@@ -268,7 +268,7 @@ an undelivered answer as successful.
 ## Rich responses and interactions
 
 Every Slack agent run creates one durable `slackMessagePresentations` row before
-delivery. Glass immediately adds the default `eyes` reaction to the triggering
+delivery. Spot immediately adds the default `eyes` reaction to the triggering
 user message, then requires the Slack model to choose one context-appropriate
 built-in reaction through `choose_slack_reaction` before its other tools. The
 selected reaction is removed on both success and failure and is not included in
@@ -282,7 +282,7 @@ The final renderer uses current Slack `card`, `context_actions`, and
 `feedback_buttons` primitives. If Slack rejects a newer block type for a
 particular surface, that same message is retried immediately with classic
 `section` and `actions` blocks. This automatic protocol degradation is part of
-the renderer and is not a rollout gate. If both renderers fail, Glass preserves
+the renderer and is not a rollout gate. If both renderers fail, Spot preserves
 the existing durable plaintext-and-attachment fallback.
 
 Interactive payloads use the same five-minute signature and raw-body validation
@@ -293,7 +293,7 @@ message, connection, tenant, and resolved Slack actor. It idempotently records
 `slackInteractionEvents`, stores one `agentResponseFeedback` row per actor and
 response, opens an optional detail modal after negative feedback, and routes
 human requests through the existing audited handoff mutation. URL buttons
-remain ordinary access-controlled Glass deep links.
+remain ordinary access-controlled Spot deep links.
 
 ## Policy-delivery migration
 
@@ -357,7 +357,7 @@ For local testing after `npm run conductor:setup` and while
 `npm run conductor:dev` is running:
 
 ```bash
-npm run conductor:slack-fixture -- --text "<@U-GLASS> summarize my policy"
+npm run conductor:slack-fixture -- --text "<@U-SPOT> summarize my policy"
 ```
 
 The command signs a native Slack Events API fixture with the worktree-only

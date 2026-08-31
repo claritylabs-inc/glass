@@ -280,7 +280,7 @@ async function processInstallationEvent(
     return {
       status: "ignored" as const,
       connection,
-      summary: "Revoked tokens did not include the Glass bot identity",
+      summary: "Revoked tokens did not include the Spot bot identity",
     };
   }
   if (

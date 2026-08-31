@@ -10,7 +10,7 @@ import {
   AuthCard,
   AuthMinimalShell,
   BrandWordmark,
-  PoweredByGlassWordmark,
+  PoweredBySpotWordmark,
 } from "@/components/auth-shell";
 import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
@@ -181,7 +181,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
 
   if (fetching) {
     return (
-      <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+      <AuthMinimalShell footer={<PoweredBySpotWordmark />}>
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </AuthMinimalShell>
     );
@@ -189,7 +189,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
 
   if (fetchError || !requestData) {
     return (
-      <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+      <AuthMinimalShell footer={<PoweredBySpotWordmark />}>
         <AuthCard title="Invite unavailable" subtitle={fetchError ?? "Invite not found"} logo={<BrandWordmark />}>
           <p className={`text-muted-foreground ${typeStyle("body.default")}`}>Ask the client to resend the vendor invite.</p>
         </AuthCard>
@@ -208,7 +208,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
       : undefined;
 
   return (
-    <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+    <AuthMinimalShell footer={<PoweredBySpotWordmark />}>
       <AuthCard title={title} subtitle={subtitle} logo={<BrandWordmark />}>
         {autoVerifying ? (
           <div className={`flex items-center gap-3 text-muted-foreground ${typeStyle("body.default")}`}>

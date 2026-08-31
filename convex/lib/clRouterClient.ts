@@ -7,6 +7,8 @@ import {
   type ModelTask,
 } from "./modelCatalog";
 
+// Preserve Spot's original opaque routing key so production policy history,
+// controls, ratings, affinity, and telemetry remain one continuous tenant.
 const CL_ROUTER_TENANT_ID = "glass";
 const DEFAULT_CL_ROUTER_TIMEOUT_MS = 180_000;
 const MIN_CL_ROUTER_TIMEOUT_MS = 30_000;
@@ -914,7 +916,7 @@ function nestedErrorCode(value: unknown, depth = 0): string | undefined {
 }
 
 function isProductionEnvironment(environment: ClRouterEnvironment): boolean {
-  return clean(environment.GLASS_ENV)?.toLowerCase() === "production";
+  return clean(environment.SPOT_ENV)?.toLowerCase() === "production";
 }
 
 export function isClRouterDirectFallbackError(

@@ -35,9 +35,9 @@ current user in the current organization.
    event.
 3. Leave an event on **Default** when it should follow the global choice.
 
-If you have never set a default, Glass emails warning and critical events,
+If you have never set a default, Spot emails warning and critical events,
 does not email informational events, and keeps text delivery off. Text delivery
-requires the correct phone number on your Glass profile and an available
+requires the correct phone number on your Spot profile and an available
 iMessage channel.
 
 These settings control email and text copies. The underlying workspace event
@@ -50,10 +50,10 @@ separate from vendor alerts.
 ## Automatic policy delivery
 
 Open **Settings → Workflows → Delivery**. After a bound policy or endorsement
-finishes processing, Glass can deliver its PDF through client-owned email,
+finishes processing, Spot can deliver its PDF through client-owned email,
 iMessage, and Slack channels.
 
-Client administrators and Glass operators can edit the client's delivery
+Client administrators and Spot operators can edit the client's delivery
 settings. A client may inherit broker defaults until an authorized person adds
 a client-specific override.
 
@@ -71,7 +71,7 @@ The available outcomes are:
 
 - **Send automatically** — send as soon as all delivery checks pass.
 - **Hold for broker review** — create a review item before sending.
-- **Hold for Glass service review** — route the item to the Glass service team.
+- **Hold for Spot service review** — route the item to the Spot service team.
 - **Do not send** — retain the record without automatic delivery.
 
 ### Delivery rules
@@ -85,7 +85,7 @@ Write conditions so a reviewer can tell why they matched. For example:
 
 `Hold for broker review when an endorsement changes the named insured or adds an exclusion.`
 
-If a condition cannot be evaluated confidently, Glass holds the delivery for
+If a condition cannot be evaluated confidently, Spot holds the delivery for
 review rather than assuming it should send.
 
 ### Channel requirements
@@ -96,7 +96,7 @@ review rather than assuming it should send.
 | iMessage | A usable client phone number and available iMessage channel                               |
 | Slack    | Active Slack connection, policy-delivery automation on, and an automatic channel selected |
 
-Glass resolves the recipient from saved client contacts and membership data.
+Spot resolves the recipient from saved client contacts and membership data.
 Review the primary contact's name, email, and phone before enabling automatic
 delivery. A multi-channel job may succeed on one channel and remain blocked or
 failed on another; check the recorded attempts.
@@ -121,7 +121,7 @@ attempt rather than creating an unrelated duplicate delivery.
 ## Certificate renewal workflow
 
 Under **Settings → Workflows → Certificates**, **Update certificates on
-renewal** controls whether Glass reviews active certificates and prepares
+renewal** controls whether Spot reviews active certificates and prepares
 updated versions when a renewed policy is uploaded. Prepared certificates may
 still require source completion or review before they can be sent.
 

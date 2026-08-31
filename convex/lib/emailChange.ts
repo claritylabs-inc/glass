@@ -21,7 +21,7 @@ export async function sendEmailChangeVerificationEmail({
     {
       from: getAuthFromAddress(),
       to,
-      subject: "Confirm your Glass email change",
+      subject: "Confirm your Spot email change",
       html,
       text,
     },

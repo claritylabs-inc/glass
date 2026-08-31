@@ -48,7 +48,7 @@ import {
   useArchivedThreadCacheActions,
   useCachedAgentTargets,
   useThreadCacheActions,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { Button } from "@/components/ui/button";
 import { MessageMetaTag } from "@/components/ui/message-meta-tag";
 import { PillButton } from "@/components/ui/pill-button";
@@ -62,9 +62,9 @@ import {
 } from "@/components/context-reference-card";
 import {
   ChatInputOverlay,
-  GlassPromptInput,
-  type GlassPromptInputHandle,
-} from "@/components/glass-prompt-input";
+  SpotPromptInput,
+  type SpotPromptInputHandle,
+} from "@/components/spot-prompt-input";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
@@ -950,7 +950,7 @@ function UnifiedThreadActions({
     for (const msg of messages) {
       if (msg.status === "processing") continue;
       const time = formatDisplayDateTime(msg._creationTime);
-      const sender = msg.role === "agent" ? "Glass" : messageSenderName(msg);
+      const sender = msg.role === "agent" ? "Spot" : messageSenderName(msg);
       const channel =
         msg.channel === "email"
           ? " [Email]"
@@ -1134,7 +1134,7 @@ export function AgentThinkingBubble() {
     <div
       role="status"
       aria-live="polite"
-      aria-label="Glass is thinking"
+      aria-label="Spot is thinking"
       className="inline-flex h-9 items-center gap-1 rounded-lg bg-foreground/[0.03] px-3"
     >
       {[0, 160, 320].map((delay) => (
@@ -1158,7 +1158,7 @@ export function WebMessageReceipt({
   return (
     <div
       className={`mt-1 flex items-center justify-end gap-1 text-muted-foreground/45 ${typeStyle("caption.default")}`}
-      aria-label={isRead ? "Read by Glass" : "Delivered to Glass"}
+      aria-label={isRead ? "Read by Spot" : "Delivered to Spot"}
     >
       {isRead ? (
         <CheckCheck className="h-3 w-3" aria-hidden="true" />
@@ -1198,7 +1198,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   threadContext?: { pageType: string; entityId?: string; summary?: string };
   /** When true, render agent messages as if sent "by the broker" — right-aligned. */
   brokerPerspective?: boolean;
-  /** Optional branding — when set, replaces generic "Glass" + asterisk on agent bubble. */
+  /** Optional branding — when set, replaces generic "Spot" + asterisk on agent bubble. */
   agentBranding?: { name: string; iconUrl?: string | null };
   collapseEmailMessages?: boolean;
   onOpenEmail?: (message: ThreadMessage) => void;
@@ -1224,7 +1224,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
     [agentTargets, msg, threadContext],
   );
 
-  // Processing stays intentionally opaque: Glass reads the message, thinks,
+  // Processing stays intentionally opaque: Spot reads the message, thinks,
   // then publishes one complete response like the other conversation channels.
   if (msg.role === "agent" && msg.status === "processing") {
     return (
@@ -1252,7 +1252,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <p className={`text-muted-foreground/60 ${typeStyle("caption.medium")}`}>
-              {agentBranding?.name ?? "Glass"}
+              {agentBranding?.name ?? "Spot"}
             </p>
             {channelIcon}
             <CancelButton messageId={msg._id} show />
@@ -1355,7 +1355,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             >
               <div className="flex items-center gap-2 min-w-0">
                 <p className={`shrink-0 text-muted-foreground/60 ${typeStyle("caption.medium")}`}>
-                  {agentBranding?.name ?? "Glass"}
+                  {agentBranding?.name ?? "Spot"}
                 </p>
                 {msg.channel === "email" && !collapseEmailMessages ? (
                   <EmailRecipientMeta
@@ -1847,7 +1847,7 @@ export function UnifiedThreadContent({
     initial: "instant",
     resize: "instant",
   });
-  const chatInputRef = useRef<GlassPromptInputHandle>(null);
+  const chatInputRef = useRef<SpotPromptInputHandle>(null);
   const lastAutoOpenedEmailId = useRef<string | null>(null);
   const autoOpenPdfThreadId = useRef<string | null>(null);
   const seenAssistantPdfKeys = useRef<Set<string>>(new Set());
@@ -1974,7 +1974,7 @@ export function UnifiedThreadContent({
           thread.visibility === "user_private" ? (
             <span
               className={`inline-flex shrink-0 items-center gap-1 text-muted-foreground/45 ${typeStyle("caption.medium")}`}
-              title="Only you can see this thread in Glass"
+              title="Only you can see this thread in Spot"
             >
               <LockKeyhole className="h-3 w-3" />
               Private
@@ -2347,7 +2347,7 @@ export function UnifiedThreadContent({
                 onCancel={() => setQueuedMessage(null)}
               />
             ) : null}
-            <GlassPromptInput
+            <SpotPromptInput
               ref={chatInputRef}
               onSubmit={handleSend}
               placeholder="Reply to this thread..."

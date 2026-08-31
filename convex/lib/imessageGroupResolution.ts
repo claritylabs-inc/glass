@@ -131,7 +131,7 @@ export function buildImessageRosterContext(params: {
       : "";
     const orgName = participant.orgId
       ? params.orgNamesById[String(participant.orgId)] ?? "linked org"
-      : "not linked to a Glass org";
+      : "not linked to a Spot org";
     return `- ${label}${current}: ${participant.address}; ${orgName}`;
   });
 

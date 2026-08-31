@@ -29,8 +29,8 @@ function argValue(name) {
 const DEPLOYMENT_ENV =
   argValue("env") ??
   argValue("environment") ??
-  process.env.GLASS_DEPLOYMENT_ENV ??
-  process.env.GLASS_ENV ??
+  process.env.SPOT_DEPLOYMENT_ENV ??
+  process.env.SPOT_ENV ??
   "production";
 
 const deployment = DEPLOYMENTS[DEPLOYMENT_ENV];
@@ -57,7 +57,7 @@ function envOrDefault(envName, defaultValue, label) {
 }
 
 function optionalClRouterHealthUrl() {
-  const explicit = process.env.GLASS_CL_ROUTER_HEALTH_URL?.trim();
+  const explicit = process.env.SPOT_CL_ROUTER_HEALTH_URL?.trim();
   if (explicit) return explicit;
   if (deployment.clRouterHealthUrlEnv || deployment.clRouterHealthUrl) {
     return envOrDefault(
@@ -72,7 +72,7 @@ function optionalClRouterHealthUrl() {
 function optionalSlackWorkerHealthUrl() {
   if (!deployment.slack?.required) return undefined;
 
-  const explicit = process.env.GLASS_SLACK_WORKER_HEALTH_URL?.trim();
+  const explicit = process.env.SPOT_SLACK_WORKER_HEALTH_URL?.trim();
   if (explicit) return explicit;
   const configured = deployment.slackWorkerHealthUrlEnv
     ? process.env[deployment.slackWorkerHealthUrlEnv]?.trim()
@@ -88,21 +88,21 @@ function optionalSlackWorkerHealthUrl() {
 
 const urls = {
   convexAgentHealth:
-    process.env.GLASS_CONVEX_AGENT_HEALTH_URL ??
+    process.env.SPOT_CONVEX_AGENT_HEALTH_URL ??
     envOrDefault(
       deployment.convexAgentHealthUrlEnv,
       deployment.convexAgentHealthUrl,
       "Convex agent health URL",
     ),
   imessageWorkerHealth:
-    process.env.GLASS_IMESSAGE_WORKER_HEALTH_URL ??
+    process.env.SPOT_IMESSAGE_WORKER_HEALTH_URL ??
     envOrDefault(
       deployment.imessageWorkerHealthUrlEnv,
       deployment.imessageWorkerHealthUrl,
       "iMessage worker health URL",
     ),
   extractionWorkerHealth:
-    process.env.GLASS_EXTRACTION_WORKER_HEALTH_URL ??
+    process.env.SPOT_EXTRACTION_WORKER_HEALTH_URL ??
     envOrDefault(
       deployment.extractionWorkerHealthUrlEnv,
       deployment.extractionWorkerHealthUrl,
@@ -112,11 +112,11 @@ const urls = {
   slackWorkerHealth: optionalSlackWorkerHealthUrl(),
 };
 
-function validateGlassEnv(payload) {
-  if (!payload.glassEnv) return;
-  if (payload.glassEnv !== deployment.glassEnv) {
+function validateSpotEnv(payload) {
+  if (!payload.spotEnv) return;
+  if (payload.spotEnv !== deployment.spotEnv) {
     throw new Error(
-      `glassEnv expected ${deployment.glassEnv} got ${String(payload.glassEnv)}`,
+      `spotEnv expected ${deployment.spotEnv} got ${String(payload.spotEnv)}`,
     );
   }
 }
@@ -162,9 +162,9 @@ const checks = [
                 `reported status=${String(payload.status)} database=${String(payload.database)}`,
               );
             }
-            if (payload.environment !== deployment.glassEnv) {
+            if (payload.environment !== deployment.spotEnv) {
               throw new Error(
-                `environment expected ${deployment.glassEnv} got ${String(payload.environment)}`,
+                `environment expected ${deployment.spotEnv} got ${String(payload.environment)}`,
               );
             }
             if (
@@ -189,7 +189,7 @@ const checks = [
       if (payload.ok !== true) {
         throw new Error(`reported ok=${String(payload.ok)}`);
       }
-      validateGlassEnv(payload);
+      validateSpotEnv(payload);
       const missing = Object.entries(payload.checks ?? {})
         .filter(([, value]) => value !== true)
         .map(([key]) => key);
@@ -248,7 +248,7 @@ const checks = [
     validate(payload) {
       const expected = {
         ok: true,
-        service: "glass-imessage-worker",
+        service: "spot-imessage-worker",
         transport: deployment.imessage.transport,
         imessageEnabled: deployment.imessage.imessageEnabled,
         convexSiteConfigured: true,
@@ -264,7 +264,7 @@ const checks = [
       if (failures.length > 0) {
         throw new Error(failures.join("; "));
       }
-      validateGlassEnv(payload);
+      validateSpotEnv(payload);
       for (const port of deployment.imessage.requiredHttpPorts ?? []) {
         if (
           !Array.isArray(payload.httpPorts) ||
@@ -282,7 +282,7 @@ const checks = [
       if (payload.ok !== true) {
         throw new Error(`reported ok=${String(payload.ok)}`);
       }
-      validateGlassEnv(payload);
+      validateSpotEnv(payload);
       const expectedProtocol = deployment.workers?.extractionProtocol;
       if (
         expectedProtocol &&
@@ -336,7 +336,7 @@ const checks = [
           validate(payload) {
             const expected = {
               ok: true,
-              service: "glass-slack-worker",
+              service: "spot-slack-worker",
               mode: deployment.slack.mode,
               workerSecretConfigured: true,
               tokenBrokerConfigured: true,
@@ -362,7 +362,7 @@ const checks = [
                   `${key} expected ${String(value)} got ${String(payload[key])}`,
               );
             if (failures.length > 0) throw new Error(failures.join("; "));
-            validateGlassEnv(payload);
+            validateSpotEnv(payload);
           },
         },
       ]

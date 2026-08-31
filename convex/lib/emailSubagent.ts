@@ -248,7 +248,7 @@ export function buildEmailExpertTool(
 ) {
   return tool({
     description:
-      "Delegate email drafting, formatting, attachment selection, and validated sending to the Glass email expert. Use this whenever the user asks to draft, send, forward, or attach documents to an email.",
+      "Delegate email drafting, formatting, attachment selection, and validated sending to the Spot email expert. Use this whenever the user asks to draft, send, forward, or attach documents to an email.",
     inputSchema: z.object({
       request: z
         .string()
@@ -266,7 +266,7 @@ export function buildEmailExpertTool(
       deliveryIntent: z
         .enum(["draft", "send"])
         .describe(
-          "Use send only when the current user message affirmatively asks Glass to send, email, forward, or deliver now. Use draft for draft-only requests, questions about sending, negated sends, and uncertain intent.",
+          "Use send only when the current user message affirmatively asks Spot to send, email, forward, or deliver now. Use draft for draft-only requests, questions about sending, negated sends, and uncertain intent.",
         ),
       cc: z.array(z.string()).optional().describe("CC email addresses."),
       bcc: z.array(z.string()).optional().describe("BCC email addresses."),
@@ -725,7 +725,7 @@ async function runEmailSubagent(
     ) {
       const message =
         context.unknownRecipientMessage ??
-        "I cannot use that recipient because it is not a known contact in Glass. Add the contact in settings or provide the correct recipient explicitly.";
+        "I cannot use that recipient because it is not a known contact in Spot. Add the contact in settings or provide the correct recipient explicitly.";
       finalResult = {
         status: "needs_confirmation",
         responseBody: message,
@@ -954,9 +954,9 @@ async function runEmailSubagent(
     "email_draft",
     {
       maxOutputTokens: 1536,
-      system: `You are Glass's email expert subagent.
+      system: `You are Spot's email expert subagent.
 
-You only handle Glass Agent outbound email. Your job is to draft or send polished insurance-business emails from ${context.agentAddress}.
+You only handle Spot Agent outbound email. Your job is to draft or send polished insurance-business emails from ${context.agentAddress}.
 
 Be careful by default:
 - If the recipient email is missing, inferred, or not clearly the intended recipient, do not send. Produce a draft and ask for confirmation.
@@ -965,7 +965,7 @@ Be careful by default:
 - If the subject, body, or requested attachments are ambiguous, do not send.
 - Respect deliveryIntent. An affirmative current-turn send request may send the generated draft; draft-only, negated, advisory, or uncertain requests must remain drafts. The final sender independently validates the persisted user message.
 - Attach original policy PDFs or generated COIs when requested. Never claim an attachment is included unless you used an attachment tool or it was already attached.
-- If the requested document is already listed in availableUploadedAttachments, attach that exact saved file. For follow-ups like "send that" after Glass generated a COI, reuse the matching saved COI instead of generating another certificate.
+- If the requested document is already listed in availableUploadedAttachments, attach that exact saved file. For follow-ups like "send that" after Spot generated a COI, reuse the matching saved COI instead of generating another certificate.
 - Available uploaded attachments may include files saved from connected mailboxes, including .eml exports of source emails. If the user asks to attach the email itself or proof from an email body, attach the saved .eml export with attach_uploaded_file.
 - For certificate/COI delivery requests, attach only the generated COI unless the request separately asks for the original/full policy PDF too.
 - When drafting COIs for multiple recipients, each recipient's email must include only that recipient's generated COI, not the full batch of generated COIs.
@@ -975,7 +975,7 @@ Be careful by default:
 - Use concise professional formatting. Prefer 1-3 short paragraphs or a short bullet list.
 - Include only the policy facts that are directly useful to the recipient. Avoid exhaustive coverage memos unless explicitly requested.
 - Do not end with open-ended offers like "If you want, I can..." unless a necessary next step or clarification is required.
-- No personal sign-off; the platform adds the Glass signature.
+- No personal sign-off; the platform adds the Spot signature.
 
 Call send_or_draft_email exactly once after preparing any requested attachments.`,
     messages: [

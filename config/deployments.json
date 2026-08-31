@@ -1,13 +1,13 @@
 {
   "production": {
     "branch": "main",
-    "glassEnv": "production",
+    "spotEnv": "production",
     "convexAgentHealthUrl": "https://merry-platypus-82.convex.site/agent-health",
-    "clientPortalUrl": "https://app.glass.insure",
-    "clRouterHealthUrlEnv": "GLASS_PRODUCTION_CL_ROUTER_HEALTH_URL",
-    "extractionWorkerHealthUrl": "https://glass-extraction-worker-production.up.railway.app/health",
-    "imessageWorkerHealthUrl": "https://glass-production-4618.up.railway.app/health",
-    "slackWorkerHealthUrlEnv": "GLASS_PRODUCTION_SLACK_WORKER_HEALTH_URL",
+    "clientPortalUrl": "https://app.spot.insure",
+    "clRouterHealthUrlEnv": "SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL",
+    "extractionWorkerHealthUrl": "https://spot-extraction-worker-production.up.railway.app/health",
+    "imessageWorkerHealthUrl": "https://spot-production-4618.up.railway.app/health",
+    "slackWorkerHealthUrlEnv": "SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL",
     "slack": {
       "appId": "A0BMW4TG7JB",
       "enabled": true,
@@ -22,9 +22,9 @@
     },
     "email": {
       "deliveryMode": "live",
-      "agentDomain": "glass.insure",
-      "notificationDomain": "notifications.glass.insure",
-      "authDomain": "auth.glass.insure"
+      "agentDomain": "spot.insure",
+      "notificationDomain": "notifications.spot.insure",
+      "authDomain": "auth.spot.insure"
     },
     "workers": {
       "extractionProtocol": "source-tree-v1"
@@ -32,7 +32,7 @@
   },
   "local": {
     "branch": "*",
-    "glassEnv": "local",
+    "spotEnv": "local",
     "convexAgentHealthUrl": "http://localhost:3210/agent-health",
     "clientPortalUrl": "http://localhost:8080",
     "extractionWorkerHealthUrl": "http://localhost:8787/health",

@@ -251,7 +251,7 @@ export const sendEmail = tool({
 
 export const saveNote = tool({
   description:
-    "Save an explicit stable company-profile fact for future reference only when the user asks Glass to remember it. Do not save policy details, endorsements, COI/certificate details, draft/email metadata, agent capabilities, tool limitations, workflow status, or one-off requests.",
+    "Save an explicit stable company-profile fact for future reference only when the user asks Spot to remember it. Do not save policy details, endorsements, COI/certificate details, draft/email metadata, agent capabilities, tool limitations, workflow status, or one-off requests.",
   inputSchema: z.object({
     content: z.string().describe("The observation or note to save"),
     type: z
@@ -357,7 +357,7 @@ export const attachPolicyDocument = tool({
 
 export const generateCoi = tool({
   description:
-    "Generate certificate PDFs in exactly one of two modes. Policy mode uses policyId plus a holder and includes all available policy coverages; when the user provides an address, call lookup_address first. Requirements mode uses requirementSourceDocumentId or one requirementId; the saved source supplies the holder and Glass creates the necessary certificates from matching policies with only the relevant coverages. Do not combine these modes. Additional-insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Glass gates the certificate and returns a drafted broker email.",
+    "Generate certificate PDFs in exactly one of two modes. Policy mode uses policyId plus a holder and includes all available policy coverages; when the user provides an address, call lookup_address first. Requirements mode uses requirementSourceDocumentId or one requirementId; the saved source supplies the holder and Spot creates the necessary certificates from matching policies with only the relevant coverages. Do not combine these modes. Additional-insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Spot gates the certificate and returns a drafted broker email.",
   inputSchema: z.object({
     policyId: z
       .string()
@@ -373,7 +373,7 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe(
-        "Requirements-mode exact requirement ID. Glass uses its connected source and generates only for this requirement.",
+        "Requirements-mode exact requirement ID. Spot uses its connected source and generates only for this requirement.",
       ),
     certificateHolder: z
       .string()
@@ -391,7 +391,7 @@ export const generateCoi = tool({
       .string()
       .optional()
       .describe(
-        "Certificate holder email address only when the user explicitly asks Glass to email/send the certificate or already provides the email. Do not ask for this for ordinary certificate generation.",
+        "Certificate holder email address only when the user explicitly asks Spot to email/send the certificate or already provides the email. Do not ask for this for ordinary certificate generation.",
       ),
     holderPhone: z
       .string()
@@ -473,7 +473,7 @@ export const createImessageGroupChat = tool({
     openingMessage: z
       .string()
       .min(1)
-      .describe("The first message Glass should send into the new group chat."),
+      .describe("The first message Spot should send into the new group chat."),
     title: z
       .string()
       .optional()
@@ -558,7 +558,7 @@ export const readConnectedEmailAttachment = tool({
 
 export const importConnectedEmailPolicyAttachments = tool({
   description:
-    "Import PDF attachments from a connected-email message into the Glass policy library. Use after search/read confirms the attachments are bound policies, declarations, binders, endorsements, COIs, or other post-binding insurance documents.",
+    "Import PDF attachments from a connected-email message into the Spot policy library. Use after search/read confirms the attachments are bound policies, declarations, binders, endorsements, COIs, or other post-binding insurance documents.",
   inputSchema: z.object({
     emailRef: z
       .string()
@@ -613,7 +613,7 @@ export const importConnectedEmailRequirementAttachments = tool({
 
 export const saveConnectedEmailAttachmentsToThread = tool({
   description:
-    "Save attachments from a connected-email message into the current Glass thread so they can be reused later and attached to outbound email drafts without searching the mailbox again. Use after search/read identifies documents that are relevant to the user's task.",
+    "Save attachments from a connected-email message into the current Spot thread so they can be reused later and attached to outbound email drafts without searching the mailbox again. Use after search/read identifies documents that are relevant to the user's task.",
   inputSchema: z.object({
     emailRef: z
       .string()
@@ -629,7 +629,7 @@ export const saveConnectedEmailAttachmentsToThread = tool({
 
 export const saveConnectedEmailMessageToThread = tool({
   description:
-    "Export the connected-email message itself into the current Glass thread as an attachable .eml proof document. Use this when the user asks to attach, forward, preserve, or provide proof of an email whose relevant content is in the email body rather than an attachment, such as a cancellation email, receipt, confirmation, notice, or correspondence.",
+    "Export the connected-email message itself into the current Spot thread as an attachable .eml proof document. Use this when the user asks to attach, forward, preserve, or provide proof of an email whose relevant content is in the email body rather than an attachment, such as a cancellation email, receipt, confirmation, notice, or correspondence.",
   inputSchema: z.object({
     emailRef: z
       .string()
@@ -668,7 +668,7 @@ export const sendConnectedVendorInvite = tool({
 
 export const coordinateMailboxTask = tool({
   description:
-    "Delegate a complex connected-mailbox workflow to the Glass mailbox coordinator. Use this for multi-step requests like finding policies and importing them, finding a lease and extracting insurance requirements, or investigating vendor email history.",
+    "Delegate a complex connected-mailbox workflow to the Spot mailbox coordinator. Use this for multi-step requests like finding policies and importing them, finding a lease and extracting insurance requirements, or investigating vendor email history.",
   inputSchema: z.object({
     task: z
       .string()

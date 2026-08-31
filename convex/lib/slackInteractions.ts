@@ -1,3 +1,5 @@
+import type { Doc, Id } from "../_generated/dataModel";
+
 export type SlackBlockActionPayload = {
   type: "block_actions";
   /** Workspace whose installation received the action. */
@@ -37,6 +39,22 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function normalizeInteractionId(value: string): string {
+  return value.startsWith("glass_") ? `spot_${value.slice("glass_".length)}` : value;
+}
+
+export function isSlackOperatorClassification(
+  classification: Doc<"slackActors">["classification"],
+): boolean {
+  return classification === "spot_operator" || classification === "glass_operator";
+}
+
+export function slackActorUserId(
+  actor: Pick<Doc<"slackActors">, "spotUserId" | "glassUserId">,
+): Id<"users"> | undefined {
+  return actor.spotUserId ?? actor.glassUserId;
+}
+
 export function parseSlackInteraction(rawBody: string): SlackInteractionPayload | null {
   const encoded = new URLSearchParams(rawBody).get("payload");
   if (!encoded) return null;
@@ -59,16 +77,24 @@ export function parseSlackInteraction(rawBody: string): SlackInteractionPayload 
     const view = record(payload.view);
     const state = record(view?.state);
     const values = record(state?.values);
-    const callbackId = text(view?.callback_id);
+    const callbackIdValue = text(view?.callback_id);
     const privateMetadata = text(view?.private_metadata);
-    if (!callbackId || !privateMetadata) return null;
+    if (!callbackIdValue || !privateMetadata) return null;
+    const callbackId = normalizeInteractionId(callbackIdValue);
     let comment: string | undefined;
     for (const blockValue of Object.values(values ?? {})) {
       const block = record(blockValue);
       if (!block) continue;
       for (const elementValue of Object.values(block)) {
         const element = record(elementValue);
-        if (element?.action_id !== "glass_feedback_comment") continue;
+        if (!element) continue;
+        const commentActionId = text(element.action_id);
+        if (
+          !commentActionId ||
+          normalizeInteractionId(commentActionId) !== "spot_feedback_comment"
+        ) {
+          continue;
+        }
         comment = text(element.value);
       }
     }
@@ -89,11 +115,12 @@ export function parseSlackInteraction(rawBody: string): SlackInteractionPayload 
   const action = Array.isArray(payload.actions) ? record(payload.actions[0]) : null;
   const channelId = text(channel?.id);
   const messageTs = text(message?.ts);
-  const actionId = text(action?.action_id);
+  const actionIdValue = text(action?.action_id);
   const valueText = text(action?.value);
-  if (!teamId || !actorTeamId || !userId || !channelId || !actionId || !valueText) {
+  if (!teamId || !actorTeamId || !userId || !channelId || !actionIdValue || !valueText) {
     return null;
   }
+  const actionId = normalizeInteractionId(actionIdValue);
   return {
     type: "block_actions",
     teamId,
@@ -112,7 +139,7 @@ export function slackActionToken(actionId: string, value: string): {
   token: string;
   value?: string;
 } | null {
-  if (actionId.startsWith("glass_response_feedback")) {
+  if (normalizeInteractionId(actionId).startsWith("spot_response_feedback")) {
     const [rating, token] = value.split(":", 2);
     if ((rating !== "positive" && rating !== "negative") || !token) return null;
     return { token, value: rating };

@@ -23,7 +23,7 @@ export const FEATURE_FLAGS = {
     id: "imessage_app_cards",
     label: "iMessage app cards",
     description:
-      "Send public Glass preview cards for policies and certificates in iMessage conversations.",
+      "Send public Spot preview cards for policies and certificates in iMessage conversations.",
     scope: "org",
     defaultEnabled: false,
     allowedOrgTypes: ["broker", "client"],

@@ -5,10 +5,10 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { isWhiteLabelingEnabled } from "./branding";
 import { getClientPortalUrl } from "./domains";
-import { buildGlassEmailIconHtml } from "./emailTemplate";
+import { buildSpotEmailIconHtml } from "./emailTemplate";
 import { getAgentDomain } from "./resend";
 
-const GLASS_PUBLIC_URL = getClientPortalUrl();
+const SPOT_PUBLIC_URL = getClientPortalUrl();
 
 export type BrokerBranding = {
   name?: string;
@@ -21,14 +21,14 @@ export function getEmailAgentFromName(broker?: BrokerBranding): string {
     const base = broker.agentDisplayName || broker.name;
     return `${base} Agent`;
   }
-  return "Glass from Clarity Labs";
+  return "Spot from Clarity Labs";
 }
 
 export function buildEmailSignature(
   agentEmail: string,
   broker?: BrokerBranding,
 ): { text: string; html: string } {
-  const poweredByUrl = GLASS_PUBLIC_URL;
+  const poweredByUrl = SPOT_PUBLIC_URL;
   const hasBroker = !!(broker?.name || broker?.agentDisplayName);
   const agentName = getEmailAgentFromName(broker);
 
@@ -38,14 +38,14 @@ export function buildEmailSignature(
     agentName,
     agentEmail,
     ...(hasBroker
-      ? ["", `powered by Glass from Clarity Labs - ${poweredByUrl}`]
+      ? ["", `powered by Spot from Clarity Labs - ${poweredByUrl}`]
       : []),
   ].join("\n");
 
   const logoHtml =
     hasBroker && broker?.logoUrl
       ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
-      : buildGlassEmailIconHtml({
+      : buildSpotEmailIconHtml({
           size: 20,
           borderRadius: 4,
           margin: "0 8px 0 0",
@@ -57,7 +57,7 @@ export function buildEmailSignature(
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     ...(hasBroker
       ? [
-          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`,
+          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Spot from Clarity Labs</a></p>`,
         ]
       : []),
   ].join("\n");

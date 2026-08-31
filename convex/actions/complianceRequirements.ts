@@ -480,7 +480,7 @@ async function runRequirementImport(
       abortSignal,
       maxOutputTokens: 3_000,
       system:
-        "You convert contract, lease, certificate, and vendor insurance language into typed ACORD-25-style coverage requirements for Glass.",
+        "You convert contract, lease, certificate, and vendor insurance language into typed ACORD-25-style coverage requirements for Spot.",
       prompt: buildPrompt({
         sourceText,
         existingRequirements: context.existingRequirements,

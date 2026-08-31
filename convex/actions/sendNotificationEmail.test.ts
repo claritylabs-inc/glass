@@ -77,7 +77,7 @@ describe("sendNotificationEmail", () => {
     expect((notif as any)?.emailSentAt).toBeDefined();
 
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(callBody.from).toContain("<notifications@notifications.glass.insure>");
+    expect(callBody.from).toContain("<notifications@notifications.spot.insure>");
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -188,7 +188,7 @@ describe("sendNotificationEmail", () => {
         title: "Renewal Review",
         createdBy: userId,
         lastMessageAt: dayjs().valueOf(),
-        threadEmail: "agent+renewal@glass.insure",
+        threadEmail: "agent+renewal@spot.insure",
         originChannel: "chat",
       })
     );
@@ -218,7 +218,7 @@ describe("sendNotificationEmail", () => {
     await t.action(sendFn, { notificationId: notifId });
 
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(callBody.reply_to).toBe("agent+renewal@glass.insure");
+    expect(callBody.reply_to).toBe("agent+renewal@spot.insure");
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -253,7 +253,7 @@ describe("sendNotificationEmail", () => {
         userId,
         type: "mailbox_attention",
         title: "Mailbox item needs attention",
-        body: "Glass found an item to review.",
+        body: "Spot found an item to review.",
         severity: "warning",
         status: "unread",
         emailStatus: "scheduled",
@@ -345,15 +345,15 @@ describe("sendNotificationEmail", () => {
     });
     vi.stubGlobal("fetch", mockFetch);
     vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
-    vi.stubEnv("SITE_URL", "https://glass.example");
+    vi.stubEnv("SITE_URL", "https://spot.example");
 
     await t.action(sendFn, { notificationId: vendorNotificationId });
     await t.action(sendFn, { notificationId: threadNotificationId });
 
     const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
     const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
-    expect(firstBody.text).toContain("https://glass.example/connect/vendors");
-    expect(secondBody.text).toContain(`https://glass.example/agent/thread/${threadId}`);
+    expect(firstBody.text).toContain("https://spot.example/connect/vendors");
+    expect(secondBody.text).toContain(`https://spot.example/agent/thread/${threadId}`);
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

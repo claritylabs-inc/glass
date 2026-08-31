@@ -3,7 +3,7 @@
 /**
  * Provider-agnostic callback adapters for cl-sdk.
  *
- * Wraps Glass's existing AI SDK model routing (lib/models.ts) into the
+ * Wraps Spot's existing AI SDK model routing (lib/models.ts) into the
  * simple callback interfaces the new SDK expects: GenerateText, GenerateObject, EmbedText.
  */
 
@@ -102,7 +102,7 @@ type ParamsWithOptionalTaskKind = {
 };
 
 type GenerateObjectParams = Parameters<GenerateObject>[0];
-type GlassGenerateObject = (
+type SpotGenerateObject = (
   params: Omit<GenerateObjectParams, "taskKind"> & { taskKind?: ModelCallTaskKind },
 ) => ReturnType<GenerateObject>;
 
@@ -712,7 +712,7 @@ async function recordModelTrace(
 }
 
 /**
- * Create a GenerateText callback backed by Glass's model router.
+ * Create a GenerateText callback backed by Spot's model router.
  * The task parameter selects which model to use (extraction, classification, etc.).
  */
 export function makeGenerateText(
@@ -927,13 +927,13 @@ export function makeGenerateText(
 }
 
 /**
- * Create a GenerateObject callback backed by Glass's model router.
+ * Create a GenerateObject callback backed by Spot's model router.
  * Uses AI SDK v6's generateText + Output.object() for structured output.
  */
 export function makeGenerateObject(
   task: ModelTask = "extraction",
   routing?: ModelRoutingContext,
-): GlassGenerateObject {
+): SpotGenerateObject {
   let settingsPromise: ReturnType<typeof resolveClRouterSettings> | null = null;
   const getRouterSettings = () => {
     settingsPromise ??= resolveClRouterSettings(routing);
@@ -1297,7 +1297,7 @@ function resolveEmbeddingConfigForSettingsSnapshot(
   const directApiKey = apiKey ?? directEmbeddingApiKey(route.provider);
   if (!directApiKey) {
     throw new Error(
-      `Direct ${route.provider} API key is missing for embedding route ${route.provider}/${route.model}. AI Gateway is not a fallback for Glass embeddings.`,
+      `Direct ${route.provider} API key is missing for embedding route ${route.provider}/${route.model}. AI Gateway is not a fallback for Spot embeddings.`,
     );
   }
   return {
@@ -1401,7 +1401,7 @@ export function makeEmbedTexts(
 
 /**
  * Create an EmbedText callback. Broker overrides are only used when the broker
- * has supplied a matching provider key; otherwise Glass uses its default config.
+ * has supplied a matching provider key; otherwise Spot uses its default config.
  */
 export function makeEmbedText(ctx?: ActionCtx, orgId?: Id<"organizations">): EmbedText {
   let configPromise: ReturnType<typeof resolveEmbeddingConfig> | null = null;
