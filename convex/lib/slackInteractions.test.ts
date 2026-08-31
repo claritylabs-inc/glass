@@ -75,7 +75,7 @@ describe("Slack interactions", () => {
     });
   });
 
-  test("normalizes legacy Glass controls during the 30-day action window", () => {
+  test("normalizes legacy controls during the 30-day action window", () => {
     const blockBody = new URLSearchParams({
       payload: JSON.stringify({
         type: "block_actions",

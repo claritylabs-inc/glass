@@ -10,12 +10,12 @@ test("creates a client without provisioning users", async () => {
   const t = convexTest(schema, modules);
   const operatorUserId = await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", {
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       accountKind: "operator",
     });
     await ctx.db.insert("operatorProfiles", {
       userId,
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       role: "operator",
       status: "active",
       createdAt: 1,
