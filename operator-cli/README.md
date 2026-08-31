@@ -54,6 +54,8 @@ spot-operator --profile prod auth:check
 Profiles are stored under `~/.spot/operator`. On first use, the Spot CLI copies
 an existing profile from `~/.glass/operator` without deleting it, preserving a
 rollback path for operators upgrading from the legacy CLI.
+`SPOT_OPERATOR_PROFILE` selects a profile for automation; during the rollout,
+the legacy `GLASS_OPERATOR_PROFILE` remains a lower-precedence fallback.
 
 ## Provision Broker
 

@@ -11,6 +11,10 @@ const appAliasHosts = [
   "app.glass.insure",
   "glass.claritylabs.inc",
 ];
+const legacyAssetRewrites = [
+  { source: "/glass-icon.jpg", destination: "/spot-icon.jpg" },
+  { source: "/glass-icon.svg", destination: "/spot-icon.svg" },
+];
 
 const nextConfig: NextConfig = {
   env: {
@@ -26,9 +30,10 @@ const nextConfig: NextConfig = {
     }));
   },
   async rewrites() {
-    if (!convexSiteUrl) return [];
+    if (!convexSiteUrl) return legacyAssetRewrites;
 
     return [
+      ...legacyAssetRewrites,
       {
         source: "/.well-known/mcp.json",
         destination: `${convexSiteUrl}/.well-known/mcp.json`,

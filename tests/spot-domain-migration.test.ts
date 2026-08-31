@@ -25,4 +25,21 @@ describe("Spot domain migration", () => {
       ]),
     );
   });
+
+  it("keeps legacy icon URLs resolvable through Spot assets", async () => {
+    const rewrites = await nextConfig.rewrites?.();
+
+    expect(rewrites).toEqual(
+      expect.arrayContaining([
+        {
+          source: "/glass-icon.jpg",
+          destination: "/spot-icon.jpg",
+        },
+        {
+          source: "/glass-icon.svg",
+          destination: "/spot-icon.svg",
+        },
+      ]),
+    );
+  });
 });

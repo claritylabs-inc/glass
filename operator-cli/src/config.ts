@@ -12,7 +12,12 @@ const configRoot = join(homedir(), ".spot", "operator");
 const legacyConfigRoot = join(homedir(), ".glass", "operator");
 
 export function resolveProfile(profile?: string): string {
-  return profile || process.env.SPOT_OPERATOR_PROFILE || "default";
+  return (
+    profile ||
+    process.env.SPOT_OPERATOR_PROFILE ||
+    process.env.GLASS_OPERATOR_PROFILE ||
+    "default"
+  );
 }
 
 function configPath(profile: string) {
