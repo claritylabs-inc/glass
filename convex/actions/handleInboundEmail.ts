@@ -687,9 +687,10 @@ export const processInbound = internalAction({
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, {
       orgId,
     });
-    const memberEmails = orgMembers.flatMap((membership) =>
-      membership.user?.email ? [membership.user.email] : [],
-    );
+    const memberEmails = orgMembers
+      .flatMap((membership) =>
+        membership.user?.email ? [membership.user.email] : [],
+      );
     const firstAdmin = orgMembers.find(
       (membership) => membership.role === "admin",
     );
@@ -900,8 +901,7 @@ export const processInbound = internalAction({
         emailContent: storedInboundEmailContent(parsedInboundEmail),
         messageId,
         resendEmailId: resendEmailId || undefined,
-        attachments:
-          attachmentRecords.length > 0 ? attachmentRecords : undefined,
+        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
         pendingEmailId:
           matchedParentEmailMessage?.pendingEmailId ?? correlatedPendingEmailId,
       },

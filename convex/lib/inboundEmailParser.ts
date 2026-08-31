@@ -76,7 +76,11 @@ function normalizeMailbox(
 }
 
 function normalizeMailboxList(
-  mailboxes: EmailForwardMailbox | EmailForwardMailbox[] | null | undefined,
+  mailboxes:
+    | EmailForwardMailbox
+    | EmailForwardMailbox[]
+    | null
+    | undefined,
 ): ParsedInboundMailbox[] {
   const values = Array.isArray(mailboxes) ? mailboxes : [mailboxes];
   return values.flatMap((mailbox) => {
@@ -168,16 +172,10 @@ export function formatInboundEmailForAgent(parsed: ParsedInboundEmail): string {
       ? `From: ${email.from.name ? `${email.from.name} <${email.from.address}>` : email.from.address}`
       : undefined,
     email.to.length > 0
-      ? `To: ${email.to
-          .map((mailbox) => mailbox.address ?? mailbox.name)
-          .filter(Boolean)
-          .join(", ")}`
+      ? `To: ${email.to.map((mailbox) => mailbox.address ?? mailbox.name).filter(Boolean).join(", ")}`
       : undefined,
     email.cc.length > 0
-      ? `Cc: ${email.cc
-          .map((mailbox) => mailbox.address ?? mailbox.name)
-          .filter(Boolean)
-          .join(", ")}`
+      ? `Cc: ${email.cc.map((mailbox) => mailbox.address ?? mailbox.name).filter(Boolean).join(", ")}`
       : undefined,
     email.subject ? `Subject: ${email.subject}` : undefined,
     email.date ? `Date: ${email.date}` : undefined,
@@ -212,7 +210,8 @@ export function hasEmailParticipantEvidence(
       ...(message.ccAddresses ?? []),
       ...(message.bccAddresses ?? []),
     ].some(
-      (address) => address?.trim().toLowerCase() === normalizedParticipant,
+      (address) =>
+        address?.trim().toLowerCase() === normalizedParticipant,
     ),
   );
 }

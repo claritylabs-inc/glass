@@ -28,7 +28,9 @@ describe("parseInboundEmail", () => {
   test("separates a current Gmail reply from quoted history", () => {
     const parsed = parseInboundEmail(gmailReplyFixture);
 
-    expect(parsed.currentText).toBe("Thanks, please proceed with the renewal.");
+    expect(parsed.currentText).toBe(
+      "Thanks, please proceed with the renewal.",
+    );
     expect(parsed.quotedText).toContain("Alice Example <alice@example.com>");
     expect(parsed.rawText).toBe(gmailReplyFixture.text);
     expect(parsed.forwarded).toBeUndefined();
@@ -108,7 +110,10 @@ describe("parseInboundEmail", () => {
     ];
 
     expect(
-      hasEmailParticipantEvidence(messages, "existing.participant@example.com"),
+      hasEmailParticipantEvidence(
+        messages,
+        "existing.participant@example.com",
+      ),
     ).toBe(true);
     expect(
       hasEmailParticipantEvidence(messages, "new.sender@example.com"),
