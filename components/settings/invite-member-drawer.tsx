@@ -91,7 +91,7 @@ export function InviteMemberDrawer({
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="colleague@company.com"
+            placeholder="name@example.com"
             className={INPUT_CLASSES}
           />
         </div>

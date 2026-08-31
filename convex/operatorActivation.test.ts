@@ -1,15 +1,10 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { describe, expect, test, vi } from "vitest";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
-import {
-  getSoloClientLaunchContextInternal,
-  launchSoloClient,
-} from "./operator";
 
 const modules = import.meta.glob("./**/*.ts");
-const getLaunchContext = getSoloClientLaunchContextInternal as any;
-const launchClient = launchSoloClient as any;
 
 async function seedClientTeam() {
   const t = convexTest(schema, modules);
@@ -75,13 +70,16 @@ async function seedClientTeam() {
 }
 
 describe("operator client activation", () => {
-  test("resolves only the selected existing admin as the activation recipient", async () => {
+  test("resolves only the selected existing admin during onboarding", async () => {
     const fixture = await seedClientTeam();
 
-    const selected = await fixture.t.query(getLaunchContext, {
-      clientOrgId: fixture.clientOrgId,
-      adminUserId: fixture.secondAdminUserId,
-    });
+    const selected = await fixture.t.query(
+      internal.operator.getSoloClientLaunchContextInternal,
+      {
+        clientOrgId: fixture.clientOrgId,
+        adminUserId: fixture.secondAdminUserId,
+      },
+    );
     expect(selected).toMatchObject({
       adminUserId: fixture.secondAdminUserId,
       adminEmail: "second-admin@example.com",
@@ -89,32 +87,43 @@ describe("operator client activation", () => {
     });
 
     await expect(
-      fixture.t.query(getLaunchContext, {
+      fixture.t.query(internal.operator.getSoloClientLaunchContextInternal, {
         clientOrgId: fixture.clientOrgId,
         adminUserId: fixture.memberUserId,
       }),
     ).resolves.toBeNull();
   });
 
-  test("records accepted activation deliveries as a launch and then a resend", async () => {
+  test("records an admin launch followed by a member resend", async () => {
     const fixture = await seedClientTeam();
     const operator = fixture.t.withIdentity({
       subject: `${fixture.operatorUserId}|session`,
     });
-    const args = {
+    const launchArgs = {
       clientOrgId: fixture.clientOrgId,
       adminUserId: fixture.secondAdminUserId,
+    };
+    const resendArgs = {
+      clientOrgId: fixture.clientOrgId,
+      adminUserId: fixture.memberUserId,
     };
     vi.stubEnv("GLASS_ENV", "local");
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     try {
-      await expect(operator.action(launchClient, args)).resolves.toMatchObject({
+      await expect(
+        operator.action(api.operator.launchSoloClient, launchArgs),
+      ).resolves.toMatchObject({
         adminUserId: fixture.secondAdminUserId,
         recipientEmail: "second-admin@example.com",
       });
-      await operator.action(launchClient, args);
+      await expect(
+        operator.action(api.operator.launchSoloClient, resendArgs),
+      ).resolves.toMatchObject({
+        adminUserId: fixture.memberUserId,
+        recipientEmail: "member@example.com",
+      });
     } finally {
       log.mockRestore();
       vi.unstubAllEnvs();
@@ -139,11 +148,11 @@ describe("operator client activation", () => {
       },
     });
     expect(result.audits[1]).toMatchObject({
-      targetUserId: fixture.secondAdminUserId,
+      targetUserId: fixture.memberUserId,
       summary:
         "Resent activation email for Client Team; email provider accepted client login email",
       metadata: {
-        recipientEmail: "second-admin@example.com",
+        recipientEmail: "member@example.com",
         resendEmailId: "captured",
       },
     });

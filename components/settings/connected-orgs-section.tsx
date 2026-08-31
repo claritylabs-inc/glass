@@ -583,7 +583,7 @@ export function ConnectedOrgsSection({
             <Input
               value={vendorEmail}
               onChange={(e) => setVendorEmail(e.target.value)}
-              placeholder="risk@vendor.com"
+              placeholder="contact@example.com"
             />
           </label>
           <label className={`flex flex-col gap-1.5 text-muted-foreground ${typeStyle("label.field")}`}>

@@ -405,7 +405,7 @@ export function TeamSection({
 
   const sendOperatorActivation = useCallback(
     async (member: TeamMember) => {
-      if (!operatorClientOrgId || member.role !== "admin" || !member.email) {
+      if (!operatorClientOrgId || !member.email) {
         return;
       }
       setActivationUserId(member.userId);
@@ -576,32 +576,31 @@ export function TeamSection({
         renderMemberAction={
           operatorClientOrgId
             ? (member) =>
-                member.role === "admin" ? (
-                  member.isActivated ? (
-                    <StatusTag tone="success">Active</StatusTag>
-                  ) : (
-                    <PillButton
-                      size="compact"
-                      variant="secondary"
-                      disabled={activationUserId !== null || !member.email}
-                      title={
-                        member.email
-                          ? undefined
-                          : "This admin does not have an email address"
-                      }
-                      onClick={() => void sendOperatorActivation(member)}
-                    >
-                      {activationUserId === member.userId ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : null}
-                      {activationUserId === member.userId
-                        ? "Sending…"
-                        : operatorClient?.operatorStatus === "onboarding"
-                          ? "Send activation"
-                          : "Resend activation"}
-                    </PillButton>
-                  )
-                ) : null
+                member.isActivated ? (
+                  <StatusTag tone="success">Active</StatusTag>
+                ) : operatorClient?.operatorStatus === "onboarding" &&
+                  member.role !== "admin" ? (
+                  <StatusTag tone="warning">Activate admin first</StatusTag>
+                ) : (
+                  <PillButton
+                    size="compact"
+                    variant="secondary"
+                    disabled={activationUserId !== null || !member.email}
+                    title={
+                      member.email
+                        ? undefined
+                        : "This team member does not have an email address"
+                    }
+                    onClick={() => void sendOperatorActivation(member)}
+                  >
+                    {activationUserId === member.userId ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : null}
+                    {activationUserId === member.userId
+                      ? "Sending…"
+                      : "Send activation"}
+                  </PillButton>
+                )
             : undefined
         }
         onEditMember={openEditMember}

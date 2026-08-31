@@ -290,7 +290,7 @@ export function AddMailboxDrawer({
                   emailAddress: event.target.value,
                 }))
               }
-              placeholder="name@company.com"
+              placeholder="name@example.com"
             />
           </div>
 
@@ -304,7 +304,7 @@ export function AddMailboxDrawer({
                   onChange={(event) =>
                     setForm((current) => ({ ...current, host: event.target.value }))
                   }
-                  placeholder="imap.company.com"
+                  placeholder="imap.example.com"
                 />
               </div>
               <div className="space-y-1.5">

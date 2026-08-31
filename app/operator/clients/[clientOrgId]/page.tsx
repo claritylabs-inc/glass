@@ -408,7 +408,7 @@ function ClientWorkspace({
                         onChange={(event) => setWebsite(event.target.value)}
                         onFocus={() => setTextFieldFocused(true)}
                         onBlur={finishTextEdit}
-                        placeholder="https://client.com"
+                        placeholder="https://example.com"
                       />
                     </Field>
                     <Field label="Broker" className="md:col-span-2">

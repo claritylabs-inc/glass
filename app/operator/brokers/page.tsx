@@ -445,7 +445,7 @@ export default function OperatorBrokersPage() {
               className={INPUT_CLASSES}
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="ReLease"
+              placeholder="Broker organization"
               required
             />
           </Field>
@@ -458,7 +458,7 @@ export default function OperatorBrokersPage() {
                 className={AFFIXED_INPUT_CLASSES}
                 value={slug}
                 onChange={(event) => setSlug(normalizeIdentifierInput(event.target.value))}
-                placeholder="release"
+                placeholder="broker-name"
               />
             </div>
             <HandleAvailability
@@ -480,7 +480,7 @@ export default function OperatorBrokersPage() {
               className={INPUT_CLASSES}
               value={website}
               onChange={(event) => setWebsite(event.target.value)}
-              placeholder="https://releaserent.com"
+              placeholder="https://example.com"
             />
           </Field>
           <Field label="Agent handle">
@@ -489,7 +489,7 @@ export default function OperatorBrokersPage() {
                 className={AFFIXED_INPUT_CLASSES}
                 value={agentHandle}
                 onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
-                placeholder="release"
+                placeholder="broker"
               />
               <span className={`flex shrink-0 items-center border-l border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
                 @{AGENT_DOMAIN}
@@ -516,7 +516,7 @@ export default function OperatorBrokersPage() {
               className={INPUT_CLASSES}
               value={adminEmail}
               onChange={(event) => setAdminEmail(event.target.value)}
-              placeholder="terry@example.com"
+              placeholder="admin@example.com"
               type="email"
               required
             />
@@ -526,7 +526,7 @@ export default function OperatorBrokersPage() {
               className={INPUT_CLASSES}
               value={adminName}
               onChange={(event) => setAdminName(event.target.value)}
-              placeholder="Terry Wang"
+              placeholder="Full name"
             />
           </Field>
           <Field label="Broker admin phone">
@@ -551,7 +551,7 @@ export default function OperatorBrokersPage() {
                 onChange={(event) =>
                   setEditSlug(normalizeIdentifierInput(event.target.value))
                 }
-                placeholder="release"
+                placeholder="broker-name"
               />
             </div>
             <HandleAvailability
@@ -575,7 +575,7 @@ export default function OperatorBrokersPage() {
               className={INPUT_CLASSES}
               value={editWebsite}
               onChange={(event) => setEditWebsite(event.target.value)}
-              placeholder="https://releaserent.com"
+              placeholder="https://example.com"
             />
           </Field>
           <Field label="Admin name">

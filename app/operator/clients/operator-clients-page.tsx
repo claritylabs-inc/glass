@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAction, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
-import { isValidPhoneNumber } from "react-phone-number-input";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
@@ -14,7 +13,6 @@ import {
   OperationalLabelValueRow,
   OperationalPanel,
 } from "@/components/ui/operational-panel";
-import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
 import { Input } from "@/components/ui/input";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
@@ -56,19 +54,12 @@ import { typeStyle } from "@/lib/typography";
 const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
 
-function isValidOptionalPhone(value: string) {
-  const trimmed = value.trim();
-  return !trimmed || isValidPhoneNumber(trimmed);
-}
-
 function Field({
   label,
   children,
-  error,
 }: {
   label: string;
   children: React.ReactNode;
-  error?: string | null;
 }) {
   return (
     <label className="block space-y-1.5">
@@ -76,9 +67,6 @@ function Field({
         {label}
       </span>
       {children}
-      {error ? (
-        <span className={`block text-destructive ${typeStyle("caption.default")}`}>{error}</span>
-      ) : null}
     </label>
   );
 }
@@ -92,22 +80,12 @@ export default function OperatorClientsScreen() {
   const [name, setName] = useState("");
   const [brokerOrgId, setBrokerOrgId] = useState<string>(STANDALONE_VALUE);
   const [website, setWebsite] = useState("");
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminName, setAdminName] = useState("");
-  const [adminPhone, setAdminPhone] = useState("");
   const [busy, setBusy] = useState(false);
-  const [debouncedAdminPhone, setDebouncedAdminPhone] = useState("");
 
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients();
   const brokers = useCachedOperatorBrokers();
   const { seedClient } = useOperatorClientCacheActions();
-  const createPhoneValid = isValidOptionalPhone(adminPhone);
-  const createShouldCheckPhone = !!adminPhone.trim() && createPhoneValid;
-  const createPhoneAvailability = useQuery(
-    api.operator.checkUserPhoneAvailability,
-    createShouldCheckPhone ? { phone: debouncedAdminPhone } : "skip",
-  );
   const createClient = useAction(api.operator.createSoloClient);
   const { startImpersonation } = useStartOperatorImpersonation();
   const stopOperatorImpersonation = useStopOperatorImpersonation(
@@ -129,31 +107,8 @@ export default function OperatorClientsScreen() {
       : "skip",
   );
 
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setDebouncedAdminPhone(adminPhone.trim()),
-      300,
-    );
-    return () => window.clearTimeout(timer);
-  }, [adminPhone]);
-
-  const createPhoneChecking =
-    createShouldCheckPhone &&
-    (debouncedAdminPhone !== adminPhone.trim() ||
-      createPhoneAvailability === undefined);
-  const createPhoneUnavailable =
-    createShouldCheckPhone && createPhoneAvailability?.available === false;
-  const createPhoneError = !createPhoneValid
-    ? "Enter a valid phone number"
-    : createPhoneChecking
-      ? "Checking phone number"
-      : createPhoneUnavailable
-        ? "This phone number is already used by another user"
-        : null;
-
   async function submitClient(event: React.FormEvent) {
     event.preventDefault();
-    if (createPhoneError) return;
     setBusy(true);
     try {
       const result = await createClient({
@@ -163,37 +118,22 @@ export default function OperatorClientsScreen() {
             ? undefined
             : (brokerOrgId as Id<"organizations">),
         website: website || undefined,
-        adminEmail,
-        adminName: adminName || undefined,
-        adminPhone: adminPhone || undefined,
+        users: [],
       });
-      toast.success("Client created for setup");
-      if (result?.clientOrgId) {
-        await seedClient({
-          clientOrgId: result.clientOrgId,
-          name,
-          brokerOrgId:
-            brokerOrgId === STANDALONE_VALUE
-              ? undefined
-              : (brokerOrgId as Id<"organizations">),
-          brokerName: selectedBroker?.name,
-          website: website || undefined,
-          adminEmail,
-          adminName: adminName || undefined,
-          adminPhone: adminPhone || undefined,
-        });
-        router.push(`/operator/clients/${result.clientOrgId}`);
-      }
-      setName("");
-      setBrokerOrgId(STANDALONE_VALUE);
-      setWebsite("");
-      setAdminEmail("");
-      setAdminName("");
-      setAdminPhone("");
-      setPanelMode(null);
+      await seedClient({
+        clientOrgId: result.clientOrgId,
+        name,
+        brokerOrgId:
+          brokerOrgId === STANDALONE_VALUE
+            ? undefined
+            : (brokerOrgId as Id<"organizations">),
+        brokerName: selectedBroker?.name,
+        website: website || undefined,
+      });
+      toast.success("Client created");
+      router.push(`/operator/clients/${result.clientOrgId}`);
     } catch (error) {
       toast.error(getUserFacingErrorMessage(error, "Failed to create client"));
-    } finally {
       setBusy(false);
     }
   }
@@ -299,15 +239,10 @@ export default function OperatorClientsScreen() {
           <PillButton
             type="submit"
             form="operator-create-client-form"
-            disabled={
-              busy ||
-              !name ||
-              !adminEmail ||
-              !!createPhoneError
-            }
+            disabled={busy || !name.trim()}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Create for setup
+            Create client
           </PillButton>
         ) : selected ? (
           <>
@@ -335,7 +270,7 @@ export default function OperatorClientsScreen() {
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="ReLease"
+              placeholder="Client organization"
               required
             />
           </Field>
@@ -385,31 +320,7 @@ export default function OperatorClientsScreen() {
             <Input
               value={website}
               onChange={(event) => setWebsite(event.target.value)}
-              placeholder="https://releaserent.com"
-            />
-          </Field>
-          <Field label="Client admin email">
-            <Input
-              value={adminEmail}
-              onChange={(event) => setAdminEmail(event.target.value)}
-              placeholder="terry@example.com"
-              type="email"
-              required
-            />
-          </Field>
-          <Field label="Client admin name">
-            <Input
-              value={adminName}
-              onChange={(event) => setAdminName(event.target.value)}
-              placeholder="Terry Wang"
-            />
-          </Field>
-          <Field label="Client admin phone" error={createPhoneError}>
-            <PhoneInput
-              value={adminPhone}
-              onChange={(value) => setAdminPhone(value ?? "")}
-              defaultCountry="US"
-              placeholder="(555) 123-4567"
+              placeholder="https://example.com"
             />
           </Field>
         </form>
