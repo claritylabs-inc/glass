@@ -27,6 +27,7 @@ import {
   requireOperatorForUser,
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
+import { parseStandaloneEmailAddress } from "./lib/emailAddress";
 import { orgBrandFields } from "./lib/orgBranding";
 import {
   throwUserFacingError,
@@ -35,6 +36,12 @@ import {
 
 const brokerStatusValidator = v.union(v.literal("onboarding"), v.literal("live"));
 const orgRoleValidator = v.union(v.literal("admin"), v.literal("member"));
+const operatorClientUserValidator = v.object({
+  email: v.string(),
+  name: v.optional(v.string()),
+  phone: v.optional(v.string()),
+  role: orgRoleValidator,
+});
 const relatedLegalEntityValidator = v.object({
   legalName: v.string(),
   relationship: v.optional(
@@ -62,7 +69,17 @@ const extractionTraceStatusValidator = v.union(
 const internalApi = internal as any;
 const OPERATOR_TRACE_EVENT_LIMIT = 500;
 const OPERATOR_POLICY_ARTIFACT_COUNT_LIMIT = 1_000;
+const OPERATOR_CLIENT_USER_LIMIT = 25;
 const CANCELLED_BY_USER = "Cancelled by user";
+
+function normalizeClientUserEmail(value: string) {
+  const email = parseStandaloneEmailAddress(value);
+  if (!email || isBootstrapOperatorEmail(email)) {
+    throw new Error("Every client user must have a valid customer email");
+  }
+  return email;
+}
+
 const REMOVED_PROGRAM_ADMIN_TABLES = [
   "partnerPrograms",
   "partnerProgramEmbeddings",
@@ -1322,28 +1339,49 @@ export const checkBrokerSetupIdentifiers = query({
   },
 });
 
-export const checkUserPhoneAvailability = query({
+export const checkUserPhoneAvailabilities = query({
   args: {
-    phone: v.string(),
-    ownerUserId: v.optional(v.id("users")),
+    users: v.array(
+      v.object({
+        email: v.string(),
+        phone: v.string(),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     await requireOperator(ctx);
-
-    let normalized: string | undefined;
-    try {
-      normalized = normalizeUserPhone(args.phone);
-    } catch {
-      return { available: false, normalized: "" };
+    if (args.users.length > OPERATOR_CLIENT_USER_LIMIT) {
+      throw new Error(`Check at most ${OPERATOR_CLIENT_USER_LIMIT} phone numbers`);
     }
-    if (!normalized) return { available: false, normalized: "" };
 
-    const existing = await findUserByNormalizedPhone(ctx, normalized);
-    return {
-      available: !existing || existing._id === args.ownerUserId,
-      current: existing?._id === args.ownerUserId,
-      normalized,
-    };
+    return await Promise.all(
+      args.users.map(async ({ email, phone }) => {
+        let normalized: string | undefined;
+        try {
+          normalized = normalizeUserPhone(phone);
+        } catch {
+          return { phone, available: false, normalized: "" };
+        }
+        if (!normalized) return { phone, available: false, normalized: "" };
+
+        const normalizedEmail = normalizeOperatorEmail(email);
+        const [existing, emailUsers] = await Promise.all([
+          findUserByNormalizedPhone(ctx, normalized),
+          normalizedEmail
+            ? ctx.db
+                .query("users")
+                .withIndex("email", (q) => q.eq("email", normalizedEmail))
+                .take(5)
+            : [],
+        ]);
+        return {
+          phone,
+          available:
+            !existing || emailUsers.some((user) => user._id === existing._id),
+          normalized,
+        };
+      }),
+    );
   },
 });
 
@@ -1402,41 +1440,97 @@ export const createSoloClient = action({
     name: v.string(),
     brokerOrgId: v.optional(v.id("organizations")),
     website: v.optional(v.string()),
-    adminEmail: v.string(),
+    users: v.optional(v.array(operatorClientUserValidator)),
+    // Legacy fields keep an already-open operator UI compatible during rollout.
+    adminEmail: v.optional(v.string()),
     adminName: v.optional(v.string()),
     adminPhone: v.optional(v.string()),
+    additionalUsers: v.optional(v.array(operatorClientUserValidator)),
   },
   handler: async (ctx, args): Promise<{ clientOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
     await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
 
-    const adminEmail = normalizeOperatorEmail(args.adminEmail);
-    if (!adminEmail || isBootstrapOperatorEmail(adminEmail)) {
-      throw new Error("Client admin email must be a customer email");
+    const submittedUsers = args.users ?? [
+      ...(args.adminEmail
+        ? [
+            {
+              email: args.adminEmail,
+              name: args.adminName,
+              phone: args.adminPhone,
+              role: "admin" as const,
+            },
+          ]
+        : []),
+      ...(args.additionalUsers ?? []),
+    ];
+    const users = submittedUsers.map((user) => ({
+      email: normalizeClientUserEmail(user.email),
+      name: user.name?.trim() || undefined,
+      phone: user.phone?.trim() || undefined,
+      role: user.role,
+    }));
+    if (users.length > OPERATOR_CLIENT_USER_LIMIT) {
+      throw new Error(`Add at most ${OPERATOR_CLIENT_USER_LIMIT} client users`);
     }
+    if (users.length > 0 && !users.some((user) => user.role === "admin")) {
+      throw new Error("At least one client user must be an admin");
+    }
+    const emails = new Set<string>();
+    const phones = new Set<string>();
+    for (const user of users) {
+      if (emails.has(user.email)) {
+        throw new Error("Use a different email for each client user");
+      }
+      emails.add(user.email);
+
+      const normalizedPhone = normalizeUserPhone(user.phone);
+      if (normalizedPhone && phones.has(normalizedPhone)) {
+        throw new Error("Use a different phone number for each client user");
+      }
+      if (normalizedPhone) phones.add(normalizedPhone);
+    }
+    await ctx.runQuery(
+      internalApi.operator.validateSoloClientUsersInternal,
+      { users: users.map(({ email, phone }) => ({ email, phone })) },
+    );
+
     const now = dayjs().valueOf();
-    const account = await createAccount(ctx, {
-      provider: "resend-otp",
-      account: { id: adminEmail },
-      profile: {
-        email: adminEmail,
-        name: args.adminName?.trim() || undefined,
-        accountKind: "customer",
-        emailVerificationTime: now,
-        onboardingComplete: true,
-      },
-      shouldLinkViaEmail: true,
-    });
-    if (!account.user) throw new Error("Could not create client admin");
+    const provisionedUsers: Array<{
+      userId: Id<"users">;
+      email: string;
+      name?: string;
+      phone?: string;
+      role: "admin" | "member";
+    }> = [];
+    for (const user of users) {
+      const account = await createAccount(ctx, {
+        provider: "resend-otp",
+        account: { id: user.email },
+        profile: {
+          email: user.email,
+          name: user.name,
+          accountKind: "customer",
+          emailVerificationTime: now,
+          onboardingComplete: true,
+        },
+        shouldLinkViaEmail: true,
+      });
+      if (!account.user) throw new Error(`Could not create client user ${user.email}`);
+      provisionedUsers.push({
+        userId: account.user._id,
+        email: user.email,
+        name: user.name ?? (account.user.name?.trim() || undefined),
+        phone: user.phone ?? account.user.phone,
+        role: user.role,
+      });
+    }
 
     const website = normalizeWebsiteUrl(args.website);
     const result = await ctx.runMutation(internalApi.operator.createSoloClientInternal, {
       operatorUserId: userId,
-      adminUserId: account.user._id,
-      adminEmail,
-      adminName: args.adminName,
-      adminPhone: args.adminPhone,
+      users: provisionedUsers,
       client: {
         name: args.name,
         brokerOrgId: args.brokerOrgId,
@@ -1987,6 +2081,48 @@ export const requireOperatorForUserInternal = internalQuery({
   },
 });
 
+export const validateSoloClientUsersInternal = internalQuery({
+  args: {
+    users: v.array(
+      v.object({
+        email: v.string(),
+        phone: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (args.users.length > OPERATOR_CLIENT_USER_LIMIT) {
+      throw new Error("Client team size is invalid");
+    }
+
+    for (const input of args.users) {
+      const email = normalizeClientUserEmail(input.email);
+      const users = await ctx.db
+        .query("users")
+        .withIndex("email", (q) => q.eq("email", email))
+        .take(5);
+      for (const user of users) {
+        await assertCustomerUser(ctx, user._id);
+        const membership = await ctx.db
+          .query("orgMemberships")
+          .withIndex("user", (q) => q.eq("userId", user._id))
+          .first();
+        if (membership) {
+          throw new Error(`${email} already belongs to another organization`);
+        }
+      }
+
+      const normalizedPhone = normalizeUserPhone(input.phone);
+      if (!normalizedPhone) continue;
+      const phoneOwner = await findUserByNormalizedPhone(ctx, normalizedPhone);
+      if (phoneOwner && !users.some((user) => user._id === phoneOwner._id)) {
+        throw new Error("This phone number is already used by another user");
+      }
+    }
+    return null;
+  },
+});
+
 export const requireOperatorPolicyWriteForUserInternal = internalQuery({
   args: {
     userId: v.id("users"),
@@ -2157,10 +2293,15 @@ export const upsertBrokerInternal = internalMutation({
 export const createSoloClientInternal = internalMutation({
   args: {
     operatorUserId: v.id("users"),
-    adminUserId: v.id("users"),
-    adminEmail: v.string(),
-    adminName: v.optional(v.string()),
-    adminPhone: v.optional(v.string()),
+    users: v.array(
+      v.object({
+        userId: v.id("users"),
+        email: v.string(),
+        name: v.optional(v.string()),
+        phone: v.optional(v.string()),
+        role: orgRoleValidator,
+      }),
+    ),
     client: v.object({
       name: v.string(),
       brokerOrgId: v.optional(v.id("organizations")),
@@ -2168,68 +2309,105 @@ export const createSoloClientInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
-    await assertCustomerUser(ctx, args.adminUserId);
+    if (args.users.length > OPERATOR_CLIENT_USER_LIMIT) {
+      throw new Error("Client team size is invalid");
+    }
+    const primaryAdminInput = args.users.find((user) => user.role === "admin");
+    if (args.users.length > 0 && !primaryAdminInput) {
+      throw new Error("At least one client user must be an admin");
+    }
     const clientName = args.client.name.trim();
     if (!clientName) throw new Error("Client name is required");
     const broker = args.client.brokerOrgId ? await ctx.db.get(args.client.brokerOrgId) : null;
     if (args.client.brokerOrgId && (!broker || broker.type !== "broker")) {
       throw new Error("Broker not found");
     }
-    const otherMembership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("user", (q) => q.eq("userId", args.adminUserId))
-      .first();
-    if (otherMembership) throw new Error("Client admin already belongs to another organization");
 
-    const adminPhone = await normalizeAvailableUserPhone(
-      ctx,
-      args.adminPhone,
-      args.adminUserId,
-    );
+    const seenUserIds = new Set<Id<"users">>();
+    const seenEmails = new Set<string>();
+    const seenPhones = new Set<string>();
+    const users: Array<{
+      userId: Id<"users">;
+      email: string;
+      name?: string;
+      phone?: string;
+      role: "admin" | "member";
+    }> = [];
+    for (const input of args.users) {
+      const email = normalizeClientUserEmail(input.email);
+      await assertCustomerUser(ctx, input.userId);
+      if (seenUserIds.has(input.userId) || seenEmails.has(email)) {
+        throw new Error("Each client user must be unique");
+      }
+      seenUserIds.add(input.userId);
+      seenEmails.add(email);
+
+      const otherMembership = await ctx.db
+        .query("orgMemberships")
+        .withIndex("user", (q) => q.eq("userId", input.userId))
+        .first();
+      if (otherMembership) {
+        throw new Error(`${email} already belongs to another organization`);
+      }
+
+      const phone = await normalizeAvailableUserPhone(ctx, input.phone, input.userId);
+      if (phone && seenPhones.has(phone)) {
+        throw new Error("Use a different phone number for each client user");
+      }
+      if (phone) seenPhones.add(phone);
+      users.push({
+        ...input,
+        email,
+        name: input.name?.trim() || undefined,
+        phone,
+      });
+    }
+    const primaryAdmin = users.find((user) => user.role === "admin");
+
     const clientOrgId = await ctx.db.insert("organizations", {
       name: clientName,
       type: "client",
       brokerOrgId: args.client.brokerOrgId,
       website: args.client.website?.trim() || undefined,
-      allowedEmails: [args.adminEmail],
+      allowedEmails: users.map((user) => user.email),
       emailVerification: "strict",
-      primaryInsuranceContactId: args.adminUserId,
-      primaryContactName: args.adminName?.trim() || undefined,
-      primaryContactEmail: args.adminEmail,
-      primaryContactPhone: adminPhone,
+      primaryInsuranceContactId: primaryAdmin?.userId,
+      primaryContactName: primaryAdmin?.name?.trim() || undefined,
+      primaryContactEmail: primaryAdmin?.email,
+      primaryContactPhone: primaryAdmin?.phone,
       onboardingComplete: true,
       operatorStatus: "onboarding",
     });
-    await ctx.db.insert("orgMemberships", {
-      orgId: clientOrgId,
-      userId: args.adminUserId,
-      role: "admin",
-    });
-    const adminUserPatch: {
-      accountKind: "customer";
-      email: string;
-      name?: string;
-      phone?: string;
-      onboardingComplete: boolean;
-    } = {
-      accountKind: "customer",
-      email: args.adminEmail,
-      name: args.adminName?.trim() || undefined,
-      onboardingComplete: true,
-    };
-    if (args.adminPhone !== undefined) {
-      adminUserPatch.phone = adminPhone;
+    for (const user of users) {
+      await ctx.db.insert("orgMemberships", {
+        orgId: clientOrgId,
+        userId: user.userId,
+        role: user.role,
+      });
+      await ctx.db.patch(user.userId, {
+        accountKind: "customer",
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        onboardingComplete: true,
+      });
     }
-    await ctx.db.patch(args.adminUserId, adminUserPatch);
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "client_created",
       targetOrgId: clientOrgId,
-      targetUserId: args.adminUserId,
+      targetUserId: primaryAdmin?.userId,
       summary: broker
         ? `Created client ${clientName} for broker ${broker.name}`
         : `Created standalone client ${clientName}`,
-      metadata: { adminEmail: args.adminEmail, brokerOrgId: args.client.brokerOrgId },
+      metadata: {
+        ...(primaryAdmin ? { adminEmail: primaryAdmin.email } : {}),
+        ...(args.client.brokerOrgId
+          ? { brokerOrgId: args.client.brokerOrgId }
+          : {}),
+        userCount: users.length,
+        adminCount: users.filter((user) => user.role === "admin").length,
+      },
     });
     return { clientOrgId };
   },
@@ -2269,23 +2447,27 @@ export const getSoloClientLaunchContextInternal = internalQuery({
       .query("orgMemberships")
       .withIndex("organization", (q) => q.eq("orgId", args.clientOrgId))
       .take(200);
-    const adminMembership = args.adminUserId
+    const targetMembership = args.adminUserId
       ? memberships.find(
           (membership) =>
-            membership.userId === args.adminUserId &&
-            membership.role === "admin",
+            membership.userId === args.adminUserId,
         )
       : memberships.find((membership) => membership.role === "admin");
-    const admin = adminMembership
-      ? await ctx.db.get(adminMembership.userId)
-      : null;
-    if (!admin || admin.serviceAccountKind) return null;
+    if (
+      !targetMembership ||
+      ((client.operatorStatus ?? "live") === "onboarding" &&
+        targetMembership.role !== "admin")
+    ) {
+      return null;
+    }
+    const recipient = await ctx.db.get(targetMembership.userId);
+    if (!recipient || recipient.serviceAccountKind) return null;
     return {
       clientOrgId: client._id,
       name: client.name,
-      adminUserId: admin._id,
-      adminEmail: admin.email,
-      adminName: admin.name,
+      adminUserId: recipient._id,
+      adminEmail: recipient.email,
+      adminName: recipient.name,
     };
   },
 });

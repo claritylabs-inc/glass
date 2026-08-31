@@ -234,6 +234,9 @@ wrapping, and truncation local.
 - Use `Input`, `Textarea`, `Select`, and the shared field primitives. The
   default field height is `h-9`; compact fields must come from a supported
   primitive size rather than a local height override.
+- Keep placeholders generic and descriptive. Never use a real customer,
+  company, or person as sample data; use reserved `example.com` addresses when
+  an email or URL format is useful.
 - Every interactive control needs visible hover, focus, disabled, and invalid
   states where applicable. Color alone must not carry essential meaning.
 

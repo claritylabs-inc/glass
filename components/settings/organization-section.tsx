@@ -378,7 +378,7 @@ export function OrganizationSection() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onBlur={() => void saveOrgSettingsNow()}
-                placeholder="Acme Corp"
+                placeholder="Organization name"
                 className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
               />
             </div>
@@ -402,7 +402,7 @@ export function OrganizationSection() {
                     }
                     onFocus={() => setSlugFocused(true)}
                     onBlur={() => setSlugFocused(false)}
-                    placeholder="my-brokerage"
+                    placeholder="brokerage-name"
                     className={`h-9 flex-1 min-w-0 rounded-r-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                   />
                 </div>
@@ -429,7 +429,7 @@ export function OrganizationSection() {
                 value={website}
                 onChange={(e) => setWebsite(e.target.value)}
                 onBlur={() => void saveOrgSettingsNow()}
-                placeholder="https://yourcompany.com"
+                placeholder="https://example.com"
                 className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
               />
             </div>

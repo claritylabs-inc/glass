@@ -269,7 +269,7 @@ function RuleDrawer({
       <div className="space-y-4">
         <label className="space-y-1.5">
           <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>Name</span>
-          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Cyber renewals from Coalition" />
+          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Renewal policy delivery" />
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="space-y-1.5">
@@ -293,7 +293,7 @@ function RuleDrawer({
         </div>
         <label className="space-y-1.5">
           <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>Insurers or markets</span>
-          <Input value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Coalition, CNA, Lloyd's" />
+          <Input value={insurers} onChange={(event) => setInsurers(event.target.value)} placeholder="Insurer or market names, separated by commas" />
         </label>
         <label className="space-y-1.5">
           <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>Lines of business</span>

@@ -523,7 +523,7 @@ export function InviteClientDrawer({
             type="text"
             value={orgName}
             onChange={(e) => setOrgNameInput(e.target.value)}
-            placeholder="Acme Inc."
+            placeholder="Organization name"
             className={INPUT_CLASSES}
           />
         </div>
@@ -536,7 +536,7 @@ export function InviteClientDrawer({
             type="text"
             value={website}
             onChange={(e) => setWebsiteInput(e.target.value)}
-            placeholder="acme.com"
+            placeholder="https://example.com"
             className={INPUT_CLASSES}
           />
           <p className={`mt-1.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
@@ -552,7 +552,7 @@ export function InviteClientDrawer({
             type="text"
             value={contactName}
             onChange={(e) => setContactNameInput(e.target.value)}
-            placeholder="Jane Smith"
+            placeholder="Full name"
             className={INPUT_CLASSES}
           />
         </div>
@@ -565,7 +565,7 @@ export function InviteClientDrawer({
             type="email"
             value={contactEmail}
             onChange={(e) => setContactEmailInput(e.target.value)}
-            placeholder="jane@acmecorp.com"
+            placeholder="name@example.com"
             className={INPUT_CLASSES}
           />
         </div>

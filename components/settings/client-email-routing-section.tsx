@@ -261,7 +261,7 @@ export function ClientEmailRoutingSection({
               }
             }}
             onBlur={addEmail}
-            placeholder="name@company.com"
+            placeholder="name@example.com"
             disabled={!canEdit}
             aria-invalid={Boolean(emailError)}
           />
@@ -344,7 +344,7 @@ export function ClientEmailRoutingSection({
               }
             }}
             onBlur={() => addDomain()}
-            placeholder="company.com"
+            placeholder="example.com"
             disabled={!canEdit || mode !== "domain"}
             aria-invalid={Boolean(domainError)}
           />
