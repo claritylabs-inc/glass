@@ -219,6 +219,62 @@ describe("Slack channel state and authorization", () => {
     expect(event).toMatchObject({ status: "completed", mentionsGlass: true });
   });
 
+  test("accepts the Spot fixture mention for a preserved local Glass connection", async () => {
+    vi.stubEnv("SPOT_ENV", "local");
+    const t = convexTest(schema, modules);
+    const { clientOrgId, connectionId } = await seedSlack(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(connectionId, {
+        teamId: "T-COVE-FIXTURE",
+        botUserId: "U-GLASS",
+      });
+      const binding = await ctx.db
+        .query("slackChannelBindings")
+        .withIndex("connection_status", (q) =>
+          q.eq("connectionId", connectionId).eq("status", "active"),
+        )
+        .unique();
+      if (!binding) throw new Error("Missing Slack fixture binding");
+      await ctx.db.patch(binding._id, {
+        customerChannelId: "C-COVE-FIXTURE",
+      });
+    });
+
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "preserved-local-fixture",
+      teamId: "T-COVE-FIXTURE",
+      channelId: "C-COVE-FIXTURE",
+      threadTs: "1800000000.040",
+      messageTs: "1800000000.040",
+      senderTeamId: "T-COVE-FIXTURE",
+      senderUserId: "U-CUSTOMER",
+      content: "<@U-SPOT> summarize my current policy",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    })) as { eventId: Id<"slackInboundEvents"> };
+
+    const event = await t.run((ctx) => ctx.db.get(claim.eventId));
+    expect(event).toMatchObject({
+      mentionsSpot: true,
+      mentionedBotUserId: "U-SPOT",
+    });
+    await expect(
+      t.mutation(prepareBatchFn, { eventIds: [claim.eventId] }),
+    ).resolves.toMatchObject({ orgId: clientOrgId });
+    const thread = await t.run((ctx) =>
+      ctx.db
+        .query("threads")
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-COVE-FIXTURE")
+            .eq("slackThreadTs", "1800000000.040"),
+        )
+        .unique(),
+    );
+    expect(thread?.slackState).toBe("active");
+  });
+
   test("fails closed until Slack resolves a sender's native workspace", async () => {
     const t = convexTest(schema, modules);
     const { connectionId } = await seedSlack(t);

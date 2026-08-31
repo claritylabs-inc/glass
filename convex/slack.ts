@@ -21,6 +21,34 @@ import {
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
 const MAX_BATCH_SIZE = 50;
+const LOCAL_FIXTURE_TEAM_ID = "T-COVE-FIXTURE";
+const LOCAL_FIXTURE_CHANNEL_ID = "C-COVE-FIXTURE";
+const LOCAL_FIXTURE_BOT_USER_IDS = new Set(["U-SPOT", "U-GLASS"]);
+
+function mentionedBotUserId(args: {
+  content: string;
+  configuredBotUserId?: string;
+  teamId: string;
+  channelId: string;
+}): string | undefined {
+  if (
+    args.configuredBotUserId &&
+    args.content.includes(`<@${args.configuredBotUserId}>`)
+  ) {
+    return args.configuredBotUserId;
+  }
+  if (
+    process.env.SPOT_ENV !== "local" ||
+    args.teamId !== LOCAL_FIXTURE_TEAM_ID ||
+    args.channelId !== LOCAL_FIXTURE_CHANNEL_ID ||
+    !LOCAL_FIXTURE_BOT_USER_IDS.has(args.configuredBotUserId ?? "")
+  ) {
+    return undefined;
+  }
+  return Array.from(LOCAL_FIXTURE_BOT_USER_IDS).find((botUserId) =>
+    args.content.includes(`<@${botUserId}>`),
+  );
+}
 
 export const getActiveConnection = internalQuery({
   args: { clientOrgId: v.id("organizations") },
@@ -453,9 +481,13 @@ export const claimInbound = internalMutation({
     if (settings?.slackEnabled !== true) {
       return { duplicate: false, status: "disabled" as const };
     }
-    const mentionsSpot = connection.botUserId
-      ? args.content.includes(`<@${connection.botUserId}>`)
-      : false;
+    const mentionedBot = mentionedBotUserId({
+      content: args.content,
+      configuredBotUserId: connection.botUserId,
+      teamId: args.teamId,
+      channelId: args.channelId,
+    });
+    const mentionsSpot = mentionedBot !== undefined;
     if (
       args.eventType !== "delete" &&
       !args.isDirectMessage &&
@@ -503,7 +535,7 @@ export const claimInbound = internalMutation({
       connectionId: connection._id,
       isPrimaryChannel: identity.isPrimaryChannel,
       mentionsSpot,
-      mentionedBotUserId: mentionsSpot ? connection.botUserId : undefined,
+      mentionedBotUserId: mentionedBot,
       status: "queued",
       attemptCount: 0,
       scheduledFor,
