@@ -11,7 +11,6 @@ import {
   OperationalLabelValueRow,
   OperationalPanel,
   OperationalPanelBody,
-  OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import {
   InputGroup,
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/input-group";
 import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -322,242 +322,261 @@ export default function OperatorTelemetryPage() {
         ) : undefined
       }
     >
-      <main className="w-full space-y-4">
-        <OperationalPanel>
-          <OperationalPanelHeader
-            title="Compliance requirement extractions"
-            description="Source parsing, model routing, extraction outcomes, and operator quality reviews."
-          />
-          {requirementRunsQuery.status === "LoadingFirstPage" ? (
-            <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
-              <Loader2 className="size-5 animate-spin" />
-            </OperationalPanelBody>
-          ) : filteredRequirementRuns.length === 0 ? (
-            <OperationalPanelBody className={`text-muted-foreground ${typeStyle("body.default")}`}>
-              {query.trim()
-                ? "No requirement extractions match this search."
-                : "No requirement extraction runs yet."}
-            </OperationalPanelBody>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Parser</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Extracted / saved</TableHead>
-                  <TableHead>Duration</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRequirementRuns.map((run) => (
-                  <TableRow
-                    key={run._id}
-                    data-state={
-                      selectedRequirementRun?._id === run._id
-                        ? "selected"
-                        : undefined
-                    }
-                  >
-                    <TableCell className="text-muted-foreground">
-                      {formatDisplayDateTime(run.startedAt)}
-                    </TableCell>
-                    <TableCell>
-                      <StatusTag
-                        tone={
-                          run.status === "complete"
-                            ? "success"
-                            : run.status === "error"
-                              ? "danger"
-                              : "neutral"
+      <main className="w-full">
+        <Tabs
+          defaultValue="requirement-extractions"
+          className="gap-4"
+          onValueChange={() => {
+            setSelectedEvent(null);
+            setSelectedRequirementRun(null);
+          }}
+        >
+          <TabsList variant="pill" aria-label="Telemetry section">
+            <TabsTrigger value="requirement-extractions">
+              Requirement extractions
+            </TabsTrigger>
+            <TabsTrigger value="model-routing">Model routing</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="requirement-extractions">
+            <OperationalPanel>
+              {requirementRunsQuery.status === "LoadingFirstPage" ? (
+                <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
+                  <Loader2 className="size-5 animate-spin" />
+                </OperationalPanelBody>
+              ) : filteredRequirementRuns.length === 0 ? (
+                <OperationalPanelBody
+                  className={`text-muted-foreground ${typeStyle("body.default")}`}
+                >
+                  {query.trim()
+                    ? "No requirement extractions match this search."
+                    : "No requirement extraction runs yet."}
+                </OperationalPanelBody>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Parser</TableHead>
+                      <TableHead>Route</TableHead>
+                      <TableHead>Extracted / saved</TableHead>
+                      <TableHead>Duration</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRequirementRuns.map((run) => (
+                      <TableRow
+                        key={run._id}
+                        data-state={
+                          selectedRequirementRun?._id === run._id
+                            ? "selected"
+                            : undefined
                         }
                       >
-                        {displayIdentifier(run.status)}
-                      </StatusTag>
-                    </TableCell>
-                    <TableCell className="min-w-64 whitespace-normal">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEvent(null);
-                          setSelectedRequirementRun(run);
-                        }}
-                        className="group flex w-full items-center justify-between gap-3 rounded-md px-2 py-1 text-left outline-none transition-colors hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-foreground/20"
-                      >
-                        <span className="min-w-0">
-                          <span className={`block truncate text-foreground ${typeStyle("body.medium")}`}>
-                            {run.sourceName}
-                          </span>
-                          <span className={`block text-muted-foreground ${typeStyle("caption.default")}`}>
-                            {run.orgName} · {displayIdentifier(run.sourceType)}
-                          </span>
-                        </span>
-                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                      </button>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {displayIdentifier(run.parserBackend)}
-                    </TableCell>
-                    <TableCell>
-                      {run.provider && run.model
-                        ? `${run.provider} / ${run.model}`
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {run.extractedRequirementCount === undefined
-                        ? "—"
-                        : `${run.extractedRequirementCount.toLocaleString()} / ${(run.createdRequirementCount ?? 0).toLocaleString()}`}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDuration(run.totalDurationMs)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          {requirementRunsQuery.status === "CanLoadMore" ||
-          requirementRunsQuery.status === "LoadingMore" ? (
-            <div className="flex justify-center border-t border-border p-4">
-              <PillButton
-                variant="secondary"
-                size="compact"
-                disabled={requirementRunsQuery.status === "LoadingMore"}
-                onClick={() => requirementRunsQuery.loadMore(50)}
-              >
-                {requirementRunsQuery.status === "LoadingMore" ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : null}
-                Load older requirement runs
-              </PillButton>
-            </div>
-          ) : null}
-        </OperationalPanel>
+                        <TableCell className="text-muted-foreground">
+                          {formatDisplayDateTime(run.startedAt)}
+                        </TableCell>
+                        <TableCell>
+                          <StatusTag
+                            tone={
+                              run.status === "complete"
+                                ? "success"
+                                : run.status === "error"
+                                  ? "danger"
+                                  : "neutral"
+                            }
+                          >
+                            {displayIdentifier(run.status)}
+                          </StatusTag>
+                        </TableCell>
+                        <TableCell className="min-w-64 whitespace-normal">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedEvent(null);
+                              setSelectedRequirementRun(run);
+                            }}
+                            className="group flex w-full items-center justify-between gap-3 rounded-md px-2 py-1 text-left outline-none transition-colors hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-foreground/20"
+                          >
+                            <span className="min-w-0">
+                              <span
+                                className={`block truncate text-foreground ${typeStyle("body.medium")}`}
+                              >
+                                {run.sourceName}
+                              </span>
+                              <span
+                                className={`block text-muted-foreground ${typeStyle("caption.default")}`}
+                              >
+                                {run.orgName} ·{" "}
+                                {displayIdentifier(run.sourceType)}
+                              </span>
+                            </span>
+                            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                          </button>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {displayIdentifier(run.parserBackend)}
+                        </TableCell>
+                        <TableCell>
+                          {run.provider && run.model
+                            ? `${run.provider} / ${run.model}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {run.extractedRequirementCount === undefined
+                            ? "—"
+                            : `${run.extractedRequirementCount.toLocaleString()} / ${(run.createdRequirementCount ?? 0).toLocaleString()}`}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatDuration(run.totalDurationMs)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              {requirementRunsQuery.status === "CanLoadMore" ||
+              requirementRunsQuery.status === "LoadingMore" ? (
+                <div className="flex justify-center border-t border-border p-4">
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    disabled={requirementRunsQuery.status === "LoadingMore"}
+                    onClick={() => requirementRunsQuery.loadMore(50)}
+                  >
+                    {requirementRunsQuery.status === "LoadingMore" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : null}
+                    Load older requirement runs
+                  </PillButton>
+                </div>
+              ) : null}
+            </OperationalPanel>
+          </TabsContent>
 
-        <OperationalPanel>
-          <OperationalPanelHeader
-            title="Model routing events"
-            description="All routed model steps and technical fallback outcomes."
-          />
-          {status === "LoadingFirstPage" ? (
-            <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
-              <Loader2 className="size-5 animate-spin" />
-            </OperationalPanelBody>
-          ) : filteredEvents.length === 0 ? (
-            <OperationalPanelBody
-              className={`text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              {query.trim()
-                ? "No telemetry matches this search."
-                : "No telemetry events yet."}
-            </OperationalPanelBody>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Result</TableHead>
-                  <TableHead>Channel / task</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Transport</TableHead>
-                  <TableHead>Outcome</TableHead>
-                  <TableHead>Request</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEvents.map((event) => {
-                  const eventOutcome = routingEventOutcome(event);
-                  const summary = routingEventSummary(event);
-                  return (
-                    <TableRow
-                      key={event._id}
-                      data-state={
-                        selectedEvent?._id === event._id
-                          ? "selected"
-                          : undefined
-                      }
-                    >
-                      <TableCell className="text-muted-foreground">
-                        {formatDisplayDateTime(event.timestamp)}
-                      </TableCell>
-                      <TableCell>
-                        <StatusTag tone={eventOutcome.tone}>
-                          {eventOutcome.label}
-                        </StatusTag>
-                      </TableCell>
-                      <TableCell className="min-w-64 whitespace-normal">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedRequirementRun(null);
-                            setSelectedEvent(event);
-                          }}
-                          className="group flex w-full items-center justify-between gap-3 rounded-md px-2 py-1 text-left outline-none transition-colors hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-foreground/20"
-                        >
-                          <span className="min-w-0">
-                            <span
-                              className={`block truncate text-foreground ${typeStyle("body.medium")}`}
-                            >
-                              {event.channel} · {event.task}
-                            </span>
-                            <span
-                              className={`block truncate text-muted-foreground ${typeStyle("caption.default")}`}
-                            >
-                              {event.taskKind} · {event.phase}
-                            </span>
-                          </span>
-                          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-active:translate-x-0.5 motion-reduce:transition-none" />
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        {routeLabel(
-                          event.provider && event.model
-                            ? {
-                                provider: event.provider,
-                                model: event.model,
-                              }
-                            : undefined,
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {event.transport ?? "—"}
-                      </TableCell>
-                      <TableCell
-                        className="max-w-80 truncate text-muted-foreground"
-                        title={summary}
-                      >
-                        {summary}
-                      </TableCell>
-                      <TableCell
-                        className={`max-w-48 truncate text-muted-foreground ${typeStyle("technical.codeCompact")}`}
-                        title={event.requestId}
-                      >
-                        {event.requestId ?? "—"}
-                      </TableCell>
+          <TabsContent value="model-routing">
+            <OperationalPanel>
+              {status === "LoadingFirstPage" ? (
+                <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
+                  <Loader2 className="size-5 animate-spin" />
+                </OperationalPanelBody>
+              ) : filteredEvents.length === 0 ? (
+                <OperationalPanelBody
+                  className={`text-muted-foreground ${typeStyle("body.default")}`}
+                >
+                  {query.trim()
+                    ? "No telemetry matches this search."
+                    : "No telemetry events yet."}
+                </OperationalPanelBody>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Result</TableHead>
+                      <TableHead>Channel / task</TableHead>
+                      <TableHead>Route</TableHead>
+                      <TableHead>Transport</TableHead>
+                      <TableHead>Outcome</TableHead>
+                      <TableHead>Request</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-          {status === "CanLoadMore" || status === "LoadingMore" ? (
-            <div className="flex justify-center border-t border-border p-4">
-              <PillButton
-                variant="secondary"
-                size="compact"
-                disabled={status === "LoadingMore"}
-                onClick={() => loadMore(100)}
-              >
-                {status === "LoadingMore" ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : null}
-                Load older events
-              </PillButton>
-            </div>
-          ) : null}
-        </OperationalPanel>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredEvents.map((event) => {
+                      const eventOutcome = routingEventOutcome(event);
+                      const summary = routingEventSummary(event);
+                      return (
+                        <TableRow
+                          key={event._id}
+                          data-state={
+                            selectedEvent?._id === event._id
+                              ? "selected"
+                              : undefined
+                          }
+                        >
+                          <TableCell className="text-muted-foreground">
+                            {formatDisplayDateTime(event.timestamp)}
+                          </TableCell>
+                          <TableCell>
+                            <StatusTag tone={eventOutcome.tone}>
+                              {eventOutcome.label}
+                            </StatusTag>
+                          </TableCell>
+                          <TableCell className="min-w-64 whitespace-normal">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedRequirementRun(null);
+                                setSelectedEvent(event);
+                              }}
+                              className="group flex w-full items-center justify-between gap-3 rounded-md px-2 py-1 text-left outline-none transition-colors hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-foreground/20"
+                            >
+                              <span className="min-w-0">
+                                <span
+                                  className={`block truncate text-foreground ${typeStyle("body.medium")}`}
+                                >
+                                  {event.channel} · {event.task}
+                                </span>
+                                <span
+                                  className={`block truncate text-muted-foreground ${typeStyle("caption.default")}`}
+                                >
+                                  {event.taskKind} · {event.phase}
+                                </span>
+                              </span>
+                              <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-active:translate-x-0.5 motion-reduce:transition-none" />
+                            </button>
+                          </TableCell>
+                          <TableCell>
+                            {routeLabel(
+                              event.provider && event.model
+                                ? {
+                                    provider: event.provider,
+                                    model: event.model,
+                                  }
+                                : undefined,
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {event.transport ?? "—"}
+                          </TableCell>
+                          <TableCell
+                            className="max-w-80 truncate text-muted-foreground"
+                            title={summary}
+                          >
+                            {summary}
+                          </TableCell>
+                          <TableCell
+                            className={`max-w-48 truncate text-muted-foreground ${typeStyle("technical.codeCompact")}`}
+                            title={event.requestId}
+                          >
+                            {event.requestId ?? "—"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+              {status === "CanLoadMore" || status === "LoadingMore" ? (
+                <div className="flex justify-center border-t border-border p-4">
+                  <PillButton
+                    variant="secondary"
+                    size="compact"
+                    disabled={status === "LoadingMore"}
+                    onClick={() => loadMore(100)}
+                  >
+                    {status === "LoadingMore" ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : null}
+                    Load older events
+                  </PillButton>
+                </div>
+              ) : null}
+            </OperationalPanel>
+          </TabsContent>
+        </Tabs>
       </main>
     </AppShell>
   );
