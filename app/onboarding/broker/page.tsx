@@ -537,7 +537,7 @@ export default function BrokerOnboardingPage() {
                     type="text"
                     value={userName}
                     onChange={(e) => setUserName(e.target.value)}
-                    placeholder="Jane Smith"
+                    placeholder="Full name"
                     autoFocus
                     className={inputClass}
                   />
@@ -548,7 +548,7 @@ export default function BrokerOnboardingPage() {
                     type="text"
                     value={userTitle}
                     onChange={(e) => setUserTitle(e.target.value)}
-                    placeholder="Producer"
+                    placeholder="Job title"
                     className={inputClass}
                   />
                 </div>
@@ -559,7 +559,7 @@ export default function BrokerOnboardingPage() {
                   type="text"
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="Acme Insurance Brokers"
+                  placeholder="Brokerage name"
                   className={inputClass}
                 />
               </div>
@@ -569,7 +569,7 @@ export default function BrokerOnboardingPage() {
                   type="text"
                   value={website}
                   onChange={(e) => setWebsite(e.target.value)}
-                  placeholder="acme-brokers.com"
+                  placeholder="https://example.com"
                   className={inputClass}
                 />
               </div>
@@ -614,7 +614,7 @@ export default function BrokerOnboardingPage() {
                       e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
                     )
                   }
-                  placeholder="acme-brokers"
+                  placeholder="brokerage-name"
                   autoFocus
                   className={`h-9 flex-1 min-w-0 rounded-r-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                 />
@@ -797,7 +797,7 @@ export default function BrokerOnboardingPage() {
                         .slice(0, 30),
                     )
                   }
-                  placeholder="acme"
+                  placeholder="brokerage"
                   autoFocus
                   className={`h-9 flex-1 min-w-0 rounded-l-lg border border-r-0 border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                 />

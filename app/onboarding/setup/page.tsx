@@ -567,7 +567,7 @@ export default function ClientOnboardingSetupPage() {
                   type="text"
                   value={userName}
                   onChange={(e) => setUserName(e.target.value)}
-                  placeholder="Jane Smith"
+                  placeholder="Full name"
                   autoFocus
                   className={inputClass}
                 />
@@ -578,7 +578,7 @@ export default function ClientOnboardingSetupPage() {
                   type="text"
                   value={userRole}
                   onChange={(e) => setUserRole(e.target.value)}
-                  placeholder="Founder, Ops Lead, etc."
+                  placeholder="Job title"
                   className={inputClass}
                 />
               </div>
@@ -642,7 +642,7 @@ export default function ClientOnboardingSetupPage() {
                   type="text"
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="Acme Inc."
+                  placeholder="Organization name"
                   autoFocus
                   className={inputClass}
                 />
@@ -653,7 +653,7 @@ export default function ClientOnboardingSetupPage() {
                   type="text"
                   value={website}
                   onChange={(e) => setWebsite(e.target.value)}
-                  placeholder="acme.com"
+                  placeholder="https://example.com"
                   className={inputClass}
                 />
                 <p className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}>

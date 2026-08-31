@@ -231,7 +231,7 @@ export default function VendorRequestAcceptance({ token }: { token: string }) {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com"
+                placeholder="name@example.com"
                 required
                 className={INPUT_CLASSES}
               />

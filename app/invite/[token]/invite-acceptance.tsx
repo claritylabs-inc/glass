@@ -255,7 +255,7 @@ export default function InviteAcceptance({ token }: { token: string }) {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com"
+                placeholder="name@example.com"
                 required
                 autoFocus
                 className={INPUT_CLASSES}
