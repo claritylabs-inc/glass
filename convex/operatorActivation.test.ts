@@ -96,6 +96,32 @@ describe("operator client activation", () => {
     ).resolves.toBeNull();
   });
 
+  test("allows attached members to receive activation only after an admin launches the client", async () => {
+    const fixture = await seedClientTeam();
+
+    await expect(
+      fixture.t.query(getLaunchContext, {
+        clientOrgId: fixture.clientOrgId,
+        adminUserId: fixture.memberUserId,
+      }),
+    ).resolves.toBeNull();
+
+    await fixture.t.run((ctx) =>
+      ctx.db.patch(fixture.clientOrgId, { operatorStatus: "live" }),
+    );
+
+    await expect(
+      fixture.t.query(getLaunchContext, {
+        clientOrgId: fixture.clientOrgId,
+        adminUserId: fixture.memberUserId,
+      }),
+    ).resolves.toMatchObject({
+      adminUserId: fixture.memberUserId,
+      adminEmail: "member@example.com",
+      adminName: "Team Member",
+    });
+  });
+
   test("records accepted activation deliveries as a launch and then a resend", async () => {
     const fixture = await seedClientTeam();
     const operator = fixture.t.withIdentity({
