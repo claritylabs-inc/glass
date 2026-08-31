@@ -189,6 +189,36 @@ async function ingest(
 }
 
 describe("Slack channel state and authorization", () => {
+  test("keeps pre-rebrand mention events actionable during the widening release", async () => {
+    const t = convexTest(schema, modules);
+    await seedSlack(t);
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "legacy-mention-event",
+      teamId: "T-CUSTOMER",
+      channelId: "C-PRIMARY",
+      threadTs: "1800000000.025",
+      messageTs: "1800000000.025",
+      senderTeamId: "T-CUSTOMER",
+      senderUserId: "U-CUSTOMER",
+      content: "Review my policy",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    })) as { eventId: Id<"slackInboundEvents"> };
+    await t.run((ctx) =>
+      ctx.db.patch(claim.eventId, {
+        mentionsSpot: undefined,
+        mentionsGlass: true,
+        status: "processing",
+      }),
+    );
+
+    await expect(
+      t.mutation(prepareBatchFn, { eventIds: [claim.eventId] }),
+    ).resolves.toMatchObject({ orgId: expect.any(String) });
+    const event = await t.run((ctx) => ctx.db.get(claim.eventId));
+    expect(event).toMatchObject({ status: "completed", mentionsGlass: true });
+  });
+
   test("fails closed until Slack resolves a sender's native workspace", async () => {
     const t = convexTest(schema, modules);
     const { connectionId } = await seedSlack(t);

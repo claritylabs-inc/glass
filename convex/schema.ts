@@ -3892,7 +3892,10 @@ export default defineSchema({
     isDirectMessage: v.optional(v.boolean()),
     isPrivateChannel: v.optional(v.boolean()),
     isPrimaryChannel: v.boolean(),
-    mentionsSpot: v.boolean(),
+    // Both fields stay optional for the widening release so existing inbound
+    // events remain valid until the production backfill has completed.
+    mentionsSpot: v.optional(v.boolean()),
+    mentionsGlass: v.optional(v.boolean()),
     mentionedBotUserId: v.optional(v.string()),
     status: v.union(
       v.literal("queued"),

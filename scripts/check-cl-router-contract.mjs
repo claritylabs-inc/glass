@@ -289,10 +289,10 @@ function checkCalibrationFixture(fixtures) {
   const qualificationSpec = seed.qualificationSpec;
   assert(isRecord(qualificationSpec), "calibration fixture qualification spec is missing");
   assert(
-    qualificationSpec.id === "spot-policy-extraction-source-tree@1"
+    qualificationSpec.id === "glass-policy-extraction-source-tree@1"
       && qualificationSpec.task === "extraction"
       && qualificationSpec.taskFamily === "extraction_source_tree",
-    "calibration fixture must use the reviewed Spot policy extraction qualification spec",
+    "calibration fixture must use Spot's reviewed legacy-compatible policy extraction qualification spec",
   );
   assert(
     qualificationSpec.classification === "proxy_benchmark"

@@ -38,6 +38,25 @@ export const getActiveConnection = internalQuery({
   },
 });
 
+export const verifyInboundEventMentionsSpotBackfill = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const remaining = await ctx.db
+      .query("slackInboundEvents")
+      .filter((query) =>
+        query.or(
+          query.eq(query.field("mentionsSpot"), undefined),
+          query.neq(query.field("mentionsGlass"), undefined),
+        ),
+      )
+      .first();
+    return {
+      complete: remaining === null,
+      remainingSampleId: remaining?._id,
+    };
+  },
+});
+
 const attachmentValidator = v.object({
   providerFileId: v.string(),
   filename: v.string(),
@@ -46,6 +65,12 @@ const attachmentValidator = v.object({
 });
 
 type SlackClassification = Doc<"slackActors">["classification"];
+
+function eventMentionsSpot(
+  event: Pick<Doc<"slackInboundEvents">, "mentionsSpot" | "mentionsGlass">,
+): boolean {
+  return event.mentionsSpot ?? event.mentionsGlass ?? false;
+}
 
 async function resolveSpotUserId(
   ctx: MutationCtx,
@@ -555,7 +580,7 @@ export const enrichInboundActor = internalMutation({
       ...(args.senderEmail ? { senderEmail: args.senderEmail } : {}),
       senderIsBot: args.senderIsBot,
       mentionsSpot:
-        event.mentionsSpot ||
+        eventMentionsSpot(event) ||
         Boolean(
           args.installationBotUserId &&
           event.content.includes(`<@${args.installationBotUserId}>`),
@@ -724,7 +749,7 @@ export const prepareBatch = internalMutation({
         ? authorizedCustomer
         : event.isPrimaryChannel
           ? true
-          : event.mentionsSpot || existingThread?.slackState === "active";
+          : eventMentionsSpot(event) || existingThread?.slackState === "active";
       if (!shouldRecord) {
         await ctx.db.patch(event._id, { status: "ignored", updatedAt: now });
         continue;
@@ -779,7 +804,7 @@ export const prepareBatch = internalMutation({
               ? "active"
               : (actor.classification === "customer_member" ||
                     (!event.isPrimaryChannel && operator)) &&
-                  event.mentionsSpot
+                  eventMentionsSpot(event)
                 ? "active"
                 : "resolved",
         });
@@ -839,13 +864,13 @@ export const prepareBatch = internalMutation({
         archivedAt: undefined,
       });
 
-      if (operator && (event.isPrimaryChannel || !event.mentionsSpot)) {
+      if (operator && (event.isPrimaryChannel || !eventMentionsSpot(event))) {
         if (trigger) await ctx.db.delete(trigger.agentMessageId);
         trigger = undefined;
         await ctx.db.patch(thread._id, { slackState: "human_paused" });
       } else if (
         authorizedCustomer &&
-        (isDirectMessage || event.mentionsSpot) &&
+        (isDirectMessage || eventMentionsSpot(event)) &&
         isResolveCommand(event.content, mentionedBotUserId)
       ) {
         if (trigger) await ctx.db.delete(trigger.agentMessageId);
@@ -871,7 +896,7 @@ export const prepareBatch = internalMutation({
       } else if (
         (authorizedCustomer || operator) &&
         (isDirectMessage ||
-          event.mentionsSpot ||
+          eventMentionsSpot(event) ||
           thread.slackState === "active")
       ) {
         await ctx.db.patch(thread._id, { slackState: "active" });

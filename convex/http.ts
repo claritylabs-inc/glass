@@ -1794,9 +1794,9 @@ const MCP_TOOLS = [
     inputSchema: { type: "object" as const, properties: {} },
   },
   {
-    name: "ask_spot",
+    name: "ask_glass",
     description:
-      "Alias for ask_spot (legacy name). Ask the Spot AI assistant a question about the organization's insurance portfolio. When the selected org is a broker workspace, Spot can answer across managed client organizations with client-labeled results.",
+      "Legacy alias for ask_spot. Ask the Spot AI assistant a question about the organization's insurance portfolio. When the selected org is a broker workspace, Spot can answer across managed client organizations with client-labeled results.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -2443,6 +2443,7 @@ async function handleToolCall(
         ],
       };
     }
+    case "ask_glass":
     case "ask_spot": {
       if (!args.message) throw new Error("Missing message");
       const result = await ctx.runAction(internal.actions.mcpChat.run, {
