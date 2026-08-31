@@ -44,7 +44,7 @@ const ORG_SUFFIXES = new Set([
 
 const UNSAFE_COMPANY_MEMORY_PATTERNS = [
   /\b(the\s+)?(agent|assistant)\b.*\b(can|cannot|can't|will|should|must|requires?|needs?|asks?|asked|responded|said|stated|indicated|sent|attached|drafts?|blocked|unable|proceed|initiated)\b/i,
-  /\bglass\b.*\b(can|cannot|can't|will|should|must|requires?|needs?|asks?|asked|sent|attached|drafts?|generates?|blocked|unable)\b/i,
+  /\bspot\b.*\b(can|cannot|can't|will|should|must|requires?|needs?|asks?|asked|sent|attached|drafts?|generates?|blocked|unable)\b/i,
   /\b(the\s+)?user\b.*\b(requested|asked|wants|can proceed|provided|indicates|confirmed|approved|approval|needs?|requires?)\b/i,
   /\b(email draft|draft email|bcc|cc field|recipient|reply[- ]to|message[- ]id|attachment|attached|\.pdf\b|policy documents attached)\b/i,
   /\b(policy|endorsement|coi|certificate of insurance|certificate holder|additional insured|waiver of subrogation|primary and noncontributory|holder email|holder address|case id|status checker|application intake|intake id|pce)\b/i,

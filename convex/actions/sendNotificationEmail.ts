@@ -106,9 +106,9 @@ export const send = internalAction({
             accentColor: brokerOrg?.brandingColor ?? null,
             logoUrl,
           }
-        : { kind: "glass" };
+        : { kind: "spot" };
     } else {
-      branding = { kind: "glass" };
+      branding = { kind: "spot" };
     }
 
     // Build CTA URL from actionPayload or fallback to inbox
@@ -160,7 +160,7 @@ export const send = internalAction({
 function notificationCtaLabel(type: string): string {
   switch (type) {
     default:
-      return "View in Glass";
+      return "View in Spot";
   }
 }
 

@@ -27,7 +27,7 @@ import {
   EntityPreviewProvider,
   useEntityPreview,
 } from "@/hooks/use-entity-preview";
-import { useGlassSync } from "@/lib/sync/glass-sync";
+import { useSpotSync } from "@/lib/sync/spot-sync";
 import { EntityPreviewPanel } from "@/components/entity-preview-panel";
 import {
   CommandPalette,
@@ -249,7 +249,7 @@ function ShellContent({
               <AppSidebar
                 mobileOpen={mobileOpen}
                 onMobileClose={() => setMobileOpen(false)}
-                onAskGlass={
+                onAskSpot={
                   disableCommandPalette ? undefined : openCommandPalette
                 }
               />
@@ -288,7 +288,7 @@ export function AppShell({
   disableCommandPalette?: boolean;
   showBrokerShare?: boolean;
 }) {
-  const { scope } = useGlassSync();
+  const { scope } = useSpotSync();
   const customSidebarPreferenceStorageKey = customSidebar
     ? appSidebarPreferenceStorageKey(
         customSidebarStorageKey ?? "custom-sidebar",

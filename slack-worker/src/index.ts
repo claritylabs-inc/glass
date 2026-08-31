@@ -133,8 +133,8 @@ type SlackFile = {
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const mode = process.env.SLACK_WORKER_MODE === "mock" ? "mock" : "slack";
-const glassEnv =
-  process.env.GLASS_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
+const spotEnv =
+  process.env.SPOT_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
 const workerSecret = process.env.SLACK_WORKER_SECRET?.trim() ?? "";
 const convexSiteUrl = process.env.CONVEX_SITE_URL?.trim().replace(/\/$/, "");
 const slackApiBaseUrl =
@@ -233,7 +233,7 @@ async function fetchCustomerInstallation(
 
 async function slackInstallation(teamId: string): Promise<SlackInstallation> {
   if (mode === "mock") {
-    return { teamId, botToken: "mock", botUserId: "U-GLASS" };
+    return { teamId, botToken: "mock", botUserId: "U-SPOT" };
   }
   const pending = installationInFlight.get(teamId);
   if (pending) return pending;
@@ -299,7 +299,7 @@ async function reconcileSlack(input: ReconcileRequest) {
   if (mode === "mock") {
     return {
       teamId: input.teamId,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       channels: channelIds.map((id) => ({
         id,
         ok: true,
@@ -648,7 +648,7 @@ async function startSlackStream(input: StreamStartRequest) {
       chunks: [
         {
           type: "task_update",
-          id: "glass-review",
+          id: "spot-review",
           title: (input.status ?? "Reviewing your request").slice(0, 256),
           status: "in_progress",
         },
@@ -732,20 +732,20 @@ async function openFeedbackView(input: OpenViewRequest) {
       trigger_id: input.triggerId,
       view: {
         type: "modal",
-        callback_id: "glass_negative_feedback",
+        callback_id: "spot_negative_feedback",
         private_metadata: input.privateMetadata,
-        title: { type: "plain_text", text: "Help Glass improve" },
+        title: { type: "plain_text", text: "Help Spot improve" },
         submit: { type: "plain_text", text: "Send feedback" },
         close: { type: "plain_text", text: "Cancel" },
         blocks: [
           {
             type: "input",
-            block_id: "glass_feedback_comment_block",
+            block_id: "spot_feedback_comment_block",
             optional: true,
             label: { type: "plain_text", text: "What could be better?" },
             element: {
               type: "plain_text_input",
-              action_id: "glass_feedback_comment",
+              action_id: "spot_feedback_comment",
               multiline: true,
               max_length: 2000,
               placeholder: {
@@ -797,7 +797,7 @@ async function resolveSlackActor(input: ActorRequest) {
       userId: input.userId,
       displayName: input.userId,
       isBot: false,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
     };
   }
   const cacheKey = `${input.teamId}:${input.userId}`;
@@ -863,7 +863,7 @@ function channelName(clientSlug: string) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 70);
   if (!slug) throw new Error("A valid client slug is required");
-  return `glass-${slug}`;
+  return `spot-${slug}`;
 }
 
 async function listConversationMembers(token: string, channelId: string) {
@@ -1110,9 +1110,9 @@ async function joinSlackChannel(input: JoinChannelRequest) {
   const channel = available.channels.find(
     (candidate) => candidate.id === input.channelId,
   );
-  if (!channel) throw new Error("Slack channel is not visible to Glass");
+  if (!channel) throw new Error("Slack channel is not visible to Spot");
   if (channel.isPrivate || channel.isShared) {
-    throw new Error("Only public workspace channels can be joined from Glass");
+    throw new Error("Only public workspace channels can be joined from Spot");
   }
   if (channel.isMember) return { channel };
 
@@ -1141,7 +1141,7 @@ async function leaveSlackChannel(input: LeaveChannelRequest) {
   const channel = available.channels.find(
     (candidate) => candidate.id === input.channelId,
   );
-  if (!channel) throw new Error("Slack channel is not visible to Glass");
+  if (!channel) throw new Error("Slack channel is not visible to Spot");
   if (channel.isPrivate || channel.isShared) {
     throw new Error("Private and Slack Connect channels are managed in Slack");
   }
@@ -1166,8 +1166,8 @@ const server = http.createServer(async (request, response) => {
       mode === "mock" || Boolean(convexSiteUrl && workerSecret);
     return json(response, 200, {
       ok: true,
-      service: "glass-slack-worker",
-      glassEnv,
+      service: "spot-slack-worker",
+      spotEnv,
       mode,
       workerSecretConfigured: Boolean(workerSecret),
       tokenBrokerConfigured,
@@ -1343,7 +1343,7 @@ const server = http.createServer(async (request, response) => {
 
 const port = Number(process.env.PORT ?? "3002");
 server.listen(port, () => {
-  console.log(`Glass Slack worker listening on ${port} (${mode})`);
+  console.log(`Spot Slack worker listening on ${port} (${mode})`);
 });
 
 async function shutdown() {

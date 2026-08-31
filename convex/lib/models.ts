@@ -57,16 +57,16 @@ import {
 import { collectToolAudit, type AgentToolAudit } from "./agentToolAudit";
 
 /**
- * Centralized model configuration for Glass.
+ * Centralized model configuration for Spot.
  *
  * Maps each task type to a provider + model. Tune costs and quality from one place.
  * All models accessed via Vercel AI SDK's provider-agnostic interface.
  *
  * Env vars needed:
- *   FIREWORKS_API_KEY — direct Fireworks access for default Glass language routes
+ *   FIREWORKS_API_KEY — direct Fireworks access for default Spot language routes
  *   OPENAI_API_KEY — direct OpenAI access for embedding routes during the migration
  *
- * Glass model routing is direct-provider only. Vercel AI Gateway is not a
+ * Spot model routing is direct-provider only. Vercel AI Gateway is not a
  * fallback for language, extraction, embedding, or web retrieval routes.
  */
 
@@ -394,7 +394,7 @@ function clRouterGenerateInputForEnabledTask(
 
   throw new ClRouterRequestError(
     "configuration",
-    `cl-router is enabled for ${taskKind ?? task}, but this generation call uses options that the non-streaming router adapter cannot preserve; disable that CL_ROUTER_TASKS gate or route the call through the Glass-owned cl-router language-model tool loop`,
+    `cl-router is enabled for ${taskKind ?? task}, but this generation call uses options that the non-streaming router adapter cannot preserve; disable that CL_ROUTER_TASKS gate or route the call through the Spot-owned cl-router language-model tool loop`,
   );
 }
 
@@ -690,7 +690,7 @@ function resolveAudioTranscriptionRouteForSettingsSnapshot(
   const staticApiKey = routeDirectApiKey(staticRoute);
   if (!staticApiKey) {
     throw new Error(
-      "Direct OpenAI API key is missing for voice memo transcription. AI Gateway is not a fallback for Glass model routing.",
+      "Direct OpenAI API key is missing for voice memo transcription. AI Gateway is not a fallback for Spot model routing.",
     );
   }
   return { route: staticRoute, apiKey: staticApiKey, routeSource: "default" };
@@ -1065,7 +1065,7 @@ function modelFromRoute(route: ModelRoute, apiKey?: string): LanguageModel {
   const directApiKey = routeDirectApiKey(route, apiKey);
   if (!directApiKey) {
     throw new Error(
-      `Direct ${route.provider} API key is missing for model route ${route.provider}/${route.model}. AI Gateway is not a fallback for Glass model routing.`,
+      `Direct ${route.provider} API key is missing for model route ${route.provider}/${route.model}. AI Gateway is not a fallback for Spot model routing.`,
     );
   }
   return providerModel(route.provider, directModel, directApiKey);

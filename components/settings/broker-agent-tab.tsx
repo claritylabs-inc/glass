@@ -14,7 +14,7 @@ import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { typeStyle } from "@/lib/typography";
 

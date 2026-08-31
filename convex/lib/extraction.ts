@@ -16,7 +16,7 @@ export type { ExtractorConfig, ExtractionResult, ExtractOptions, InsuranceDocume
 // ── Local re-exports ──
 export { insuranceDocToPolicy, policyToInsuranceDoc } from "./documentMapping";
 
-// ── Glass extraction factory ──
+// ── Spot extraction factory ──
 import { createExtractor } from "@claritylabs/cl-sdk";
 import type { LogFn, TokenUsage } from "@claritylabs/cl-sdk";
 import { makeGenerateObject } from "./sdkCallbacks";

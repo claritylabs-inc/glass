@@ -26,7 +26,7 @@ function userFacingReviewReason(reason: string) {
   const normalized = reason.trim();
   if (
     normalized === INCOMPLETE_CLASSIFICATION_REASON ||
-    normalized === "Glass could not classify this email automatically. Review its sender, date, and attachments before choosing an action."
+    normalized === "Spot could not classify this email automatically. Review its sender, date, and attachments before choosing an action."
   ) {
     return undefined;
   }
@@ -411,7 +411,7 @@ export const recordUnreadableItemInternal = internalMutation({
       attempts,
       lastError: args.error,
       actionSummary: gaveUp
-        ? "Skipped: Glass could not read this mailbox message after repeated attempts."
+        ? "Skipped: Spot could not read this mailbox message after repeated attempts."
         : undefined,
       updatedAt: now,
     };
@@ -429,7 +429,7 @@ export const recordUnreadableItemInternal = internalMutation({
         subject: "(unreadable message)",
         classification: "review_needed",
         confidence: 0,
-        reason: "Glass could not read this mailbox message.",
+        reason: "Spot could not read this mailbox message.",
         createdAt: now,
         ...patch,
       });

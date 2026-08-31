@@ -540,7 +540,7 @@ export function InviteClientDrawer({
             className={INPUT_CLASSES}
           />
           <p className={`mt-1.5 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
-            Glass will enrich the company profile in the background.
+            Spot will enrich the company profile in the background.
           </p>
         </div>
         <div>
@@ -591,7 +591,7 @@ export function InviteClientDrawer({
             ) : shouldCheckPhone && phoneAvailability?.available ? (
               "Phone number is available for iMessage."
             ) : (
-              "Used for iMessage access to the client's Glass agent."
+              "Used for iMessage access to the client's Spot agent."
             )}
           </p>
         </div>

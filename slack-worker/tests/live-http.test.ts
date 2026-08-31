@@ -92,7 +92,7 @@ before(async () => {
       return respond(response, {
         teamId,
         botToken: teamId === "T-CLARITY" ? "xoxb-clarity" : "xoxb-customer",
-        botUserId: "U-GLASS",
+        botUserId: "U-SPOT",
       });
     }
     if (request.url === "/api/chat.postMessage") {
@@ -181,7 +181,7 @@ before(async () => {
     if (request.url === "/api/conversations.create") {
       return respond(response, {
         ok: true,
-        channel: { id: "C-HOST", name: "glass-client" },
+        channel: { id: "C-HOST", name: "spot-client" },
       });
     }
     if (request.url === "/api/conversations.members") {
@@ -272,7 +272,7 @@ before(async () => {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      GLASS_ENV: "production",
+      SPOT_ENV: "production",
       SLACK_WORKER_MODE: "slack",
       SLACK_WORKER_SECRET: "test-secret",
       CONVEX_SITE_URL: providerOrigin,
@@ -341,7 +341,7 @@ describe("native Slack worker HTTP adapter", () => {
       displayName: "Customer Admin",
       email: "admin@customer.test",
       isBot: false,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
     });
     assert.deepEqual(
       apiCalls.find((call) => call.path === "/api/users.info"),
@@ -499,7 +499,7 @@ describe("native Slack worker HTTP adapter", () => {
     });
     assert.deepEqual(await response.json(), {
       channelId: "C-HOST",
-      channelName: "glass-client",
+      channelName: "spot-client",
       inviteId: "I-1",
       reusedChannel: false,
       operatorInvites: { requested: 2, succeeded: true },
@@ -522,11 +522,11 @@ describe("native Slack worker HTTP adapter", () => {
       inviteEmail: "admin@client.test",
       operatorUserIds: ["U-ALREADY"],
       existingChannelId: "C-HOST",
-      existingChannelName: "glass-client",
+      existingChannelName: "spot-client",
     });
     assert.deepEqual(await retry.json(), {
       channelId: "C-HOST",
-      channelName: "glass-client",
+      channelName: "spot-client",
       inviteId: "I-1",
       reusedChannel: true,
       operatorInvites: { requested: 1, succeeded: true },

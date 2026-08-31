@@ -68,7 +68,7 @@ export function parseSlackInteraction(rawBody: string): SlackInteractionPayload 
       if (!block) continue;
       for (const elementValue of Object.values(block)) {
         const element = record(elementValue);
-        if (element?.action_id !== "glass_feedback_comment") continue;
+        if (element?.action_id !== "spot_feedback_comment") continue;
         comment = text(element.value);
       }
     }
@@ -112,7 +112,7 @@ export function slackActionToken(actionId: string, value: string): {
   token: string;
   value?: string;
 } | null {
-  if (actionId.startsWith("glass_response_feedback")) {
+  if (actionId.startsWith("spot_response_feedback")) {
     const [rating, token] = value.split(":", 2);
     if ((rating !== "positive" && rating !== "negative") || !token) return null;
     return { token, value: rating };

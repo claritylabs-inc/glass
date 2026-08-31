@@ -65,7 +65,7 @@ async function seedSlack(t: ReturnType<typeof convexTest>) {
       type: "client",
     });
     const serviceUserId = await ctx.db.insert("users", {
-      name: "Glass Slack",
+      name: "Spot Slack",
       accountKind: "customer",
       serviceAccountKind: "slack",
     });
@@ -78,7 +78,7 @@ async function seedSlack(t: ReturnType<typeof convexTest>) {
       clientOrgId,
       teamId: "T-CUSTOMER",
       teamName: "Cove",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       grantedScopes: ["app_mentions:read", "chat:write"],
       status: "active",
       serviceUserId,
@@ -101,10 +101,10 @@ async function seedSlack(t: ReturnType<typeof convexTest>) {
       connectionId,
       clientOrgId,
       kind: "primary",
-      hostTeamId: "T-GLASS",
+      hostTeamId: "T-SPOT",
       hostChannelId: "C-HOST",
       customerChannelId: "C-PRIMARY",
-      channelName: "glass-cove",
+      channelName: "spot-cove",
       status: "active",
       createdAt: 1,
       updatedAt: 1,
@@ -122,16 +122,16 @@ async function seedSlack(t: ReturnType<typeof convexTest>) {
       updatedAt: 1,
     });
     const operatorUserId = await ctx.db.insert("users", {
-      name: "Glass Operator",
-      email: "operator@glass.insure",
+      name: "Spot Operator",
+      email: "operator@spot.insure",
       accountKind: "operator",
     });
     await ctx.db.insert("operatorProfiles", {
       userId: operatorUserId,
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       role: "operator",
       status: "active",
-      slackTeamId: "T-GLASS",
+      slackTeamId: "T-SPOT",
       slackUserId: "U-OPERATOR",
       createdAt: 1,
       updatedAt: 1,
@@ -213,8 +213,8 @@ describe("Slack channel state and authorization", () => {
     });
     await t.mutation(enrichInboundActorFn, {
       eventId: claim.eventId,
-      senderTeamId: "T-GLASS",
-      senderDisplayName: "Glass Operator",
+      senderTeamId: "T-SPOT",
+      senderDisplayName: "Spot Operator",
       senderIsBot: false,
     });
     await expect(
@@ -227,7 +227,7 @@ describe("Slack channel state and authorization", () => {
         .withIndex("slack_identity", (q) =>
           q
             .eq("connectionId", connectionId)
-            .eq("teamId", "T-GLASS")
+            .eq("teamId", "T-SPOT")
             .eq("slackUserId", "U-OPERATOR"),
         )
         .unique(),
@@ -243,7 +243,7 @@ describe("Slack channel state and authorization", () => {
         )
         .unique(),
     }));
-    expect(state.actor?.classification).toBe("glass_operator");
+    expect(state.actor?.classification).toBe("spot_operator");
     expect(state.thread?.slackState).toBe("human_paused");
   });
 
@@ -253,12 +253,12 @@ describe("Slack channel state and authorization", () => {
     const claim = (await t.mutation(claimInboundFn, {
       eventKey: "event-host-side",
       spectrumMessageId: "event-host-side",
-      teamId: "T-GLASS",
+      teamId: "T-SPOT",
       channelId: "C-HOST",
       threadTs: "1800000000.075",
       messageTs: "1800000000.075",
       senderUserId: "U-CUSTOMER",
-      content: "<@U-GLASS-HOST> show my policy",
+      content: "<@U-SPOT-HOST> show my policy",
       eventType: "message",
       receivedAt: BASE_TIME,
     })) as {
@@ -274,7 +274,7 @@ describe("Slack channel state and authorization", () => {
       senderTeamId: "T-CUSTOMER",
       senderDisplayName: "Customer Admin",
       senderIsBot: false,
-      installationBotUserId: "U-GLASS-HOST",
+      installationBotUserId: "U-SPOT-HOST",
     });
     await expect(
       t.mutation(prepareBatchFn, { eventIds: [claim.eventId] }),
@@ -288,14 +288,14 @@ describe("Slack channel state and authorization", () => {
         threadTs: "1800000000.075",
         messageTs: "1800000000.075",
         senderUserId: "U-CUSTOMER",
-        content: "<@U-GLASS> show my policy",
+        content: "<@U-SPOT> show my policy",
         eventType: "message",
         receivedAt: BASE_TIME,
       }),
     ).resolves.toMatchObject({ duplicate: true });
     await expect(
       t.query(getSendTargetFn, { connectionId, channelId: "C-HOST" }),
-    ).resolves.toMatchObject({ teamId: "T-GLASS" });
+    ).resolves.toMatchObject({ teamId: "T-SPOT" });
     await expect(
       t.query(getSendTargetFn, { connectionId, channelId: "C-CUSTOMER-OTHER" }),
     ).resolves.toMatchObject({ teamId: "T-CUSTOMER" });
@@ -303,12 +303,12 @@ describe("Slack channel state and authorization", () => {
     const resolveClaim = (await t.mutation(claimInboundFn, {
       eventKey: "event-host-side-resolve",
       spectrumMessageId: "event-host-side-resolve",
-      teamId: "T-GLASS",
+      teamId: "T-SPOT",
       channelId: "C-HOST",
       threadTs: "1800000000.075",
       messageTs: "1800000000.076",
       senderUserId: "U-CUSTOMER",
-      content: "<@U-GLASS-HOST> resolve",
+      content: "<@U-SPOT-HOST> resolve",
       eventType: "message",
       receivedAt: BASE_TIME + 1,
     })) as { eventId: Id<"slackInboundEvents"> };
@@ -320,7 +320,7 @@ describe("Slack channel state and authorization", () => {
       senderTeamId: "T-CUSTOMER",
       senderDisplayName: "Customer Admin",
       senderIsBot: false,
-      installationBotUserId: "U-GLASS-HOST",
+      installationBotUserId: "U-SPOT-HOST",
     });
     await expect(
       t.mutation(prepareBatchFn, { eventIds: [resolveClaim.eventId] }),
@@ -350,7 +350,7 @@ describe("Slack channel state and authorization", () => {
 
     const mentioned = await ingest(t, {
       eventKey: "event-2",
-      content: "<@U-GLASS> show my policy",
+      content: "<@U-SPOT> show my policy",
     });
     expect(mentioned.prepared).toMatchObject({ orgId: clientOrgId });
 
@@ -363,7 +363,7 @@ describe("Slack channel state and authorization", () => {
     const paused = await ingest(t, {
       eventKey: "event-4",
       content: "I can help with this.",
-      senderTeamId: "T-GLASS",
+      senderTeamId: "T-SPOT",
       senderUserId: "U-OPERATOR",
     });
     expect(paused.prepared).toBeNull();
@@ -375,12 +375,12 @@ describe("Slack channel state and authorization", () => {
 
     const resumed = await ingest(t, {
       eventKey: "event-6",
-      content: "<@U-GLASS> continue",
+      content: "<@U-SPOT> continue",
     });
     expect(resumed.prepared).not.toBeNull();
     const resolved = await ingest(t, {
       eventKey: "event-7",
-      content: "<@U-GLASS> resolve",
+      content: "<@U-SPOT> resolve",
     });
     expect(resolved.prepared).toBeNull();
 
@@ -399,7 +399,7 @@ describe("Slack channel state and authorization", () => {
   test("treats an App Home DM as one private, mention-free conversation", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, connectionId } = await seedSlack(t);
-    const glassUserId = await t.run(async (ctx) => {
+    const spotUserId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         name: "Cove Admin",
         email: "admin@cove.test",
@@ -490,7 +490,7 @@ describe("Slack channel state and authorization", () => {
     expect(state.threads).toHaveLength(1);
     expect(state.threads[0]).toMatchObject({
       title: "DM · Cove Admin",
-      createdBy: glassUserId,
+      createdBy: spotUserId,
       visibility: "user_private",
       slackChannelId: "D-COVE-ADMIN",
       slackThreadTs: "D-COVE-ADMIN",
@@ -498,21 +498,21 @@ describe("Slack channel state and authorization", () => {
       slackState: "active",
     });
     expect(state.threads[0].archivedAt).toBeUndefined();
-    expect(state.actors[0]).toMatchObject({ glassUserId });
+    expect(state.actors[0]).toMatchObject({ spotUserId });
     expect(
       state.messages.filter((message) => message.role === "user"),
     ).toHaveLength(3);
     expect(
       state.messages
         .filter((message) => message.role === "user")
-        .every((message) => message.userId === glassUserId),
+        .every((message) => message.userId === spotUserId),
     ).toBe(true);
   });
 
   test("fails closed when mirroring a private non-support channel", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, connectionId } = await seedSlack(t);
-    const glassUserId = await t.run(async (ctx) => {
+    const spotUserId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         name: "Private Channel Member",
         email: "private@cove.test",
@@ -545,7 +545,7 @@ describe("Slack channel state and authorization", () => {
       messageTs: "1800000001.500",
       senderDisplayName: "Private Channel Member",
       senderEmail: "private@cove.test",
-      content: "<@U-GLASS> review this claim",
+      content: "<@U-SPOT> review this claim",
       isPrivateChannel: true,
     });
     expect(result.prepared).not.toBeNull();
@@ -553,7 +553,7 @@ describe("Slack channel state and authorization", () => {
     const thread = await t.run((ctx) => ctx.db.query("threads").first());
     expect(thread).toMatchObject({
       title: "#private-claims · Private Channel Member",
-      createdBy: glassUserId,
+      createdBy: spotUserId,
       visibility: "user_private",
       slackConversationKind: "channel",
     });
@@ -580,7 +580,7 @@ describe("Slack channel state and authorization", () => {
       eventKey: "off-channel-mentioned",
       channelId: "C-POLICIES",
       threadTs,
-      content: "<@U-GLASS> review this policy",
+      content: "<@U-SPOT> review this policy",
     });
     expect(mentioned.prepared).not.toBeNull();
     const continued = await ingest(t, {
@@ -625,7 +625,7 @@ describe("Slack channel state and authorization", () => {
     const external = await ingest(t, {
       eventKey: "external",
       channelId: "C-OTHER",
-      content: "<@U-GLASS> expose the policy",
+      content: "<@U-SPOT> expose the policy",
       senderTeamId: "T-VENDOR",
       senderUserId: "U-VENDOR",
     });
@@ -644,7 +644,7 @@ describe("Slack channel state and authorization", () => {
     const handoff = await ingest(t, {
       eventKey: "handoff",
       channelId: "C-OTHER",
-      content: "<@U-GLASS> human",
+      content: "<@U-SPOT> human",
     });
     expect(handoff.prepared).toBeNull();
     const records = await t.run(async (ctx) => ({
@@ -659,8 +659,8 @@ describe("Slack channel state and authorization", () => {
     const operatorInvocation = await ingest(t, {
       eventKey: "operator-invocation",
       channelId: "C-OPERATOR",
-      content: "<@U-GLASS> summarize the policy",
-      senderTeamId: "T-GLASS",
+      content: "<@U-SPOT> summarize the policy",
+      senderTeamId: "T-SPOT",
       senderUserId: "U-OPERATOR",
     });
     expect(operatorInvocation.prepared).not.toBeNull();
@@ -677,7 +677,7 @@ describe("Slack channel state and authorization", () => {
       messageTs: "1800000000.399",
       senderTeamId: "T-VENDOR",
       senderUserId: "U-VENDOR",
-      content: "<@U-GLASS> inspect this",
+      content: "<@U-SPOT> inspect this",
       attachments: [
         {
           providerFileId: "F-EXTERNAL",
@@ -729,14 +729,14 @@ describe("Slack channel state and authorization", () => {
       channelId: "C-ONE",
       threadTs: "1800000000.441",
       messageTs,
-      content: "<@U-GLASS> channel one",
+      content: "<@U-SPOT> channel one",
     });
     const second = await ingest(t, {
       eventKey: "channel-two-message",
       channelId: "C-TWO",
       threadTs: "1800000000.442",
       messageTs,
-      content: "<@U-GLASS> channel two",
+      content: "<@U-SPOT> channel two",
     });
     expect(first.claim.duplicate).toBe(false);
     expect(second.claim.duplicate).toBe(false);
@@ -746,7 +746,7 @@ describe("Slack channel state and authorization", () => {
       channelId: "C-ONE",
       threadTs: "1800000000.441",
       messageTs,
-      content: "<@U-GLASS> corrected channel one",
+      content: "<@U-SPOT> corrected channel one",
       eventType: "edit",
     });
     const state = await t.run(async (ctx) => {
@@ -764,9 +764,9 @@ describe("Slack channel state and authorization", () => {
       expect.arrayContaining([
         {
           channelId: "C-ONE",
-          userContent: "<@U-GLASS> corrected channel one",
+          userContent: "<@U-SPOT> corrected channel one",
         },
-        { channelId: "C-TWO", userContent: "<@U-GLASS> channel two" },
+        { channelId: "C-TWO", userContent: "<@U-SPOT> channel two" },
       ]),
     );
   });
@@ -777,7 +777,7 @@ describe("Slack channel state and authorization", () => {
     const first = await ingest(t, {
       eventKey: "duplicate",
       messageTs: "1800000000.111",
-      content: "<@U-GLASS> first",
+      content: "<@U-SPOT> first",
       receivedAt: BASE_TIME,
     });
     const duplicate = await t.mutation(claimInboundFn, {
@@ -789,7 +789,7 @@ describe("Slack channel state and authorization", () => {
       messageTs: "1800000000.111",
       senderTeamId: "T-CUSTOMER",
       senderUserId: "U-CUSTOMER",
-      content: "<@U-GLASS> first",
+      content: "<@U-SPOT> first",
       eventType: "message",
       receivedAt: BASE_TIME + 1,
     });
@@ -837,7 +837,7 @@ describe("Slack channel state and authorization", () => {
     const edit = await ingest(t, {
       eventKey: "edit",
       messageTs: "1800000000.111",
-      content: "<@U-GLASS> corrected",
+      content: "<@U-SPOT> corrected",
       eventType: "edit",
     });
     expect(edit.prepared).toBeNull();
@@ -846,8 +846,8 @@ describe("Slack channel state and authorization", () => {
     );
     expect(revisions).toMatchObject([
       {
-        previousContent: "<@U-GLASS> first",
-        revisedContent: "<@U-GLASS> corrected",
+        previousContent: "<@U-SPOT> first",
+        revisedContent: "<@U-SPOT> corrected",
       },
     ]);
     expect(first.claim.status).toBe("queued");
@@ -860,7 +860,7 @@ describe("Slack channel state and authorization", () => {
     const original = await ingest(t, {
       eventKey: "delete-original",
       messageTs,
-      content: "<@U-GLASS> sensitive details",
+      content: "<@U-SPOT> sensitive details",
     });
     const attachmentId = await t.run(async (ctx) => {
       const fileId = await ctx.storage.store(
@@ -888,7 +888,7 @@ describe("Slack channel state and authorization", () => {
     await ingest(t, {
       eventKey: "delete-edit",
       messageTs,
-      content: "<@U-GLASS> corrected sensitive details",
+      content: "<@U-SPOT> corrected sensitive details",
       eventType: "edit",
     });
     const deleted = await ingest(t, {
@@ -931,8 +931,8 @@ describe("Slack channel state and authorization", () => {
     await seedSlack(t);
     const bot = await ingest(t, {
       eventKey: "bot-echo",
-      content: "Glass response",
-      senderUserId: "U-GLASS",
+      content: "Spot response",
+      senderUserId: "U-SPOT",
     });
     expect(bot.prepared).toBeNull();
 
@@ -945,7 +945,7 @@ describe("Slack channel state and authorization", () => {
       messageTs: "1800000000.901",
       senderTeamId: "T-CUSTOMER",
       senderUserId: "U-CUSTOMER",
-      content: "<@U-GLASS> retry this",
+      content: "<@U-SPOT> retry this",
       eventType: "message",
       receivedAt: BASE_TIME,
     })) as { eventId: Id<"slackInboundEvents"> };
@@ -983,7 +983,7 @@ describe("Slack channel state and authorization", () => {
           content: "historical",
           eventType: "message",
           isPrimaryChannel: true,
-          mentionsGlass: false,
+          mentionsSpot: false,
           status: "completed",
           attemptCount: 1,
           receivedAt: index,
@@ -1000,7 +1000,7 @@ describe("Slack channel state and authorization", () => {
       messageTs: "1800000000.951",
       senderTeamId: "T-CUSTOMER",
       senderUserId: "U-CUSTOMER",
-      content: "<@U-GLASS> current",
+      content: "<@U-SPOT> current",
       eventType: "message",
       receivedAt: BASE_TIME,
     })) as { eventId: Id<"slackInboundEvents"> };
@@ -1024,7 +1024,7 @@ describe("Slack channel state and authorization", () => {
     const external = await ingest(t, {
       eventKey: "external-bind-attempt",
       channelId: "C-VENDOR",
-      content: "<@U-GLASS> hello",
+      content: "<@U-SPOT> hello",
       senderTeamId: "T-VENDOR",
       senderUserId: "U-VENDOR",
     });
@@ -1037,7 +1037,7 @@ describe("Slack channel state and authorization", () => {
     const result = await ingest(t, {
       eventKey: "bind-primary",
       channelId: "C-CUSTOMER-SIDE",
-      content: "<@U-GLASS> hello",
+      content: "<@U-SPOT> hello",
     });
     expect(result.prepared).not.toBeNull();
     const binding = await t.run((ctx) =>
@@ -1054,7 +1054,7 @@ describe("Slack channel state and authorization", () => {
       eventKey: "handoff-without-binding",
       channelId: "C-OTHER",
       threadTs: "1800000000.888",
-      content: "<@U-GLASS> human",
+      content: "<@U-SPOT> human",
     });
     expect(noBindingHandoff.prepared).toBeNull();
     const handoffState = await t.run(async (ctx) => ({
@@ -1120,7 +1120,7 @@ describe("Slack setup and outbound durability", () => {
       clientOrgId,
       teamId: "T-ONE",
       teamName: "Client Slack",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       grantedScopes: ["app_mentions:read"],
     };
     const connectionId = await t.mutation(upsertSlackConnectionFn, args);
@@ -1129,10 +1129,10 @@ describe("Slack setup and outbound durability", () => {
         connectionId,
         clientOrgId,
         kind: "primary",
-        hostTeamId: "T-GLASS",
+        hostTeamId: "T-SPOT",
         hostChannelId: "C-HOST",
         customerChannelId: "C-CUSTOMER",
-        channelName: "glass-client",
+        channelName: "spot-client",
         status: "active",
         createdAt: 1,
         updatedAt: 1,

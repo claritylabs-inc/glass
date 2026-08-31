@@ -1,7 +1,7 @@
-# Glass CLI Implementation Plan (CLA-9)
+# Spot CLI Implementation Plan (CLA-9)
 
 ## Goals
-- Deliver a first-party Glass CLI with API-backed parity for high-value web workflows.
+- Deliver a first-party Spot CLI with API-backed parity for high-value web workflows.
 - Make the CLI agent-first (scriptable, machine-readable output), while still usable by humans.
 - Enforce the same auth and org-role gating model as web and MCP.
 

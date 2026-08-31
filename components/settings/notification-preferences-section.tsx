@@ -356,8 +356,8 @@ export function NotificationPreferencesSection({
           title="Default email delivery"
           description={
             defaultOverride("email") === undefined
-              ? "Set a default for all events. Events currently follow Glass defaults by importance."
-              : "Overrides the Glass default for events without a custom email setting."
+              ? "Set a default for all events. Events currently follow Spot defaults by importance."
+              : "Overrides the Spot default for events without a custom email setting."
           }
           checked={defaultOverride("email") ?? false}
           disabled={savingDefault !== null}
@@ -369,8 +369,8 @@ export function NotificationPreferencesSection({
           title="Default text delivery"
           description={
             defaultOverride("imessage") === undefined
-              ? "Set a default for all events. Events currently follow Glass defaults by importance."
-              : "Overrides the Glass default for events without a custom text setting."
+              ? "Set a default for all events. Events currently follow Spot defaults by importance."
+              : "Overrides the Spot default for events without a custom text setting."
           }
           checked={defaultOverride("imessage") ?? false}
           disabled={savingDefault !== null}

@@ -75,13 +75,13 @@ async function seedOperator(
       type: "client",
     });
     const operatorUserId = await ctx.db.insert("users", {
-      name: "Glass Operator",
-      email: "operator@glass.insure",
+      name: "Spot Operator",
+      email: "operator@spot.insure",
       accountKind: "operator",
     });
     await ctx.db.insert("operatorProfiles", {
       userId: operatorUserId,
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       role: "operator",
       status: "active",
       createdAt: 1,
@@ -113,7 +113,7 @@ async function seedRepairConnection(t: ReturnType<typeof convexTest>) {
       teamId: "T-CUSTOMER",
       teamName: "Customer workspace",
       kind: "customer",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       encryptedBotToken: encryptSlackCredential(
         "xoxb-working-token",
         "T-CUSTOMER",
@@ -128,7 +128,7 @@ async function seedRepairConnection(t: ReturnType<typeof convexTest>) {
       teamId: "T-CUSTOMER",
       teamName: "Customer workspace",
       nativeInstallationId: installationId,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       grantedScopes: [...SLACK_CUSTOMER_SCOPES],
       status: "active",
       serviceUserId,
@@ -146,7 +146,7 @@ async function seedRepairConnection(t: ReturnType<typeof convexTest>) {
       hostTeamId: "T-CLARITY",
       hostChannelId: "C-HOST",
       customerChannelId: "C-SUPPORT",
-      channelName: "glass-repair-client",
+      channelName: "spot-repair-client",
       status: "active",
       createdAt: 1,
       updatedAt: 1,
@@ -199,12 +199,12 @@ function jsonResponse(body: unknown, status = 200) {
 function slackTokenResponse(overrides: Record<string, unknown> = {}) {
   return {
     ok: true,
-    app_id: "A-GLASS",
+    app_id: "A-SPOT",
     access_token: "xoxb-test-token",
     refresh_token: "xoxe-test-refresh-token",
     expires_in: 43_200,
     scope: SLACK_CUSTOMER_SCOPES.join(","),
-    bot_user_id: "U-GLASS",
+    bot_user_id: "U-SPOT",
     team: { id: "T-CUSTOMER", name: "Customer workspace" },
     ...overrides,
   };
@@ -213,7 +213,7 @@ function slackTokenResponse(overrides: Record<string, unknown> = {}) {
 describe("Slack OAuth actions", () => {
   test("lets an operator invite installation before the support channel exists", async () => {
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const t = convexTest(schema, modules);
     const { clientOrgId, operatorUserId } = await seedOperator(t, "Cove & Co.");
@@ -235,9 +235,9 @@ describe("Slack OAuth actions", () => {
     const capture = String(logSpy.mock.calls[0]?.[0] ?? "");
     expect(capture).toContain("to: admin@cove.test");
     expect(capture).toContain(
-      "subject: Install the Glass Slack app for Cove & Co.",
+      "subject: Install the Spot Slack app for Cove & Co.",
     );
-    expect(capture).toContain("Install the Glass app once in your workspace");
+    expect(capture).toContain("Install the Spot app once in your workspace");
     expect(capture).toContain(
       "https://platform.slack-edge.com/img/add_to_slack.png",
     );
@@ -275,7 +275,7 @@ describe("Slack OAuth actions", () => {
 
   test("does not let a client admin send the operator install invitation", async () => {
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     vi.spyOn(console, "log").mockImplementation(() => {});
     const t = convexTest(schema, modules);
     const { clientOrgId, userId } = await seedAdmin(t);
@@ -285,7 +285,7 @@ describe("Slack OAuth actions", () => {
         kind: "primary",
         hostTeamId: "T-CLARITY",
         hostChannelId: "C-HOST",
-        channelName: "glass-client",
+        channelName: "spot-client",
         status: "active",
         createdAt: 1,
         updatedAt: 1,
@@ -308,7 +308,7 @@ describe("Slack OAuth actions", () => {
 
   test("resending invalidates the previous unused install link", async () => {
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     vi.spyOn(console, "log").mockImplementation(() => {});
     const t = convexTest(schema, modules);
     const { clientOrgId, operatorUserId } = await seedOperator(t);
@@ -362,11 +362,11 @@ describe("Slack OAuth actions", () => {
     expect(records.setup?.inviteSentAt).toBeUndefined();
   });
 
-  test("installs the host app only for an authenticated Glass operator", async () => {
+  test("installs the host app only for an authenticated Spot operator", async () => {
     const t = convexTest(schema, modules);
     const userId = await t.run(async (ctx) => {
       const id = await ctx.db.insert("users", {
-        name: "Glass Operator",
+        name: "Spot Operator",
         email: "operator@claritylabs.test",
       });
       await ctx.db.insert("operatorProfiles", {
@@ -509,7 +509,7 @@ describe("Slack OAuth actions", () => {
     expect(first.connection).toMatchObject({
       clientOrgId,
       teamName: "Client local workspace",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       grantedScopes: [...SLACK_CUSTOMER_SCOPES],
       status: "active",
     });
@@ -558,7 +558,7 @@ describe("Slack OAuth actions", () => {
     expect(records.connection).toMatchObject({
       clientOrgId,
       teamId: "T-CUSTOMER",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       status: "active",
     });
     expect(records.installation).toMatchObject({
@@ -825,7 +825,7 @@ describe("Slack OAuth actions", () => {
     });
   });
 
-  test("uninstalls the native Slack app before disconnecting Glass", async () => {
+  test("uninstalls the native Slack app before disconnecting Spot", async () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, userId } = await seedAdmin(t);
     const connectionId = await t.run(async (ctx) => {
@@ -838,7 +838,7 @@ describe("Slack OAuth actions", () => {
         teamId: "T-CUSTOMER",
         teamName: "Customer workspace",
         kind: "customer",
-        botUserId: "U-GLASS",
+        botUserId: "U-SPOT",
         encryptedBotToken: encryptSlackCredential(
           "xoxb-test-token",
           "T-CUSTOMER",

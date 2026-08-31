@@ -214,7 +214,7 @@ export function buildTextModelHistory(
         role: "assistant",
         content: message.content,
         ...(privateHistory
-          ? { providerOptions: { glass: { privateHistory } } }
+          ? { providerOptions: { spot: { privateHistory } } }
           : {}),
       },
     ];
@@ -230,7 +230,7 @@ export function buildRecentAgentConversationContext(
     .slice(-12)
     .map((message) => {
       const speaker =
-        message.role === "user" ? (message.userName ?? "User") : "Glass";
+        message.role === "user" ? (message.userName ?? "User") : "Spot";
       return `${speaker}: ${message.content}`;
     })
     .join("\n");
@@ -252,7 +252,7 @@ export function formatMessagesForThreadSummary(
     .filter(isModelHistoryMessage)
     .map((message) => {
       const speaker =
-        message.role === "user" ? (message.userName ?? "User") : "Glass";
+        message.role === "user" ? (message.userName ?? "User") : "Spot";
       const files = (message.attachments ?? [])
         .map((attachment) => attachment.filename.trim())
         .filter(Boolean);

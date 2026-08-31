@@ -200,12 +200,12 @@
   ],
   "fixtures": [
     {
-      "name": "Glass structured generation request",
+      "name": "Spot structured generation request",
       "schema": "GenerateRequest",
       "value": {
         "task": "extraction",
         "taskKind": "extraction_operational_profile",
-        "tenantId": "glass",
+        "tenantId": "spot",
         "orgId": "org_contract_fixture",
         "settings": {
           "routes": {
@@ -244,7 +244,7 @@
       }
     },
     {
-      "name": "Glass structured generation response",
+      "name": "Spot structured generation response",
       "schema": "GenerateResponse",
       "value": {
         "output": {
@@ -288,7 +288,7 @@
       }
     },
     {
-      "name": "Glass streaming terminal event",
+      "name": "Spot streaming terminal event",
       "schema": "StreamEvent",
       "value": {
         "type": "done",
@@ -323,10 +323,10 @@
       }
     },
     {
-      "name": "Glass embedding request",
+      "name": "Spot embedding request",
       "schema": "EmbedRequest",
       "value": {
-        "tenantId": "glass",
+        "tenantId": "spot",
         "orgId": "org_contract_fixture",
         "settings": {
           "routes": {
@@ -349,7 +349,7 @@
       }
     },
     {
-      "name": "Glass embedding response",
+      "name": "Spot embedding response",
       "schema": "EmbedResponse",
       "value": {
         "embeddings": [
@@ -389,10 +389,10 @@
       }
     },
     {
-      "name": "Glass transcription metadata",
+      "name": "Spot transcription metadata",
       "schema": "TranscribeMetadata",
       "value": {
-        "tenantId": "glass",
+        "tenantId": "spot",
         "orgId": "org_contract_fixture",
         "settings": {
           "routes": {
@@ -414,7 +414,7 @@
       }
     },
     {
-      "name": "Glass transcription response",
+      "name": "Spot transcription response",
       "schema": "TranscribeResponse",
       "value": {
         "text": "Please send the certificate to the landlord.",
@@ -449,11 +449,11 @@
       }
     },
     {
-      "name": "Glass extraction feedback request",
+      "name": "Spot extraction feedback request",
       "schema": "FeedbackRequest",
       "value": {
         "requestId": "router_request_generation_fixture",
-        "tenantId": "glass",
+        "tenantId": "spot",
         "idempotencyKey": "extraction-postprocess-v1:policy_fixture:router_request_generation_fixture",
         "signals": {
           "reviewCorrectionCount": 2,
@@ -469,7 +469,7 @@
       }
     },
     {
-      "name": "Glass extraction feedback response",
+      "name": "Spot extraction feedback response",
       "schema": "FeedbackResponse",
       "value": {
         "accepted": true,
@@ -491,7 +491,7 @@
       "name": "Admin freeze request",
       "schema": "FreezeRequest",
       "value": {
-        "tenantId": "glass",
+        "tenantId": "spot",
         "taskFamily": "extraction_operational_profile",
         "frozen": true,
         "reason": "dev freeze drill"
@@ -510,7 +510,7 @@
       "name": "Admin pin request",
       "schema": "PinRequest",
       "value": {
-        "tenantId": "glass",
+        "tenantId": "spot",
         "taskFamily": "classification",
         "route": {
           "provider": "fireworks",
@@ -531,7 +531,7 @@
       "name": "Admin score request",
       "schema": "ScoreRequest",
       "value": {
-        "tenantId": "glass",
+        "tenantId": "spot",
         "taskFamily": "classification"
       }
     },
@@ -539,7 +539,7 @@
       "name": "Admin calibration seed import request",
       "schema": "CalibrationSeedImportRequest",
       "value": {
-        "tenantId": "glass",
+        "tenantId": "spot",
         "reason": "three-replicate proxy benchmark contract fixture",
         "reportUri": "s3://private-calibrations/run-fixture-2026-07-21/report.html",
         "expectedPolicyVersionIds": {
@@ -551,7 +551,7 @@
           "replicateCount": 3,
           "activationReady": true,
           "qualificationSpec": {
-            "id": "glass-policy-extraction-source-tree@1",
+            "id": "spot-policy-extraction-source-tree@1",
             "task": "extraction",
             "taskFamily": "extraction_source_tree",
             "classification": "proxy_benchmark",
@@ -581,7 +581,7 @@
               "corpusVersion": "policy-corpus-v1",
               "benchmark": "in_house",
               "benchmarkVersion": "in_house-reviewed-v1",
-              "qualificationSpecId": "glass-policy-extraction-source-tree@1",
+              "qualificationSpecId": "spot-policy-extraction-source-tree@1",
               "purpose": "production_qualification",
               "sourceKind": "private_bucket",
               "caseCount": 20,
@@ -715,7 +715,7 @@
               "corpusVersion": "docvqa-corpus-v1",
               "benchmark": "docvqa",
               "benchmarkVersion": "docvqa-reviewed-v1",
-              "qualificationSpecId": "glass-policy-extraction-source-tree@1",
+              "qualificationSpecId": "spot-policy-extraction-source-tree@1",
               "purpose": "open_benchmark",
               "sourceKind": "local",
               "caseCount": 1,
@@ -735,7 +735,7 @@
               "corpusVersion": "vrdu-corpus-v1",
               "benchmark": "vrdu",
               "benchmarkVersion": "vrdu-reviewed-v1",
-              "qualificationSpecId": "glass-policy-extraction-source-tree@1",
+              "qualificationSpecId": "spot-policy-extraction-source-tree@1",
               "purpose": "open_benchmark",
               "sourceKind": "local",
               "caseCount": 1,
@@ -755,7 +755,7 @@
               "corpusVersion": "cord-corpus-v1",
               "benchmark": "cord",
               "benchmarkVersion": "cord-reviewed-v1",
-              "qualificationSpecId": "glass-policy-extraction-source-tree@1",
+              "qualificationSpecId": "spot-policy-extraction-source-tree@1",
               "purpose": "open_benchmark",
               "sourceKind": "local",
               "caseCount": 1,
@@ -775,7 +775,7 @@
               "corpusVersion": "kleister-corpus-v1",
               "benchmark": "kleister",
               "benchmarkVersion": "kleister-reviewed-v1",
-              "qualificationSpecId": "glass-policy-extraction-source-tree@1",
+              "qualificationSpecId": "spot-policy-extraction-source-tree@1",
               "purpose": "open_benchmark",
               "sourceKind": "local",
               "caseCount": 1,
@@ -846,7 +846,7 @@
           "candidates": [
             {
               "candidateId": "extraction_fireworks_fixture",
-              "qualificationSpecId": "glass-policy-extraction-source-tree@1",
+              "qualificationSpecId": "spot-policy-extraction-source-tree@1",
               "task": "extraction",
               "taskFamily": "extraction_source_tree",
               "provider": "fireworks",
@@ -953,7 +953,7 @@
       "value": [
         {
           "hourStart": "2026-07-21T18:00:00.000Z",
-          "tenantId": "glass",
+          "tenantId": "spot",
           "taskFamily": "classification",
           "provider": "fireworks",
           "model": "accounts/fireworks/models/glm-5p2",

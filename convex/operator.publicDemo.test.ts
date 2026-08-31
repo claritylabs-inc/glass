@@ -46,7 +46,7 @@ async function seedPublicDemoLead() {
         conversationId,
         channel: "email",
         direction: "inbound",
-        content: "I need help understanding Glass.",
+        content: "I need help understanding Spot.",
         createdAt: now,
       }),
       ctx.db.insert("publicDemoChatLogs", {

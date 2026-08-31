@@ -23,10 +23,10 @@ export function SidebarBrokerContact({
   broker: BrokerContact;
   fallbackAgentHandle?: string;
 }) {
-  // When no broker is linked, fall back to Glass defaults so the user still
+  // When no broker is linked, fall back to Spot defaults so the user still
   // sees who to contact (the standard agent email).
-  const isGlassFallback = !broker;
-  const name = broker?.name ?? "Ask Glass";
+  const isSpotFallback = !broker;
+  const name = broker?.name ?? "Ask Spot";
   const iconUrl = broker?.iconUrl ?? null;
   const brandColor = broker?.brandingColor ?? "#000000";
   const handle = broker?.agentHandle ?? fallbackAgentHandle;
@@ -34,7 +34,7 @@ export function SidebarBrokerContact({
     ? `${handle}@${AGENT_DOMAIN}`
     : `agent@${AGENT_DOMAIN}`;
   const initial = name.charAt(0).toUpperCase();
-  const hasBrokerIcon = !isGlassFallback && Boolean(iconUrl);
+  const hasBrokerIcon = !isSpotFallback && Boolean(iconUrl);
 
   const handleSaveContact = async () => {
     if (!agentEmail) return;
@@ -51,22 +51,22 @@ export function SidebarBrokerContact({
       <div className="flex items-center gap-2.5">
         <div
           className={`h-8 w-8 shrink-0 overflow-hidden rounded-md flex items-center justify-center ${
-            isGlassFallback
+            isSpotFallback
               ? "bg-white ring-1 ring-inset ring-border-emphasized"
               : hasBrokerIcon
                 ? "bg-transparent"
               : ""
           }`}
           style={
-            isGlassFallback || hasBrokerIcon
+            isSpotFallback || hasBrokerIcon
               ? undefined
               : {
                   background: `linear-gradient(135deg, ${brandColor} 0%, ${brandColor}cc 60%, ${brandColor}88 100%)`,
                 }
           }
         >
-          {isGlassFallback ? (
-            // Glass globe is rendered at text scale (not filling the tile)
+          {isSpotFallback ? (
+            // Spot globe is rendered at text scale (not filling the tile)
             // because that's how the brand mark is meant to read.
             <LogoIcon size={14} static color="#000000" />
           ) : iconUrl ? (
@@ -90,7 +90,7 @@ export function SidebarBrokerContact({
             <a
               href={`mailto:${agentEmail}`}
               className={`block text-muted-foreground hover:text-foreground truncate ${typeStyle("caption.default")}`}
-              title={broker ? "Partner assistant" : "Glass assistant"}
+              title={broker ? "Partner assistant" : "Spot assistant"}
             >
               {agentEmail}
             </a>

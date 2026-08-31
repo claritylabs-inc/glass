@@ -4,7 +4,7 @@ import { normalizeCertificateDescription } from "../convex/lib/certificateDescri
 describe("certificate description normalization", () => {
   it("removes form branding while preserving meaningful line breaks", () => {
     expect(normalizeCertificateDescription(
-      "ACORD 25 Generated using Glass\nRestaurant and bar\n\nWaiver of subrogation applies.",
+      "ACORD 25 Generated using Spot\nRestaurant and bar\n\nWaiver of subrogation applies.",
     )).toBe("Restaurant and bar\n\nWaiver of subrogation applies.");
   });
 });

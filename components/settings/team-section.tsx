@@ -18,7 +18,7 @@ import type {
   TeamMember,
   ViewerOrgData,
 } from "@/components/settings/team-types";
-import { useCachedViewerOrg } from "@/lib/sync/glass-cached-queries";
+import { useCachedViewerOrg } from "@/lib/sync/spot-cached-queries";
 import {
   useCachedQuery,
   useUpdateCachedQuery,

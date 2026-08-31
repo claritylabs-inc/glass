@@ -26,7 +26,7 @@ import {
 import { extractOrgMemoryFromExchange } from "../lib/orgMemoryExtraction";
 import {
   imapErrorMessage,
-  isGlassSearchLoopAddress,
+  isSpotSearchLoopAddress,
   messageRef,
   streamToBuffer,
   withClient,
@@ -79,7 +79,7 @@ type AutomationMessage = {
   receivedAt?: number;
   snippet: string;
   textPreview: string;
-  glassLoop: boolean;
+  spotLoop: boolean;
   attachments: Array<{
     filename?: string;
     contentType: string;
@@ -296,9 +296,9 @@ async function fetchAutomationMessage(
     receivedAt,
     snippet: textPreview.slice(0, 1_500),
     textPreview,
-    glassLoop:
+    spotLoop:
       metadata.envelope?.from?.some((address) =>
-        isGlassSearchLoopAddress(address.address),
+        isSpotSearchLoopAddress(address.address),
       ) ?? false,
     attachments: automationAttachmentSummary(metadata.bodyStructure),
   };
@@ -423,13 +423,13 @@ async function classifyAutomationMessages(
 ) {
   const decisions = new Map<string, MailboxAutomationDecision>();
   const candidates = messages.filter((message) => {
-    if (!message.glassLoop) return true;
+    if (!message.spotLoop) return true;
     decisions.set(
       message.emailRef,
       defaultAutomationDecision(
         message,
         "ignore",
-        "Message originated from Glass and was excluded to prevent an automation loop.",
+        "Message originated from Spot and was excluded to prevent an automation loop.",
       ),
     );
     return false;
@@ -509,7 +509,7 @@ This is a legacy alert-only mailbox: ${policy.alertOnly ? "yes" : "no"}.`,
         defaultAutomationDecision(
           message,
           "review_needed",
-          "Glass could not classify this email automatically. Review its sender, date, and attachments before choosing an action.",
+          "Spot could not classify this email automatically. Review its sender, date, and attachments before choosing an action.",
         ),
       );
     }
@@ -839,7 +839,7 @@ export function buildMailboxActivityBody(
 
   return [
     successful.length > 0
-      ? `Glass completed ${successful.length} connected-mailbox automation action${successful.length === 1 ? "" : "s"}.`
+      ? `Spot completed ${successful.length} connected-mailbox automation action${successful.length === 1 ? "" : "s"}.`
       : undefined,
     ...successful.slice(0, 8).map(
       (outcome, index) => `${index + 1}. ${outcome.actionSummary ?? "Mailbox automation completed."}`,
@@ -872,16 +872,16 @@ export function buildEmailReviewNotificationCopy(
     return {
       title,
       body: isSingleEmail
-        ? "While reviewing your emails, Glass couldn't categorize one of them. Review it in Glass and choose how it should be handled."
-        : `While reviewing your emails, Glass couldn't categorize ${emailCount} of them. Review them in Glass and choose how each email should be handled.`,
+        ? "While reviewing your emails, Spot couldn't categorize one of them. Review it in Spot and choose how it should be handled."
+        : `While reviewing your emails, Spot couldn't categorize ${emailCount} of them. Review them in Spot and choose how each email should be handled.`,
     };
   }
 
   return {
     title,
     body: isSingleEmail
-      ? "Glass found an email that needs review. Open it in Glass to see what happened and choose how it should be handled."
-      : `Glass found ${emailCount} emails that need review. Open them in Glass to see what happened and choose how they should be handled.`,
+      ? "Spot found an email that needs review. Open it in Spot to see what happened and choose how it should be handled."
+      : `Spot found ${emailCount} emails that need review. Open them in Spot to see what happened and choose how they should be handled.`,
   };
 }
 
@@ -947,7 +947,7 @@ async function createMailboxActivity(
       userId: account.userId,
       type: "mailbox_attention",
       title: "Insurance requirements need attention",
-      body: `${complianceAttention.length} insurance requirement${complianceAttention.length === 1 ? "" : "s"} need review in Glass.`,
+      body: `${complianceAttention.length} insurance requirement${complianceAttention.length === 1 ? "" : "s"} need review in Spot.`,
       severity: "warning",
       actionType: "view_thread",
       actionPayload: { threadId: proactive.threadId },
@@ -1058,7 +1058,7 @@ export const scanAccountInternal = internalAction({
                 kind: "mailbox",
                 subject: "Mailbox scan was incomplete",
                 reason:
-                  "Glass could not read a mailbox message and will retry on the next scan. Reconnect the mailbox or review its scan status if this continues.",
+                  "Spot could not read a mailbox message and will retry on the next scan. Reconnect the mailbox or review its scan status if this continues.",
               });
             }
             batchBlocked = true;

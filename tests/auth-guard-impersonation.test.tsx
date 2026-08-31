@@ -64,10 +64,10 @@ vi.mock("@/lib/sync/use-cached-query", () => ({
   },
 }));
 
-vi.mock("@/lib/sync/glass-sync", () => ({
+vi.mock("@/lib/sync/spot-sync", () => ({
   useCachedShell: () => undefined,
   useCacheShellRecord: () => mocks.cacheShellRecord,
-  useGlassSync: () => ({
+  useSpotSync: () => ({
     scope: { userId: "operator-1", orgId: undefined },
     updateScope: mocks.updateScope,
     clearScope: mocks.clearScope,

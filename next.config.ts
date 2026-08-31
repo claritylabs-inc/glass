@@ -5,8 +5,10 @@ const convexSiteUrl =
   process.env.CONVEX_SITE_URL ??
   process.env.NEXT_PUBLIC_CONVEX_URL?.replace(".convex.cloud", ".convex.site");
 
-const appHost = "app.glass.insure";
+const appHost = "app.spot.insure";
 const appAliasHosts = [
+  "spot.claritylabs.inc",
+  "app.glass.insure",
   "glass.claritylabs.inc",
 ];
 
@@ -20,7 +22,7 @@ const nextConfig: NextConfig = {
       source: "/:path*",
       has: [{ type: "host" as const, value: host }],
       destination: `https://${appHost}/:path*`,
-      permanent: false,
+      permanent: true,
     }));
   },
   async rewrites() {

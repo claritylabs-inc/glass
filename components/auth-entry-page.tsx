@@ -94,7 +94,7 @@ export function AuthEntryPage({
     : "Log in";
   const subtitle = isSignup
     ? isBroker
-      ? "Set up your brokerage on Glass."
+      ? "Set up your brokerage on Spot."
       : "Use your work email to get started."
     : "Use your work email to continue.";
   const alternateHref = isSignup ? "/login" : "/signup";

@@ -3,7 +3,7 @@
   "info": {
     "title": "Clarity Labs Router API",
     "version": "1.0.0",
-    "description": "Task-aware direct-provider inference routing for Glass."
+    "description": "Task-aware direct-provider inference routing for Spot."
   },
   "paths": {
     "/health": {
@@ -319,7 +319,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "default": "glass"
+              "default": "spot"
             }
           },
           {
@@ -360,7 +360,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "default": "glass"
+              "default": "spot"
             }
           },
           {
@@ -2139,7 +2139,7 @@
         "type": "object",
         "properties": {
           "tenantId": {
-            "default": "glass",
+            "default": "spot",
             "type": "string",
             "minLength": 1
           },
@@ -2167,7 +2167,7 @@
         "type": "object",
         "properties": {
           "tenantId": {
-            "default": "glass",
+            "default": "spot",
             "type": "string",
             "minLength": 1
           },
@@ -2227,7 +2227,7 @@
         "type": "object",
         "properties": {
           "tenantId": {
-            "default": "glass",
+            "default": "spot",
             "type": "string",
             "minLength": 1
           },
@@ -3135,7 +3135,7 @@
         "type": "object",
         "properties": {
           "tenantId": {
-            "default": "glass",
+            "default": "spot",
             "type": "string",
             "minLength": 1
           },

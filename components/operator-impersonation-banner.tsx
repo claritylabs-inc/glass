@@ -38,11 +38,11 @@ export function OperatorImpersonationBanner() {
     const root = document.documentElement;
     const setInset = () => {
       const height = bannerRef.current?.getBoundingClientRect().height ?? 0;
-      root.style.setProperty("--glass-app-bottom-inset", `${height}px`);
+      root.style.setProperty("--spot-app-bottom-inset", `${height}px`);
     };
 
     if (!hasImpersonation) {
-      root.style.removeProperty("--glass-app-bottom-inset");
+      root.style.removeProperty("--spot-app-bottom-inset");
       return;
     }
 
@@ -57,7 +57,7 @@ export function OperatorImpersonationBanner() {
     return () => {
       observer?.disconnect();
       window.removeEventListener("resize", setInset);
-      root.style.removeProperty("--glass-app-bottom-inset");
+      root.style.removeProperty("--spot-app-bottom-inset");
     };
   }, [hasImpersonation]);
 

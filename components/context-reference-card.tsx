@@ -13,7 +13,7 @@ import {
   resolvePolicyCarrierDisplay,
   resolvePolicyPartyContext,
 } from "@/convex/lib/policyPartyContext";
-import { useCachedPolicySummary } from "@/lib/sync/glass-cached-queries";
+import { useCachedPolicySummary } from "@/lib/sync/spot-cached-queries";
 import { policyCardBranding } from "@/lib/policy-card-branding";
 import { typeStyle } from "@/lib/typography";
 import { cn } from "@/lib/utils";

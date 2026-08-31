@@ -66,7 +66,7 @@ const sendVerificationRequest = async function (this: unknown, ...args: any[]) {
       : getBrandingContext();
 
     const { html, text } = buildOtpEmail(token, getAuthSiteUrl(), branding);
-    const subjectBrand = brokerBranding?.name ?? "Glass";
+    const subjectBrand = brokerBranding?.name ?? "Spot";
     const subject = `Your ${subjectBrand} sign-in code`;
     const fromName = brokerBranding?.name ? `${brokerBranding.name} Login` : undefined;
     const result = await sendResendEmail({

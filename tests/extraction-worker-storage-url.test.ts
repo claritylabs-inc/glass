@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { resolveConvexStorageUrl } from "../extraction-worker/src/convexStorageUrl";
 
 const LOCAL_OPTIONS = {
-  glassEnv: "local",
+  spotEnv: "local",
   convexUrl: "http://192.168.64.1:55053",
 };
 
@@ -33,7 +33,7 @@ describe("extraction worker Convex storage URLs", () => {
     expect(resolveConvexStorageUrl(publicUrl, LOCAL_OPTIONS)).toBe(publicUrl);
     expect(resolveConvexStorageUrl(localUrl, {
       ...LOCAL_OPTIONS,
-      glassEnv: "production",
+      spotEnv: "production",
     })).toBe(localUrl);
   });
 

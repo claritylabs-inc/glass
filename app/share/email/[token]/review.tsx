@@ -4,7 +4,7 @@ import { AlertTriangle, Check, Paperclip, Send } from "lucide-react";
 import { useAction, useQuery } from "convex/react";
 import { makeFunctionReference } from "convex/server";
 import { useState } from "react";
-import { GlassWordmark } from "@/components/ui/glass-wordmark";
+import { SpotWordmark } from "@/components/ui/spot-wordmark";
 import { PillButton } from "@/components/ui/pill-button";
 import { typeStyle } from "@/lib/typography";
 import type { EmailDraftReviewView } from "./view";
@@ -30,21 +30,21 @@ function EmptyReview({ state }: { state: "missing" | "expired" | "stale" }) {
   const content = {
     missing: {
       title: "Draft link unavailable",
-      body: "This review link could not be found. Ask Glass to show the draft again.",
+      body: "This review link could not be found. Ask Spot to show the draft again.",
     },
     expired: {
       title: "Draft link expired",
-      body: "For your protection, draft review links expire. Ask Glass to show the current draft again.",
+      body: "For your protection, draft review links expire. Ask Spot to show the current draft again.",
     },
     stale: {
       title: "Draft changed",
-      body: "The email changed after this link was created. Ask Glass for a fresh review link before sending.",
+      body: "The email changed after this link was created. Ask Spot for a fresh review link before sending.",
     },
   }[state];
   return (
     <main className="min-h-screen bg-background px-5 py-8 text-foreground sm:px-8 sm:py-12">
       <div className="mx-auto max-w-xl">
-        <GlassWordmark />
+        <SpotWordmark />
         <section className="mt-10 border-t border-border pt-8">
           <AlertTriangle className="h-5 w-5 text-muted-foreground" />
           <h1 className={`mt-4 ${typeStyle("heading.micro")}`}>{content.title}</h1>
@@ -99,7 +99,7 @@ export function EmailDraftReview({
         : displayState === "pending"
           ? "This email is already scheduled."
           : displayState === "draft" && !view.canSend
-            ? "This draft needs a fresh confirmation in Glass."
+            ? "This draft needs a fresh confirmation in Spot."
             : undefined;
 
   return (
@@ -107,7 +107,7 @@ export function EmailDraftReview({
       <div className="mx-auto max-w-5xl">
         <header className="border-b border-border pb-6">
           <div className="flex items-center justify-between gap-4">
-            <GlassWordmark />
+            <SpotWordmark />
             <p className={`truncate text-muted-foreground ${typeStyle("body.default")}`}>
               {view.orgName}
             </p>

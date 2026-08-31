@@ -161,7 +161,7 @@ export async function readStoredThreadAttachment(
       filename: args.filename,
       contentType: args.contentType,
       message:
-        "Glass cannot reopen this attachment type from conversation history. Ask the user to upload it again in a supported format.",
+        "Spot cannot reopen this attachment type from conversation history. Ask the user to upload it again in a supported format.",
     };
   }
 

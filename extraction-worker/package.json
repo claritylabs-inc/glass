@@ -1,8 +1,8 @@
 {
-  "name": "@glass/extraction-worker",
+  "name": "@spot/extraction-worker",
   "version": "1.0.0",
   "private": true,
-  "description": "Glass policy extraction worker for long-running cl-sdk jobs",
+  "description": "Spot policy extraction worker for long-running cl-sdk jobs",
   "packageManager": "npm@11.12.1",
   "type": "module",
   "engines": {

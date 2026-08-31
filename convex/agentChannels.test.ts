@@ -112,21 +112,21 @@ describe("agent channel settings", () => {
     });
   });
 
-  test("lists the signed-in operator first alongside every other Glass operator", async () => {
+  test("lists the signed-in operator first alongside every other Spot operator", async () => {
     const t = convexTest(schema, modules);
     const { currentUserId, activeUserId, disabledUserId } = await t.run(
       async (ctx) => {
         const currentUserId = await ctx.db.insert("users", {
           name: "Current Operator",
-          email: "current@glass.insure",
+          email: "current@spot.insure",
           accountKind: "operator",
         });
         await ctx.db.insert("operatorProfiles", {
           userId: currentUserId,
-          email: "current@glass.insure",
+          email: "current@spot.insure",
           role: "owner",
           status: "active",
-          slackTeamId: "T-GLASS",
+          slackTeamId: "T-SPOT",
           slackUserId: "U-CURRENT",
           createdAt: 1,
           updatedAt: 1,
@@ -134,12 +134,12 @@ describe("agent channel settings", () => {
 
         const activeUserId = await ctx.db.insert("users", {
           name: "Active Operator",
-          email: "active@glass.insure",
+          email: "active@spot.insure",
           accountKind: "operator",
         });
         await ctx.db.insert("operatorProfiles", {
           userId: activeUserId,
-          email: "active@glass.insure",
+          email: "active@spot.insure",
           role: "operator",
           status: "active",
           createdAt: 1,
@@ -147,12 +147,12 @@ describe("agent channel settings", () => {
         });
 
         const disabledUserId = await ctx.db.insert("users", {
-          email: "disabled@glass.insure",
+          email: "disabled@spot.insure",
           accountKind: "operator",
         });
         await ctx.db.insert("operatorProfiles", {
           userId: disabledUserId,
-          email: "disabled@glass.insure",
+          email: "disabled@spot.insure",
           role: "operator",
           status: "disabled",
           slackTeamId: "T-OLD",
@@ -173,17 +173,17 @@ describe("agent channel settings", () => {
       {
         userId: currentUserId,
         name: "Current Operator",
-        email: "current@glass.insure",
+        email: "current@spot.insure",
         role: "owner",
         status: "active",
-        slackTeamId: "T-GLASS",
+        slackTeamId: "T-SPOT",
         slackUserId: "U-CURRENT",
         isCurrent: true,
       },
       {
         userId: activeUserId,
         name: "Active Operator",
-        email: "active@glass.insure",
+        email: "active@spot.insure",
         role: "operator",
         status: "active",
         slackTeamId: null,
@@ -193,7 +193,7 @@ describe("agent channel settings", () => {
       {
         userId: disabledUserId,
         name: null,
-        email: "disabled@glass.insure",
+        email: "disabled@spot.insure",
         role: "operator",
         status: "disabled",
         slackTeamId: "T-OLD",
@@ -290,12 +290,12 @@ describe("agent channel settings", () => {
     const { operatorUserId, standaloneOrgId, managedOrgId } = await t.run(
       async (ctx) => {
         const operatorUserId = await ctx.db.insert("users", {
-          email: "operator@glass.insure",
+          email: "operator@spot.insure",
           accountKind: "operator",
         });
         await ctx.db.insert("operatorProfiles", {
           userId: operatorUserId,
-          email: "operator@glass.insure",
+          email: "operator@spot.insure",
           role: "operator",
           status: "active",
           createdAt: 1,
@@ -381,13 +381,13 @@ describe("agent channel settings", () => {
           type: "client",
         });
         const operatorUserId = await ctx.db.insert("users", {
-          name: "Glass Operator",
-          email: "operator@glass.insure",
+          name: "Spot Operator",
+          email: "operator@spot.insure",
           accountKind: "operator",
         });
         await ctx.db.insert("operatorProfiles", {
           userId: operatorUserId,
-          email: "operator@glass.insure",
+          email: "operator@spot.insure",
           role: "operator",
           status: "active",
           createdAt: 1,
@@ -458,7 +458,7 @@ describe("agent channel settings", () => {
     ).rejects.toThrow();
     await expect(
       operator.mutation(finishSlackSetupFn, { clientOrgId }),
-    ).rejects.toThrow("Install or update Glass in Slack");
+    ).rejects.toThrow("Install or update Spot in Slack");
 
     await t.run(async (ctx) => {
       const serviceUserId = await ctx.db.insert("users", {
@@ -499,12 +499,12 @@ describe("agent channel settings", () => {
         type: "client",
       });
       const operatorUserId = await ctx.db.insert("users", {
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         accountKind: "operator",
       });
       await ctx.db.insert("operatorProfiles", {
         userId: operatorUserId,
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         role: "operator",
         status: "active",
         createdAt: 1,
@@ -543,12 +543,12 @@ describe("agent channel settings", () => {
         type: "client",
       });
       const operatorUserId = await ctx.db.insert("users", {
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         accountKind: "operator",
       });
       await ctx.db.insert("operatorProfiles", {
         userId: operatorUserId,
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         role: "operator",
         status: "active",
         createdAt: 1,
@@ -594,12 +594,12 @@ describe("agent channel settings", () => {
           type: "client",
         });
         const operatorUserId = await ctx.db.insert("users", {
-          email: "operator@glass.insure",
+          email: "operator@spot.insure",
           accountKind: "operator",
         });
         await ctx.db.insert("operatorProfiles", {
           userId: operatorUserId,
-          email: "operator@glass.insure",
+          email: "operator@spot.insure",
           role: "operator",
           status: "active",
           createdAt: 1,
@@ -630,7 +630,7 @@ describe("agent channel settings", () => {
           hostTeamId: "T-CLARITY",
           hostChannelId: "C-HOST",
           customerChannelId: "C-SUPPORT",
-          channelName: "glass-repair-client",
+          channelName: "spot-repair-client",
           status: "active",
           createdAt: 1,
           updatedAt: 1,
@@ -775,7 +775,7 @@ describe("agent channel settings", () => {
   test("audits operator-managed channel settings and Slack identity", async () => {
     vi.stubEnv("SLACK_MODE", "mock");
     vi.stubEnv("SLACK_ENABLED", "true");
-    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-GLASS");
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-SPOT");
     const t = convexTest(schema, modules);
     const { clientOrgId, operatorUserId } = await t.run(async (ctx) => {
       const clientOrgId = await ctx.db.insert("organizations", {
@@ -783,12 +783,12 @@ describe("agent channel settings", () => {
         type: "client",
       });
       const operatorUserId = await ctx.db.insert("users", {
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         accountKind: "operator",
       });
       await ctx.db.insert("operatorProfiles", {
         userId: operatorUserId,
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         role: "operator",
         status: "active",
         createdAt: 1,
@@ -807,7 +807,7 @@ describe("agent channel settings", () => {
       slackPolicyDeliveryEnabled: true,
     });
     await operator.mutation(setOperatorSlackIdentityFn, {
-      teamId: "T-GLASS",
+      teamId: "T-SPOT",
       userId: "U-OPERATOR",
     });
 
@@ -816,7 +816,7 @@ describe("agent channel settings", () => {
       audits: await ctx.db.query("operatorAuditEvents").collect(),
     }));
     expect(records.profile).toMatchObject({
-      slackTeamId: "T-GLASS",
+      slackTeamId: "T-SPOT",
       slackUserId: "U-OPERATOR",
     });
     expect(records.audits.map((audit) => audit.summary)).toEqual([
@@ -828,16 +828,16 @@ describe("agent channel settings", () => {
   test("rejects an operator identity from a different Slack workspace", async () => {
     vi.stubEnv("SLACK_MODE", "mock");
     vi.stubEnv("SLACK_ENABLED", "true");
-    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-GLASS");
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-SPOT");
     const t = convexTest(schema, modules);
     const operatorUserId = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         accountKind: "operator",
       });
       await ctx.db.insert("operatorProfiles", {
         userId,
-        email: "operator@glass.insure",
+        email: "operator@spot.insure",
         role: "operator",
         status: "active",
         createdAt: 1,
@@ -908,7 +908,7 @@ describe("agent channel settings", () => {
         type: "client",
       });
       const serviceUserId = await ctx.db.insert("users", {
-        name: "Glass Slack",
+        name: "Spot Slack",
         accountKind: "customer",
         serviceAccountKind: "slack",
       });
@@ -937,7 +937,7 @@ describe("agent channel settings", () => {
       const actor = async (
         teamId: string,
         slackUserId: string,
-        classification: "customer_member" | "glass_operator" | "external",
+        classification: "customer_member" | "spot_operator" | "external",
       ) =>
         await ctx.db.insert("slackActors", {
           connectionId,
@@ -959,7 +959,7 @@ describe("agent channel settings", () => {
         operatorActorId: await actor(
           "T-CLARITY",
           "U-OPERATOR",
-          "glass_operator",
+          "spot_operator",
         ),
         externalActorId: await actor("T-VENDOR", "U-VENDOR", "external"),
       };

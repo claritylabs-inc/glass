@@ -157,7 +157,7 @@ async function evaluateCertificateRequestGateWithLlm(params: {
       status: "held",
       reasonCode: "missing_policy_evidence",
       reasonMessage:
-        "I need broker review before issuing this certificate because Glass could not find source-backed policy or endorsement evidence for the requested certificate wording.",
+        "I need broker review before issuing this certificate because Spot could not find source-backed policy or endorsement evidence for the requested certificate wording.",
       requiredChanges,
       evidence: [],
     };
@@ -174,7 +174,7 @@ async function evaluateCertificateRequestGateWithLlm(params: {
       maxTokens: 1400,
       system: `You are a conservative certificate-of-insurance gate reviewer.
 
-Decide whether Glass may issue the requested COI from existing policy and endorsement evidence.
+Decide whether Spot may issue the requested COI from existing policy and endorsement evidence.
 
 Rules:
 - Use only the provided evidence IDs. Do not invent evidence.
@@ -1071,7 +1071,7 @@ export const generateForOrg = internalAction({
         holderName,
         certificateHolder,
         message:
-          "COI generation is available after Glass finishes full source-backed extraction for this policy.",
+          "COI generation is available after Spot finishes full source-backed extraction for this policy.",
       };
     }
     const org = await ctx.runQuery(internal.orgs.getInternal, {
@@ -1195,7 +1195,7 @@ export const generateForOrg = internalAction({
           message:
             rebuild.status === "failed"
               ? `Endorsement-aware certificate generation needs source-tree evidence, but rebuilding failed: ${rebuild.error ?? "unknown error"}`
-              : "Endorsement-aware certificate generation is queued until Glass rebuilds source-tree evidence for this policy.",
+              : "Endorsement-aware certificate generation is queued until Spot rebuilds source-tree evidence for this policy.",
         };
       }
       gate = await evaluateCertificateRequestGateWithLlm({

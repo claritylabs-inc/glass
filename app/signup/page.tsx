@@ -54,7 +54,7 @@ export default function SignupPage() {
               </div>
               <div className={`text-muted-foreground ${typeStyle("caption.default")}`}>
                 Use the signup link your partner shared with you (it looks like{" "}
-                app.glass.insure/signup/your-partner), or{" "}
+                app.spot.insure/signup/your-partner), or{" "}
                 <Link href="/login" className={`text-foreground underline-offset-2 hover:underline ${typeStyle("control.button")}`}>
                   log in
                 </Link>{" "}

@@ -11,8 +11,8 @@ type GlobalOptions = {
 
 const program = new Command();
 program
-  .name("glass-operator")
-  .description("Private Glass operator CLI")
+  .name("spot-operator")
+  .description("Private Spot operator CLI")
   .version("0.1.2")
   .option("--profile <profile>", "operator config profile")
   .option("--json", "print JSON output");

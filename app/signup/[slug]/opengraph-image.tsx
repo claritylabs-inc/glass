@@ -1,10 +1,10 @@
 import { ImageResponse } from "next/og";
 import { fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
-import { createGlassSocialImage } from "@/lib/glass-social-image";
-import { GlassWordmark, ogFonts } from "../../opengraph-image";
+import { createSpotSocialImage } from "@/lib/spot-social-image";
+import { SpotWordmark, ogFonts } from "../../opengraph-image";
 
-export const alt = "Glass from Clarity Labs";
+export const alt = "Spot from Clarity Labs";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -14,7 +14,7 @@ export default async function Image({ params }: { params: { slug: string } }) {
   );
 
   if (!broker || broker.whiteLabelingEnabled === false) {
-    return createGlassSocialImage();
+    return createSpotSocialImage();
   }
 
   const fonts = await ogFonts();
@@ -70,7 +70,7 @@ export default async function Image({ params }: { params: { slug: string } }) {
           }}
         >
           <span>Powered by</span>
-          <GlassWordmark size={18} />
+          <SpotWordmark size={18} />
         </div>
       </div>
     ),

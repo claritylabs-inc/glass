@@ -1,6 +1,6 @@
-# Glass interface style guide
+# Spot interface style guide
 
-This guide is the visual contract for Glass browser product surfaces. It puts
+This guide is the visual contract for Spot browser product surfaces. It puts
 the existing design system into clear rules so new work stays formal, quiet,
 and consistent. It applies to the signed-in app, auth, onboarding, and shared
 browser components. Transactional email, generated images, PDFs, and marketing
@@ -14,7 +14,7 @@ The words **must**, **should**, and **may** are intentional:
 
 ## Character
 
-Glass is a dense operational product, not a collection of promotional cards.
+Spot is a dense operational product, not a collection of promotional cards.
 The interface should feel calm, precise, and trustworthy.
 
 - Put the user's next decision or action first.
@@ -154,7 +154,7 @@ fill empty space.
 
 The generic `Card` component is not the default application container. Use it
 only when the content is genuinely a self-contained object with card-specific
-header, content, and footer behavior. Most Glass data and settings should use
+header, content, and footer behavior. Most Spot data and settings should use
 `OperationalPanel` instead.
 
 Card rules:
@@ -176,7 +176,7 @@ Card rules:
 | `rounded-xl` | Dialogs, prominent composers, and temporary elevated surfaces |
 | `rounded-full` | Pill buttons, badges, avatars, and circular icon wells only |
 
-Glass applies continuous corners globally. Use the standard radius utilities
+Spot applies continuous corners globally. Use the standard radius utilities
 and let the smooth-corner owner render them. Do not add custom clip paths or
 opt out with `data-smooth-corners="off"` unless a tested rendering limitation
 requires it. Arbitrary radii should be limited to a shared specialized

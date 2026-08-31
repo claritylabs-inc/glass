@@ -156,9 +156,13 @@ export function parseMessageRef(ref: string): {
   };
 }
 
-export function isGlassSearchLoopAddress(address?: string) {
+export function isSpotSearchLoopAddress(address?: string) {
   const domain = address?.split("@").pop()?.trim().toLowerCase();
   return !!domain && (
+    domain === "spot.insure" ||
+    domain.endsWith(".spot.insure") ||
+    domain === "spot.claritylabs.inc" ||
+    domain.endsWith(".spot.claritylabs.inc") ||
     domain === "glass.insure" ||
     domain.endsWith(".glass.insure") ||
     domain === "glass.claritylabs.inc" ||
@@ -166,8 +170,8 @@ export function isGlassSearchLoopAddress(address?: string) {
   );
 }
 
-export function isGlassSearchLoopEmail(parsed: ParsedMail) {
-  return parsed.from?.value.some((item) => isGlassSearchLoopAddress(item.address)) ?? false;
+export function isSpotSearchLoopEmail(parsed: ParsedMail) {
+  return parsed.from?.value.some((item) => isSpotSearchLoopAddress(item.address)) ?? false;
 }
 
 export async function fetchParsedMessage(

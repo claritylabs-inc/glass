@@ -25,7 +25,7 @@ async function seedPresentation(t: ReturnType<typeof convexTest>) {
       type: "client",
     });
     const serviceUserId = await ctx.db.insert("users", {
-      name: "Glass Slack",
+      name: "Spot Slack",
       accountKind: "customer",
       serviceAccountKind: "slack",
     });
@@ -33,7 +33,7 @@ async function seedPresentation(t: ReturnType<typeof convexTest>) {
       clientOrgId: orgId,
       teamId: "T-CUSTOMER",
       teamName: "Cove",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       grantedScopes: ["chat:write"],
       status: "active",
       serviceUserId,

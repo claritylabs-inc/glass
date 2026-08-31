@@ -56,8 +56,8 @@ function policyCardRequest(policyId: Id<"policies">): ImessageAppCardRequest {
     },
     card: {
       title: "Policy link",
-      subtitle: "Open this policy in Glass",
-      summary: "Here's the policy link in Glass:",
+      subtitle: "Open this policy in Spot",
+      summary: "Here's the policy link in Spot:",
     },
   };
 }
@@ -88,7 +88,7 @@ function certificateCardRequest(
     },
     card: {
       title: "Certificate",
-      subtitle: "Open the certificate in Glass",
+      subtitle: "Open the certificate in Spot",
     },
   };
 }

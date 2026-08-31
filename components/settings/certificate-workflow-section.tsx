@@ -126,7 +126,7 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
         <OperationalPanelBody className="space-y-0 divide-y divide-border py-0">
           <ToggleRow
             title="Update certificates on renewal"
-            description="When a renewed policy is uploaded, Glass reviews active certificates and prepares updated versions."
+            description="When a renewed policy is uploaded, Spot reviews active certificates and prepares updated versions."
             checked={draft.renewalReissueEnabled}
             disabled={!editable}
             label="Toggle certificate updates on renewal"

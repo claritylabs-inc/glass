@@ -375,7 +375,7 @@ export function shouldFallBackFromClRouter(
   error: unknown,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  if (environment.GLASS_ENV?.trim().toLowerCase() !== "production") return false;
+  if (environment.SPOT_ENV?.trim().toLowerCase() !== "production") return false;
   if (
     error instanceof ClRouterHttpError &&
     error.routerCode === "router_unavailable" &&

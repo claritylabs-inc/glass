@@ -3,7 +3,7 @@
 /**
  * Query agent — cl-sdk
  *
- * Wraps createQueryAgent with Glass's model routing and Convex storage.
+ * Wraps createQueryAgent with Spot's model routing and Convex storage.
  * Provides citation-backed Q&A over bound policy documents.
  */
 
@@ -18,7 +18,7 @@ import { createConvexSourceRetriever } from "./convexSourceRetriever";
 import { modelCapabilitiesForTask } from "./modelCatalog";
 
 /**
- * Build a query agent pre-configured with Glass's model routing and Convex storage.
+ * Build a query agent pre-configured with Spot's model routing and Convex storage.
  * Must be called from an action context.
  */
 export function buildQueryAgent(

@@ -1,7 +1,15 @@
 import type { Doc } from "../_generated/dataModel";
 
-export const DEFAULT_CLIENT_PORTAL_URL = "https://app.glass.insure";
+export const DEFAULT_CLIENT_PORTAL_URL = "https://app.spot.insure";
 export const DEFAULT_EMAIL_ASSET_BASE_URL = DEFAULT_CLIENT_PORTAL_URL;
+
+const NON_CANONICAL_SITE_URLS = new Set([
+  "https://spot.claritylabs.inc",
+  "https://app.glass.insure",
+  "https://glass.claritylabs.inc",
+  "https://auth.spot.insure",
+  "https://auth.glass.insure",
+]);
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -10,10 +18,7 @@ function trimTrailingSlash(url: string): string {
 function normalizeSiteUrl(url: string | undefined, fallback: string): string {
   if (!url) return fallback;
   const trimmed = trimTrailingSlash(url);
-  if (
-    trimmed === "https://glass.claritylabs.inc" ||
-    trimmed === "https://auth.glass.insure"
-  ) {
+  if (NON_CANONICAL_SITE_URLS.has(trimmed)) {
     return fallback;
   }
   return trimmed;

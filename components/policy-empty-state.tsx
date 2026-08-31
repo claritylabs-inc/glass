@@ -53,7 +53,7 @@ export function PolicyEmptyState({
     subtitle === ""
       ? null
       : (subtitle ??
-        `Email it in or drop a PDF — Glass sets it up for you, no forms to fill.`);
+        `Email it in or drop a PDF — Spot sets it up for you, no forms to fill.`);
   const hasHeader = heading || sub;
 
   const content = (

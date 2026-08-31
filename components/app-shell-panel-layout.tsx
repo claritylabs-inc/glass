@@ -106,7 +106,7 @@ export function AppShellPanelLayout({
     ],
     [hasEntityPanel, hasPdfPanel, hasRightPanel],
   );
-  const layoutStorageId = `glass:app-shell-panels:${storageUserId ?? "pending"}`;
+  const layoutStorageId = `spot:app-shell-panels:${storageUserId ?? "pending"}`;
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: layoutStorageId,
     panelIds,

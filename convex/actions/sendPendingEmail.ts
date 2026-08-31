@@ -284,7 +284,7 @@ async function assertSafeDraftAttachments(
 }
 
 function outboundMessageIdForPending(id: Id<"pendingEmails">) {
-  return `<glass-pending-${String(id)}@${getAgentDomain()}>`;
+  return `<spot-pending-${String(id)}@${getAgentDomain()}>`;
 }
 
 async function sendPendingEmailById(

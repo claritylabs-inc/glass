@@ -165,7 +165,7 @@ function MemoryEditDrawer({
                 Delete this company memory?
               </p>
               <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
-                Glass will stop using it in future advice and servicing.
+                Spot will stop using it in future advice and servicing.
               </p>
             </div>
           </div>

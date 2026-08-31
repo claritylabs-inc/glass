@@ -18,7 +18,7 @@ export function normalizeCertificateDescription(value: unknown) {
   return text
     .replace(/^[ \t]*(?:[-*]|\d+[.)])[ \t]+/gm, "")
     .replace(/\bACORD\s*\d*\b/gi, "")
-    .replace(/\bGenerated using Glass\b/gi, "")
+    .replace(/\bGenerated using Spot\b/gi, "")
     .split(/\r?\n/)
     .map((line) => line.replace(/\s+/g, " ").trim())
     .join("\n")

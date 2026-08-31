@@ -1,6 +1,6 @@
 # Transformer Capital requirements test kit
 
-This is a fictional QA kit for the Glass requirements feature. It models Transformer Capital investing in Cove Technologies Inc. at 1070 Bridgeview Way, San Francisco, CA 94124. None of the documents is a real contract, policy, binder, certificate, or legal document.
+This is a fictional QA kit for the Spot requirements feature. It models Transformer Capital investing in Cove Technologies Inc. at 1070 Bridgeview Way, San Francisco, CA 94124. None of the documents is a real contract, policy, binder, certificate, or legal document.
 
 ## Fixture files
 

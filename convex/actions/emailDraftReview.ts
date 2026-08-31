@@ -27,8 +27,8 @@ export const send = action({
         if (confirmationResult !== "completed") {
           throw new Error(
             confirmationResult === "expired"
-              ? "This draft confirmation expired. Ask Glass to show the draft again."
-              : "This draft changed. Ask Glass to show the current draft again.",
+              ? "This draft confirmation expired. Ask Spot to show the draft again."
+              : "This draft changed. Ask Spot to show the current draft again.",
           );
         }
       }

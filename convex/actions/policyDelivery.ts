@@ -143,7 +143,7 @@ async function chooseDecision(ctx: any, data: any): Promise<{
       action: data.ownerSettings ? "service_review" : "broker_review",
       channels: settings.channels,
       summary: data.ownerSettings
-        ? "Extraction has open review questions, so delivery requires Glass service review."
+        ? "Extraction has open review questions, so delivery requires Spot service review."
         : "Extraction has open review questions, so delivery requires broker review.",
     };
   }
@@ -169,7 +169,7 @@ async function chooseDecision(ctx: any, data: any): Promise<{
         channels: settings.channels,
         rule,
         summary: data.ownerSettings
-          ? `Rule "${rule.name}" needs Glass service review because evaluation failed.`
+          ? `Rule "${rule.name}" needs Spot service review because evaluation failed.`
           : `Rule "${rule.name}" needs broker review because evaluation failed.`,
         details: { error: error instanceof Error ? error.message : String(error) },
       };
@@ -215,8 +215,8 @@ async function buildDeliveryCopy(ctx: any, data: any, instructions?: string) {
   const broker = data.broker as Doc<"organizations"> | null;
   const client = data.client as Doc<"organizations">;
   const serviceOrganization = data.ownerSettings
-    ? "Glass"
-    : broker?.name ?? "Glass";
+    ? "Spot"
+    : broker?.name ?? "Spot";
   const label = sourceLabel(data);
   const fallbackSubject =
     label === "endorsement"
@@ -229,7 +229,7 @@ async function buildDeliveryCopy(ctx: any, data: any, instructions?: string) {
     "",
     `${policy.carrier || "Carrier"}${policy.policyNumber ? ` policy ${policy.policyNumber}` : ""}${policy.effectiveDate && policy.expirationDate ? ` is effective ${policy.effectiveDate} to ${policy.expirationDate}` : ""}.`,
     "",
-    "Reply here with any questions. Glass will help answer using the policy documents, and your broker can review the conversation.",
+    "Reply here with any questions. Spot will help answer using the policy documents, and your broker can review the conversation.",
   ].join("\n");
   if (!instructions?.trim()) return { subject: fallbackSubject, body: fallbackBody };
 
@@ -371,7 +371,7 @@ export const processJob = internalAction({
           orgId: data.client._id,
           connectionId: data.connection._id,
           channelId: supportSlackChannelId,
-          content: `Policy delivery needs Glass service review for ${data.policy.policyNumber || "a client policy"}. ${decision.summary}`,
+          content: `Policy delivery needs Spot service review for ${data.policy.policyNumber || "a client policy"}. ${decision.summary}`,
         });
       }
       await ctx.runMutation((internal as any).policyDelivery.patchJobInternal, {
@@ -457,7 +457,7 @@ export const processJob = internalAction({
           throw new Error(identity.reason ?? "Email sender is not configured.");
         }
         const signature = buildEmailSignature(identity.agentAddress, identity.brokerBranding);
-        const outboundMessageId = `<glass-policy-delivery-${args.jobId}@${getAgentDomain()}>`;
+        const outboundMessageId = `<spot-policy-delivery-${args.jobId}@${getAgentDomain()}>`;
         const emailPayload = buildEmailPayload({
           fromHeader: identity.fromHeader,
           to: recipient.email,
@@ -487,7 +487,7 @@ export const processJob = internalAction({
           orgId: data.client._id,
           role: "agent",
           fromEmail: identity.agentAddress,
-          fromName: identity.brokerBranding?.agentDisplayName ?? identity.brokerBranding?.name ?? "Glass",
+          fromName: identity.brokerBranding?.agentDisplayName ?? identity.brokerBranding?.name ?? "Spot",
           toAddresses: [recipient.email],
           subject: copy.subject,
           content: copy.body,

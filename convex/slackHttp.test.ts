@@ -26,7 +26,7 @@ async function seedConnection(t: ReturnType<typeof convexTest>) {
       type: "client",
     });
     const serviceUserId = await ctx.db.insert("users", {
-      name: "Glass Slack",
+      name: "Spot Slack",
       accountKind: "customer",
       serviceAccountKind: "slack",
     });
@@ -39,7 +39,7 @@ async function seedConnection(t: ReturnType<typeof convexTest>) {
       clientOrgId,
       teamId: "T-CUSTOMER",
       teamName: "Customer",
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       grantedScopes: ["app_mentions:read", "chat:write"],
       status: "active",
       serviceUserId,
@@ -62,10 +62,10 @@ async function seedConnection(t: ReturnType<typeof convexTest>) {
       connectionId,
       clientOrgId,
       kind: "primary",
-      hostTeamId: "T-GLASS",
+      hostTeamId: "T-SPOT",
       hostChannelId: "C-HOST",
       customerChannelId: "C-PRIMARY",
-      channelName: "glass-customer",
+      channelName: "spot-customer",
       status: "active",
       createdAt: 1,
       updatedAt: 1,
@@ -78,7 +78,7 @@ function messagePayload(overrides: Record<string, unknown> = {}) {
   return {
     type: "event_callback",
     team_id: "T-CUSTOMER",
-    api_app_id: "A-GLASS",
+    api_app_id: "A-SPOT",
     event_id: "Ev-1800000000.100",
     event_time: dayjs().unix(),
     event: {
@@ -89,7 +89,7 @@ function messagePayload(overrides: Record<string, unknown> = {}) {
       channel: "C-PRIMARY",
       channel_type: "channel",
       user: "U-CUSTOMER",
-      text: "<@U-GLASS> show my policy",
+      text: "<@U-SPOT> show my policy",
       ...overrides,
     },
   };
@@ -169,7 +169,7 @@ describe("Slack Events API webhook", () => {
     expect(events[0]).toMatchObject({
       eventKey: "T-CUSTOMER:C-PRIMARY:1800000000.100:message",
       status: "queued",
-      mentionsGlass: true,
+      mentionsSpot: true,
       isPrimaryChannel: true,
     });
     expect(events[0].senderTeamId).toBeUndefined();
@@ -205,7 +205,7 @@ describe("Slack Events API webhook", () => {
     const echo = messagePayload({
       ts: "1800000000.200",
       event_ts: "1800000000.200",
-      bot_id: "B-GLASS",
+      bot_id: "B-SPOT",
     });
 
     expect(await (await signedRequest(t, dm)).json()).toMatchObject({
@@ -344,7 +344,7 @@ describe("Slack Events API webhook", () => {
       message: { ts: "1800.1" },
       actions: [
         {
-          action_id: "glass_response_feedback",
+          action_id: "spot_response_feedback",
           action_ts: "1800.2",
           value: `positive:${created.actionToken}`,
         },
@@ -357,7 +357,7 @@ describe("Slack Events API webhook", () => {
     );
     expect(interactions).toHaveLength(1);
     expect(interactions[0]).toMatchObject({
-      actionId: "glass_response_feedback",
+      actionId: "spot_response_feedback",
       actorId: fixture.actorId,
     });
 
@@ -436,7 +436,7 @@ describe("Slack Events API webhook", () => {
         slackUserId: "U-CUSTOMER",
         channelId: "C-PRIMARY",
         messageTs: "1800.1",
-        actionId: "glass_response_feedback",
+        actionId: "spot_response_feedback",
         value: "negative",
       },
     );
@@ -445,13 +445,13 @@ describe("Slack Events API webhook", () => {
       team: { id: "T-CUSTOMER" },
       user: { id: "U-CUSTOMER", team_id: "T-CUSTOMER" },
       view: {
-        callback_id: "glass_negative_feedback",
+        callback_id: "spot_negative_feedback",
         private_metadata: claimed.interaction._id,
         state: {
           values: {
-            glass_feedback_comment_block: {
-              glass_feedback_comment: {
-                action_id: "glass_feedback_comment",
+            spot_feedback_comment_block: {
+              spot_feedback_comment: {
+                action_id: "spot_feedback_comment",
                 value: "The coverage limit was wrong.",
               },
             },

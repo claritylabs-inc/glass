@@ -10,7 +10,7 @@ import {
   type ModelProviderId,
 } from "@/components/model-provider-logo";
 import { Badge } from "@/components/ui/badge";
-import { GlassWordmark } from "@/components/ui/glass-wordmark";
+import { SpotWordmark } from "@/components/ui/spot-wordmark";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -161,13 +161,13 @@ export default function WeatherPage() {
             rel="noopener noreferrer"
             className={`inline-flex items-center gap-2 text-foreground/60 transition-colors hover:text-foreground ${typeStyle("control.buttonCompact")}`}
           >
-            <GlassWordmark />
+            <SpotWordmark />
           </Link>
           <h1 className={`mt-4 ${typeStyle("heading.page")}`}>
             AI Weather Report
           </h1>
           <p className={`mt-1 text-foreground/50 ${typeStyle("body.default")}`}>
-            Current model routing across Glass.
+            Current model routing across Spot.
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export default function WeatherPage() {
           <OperationalPanel as="div">
             <Table className="min-w-[760px]">
               <TableCaption className="sr-only">
-                Current provider and model routing for every Glass AI task.
+                Current provider and model routing for every Spot AI task.
               </TableCaption>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">

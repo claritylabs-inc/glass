@@ -494,7 +494,7 @@ export const searchThreadHistory = internalQuery({
         messageId: message._id,
         role: message.role,
         speaker:
-          message.role === "user" ? (message.userName ?? "User") : "Glass",
+          message.role === "user" ? (message.userName ?? "User") : "Spot",
         createdAt: message._creationTime,
         excerpt: message.content.slice(0, 1_200),
         attachments: (message.attachments ?? []).map((attachment) => ({

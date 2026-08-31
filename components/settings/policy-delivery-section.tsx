@@ -72,7 +72,7 @@ const DEFAULT_SETTINGS: SettingsRow = {
 const ACTION_LABELS: Record<DeliveryAction, string> = {
   auto_send: "Send automatically",
   broker_review: "Hold for broker review",
-  service_review: "Hold for Glass service review",
+  service_review: "Hold for Spot service review",
   do_not_send: "Do not send",
 };
 
@@ -183,7 +183,7 @@ function ActionSelect({
       <SelectContent>
         <SelectItem value="auto_send">Send automatically</SelectItem>
         <SelectItem value="broker_review">Hold for broker review</SelectItem>
-        <SelectItem value="service_review">Hold for Glass service review</SelectItem>
+        <SelectItem value="service_review">Hold for Spot service review</SelectItem>
         <SelectItem value="do_not_send">Do not send</SelectItem>
       </SelectContent>
     </Select>
@@ -465,7 +465,7 @@ function PolicyDeliveryEditor({
       <OperationalPanel>
         <OperationalPanelHeader
           title="Automatic policy delivery"
-          description="After a bound policy or endorsement finishes processing, Glass can deliver the PDF through client-owned channels."
+          description="After a bound policy or endorsement finishes processing, Spot can deliver the PDF through client-owned channels."
           className="px-5 py-4"
           action={(
             isInheritedClientSettings ? (
@@ -474,7 +474,7 @@ function PolicyDeliveryEditor({
               undefined
             ) : (
               <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
-                Client admins and Glass operators can edit
+                Client admins and Spot operators can edit
               </span>
             )
           )}

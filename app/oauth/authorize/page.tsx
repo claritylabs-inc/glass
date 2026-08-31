@@ -162,7 +162,7 @@ export default function OAuthAuthorizePage() {
   if (!isAuthenticated) {
     return (
       <AuthShell>
-        <AuthCard title="Authorize app" subtitle="Sign in to connect your Glass account.">
+        <AuthCard title="Authorize app" subtitle="Sign in to connect your Spot account.">
 
             {loginStep === "email" ? (
               <form onSubmit={handleEmailSubmit} className="space-y-4">
@@ -236,7 +236,7 @@ export default function OAuthAuthorizePage() {
   const cardSubtitle = redirecting && clientInfo
     ? `Redirecting you back to ${clientInfo.clientName}...`
     : clientInfo
-      ? `${clientInfo.clientName} wants to access your Glass account.`
+      ? `${clientInfo.clientName} wants to access your Spot account.`
       : "Review this request before continuing.";
 
   return (
@@ -281,7 +281,7 @@ export default function OAuthAuthorizePage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Ask questions via Glass AI
+                    Ask questions via Spot AI
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-foreground/30 mt-0.5">&#x2022;</span>

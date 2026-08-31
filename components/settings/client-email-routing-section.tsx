@@ -186,7 +186,7 @@ export function ClientEmailRoutingSection({
       <OperationalPanel>
       <OperationalPanelHeader
         title="Inbound email access"
-        description="Choose who Glass can identify as this client when they email your agent address."
+        description="Choose who Spot can identify as this client when they email your agent address."
         action={
           canEdit ? undefined : (
             <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>

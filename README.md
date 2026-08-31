@@ -1,14 +1,14 @@
-# Glass
+# Spot
 
 Client-facing instructions for web chat, email, iMessage, Slack, connected
 mailboxes, notifications, and document delivery are in the
-[Glass client help](docs/help/README.md) section.
+[Spot client help](docs/help/README.md) section.
 
-Glass is Clarity Labs' insurance intelligence platform. It combines document extraction, conversational AI, org memory, broker/client workspaces, connected vendor/client access, and API/MCP surfaces in one system.
+Spot is Clarity Labs' insurance intelligence platform. It combines document extraction, conversational AI, org memory, broker/client workspaces, connected vendor/client access, and API/MCP surfaces in one system.
 
 For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 
-## What Glass Does
+## What Spot Does
 
 - Ingests insurance-related documents from email and uploads
 - Extracts structured bound-policy, renewal, and supporting business data
@@ -27,7 +27,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 
 ## Getting Started
 
-Glass standardizes on Node 24.x for the app, Convex Node actions, CLIs, and all
+Spot standardizes on Node 24.x for the app, Convex Node actions, CLIs, and all
 workers. `.nvmrc`, `.node-version`, package `engines`, and `convex.json` encode
 that contract. On a Mac, the Conductor setup installs Homebrew `node@24` when it
 is missing and always runs the workspace under that toolchain.
@@ -55,7 +55,7 @@ deployment and database that belong only to that worktree. Workspace setup:
    Conductor Cloud workspace continues with an anonymous local deployment
    instead of failing on `401 MissingAccessToken`.
 3. Generates a worktree-local Convex Auth signing keypair, forces local safety
-   settings (`GLASS_ENV=local`, captured email, terminal iMessage, dev clear
+   settings (`SPOT_ENV=local`, captured email, terminal iMessage, dev clear
    enabled), maps the copied `NEXT_PUBLIC_MAPBOX_TOKEN` to Convex
    `MAPBOX_ACCESS_TOKEN` for agent address validation, creates worktree-local
    worker secrets, and points Convex at the worktree's worker ports.
@@ -90,7 +90,7 @@ the next run.
 The default **Dev** run template starts these foreground processes together in
 local and cloud Conductor workspaces:
 
-- Glass on `http://localhost:$CONDUCTOR_PORT`
+- Spot on `http://localhost:$CONDUCTOR_PORT`
 - `convex dev` with the worktree's native local database, including local
   email/OTP capture logs, on `$CONDUCTOR_PORT + 3` (client) and `+ 4` (HTTP actions)
 - the extraction worker on `$CONDUCTOR_PORT + 1`
@@ -153,7 +153,7 @@ not rewrite committed agent skills and guidance; refresh those explicitly with
 
 - `npm run build` - production build
 - `npm run conductor:setup` - prepare a fresh Conductor worktree end to end
-- `npm run conductor:dev` - start Glass, Convex, extraction, Slack, and email capture
+- `npm run conductor:dev` - start Spot, Convex, extraction, Slack, and email capture
 - `npm run conductor:spectrum` - open the optional Spectrum iMessage TUI in a separate terminal
 - `npm run conductor:emails` - show captured local email deliveries and OTPs in a dedicated terminal
 - `npm run lint` - ESLint
@@ -217,20 +217,20 @@ Common variables used across major workflows:
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `DEEPSEEK_API_KEY`
-- `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email; not required for local capture with `GLASS_ENV=local` and `EMAIL_DELIVERY_MODE=capture`)
+- `AUTH_RESEND_KEY` — Resend API key (shared by all outbound email; not required for local capture with `SPOT_ENV=local` and `EMAIL_DELIVERY_MODE=capture`)
 - `RESEND_WEBHOOK_SECRET`
-- `GLASS_ENV` — runtime lane: `production`, `dev`, or `local`
-- `EMAIL_DELIVERY_MODE` — outbound email policy: `live`, `restricted`, or `capture`. Use `capture` with `GLASS_ENV=local` to print full local email text/HTML and six-digit code candidates in the Convex terminal while skipping Resend. Non-local `capture` logs metadata only.
+- `SPOT_ENV` — runtime lane: `production`, `dev`, or `local`
+- `EMAIL_DELIVERY_MODE` — outbound email policy: `live`, `restricted`, or `capture`. Use `capture` with `SPOT_ENV=local` to print full local email text/HTML and six-digit code candidates in the Convex terminal while skipping Resend. Non-local `capture` logs metadata only.
 - `EMAIL_ALLOWED_RECIPIENT_DOMAINS` / `EMAIL_ALLOWED_RECIPIENTS` — allowlist for restricted delivery
 - `EMAIL_REDIRECT_TO` — internal redirect address for restricted delivery; local capture does not use a redirect address
 - `EMAIL_SUBJECT_PREFIX` — optional prefix for restricted delivery subjects
-- `AGENT_DOMAIN` — verified Resend sending domain for agent mail. Defaults to `glass.insure`. Legacy inbound addresses at `glass.claritylabs.inc` and `dev.claritylabs.inc` remain recognized.
-- `NOTIFICATION_EMAIL_DOMAIN` — verified Resend sending domain for system notifications. Defaults to `notifications.glass.insure`.
-- `AUTH_EMAIL_DOMAIN` — verified Resend sending domain for OTP, auth, and invite mail. Defaults to `auth.glass.insure`.
-- `CLIENT_PORTAL_URL` / `APP_SITE_URL` — client portal URL. Defaults to `https://app.glass.insure`.
-- `glass.claritylabs.inc` is the legacy browser host and redirects to `app.glass.insure`.
-- `AUTH_LINK_SITE_URL` — optional override for auth, login, signup, and invite links. Defaults to `https://app.glass.insure`; `auth.glass.insure` is only the default email sender domain.
-- `AUTH_EMAIL_FROM` — optional mailbox-address override for OTP sign-in emails. The sender name is `Glass from Clarity Labs` unless a branded sender name is supplied by the email flow; the default address is `noreply@auth.glass.insure`.
+- `AGENT_DOMAIN` — verified Resend sending domain for agent mail. Defaults to `spot.insure`. Legacy inbound addresses at `spot.claritylabs.inc` and `dev.claritylabs.inc` remain recognized.
+- `NOTIFICATION_EMAIL_DOMAIN` — verified Resend sending domain for system notifications. Defaults to `notifications.spot.insure`.
+- `AUTH_EMAIL_DOMAIN` — verified Resend sending domain for OTP, auth, and invite mail. Defaults to `auth.spot.insure`.
+- `CLIENT_PORTAL_URL` / `APP_SITE_URL` — client portal URL. Defaults to `https://app.spot.insure`.
+- `spot.claritylabs.inc` is the legacy browser host and redirects to `app.spot.insure`.
+- `AUTH_LINK_SITE_URL` — optional override for auth, login, signup, and invite links. Defaults to `https://app.spot.insure`; `auth.spot.insure` is only the default email sender domain.
+- `AUTH_EMAIL_FROM` — optional mailbox-address override for OTP sign-in emails. The sender name is `Spot from Clarity Labs` unless a branded sender name is supplied by the email flow; the default address is `noreply@auth.spot.insure`.
 - `SITE_URL` — legacy fallback for client-facing links when the newer portal URL variables are not set.
 
 Not every flow requires every variable; requirements depend on which features you are running.
@@ -255,7 +255,7 @@ Agent responses are grounded in:
 
 ### 3) Connected vendor/client accounts
 
-Client/customer orgs can request a one-way vendor relationship from Connected orgs in the main app menu by entering a vendor contact email. If the email belongs to an existing Glass user, Glass resolves that user's org and emails an approval link; otherwise Glass sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and bound policy records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
+Client/customer orgs can request a one-way vendor relationship from Connected orgs in the main app menu by entering a vendor contact email. If the email belongs to an existing Spot user, Spot resolves that user's org and emails an approval link; otherwise Spot sends an invite link so the vendor can sign in, create/select their org, and approve access. Active relationships grant the client org read-only access to the vendor's public org profile and bound policy records; they do not grant uploads, deletes, email/thread access, broker-portal capabilities, or onward access to third-party orgs.
 
 Connected vendor data is exposed in the same channels as first-party insurance data:
 
@@ -272,7 +272,7 @@ Connected vendor data is exposed in the same channels as first-party insurance d
 ## Model Routing
 
 Model execution can be routed through the separate task-aware `cl-router`
-service. Glass resolves the broker/global/code settings snapshot and sends it
+service. Spot resolves the broker/global/code settings snapshot and sends it
 with each enabled request; the router owns direct-provider selection,
 failover, cost telemetry, calibration, and autonomous policy.
 
@@ -283,7 +283,7 @@ failover, cost telemetry, calibration, and autonomous policy.
   are explicit overrides; leaving a task on Automated routing gives the active
   policy control. The global fallback remains a separate safety route.
 - `convex/lib/clRouterClient.ts` owns the API contract and safe pre-response
-  fallback. `convex/lib/clRouterLanguageModel.ts` preserves the Glass-side chat
+  fallback. `convex/lib/clRouterLanguageModel.ts` preserves the Spot-side chat
   tool loop with one router stream per model step.
 - Tool-bearing successes and incomplete responses feed generic quality signals
   back to the routed request so autonomous `query_reason` policies can learn

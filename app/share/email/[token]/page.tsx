@@ -10,7 +10,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!view || view.state === "expired" || view.state === "stale") {
     return {
       title: "Email draft review",
-      description: "Review an email draft prepared by Glass.",
+      description: "Review an email draft prepared by Spot.",
       robots: { index: false, follow: false },
     };
   }

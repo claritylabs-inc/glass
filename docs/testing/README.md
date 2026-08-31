@@ -1,6 +1,6 @@
 # Testing guide
 
-Glass uses automated tests to protect consequential, durable behavior. The goal is not the largest suite or the highest line count. A smaller suite is better when each failure points to a real regression and the suite remains fast enough to run routinely.
+Spot uses automated tests to protect consequential, durable behavior. The goal is not the largest suite or the highest line count. A smaller suite is better when each failure points to a real regression and the suite remains fast enough to run routinely.
 
 ## The decision rule
 
@@ -21,7 +21,7 @@ Prioritize coverage for:
 - **Irreversible or externally visible side effects.** Test destructive operations, email and channel delivery, certificate generation, compliance decisions, migrations, and any workflow that can lose, duplicate, or expose data.
 - **State transitions and recovery.** Test idempotency, ordering, cancellation, retries, leases, resumability, stale completions, partial failure, and fallback rules. These tests should prove the important transition, not every intermediate call.
 - **Complex domain invariants.** Test policy evidence and extraction promotion, source grounding, certificate request gates, routing eligibility, normalization, and other rules where several inputs interact and a plausible implementation can be subtly wrong.
-- **Security-sensitive external boundaries.** Test webhook signatures and replay windows, authenticated worker endpoints, request encoding, protocol compatibility, and delivery deduplication. Test Glass's handling of the boundary, not the third-party library itself.
+- **Security-sensitive external boundaries.** Test webhook signatures and replay windows, authenticated worker endpoints, request encoding, protocol compatibility, and delivery deduplication. Test Spot's handling of the boundary, not the third-party library itself.
 - **High-consequence regressions.** When fixing a bug that could reasonably recur, add the smallest test that would have caught it before the fix.
 - **Stateful UI behavior with a data or access consequence.** Component tests are appropriate for cases such as autosave ordering, unsaved-data protection, auth transitions, impersonation teardown, or an exact-send confirmation. Assert the user-visible state and outcome through stable semantics.
 

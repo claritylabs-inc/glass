@@ -786,7 +786,7 @@ export const processInbound = internalAction({
           threadId,
           canWrite: currentSenderIsLinked,
           writeUnavailableMessage:
-            "Only a linked Glass user in this chat can do that.",
+            "Only a linked Spot user in this chat can do that.",
           availableFileIds,
           requirementImportAttachments,
           requirementImportDefaultScope,
@@ -804,7 +804,7 @@ export const processInbound = internalAction({
             confirmed: boolean;
           }) => {
             if (!currentSenderIsLinked) {
-              return "Only a linked Glass user can start a new group chat.";
+              return "Only a linked Spot user can start a new group chat.";
             }
             if (!params.confirmed) {
               return "Ask the user to confirm before creating a new iMessage group chat.";
@@ -886,7 +886,7 @@ export const processInbound = internalAction({
                 missingRecipientMessage:
                   "No broker contact email is set for this organization. Add the broker contact in Settings, or send me the broker's email address first.",
                 unknownRecipientMessage:
-                  "I cannot use that broker recipient because it is not the configured broker contact in Glass. Add the broker contact in Settings, or send me the correct broker email address explicitly.",
+                  "I cannot use that broker recipient because it is not the configured broker contact in Spot. Add the broker contact in Settings, or send me the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && user.email
                     ? [user.email]

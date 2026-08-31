@@ -15,7 +15,7 @@ async function seed(t: ReturnType<typeof convexTest>) {
       type: "client",
     });
     const serviceUserId = await ctx.db.insert("users", {
-      name: "Glass Slack",
+      name: "Spot Slack",
       accountKind: "customer",
       serviceAccountKind: "slack",
     });
@@ -23,8 +23,8 @@ async function seed(t: ReturnType<typeof convexTest>) {
       clientOrgId,
       teamId: "T-CUSTOMER",
       teamName: "Customer",
-      appId: "A-GLASS",
-      botUserId: "U-GLASS",
+      appId: "A-SPOT",
+      botUserId: "U-SPOT",
       grantedScopes: ["chat:write"],
       status: "active",
       healthStatus: "healthy",
@@ -41,7 +41,7 @@ async function seed(t: ReturnType<typeof convexTest>) {
       hostTeamId: "T-HOST",
       hostChannelId: "C-HOST",
       customerChannelId: "C-CUSTOMER",
-      channelName: "glass-lifecycle",
+      channelName: "spot-lifecycle",
       status: "active",
       healthStatus: "healthy",
       boundAt: 100,
@@ -81,7 +81,7 @@ describe("Slack lifecycle state machine", () => {
       eventKey: "slack:unrelated-token",
       eventType: "tokens_revoked",
       teamId: "T-CUSTOMER",
-      apiAppId: "A-GLASS",
+      apiAppId: "A-SPOT",
       botUserIds: ["U-OTHER"],
     });
     const state = await t.run(async (ctx) => ({
@@ -113,8 +113,8 @@ describe("Slack lifecycle state machine", () => {
       eventKey: "slack:matching-token",
       eventType: "tokens_revoked",
       teamId: "T-CUSTOMER",
-      apiAppId: "A-GLASS",
-      botUserIds: ["U-GLASS"],
+      apiAppId: "A-SPOT",
+      botUserIds: ["U-SPOT"],
     });
     const state = await t.run(async (ctx) => ({
       connection: await ctx.db.get(connectionId),
@@ -175,7 +175,7 @@ describe("Slack lifecycle state machine", () => {
       teamId: "T-CUSTOMER",
       authorizationTeamId: "T-CUSTOMER",
       channelId: "C-CUSTOMER",
-      channelName: "glass-renamed",
+      channelName: "spot-renamed",
     });
     await processEvent(t, {
       eventKey: "slack:channel-archive",
@@ -186,7 +186,7 @@ describe("Slack lifecycle state machine", () => {
       eventAt: 300,
     });
     await expect(t.run((ctx) => ctx.db.get(bindingId))).resolves.toMatchObject({
-      channelName: "glass-renamed",
+      channelName: "spot-renamed",
       status: "unavailable",
       unavailableReason: "channel_archived",
     });
@@ -305,7 +305,7 @@ describe("Slack lifecycle state machine", () => {
       checkedAt: 300,
       ok: false,
       errorCode: "ratelimited",
-      errorSummary: "Slack asked Glass to retry later",
+      errorSummary: "Slack asked Spot to retry later",
       retryable: true,
       channels: [],
     });
@@ -326,12 +326,12 @@ describe("Slack lifecycle state machine", () => {
       teamId: "T-CUSTOMER",
       checkedAt: 400,
       ok: true,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       channels: [
         {
           id: "C-CUSTOMER",
           ok: true,
-          name: "glass-lifecycle",
+          name: "spot-lifecycle",
           isArchived: false,
           isMember: true,
           isPrivate: true,
@@ -414,7 +414,7 @@ describe("Slack lifecycle state machine", () => {
       teamId: "T-CUSTOMER",
       checkedAt: 300,
       ok: true,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       channels: [
         {
           id: "C-CUSTOMER",
@@ -438,12 +438,12 @@ describe("Slack lifecycle state machine", () => {
       teamId: "T-CUSTOMER",
       checkedAt: 400,
       ok: true,
-      botUserId: "U-GLASS",
+      botUserId: "U-SPOT",
       channels: [
         {
           id: "C-CUSTOMER",
           ok: true,
-          name: "glass-lifecycle",
+          name: "spot-lifecycle",
           isArchived: false,
           isMember: true,
           isPrivate: true,

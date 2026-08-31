@@ -24,8 +24,8 @@ describe("queueEmailDraftArtifact", () => {
         threadId,
         chatMessageId: agentMessageId,
         channel: "web",
-        fromHeader: "Glass <agent@glass.insure>",
-        agentAddress: "agent@glass.insure",
+        fromHeader: "Spot <agent@spot.insure>",
+        agentAddress: "agent@spot.insure",
       },
       {
         to: "terry@releaserent.com",

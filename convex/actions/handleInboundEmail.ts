@@ -33,9 +33,9 @@ import {
   sendResendEmail,
   getAgentDomain,
   getAgentDomains,
-  isGlassOutboundAddress,
+  isSpotOutboundAddress,
 } from "../lib/resend";
-import { buildGlassEmailIconHtml } from "../lib/emailTemplate";
+import { buildSpotEmailIconHtml } from "../lib/emailTemplate";
 import {
   buildSystemPromptForContext,
   buildBrokerPortfolioSystemPrompt,
@@ -100,8 +100,8 @@ import {
 } from "../lib/actionConfirmationFingerprint";
 import { extractEmailAddress } from "../lib/emailAddress";
 
-const GLASS_PUBLIC_URL = getClientPortalUrl();
-const GLASS_PENDING_MESSAGE_ID_RE = /<?glass-pending-([^@\s>]+)@[^>\s]+>?/gi;
+const SPOT_PUBLIC_URL = getClientPortalUrl();
+const SPOT_PENDING_MESSAGE_ID_RE = /<?spot-pending-([^@\s>]+)@[^>\s]+>?/gi;
 const MAX_CAPTURED_PENDING_EMAIL_ID_LENGTH = 128;
 
 const CONSUMER_DOMAINS = new Set([
@@ -152,7 +152,7 @@ function extractPendingEmailIdsFromHeaders(values: Array<string | undefined>) {
   const ids = new Set<string>();
   for (const value of values) {
     if (!value) continue;
-    for (const match of value.matchAll(GLASS_PENDING_MESSAGE_ID_RE)) {
+    for (const match of value.matchAll(SPOT_PENDING_MESSAGE_ID_RE)) {
       const pendingEmailId = match[1]?.trim();
       if (
         pendingEmailId &&
@@ -234,14 +234,14 @@ function getAgentFromName(broker?: BrokerBranding): string {
     const base = broker.agentDisplayName || broker.name;
     return `${base} Agent`;
   }
-  return "Glass from Clarity Labs";
+  return "Spot from Clarity Labs";
 }
 
 function buildSignature(
   agentEmail: string,
   broker?: BrokerBranding,
 ): { text: string; html: string } {
-  const poweredByUrl = GLASS_PUBLIC_URL;
+  const poweredByUrl = SPOT_PUBLIC_URL;
   const hasBroker = !!(broker?.name || broker?.agentDisplayName);
   const agentName = getAgentFromName(broker);
 
@@ -251,14 +251,14 @@ function buildSignature(
     agentName,
     agentEmail,
     ...(hasBroker
-      ? ["", `powered by Glass from Clarity Labs — ${poweredByUrl}`]
+      ? ["", `powered by Spot from Clarity Labs — ${poweredByUrl}`]
       : []),
   ].join("\n");
 
   const logoHtml =
     hasBroker && broker?.logoUrl
       ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
-      : buildGlassEmailIconHtml({
+      : buildSpotEmailIconHtml({
           size: 20,
           borderRadius: 4,
           margin: "0 8px 0 0",
@@ -270,7 +270,7 @@ function buildSignature(
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     ...(hasBroker
       ? [
-          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Glass from Clarity Labs</a></p>`,
+          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Spot from Clarity Labs</a></p>`,
         ]
       : []),
   ].join("\n");
@@ -599,7 +599,7 @@ export const processInbound = internalAction({
     }
 
     // Loop prevention
-    if (isGlassOutboundAddress(fromEmail)) {
+    if (isSpotOutboundAddress(fromEmail)) {
       console.log(
         "Loop prevention: ignoring email from agent domain",
         fromEmail,
@@ -653,7 +653,7 @@ export const processInbound = internalAction({
         {
           channel: "email",
           senderContact: fromEmail,
-          messageText: bodyForAgent || data.subject || "Tell me about Glass.",
+          messageText: bodyForAgent || data.subject || "Tell me about Spot.",
           subject: data.subject,
           fromName,
           fromEmail,
@@ -666,14 +666,14 @@ export const processInbound = internalAction({
         ? /^re:/i.test(data.subject)
           ? data.subject
           : `Re: ${data.subject}`
-        : "Re: Glass product demo";
+        : "Re: Spot product demo";
       const headers: Record<string, string> = {};
       if (data.message_id) {
         headers["In-Reply-To"] = data.message_id;
         headers["References"] = data.message_id;
       }
       const result = await sendResendEmail({
-        from: `Glass from Clarity Labs <${agentAddress}>`,
+        from: `Spot from Clarity Labs <${agentAddress}>`,
         to: fromEmail,
         subject,
         html: demo.html,
@@ -938,7 +938,7 @@ export const processInbound = internalAction({
         }
 
         const notificationBody = [
-          `Your Glass agent received an email it couldn't confidently classify, so it's forwarding it to you for review.`,
+          `Your Spot agent received an email it couldn't confidently classify, so it's forwarding it to you for review.`,
           ``,
           `**From:** ${fromName ? `${fromName} <${fromEmail}>` : fromEmail}`,
           `**Subject:** ${subject}`,
@@ -957,7 +957,7 @@ export const processInbound = internalAction({
 
         const fullHtml = buildAgentEmailHtmlBody(notificationBody, signature);
 
-        const notifSubject = `[Glass] Help needed: ${subject}`;
+        const notifSubject = `[Spot] Help needed: ${subject}`;
 
         const emailPayload: Record<string, unknown> = {
           from: fromHeader,
@@ -1270,7 +1270,7 @@ export const processInbound = internalAction({
                 missingRecipientMessage:
                   "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
                 unknownRecipientMessage:
-                  "I cannot use that broker recipient because it is not the configured broker contact in Glass. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
+                  "I cannot use that broker recipient because it is not the configured broker contact in Spot. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false
                     ? [fromEmail]

@@ -1,8 +1,8 @@
 {
-  "name": "@claritylabs-inc/glass-operator",
+  "name": "@claritylabs-inc/spot-operator",
   "version": "0.1.3",
   "private": false,
-  "description": "Private operator CLI for Glass broker provisioning",
+  "description": "Private operator CLI for Spot broker provisioning",
   "license": "UNLICENSED",
   "type": "module",
   "engines": {
@@ -10,11 +10,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/claritylabs-inc/glass.git",
+    "url": "git+https://github.com/claritylabs-inc/spot.git",
     "directory": "operator-cli"
   },
   "bin": {
-    "glass-operator": "dist/index.js"
+    "spot-operator": "dist/index.js"
   },
   "publishConfig": {
     "access": "restricted",

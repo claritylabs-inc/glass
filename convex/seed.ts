@@ -112,11 +112,11 @@ const DEFAULT_BROKER_PHONE = "+16472921666";
 const DEFAULT_CLIENT_PHONE = "+12025550102";
 const LOCAL_SLACK_FIXTURE = {
   clarityTeamId: "T-CLARITY-FIXTURE",
-  operatorUserId: "U-GLASS-OPERATOR",
+  operatorUserId: "U-SPOT-OPERATOR",
   customerTeamId: "T-COVE-FIXTURE",
-  botUserId: "U-GLASS",
+  botUserId: "U-SPOT",
   channelId: "C-COVE-FIXTURE",
-  channelName: "glass-cove",
+  channelName: "spot-cove",
 } as const;
 
 type LocalFixtureResult = {
@@ -151,8 +151,8 @@ type VerificationCleanupResult = {
 };
 
 function assertLocalSeed() {
-  if (process.env.GLASS_ENV !== "local") {
-    throw new Error("seed:seed is restricted to GLASS_ENV=local");
+  if (process.env.SPOT_ENV !== "local") {
+    throw new Error("seed:seed is restricted to SPOT_ENV=local");
   }
 }
 
@@ -453,7 +453,7 @@ export const removeLegacyDemoFixture = internalMutation({
     const users = (await ctx.db.query("users").collect()).filter(
       (user) =>
         candidateUserIds.has(String(user._id)) &&
-        user.email?.endsWith("@demo.glass") &&
+        user.email?.endsWith("@demo.spot") &&
         !authAccounts.some((account) => account.userId === user._id),
     );
 

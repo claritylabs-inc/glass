@@ -53,7 +53,7 @@ export type SettingsNavGroup = {
   pages: SettingsPage[];
 };
 
-function GlassStarIcon({ className }: { className?: string }) {
+function SpotStarIcon({ className }: { className?: string }) {
   return createElement(LogoIcon, { size: 16, static: true, className });
 }
 
@@ -83,7 +83,7 @@ export function getSettingsNavigation({
     {
       id: "agent",
       label: "Agent",
-      icon: GlassStarIcon,
+      icon: SpotStarIcon,
       tabs: [
         { id: "channels", label: "Channels" },
         ...(isBroker || isStandaloneClient
@@ -130,7 +130,7 @@ export function getSettingsNavigation({
   const page = (id: SettingsPageId) => pages.find((item) => item.id === id)!;
   return [
     { label: "Workspace", pages: [page("organization"), page("team")] },
-    { label: "Glass", pages: [page("agent"), page("workflows")] },
+    { label: "Spot", pages: [page("agent"), page("workflows")] },
     {
       label: "Connections",
       pages: [page("integrations"), page("mailboxes")],

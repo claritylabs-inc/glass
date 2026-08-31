@@ -144,7 +144,7 @@ export function routingEventOutcome(event: RoutingEvent) {
       label: "Fell back",
       tone: "warning" as const,
       description:
-        "The routed path failed before Glass observed output or tool execution, so Glass used a direct fallback route.",
+        "The routed path failed before Spot observed output or tool execution, so Spot used a direct fallback route.",
     };
   }
   if (event.status === "error") {
@@ -168,7 +168,7 @@ export function routingEventOutcome(event: RoutingEvent) {
       label: "Recovered",
       tone: "warning" as const,
       description:
-        "The primary route failed before Glass observed output or tool execution, and the configured fallback completed the run.",
+        "The primary route failed before Spot observed output or tool execution, and the configured fallback completed the run.",
     };
   }
   return {
@@ -180,7 +180,7 @@ export function routingEventOutcome(event: RoutingEvent) {
 
 export function routingEventSummary(event: RoutingEvent) {
   if (event.kind === "direct_fallback") {
-    return event.error ?? "Glass used its direct route.";
+    return event.error ?? "Spot used its direct route.";
   }
   if (event.kind === "run") {
     return event.error ?? formatIdentifier(event.completionIssue ?? event.status);
@@ -797,7 +797,7 @@ export function RoutingTab({
       ? {
           title: "Connected to the retired staging router",
           description:
-            "Glass now has dev and production only. Confirm CL_ROUTER_URL before changing this retired router.",
+            "Spot now has dev and production only. Confirm CL_ROUTER_URL before changing this retired router.",
         }
       : !controlsAvailable && controlError
         ? {
@@ -1054,7 +1054,7 @@ export function RoutingTab({
           <OperationalPanel>
             <OperationalPanelHeader
               title="Recent routing events"
-              description="Hourly attempt telemetry covers the last 24 hours. Workflow totals use the latest 200 Glass events."
+              description="Hourly attempt telemetry covers the last 24 hours. Workflow totals use the latest 200 Spot events."
             />
             {dashboard?.rollups.error ? (
               <OperationalPanelBody

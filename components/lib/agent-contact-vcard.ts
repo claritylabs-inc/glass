@@ -1,6 +1,6 @@
 "use client";
 
-const GLASS_ICON_URL = "/glass-icon.svg";
+const SPOT_ICON_URL = "/spot-icon.svg";
 const CONTACT_PHOTO_SIZE = 256;
 const CONTACT_TILE_INSET = 34;
 
@@ -166,13 +166,13 @@ export async function buildAgentContactVCard({
   phone,
 }: BuildAgentContactVCardArgs) {
   const whiteLabeledBroker = broker?.whiteLabelingEnabled !== false ? broker : null;
-  const firstName = whiteLabeledBroker?.name ?? "Glass";
+  const firstName = whiteLabeledBroker?.name ?? "Spot";
   const lastName = "Agent";
   const displayName = `${firstName} ${lastName}`;
   const organization = whiteLabeledBroker
     ? "powered by Clarity Labs"
     : "from Clarity Labs";
-  const iconUrl = whiteLabeledBroker?.iconUrl ?? GLASS_ICON_URL;
+  const iconUrl = whiteLabeledBroker?.iconUrl ?? SPOT_ICON_URL;
   const photoEntry = await buildPhotoEntry(
     iconUrl,
     whiteLabeledBroker ? 18 : 44,

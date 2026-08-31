@@ -9,9 +9,9 @@
  */
 
 export type BrandingContext = {
-  /** Full brand name, e.g. "Glass" or "Acme Insurance" */
+  /** Full brand name, e.g. "Spot" or "Acme Insurance" */
   brandName: string;
-  /** Short name used in compact contexts, e.g. "Glass" */
+  /** Short name used in compact contexts, e.g. "Spot" */
   shortBrandName: string;
   /** Logo URL (CDN or public path) */
   logoUrl: string;
@@ -19,7 +19,7 @@ export type BrandingContext = {
   brandColor: string;
   /** Support URL */
   supportUrl: string;
-  /** Display name for the AI agent, e.g. "Glass Agent" */
+  /** Display name for the AI agent, e.g. "Spot Agent" */
   agentDisplayName: string;
 };
 
@@ -29,25 +29,25 @@ export function isWhiteLabelingEnabled(org?: {
   return org?.whiteLabelingEnabled !== false;
 }
 
-const DEFAULT_LOGO_URL = "/glass-icon.jpg";
+const DEFAULT_LOGO_URL = "/spot-icon.jpg";
 const DEFAULT_BRAND_COLOR = "#2563EB";
-const DEFAULT_SUPPORT_URL = "https://app.glass.insure/support";
+const DEFAULT_SUPPORT_URL = "https://app.spot.insure/support";
 
-/** Returns the default Glass branding context. */
+/** Returns the default Spot branding context. */
 export function getDefaultBranding(): BrandingContext {
   return {
-    brandName: "Glass",
-    shortBrandName: "Glass",
+    brandName: "Spot",
+    shortBrandName: "Spot",
     logoUrl: DEFAULT_LOGO_URL,
     brandColor: DEFAULT_BRAND_COLOR,
     supportUrl: DEFAULT_SUPPORT_URL,
-    agentDisplayName: "Glass Agent",
+    agentDisplayName: "Spot Agent",
   };
 }
 
 /**
  * Build a BrandingContext from optional org overrides.
- * All fields fall back to Glass defaults when the org has not configured them.
+ * All fields fall back to Spot defaults when the org has not configured them.
  */
 export function getBrandingContext(orgOverrides?: {
   agentDisplayName?: string;

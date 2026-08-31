@@ -16,7 +16,7 @@ import { getPublicAgentDomain } from "@/lib/domains";
 import {
   useCachedViewerOrg,
   useViewerCacheActions,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { typeStyle } from "@/lib/typography";

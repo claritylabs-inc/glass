@@ -33,7 +33,7 @@ import { PillButton } from "@/components/ui/pill-button";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus } from "ai";
-import { useCachedAgentTargets } from "@/lib/sync/glass-cached-queries";
+import { useCachedAgentTargets } from "@/lib/sync/spot-cached-queries";
 import {
   PromptReferenceTag,
   promptReferenceMarker,
@@ -513,7 +513,7 @@ function PreparedInputActions({
     <div
       aria-label="Prepared prompt actions"
       aria-hidden={!visible}
-      data-glass-prepared-actions
+      data-spot-prepared-actions
       className={cn(
         "flex min-w-0 items-center overflow-hidden transition-[max-width,opacity,transform,margin] duration-0 ease-linear",
         visible
@@ -563,11 +563,11 @@ function findActiveTrigger(
   };
 }
 
-export interface GlassPromptInputHandle {
+export interface SpotPromptInputHandle {
   setValueAndFocus: (value: string) => void;
 }
 
-export interface GlassPromptInputProps {
+export interface SpotPromptInputProps {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
   placeholder?: string;
   showAttach?: boolean;
@@ -581,13 +581,13 @@ export interface GlassPromptInputProps {
   variant?: "default" | "command";
 }
 
-export const GlassPromptInput = forwardRef<
-  GlassPromptInputHandle,
-  GlassPromptInputProps
->(function GlassPromptInput(
+export const SpotPromptInput = forwardRef<
+  SpotPromptInputHandle,
+  SpotPromptInputProps
+>(function SpotPromptInput(
   {
     onSubmit,
-    placeholder = "Ask Glass...",
+    placeholder = "Ask Spot...",
     showAttach = true,
     defaultReferences,
     roomyOnMobile = false,

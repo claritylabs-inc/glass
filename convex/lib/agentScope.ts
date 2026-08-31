@@ -155,7 +155,7 @@ export const resolveForAction = internalQuery({
         connection.clientOrgId !== args.orgId ||
         connection.serviceUserId !== args.userId ||
         (actor.classification !== "customer_member" &&
-          actor.classification !== "glass_operator") ||
+          actor.classification !== "spot_operator") ||
         settings?.slackEnabled !== true
       ) {
         throwUserFacingError(userFacingErrorCodes.orgAccessRequired);

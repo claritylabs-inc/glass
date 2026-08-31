@@ -9,7 +9,7 @@ import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import type { CarrierIdentityAccentColorSource } from "./carrierIdentity";
 
-const USER_AGENT = "Mozilla/5.0 (compatible; GlassBot/1.0)";
+const USER_AGENT = "Mozilla/5.0 (compatible; SpotBot/1.0)";
 const MAX_HTML_BYTES = 1_000_000;
 const MAX_STYLESHEET_BYTES = 750_000;
 const MAX_IMAGE_BYTES = 512 * 1024;

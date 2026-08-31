@@ -37,7 +37,7 @@ export const sendIntroImessage = action({
     const firstName = viewer.name?.split(/\s+/)[0] ?? "there";
 
     const message =
-      `Hi ${firstName}! 👋 I'm your Glass agent. ` +
+      `Hi ${firstName}! 👋 I'm your Spot agent. ` +
       `Text me anytime with questions about your insurance — ` +
       `coverage details, COIs, policy comparisons, and more.`;
 

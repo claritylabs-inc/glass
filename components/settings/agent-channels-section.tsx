@@ -51,7 +51,7 @@ import { openOAuthTab } from "@/lib/oauth-tab";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { useOperatorClientCacheActions } from "@/lib/sync/operator-cached-queries";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { resolveSlackRowStatus } from "@/lib/slack-setup-status";
@@ -107,7 +107,7 @@ const SLACK_SETUP_STEPS: Array<{
 }> = [
   {
     id: "install",
-    title: "Install Glass",
+    title: "Install Spot",
     description: "Send the client Slack admin a secure installation link.",
   },
   {
@@ -119,12 +119,12 @@ const SLACK_SETUP_STEPS: Array<{
   {
     id: "channels",
     title: "Add more channels",
-    description: "Choose additional client workspace channels for Glass.",
+    description: "Choose additional client workspace channels for Spot.",
   },
   {
     id: "automations",
     title: "Review automations",
-    description: "Choose what Glass may post automatically in Slack.",
+    description: "Choose what Spot may post automatically in Slack.",
   },
 ];
 
@@ -217,7 +217,7 @@ function agentEmailAddressDescription(
       : `Managed by ${address.ownerName}.`;
   }
   if (address.source === "shared") {
-    return "Glass identifies this standalone client from the sender’s email address.";
+    return "Spot identifies this standalone client from the sender’s email address.";
   }
   return `Dedicated to ${address.ownerName}.`;
 }
@@ -411,7 +411,7 @@ function SlackAvailabilityCard({
   return (
     <ChannelCard
       title="Available in Slack"
-      description="Let members use Glass privately and in connected channels."
+      description="Let members use Spot privately and in connected channels."
       checked={settings.slackEnabled}
       disabled={!canEdit || busy}
       onChange={() =>
@@ -707,7 +707,7 @@ export function AgentChannelsSection({
         clientOrgId,
         thirdPartyVisibilityAcknowledged: true,
       });
-      toast.success(connection ? "Glass updated" : "Slack connected");
+      toast.success(connection ? "Spot updated" : "Slack connected");
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(error, "Slack setup could not start"),
@@ -724,7 +724,7 @@ export function AgentChannelsSection({
     }
     const oauthTab = openOAuthTab();
     if (!oauthTab) {
-      toast.error("Allow pop-ups for Glass to reinstall Slack in a new tab");
+      toast.error("Allow pop-ups for Spot to reinstall Slack in a new tab");
       return;
     }
     setBusy("oauth");
@@ -983,7 +983,7 @@ export function AgentChannelsSection({
         <p
           className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}
         >
-          #{supportChannel?.channelName ?? `glass-${clientSlug}`}
+          #{supportChannel?.channelName ?? `spot-${clientSlug}`}
         </p>
         <StatusTag tone={supportStatus.tone}>{supportStatus.label}</StatusTag>
       </div>
@@ -1331,7 +1331,7 @@ export function AgentChannelsSection({
               <p
                 className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
               >
-                Glass support must rebind the primary Slack Connect channel.
+                Spot support must rebind the primary Slack Connect channel.
                 Your existing Slack history remains available.
               </p>
             ) : null}
@@ -1455,7 +1455,7 @@ export function AgentChannelsSection({
   const clientPendingContent = (
     <FormSection
       title="Slack setup"
-      description="Glass support is finishing Slack setup for your organization."
+      description="Spot support is finishing Slack setup for your organization."
       divided={false}
     >
       <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-popover px-3 py-2.5">
@@ -1463,7 +1463,7 @@ export function AgentChannelsSection({
           {slackNeedsReinstall
             ? "An installation update is required."
             : setupStatus === "in_progress"
-              ? "Glass support is finishing Slack setup."
+              ? "Spot support is finishing Slack setup."
               : "Slack is not connected yet."}
         </p>
         <StatusTag tone={clientPendingStatus.tone}>
@@ -1489,7 +1489,7 @@ export function AgentChannelsSection({
       <div className="space-y-4">
         <ChannelCard
           title="Available by email"
-          description="Let members email the client’s Glass agent."
+          description="Let members email the client’s Spot agent."
           checked={settings.emailEnabled}
           disabled={!canEdit || busy === "settings"}
           onChange={() =>
@@ -1513,7 +1513,7 @@ export function AgentChannelsSection({
   const imessageContent = settings ? (
     <ChannelCard
       title="Available by iMessage"
-      description="Let linked members message the Glass phone number."
+      description="Let linked members message the Spot phone number."
       checked={settings.imessageEnabled}
       disabled={!canEdit || busy === "settings"}
       onChange={() =>
@@ -1588,7 +1588,7 @@ export function AgentChannelsSection({
               ? "Continue"
               : isMockSlack
                 ? connection
-                  ? "Update Glass"
+                  ? "Update Spot"
                   : "Connect Slack"
                 : operatorSetup.inviteSentAt
                   ? "Resend invitation"
@@ -1837,12 +1837,12 @@ export function AgentChannelsSection({
         : setupStatus === "in_progress"
           ? isOperator && operatorSetup?.inviteRecipientEmail
             ? `Installation invitation sent to ${operatorSetup.inviteRecipientEmail}.`
-            : "Glass support is finishing Slack setup."
+            : "Spot support is finishing Slack setup."
           : slackReady
             ? `${connection.teamName} · ${joinedChannels.length} joined ${joinedChannels.length === 1 ? "channel" : "channels"}`
             : isOperator
               ? "Set up the client Slack workspace."
-              : "Slack has not been connected by Glass support.";
+              : "Slack has not been connected by Spot support.";
   const slackRowStatus = resolveSlackRowStatus({
     connected: slackReady,
     needsUpdate: slackNeedsReinstall,
@@ -1864,7 +1864,7 @@ export function AgentChannelsSection({
           />
           <ChannelRow
             title="iMessage"
-            description="Let linked members message the Glass phone number."
+            description="Let linked members message the Spot phone number."
             status={resolvedSettings.imessageEnabled ? "On" : "Off"}
             statusTone={
               resolvedSettings.imessageEnabled ? "success" : "neutral"
@@ -1891,8 +1891,8 @@ export function AgentChannelsSection({
           <DialogHeader>
             <DialogTitle>Disconnect Slack</DialogTitle>
             <DialogDescription>
-              Disconnect Glass from{" "}
-              <strong>{connection?.teamName ?? "this workspace"}</strong>? Glass
+              Disconnect Spot from{" "}
+              <strong>{connection?.teamName ?? "this workspace"}</strong>? Spot
               will stop responding and posting there. Reconnecting will require
               a new installation.
             </DialogDescription>
@@ -2000,7 +2000,7 @@ export function BrokerAgentChannelsSection() {
         description={
           address.handle
             ? `${address.handle}@${agentDomain}`
-            : "Set the address clients and carriers use to reach Glass."
+            : "Set the address clients and carriers use to reach Spot."
         }
         status={address.handle ? "Configured" : "Needs setup"}
         statusTone={address.handle ? "success" : "warning"}

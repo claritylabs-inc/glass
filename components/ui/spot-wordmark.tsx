@@ -1,26 +1,26 @@
 import { LogoIcon } from "@/components/ui/logo-icon";
 import { cn } from "@/lib/utils";
 import {
-  glassWordmarkLeadingGlyphTypographyStyle,
+  spotWordmarkLeadingGlyphTypographyStyle,
   redactionTypeStyle,
 } from "@/lib/typography";
 
-const GLASS_BLUE = "#A0D2FA";
+const SPOT_BLUE = "#A0D2FA";
 
-export function GlassWordmark({ className }: { className?: string }) {
+export function SpotWordmark({ className }: { className?: string }) {
   return (
     <span
       role="img"
-      aria-label="Glass"
+      aria-label="Spot"
       className={cn(
         "inline-flex items-center gap-[0.25em] text-foreground",
         redactionTypeStyle("brand.wordmark"),
         className,
       )}
     >
-      <LogoIcon className="shrink-0" size="1em" color={GLASS_BLUE} static />
+      <LogoIcon className="shrink-0" size="1em" color={SPOT_BLUE} static />
       <span aria-hidden>
-        <span style={glassWordmarkLeadingGlyphTypographyStyle}>g</span>lass
+        <span style={spotWordmarkLeadingGlyphTypographyStyle}>s</span>pot
       </span>
     </span>
   );

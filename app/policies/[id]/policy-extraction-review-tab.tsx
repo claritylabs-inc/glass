@@ -226,7 +226,7 @@ function displayReviewQuestion(question: CoverageReviewQuestion) {
 function displayReviewReason(question: CoverageReviewQuestion) {
   const reason = reviewString(question.reason);
   if (!reason || /selected policy limit needs confirmation/i.test(reason)) {
-    return "Glass found more than one extracted entry. Confirm the value that should be used in the policy summary.";
+    return "Spot found more than one extracted entry. Confirm the value that should be used in the policy summary.";
   }
   return reason;
 }

@@ -9,7 +9,7 @@ const modules = import.meta.glob("./**/*.ts");
 const setGlobalFreezeFn = setGlobalFreeze as any;
 
 beforeEach(() => {
-  vi.stubEnv("GLASS_ENV", "production");
+  vi.stubEnv("SPOT_ENV", "production");
   vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
   vi.stubEnv("CL_ROUTER_ADMIN_SECRET", "router-admin-secret");
 });
@@ -23,13 +23,13 @@ afterEach(() => {
 async function seedOperator(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => {
     const userId = await ctx.db.insert("users", {
-      name: "Glass Operator",
-      email: "operator@glass.insure",
+      name: "Spot Operator",
+      email: "operator@spot.insure",
       accountKind: "operator",
     });
     await ctx.db.insert("operatorProfiles", {
       userId,
-      email: "operator@glass.insure",
+      email: "operator@spot.insure",
       role: "operator",
       status: "active",
       createdAt: 1,
@@ -55,7 +55,7 @@ describe("cl-router operator controls", () => {
     const customerUserId = await t.run(
       async (ctx) =>
         await ctx.db.insert("users", {
-          name: "Glass Customer",
+          name: "Spot Customer",
           email: "customer@example.com",
           accountKind: "customer",
         }),
@@ -119,7 +119,7 @@ describe("cl-router operator controls", () => {
   test("lets an operator control the configured router across environments", async () => {
     const t = convexTest(schema, modules);
     const operatorUserId = await seedOperator(t);
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     let healthRequestCount = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

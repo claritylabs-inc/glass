@@ -21,7 +21,7 @@ describe("sendSlack", () => {
         type: "client",
       });
       const serviceUserId = await ctx.db.insert("users", {
-        name: "Glass Slack",
+        name: "Spot Slack",
         accountKind: "customer",
         serviceAccountKind: "slack",
       });
@@ -29,7 +29,7 @@ describe("sendSlack", () => {
         clientOrgId: orgId,
         teamId: "T-CUSTOMER",
         teamName: "Cove",
-        botUserId: "U-GLASS",
+        botUserId: "U-SPOT",
         grantedScopes: ["chat:write"],
         status: "active",
         serviceUserId,
@@ -83,7 +83,7 @@ describe("sendSlack", () => {
         type: "client",
       });
       const serviceUserId = await ctx.db.insert("users", {
-        name: "Glass Slack",
+        name: "Spot Slack",
         accountKind: "customer",
         serviceAccountKind: "slack",
       });
@@ -96,7 +96,7 @@ describe("sendSlack", () => {
         clientOrgId: orgId,
         teamId: "T-CUSTOMER",
         teamName: "Cove",
-        botUserId: "U-GLASS",
+        botUserId: "U-SPOT",
         grantedScopes: ["chat:write"],
         status: "active",
         serviceUserId,

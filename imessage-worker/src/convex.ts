@@ -1,4 +1,4 @@
-/** Typed client for the Glass Convex /imessage-inbound HTTP endpoint. */
+/** Typed client for the Spot Convex /imessage-inbound HTTP endpoint. */
 
 export interface ImessageAttachment {
   data: string; // base64-encoded bytes

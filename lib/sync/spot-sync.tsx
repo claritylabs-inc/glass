@@ -19,20 +19,20 @@ import {
   type SyncRecord,
 } from "@claritylabs/cl-sync";
 
-const GLASS_SYNC_SCOPE_KEY = "glass:sync-scope";
+const SPOT_SYNC_SCOPE_KEY = "spot:sync-scope";
 
-type GlassSyncScope = {
+type SpotSyncScope = {
   userId?: string;
   orgId?: string;
 };
 
-type GlassSyncContextValue = {
-  scope: GlassSyncScope;
-  updateScope: (scope: GlassSyncScope) => void;
+type SpotSyncContextValue = {
+  scope: SpotSyncScope;
+  updateScope: (scope: SpotSyncScope) => void;
   clearScope: () => Promise<void>;
 };
 
-const GlassSyncContext = createContext<GlassSyncContextValue | null>(null);
+const SpotSyncContext = createContext<SpotSyncContextValue | null>(null);
 
 export type CachedShellRecord = SyncRecord & {
   _id: "current";
@@ -45,16 +45,16 @@ export type CachedShellRecord = SyncRecord & {
 };
 
 export const cachedShellCollection = defineCollection<CachedShellRecord>({
-  name: "glass.cachedShell",
+  name: "spot.cachedShell",
   persist: true,
 });
 
-function readInitialScope(): GlassSyncScope {
+function readInitialScope(): SpotSyncScope {
   if (typeof window === "undefined") return {};
   try {
-    const raw = localStorage.getItem(GLASS_SYNC_SCOPE_KEY);
+    const raw = localStorage.getItem(SPOT_SYNC_SCOPE_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as GlassSyncScope;
+    const parsed = JSON.parse(raw) as SpotSyncScope;
     return {
       userId: typeof parsed.userId === "string" ? parsed.userId : undefined,
       orgId: typeof parsed.orgId === "string" ? parsed.orgId : undefined,
@@ -64,19 +64,19 @@ function readInitialScope(): GlassSyncScope {
   }
 }
 
-function persistScope(scope: GlassSyncScope) {
+function persistScope(scope: SpotSyncScope) {
   try {
-    localStorage.setItem(GLASS_SYNC_SCOPE_KEY, JSON.stringify(scope));
+    localStorage.setItem(SPOT_SYNC_SCOPE_KEY, JSON.stringify(scope));
   } catch {}
 }
 
-export function GlassSyncProvider({ children }: { children: ReactNode }) {
-  const [scope, setScope] = useState<GlassSyncScope>(() => readInitialScope());
+export function SpotSyncProvider({ children }: { children: ReactNode }) {
+  const [scope, setScope] = useState<SpotSyncScope>(() => readInitialScope());
   const store = useMemo(
     () =>
       createSyncStore({
         scope: {
-          appId: "glass",
+          appId: "spot",
           environment:
             process.env.NEXT_PUBLIC_VERCEL_ENV ??
             process.env.NODE_ENV ??
@@ -88,7 +88,7 @@ export function GlassSyncProvider({ children }: { children: ReactNode }) {
     [scope.orgId, scope.userId],
   );
 
-  const updateScope = useCallback((nextScope: GlassSyncScope) => {
+  const updateScope = useCallback((nextScope: SpotSyncScope) => {
     setScope((previous) => {
       const hasUserId = Object.prototype.hasOwnProperty.call(
         nextScope,
@@ -110,7 +110,7 @@ export function GlassSyncProvider({ children }: { children: ReactNode }) {
   const clearScope = useCallback(async () => {
     await store.clearScope();
     try {
-      localStorage.removeItem(GLASS_SYNC_SCOPE_KEY);
+      localStorage.removeItem(SPOT_SYNC_SCOPE_KEY);
     } catch {}
     setScope({});
   }, [store]);
@@ -121,15 +121,15 @@ export function GlassSyncProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <GlassSyncContext.Provider value={value}>
+    <SpotSyncContext.Provider value={value}>
       <SyncProvider store={store}>{children}</SyncProvider>
-    </GlassSyncContext.Provider>
+    </SpotSyncContext.Provider>
   );
 }
 
-export function useGlassSync() {
-  const value = useContext(GlassSyncContext);
-  if (!value) throw new Error("useGlassSync must be used inside GlassSyncProvider");
+export function useSpotSync() {
+  const value = useContext(SpotSyncContext);
+  if (!value) throw new Error("useSpotSync must be used inside SpotSyncProvider");
   return value;
 }
 

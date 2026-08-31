@@ -1339,12 +1339,12 @@ export default defineSchema({
     slackUserId: v.string(),
     classification: v.union(
       v.literal("customer_member"),
-      v.literal("glass_operator"),
+      v.literal("spot_operator"),
       v.literal("external"),
       v.literal("bot"),
     ),
     operatorUserId: v.optional(v.id("users")),
-    glassUserId: v.optional(v.id("users")),
+    spotUserId: v.optional(v.id("users")),
     displayName: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -3892,7 +3892,7 @@ export default defineSchema({
     isDirectMessage: v.optional(v.boolean()),
     isPrivateChannel: v.optional(v.boolean()),
     isPrimaryChannel: v.boolean(),
-    mentionsGlass: v.boolean(),
+    mentionsSpot: v.boolean(),
     mentionedBotUserId: v.optional(v.string()),
     status: v.union(
       v.literal("queued"),

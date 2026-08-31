@@ -24,10 +24,10 @@ describe("confidence marker compatibility", () => {
 
   it("strips markers without closing on double brackets in Markdown", () => {
     const source =
-      "[[g:Use `tail]]` and see [array [1, 2]](https://glass.insure)]]";
+      "[[g:Use `tail]]` and see [array [1, 2]](https://spot.insure)]]";
 
     expect(stripConfidenceMarkers(source)).toBe(
-      "Use `tail]]` and see [array [1, 2]](https://glass.insure)",
+      "Use `tail]]` and see [array [1, 2]](https://spot.insure)",
     );
   });
 

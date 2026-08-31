@@ -24,7 +24,7 @@ const MAX_QUERY_LENGTH = 500;
 const MAX_GOAL_LENGTH = 500;
 const MAX_OUTPUT_CHARS = 12_000;
 const MAX_SOURCE_COUNT = 5;
-const USER_AGENT = "Mozilla/5.0 (compatible; GlassBot/1.0)";
+const USER_AGENT = "Mozilla/5.0 (compatible; SpotBot/1.0)";
 
 export type WebRetrievalInput = {
   query?: string;

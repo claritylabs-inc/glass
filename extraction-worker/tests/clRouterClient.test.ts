@@ -57,7 +57,7 @@ test("request builder forwards schema, snapshot, and referenced PDF assets witho
   const request = buildClRouterGenerateRequest({
     task: "extraction",
     taskKind: "extraction_focused",
-    tenantId: "glass",
+    tenantId: "spot",
     orgId: "org-1",
     settings,
     prompt: "Extract the policy.",
@@ -97,7 +97,7 @@ test("client authenticates and preserves routing lineage", async () => {
   });
   const result = await client.generate({
     task: "extraction_preview",
-    tenantId: "glass",
+    tenantId: "spot",
     prompt: "Extract preview.",
     schema: { type: "object" },
   });
@@ -118,7 +118,7 @@ test("client permits plaintext only for loopback hosts", async () => {
     });
     await client.generate({
       task: "extraction",
-      tenantId: "glass",
+      tenantId: "spot",
       prompt: "Extract.",
       schema: { type: "object" },
     });
@@ -135,7 +135,7 @@ test("client permits plaintext only for loopback hosts", async () => {
 });
 
 test("only proven pre-execution production outages permit direct-provider fallback", () => {
-  const production = { GLASS_ENV: "production" };
+  const production = { SPOT_ENV: "production" };
   const refused = Object.assign(new Error("offline"), { code: "ECONNREFUSED" });
   assert.equal(
     shouldFallBackFromClRouter(new ClRouterConnectionError("connection", refused), production),
@@ -147,14 +147,14 @@ test("only proven pre-execution production outages permit direct-provider fallba
     executionStarted: false,
   });
   assert.equal(shouldFallBackFromClRouter(unavailable, production), true);
-  assert.equal(shouldFallBackFromClRouter(unavailable, { GLASS_ENV: "local" }), false);
+  assert.equal(shouldFallBackFromClRouter(unavailable, { SPOT_ENV: "local" }), false);
   assert.equal(shouldFallBackFromClRouter(new ClRouterConnectionError("timeout", new Error("slow")), production), false);
   assert.equal(shouldFallBackFromClRouter(new ClRouterHttpError(503, "Unavailable"), production), false);
   assert.equal(shouldFallBackFromClRouter(new ClRouterProtocolError("invalid"), production), false);
 });
 
 test("client wraps a proven connection refusal for fallback", async () => {
-  const production = { GLASS_ENV: "production" };
+  const production = { SPOT_ENV: "production" };
   const disconnected = createClRouterClient({
     baseUrl: "https://router.internal",
     secret: "shared-secret",
@@ -166,7 +166,7 @@ test("client wraps a proven connection refusal for fallback", async () => {
   await assert.rejects(
     disconnected.generate({
       task: "extraction",
-      tenantId: "glass",
+      tenantId: "spot",
       prompt: "Extract.",
       schema: { type: "object" },
     }),
@@ -194,7 +194,7 @@ test("client preserves typed router failure metadata", async () => {
   await assert.rejects(
     client.generate({
       task: "extraction",
-      tenantId: "glass",
+      tenantId: "spot",
       prompt: "Extract.",
       schema: { type: "object" },
     }),
@@ -215,7 +215,7 @@ test("invalid 2xx responses fail closed", async () => {
   await assert.rejects(
     client.generate({
       task: "extraction",
-      tenantId: "glass",
+      tenantId: "spot",
       prompt: "Extract.",
       schema: { type: "object" },
     }),

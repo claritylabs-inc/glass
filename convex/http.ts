@@ -65,7 +65,7 @@ http.route({
     if (!code || !state || error) {
       const redirect = new URL(
         "/settings?section=agent&tab=channels",
-        process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://app.glass.insure",
+        process.env.NEXT_PUBLIC_APP_URL?.trim() || "https://app.spot.insure",
       );
       redirect.searchParams.set("slack", "error");
       redirect.searchParams.set("reason", error || "missing_oauth_parameters");
@@ -180,7 +180,7 @@ http.route({
     if (!payload)
       return jsonResponse({ error: "Unsupported Slack interaction" }, 400);
     if (payload.type === "view_submission") {
-      if (payload.callbackId !== "glass_negative_feedback") {
+      if (payload.callbackId !== "spot_negative_feedback") {
         return jsonResponse({ response_action: "clear" });
       }
       try {
@@ -353,15 +353,15 @@ http.route({
       slackOAuthConfigured:
         !slackEnabled ||
         slackMode === "mock" ||
-        process.env.GLASS_ENV === "local" ||
+        process.env.SPOT_ENV === "local" ||
         Boolean(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET),
     };
     const ok = Object.values(checks).every(Boolean);
     return new Response(
       JSON.stringify({
         ok,
-        service: "glass-convex-agent-health",
-        glassEnv: process.env.GLASS_ENV ?? "unknown",
+        service: "spot-convex-agent-health",
+        spotEnv: process.env.SPOT_ENV ?? "unknown",
         emailDeliveryMode: getEmailDeliveryMode(),
         clientPortalUrl: getClientPortalUrl(),
         authSiteUrl: getAuthSiteUrl(),
@@ -1706,7 +1706,7 @@ const MCP_TOOLS = [
         requirementId: {
           type: "string",
           description:
-            "Requirements-mode single requirement ID; Glass uses its connected source",
+            "Requirements-mode single requirement ID; Spot uses its connected source",
         },
         holderName: { type: "string", description: "Certificate holder name" },
         holderContactName: {
@@ -1794,15 +1794,15 @@ const MCP_TOOLS = [
     inputSchema: { type: "object" as const, properties: {} },
   },
   {
-    name: "ask_glass",
+    name: "ask_spot",
     description:
-      "Alias for ask_glass (legacy name). Ask the Glass AI assistant a question about the organization's insurance portfolio. When the selected org is a broker workspace, Glass can answer across managed client organizations with client-labeled results.",
+      "Alias for ask_spot (legacy name). Ask the Spot AI assistant a question about the organization's insurance portfolio. When the selected org is a broker workspace, Spot can answer across managed client organizations with client-labeled results.",
     inputSchema: {
       type: "object" as const,
       properties: {
         message: {
           type: "string",
-          description: "The question or message to send to Glass",
+          description: "The question or message to send to Spot",
         },
         threadId: {
           type: "string",
@@ -1814,15 +1814,15 @@ const MCP_TOOLS = [
     },
   },
   {
-    name: "ask_glass",
+    name: "ask_spot",
     description:
-      "Ask the Glass AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. For client orgs, Glass answers within that org; for broker workspaces, Glass can answer across managed clients with client-labeled results. Optionally pass a threadId to continue an existing conversation.",
+      "Ask the Spot AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. For client orgs, Spot answers within that org; for broker workspaces, Spot can answer across managed clients with client-labeled results. Optionally pass a threadId to continue an existing conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
         message: {
           type: "string",
-          description: "The question or message to send to Glass",
+          description: "The question or message to send to Spot",
         },
         threadId: {
           type: "string",
@@ -1851,7 +1851,7 @@ const MCP_TOOLS = [
   {
     name: "draft_email",
     description:
-      "Create a durable outbound email draft using the same Glass email artifact used by web chat. Requires write scope. Returns a draft ID that can be updated, sent, or cancelled.",
+      "Create a durable outbound email draft using the same Spot email artifact used by web chat. Requires write scope. Returns a draft ID that can be updated, sent, or cancelled.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -2443,7 +2443,7 @@ async function handleToolCall(
         ],
       };
     }
-    case "ask_glass": {
+    case "ask_spot": {
       if (!args.message) throw new Error("Missing message");
       const result = await ctx.runAction(internal.actions.mcpChat.run, {
         orgId,
@@ -2807,18 +2807,18 @@ http.route({
             protocolVersion: "2025-03-26",
             capabilities: { tools: {} },
             serverInfo: {
-              name: "Glass",
+              name: "Spot",
               version: "2.0.0",
               icons: [
                 {
-                  src: `${siteUrl}/glass-icon.svg`,
+                  src: `${siteUrl}/spot-icon.svg`,
                   mimeType: "image/svg+xml",
                   sizes: ["any"],
                 },
               ],
             },
             instructions:
-              "Glass is an insurance intelligence platform. Use Glass tools to look up bound policies, renewals, threads, and org info. Use ask_glass for complex insurance questions.",
+              "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and org info. Use ask_spot for complex insurance questions.",
           });
         }
         case "tools/list": {
@@ -2861,7 +2861,7 @@ http.route({
 });
 
 // Streamable HTTP clients may probe GET /mcp for an optional server-to-client SSE stream.
-// Glass is stateless and responds to MCP requests directly over POST.
+// Spot is stateless and responds to MCP requests directly over POST.
 http.route({
   path: "/mcp",
   method: "GET",
@@ -4087,11 +4087,11 @@ http.route({
     return jsonResponse({
       openapi: "3.1.0",
       info: {
-        title: "Glass API",
+        title: "Spot API",
         version: "1.0.0",
-        description: "Glass insurance intelligence platform REST API",
+        description: "Spot insurance intelligence platform REST API",
       },
-      servers: [{ url: baseUrl, description: "Glass API" }],
+      servers: [{ url: baseUrl, description: "Spot API" }],
       security: [{ bearerAuth: [] }],
       components: {
         securitySchemes: {
@@ -4260,10 +4260,10 @@ http.route({
     const url = new URL(request.url);
     return jsonResponse({
       mcpServers: {
-        glass: {
+        spot: {
           uri: `${url.origin}/mcp`,
           instructions:
-            "Glass is an insurance intelligence platform. Use Glass tools to look up bound policies, renewals, threads, and broker-client workflows.",
+            "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and broker-client workflows.",
         },
       },
     });

@@ -147,7 +147,7 @@ async function requiresPolicyEvidence(ctx: ActionCtx, args: RunAgentTurnArgs) {
       {
         schema: PolicyEvidenceDecisionSchema,
         maxOutputTokens: 96,
-        system: `Decide whether answering the current message requires private policy evidence from the organization's Glass policy records.
+        system: `Decide whether answering the current message requires private policy evidence from the organization's Spot policy records.
 
 Set requiresPolicyEvidence true only for an informational answer that depends on the organization's actual policy facts, including coverage, limits, deductibles, premiums, dates, carriers, insured parties, endorsements, exclusions, conditions, wording, or comparisons between its policies.
 

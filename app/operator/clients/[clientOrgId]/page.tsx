@@ -566,7 +566,7 @@ function ClientWorkspace({
             <DialogTitle>Disable account</DialogTitle>
             <DialogDescription>
               Disable <strong>{client.name}</strong>? The client will lose
-              access to Glass and return to onboarding. You can send a new
+              access to Spot and return to onboarding. You can send a new
               activation email later.
             </DialogDescription>
           </DialogHeader>

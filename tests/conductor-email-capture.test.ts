@@ -10,13 +10,13 @@ import {
 describe("Conductor email capture watcher", () => {
   it("extracts OTPs and delivery context from Convex multiline logs", () => {
     const result = consumeLocalEmailCaptures(`
-8/7/2026 [CONVEX A(auth)] [LOG] '[glass:local-email-capture]
+8/7/2026 [CONVEX A(auth)] [LOG] '[spot:local-email-capture]
 kind: email
-from: Glass <noreply@auth.glass.insure>
+from: Spot <noreply@auth.spot.insure>
 to: person@example.com
 cc: (none)
 bcc: (none)
-subject: Your Glass sign-in code
+subject: Your Spot sign-in code
 codeCandidates: 123456
 attachmentCount: 0
 `);
@@ -25,7 +25,7 @@ attachmentCount: 0
       {
         kind: "email",
         to: "person@example.com",
-        subject: "Your Glass sign-in code",
+        subject: "Your Spot sign-in code",
         codes: ["123456"],
       },
     ]);
@@ -36,7 +36,7 @@ attachmentCount: 0
 
   it("handles escaped Convex log lines and captures non-OTP deliveries", () => {
     const result = consumeLocalEmailCaptures(
-      "[LOG] '[glass:local-email-capture]\\nkind: email\\nto: client@example.com\\nsubject: Policy ready\\ncodeCandidates: (none)\\nattachmentCount: 1'",
+      "[LOG] '[spot:local-email-capture]\\nkind: email\\nto: client@example.com\\nsubject: Policy ready\\ncodeCandidates: (none)\\nattachmentCount: 1'",
     );
 
     expect(result.captures).toEqual([
@@ -52,7 +52,7 @@ attachmentCount: 0
 
   it("retains an incomplete capture until the candidate line arrives", () => {
     const first = consumeLocalEmailCaptures(
-      "noise [glass:local-email-capture]\\nkind: suppressed-invite-otp\\nto: invitee@example.com\\n",
+      "noise [spot:local-email-capture]\\nkind: suppressed-invite-otp\\nto: invitee@example.com\\n",
     );
     expect(first.captures).toEqual([]);
 

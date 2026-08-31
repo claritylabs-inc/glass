@@ -108,13 +108,13 @@ export function redactionTypeStyle(
   return typographyRoles[role].replace("font-brand", redactionFamilyClasses[level]);
 }
 
-/** The canonical Glass lockup preserves normal tracking on its leading glyph. */
-export const glassWordmarkLeadingGlyphTypographyStyle = Object.freeze({
+/** The canonical Spot lockup preserves normal tracking on its leading glyph. */
+export const spotWordmarkLeadingGlyphTypographyStyle = Object.freeze({
   letterSpacing: "normal",
 } satisfies CSSProperties);
 
-/** Typography contract for the Glass social card rendered through next/og. */
-export const glassSocialAsciiTypographyStyle = Object.freeze({
+/** Typography contract for the Spot social card rendered through next/og. */
+export const spotSocialAsciiTypographyStyle = Object.freeze({
   fontFamily: "monospace",
   fontSize: 10,
   fontWeight: 500,
@@ -122,7 +122,7 @@ export const glassSocialAsciiTypographyStyle = Object.freeze({
   lineHeight: 0.96,
 } satisfies CSSProperties);
 
-export const glassSocialWordmarkTypographyStyle = Object.freeze({
+export const spotSocialWordmarkTypographyStyle = Object.freeze({
   fontFamily: "Redaction",
   fontSize: 136,
   fontWeight: 400,
@@ -130,7 +130,7 @@ export const glassSocialWordmarkTypographyStyle = Object.freeze({
   lineHeight: 1,
 } satisfies CSSProperties);
 
-export const glassSocialUrlTypographyStyle = Object.freeze({
+export const spotSocialUrlTypographyStyle = Object.freeze({
   fontFamily: "Geist",
   fontSize: 32,
   fontWeight: 400,

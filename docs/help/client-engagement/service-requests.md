@@ -1,9 +1,9 @@
 # Common service requests
 
-The Glass agent supports the same core insurance workflows across web chat,
+The Spot agent supports the same core insurance workflows across web chat,
 agent email, iMessage, and Slack. The presentation differs by channel: web chat
 shows the richest evidence and action controls, while text and Slack keep the
-reply concise and preserve the work in a Glass thread.
+reply concise and preserve the work in a Spot thread.
 
 ## Policy questions and comparisons
 
@@ -30,7 +30,7 @@ Provide:
 - the delivery recipient; and
 - the deadline.
 
-Glass uses the finalized source-backed policy facts and may reuse a current
+Spot uses the finalized source-backed policy facts and may reuse a current
 certificate for the same holder and policy version. It holds the request if the
 holder is ambiguous, the requested evidence is unavailable, or the policy is
 not final. Review the generated certificate before sending it to an outside
@@ -39,7 +39,7 @@ party.
 ## Policy changes and endorsements
 
 State the exact change, requested effective date, affected entity or location,
-and any supporting documentation. Glass may ask follow-up questions, create a
+and any supporting documentation. Spot may ask follow-up questions, create a
 review item, or prepare an email rather than treating the conversation itself
 as a bound change.
 
@@ -49,12 +49,12 @@ Examples:
 - `Request removal of vehicle 23 from the commercial auto policy.`
 - `Show the status of the endorsement request in this thread.`
 
-A Glass message is not carrier confirmation that coverage has changed. Rely on
+A Spot message is not carrier confirmation that coverage has changed. Rely on
 the issued endorsement or other formal evidence from the broker or carrier.
 
 ## Compliance checks
 
-Glass can compare the client's own policies with insurance requirements and can
+Spot can compare the client's own policies with insurance requirements and can
 review connected-vendor policies requirement by requirement. Identify whether
 you mean **our insurance** or a **vendor's insurance**, and name the requirement
 set or relationship.
@@ -86,7 +86,7 @@ organization-visible workspace data.
 
 ## Email drafting and sending
 
-Tell Glass the recipients, goal, facts that must be included, attachments, and
+Tell Spot the recipients, goal, facts that must be included, attachments, and
 tone. Ask for a draft first when the message changes coverage, represents an
 official position, or goes outside the organization.
 
@@ -102,7 +102,7 @@ with that conversation.
 
 ## Company facts and notes
 
-Glass can save stable company context when authorized. State that you want the
+Spot can save stable company context when authorized. State that you want the
 fact saved and include its source. Do not save temporary instructions, guesses,
 credentials, or another organization's confidential information as durable
 company context.

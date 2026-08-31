@@ -18,7 +18,7 @@ function payload(overrides: Record<string, unknown> = {}) {
       channel_type: "channel",
       user: "U-CUSTOMER",
       user_team: "T-CUSTOMER",
-      text: "<@U-GLASS> show my policy",
+      text: "<@U-SPOT> show my policy",
       ...overrides,
     },
   };
@@ -31,13 +31,13 @@ describe("Slack webhook payload narrowing", () => {
         {
           type: "event_callback",
           team_id: "T-CUSTOMER",
-          api_app_id: "A-GLASS",
+          api_app_id: "A-SPOT",
           event_id: "Ev-revoked",
           event_time: 1_800_000_000,
           authorizations: [{ team_id: "T-CUSTOMER" }],
           event: {
             type: "tokens_revoked",
-            tokens: { bot: ["U-GLASS"], oauth: ["U-HUMAN"] },
+            tokens: { bot: ["U-SPOT"], oauth: ["U-HUMAN"] },
           },
         },
         "hash",
@@ -48,8 +48,8 @@ describe("Slack webhook payload narrowing", () => {
       eventType: "tokens_revoked",
       teamId: "T-CUSTOMER",
       authorizationTeamId: "T-CUSTOMER",
-      apiAppId: "A-GLASS",
-      botUserIds: ["U-GLASS"],
+      apiAppId: "A-SPOT",
+      botUserIds: ["U-SPOT"],
       eventAt: 1_800_000_000_000,
     });
     expect(
@@ -158,7 +158,7 @@ describe("Slack webhook payload narrowing", () => {
       messageTs: "1800000000.100",
     });
     expect(
-      parseSlackEventPayload(payload({ bot_id: "B-GLASS" })),
+      parseSlackEventPayload(payload({ bot_id: "B-SPOT" })),
     ).toMatchObject({ isBotEcho: true });
     const dm = payload();
     dm.event.channel = "D-PRIVATE";

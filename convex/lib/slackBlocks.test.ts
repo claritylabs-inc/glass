@@ -40,7 +40,7 @@ describe("Slack Block Kit renderers", () => {
         recipientEmail: "recipient@example.com",
         subject: "Certificate of insurance",
         attachmentCount: 1,
-        reviewUrl: "https://app.glass.insure/share/email/review-token",
+        reviewUrl: "https://app.spot.insure/share/email/review-token",
       },
       actionToken: "opaque-token",
       revision: 2,
@@ -50,10 +50,10 @@ describe("Slack Block Kit renderers", () => {
     expect(JSON.stringify(blocks)).not.toContain("private reasoning");
     expect(JSON.stringify(blocks)).not.toContain("secret");
     expect(JSON.stringify(blocks)).not.toContain("tool activity");
-    expect(JSON.stringify(blocks)).toContain("glass_response_feedback");
-    expect(JSON.stringify(blocks)).toContain("glass_request_human");
+    expect(JSON.stringify(blocks)).toContain("spot_response_feedback");
+    expect(JSON.stringify(blocks)).toContain("spot_request_human");
     expect(JSON.stringify(blocks)).toContain("tab=certificates");
-    expect(JSON.stringify(blocks)).toContain("glass_open_email_draft");
+    expect(JSON.stringify(blocks)).toContain("spot_open_email_draft");
     expect(JSON.stringify(blocks)).toContain("Review draft");
     expect(JSON.stringify(blocks)).toContain("/share/email/review-token");
   });
@@ -82,14 +82,14 @@ describe("Slack Block Kit renderers", () => {
         recipientEmail: "recipient@example.com",
         subject: "Certificate of insurance",
         attachmentCount: 1,
-        reviewUrl: "https://app.glass.insure/share/email/review-token",
+        reviewUrl: "https://app.spot.insure/share/email/review-token",
       },
       actionToken: "opaque-token",
       revision: 2,
       showHandoff: false,
     });
 
-    expect(JSON.stringify(blocks)).toContain("glass_open_email_draft");
+    expect(JSON.stringify(blocks)).toContain("spot_open_email_draft");
     expect(JSON.stringify(blocks)).toContain("/share/email/review-token");
   });
 });

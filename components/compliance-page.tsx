@@ -72,7 +72,7 @@ import {
 } from "@/convex/lib/complianceTypes";
 import { lobLabel } from "@/convex/lib/linesOfBusiness";
 import { useActiveOrgContext } from "@/lib/hooks/use-active-org-context";
-import { useCachedConnectedVendors } from "@/lib/sync/glass-cached-queries";
+import { useCachedConnectedVendors } from "@/lib/sync/spot-cached-queries";
 import { useCachedQuery, useUpdateCachedQuery } from "@/lib/sync/use-cached-query";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { AddressAutofillInput } from "@/components/ui/address-autofill-input";

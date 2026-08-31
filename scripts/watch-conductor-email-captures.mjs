@@ -8,7 +8,7 @@ import {
   repoRoot,
 } from "./lib/conductor-workspace.mjs";
 
-const captureMarker = "[glass:local-email-capture]";
+const captureMarker = "[spot:local-email-capture]";
 const codeCandidatesKey = "codeCandidates:";
 
 function normalizeLogText(contents) {
@@ -81,7 +81,7 @@ export function consumeLocalEmailCaptures(contents) {
 export function formatLocalEmailCapture(capture) {
   const lines = [
     "",
-    "[Glass local email capture]",
+    "[Spot local email capture]",
     `To: ${capture.to}`,
     `Subject: ${capture.subject}`,
   ];

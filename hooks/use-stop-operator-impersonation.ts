@@ -8,7 +8,7 @@ import {
   getOperatorImpersonationReturnHref,
   type OperatorImpersonationTarget,
 } from "@/lib/operator-navigation";
-import { useGlassSync } from "@/lib/sync/glass-sync";
+import { useSpotSync } from "@/lib/sync/spot-sync";
 import {
   beginOperatorImpersonationStop,
   endOperatorImpersonationStop,
@@ -18,7 +18,7 @@ export function useStopOperatorImpersonation(
   activeImpersonation: OperatorImpersonationTarget | null | undefined,
 ) {
   const router = useRouter();
-  const { clearScope } = useGlassSync();
+  const { clearScope } = useSpotSync();
   const stopImpersonation = useMutation(api.operator.stopImpersonation);
 
   return useCallback(async () => {

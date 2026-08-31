@@ -8,10 +8,10 @@ export type OperatorConfig = {
   tokenId?: string;
 };
 
-const configRoot = join(homedir(), ".glass", "operator");
+const configRoot = join(homedir(), ".spot", "operator");
 
 export function resolveProfile(profile?: string): string {
-  return profile || process.env.GLASS_OPERATOR_PROFILE || "default";
+  return profile || process.env.SPOT_OPERATOR_PROFILE || "default";
 }
 
 function configPath(profile: string) {
@@ -27,9 +27,9 @@ export async function loadConfig(profile: string): Promise<OperatorConfig> {
   }
 
   return {
-    convexUrl: process.env.GLASS_CONVEX_URL ?? process.env.CONVEX_URL ?? stored.convexUrl,
-    token: process.env.GLASS_OPERATOR_TOKEN ?? process.env.OPERATOR_PROVISIONING_SECRET ?? stored.token,
-    tokenId: process.env.GLASS_OPERATOR_TOKEN_ID ?? process.env.OPERATOR_PROVISIONING_TOKEN_ID ?? stored.tokenId,
+    convexUrl: process.env.SPOT_CONVEX_URL ?? process.env.CONVEX_URL ?? stored.convexUrl,
+    token: process.env.SPOT_OPERATOR_TOKEN ?? process.env.OPERATOR_PROVISIONING_SECRET ?? stored.token,
+    tokenId: process.env.SPOT_OPERATOR_TOKEN_ID ?? process.env.OPERATOR_PROVISIONING_TOKEN_ID ?? stored.tokenId,
   };
 }
 
@@ -44,7 +44,7 @@ export async function deleteConfig(profile: string): Promise<void> {
 }
 
 export function requireConfig(config: OperatorConfig): Required<Pick<OperatorConfig, "convexUrl" | "token">> & OperatorConfig {
-  if (!config.convexUrl) throw new Error("Missing Convex URL. Run auth:login or set GLASS_CONVEX_URL.");
-  if (!config.token) throw new Error("Missing operator token. Run auth:login or set GLASS_OPERATOR_TOKEN.");
+  if (!config.convexUrl) throw new Error("Missing Convex URL. Run auth:login or set SPOT_CONVEX_URL.");
+  if (!config.token) throw new Error("Missing operator token. Run auth:login or set SPOT_OPERATOR_TOKEN.");
   return config as Required<Pick<OperatorConfig, "convexUrl" | "token">> & OperatorConfig;
 }

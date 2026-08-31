@@ -76,7 +76,7 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-const DEFAULT_TITLE = "Glass from Clarity Labs";
+const DEFAULT_TITLE = "Spot from Clarity Labs";
 const DEFAULT_DESCRIPTION = "Insurance policy intelligence by Clarity Labs";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -117,7 +117,7 @@ export default function RootLayout({
         <head>
           <script
             dangerouslySetInnerHTML={{
-              __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark");var b=localStorage.getItem("glass:boot-state");var s=localStorage.getItem("glass:sync-scope");if(b&&s){b=JSON.parse(b);s=JSON.parse(s);if(b&&s&&b.userId===s.userId&&b.orgId===s.orgId)window.__GLASS_BOOT__={accountKind:b.accountKind,onboardingComplete:b.onboardingComplete,membershipRole:b.membershipRole,userId:b.userId,orgId:b.orgId}}}catch(e){}})()`,
+              __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark");var b=localStorage.getItem("spot:boot-state");var s=localStorage.getItem("spot:sync-scope");if(b&&s){b=JSON.parse(b);s=JSON.parse(s);if(b&&s&&b.userId===s.userId&&b.orgId===s.orgId)window.__SPOT_BOOT__={accountKind:b.accountKind,onboardingComplete:b.onboardingComplete,membershipRole:b.membershipRole,userId:b.userId,orgId:b.orgId}}}catch(e){}})()`,
             }}
           />
         </head>

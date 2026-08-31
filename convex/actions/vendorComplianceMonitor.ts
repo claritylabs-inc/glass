@@ -90,11 +90,11 @@ function buildFollowUpBody(event: ComplianceEvent) {
   return [
     "Hello,",
     "",
-    `${event.clientName} is reviewing vendor insurance records in Glass, and these items currently need attention for ${event.vendorName}:`,
+    `${event.clientName} is reviewing vendor insurance records in Spot, and these items currently need attention for ${event.vendorName}:`,
     "",
     issueText,
     "",
-    "Please upload the current policies or certificates in Glass, or reply with the documents and any endorsements that address the items above.",
+    "Please upload the current policies or certificates in Spot, or reply with the documents and any endorsements that address the items above.",
     "",
     "Thank you.",
   ].join("\n");
@@ -115,9 +115,9 @@ export function buildFollowUpThreadContext(
   const action = `Review the draft below, edit anything that should change, then send it to ${vendorEmail}. If ${event.vendorName} already sent documents, upload them or ask the vendor to reply with the policies, certificates, or endorsements that satisfy these requirements.`;
 
   return [
-    `Glass found ${issueCount} vendor insurance ${issueLabel} needing attention for ${event.vendorName}.`,
+    `Spot found ${issueCount} vendor insurance ${issueLabel} needing attention for ${event.vendorName}.`,
     "",
-    `Reason: ${event.clientName}'s active vendor requirements do not currently have matching policy evidence in Glass for ${event.vendorName}.`,
+    `Reason: ${event.clientName}'s active vendor requirements do not currently have matching policy evidence in Spot for ${event.vendorName}.`,
     "",
     "What needs attention:",
     ...issuePreview,

@@ -11,7 +11,7 @@ describe("Slack interactions", () => {
         channel: { id: "C-PRIMARY" },
         message: { ts: "1800.1" },
         actions: [{
-          action_id: "glass_response_feedback",
+          action_id: "spot_response_feedback",
           action_ts: "1800.2",
           value: "negative:opaque-token",
         }],
@@ -24,7 +24,7 @@ describe("Slack interactions", () => {
       userId: "U-CUSTOMER",
       channelId: "C-PRIMARY",
       messageTs: "1800.1",
-      actionId: "glass_response_feedback",
+      actionId: "spot_response_feedback",
     });
     expect(payload?.type).toBe("block_actions");
     if (payload?.type !== "block_actions") throw new Error("Expected block action");
@@ -33,7 +33,7 @@ describe("Slack interactions", () => {
       value: "negative",
     });
     expect(slackActionToken(
-      "glass_response_feedback_negative",
+      "spot_response_feedback_negative",
       "negative:opaque-token",
     )).toEqual({ token: "opaque-token", value: "negative" });
   });
@@ -45,13 +45,13 @@ describe("Slack interactions", () => {
         team: { id: "T-CUSTOMER" },
         user: { id: "U-CUSTOMER", team_id: "T-ACTOR" },
         view: {
-          callback_id: "glass_negative_feedback",
+          callback_id: "spot_negative_feedback",
           private_metadata: "interaction-1",
           state: {
             values: {
-              glass_feedback_comment_block: {
-                glass_feedback_comment: {
-                  action_id: "glass_feedback_comment",
+              spot_feedback_comment_block: {
+                spot_feedback_comment: {
+                  action_id: "spot_feedback_comment",
                   value: "It missed an endorsement.",
                 },
               },
@@ -65,7 +65,7 @@ describe("Slack interactions", () => {
       teamId: "T-CUSTOMER",
       actorTeamId: "T-ACTOR",
       userId: "U-CUSTOMER",
-      callbackId: "glass_negative_feedback",
+      callbackId: "spot_negative_feedback",
       privateMetadata: "interaction-1",
       comment: "It missed an endorsement.",
     });
@@ -76,6 +76,6 @@ describe("Slack interactions", () => {
     expect(parseSlackInteraction(new URLSearchParams({
       payload: JSON.stringify({ type: "shortcut" }),
     }).toString())).toBeNull();
-    expect(slackActionToken("glass_response_feedback", "maybe:token")).toBeNull();
+    expect(slackActionToken("spot_response_feedback", "maybe:token")).toBeNull();
   });
 });

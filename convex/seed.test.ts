@@ -218,7 +218,7 @@ describe("local workspace seed", () => {
   });
 
   test("stores Montgomery Risk and Cove favicons during the full seed action", async () => {
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     const fetchedUrls: string[] = [];
     const favicon = encode({
       width: 2,

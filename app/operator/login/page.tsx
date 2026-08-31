@@ -108,7 +108,7 @@ export default function OperatorLoginPage() {
               {!loading ? <ArrowRight className="h-4 w-4" /> : null}
             </PillButton>
             <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
-              Looking for Glass?{" "}
+              Looking for Spot?{" "}
               <Link href="/login" className={`text-foreground hover:opacity-70 ${typeStyle("control.button")}`}>
                 Go to the main login
               </Link>

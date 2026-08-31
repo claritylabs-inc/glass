@@ -109,7 +109,7 @@ export const noUntypedTypography = {
   meta: {
     type: /** @type {const} */ ("problem"),
     docs: {
-      description: "Require Glass browser typography to use typed semantic roles.",
+      description: "Require Spot browser typography to use typed semantic roles.",
     },
     schema: [],
     messages: {
@@ -143,10 +143,10 @@ export const noUntypedTypography = {
   },
 };
 
-const glassTypographyPlugin = {
+const spotTypographyPlugin = {
   rules: {
     "no-untyped-typography": noUntypedTypography,
   },
 };
 
-export default glassTypographyPlugin;
+export default spotTypographyPlugin;

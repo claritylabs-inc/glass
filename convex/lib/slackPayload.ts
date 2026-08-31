@@ -251,7 +251,7 @@ export function parseSlackEventPayload(
     teamId,
     channelId,
     // Slack App Home is one continuous 1:1 conversation. Use the DM channel
-    // as its stable Glass conversation key while preserving an explicit Slack
+    // as its stable Spot conversation key while preserving an explicit Slack
     // thread root as the delivery target for replies made inside a thread.
     threadTs: isDirectMessage
       ? channelId

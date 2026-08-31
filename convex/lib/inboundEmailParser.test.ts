@@ -91,7 +91,7 @@ describe("parseInboundEmail", () => {
   test("requires actual participant evidence for subject-only threading", () => {
     const messages = [
       {
-        fromEmail: "agent@glass.insure",
+        fromEmail: "agent@spot.insure",
         toAddresses: ["Existing.Participant@example.com"],
       },
     ];

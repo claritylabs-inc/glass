@@ -72,7 +72,7 @@ function settingsRedirect(
   const base =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
     process.env.APP_URL?.trim() ||
-    "https://app.glass.insure";
+    "https://app.spot.insure";
   const url = new URL(
     clientOrgId
       ? "/settings?section=agent&tab=channels"
@@ -96,7 +96,7 @@ export const begin = action({
     }
     if (!args.thirdPartyVisibilityAcknowledged) {
       throw new Error(
-        "Acknowledge that everyone in a channel can see Glass responses before installing.",
+        "Acknowledge that everyone in a channel can see Spot responses before installing.",
       );
     }
     const userId = await getAuthUserId(ctx);
@@ -131,7 +131,7 @@ export const begin = action({
         teamId: existing?.teamId ?? `T-MOCK-${args.clientOrgId}`,
         teamName:
           existing?.teamName ?? `${permission.org.name} local workspace`,
-        botUserId: existing?.botUserId ?? "U-GLASS",
+        botUserId: existing?.botUserId ?? "U-SPOT",
         grantedScopes: [...SLACK_CUSTOMER_SCOPES],
         ...(permission.kind === "operator"
           ? { installedByOperatorUserId: userId }

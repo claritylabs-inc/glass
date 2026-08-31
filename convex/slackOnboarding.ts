@@ -137,7 +137,7 @@ export const createPrimaryChannel = action({
     if (permission.kind !== "operator") {
       throwUserFacingError(
         userFacingErrorCodes.operatorRequired,
-        "A Glass operator must create the hosted Slack Connect channel.",
+        "A Spot operator must create the hosted Slack Connect channel.",
       );
     }
     const [connection, supportContext, existingBinding] = await Promise.all([
@@ -310,7 +310,7 @@ export const selectAutomaticChannel = action({
       (candidate) => candidate.id === args.channelId && candidate.isMember,
     );
     if (!channel) {
-      throw new Error("Select a Slack channel that Glass has joined");
+      throw new Error("Select a Slack channel that Spot has joined");
     }
     await ctx.runMutation(
       internalApi.agentChannels.selectAutomaticSlackChannelInternal,
@@ -367,7 +367,7 @@ export const joinPublicChannel = action({
       error?: string;
     };
     if (!response.ok || !result.channel?.isMember) {
-      throw new Error(result.error ?? "Glass could not be added to that channel");
+      throw new Error(result.error ?? "Spot could not be added to that channel");
     }
     const channels = await fetchAvailableChannels({ teamId: connection.teamId });
     await syncJoinedChannels(ctx, {
@@ -431,7 +431,7 @@ export const leavePublicChannel = action({
       error?: string;
     };
     if (!response.ok || result.channel?.isMember !== false) {
-      throw new Error(result.error ?? "Glass could not leave that channel");
+      throw new Error(result.error ?? "Spot could not leave that channel");
     }
     const channels = await fetchAvailableChannels({ teamId: connection.teamId });
     await syncJoinedChannels(ctx, {

@@ -1,7 +1,7 @@
 "use node";
 
 /**
- * Maps between cl-sdk InsuranceDocument types and Glass's policies table schema.
+ * Maps between cl-sdk InsuranceDocument types and Spot's policies table schema.
  *
  * Replaces the removed applyExtracted adapter from cl-sdk v0.1.x
  * and the old toPolicy adapter from agentPrompts.ts.
@@ -100,7 +100,7 @@ function policyYearFromDate(value: unknown): number {
 }
 
 /**
- * Map an InsuranceDocument (extraction output) to Glass's policies table fields.
+ * Map an InsuranceDocument (extraction output) to Spot's policies table fields.
  * This is the forward mapping: SDK extraction → Convex mutation args.
  */
 export function insuranceDocToPolicy(
@@ -253,7 +253,7 @@ export function insuranceDocToPolicy(
 }
 
 /**
- * Map a Glass policies Doc to an InsuranceDocument (SDK type).
+ * Map a Spot policies Doc to an InsuranceDocument (SDK type).
  * This is the reverse mapping: Convex Doc → SDK interface.
  * Used by DocumentStore.get/query and agent context building.
  */

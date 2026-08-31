@@ -236,7 +236,7 @@ function finalExtractionRequiredMessage(
       ? ` ${policy.fileName}`
       : "";
   return [
-    `Glass has completed extraction for policy${label}, but ${action} requires enrichment to finish.`,
+    `Spot has completed extraction for policy${label}, but ${action} requires enrichment to finish.`,
     "Try again after enrichment completes.",
   ].join(" ");
 }

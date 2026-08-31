@@ -244,7 +244,7 @@ describe("operator client support", () => {
     const operator = fixture.t.withIdentity({
       subject: `${fixture.operatorUserId}|session`,
     });
-    vi.stubEnv("GLASS_ENV", "local");
+    vi.stubEnv("SPOT_ENV", "local");
     vi.stubEnv("EMAIL_DELIVERY_MODE", "capture");
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
 

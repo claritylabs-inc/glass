@@ -43,7 +43,7 @@ describe("sendNotificationImessage", () => {
         userId,
         type: "mailbox_attention",
         title: "Mailbox item needs attention",
-        body: "Glass found a policy document.",
+        body: "Spot found a policy document.",
         severity: "warning",
         status: "unread",
         imessageStatus: "scheduled",
@@ -83,7 +83,7 @@ describe("sendNotificationImessage", () => {
         threadId: snapshot.threads[0]._id,
         channel: "imessage",
         role: "agent",
-        content: "Mailbox item needs attention\n\nGlass found a policy document.",
+        content: "Mailbox item needs attention\n\nSpot found a policy document.",
       },
     ]);
     expect(snapshot.sends).toMatchObject([
@@ -144,7 +144,7 @@ describe("sendNotificationImessage", () => {
         orgId,
         type: "mailbox_attention",
         title: "Mailbox item needs attention",
-        body: "Glass found a private mailbox item.",
+        body: "Spot found a private mailbox item.",
         severity: "warning",
         status: "unread",
         imessageStatus: "scheduled",

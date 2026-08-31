@@ -18,7 +18,7 @@ import {
   fetchParsedMessage,
   imapErrorMessage,
   isMailboxMessageUnavailableError,
-  isGlassSearchLoopEmail,
+  isSpotSearchLoopEmail,
   MailboxMessageUnavailableError,
   messageRef,
   parseMessageRef,
@@ -223,7 +223,7 @@ function buildSavedMessageExport(args: {
   const html = typeof args.html === "string" && args.html.trim() ? args.html : undefined;
   const text = args.text?.trim() || (html ? "This email contains HTML content." : "");
   if (html) {
-    const boundary = `glass-${createHash("sha256").update(`${args.subject ?? ""}${args.date?.toISOString() ?? ""}`).digest("hex").slice(0, 16)}`;
+    const boundary = `spot-${createHash("sha256").update(`${args.subject ?? ""}${args.date?.toISOString() ?? ""}`).digest("hex").slice(0, 16)}`;
     return [
       headerLine("Subject", args.subject ?? "(no subject)"),
       headerLine("From", args.from),
@@ -299,7 +299,7 @@ function mailboxSearchError(
     mailbox,
     message,
     hint:
-      "Glass could not search this mailbox. The folder may not exist, the provider rejected the IMAP SEARCH command, or the mailbox connection needs to be reconnected.",
+      "Spot could not search this mailbox. The folder may not exist, the provider rejected the IMAP SEARCH command, or the mailbox connection needs to be reconnected.",
   };
 }
 
@@ -534,7 +534,7 @@ export const searchInternal = internalAction({
           if (rows.length >= limit) break;
           try {
             const parsed = await fetchParsedMessage(client, mailbox, uid);
-            if (isGlassSearchLoopEmail(parsed)) continue;
+            if (isSpotSearchLoopEmail(parsed)) continue;
             const haystack = [
               parsed.subject,
               parsed.from?.text,

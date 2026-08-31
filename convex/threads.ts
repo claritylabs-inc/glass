@@ -30,7 +30,7 @@ import {
 
 // Note: mutations/queries don't have process.env
 // The domain is stored on the org via setAgentDomain action, or passed by the client
-const FALLBACK_AGENT_DOMAIN = "glass.insure";
+const FALLBACK_AGENT_DOMAIN = "spot.insure";
 const EMAIL_MODE_VALIDATOR = v.union(
   v.literal("direct"),
   v.literal("cc"),

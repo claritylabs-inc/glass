@@ -3,12 +3,12 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { ImageResponse } from "next/og";
 import {
-  glassSocialAsciiTypographyStyle,
-  glassSocialUrlTypographyStyle,
-  glassSocialWordmarkTypographyStyle,
+  spotSocialAsciiTypographyStyle,
+  spotSocialUrlTypographyStyle,
+  spotSocialWordmarkTypographyStyle,
 } from "@/lib/typography";
 
-export const GLASS_SOCIAL_IMAGE_SIZE = { width: 1200, height: 630 };
+export const SPOT_SOCIAL_IMAGE_SIZE = { width: 1200, height: 630 };
 
 const ASCII_GLYPHS = "  ..::+?N9#";
 const ASCII_COLUMNS = 154;
@@ -40,21 +40,21 @@ function imageDataUrl(mimeType: string, data: Buffer) {
   return `data:${mimeType};base64,${data.toString("base64")}`;
 }
 
-type GlassSocialAssets = {
+type SpotSocialAssets = {
   redaction: Buffer;
   geist: Buffer;
   skySrc: string;
   iconSrc: string;
 };
 
-let assetsPromise: Promise<GlassSocialAssets> | undefined;
+let assetsPromise: Promise<SpotSocialAssets> | undefined;
 
-function loadGlassSocialAssets() {
+function loadSpotSocialAssets() {
   assetsPromise ??= Promise.all([
     readFile(join(process.cwd(), "app/fonts/redaction/Redaction-Regular.ttf")),
     readFile(join(process.cwd(), "app/fonts/geist/Geist-Regular.ttf")),
-    readFile(join(process.cwd(), "public/glass/hero-clouds-v1.jpg")),
-    readFile(join(process.cwd(), "public/glass/logo-icon.png")),
+    readFile(join(process.cwd(), "public/spot/hero-clouds-v1.jpg")),
+    readFile(join(process.cwd(), "public/spot/logo-icon.png")),
   ]).then(([redaction, geist, sky, icon]) => ({
     redaction,
     geist,
@@ -65,10 +65,10 @@ function loadGlassSocialAssets() {
   return assetsPromise;
 }
 
-function GlassSocialCard({
+function SpotSocialCard({
   skySrc,
   iconSrc,
-}: Omit<GlassSocialAssets, "redaction" | "geist">) {
+}: Omit<SpotSocialAssets, "redaction" | "geist">) {
   return (
     <div
       style={{
@@ -117,7 +117,7 @@ function GlassSocialCard({
           overflow: "hidden",
           whiteSpace: "pre",
           color: "rgba(38, 67, 84, 0.16)",
-          ...glassSocialAsciiTypographyStyle,
+          ...spotSocialAsciiTypographyStyle,
         }}
       >
         {STATIC_ASCII_FIELD}
@@ -151,11 +151,11 @@ function GlassSocialCard({
               alignItems: "center",
               gap: 18,
               color: "#000000",
-              ...glassSocialWordmarkTypographyStyle,
+              ...spotSocialWordmarkTypographyStyle,
             }}
           >
             <img src={iconSrc} alt="" width={96} height={96} />
-            <span>glass</span>
+            <span>spot</span>
           </div>
         </div>
 
@@ -163,21 +163,21 @@ function GlassSocialCard({
           style={{
             display: "flex",
             color: "rgba(0, 0, 0, 0.58)",
-            ...glassSocialUrlTypographyStyle,
+            ...spotSocialUrlTypographyStyle,
           }}
         >
-          app.glass.insure
+          app.spot.insure
         </div>
       </div>
     </div>
   );
 }
 
-export async function createGlassSocialImage() {
-  const assets = await loadGlassSocialAssets();
+export async function createSpotSocialImage() {
+  const assets = await loadSpotSocialAssets();
   const { redaction, geist, ...cardAssets } = assets;
-  return new ImageResponse(<GlassSocialCard {...cardAssets} />, {
-    ...GLASS_SOCIAL_IMAGE_SIZE,
+  return new ImageResponse(<SpotSocialCard {...cardAssets} />, {
+    ...SPOT_SOCIAL_IMAGE_SIZE,
     fonts: [
       {
         name: "Redaction",

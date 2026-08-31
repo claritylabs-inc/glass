@@ -137,7 +137,7 @@ function McpSection() {
           <Trash2 className="mt-0.5 size-5 shrink-0 text-red-500" />
           <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
             This will disconnect <strong>{revokeTarget?.clientName}</strong> and
-            revoke its access to your Glass data.
+            revoke its access to your Spot data.
           </p>
         </div>
       </SettingsDrawer>,
@@ -175,7 +175,7 @@ function McpSection() {
       <OperationalPanel>
         <OperationalPanelHeader
           title="MCP endpoint"
-          description="Connect Glass to an AI assistant with your existing Glass account."
+          description="Connect Spot to an AI assistant with your existing Spot account."
           className="px-5 py-3.5"
         />
         <OperationalPanelBody className="px-5 py-5">
@@ -213,9 +213,9 @@ function McpSection() {
             </li>
             <li>
               Select <span className={`text-foreground ${typeStyle("body.medium")}`}>Add custom connector</span>,
-              name it Glass, and paste the endpoint above.
+              name it Spot, and paste the endpoint above.
             </li>
-            <li>Add the connector, select Connect, and sign in to Glass.</li>
+            <li>Add the connector, select Connect, and sign in to Spot.</li>
           </ol>
         </OperationalItem>
 
@@ -244,9 +244,9 @@ function McpSection() {
             </li>
             <li>
               Return to Apps, select <span className={`text-foreground ${typeStyle("body.medium")}`}>Create</span>,
-              name the app Glass, and paste the endpoint above.
+              name the app Spot, and paste the endpoint above.
             </li>
-            <li>Choose OAuth when prompted, scan the tools, create the app, and sign in to Glass.</li>
+            <li>Choose OAuth when prompted, scan the tools, create the app, and sign in to Spot.</li>
           </ol>
         </OperationalItem>
       </OperationalPanel>
@@ -300,11 +300,11 @@ function McpSection() {
 function CliSection() {
   const [copied, setCopied] = useState(false);
   const cliSnippet = [
-    "npm install -g @claritylabs/glass-cli",
-    "glass auth:login",
-    "glass auth:whoami",
-    "glass auth:whoami --set-org <orgId>",
-    "glass policies:list",
+    "npm install -g @claritylabs/spot-cli",
+    "spot auth:login",
+    "spot auth:whoami",
+    "spot auth:whoami --set-org <orgId>",
+    "spot policies:list",
   ].join("\n");
 
   function copyCliSnippet() {
@@ -317,7 +317,7 @@ function CliSection() {
     <OperationalPanel>
       <OperationalPanelHeader
         title="Install and sign in"
-        description="Use the Glass CLI for terminal workflows, scripts, and local automation."
+        description="Use the Spot CLI for terminal workflows, scripts, and local automation."
         className="px-5 py-3.5"
       />
       <OperationalPanelBody className="px-5 py-5">
@@ -344,7 +344,7 @@ function AdvancedSection() {
   const localSnippet = JSON.stringify(
     {
       mcpServers: {
-        glass: {
+        spot: {
           command: "npx",
           args: ["-y", "mcp-remote", mcpUrl],
         },
@@ -364,13 +364,13 @@ function AdvancedSection() {
     <OperationalPanel>
       <OperationalPanelHeader
         title="Local MCP clients"
-        description="Use Glass from Claude Code, Cursor, Codex, or another local MCP client."
+        description="Use Spot from Claude Code, Cursor, Codex, or another local MCP client."
         className="px-5 py-3.5"
       />
       <OperationalPanelBody className="space-y-3 px-5 py-5">
         <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
           Add this server to your client&apos;s MCP configuration. A browser window opens for
-          Glass sign-in on first use.
+          Spot sign-in on first use.
         </p>
         <div className="relative">
           <pre className={`overflow-x-auto rounded-lg border border-border bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>

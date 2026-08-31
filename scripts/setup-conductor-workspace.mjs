@@ -412,7 +412,7 @@ const overridesPath = path.join(contextDirectory, "convex-local-overrides.env");
 
 try {
   writeRuntimeEnv("convex-local-overrides.env", {
-    GLASS_ENV: "local",
+    SPOT_ENV: "local",
     JWT_PRIVATE_KEY: localAuthKeys.JWT_PRIVATE_KEY,
     JWKS: localAuthKeys.JWKS,
     MAPBOX_ACCESS_TOKEN:
@@ -461,7 +461,7 @@ if (createdLocalDeployment) {
 
 writeRuntimeEnv("extraction-worker.env", {
   CONVEX_URL: localUrls.cloud,
-  GLASS_ENV: "local",
+  SPOT_ENV: "local",
   EXTRACTION_WORKER_SECRET: extractionSecret,
   EXTRACTION_WORKER_ID: `conductor-${workspaceSlug()}`,
   EXTRACTION_JOB_CONCURRENCY: "8",
@@ -484,7 +484,7 @@ writeRuntimeEnv("extraction-worker.env", {
   XAI_API_KEY: optionalConvexEnv(convex, "XAI_API_KEY"),
 });
 writeRuntimeEnv("imessage-worker.env", {
-  GLASS_ENV: "local",
+  SPOT_ENV: "local",
   IMESSAGE_ENABLED: "false",
   SPECTRUM_PROVIDER: "terminal",
   CONVEX_SITE_URL: localUrls.site,
@@ -497,7 +497,7 @@ writeRuntimeEnv("imessage-worker.env", {
     imessageEnv.get("IMESSAGE_TERMINAL_SPACE_ID")?.trim() || "chat-1",
 });
 writeRuntimeEnv("slack-worker.env", {
-  GLASS_ENV: "local",
+  SPOT_ENV: "local",
   SLACK_WORKER_MODE: "mock",
   SLACK_WORKER_SECRET: slackSecret,
   SLACK_SIGNING_SECRET: slackWebhookSecret,
@@ -512,5 +512,5 @@ if (process.env.CONDUCTOR_IS_LOCAL !== "0") {
 }
 
 console.log(
-  "\nConductor workspace ready with its own local Convex database. Run the default Dev template to start Glass, Convex, extraction, the Slack mock worker, and automatic email/OTP capture. Start Spectrum separately with npm run conductor:spectrum.",
+  "\nConductor workspace ready with its own local Convex database. Run the default Dev template to start Spot, Convex, extraction, the Slack mock worker, and automatic email/OTP capture. Start Spectrum separately with npm run conductor:spectrum.",
 );

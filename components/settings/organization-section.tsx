@@ -31,7 +31,7 @@ import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
   patchCachedViewerOrg,
   useCachedViewerOrg,
-} from "@/lib/sync/glass-cached-queries";
+} from "@/lib/sync/spot-cached-queries";
 import { useSyncStore } from "@claritylabs/cl-sync";
 import {
   AutoSaveStatus,

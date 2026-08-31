@@ -78,7 +78,7 @@ function isRecord(value) {
 }
 
 function schemaId(name) {
-  return `https://glass.local/contracts/cl-router/v1/schemas/${encodeURIComponent(name)}`;
+  return `https://spot.local/contracts/cl-router/v1/schemas/${encodeURIComponent(name)}`;
 }
 
 function rewriteComponentRefs(value) {
@@ -289,10 +289,10 @@ function checkCalibrationFixture(fixtures) {
   const qualificationSpec = seed.qualificationSpec;
   assert(isRecord(qualificationSpec), "calibration fixture qualification spec is missing");
   assert(
-    qualificationSpec.id === "glass-policy-extraction-source-tree@1"
+    qualificationSpec.id === "spot-policy-extraction-source-tree@1"
       && qualificationSpec.task === "extraction"
       && qualificationSpec.taskFamily === "extraction_source_tree",
-    "calibration fixture must use the reviewed Glass policy extraction qualification spec",
+    "calibration fixture must use the reviewed Spot policy extraction qualification spec",
   );
   assert(
     qualificationSpec.classification === "proxy_benchmark"

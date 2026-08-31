@@ -19,7 +19,7 @@ import {
 const environment = {
   CL_ROUTER_URL: "https://router.example.test",
   CL_ROUTER_SECRET: "router-secret",
-  GLASS_ENV: "production",
+  SPOT_ENV: "production",
 };
 
 const usage: LanguageModelV3Usage = {

@@ -30,12 +30,12 @@ export function SettingsDrawer({
     if (!open || !hasFooter) return;
     const root = document.documentElement;
     const previous = root.style.getPropertyValue(
-      "--glass-settings-drawer-footer-inset",
+      "--spot-settings-drawer-footer-inset",
     );
     const updateInset = () => {
       const height = footerRef.current?.getBoundingClientRect().height ?? 0;
       root.style.setProperty(
-        "--glass-settings-drawer-footer-inset",
+        "--spot-settings-drawer-footer-inset",
         `${height}px`,
       );
     };
@@ -46,11 +46,11 @@ export function SettingsDrawer({
       observer.disconnect();
       if (previous) {
         root.style.setProperty(
-          "--glass-settings-drawer-footer-inset",
+          "--spot-settings-drawer-footer-inset",
           previous,
         );
       } else {
-        root.style.removeProperty("--glass-settings-drawer-footer-inset");
+        root.style.removeProperty("--spot-settings-drawer-footer-inset");
       }
     };
   }, [hasFooter, open]);

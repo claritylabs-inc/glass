@@ -10,7 +10,7 @@ import {
   AuthMinimalShell,
   BrandWordmark,
   PartnerWordmark,
-  PoweredByGlassWordmark,
+  PoweredBySpotWordmark,
 } from "@/components/auth-shell";
 import { OtpField } from "@/components/ui/otp-field";
 import { PillButton } from "@/components/ui/pill-button";
@@ -115,7 +115,7 @@ export function BrokerAuthEntryPage({
   }
 
   const whiteLabelingEnabled = broker.whiteLabelingEnabled !== false;
-  const displayName = whiteLabelingEnabled ? broker.name : "Glass";
+  const displayName = whiteLabelingEnabled ? broker.name : "Spot";
   const title = isSignup ? `Join ${displayName}` : `Sign in to ${displayName}`;
   const subtitle = isSignup
     ? `Join ${displayName} to manage your policies, share documents, and get instant answers about your coverage.`
@@ -127,7 +127,7 @@ export function BrokerAuthEntryPage({
 
   return (
     <div style={accentStyle}>
-      <AuthMinimalShell footer={<PoweredByGlassWordmark />}>
+      <AuthMinimalShell footer={<PoweredBySpotWordmark />}>
         <AuthCard
           title={title}
           subtitle={subtitle}
