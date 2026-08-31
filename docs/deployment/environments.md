@@ -43,6 +43,12 @@ runtimes are not atomic. Keep expand/contract compatibility for destructive
 query-shape changes and version worker protocol changes so the old frontend and
 workers remain compatible while the new backend rolls out.
 
+The iMessage number follows the same expand-first rule. Browser surfaces prefer
+`NEXT_PUBLIC_SPOT_IMESSAGE_NUMBER` and its `_DISPLAY` companion, and the worker
+prefers `SPOT_IMESSAGE_CONTACT_PHONE` before the public Spot value. Both paths
+temporarily fall back to the corresponding legacy `GLASS_*` variables until the
+Spot values have been verified on every production target.
+
 Slack environment/app setup and the client-owned policy-delivery migration are
 documented in [Slack privileged service channel](./slack.md). Production owns
 the native Slack app and live worker; shared dev and local development use the

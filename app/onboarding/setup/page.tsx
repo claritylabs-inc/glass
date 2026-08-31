@@ -17,6 +17,7 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { ArrowRight, Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getPublicAgentDomain } from "@/lib/domains";
+import { AGENT_TEXT_NUMBER } from "@/lib/imessage-config";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import {
   useCachedPolicyList,
@@ -28,8 +29,7 @@ import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { typeStyle } from "@/lib/typography";
 
 const AGENT_DOMAIN = getPublicAgentDomain();
-const SPOT_IMESSAGE_NUMBER =
-  process.env.NEXT_PUBLIC_SPOT_IMESSAGE_NUMBER ?? "";
+const SPOT_IMESSAGE_NUMBER = AGENT_TEXT_NUMBER;
 
 function companyNameFromEmail(email?: string | null): string {
   if (!email) return "";

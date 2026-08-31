@@ -34,6 +34,7 @@ import {
   normalizeInboundTurn,
   type InboundRecoveryClient,
 } from "./inboundNormalization.js";
+import { resolveContactCardPhone } from "./contactCard.js";
 
 function imessageMarkdown(value: string) {
   return markdown(value);
@@ -149,10 +150,7 @@ const TYPING_REFRESH_MS = 4_000;
 const CONTACT_CARD_NAME = "Spot from Clarity Labs";
 const CONTACT_CARD_EMAIL =
   process.env.SPOT_AGENT_EMAIL ?? "agent@spot.insure";
-const CONTACT_CARD_PHONE =
-  process.env.SPOT_IMESSAGE_CONTACT_PHONE ??
-  process.env.NEXT_PUBLIC_SPOT_IMESSAGE_NUMBER ??
-  "";
+const CONTACT_CARD_PHONE = resolveContactCardPhone();
 const CONTACT_CARD_URL = "https://spot.insure";
 const CONTACT_CARD_NOTE =
   "Spot is an insurance intelligence assistant from Clarity Labs for policies, certificates, renewals, and broker follow-ups.";

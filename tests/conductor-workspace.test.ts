@@ -72,10 +72,11 @@ describe("Conductor workspace identity", () => {
     ]);
   });
 
-  it("finds Spot worker containers occupying an allocated workspace port", () => {
+  it("finds Spot and legacy Glass worker containers on an allocated port", () => {
     const containers = [
       { id: "buildkit" },
       { id: "spot-extraction-old-workspace-55061" },
+      { id: "glass-extraction-legacy-workspace-55061" },
       {
         id: "opaque-runtime-id",
         configuration: {
@@ -90,6 +91,7 @@ describe("Conductor workspace identity", () => {
       conductorContainerNamesOnPort(containers, "extraction", 55061),
     ).toEqual([
       "spot-extraction-old-workspace-55061",
+      "glass-extraction-legacy-workspace-55061",
       "spot-extraction-current-workspace-55061",
     ]);
   });

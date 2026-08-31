@@ -332,7 +332,7 @@ export function conductorContainerName(
 }
 
 export function conductorContainerNamesOnPort(containers, workerName, port) {
-  const prefix = `spot-${workerName}-`;
+  const prefixes = [`spot-${workerName}-`, `glass-${workerName}-`];
   const suffix = `-${port}`;
   const names = new Set();
 
@@ -340,7 +340,7 @@ export function conductorContainerNamesOnPort(containers, workerName, port) {
     for (const name of [container?.id, container?.configuration?.id]) {
       if (
         typeof name === "string" &&
-        name.startsWith(prefix) &&
+        prefixes.some((prefix) => name.startsWith(prefix)) &&
         name.endsWith(suffix)
       ) {
         names.add(name);
