@@ -20,12 +20,16 @@ Conductor worktree uses native local Convex plus local workers.
 
 Vercel may build the production candidate in parallel, but the Spot Vercel
 project must keep automatic production domain assignment enabled and configure
-the GitHub `release-ready-production` check as a required Deployment Check.
-Vercel then assigns `app.spot.insure` only after the release job succeeds.
-Changing the job name requires updating the Vercel project setting in the same
-rollout. A failed or timed-out Convex deploy, Railway status, compatibility
-audit, or stale-head check leaves the candidate unpromoted; use Vercel's explicit
-force-promotion control only for an incident-approved bypass.
+the GitHub `release-ready-production` check as a required Deployment Check. The
+project check targets only `production`, uses the Git provider source with
+external check name `release-ready-production`, requires no deployment URL,
+blocks `deployment-alias`, and allows 1,800 seconds for the full release
+workflow. Vercel then assigns every production alias, including
+`app.spot.insure`, only after the release job succeeds. Changing the job name
+requires updating the Vercel project check in the same rollout. A failed or
+timed-out Convex deploy, Railway status, compatibility audit, or stale-head
+check leaves the candidate unpromoted; use Vercel's explicit force-promotion
+control only for an incident-approved bypass.
 
 Railway Git autodeploy and all four service-local watch paths must remain
 enabled. Unchanged workers satisfy the barrier with Railway's no-op status, and
