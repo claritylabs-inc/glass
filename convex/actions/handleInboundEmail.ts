@@ -33,6 +33,7 @@ import {
   sendResendEmail,
   getAgentDomain,
   getAgentDomains,
+  getAgentRecipientAddresses,
   isSpotOutboundAddress,
 } from "../lib/resend";
 import { buildSpotEmailIconHtml } from "../lib/emailTemplate";
@@ -82,6 +83,7 @@ import {
 } from "../lib/requirementAttachmentIntent";
 import {
   formatInboundEmailForAgent,
+  extractPendingEmailIdsFromHeaders,
   hasEmailParticipantEvidence,
   parseInboundEmail,
   resolveForwardReplyAddress,
@@ -101,8 +103,6 @@ import {
 import { extractEmailAddress } from "../lib/emailAddress";
 
 const SPOT_PUBLIC_URL = getClientPortalUrl();
-const SPOT_PENDING_MESSAGE_ID_RE = /<?spot-pending-([^@\s>]+)@[^>\s]+>?/gi;
-const MAX_CAPTURED_PENDING_EMAIL_ID_LENGTH = 128;
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com",
@@ -146,23 +146,6 @@ function getCompanyDomains(
     }
   }
   return domains;
-}
-
-function extractPendingEmailIdsFromHeaders(values: Array<string | undefined>) {
-  const ids = new Set<string>();
-  for (const value of values) {
-    if (!value) continue;
-    for (const match of value.matchAll(SPOT_PENDING_MESSAGE_ID_RE)) {
-      const pendingEmailId = match[1]?.trim();
-      if (
-        pendingEmailId &&
-        pendingEmailId.length <= MAX_CAPTURED_PENDING_EMAIL_ID_LENGTH
-      ) {
-        ids.add(pendingEmailId);
-      }
-    }
-  }
-  return [...ids];
 }
 
 interface WebhookPayload {
@@ -704,10 +687,9 @@ export const processInbound = internalAction({
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, {
       orgId,
     });
-    const memberEmails = orgMembers
-      .flatMap((membership) =>
-        membership.user?.email ? [membership.user.email] : [],
-      );
+    const memberEmails = orgMembers.flatMap((membership) =>
+      membership.user?.email ? [membership.user.email] : [],
+    );
     const firstAdmin = orgMembers.find(
       (membership) => membership.role === "admin",
     );
@@ -756,12 +738,15 @@ export const processInbound = internalAction({
     // Detect mode
     // agentAddress is the canonical address (without +suffix) — used for outbound from and reply-to
     const agentAddress = `${handle}@${getAgentDomain()}`;
-    // The actual recipient may include +threadSuffix, so also match that
+    const acceptedAgentAddresses = new Set(
+      getAgentRecipientAddresses(handle, threadSuffix),
+    );
+    const isAgentAddr = (addr: string) => acceptedAgentAddresses.has(addr);
     const agentAddressWithSuffix = threadSuffix
-      ? `${handle}+${threadSuffix}@${getAgentDomain()}`
+      ? (allAddresses.find(
+          (addr) => addr.includes(`+${threadSuffix}@`) && isAgentAddr(addr),
+        ) ?? `${handle}+${threadSuffix}@${getAgentDomain()}`)
       : null;
-    const isAgentAddr = (addr: string) =>
-      addr === agentAddress || addr === agentAddressWithSuffix;
 
     // Resolve broker branding once — used for outbound from-name and signature.
     const senderBrokerOrg = brokerOrg.type === "broker" ? brokerOrg : null;
@@ -915,7 +900,8 @@ export const processInbound = internalAction({
         emailContent: storedInboundEmailContent(parsedInboundEmail),
         messageId,
         resendEmailId: resendEmailId || undefined,
-        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
+        attachments:
+          attachmentRecords.length > 0 ? attachmentRecords : undefined,
         pendingEmailId:
           matchedParentEmailMessage?.pendingEmailId ?? correlatedPendingEmailId,
       },

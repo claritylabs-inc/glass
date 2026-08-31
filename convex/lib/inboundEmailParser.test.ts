@@ -5,19 +5,30 @@ import {
   rewrittenSubjectForwardFixture,
 } from "./__fixtures__/inboundEmailParser";
 import {
+  extractPendingEmailIdsFromHeaders,
   formatInboundEmailForAgent,
   hasEmailParticipantEvidence,
   parseInboundEmail,
   resolveForwardReplyAddress,
 } from "./inboundEmailParser";
 
+describe("extractPendingEmailIdsFromHeaders", () => {
+  test("keeps replies to pending emails sent before and after the rebrand", () => {
+    expect(
+      extractPendingEmailIdsFromHeaders([
+        "<glass-pending-legacy-draft@glass.insure>",
+        "<spot-pending-current-draft@spot.insure>",
+        "<glass-pending-legacy-draft@glass.insure>",
+      ]),
+    ).toEqual(["legacy-draft", "current-draft"]);
+  });
+});
+
 describe("parseInboundEmail", () => {
   test("separates a current Gmail reply from quoted history", () => {
     const parsed = parseInboundEmail(gmailReplyFixture);
 
-    expect(parsed.currentText).toBe(
-      "Thanks, please proceed with the renewal.",
-    );
+    expect(parsed.currentText).toBe("Thanks, please proceed with the renewal.");
     expect(parsed.quotedText).toContain("Alice Example <alice@example.com>");
     expect(parsed.rawText).toBe(gmailReplyFixture.text);
     expect(parsed.forwarded).toBeUndefined();
@@ -97,10 +108,7 @@ describe("parseInboundEmail", () => {
     ];
 
     expect(
-      hasEmailParticipantEvidence(
-        messages,
-        "existing.participant@example.com",
-      ),
+      hasEmailParticipantEvidence(messages, "existing.participant@example.com"),
     ).toBe(true);
     expect(
       hasEmailParticipantEvidence(messages, "new.sender@example.com"),

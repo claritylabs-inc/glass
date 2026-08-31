@@ -37,11 +37,27 @@ export function getLegacyAgentDomains(): string[] {
 }
 
 export function getAgentDomains(): string[] {
-  return uniqueDomains([DEFAULT_AGENT_DOMAIN, getAgentDomain(), ...getLegacyAgentDomains()]);
+  return uniqueDomains([
+    DEFAULT_AGENT_DOMAIN,
+    getAgentDomain(),
+    ...getLegacyAgentDomains(),
+  ]);
+}
+
+export function getAgentRecipientAddresses(
+  handle: string,
+  threadSuffix?: string,
+): string[] {
+  return getAgentDomains().flatMap((domain) => [
+    `${handle}@${domain}`,
+    ...(threadSuffix ? [`${handle}+${threadSuffix}@${domain}`] : []),
+  ]);
 }
 
 export function getNotificationEmailDomain(): string {
-  return process.env.NOTIFICATION_EMAIL_DOMAIN ?? DEFAULT_NOTIFICATION_EMAIL_DOMAIN;
+  return (
+    process.env.NOTIFICATION_EMAIL_DOMAIN ?? DEFAULT_NOTIFICATION_EMAIL_DOMAIN
+  );
 }
 
 export function getAuthEmailDomain(): string {
@@ -63,7 +79,10 @@ export function getNotificationFromAddress(fromName: string): string {
 }
 
 function sanitizeFromName(value: string): string {
-  return value.replace(/[\r\n<>]/g, " ").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/[\r\n<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function getAuthFromAddress(fromName?: string): string {
@@ -72,7 +91,9 @@ export function getAuthFromAddress(fromName?: string): string {
   const address =
     extractEmailAddress(configured ?? fallback) ??
     `noreply@${getAuthEmailDomain()}`;
-  const displayName = sanitizeFromName(fromName ?? DEFAULT_AUTH_EMAIL_FROM_NAME);
+  const displayName = sanitizeFromName(
+    fromName ?? DEFAULT_AUTH_EMAIL_FROM_NAME,
+  );
   return `${displayName} <${address}>`;
 }
 
@@ -118,8 +139,12 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function extractSixDigitCodeCandidates(...values: Array<string | undefined>): string[] {
-  const candidates = values.flatMap((value) => value?.match(/\b\d{6}\b/g) ?? []);
+function extractSixDigitCodeCandidates(
+  ...values: Array<string | undefined>
+): string[] {
+  const candidates = values.flatMap(
+    (value) => value?.match(/\b\d{6}\b/g) ?? [],
+  );
   return uniqueStrings(candidates);
 }
 
@@ -136,12 +161,18 @@ function stringValue(value: unknown): string | undefined {
 }
 
 function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
-function compactMetadata(record: Record<string, unknown>): Record<string, unknown> {
+function compactMetadata(
+  record: Record<string, unknown>,
+): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined && value !== ""),
+    Object.entries(record).filter(
+      ([, value]) => value !== undefined && value !== "",
+    ),
   );
 }
 
@@ -167,7 +198,11 @@ function summarizeAttachments(attachments: unknown): {
   count: number;
   items: Array<Record<string, unknown>>;
 } {
-  const list = Array.isArray(attachments) ? attachments : attachments ? [attachments] : [];
+  const list = Array.isArray(attachments)
+    ? attachments
+    : attachments
+      ? [attachments]
+      : [];
   return {
     count: list.length,
     items: list.map(summarizeAttachment),
@@ -192,7 +227,10 @@ function formatRecipientList(value: string | string[] | undefined): string {
 }
 
 export function isLocalEmailCaptureEnabled(): boolean {
-  return process.env.SPOT_ENV?.trim().toLowerCase() === "local" && getEmailDeliveryMode() === "capture";
+  return (
+    process.env.SPOT_ENV?.trim().toLowerCase() === "local" &&
+    getEmailDeliveryMode() === "capture"
+  );
 }
 
 export function logLocalEmailCapture(details: LocalEmailCaptureLog): boolean {
@@ -243,7 +281,8 @@ function prefixSubject(subject: string): string {
 
 export function getEmailDeliveryMode(): EmailDeliveryMode {
   const configured = process.env.EMAIL_DELIVERY_MODE?.trim().toLowerCase();
-  if (configured === "restricted" || configured === "capture") return configured;
+  if (configured === "restricted" || configured === "capture")
+    return configured;
   return "live";
 }
 
@@ -276,14 +315,18 @@ function withOriginalRecipientHeaders(
       ...(recipients.bcc.length
         ? { "X-Spot-Original-Bcc": recipients.bcc.join(", ") }
         : {}),
-      ...(process.env.SPOT_ENV ? { "X-Spot-Environment": process.env.SPOT_ENV } : {}),
+      ...(process.env.SPOT_ENV
+        ? { "X-Spot-Environment": process.env.SPOT_ENV }
+        : {}),
     },
   };
 }
 
-function preparePayloadForDelivery(
-  payload: ResendPayload,
-): { payload?: ResendPayload; captured?: boolean; error?: string } {
+function preparePayloadForDelivery(payload: ResendPayload): {
+  payload?: ResendPayload;
+  captured?: boolean;
+  error?: string;
+} {
   const mode = getEmailDeliveryMode();
   if (mode === "live") return { payload };
 
@@ -314,7 +357,9 @@ function preparePayloadForDelivery(
         subject: prefixSubject(payload.subject),
         headers: {
           ...payload.headers,
-          ...(process.env.SPOT_ENV ? { "X-Spot-Environment": process.env.SPOT_ENV } : {}),
+          ...(process.env.SPOT_ENV
+            ? { "X-Spot-Environment": process.env.SPOT_ENV }
+            : {}),
         },
       },
     };
@@ -348,7 +393,8 @@ export async function sendResendEmail(
   const prepared = preparePayloadForDelivery(payload);
   if (prepared.captured) return { ok: true, id: "captured" };
   if (prepared.error) return { ok: false, error: prepared.error };
-  if (!prepared.payload) return { ok: false, error: "Email payload was not prepared" };
+  if (!prepared.payload)
+    return { ok: false, error: "Email payload was not prepared" };
 
   const apiKey = process.env.AUTH_RESEND_KEY;
   if (!apiKey) return { ok: false, error: "AUTH_RESEND_KEY not set" };

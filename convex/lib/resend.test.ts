@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   getAgentDomain,
   getAgentDomains,
+  getAgentRecipientAddresses,
   getEmailDeliveryMode,
   isLocalEmailCaptureEnabled,
   logLocalEmailCapture,
@@ -38,6 +39,19 @@ describe("agent email domains", () => {
       "agents.example.com",
       "spot.claritylabs.inc",
       "old.example.com",
+    ]);
+  });
+
+  test("recognizes canonical and legacy recipients for inbound mode detection", () => {
+    vi.stubEnv("LEGACY_AGENT_DOMAINS", "glass.insure,spot.claritylabs.inc");
+
+    expect(getAgentRecipientAddresses("broker", "thread-1")).toEqual([
+      "broker@spot.insure",
+      "broker+thread-1@spot.insure",
+      "broker@glass.insure",
+      "broker+thread-1@glass.insure",
+      "broker@spot.claritylabs.inc",
+      "broker+thread-1@spot.claritylabs.inc",
     ]);
   });
 });
@@ -95,7 +109,9 @@ describe("email delivery modes", () => {
     expect(block).toContain('"contentType":"application/pdf"');
     expect(block).not.toContain("raw-base64-secret");
     expect(block).toContain("text:\nYour Spot code is 654321.");
-    expect(block).toContain("html:\n<p>Your Spot code is <strong>654321</strong>.</p>");
+    expect(block).toContain(
+      "html:\n<p>Your Spot code is <strong>654321</strong>.</p>",
+    );
   });
 
   test("does not treat email template colors as OTP candidates", async () => {
@@ -157,9 +173,15 @@ describe("email delivery modes", () => {
     });
 
     expect(logged).toBe(true);
-    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("kind: suppressed-invite-otp");
-    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("to: invitee@example.com");
-    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain("codeCandidates: 112233");
+    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain(
+      "kind: suppressed-invite-otp",
+    );
+    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain(
+      "to: invitee@example.com",
+    );
+    expect(String(logSpy.mock.calls[0]?.[0] ?? "")).toContain(
+      "codeCandidates: 112233",
+    );
 
     vi.stubEnv("SPOT_ENV", "dev");
     expect(
@@ -199,7 +221,9 @@ describe("email delivery modes", () => {
     expect(callBody.cc).toBeUndefined();
     expect(callBody.bcc).toBeUndefined();
     expect(callBody.subject).toBe("[DEV] Policy update");
-    expect(callBody.headers["X-Spot-Original-To"]).toContain("person@example.com");
+    expect(callBody.headers["X-Spot-Original-To"]).toContain(
+      "person@example.com",
+    );
     expect(callBody.headers["X-Spot-Environment"]).toBe("dev");
   });
 
