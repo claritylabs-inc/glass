@@ -362,3 +362,7 @@ npm run conductor:slack-fixture -- --text "<@U-SPOT> summarize my policy"
 
 The command signs a native Slack Events API fixture with the worktree-only
 secret and records the response through the same durable Slack tables.
+During the rebrand transition, local fixture ingestion accepts the canonical
+`U-SPOT` mention when a preserved worktree still stores the synthetic
+`U-GLASS` bot identity. This compatibility is restricted to the known local
+fixture team and channel and never applies to deployed Slack traffic.
