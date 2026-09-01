@@ -4,7 +4,7 @@ import { api } from "@/convex/_generated/api";
 import { createSpotSocialImage } from "@/lib/spot-social-image";
 import { SpotWordmark, ogFonts } from "../../opengraph-image";
 
-export const alt = "Spot from Clarity Labs";
+export const alt = "Spot";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 

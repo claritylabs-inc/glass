@@ -147,13 +147,13 @@ const TERMINAL_IDENTITIES = {
 };
 const SEND_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 const TYPING_REFRESH_MS = 4_000;
-const CONTACT_CARD_NAME = "Spot from Clarity Labs";
+const CONTACT_CARD_NAME = "Spot";
 const CONTACT_CARD_EMAIL =
   process.env.SPOT_AGENT_EMAIL ?? "agent@spot.insure";
 const CONTACT_CARD_PHONE = resolveContactCardPhone();
 const CONTACT_CARD_URL = "https://spot.insure";
 const CONTACT_CARD_NOTE =
-  "Spot is an insurance intelligence assistant from Clarity Labs for policies, certificates, renewals, and broker follow-ups.";
+  "Spot is an insurance intelligence assistant from Tools for Enlightenment for policies, certificates, renewals, and broker follow-ups.";
 const SPECTRUM_MINI_APP = {
   appName: "Spectrum",
   extensionBundleId: "codes.photon.Spectrum.MessagesExtension",
@@ -505,7 +505,10 @@ async function sendSpotContactCard(space: Space): Promise<void> {
   await space.send(
     contact({
       name: { formatted: CONTACT_CARD_NAME },
-      org: { name: "Clarity Labs", title: "Insurance intelligence assistant" },
+      org: {
+        name: "Tools for Enlightenment",
+        title: "Insurance intelligence assistant",
+      },
       phones,
       emails: [{ value: CONTACT_CARD_EMAIL, type: "work" }],
       urls: [CONTACT_CARD_URL],

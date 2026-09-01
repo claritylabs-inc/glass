@@ -21,7 +21,7 @@ export function getEmailAgentFromName(broker?: BrokerBranding): string {
     const base = broker.agentDisplayName || broker.name;
     return `${base} Agent`;
   }
-  return "Spot from Clarity Labs";
+  return "Spot";
 }
 
 export function buildEmailSignature(
@@ -38,7 +38,7 @@ export function buildEmailSignature(
     agentName,
     agentEmail,
     ...(hasBroker
-      ? ["", `powered by Spot from Clarity Labs - ${poweredByUrl}`]
+      ? ["", `from Tools for Enlightenment - ${poweredByUrl}`]
       : []),
   ].join("\n");
 
@@ -57,7 +57,7 @@ export function buildEmailSignature(
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     ...(hasBroker
       ? [
-          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Spot from Clarity Labs</a></p>`,
+          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">from Tools for Enlightenment</a></p>`,
         ]
       : []),
   ].join("\n");

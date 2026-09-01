@@ -217,7 +217,7 @@ function getAgentFromName(broker?: BrokerBranding): string {
     const base = broker.agentDisplayName || broker.name;
     return `${base} Agent`;
   }
-  return "Spot from Clarity Labs";
+  return "Spot";
 }
 
 function buildSignature(
@@ -234,7 +234,7 @@ function buildSignature(
     agentName,
     agentEmail,
     ...(hasBroker
-      ? ["", `powered by Spot from Clarity Labs — ${poweredByUrl}`]
+      ? ["", `from Tools for Enlightenment — ${poweredByUrl}`]
       : []),
   ].join("\n");
 
@@ -253,7 +253,7 @@ function buildSignature(
     `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
     ...(hasBroker
       ? [
-          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">powered by Spot from Clarity Labs</a></p>`,
+          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">from Tools for Enlightenment</a></p>`,
         ]
       : []),
   ].join("\n");
@@ -656,7 +656,7 @@ export const processInbound = internalAction({
         headers["References"] = data.message_id;
       }
       const result = await sendResendEmail({
-        from: `Spot from Clarity Labs <${agentAddress}>`,
+        from: `Spot <${agentAddress}>`,
         to: fromEmail,
         subject,
         html: demo.html,

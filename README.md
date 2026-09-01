@@ -4,7 +4,7 @@ Client-facing instructions for web chat, email, iMessage, Slack, connected
 mailboxes, notifications, and document delivery are in the
 [Spot client help](docs/help/README.md) section.
 
-Spot is Clarity Labs' insurance intelligence platform. It combines document extraction, conversational AI, org memory, broker/client workspaces, connected vendor/client access, and API/MCP surfaces in one system.
+Spot is the insurance intelligence platform from Tools for Enlightenment. It combines document extraction, conversational AI, org memory, broker/client workspaces, connected vendor/client access, and API/MCP surfaces in one system.
 
 For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 
@@ -230,7 +230,7 @@ Common variables used across major workflows:
 - `CLIENT_PORTAL_URL` / `APP_SITE_URL` — client portal URL. Defaults to `https://app.spot.insure`.
 - `spot.claritylabs.inc` is the legacy browser host and redirects to `app.spot.insure`.
 - `AUTH_LINK_SITE_URL` — optional override for auth, login, signup, and invite links. Defaults to `https://app.spot.insure`; `auth.spot.insure` is only the default email sender domain.
-- `AUTH_EMAIL_FROM` — optional mailbox-address override for OTP sign-in emails. The sender name is `Spot from Clarity Labs` unless a branded sender name is supplied by the email flow; the default address is `noreply@auth.spot.insure`.
+- `AUTH_EMAIL_FROM` — optional mailbox-address override for OTP sign-in emails. The sender name is `Spot` unless a branded sender name is supplied by the email flow; the default address is `noreply@auth.spot.insure`.
 - `SITE_URL` — legacy fallback for client-facing links when the newer portal URL variables are not set.
 
 Not every flow requires every variable; requirements depend on which features you are running.

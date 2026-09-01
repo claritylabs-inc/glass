@@ -13,7 +13,7 @@ export async function generateMetadata({
   const broker = await fetchQuery(api.orgs.publicBrokerBySlug, { slug }).catch(() => null);
   if (!broker) return {};
   const whiteLabelingEnabled = broker.whiteLabelingEnabled !== false;
-  const title = whiteLabelingEnabled ? broker.name : "Spot from Clarity Labs";
+  const title = whiteLabelingEnabled ? broker.name : "Spot";
   const description = `Join ${title} to manage your insurance and coverage.`;
   return {
     title: { absolute: title },

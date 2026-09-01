@@ -76,8 +76,9 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-const DEFAULT_TITLE = "Spot from Clarity Labs";
-const DEFAULT_DESCRIPTION = "Insurance policy intelligence by Clarity Labs";
+const DEFAULT_TITLE = "Spot";
+const DEFAULT_DESCRIPTION =
+  "Insurance policy intelligence from Tools for Enlightenment";
 
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await getViewerBranding();
