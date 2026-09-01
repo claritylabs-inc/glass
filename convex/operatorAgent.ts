@@ -3265,52 +3265,153 @@ export const getPendingConfirmationInternal = internalQuery({
   },
 });
 
-export const createOrGetChannelThreadInternal = internalMutation({
+const channelThreadArgs = {
+  operatorUserId: v.id("users"),
+  channel: v.union(
+    v.literal("slack"),
+    v.literal("imessage"),
+    v.literal("mcp"),
+  ),
+  conversationKey: v.string(),
+  title: v.optional(v.string()),
+  shared: v.optional(v.boolean()),
+};
+
+async function createOrGetChannelThread(
+  ctx: MutationCtx,
   args: {
-    operatorUserId: v.id("users"),
-    channel: v.union(
-      v.literal("slack"),
-      v.literal("imessage"),
-      v.literal("mcp"),
-    ),
-    conversationKey: v.string(),
-    title: v.optional(v.string()),
-    shared: v.optional(v.boolean()),
+    operatorUserId: Id<"users">;
+    channel: "slack" | "imessage" | "mcp";
+    conversationKey: string;
+    title?: string;
+    shared?: boolean;
+  },
+) {
+  await requireOperatorForUser(ctx, args.operatorUserId);
+  const conversationKey = normalizeOperatorConversationKey(
+    args.conversationKey,
+  );
+  if (args.shared && args.channel !== "slack") {
+    throw new Error("Only Slack channel conversations may be shared");
+  }
+  const existing = args.shared
+    ? await ctx.db
+        .query("operatorAgentThreads")
+        .withIndex("channel_conversation", (index) =>
+          index
+            .eq("channel", args.channel)
+            .eq("conversationKey", conversationKey),
+        )
+        .unique()
+    : await ctx.db
+        .query("operatorAgentThreads")
+        .withIndex("owner_conversation", (index) =>
+          index
+            .eq("ownerUserId", args.operatorUserId)
+            .eq("channel", args.channel)
+            .eq("conversationKey", conversationKey),
+        )
+        .unique();
+  if (existing) {
+    return { threadId: existing._id, created: false, title: existing.title };
+  }
+  const threadId = await insertOperatorThread(ctx, {
+    operatorUserId: args.operatorUserId,
+    channel: args.channel,
+    title: args.title,
+    conversationKey,
+    visibility: args.shared ? "shared" : "private",
+  });
+  return {
+    threadId,
+    created: true,
+    title: normalizeOperatorThreadTitle(args.title),
+  };
+}
+
+export const createOrGetChannelThreadInternal = internalMutation({
+  args: channelThreadArgs,
+  handler: async (ctx, args) => {
+    const result = await createOrGetChannelThread(ctx, args);
+    return result.threadId;
+  },
+});
+
+export const createOrGetChannelThreadWithStatusInternal = internalMutation({
+  args: channelThreadArgs,
+  handler: async (ctx, args) => {
+    return createOrGetChannelThread(ctx, args);
+  },
+});
+
+export const getSlackThreadTitleContextInternal = internalQuery({
+  args: {
+    threadId: v.id("operatorAgentThreads"),
+    expectedTitle: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireOperatorForUser(ctx, args.operatorUserId);
-    const conversationKey = normalizeOperatorConversationKey(
-      args.conversationKey,
-    );
-    if (args.shared && args.channel !== "slack") {
-      throw new Error("Only Slack channel conversations may be shared");
+    const thread = await ctx.db.get(args.threadId);
+    if (
+      !thread ||
+      thread.channel !== "slack" ||
+      thread.title !== args.expectedTitle
+    ) {
+      return null;
     }
-    const existing = args.shared
-      ? await ctx.db
-          .query("operatorAgentThreads")
-          .withIndex("channel_conversation", (index) =>
-            index
-              .eq("channel", args.channel)
-              .eq("conversationKey", conversationKey),
-          )
-          .unique()
-      : await ctx.db
-          .query("operatorAgentThreads")
-          .withIndex("owner_conversation", (index) =>
-            index
-              .eq("ownerUserId", args.operatorUserId)
-              .eq("channel", args.channel)
-              .eq("conversationKey", conversationKey),
-          )
-          .unique();
-    if (existing) return existing._id;
-    return insertOperatorThread(ctx, {
-      operatorUserId: args.operatorUserId,
-      channel: args.channel,
-      title: args.title,
-      conversationKey,
-      visibility: args.shared ? "shared" : "private",
+    const message = await ctx.db
+      .query("operatorAgentMessages")
+      .withIndex("thread", (index) => index.eq("threadId", args.threadId))
+      .order("asc")
+      .filter((query) => query.eq(query.field("role"), "user"))
+      .first();
+    return message ? { message } : null;
+  },
+});
+
+export const scheduleSlackThreadTitleInternal = internalMutation({
+  args: {
+    threadId: v.id("operatorAgentThreads"),
+    expectedTitle: v.string(),
+    titlePrefix: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const thread = await ctx.db.get(args.threadId);
+    if (
+      !thread ||
+      thread.channel !== "slack" ||
+      thread.title !== args.expectedTitle
+    ) {
+      return false;
+    }
+    await ctx.scheduler.runAfter(
+      0,
+      internal.actions.threadTitle.generateOperatorSlack,
+      args,
+    );
+    return true;
+  },
+});
+
+export const updateSlackThreadTitleInternal = internalMutation({
+  args: {
+    threadId: v.id("operatorAgentThreads"),
+    expectedTitle: v.string(),
+    title: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const thread = await ctx.db.get(args.threadId);
+    if (
+      !thread ||
+      thread.channel !== "slack" ||
+      thread.title !== args.expectedTitle
+    ) {
+      return false;
+    }
+    await ctx.db.patch(args.threadId, {
+      title: normalizeOperatorThreadTitle(args.title),
+      updatedAt: dayjs().valueOf(),
     });
+    return true;
   },
 });
 

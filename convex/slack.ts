@@ -18,6 +18,10 @@ import {
   slackActorUserId,
 } from "./lib/slackInteractions";
 import { getOperatorSlackConfig } from "./lib/operatorSlackConfig";
+import {
+  slackChannelTitlePrefix,
+  slackThreadTitle,
+} from "./lib/slackThreadTitle";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -961,6 +965,9 @@ export const prepareBatch = internalMutation({
           : (actorUserId ?? connection.serviceUserId);
 
       let thread = existingThread;
+      let titleGeneration:
+        | { expectedTitle: string; titlePrefix: string }
+        | undefined;
       if (!thread) {
         const channelLabel =
           membership?.status === "active"
@@ -969,11 +976,16 @@ export const prepareBatch = internalMutation({
               ? binding.channelName
               : threadChannelId;
         const actorName = actor.displayName ?? event.senderUserId;
+        const channelTitlePrefix = slackChannelTitlePrefix({
+          channelId: threadChannelId,
+          channelName: channelLabel,
+        });
+        const initialTitle = isDirectMessage
+          ? `DM · ${actorName}`
+          : slackThreadTitle(channelTitlePrefix, actorName);
         const threadId = await ctx.db.insert("threads", {
           orgId: connection.clientOrgId,
-          title: isDirectMessage
-            ? `DM · ${actorName}`
-            : `#${channelLabel} · ${actorName}`,
+          title: initialTitle,
           createdBy: isUserPrivate ? privateOwnerId : connection.serviceUserId,
           lastMessageAt: event.receivedAt,
           originChannel: "slack",
@@ -993,6 +1005,12 @@ export const prepareBatch = internalMutation({
         });
         thread = await ctx.db.get(threadId);
         if (!thread) throw new Error("Could not create Slack thread");
+        if (!isDirectMessage) {
+          titleGeneration = {
+            expectedTitle: initialTitle,
+            titlePrefix: channelTitlePrefix,
+          };
+        }
       } else if (isUserPrivate) {
         if (
           thread.createdBy !== privateOwnerId ||
@@ -1042,6 +1060,17 @@ export const prepareBatch = internalMutation({
           `[Attached ${inboundAttachments.map((attachment) => attachment.filename).join(", ") || "file"}]`,
         attachments: attachments.length ? attachments : undefined,
       });
+      if (titleGeneration) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.actions.threadTitle.generate,
+          {
+            threadId: thread._id,
+            userMessageId: messageId,
+            ...titleGeneration,
+          },
+        );
+      }
       await ctx.db.patch(thread._id, {
         lastMessageAt: event.receivedAt,
         archivedAt: undefined,

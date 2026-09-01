@@ -111,6 +111,15 @@ describe("Slack worker HTTP adapter", () => {
       isBot: false,
       botUserId: "U-SPOT",
     });
+    const channel = await workerRequest("/channel", {
+      teamId: "T-CUSTOMER",
+      channelId: "C-PRIMARY",
+    }).then((response) => response.json());
+    assert.deepEqual(channel, {
+      teamId: "T-CUSTOMER",
+      channelId: "C-PRIMARY",
+      name: "c-primary",
+    });
   });
 
   test("reconciles authorization and channel identity without exposing credentials", async () => {
