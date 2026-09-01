@@ -259,11 +259,33 @@ describe("procurement requests", () => {
         updatedAt: 2,
       });
     });
+    const unscopedClaim = await fixture.t.mutation(
+      internal.companyInformation.claimClientFileInternal,
+      { clientFileId: linkedFileId },
+    );
+    expect(unscopedClaim.status).toBe("claimed");
+    if (unscopedClaim.status !== "claimed") {
+      throw new Error("Expected unscoped file claim");
+    }
+    expect(unscopedClaim.source.requestId).toBeUndefined();
+
     await operator.mutation(api.procurementRequests.updateFileItem, {
       fileItemId: fileItem.fileItemId,
       clientFileId: linkedFileId,
       status: "available",
     });
+    const scopedClaim = await fixture.t.mutation(
+      internal.companyInformation.claimClientFileInternal,
+      { clientFileId: linkedFileId },
+    );
+    expect(scopedClaim.status).toBe("claimed");
+    if (scopedClaim.status !== "claimed") {
+      throw new Error("Expected request-scoped file claim");
+    }
+    expect(scopedClaim.source.requestId).toBe(request.requestId);
+    expect(scopedClaim.source.sourceFingerprint).not.toBe(
+      unscopedClaim.source.sourceFingerprint,
+    );
 
     const details = await operator.query(api.procurementRequests.get, {
       requestId: request.requestId,

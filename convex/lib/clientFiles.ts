@@ -16,6 +16,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./userFacingErrors";
+import { scheduleClientFileCompanyInformation } from "../companyInformation";
 
 type ClientFilePatch = {
   name?: string;
@@ -90,7 +91,9 @@ export async function updateClientFileByOperator(
   await requireOperatorForUser(ctx, args.operatorUserId);
   await assertNoOperatorImpersonation(ctx, args.operatorUserId);
   const file = await ctx.db.get(args.clientFileId);
-  if (!file) throw new Error("Client file not found");
+  if (!file || file.archivedAt || file.deletedAt) {
+    throw new Error("Client file not found");
+  }
   const organization = await requireClientOrganization(ctx, file.orgId);
   if (
     args.name === undefined &&
@@ -203,6 +206,7 @@ export async function createClientFileFromOperatorAttachment(
     createdAt: now,
     updatedAt: now,
   });
+  await scheduleClientFileCompanyInformation(ctx, clientFileId);
   await writeOperatorAudit(ctx, {
     operatorUserId: args.operatorUserId,
     type: "setup_write",

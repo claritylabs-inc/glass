@@ -19,6 +19,7 @@ import {
   type OrgMemoryProvenance,
   type OrgMemoryType,
 } from "./lib/orgMemoryPolicy";
+import { stableCompanyInformationHash } from "./lib/companyInformationExtraction";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
@@ -292,6 +293,7 @@ async function updateMemoryContent(
     content,
     source,
     sourceRef: undefined,
+    sourceRefs: undefined,
     provenance: undefined,
     updatedAt,
   });
@@ -393,6 +395,118 @@ export const upsert = internalMutation({
     });
   },
 });
+
+const COMPANY_INFORMATION_MEMORY_PREFIX = "company-information:org:";
+
+export async function reconcileExtractedCompanyMemory(
+  ctx: MutationCtx,
+  args: {
+    orgId: Id<"organizations">;
+    facts: Array<{
+      sourceRef: string;
+      content: string;
+      confidence: number;
+      observedAt: number;
+    }>;
+  },
+) {
+  const orgName = await orgNameById(ctx, args.orgId);
+  const grouped = new Map<
+    string,
+    {
+      content: string;
+      confidence: number;
+      observedAt: number;
+      sourceRefs: Set<string>;
+    }
+  >();
+  for (const fact of args.facts) {
+    const content = normalizeMemoryContent(fact.content).slice(0, 280);
+    if (
+      !isCompanyContextMemory({
+        type: "fact",
+        content,
+        orgName,
+        provenance: {
+          kind: "organization_fact",
+          derivation: "company_profile_extraction",
+          schemaVersion: "organization-fact-v1",
+        },
+      })
+    ) {
+      continue;
+    }
+    const key = memoryContentKey(content);
+    const current = grouped.get(key);
+    if (current) {
+      current.confidence = Math.max(current.confidence, fact.confidence);
+      current.observedAt = Math.max(current.observedAt, fact.observedAt);
+      current.sourceRefs.add(fact.sourceRef);
+    } else {
+      grouped.set(key, {
+        content,
+        confidence: fact.confidence,
+        observedAt: fact.observedAt,
+        sourceRefs: new Set([fact.sourceRef]),
+      });
+    }
+  }
+
+  const existing = await ctx.db
+    .query("orgMemory")
+    .withIndex("organization", (q) => q.eq("orgId", args.orgId))
+    .take(500);
+  const generated = existing.filter((memory) =>
+    memory.sourceRef?.startsWith(COMPANY_INFORMATION_MEMORY_PREFIX),
+  );
+  const existingByRef = new Map(
+    generated.map((memory) => [memory.sourceRef!, memory]),
+  );
+  const desiredRefs = new Set<string>();
+  const now = dayjs().valueOf();
+
+  for (const [key, fact] of grouped) {
+    const sourceRef = `${COMPANY_INFORMATION_MEMORY_PREFIX}${stableCompanyInformationHash(key)}`;
+    desiredRefs.add(sourceRef);
+    const sourceRefs = [...fact.sourceRefs].sort();
+    const source: "email" | "extraction" = sourceRefs.every((ref) =>
+      ref.startsWith("procurement-email-thread:"),
+    )
+      ? "email"
+      : "extraction";
+    const current = existingByRef.get(sourceRef);
+    const patch = {
+      content: fact.content,
+      source,
+      sourceRefs,
+      confidence: fact.confidence,
+      observedAt: fact.observedAt,
+      provenance: {
+        kind: "organization_fact" as const,
+        derivation: "company_profile_extraction" as const,
+        schemaVersion: "organization-fact-v1" as const,
+      },
+      updatedAt: now,
+    };
+    if (current) {
+      await ctx.db.patch(current._id, patch);
+    } else {
+      await ctx.db.insert("orgMemory", {
+        orgId: args.orgId,
+        type: "fact",
+        sourceRef,
+        createdAt: now,
+        ...patch,
+      });
+    }
+  }
+
+  for (const memory of generated) {
+    if (!desiredRefs.has(memory.sourceRef!)) {
+      await ctx.db.delete(memory._id);
+    }
+  }
+}
 
 export const bulkInsert = internalMutation({
   args: {

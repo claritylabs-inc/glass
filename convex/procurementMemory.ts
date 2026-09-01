@@ -12,6 +12,7 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
+import { stableCompanyInformationHash } from "./lib/companyInformationExtraction";
 
 export type ProcurementMemoryKind =
   | "placement_preference"
@@ -24,6 +25,7 @@ export type ProcurementMemorySource =
   | "operator_agent"
   | "mcp"
   | "email"
+  | "document"
   | "procurement_outcome";
 
 const procurementMemoryKindValidator = v.union(
@@ -184,6 +186,119 @@ export async function listProcurementMemory(
   return await Promise.all(filtered.map((row) => memoryView(ctx, row)));
 }
 
+const COMPANY_INFORMATION_MEMORY_PREFIX = "company-information:procurement:";
+
+export async function reconcileExtractedProcurementMemory(
+  ctx: MutationCtx,
+  args: {
+    clientOrgId: Id<"organizations">;
+    facts: Array<{
+      sourceKind: "client_file" | "procurement_email_thread";
+      sourceRef: string;
+      kind: ProcurementMemoryKind;
+      content: string;
+      confidence: number;
+      observedAt: number;
+      actorUserId: Id<"users">;
+      requestId?: Id<"procurementRequests">;
+    }>;
+  },
+) {
+  const grouped = new Map<
+    string,
+    {
+      sourceKinds: Set<"client_file" | "procurement_email_thread">;
+      sourceRefs: Set<string>;
+      kind: ProcurementMemoryKind;
+      content: string;
+      confidence: number;
+      observedAt: number;
+      actorUserId: Id<"users">;
+      requestId?: Id<"procurementRequests">;
+    }
+  >();
+  for (const fact of args.facts) {
+    const content = normalizeContent(fact.content);
+    const requestKey = fact.requestId ? String(fact.requestId) : "unscoped";
+    const contentKey = content.toLowerCase().replace(/[.!?]+$/g, "");
+    const key = `${fact.kind}:${requestKey}:${contentKey}`;
+    const current = grouped.get(key);
+    if (current) {
+      current.sourceKinds.add(fact.sourceKind);
+      current.sourceRefs.add(fact.sourceRef);
+      current.confidence = Math.max(current.confidence, fact.confidence);
+      if (fact.observedAt >= current.observedAt) {
+        current.observedAt = fact.observedAt;
+        current.actorUserId = fact.actorUserId;
+      }
+    } else {
+      grouped.set(key, {
+        sourceKinds: new Set([fact.sourceKind]),
+        sourceRefs: new Set([fact.sourceRef]),
+        kind: fact.kind,
+        content,
+        confidence: fact.confidence,
+        observedAt: fact.observedAt,
+        actorUserId: fact.actorUserId,
+        requestId: fact.requestId,
+      });
+    }
+  }
+
+  const existing = await ctx.db
+    .query("procurementMemory")
+    .withIndex("client", (index) =>
+      index.eq("clientOrgId", args.clientOrgId),
+    )
+    .take(MAX_MEMORY_ROWS);
+  const generated = existing.filter((memory) =>
+    memory.sourceRef?.startsWith(COMPANY_INFORMATION_MEMORY_PREFIX),
+  );
+  const existingByRef = new Map(
+    generated.map((memory) => [memory.sourceRef!, memory]),
+  );
+  const desiredRefs = new Set<string>();
+  const now = dayjs().valueOf();
+
+  for (const [key, fact] of grouped) {
+    const sourceRef = `${COMPANY_INFORMATION_MEMORY_PREFIX}${stableCompanyInformationHash(key)}`;
+    desiredRefs.add(sourceRef);
+    const sourceRefs = [...fact.sourceRefs].sort();
+    const source: "document" | "email" = fact.sourceKinds.has("client_file")
+      ? "document"
+      : "email";
+    const current = existingByRef.get(sourceRef);
+    const patch = {
+      kind: fact.kind,
+      content: fact.content,
+      source,
+      requestId: fact.requestId,
+      sourceRefs,
+      confidence: fact.confidence,
+      observedAt: fact.observedAt,
+      updatedByUserId: fact.actorUserId,
+      updatedAt: now,
+    };
+    if (current) {
+      await ctx.db.patch(current._id, patch);
+    } else {
+      await ctx.db.insert("procurementMemory", {
+        clientOrgId: args.clientOrgId,
+        sourceRef,
+        createdByUserId: fact.actorUserId,
+        createdAt: now,
+        ...patch,
+      });
+    }
+  }
+
+  for (const memory of generated) {
+    if (!desiredRefs.has(memory.sourceRef!)) {
+      await ctx.db.delete(memory._id);
+    }
+  }
+}
+
 async function createMemory(
   ctx: MutationCtx,
   args: {
@@ -304,6 +419,10 @@ async function updateMemory(
       args.confidence === undefined
         ? memory.confidence
         : (args.confidence ?? undefined),
+    source: "manual",
+    sourceRef: undefined,
+    sourceRefs: undefined,
+    observedAt: undefined,
     updatedByUserId: args.operatorUserId,
     updatedAt,
   });

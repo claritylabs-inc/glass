@@ -33,10 +33,19 @@ import {
   throwUserFacingError,
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
+import {
+  removeEmailThreadCompanyInformation,
+  scheduleClientFileCompanyInformation,
+  scheduleEmailThreadCompanyInformation,
+} from "./companyInformation";
 
 const MAX_REQUESTS = 100;
 const MAX_EMAIL_THREADS = 200;
 const MAX_TEXT = 20_000;
+
+function activeEmailThread(thread: Doc<"procurementEmailThreads">) {
+  return !thread.archivedAt && !thread.deletedAt;
+}
 
 const requestStatusValidator = v.union(
   v.literal("draft"),
@@ -273,7 +282,7 @@ async function requestSummary(ctx: Ctx, request: Doc<"procurementRequests">) {
     ).length,
     outstandingFileCount: files.filter((file) => file.status === "requested")
       .length,
-    emailThreadCount: emails.length,
+    emailThreadCount: emails.filter(activeEmailThread).length,
   };
 }
 
@@ -325,7 +334,12 @@ export async function getProcurementRequestDetails(
       };
     }),
   );
-  return { request: summary, outreaches, files, emailThreads };
+  return {
+    request: summary,
+    outreaches,
+    files,
+    emailThreads: emailThreads.filter(activeEmailThread),
+  };
 }
 
 export async function listProcurementRequestSummaries(
@@ -821,6 +835,9 @@ export async function createProcurementFileItemByOperator(
     createdAt: now,
     updatedAt: now,
   });
+  if (args.clientFileId) {
+    await scheduleClientFileCompanyInformation(ctx, args.clientFileId);
+  }
   await writeOperatorAudit(ctx, {
     operatorUserId: args.operatorUserId,
     type: "setup_write",
@@ -906,6 +923,15 @@ export async function updateProcurementFileItemByOperator(
   );
   if (fields.length === 0) throw new Error("No file fields changed");
   await ctx.db.patch(item._id, patch);
+  if (args.clientFileId !== undefined) {
+    for (const clientFileId of new Set(
+      [item.clientFileId, args.clientFileId ?? undefined].filter(
+        (id): id is Id<"clientFiles"> => Boolean(id),
+      ),
+    )) {
+      await scheduleClientFileCompanyInformation(ctx, clientFileId);
+    }
+  }
   await writeOperatorAudit(ctx, {
     operatorUserId: args.operatorUserId,
     type: "setup_write",
@@ -959,19 +985,21 @@ export async function listProcurementEmailThreads(
     if (request.clientOrgId !== args.clientOrgId) {
       throw new Error("Procurement request does not belong to this client");
     }
-    return await ctx.db
+    const rows = await ctx.db
       .query("procurementEmailThreads")
       .withIndex("request", (index) => index.eq("requestId", request._id))
       .order("desc")
-      .take(limit);
+      .take(MAX_EMAIL_THREADS);
+    return rows.filter(activeEmailThread).slice(0, limit);
   }
-  return await ctx.db
+  const rows = await ctx.db
     .query("procurementEmailThreads")
     .withIndex("organization", (index) =>
       index.eq("clientOrgId", args.clientOrgId),
     )
     .order("desc")
-    .take(limit);
+    .take(MAX_EMAIL_THREADS);
+  return rows.filter(activeEmailThread).slice(0, limit);
 }
 
 export const listEmailThreads = query({
@@ -991,7 +1019,7 @@ export async function getProcurementEmailThreadDetails(
   emailThreadId: Id<"procurementEmailThreads">,
 ) {
   const thread = await ctx.db.get(emailThreadId);
-  if (!thread) return null;
+  if (!thread || thread.deletedAt) return null;
   const [request, addressedRequest, messages] = await Promise.all([
     requireRequest(ctx, thread.requestId),
     requireRequest(ctx, thread.addressedRequestId),
@@ -1006,7 +1034,7 @@ export async function getProcurementEmailThreadDetails(
       files: await Promise.all(
         message.clientFileIds.map(async (clientFileId) => {
           const file = await ctx.db.get(clientFileId);
-          return file
+          return file && !file.archivedAt && !file.deletedAt
             ? {
                 clientFileId,
                 name: file.name,
@@ -1051,7 +1079,9 @@ export async function updateProcurementEmailThreadByOperator(
 ) {
   await requireDirectOperatorWrite(ctx, args.operatorUserId);
   const thread = await ctx.db.get(args.emailThreadId);
-  if (!thread) throw new Error("Procurement email thread not found");
+  if (!thread || thread.deletedAt) {
+    throw new Error("Procurement email thread not found");
+  }
   const currentRequest = await requireRequest(ctx, thread.requestId);
   const patch: Partial<Doc<"procurementEmailThreads">> = {
     updatedAt: dayjs().valueOf(),
@@ -1071,6 +1101,7 @@ export async function updateProcurementEmailThreadByOperator(
       .query("procurementEmailMessages")
       .withIndex("thread", (index) => index.eq("threadId", thread._id))
       .collect();
+    const movedClientFileIds = new Set<Id<"clientFiles">>();
     for (const message of messages) {
       const fileItems = await ctx.db
         .query("procurementFileItems")
@@ -1079,6 +1110,9 @@ export async function updateProcurementEmailThreadByOperator(
         )
         .collect();
       for (const fileItem of fileItems) {
+        if (fileItem.clientFileId) {
+          movedClientFileIds.add(fileItem.clientFileId);
+        }
         await ctx.db.patch(fileItem._id, {
           requestId: nextRequest._id,
           updatedByUserId: args.operatorUserId,
@@ -1086,10 +1120,16 @@ export async function updateProcurementEmailThreadByOperator(
         });
       }
     }
+    for (const clientFileId of movedClientFileIds) {
+      await scheduleClientFileCompanyInformation(ctx, clientFileId);
+    }
   }
   const fields = Object.keys(patch).filter((field) => field !== "updatedAt");
   if (fields.length === 0) throw new Error("No email thread fields changed");
   await ctx.db.patch(thread._id, patch);
+  if (patch.requestId) {
+    await scheduleEmailThreadCompanyInformation(ctx, thread._id);
+  }
   await writeOperatorAudit(ctx, {
     operatorUserId: args.operatorUserId,
     type: "setup_write",
@@ -1120,6 +1160,94 @@ export const updateEmailThread = mutation({
       ...args,
       source: "operator",
     });
+  },
+});
+
+async function emailThreadClientFileIds(
+  ctx: QueryCtx | MutationCtx,
+  emailThreadId: Id<"procurementEmailThreads">,
+) {
+  const messages = await ctx.db
+    .query("procurementEmailMessages")
+    .withIndex("thread", (index) => index.eq("threadId", emailThreadId))
+    .collect();
+  return [
+    ...new Set(messages.flatMap((message) => message.clientFileIds)),
+  ];
+}
+
+export const setEmailThreadArchived = mutation({
+  args: {
+    emailThreadId: v.id("procurementEmailThreads"),
+    archived: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    await requireDirectOperatorWrite(ctx, operator.userId);
+    const thread = await ctx.db.get(args.emailThreadId);
+    if (!thread || thread.deletedAt) {
+      throw new Error("Procurement email thread not found");
+    }
+    const now = dayjs().valueOf();
+    await ctx.db.patch(thread._id, {
+      archivedAt: args.archived ? now : undefined,
+      archivedByUserId: args.archived ? operator.userId : undefined,
+      updatedAt: now,
+    });
+    if (args.archived) {
+      await removeEmailThreadCompanyInformation(ctx, thread._id);
+    } else {
+      await scheduleEmailThreadCompanyInformation(ctx, thread._id);
+      for (const clientFileId of await emailThreadClientFileIds(
+        ctx,
+        thread._id,
+      )) {
+        await scheduleClientFileCompanyInformation(ctx, clientFileId);
+      }
+    }
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: thread.clientOrgId,
+      summary: `${args.archived ? "Archived" : "Restored"} procurement email thread ${thread.subject}`,
+      metadata: {
+        domain: "procurement",
+        emailThreadId: thread._id,
+        operation: args.archived ? "archive" : "restore",
+      },
+    });
+    return { emailThreadId: thread._id, archived: args.archived };
+  },
+});
+
+export const removeEmailThread = mutation({
+  args: { emailThreadId: v.id("procurementEmailThreads") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    await requireDirectOperatorWrite(ctx, operator.userId);
+    const thread = await ctx.db.get(args.emailThreadId);
+    if (!thread || thread.deletedAt) return { deleted: false as const };
+    const now = dayjs().valueOf();
+    await ctx.db.patch(thread._id, {
+      deletedAt: now,
+      deletedByUserId: operator.userId,
+      archivedAt: thread.archivedAt ?? now,
+      archivedByUserId: thread.archivedByUserId ?? operator.userId,
+      updatedAt: now,
+    });
+    await removeEmailThreadCompanyInformation(ctx, thread._id);
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: thread.clientOrgId,
+      summary: `Deleted procurement email thread ${thread.subject}`,
+      metadata: {
+        domain: "procurement",
+        emailThreadId: thread._id,
+        operation: "delete",
+      },
+    });
+    return { deleted: true as const };
   },
 });
 
@@ -1213,7 +1341,10 @@ export const ingestEmailInternal = internalMutation({
         .first();
       if (!parent) continue;
       const candidate = await ctx.db.get(parent.threadId);
-      if (candidate?.clientOrgId === addressedRequest.clientOrgId) {
+      if (
+        candidate?.clientOrgId === addressedRequest.clientOrgId &&
+        !candidate.deletedAt
+      ) {
         thread = candidate;
         break;
       }
@@ -1231,6 +1362,7 @@ export const ingestEmailInternal = internalMutation({
       thread =
         candidates.find(
           (candidate) =>
+            !candidate.deletedAt &&
             candidate.addressedRequestId === addressedRequest._id &&
             procurementParticipantsOverlap(
               candidate.participantEmails,
@@ -1282,6 +1414,9 @@ export const ingestEmailInternal = internalMutation({
       operatorEmails,
     });
     const now = dayjs().valueOf();
+    const restoredClientFileIds = thread?.archivedAt
+      ? await emailThreadClientFileIds(ctx, thread._id)
+      : [];
     let threadId: Id<"procurementEmailThreads">;
     if (thread) {
       threadId = thread._id;
@@ -1290,6 +1425,8 @@ export const ingestEmailInternal = internalMutation({
         participantEmails: classificationParticipants,
         latestMessageAt: args.receivedAt,
         messageCount: thread.messageCount + 1,
+        archivedAt: undefined,
+        archivedByUserId: undefined,
         ...(thread.categorySource === "auto"
           ? {
               category: inferred.category,
@@ -1334,6 +1471,7 @@ export const ingestEmailInternal = internalMutation({
         expectedUpdatedAt: stored.expectedUpdatedAt,
         hint: boundedClientFileHint(args.subject),
       });
+      await scheduleClientFileCompanyInformation(ctx, stored.clientFileId);
     }
     const clientFileIds: Id<"clientFiles">[] = storedClientFiles.map(
       (stored) => stored.clientFileId,
@@ -1375,6 +1513,10 @@ export const ingestEmailInternal = internalMutation({
         createdAt: now,
         updatedAt: now,
       });
+    }
+    await scheduleEmailThreadCompanyInformation(ctx, threadId);
+    for (const clientFileId of restoredClientFileIds) {
+      await scheduleClientFileCompanyInformation(ctx, clientFileId);
     }
     return {
       duplicate: false as const,
