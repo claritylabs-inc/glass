@@ -876,13 +876,35 @@ function procurementMemoryKind(value: unknown): ProcurementMemoryKind {
   }
 }
 
-function normalizeStorageId(ctx: QueryCtx | MutationCtx, value: unknown) {
-  if (typeof value !== "string") {
-    throw new Error("Attachment file ID is required");
-  }
-  const fileId = ctx.db.system.normalizeId("_storage", value);
-  if (!fileId) throw new Error("Invalid attachment file ID");
-  return fileId;
+const MAX_RESOLVABLE_THREAD_ATTACHMENTS = 50;
+
+async function resolveThreadAttachmentFileId(
+  ctx: MutationCtx,
+  threadId: Id<"operatorAgentThreads">,
+  value: unknown,
+) {
+  const reference = typeof value === "string" ? value.trim() : "";
+  const exact = reference
+    ? ctx.db.system.normalizeId("_storage", reference)
+    : null;
+  if (exact) return exact;
+  const attachments = await ctx.db
+    .query("operatorAgentAttachments")
+    .withIndex("thread_file", (index) => index.eq("threadId", threadId))
+    .take(MAX_RESOLVABLE_THREAD_ATTACHMENTS);
+  const matches = attachments.filter(
+    (attachment) =>
+      attachment.filename.trim().toLowerCase() === reference.toLowerCase(),
+  );
+  if (matches.length === 1) return matches[0]!.fileId;
+  const available = attachments
+    .map((attachment) => attachment.filename)
+    .join(", ");
+  throw new Error(
+    `Attachment file ID must be an exact storage ID or filename from this thread's attachment references${
+      available ? `. This thread holds: ${available}` : ""
+    }`,
+  );
 }
 
 async function requireOperatorThread(
@@ -2122,7 +2144,11 @@ async function executeToolDomain(
 
   if (toolName === "add_client_file") {
     const orgId = normalizeOrganizationId(ctx, input.orgId);
-    const attachmentFileId = normalizeStorageId(ctx, input.attachmentFileId);
+    const attachmentFileId = await resolveThreadAttachmentFileId(
+      ctx,
+      args.threadId,
+      input.attachmentFileId,
+    );
     const name = typeof input.name === "string" ? input.name : "";
     const associatedPolicyId = input.policyId
       ? normalizePolicyId(ctx, input.policyId)
@@ -2133,7 +2159,6 @@ async function executeToolDomain(
       orgId,
       attachmentFileId,
       name,
-      clientVisible: input.clientVisible === true,
       policyId: associatedPolicyId,
     });
   }

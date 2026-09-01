@@ -143,7 +143,7 @@ describe("operator procurement tools", () => {
     expect(getOperatorAgentToolSpec("add_client_file")).toMatchObject({
       capability: "operator.client_files.write",
       effect: "reversible_write",
-      confirmation: "exact",
+      confirmation: "none",
       execution: "mutation",
     });
     expect(

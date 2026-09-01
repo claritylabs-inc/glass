@@ -723,14 +723,14 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
   add_client_file: defineOperatorTool({
     version: 1,
     description:
-      "File one attachment from this operator thread in an exact client organization's shared dropbox. Use the exact attachment file ID shown in attachment metadata. Infer a concise factual name from the parsed file contents and the operator's prompt, while preserving the original extension. Defaults to hidden from clients unless the operator explicitly asks to share it.",
+      "File one attachment from this operator thread in an exact client organization's shared dropbox, hidden from the client. Use the exact attachment file ID shown in attachment metadata. Infer a concise factual name from the parsed file contents and the operator's prompt, while preserving the original extension. Filing runs immediately; use update_client_file when the operator asks to show a filed document to the client.",
     inputSchema: z.object({
       orgId: organizationId,
       attachmentFileId: z
         .string()
         .min(1)
         .describe(
-          "Exact storage ID from this operator thread's attachment metadata",
+          "Exact storage ID from this operator thread's attachment metadata, or the exact filename of one attachment in this thread",
         ),
       name: z
         .string()
@@ -739,16 +739,15 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
         .describe(
           "Concise factual document name inferred from the file contents and operator prompt",
         ),
-      clientVisible: z.boolean().optional(),
       policyId: policyId.nullable().optional(),
     }),
     capability: "operator.client_files.write",
     effect: "reversible_write",
     requiredRole: "operator",
-    confirmation: "exact",
+    confirmation: "none",
     target: (input) => ({ kind: "organization", id: input.orgId }),
     summarize: (input) =>
-      `Add ${JSON.stringify(input.name)} to organization ${input.orgId}${input.policyId ? ` for policy ${input.policyId}` : ""}${input.clientVisible ? " and show it to the client" : " hidden from the client"}`,
+      `Add ${JSON.stringify(input.name)} to organization ${input.orgId}${input.policyId ? ` for policy ${input.policyId}` : ""} hidden from the client`,
   }),
   update_client_file: defineOperatorTool({
     version: 1,

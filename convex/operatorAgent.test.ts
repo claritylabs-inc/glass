@@ -986,7 +986,7 @@ describe("operator agent boundary", () => {
     expect(state.response).toMatchObject({ content: "", status: "processing" });
   });
 
-  test("files an exact thread attachment for a client only after confirmation", async () => {
+  test("files an exact thread attachment privately without confirmation", async () => {
     const fixture = await seedOperatorAgentFixture();
     const operator = fixture.t.withIdentity({
       subject: `${fixture.firstOperatorUserId}|session`,
@@ -1035,33 +1035,62 @@ describe("operator agent boundary", () => {
           orgId: fixture.orgId,
           attachmentFileId: fileId,
           name: "123 Main Street Roof Report",
-          clientVisible: false,
         },
         idempotencyKey: "file-roof-report-once",
       },
     );
-    expect(filed.outcome.status).toBe("confirmation_required");
-    if (
-      filed.outcome.status !== "confirmation_required" ||
-      !filed.outcome.confirmationId
-    ) {
-      throw new Error("Expected exact operator confirmation");
+    if (filed.outcome.status !== "succeeded") {
+      throw new Error(JSON.stringify(filed.outcome));
     }
+    expect(filed.outcome.result).toMatchObject({ status: "filed" });
 
-    const confirmation = await fixture.t.mutation(
-      internal.operatorAgent.confirmActionInternal,
+    const rejected = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
       {
         operatorUserId: fixture.firstOperatorUserId,
         threadId,
-        confirmationId: filed.outcome.confirmationId,
-        decision: "approve",
         channel: "mcp",
+        toolName: "add_client_file",
+        input: {
+          orgId: fixture.orgId,
+          attachmentFileId: "F0BU8DYAEG6",
+          name: "Slack file identifier",
+        },
+        idempotencyKey: "file-roof-report-slack-id",
       },
     );
-    if (confirmation.status === "failed") {
-      throw new Error(JSON.stringify(confirmation));
-    }
-    expect(confirmation).toMatchObject({ status: "completed" });
+    expect(rejected.outcome).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("exact storage ID"),
+    });
+
+    const byFilename = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "add_client_file",
+        input: {
+          orgId: fixture.orgId,
+          attachmentFileId: "scan-004.pdf",
+          name: "123 Main Street Roof Report",
+        },
+        idempotencyKey: "file-roof-report-by-filename",
+      },
+    );
+    expect(byFilename.outcome).toMatchObject({
+      status: "succeeded",
+      result: { status: "already_filed" },
+    });
+
+    const confirmations = await fixture.t.run((ctx) =>
+      ctx.db
+        .query("operatorAgentConfirmations")
+        .filter((query) => query.eq(query.field("threadId"), threadId))
+        .collect(),
+    );
+    expect(confirmations).toEqual([]);
 
     const clientFiles = await fixture.t.run((ctx) =>
       ctx.db
@@ -1147,14 +1176,6 @@ describe("operator agent boundary", () => {
         input: {
           policyId: invalidResourceReference,
           certificateHolder: "Carroll Avenue Holdings",
-        },
-      },
-      {
-        toolName: "add_client_file",
-        input: {
-          orgId: fixture.orgId,
-          attachmentFileId: invalidResourceReference,
-          name: "Building appraisal.pdf",
         },
       },
       {
@@ -1266,9 +1287,6 @@ describe("operator agent boundary", () => {
 
   test("requests confirmation for every exact-confirmed resource tool with valid references", async () => {
     const fixture = await seedOperatorAgentFixture();
-    const operator = fixture.t.withIdentity({
-      subject: `${fixture.firstOperatorUserId}|session`,
-    });
     const now = dayjs().valueOf();
     const seeded = await fixture.t.run(async (ctx) => {
       const brokerOrgId = await ctx.db.insert("organizations", {
@@ -1435,35 +1453,6 @@ describe("operator agent boundary", () => {
         requirementId,
       };
     });
-    const attachmentFileId = await fixture.t.run((ctx) =>
-      ctx.storage.store(new Blob(["Roof report"], { type: "application/pdf" })),
-    );
-    const attachmentThreadId = await operator.mutation(
-      api.operatorAgent.createThread,
-      {},
-    );
-    const upload = await operator.mutation(
-      api.operatorAgent.generateUploadUrl,
-      {},
-    );
-    await operator.mutation(api.operatorAgent.registerUpload, {
-      uploadIntentId: upload.uploadIntentId,
-      fileId: attachmentFileId,
-    });
-    await operator.mutation(api.operatorAgent.sendMessage, {
-      threadId: attachmentThreadId,
-      content: "File this appraisal for the client.",
-      attachments: [
-        {
-          fileId: attachmentFileId,
-          filename: "appraisal.pdf",
-          contentType: "application/pdf",
-          size: 11,
-          uploadIntentId: upload.uploadIntentId,
-        },
-      ],
-    });
-
     const cases = [
       {
         toolName: "confirm_policy_fact",
@@ -1531,16 +1520,6 @@ describe("operator agent boundary", () => {
         input: {
           requirementSourceDocumentId: seeded.requirementSourceDocumentId,
           requirementId: seeded.requirementId,
-        },
-      },
-      {
-        toolName: "add_client_file",
-        threadId: attachmentThreadId,
-        input: {
-          orgId: fixture.orgId,
-          attachmentFileId,
-          name: "Building appraisal",
-          policyId: fixture.policyId,
         },
       },
       {
@@ -1635,17 +1614,14 @@ describe("operator agent boundary", () => {
     ] as const;
 
     for (const [index, testCase] of cases.entries()) {
-      const threadId =
-        "threadId" in testCase
-          ? testCase.threadId
-          : await fixture.t.mutation(
-              internal.operatorAgent.createOrGetChannelThreadInternal,
-              {
-                operatorUserId: fixture.firstOperatorUserId,
-                channel: "mcp",
-                conversationKey: `mcp:valid-preflight-${index}`,
-              },
-            );
+      const threadId = await fixture.t.mutation(
+        internal.operatorAgent.createOrGetChannelThreadInternal,
+        {
+          operatorUserId: fixture.firstOperatorUserId,
+          channel: "mcp",
+          conversationKey: `mcp:valid-preflight-${index}`,
+        },
+      );
       const result = await fixture.t.action(
         internal.operatorAgent.invokeRegisteredToolInternal,
         {

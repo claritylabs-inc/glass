@@ -22,7 +22,6 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "delete_procurement_memory",
   "retry_failed_policy_extraction",
   "generate_coi",
-  "add_client_file",
   "update_client_file",
   "create_procurement_request",
   "update_procurement_request",
@@ -457,41 +456,6 @@ async function preflightProcurementFileUpdate(
   }
 }
 
-async function preflightAddClientFile(ctx: MutationCtx, args: PreflightArgs) {
-  const organization = await requireClientOrganization(ctx, args.input.orgId);
-  await requirePolicyForClient(ctx, args.input.policyId, organization._id, {
-    active: true,
-  });
-  const attachmentFileId =
-    typeof args.input.attachmentFileId === "string"
-      ? ctx.db.system.normalizeId("_storage", args.input.attachmentFileId)
-      : null;
-  if (!attachmentFileId) {
-    throw new Error(
-      "Operator attachment must be an exact storage ID returned by this thread",
-    );
-  }
-  const attachment = await ctx.db
-    .query("operatorAgentAttachments")
-    .withIndex("thread_file", (query) =>
-      query.eq("threadId", args.threadId).eq("fileId", attachmentFileId),
-    )
-    .first();
-  if (!attachment || attachment.operatorUserId !== args.operatorUserId) {
-    throw new Error("Operator attachment was not found in this thread");
-  }
-  const existing = await ctx.db
-    .query("clientFiles")
-    .withIndex("storage", (query) => query.eq("fileId", attachmentFileId))
-    .first();
-  if (existing && existing.orgId !== organization._id) {
-    throw new Error("Operator attachment is already filed for another client");
-  }
-  if (!existing && !(await ctx.db.system.get("_storage", attachmentFileId))) {
-    throw new Error("Operator attachment file is unavailable");
-  }
-}
-
 async function preflightUpdateClientFile(
   ctx: MutationCtx,
   input: Record<string, unknown>,
@@ -641,9 +605,6 @@ export async function preflightOperatorToolConfirmation(
     }
     case "generate_coi":
       await preflightGenerateCoi(ctx, args.input);
-      return;
-    case "add_client_file":
-      await preflightAddClientFile(ctx, args);
       return;
     case "update_client_file":
       await preflightUpdateClientFile(ctx, args.input);
