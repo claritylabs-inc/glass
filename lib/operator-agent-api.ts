@@ -7,8 +7,10 @@ type BackendThread = {
   _id: string;
   channel: "chat" | "slack" | "imessage" | "mcp";
   title: string;
+  initialContext?: PageContext;
   createdAt: number;
   lastMessageAt: number;
+  archivedAt?: number;
 };
 
 type BackendMessage = {
@@ -58,8 +60,9 @@ type BackendConfirmation = {
   expiresAt: number;
 };
 
-type ListThreadsArgs = { limit?: number };
+type ListThreadsArgs = { limit?: number; archived?: boolean };
 type GetThreadArgs = { threadId: string };
+type SetThreadArchiveArgs = { threadId: string };
 type GetThreadResult = {
   thread: BackendThread;
   messages: BackendMessage[];
@@ -104,8 +107,10 @@ export type OperatorAgentThread = {
   id: string;
   channel: "chat" | "slack" | "imessage" | "mcp";
   title: string;
+  initialContext?: PageContext;
   createdAt: number;
   lastMessageAt: number;
+  archivedAt?: number;
 };
 
 export type OperatorAgentConfirmation = {
@@ -142,6 +147,16 @@ export const operatorAgentApi = {
   createThread: makeFunctionReference<"mutation", CreateThreadArgs, string>(
     "operatorAgent:createThread",
   ),
+  archiveThread: makeFunctionReference<
+    "mutation",
+    SetThreadArchiveArgs,
+    { archivedAt: number }
+  >("operatorAgent:archiveThread"),
+  unarchiveThread: makeFunctionReference<
+    "mutation",
+    SetThreadArchiveArgs,
+    { restored: true }
+  >("operatorAgent:unarchiveThread"),
   generateUploadUrl: makeFunctionReference<
     "mutation",
     Record<string, never>,
@@ -192,8 +207,10 @@ function normalizeThread(thread: BackendThread): OperatorAgentThread {
     id: thread._id,
     channel: thread.channel,
     title: thread.title,
+    initialContext: thread.initialContext,
     createdAt: thread.createdAt,
     lastMessageAt: thread.lastMessageAt,
+    archivedAt: thread.archivedAt,
   };
 }
 

@@ -1,12 +1,15 @@
 "use client";
 
 import {
+  createContext,
   forwardRef,
+  useContext,
   type MouseEvent,
   type Ref,
   type ReactNode,
 } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { typeStyle } from "@/lib/typography";
 
@@ -58,10 +61,34 @@ type PillButtonAnchorProps = CommonPillButtonProps &
 
 type PillButtonProps = PillButtonButtonProps | PillButtonAnchorProps;
 
+const PillButtonSizeContext = createContext<PillButtonSize | undefined>(
+  undefined,
+);
+
+function PillButtonSizeProvider({
+  children,
+  size,
+}: {
+  children: ReactNode;
+  size: PillButtonSize;
+}) {
+  return (
+    <PillButtonSizeContext.Provider value={size}>
+      {children}
+    </PillButtonSizeContext.Provider>
+  );
+}
+
 const MOTION_TRANSITION = {
   duration: 0.08,
   ease: [0.2, 0, 0, 1] as const,
 };
+
+const MotionLink = motion.create(Link);
+
+function isInternalAppHref(href: string) {
+  return href.startsWith("/") && !href.startsWith("//");
+}
 
 type VariantConfig = {
   classes: string;
@@ -122,11 +149,14 @@ const expandableIconSizeClasses: Record<PillButtonSize, string> = {
 const expandingLabelClasses =
   "min-w-0 -translate-x-0.5 overflow-hidden whitespace-nowrap opacity-0 transition-[opacity,transform] duration-[180ms] [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-focus-visible/pill:translate-x-0 group-focus-visible/pill:opacity-100 group-focus-visible/pill:duration-[280ms] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:translate-x-0 [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:duration-[280ms]";
 
-const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonProps>(
+const PillButton = forwardRef<
+  HTMLButtonElement | HTMLAnchorElement,
+  PillButtonProps
+>(
   (
     {
       variant = "primary",
-      size = "default",
+      size: requestedSize,
       iconOnly = false,
       expandLabel = false,
       label,
@@ -138,11 +168,17 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
     },
     ref,
   ) => {
+    const inheritedSize = useContext(PillButtonSizeContext);
+    const size = inheritedSize ?? requestedSize ?? "default";
     const isIcon = iconOnly || variant === "icon";
     const isExpandableIcon =
-      !iconOnly && variant === "icon" && expandLabel && Boolean(label);
+      !iconOnly &&
+      (variant === "icon" || variant === "secondary") &&
+      expandLabel &&
+      Boolean(label);
     const showsLabel =
-      !iconOnly && Boolean(label) &&
+      !iconOnly &&
+      Boolean(label) &&
       (isExpandableIcon || variant === "iconLabel");
     const config = variantConfig[variant];
     const disabled = "disabled" in props && Boolean(props.disabled);
@@ -155,9 +191,7 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
       </span>
     ) : null;
     const content = isExpandableIcon ? (
-      <span
-        className="grid min-w-0 grid-cols-[auto_minmax(0,0fr)] items-center gap-0 transition-[grid-template-columns,gap] duration-[180ms] [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-focus-visible/pill:grid-cols-[auto_minmax(0,1fr)] group-focus-visible/pill:gap-1.5 group-focus-visible/pill:duration-[280ms] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:grid-cols-[auto_minmax(0,1fr)] [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:gap-1.5 [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:duration-[280ms]"
-      >
+      <span className="grid min-w-0 grid-cols-[auto_minmax(0,0fr)] items-center gap-0 transition-[grid-template-columns,gap] duration-[180ms] [transition-timing-function:cubic-bezier(0.33,1,0.68,1)] group-focus-visible/pill:grid-cols-[auto_minmax(0,1fr)] group-focus-visible/pill:gap-1.5 group-focus-visible/pill:duration-[280ms] motion-reduce:transition-none [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:grid-cols-[auto_minmax(0,1fr)] [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:gap-1.5 [@media(hover:hover)_and_(pointer:fine)]:group-hover/pill:duration-[280ms]">
         {children}
         {renderedLabel}
       </span>
@@ -182,27 +216,55 @@ const PillButton = forwardRef<HTMLButtonElement | HTMLAnchorElement, PillButtonP
     );
 
     if ("href" in props && props.href) {
-      const { disabled: _disabled, onClick, tabIndex, ...anchorProps } = props;
+      const {
+        disabled: _disabled,
+        href,
+        onClick,
+        tabIndex,
+        ...anchorProps
+      } = props;
+      const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+        if (disabled) {
+          event.preventDefault();
+          return;
+        }
+        onClick?.(event);
+      };
+      const sharedAnchorProps = {
+        "aria-disabled": disabled || undefined,
+        "aria-label": ariaLabel ?? label,
+        "data-icon-only": isIcon || undefined,
+        "data-expand-label": isExpandableIcon || undefined,
+        className: classes,
+        onClick: handleClick,
+        tabIndex: disabled ? -1 : tabIndex,
+        title: title ?? (isIcon && !isExpandableIcon ? label : undefined),
+        transition: MOTION_TRANSITION,
+        whileHover: disabled ? undefined : config.hover,
+        whileTap: disabled ? undefined : config.tap,
+      };
+      const useClientRouter =
+        isInternalAppHref(href) && anchorProps.download === undefined;
+
+      if (useClientRouter) {
+        return (
+          <MotionLink
+            ref={ref as Ref<HTMLAnchorElement>}
+            href={href}
+            prefetch
+            {...sharedAnchorProps}
+            {...anchorProps}
+          >
+            {content}
+          </MotionLink>
+        );
+      }
+
       return (
         <motion.a
           ref={ref as Ref<HTMLAnchorElement>}
-          aria-disabled={disabled || undefined}
-          aria-label={ariaLabel ?? label}
-          data-icon-only={isIcon || undefined}
-          data-expand-label={isExpandableIcon || undefined}
-          className={classes}
-          onClick={(event: MouseEvent<HTMLAnchorElement>) => {
-            if (disabled) {
-              event.preventDefault();
-              return;
-            }
-            onClick?.(event);
-          }}
-          tabIndex={disabled ? -1 : tabIndex}
-          title={title ?? (isIcon && !isExpandableIcon ? label : undefined)}
-          transition={MOTION_TRANSITION}
-          whileHover={disabled ? undefined : config.hover}
-          whileTap={disabled ? undefined : config.tap}
+          href={href}
+          {...sharedAnchorProps}
           {...anchorProps}
         >
           {content}
@@ -236,6 +298,7 @@ PillButton.displayName = "PillButton";
 
 export {
   PillButton,
+  PillButtonSizeProvider,
   type PillButtonProps,
   type PillButtonVariant,
   type PillButtonSize,

@@ -1,5 +1,6 @@
 "use node";
 
+import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
@@ -101,6 +102,10 @@ import {
   pendingEmailDraftFingerprint,
 } from "../lib/actionConfirmationFingerprint";
 import { extractEmailAddress } from "../lib/emailAddress";
+import {
+  procurementInboxTokenFromAddresses,
+  uniqueProcurementEmails,
+} from "../lib/procurement";
 
 const SPOT_PUBLIC_URL = getClientPortalUrl();
 
@@ -574,7 +579,8 @@ export const processInbound = internalAction({
     const fromName = extractName(data.from);
     const toAddresses = parseAddressList(data.to);
     const ccAddresses = parseAddressList(data.cc);
-    const allAddresses = [...toAddresses, ...ccAddresses];
+    const bccAddresses = parseAddressList(data.bcc);
+    const allAddresses = [...toAddresses, ...ccAddresses, ...bccAddresses];
 
     if (!fromEmail) {
       console.error("No from address found in payload");
@@ -587,6 +593,109 @@ export const processInbound = internalAction({
         "Loop prevention: ignoring email from agent domain",
         fromEmail,
       );
+      return;
+    }
+
+    const procurementInboxToken = procurementInboxTokenFromAddresses(
+      allAddresses,
+      getAgentDomains(),
+    );
+    if (procurementInboxToken) {
+      const resolvedProcurementInbox = await ctx.runQuery(
+        internal.procurementRequests.resolveInboxInternal,
+        { inboxToken: procurementInboxToken },
+      );
+      if (!resolvedProcurementInbox) {
+        console.warn("Unknown procurement forwarding address");
+        return;
+      }
+
+      const emailContent = data.email_id
+        ? await fetchEmailContent(data.email_id)
+        : {};
+      const parsedInboundEmail = parseInboundEmail({
+        subject: data.subject,
+        text: emailContent.text,
+        html: emailContent.html,
+      });
+      const rawHeaders = emailContent.headers;
+      const header = (name: string) => {
+        const lower = name.toLowerCase();
+        if (Array.isArray(rawHeaders)) {
+          return (rawHeaders as Array<{ name?: string; value?: string }>).find(
+            (item) => item.name?.toLowerCase() === lower,
+          )?.value;
+        }
+        if (rawHeaders && typeof rawHeaders === "object") {
+          return (
+            (rawHeaders as Record<string, string>)[lower] ??
+            (rawHeaders as Record<string, string>)[name]
+          );
+        }
+        return undefined;
+      };
+      const inReplyTo = header("In-Reply-To");
+      const references =
+        header("References")?.trim().split(/\s+/).filter(Boolean) ?? [];
+      const forwardedParticipants = parsedInboundEmail.forwarded
+        ? [
+            parsedInboundEmail.forwarded.email.from?.address,
+            ...parsedInboundEmail.forwarded.email.to.map(
+              (mailbox) => mailbox.address,
+            ),
+            ...parsedInboundEmail.forwarded.email.cc.map(
+              (mailbox) => mailbox.address,
+            ),
+          ].filter((address): address is string => Boolean(address))
+        : [];
+      const participantEmails = uniqueProcurementEmails(
+        forwardedParticipants.length > 0
+          ? forwardedParticipants
+          : [fromEmail, ...toAddresses, ...ccAddresses, ...bccAddresses],
+      ).filter(
+        (address) =>
+          !address
+            .slice(0, address.lastIndexOf("@"))
+            .startsWith("procurement+"),
+      );
+      const downloaded = data.email_id
+        ? await fetchAttachments(data.email_id)
+        : [];
+      const storedAttachments = [];
+      for (const attachment of downloaded) {
+        const bytes = new Uint8Array(attachment.buffer);
+        const fileId = await ctx.storage.store(
+          new Blob([bytes], { type: attachment.content_type }),
+        );
+        storedAttachments.push({
+          fileId,
+          filename: attachment.filename,
+          contentType: attachment.content_type,
+          size: attachment.size,
+        });
+      }
+      const receivedAt = dayjs(webhook.created_at).isValid()
+        ? dayjs(webhook.created_at).valueOf()
+        : dayjs().valueOf();
+      await ctx.runMutation(internal.procurementRequests.ingestEmailInternal, {
+        addressedRequestId: resolvedProcurementInbox.request._id,
+        resendEmailId: resendEmailId || undefined,
+        messageId: data.message_id,
+        inReplyTo,
+        references,
+        subject: data.subject ?? "(no subject)",
+        fromName,
+        fromEmail,
+        toAddresses,
+        ccAddresses,
+        bccAddresses,
+        currentText: parsedInboundEmail.currentText,
+        bodyHtml: parsedInboundEmail.rawHtml,
+        forwarded: parsedInboundEmail.forwarded,
+        participantEmails,
+        attachments: storedAttachments,
+        receivedAt,
+      });
       return;
     }
 
@@ -687,10 +796,9 @@ export const processInbound = internalAction({
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, {
       orgId,
     });
-    const memberEmails = orgMembers
-      .flatMap((membership) =>
-        membership.user?.email ? [membership.user.email] : [],
-      );
+    const memberEmails = orgMembers.flatMap((membership) =>
+      membership.user?.email ? [membership.user.email] : [],
+    );
     const firstAdmin = orgMembers.find(
       (membership) => membership.role === "admin",
     );
@@ -901,7 +1009,8 @@ export const processInbound = internalAction({
         emailContent: storedInboundEmailContent(parsedInboundEmail),
         messageId,
         resendEmailId: resendEmailId || undefined,
-        attachments: attachmentRecords.length > 0 ? attachmentRecords : undefined,
+        attachments:
+          attachmentRecords.length > 0 ? attachmentRecords : undefined,
         pendingEmailId:
           matchedParentEmailMessage?.pendingEmailId ?? correlatedPendingEmailId,
       },

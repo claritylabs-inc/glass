@@ -41,6 +41,10 @@ import {
   coordinateMailboxTask,
   webResearch,
 } from "../lib/chatTools";
+import {
+  filterToolsForWriteAccess,
+  MCP_CHAT_WRITE_TOOL_NAMES,
+} from "../lib/mcpAgentToolAccess";
 import { buildAgentToolExecutors } from "../lib/agentToolExecutors";
 import { classifyPromptInjection, enforceInputLimits } from "../lib/security";
 import type { Id } from "../_generated/dataModel";
@@ -191,179 +195,190 @@ MCP MODE:
       fileId?: Id<"_storage">;
     }> = [];
     const mcpToolArtifacts: Array<{ type: string; data: unknown }> = [];
-    const tools = {
-      ...buildAgentToolExecutors(ctx, {
-        surface: "mcp",
-        orgId: args.orgId,
-        userId: args.userId,
-        scope,
-        threadId,
-        canWrite: args.canWrite,
-        writeUnavailableMessage:
-          args.canWrite === false
-            ? "This MCP token has read-only scope. Reconnect or authorize with write scope to perform that action."
-            : undefined,
-        onResponseAttachment: (attachment) => {
-          responseAttachments.push(attachment);
+    const tools = filterToolsForWriteAccess(
+      {
+        ...buildAgentToolExecutors(ctx, {
+          surface: "mcp",
+          orgId: args.orgId,
+          userId: args.userId,
+          scope,
+          threadId,
+          canWrite: args.canWrite,
+          writeUnavailableMessage:
+            args.canWrite === false
+              ? "This MCP token has read-only scope. Reconnect or authorize with write scope to perform that action."
+              : undefined,
+          onResponseAttachment: (attachment) => {
+            responseAttachments.push(attachment);
+          },
+          onToolArtifact: (artifact) => {
+            mcpToolArtifacts.push(artifact);
+          },
+        }),
+        create_imessage_group_chat: {
+          ...createImessageGroupChat,
+          execute: async (params: {
+            recipients: string[];
+            openingMessage: string;
+            title?: string;
+            confirmed: boolean;
+          }) => {
+            if (!params.confirmed) {
+              return "Ask the caller to confirm before creating a new iMessage group chat.";
+            }
+            return await ctx.runAction(
+              internal.actions.createOutboundImessageGroup
+                .createOutboundImessageGroupInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                recipients: params.recipients,
+                openingMessage: params.openingMessage,
+                title: params.title,
+              },
+            );
+          },
         },
-        onToolArtifact: (artifact) => {
-          mcpToolArtifacts.push(artifact);
+        search_connected_email: {
+          ...searchConnectedEmail,
+          execute: async (params: {
+            query?: string;
+            mailbox?: string;
+            sinceDays?: number;
+            dateFrom?: string;
+            dateTo?: string;
+            limit?: number;
+          }) =>
+            await ctx.runAction(
+              internal.actions.connectedEmail.searchInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                query: params.query,
+                mailbox: params.mailbox,
+                sinceDays: params.sinceDays,
+                dateFrom: params.dateFrom,
+                dateTo: params.dateTo,
+                limit: params.limit,
+              },
+            ),
         },
-      }),
-      create_imessage_group_chat: {
-        ...createImessageGroupChat,
-        execute: async (params: {
-          recipients: string[];
-          openingMessage: string;
-          title?: string;
-          confirmed: boolean;
-        }) => {
-          if (!params.confirmed) {
-            return "Ask the caller to confirm before creating a new iMessage group chat.";
-          }
-          return await ctx.runAction(
-            internal.actions.createOutboundImessageGroup
-              .createOutboundImessageGroupInternal,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              recipients: params.recipients,
-              openingMessage: params.openingMessage,
-              title: params.title,
-            },
-          );
-        },
-      },
-      search_connected_email: {
-        ...searchConnectedEmail,
-        execute: async (params: {
-          query?: string;
-          mailbox?: string;
-          sinceDays?: number;
-          dateFrom?: string;
-          dateTo?: string;
-          limit?: number;
-        }) =>
-          await ctx.runAction(internal.actions.connectedEmail.searchInternal, {
-            orgId: args.orgId,
-            userId: args.userId,
-            query: params.query,
-            mailbox: params.mailbox,
-            sinceDays: params.sinceDays,
-            dateFrom: params.dateFrom,
-            dateTo: params.dateTo,
-            limit: params.limit,
-          }),
-      },
-      read_connected_email: {
-        ...readConnectedEmail,
-        execute: async (params: { emailRef: string }) =>
-          await ctx.runAction(internal.actions.connectedEmail.readInternal, {
-            orgId: args.orgId,
-            userId: args.userId,
-            emailRef: params.emailRef,
-          }),
-      },
-      read_connected_email_attachment: {
-        ...readConnectedEmailAttachment,
-        execute: async (params: { emailRef: string; filename: string }) =>
-          await ctx.runAction(
-            internal.actions.connectedEmail.readAttachmentInternal,
-            {
+        read_connected_email: {
+          ...readConnectedEmail,
+          execute: async (params: { emailRef: string }) =>
+            await ctx.runAction(internal.actions.connectedEmail.readInternal, {
               orgId: args.orgId,
               userId: args.userId,
               emailRef: params.emailRef,
-              filename: params.filename,
-            },
-          ),
-      },
-      import_connected_email_policy_attachments: {
-        ...importConnectedEmailPolicyAttachments,
-        execute: async (params: { emailRef: string; filenames?: string[] }) =>
-          await ctx.runAction(
-            internal.actions.connectedEmail.importPolicyAttachmentsInternal,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              emailRef: params.emailRef,
-              filenames: params.filenames,
-            },
-          ),
-      },
-      import_connected_email_requirement_attachments: {
-        ...importConnectedEmailRequirementAttachments,
-        execute: async (params: {
-          emailRef: string;
-          filenames?: string[];
-          sourceType?:
-            | "lease_agreement"
-            | "client_contract"
-            | "vendor_requirements"
-            | "other";
-          scope?: "vendors" | "own_org";
-        }) =>
-          await ctx.runAction(
-            internal.actions.connectedEmail
-              .importRequirementAttachmentsInternal,
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              emailRef: params.emailRef,
-              filenames: params.filenames,
-              sourceType: params.sourceType,
-              scope: params.scope,
-            },
-          ),
-      },
-      send_connected_vendor_invite: {
-        ...sendConnectedVendorInvite,
-        execute: async (params: {
-          vendorEmail: string;
-          relationshipLabel?: string;
-          note?: string;
-        }) =>
-          await ctx.runAction(
-            internal.connectedOrgs.requestVendorAccessByEmailInternal,
-            {
-              clientOrgId: args.orgId,
-              requestedByUserId: args.userId,
-              vendorEmail: params.vendorEmail,
-              relationshipLabel: params.relationshipLabel,
-              note: params.note,
-            },
-          ),
-      },
-      coordinate_mailbox_task: {
-        ...coordinateMailboxTask,
-        execute: async (params: { task: string }) =>
-          await ctx.runAction(internal.actions.mailboxCoordinator.runInternal, {
-            orgId: args.orgId,
-            userId: args.userId,
-            task: params.task,
-            routingParentId: `${String(userMessageId)}:mcp-agent`,
-          }),
-      },
-      web_research: {
-        ...webResearch,
-        execute: async (params: WebRetrievalInput) => {
-          const result = await runWebRetrieval(ctx, args.orgId, params);
-          if (!result.text) {
+            }),
+        },
+        read_connected_email_attachment: {
+          ...readConnectedEmailAttachment,
+          execute: async (params: { emailRef: string; filename: string }) =>
+            await ctx.runAction(
+              internal.actions.connectedEmail.readAttachmentInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                emailRef: params.emailRef,
+                filename: params.filename,
+              },
+            ),
+        },
+        import_connected_email_policy_attachments: {
+          ...importConnectedEmailPolicyAttachments,
+          execute: async (params: { emailRef: string; filenames?: string[] }) =>
+            await ctx.runAction(
+              internal.actions.connectedEmail.importPolicyAttachmentsInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                emailRef: params.emailRef,
+                filenames: params.filenames,
+              },
+            ),
+        },
+        import_connected_email_requirement_attachments: {
+          ...importConnectedEmailRequirementAttachments,
+          execute: async (params: {
+            emailRef: string;
+            filenames?: string[];
+            sourceType?:
+              | "lease_agreement"
+              | "client_contract"
+              | "vendor_requirements"
+              | "other";
+            scope?: "vendors" | "own_org";
+          }) =>
+            await ctx.runAction(
+              internal.actions.connectedEmail
+                .importRequirementAttachmentsInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                emailRef: params.emailRef,
+                filenames: params.filenames,
+                sourceType: params.sourceType,
+                scope: params.scope,
+              },
+            ),
+        },
+        send_connected_vendor_invite: {
+          ...sendConnectedVendorInvite,
+          execute: async (params: {
+            vendorEmail: string;
+            relationshipLabel?: string;
+            note?: string;
+          }) =>
+            await ctx.runAction(
+              internal.connectedOrgs.requestVendorAccessByEmailInternal,
+              {
+                clientOrgId: args.orgId,
+                requestedByUserId: args.userId,
+                vendorEmail: params.vendorEmail,
+                relationshipLabel: params.relationshipLabel,
+                note: params.note,
+              },
+            ),
+        },
+        coordinate_mailbox_task: {
+          ...coordinateMailboxTask,
+          execute: async (params: { task: string }) =>
+            await ctx.runAction(
+              internal.actions.mailboxCoordinator.runInternal,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                task: params.task,
+                routingParentId: `${String(userMessageId)}:mcp-agent`,
+                canWrite: args.canWrite,
+              },
+            ),
+        },
+        web_research: {
+          ...webResearch,
+          execute: async (params: WebRetrievalInput) => {
+            const result = await runWebRetrieval(ctx, args.orgId, params);
+            if (!result.text) {
+              return {
+                status: "unavailable",
+                attempts: result.attempts,
+                warnings: result.warnings,
+              };
+            }
             return {
-              status: "unavailable",
-              attempts: result.attempts,
+              status: "ok",
+              provider: result.provider,
+              text: result.text,
+              sources: result.sources,
               warnings: result.warnings,
             };
-          }
-          return {
-            status: "ok",
-            provider: result.provider,
-            text: result.text,
-            sources: result.sources,
-            warnings: result.warnings,
-          };
+          },
         },
       },
-    };
+      args.canWrite,
+      MCP_CHAT_WRITE_TOOL_NAMES,
+    );
 
     const fullSystemPrompt =
       systemPrompt +

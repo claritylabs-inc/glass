@@ -986,7 +986,7 @@ function UnifiedThreadActions({
     <>
       <PillButton
         size="compact"
-        variant="icon"
+        variant="secondary"
         onClick={handleCopyThread}
         label="Copy thread"
         expandLabel
@@ -995,7 +995,7 @@ function UnifiedThreadActions({
       </PillButton>
       <PillButton
         size="compact"
-        variant="icon"
+        variant="secondary"
         onClick={handleArchiveToggle}
         label={isArchived ? "Unarchive" : "Archive"}
         expandLabel

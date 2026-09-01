@@ -43,6 +43,13 @@ const TABLES: TableNames[] = [
   "sourceChunks",
   "conversationTurns",
   "policyAuditLog",
+  "procurementFileItems",
+  "procurementEmailMessages",
+  "procurementEmailThreads",
+  "procurementBrokerOutreaches",
+  "procurementRequests",
+  "clientFileUploadIntents",
+  "clientFiles",
   "threads",
   "threadMessages",
   "operatorAgentAttachments",
@@ -68,7 +75,7 @@ function assertDev() {
   // Never set this on prod.
   if (process.env.ALLOW_DEV_CLEAR !== "true") {
     throw new Error(
-      "devClear is disabled. Set ALLOW_DEV_CLEAR=true on the dev deployment only."
+      "devClear is disabled. Set ALLOW_DEV_CLEAR=true on the dev deployment only.",
     );
   }
 }

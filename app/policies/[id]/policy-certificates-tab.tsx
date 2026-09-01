@@ -36,7 +36,7 @@ export function ViewPdfButton({
   if (!url) return null;
   return (
     <PillButton
-      variant="icon"
+      variant="secondary"
       size="compact"
       label={isPdfOpen ? "Hide PDF" : "View PDF"}
       expandLabel

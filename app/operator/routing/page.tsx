@@ -63,7 +63,7 @@ export default function OperatorRoutingPage() {
   const actions =
     activeTab === "routing" ? (
       <PillButton
-        variant="icon"
+        variant="secondary"
         size="compact"
         label={loading ? "Refreshing…" : "Refresh"}
         expandLabel

@@ -3,7 +3,10 @@
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  Brain,
   ClipboardCheck,
+  FileSearch,
+  FolderOpen,
   FileText,
   Settings,
   User,
@@ -16,16 +19,27 @@ import {
 } from "@/components/app-sidebar/nav-item";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import type { OperatorImpersonationTarget } from "@/lib/operator-navigation";
+import { OperatorClientImpersonationAction } from "./operator-client-impersonation-action";
 
 type OperatorClientNavigationSection =
   | "overview"
   | "policies"
+  | "procurement"
+  | "files"
+  | "memory"
   | "compliance"
   | "team"
   | "settings";
 
 const INSURANCE_NAV_ITEMS = [
   { id: "policies", label: "Policies", href: "/policies", icon: FileText },
+  {
+    id: "procurement",
+    label: "Procurement",
+    href: "/procurement",
+    icon: FileSearch,
+  },
   {
     id: "compliance",
     label: "Compliance",
@@ -44,10 +58,28 @@ function activeClientSection({
   basePath: string;
 }): OperatorClientNavigationSection {
   if (
+    pathname === `${basePath}/procurement` ||
+    pathname.startsWith(`${basePath}/procurement/`)
+  ) {
+    return "procurement";
+  }
+  if (
     pathname === `${basePath}/policies` ||
     pathname.startsWith(`${basePath}/policies/`)
   ) {
     return "policies";
+  }
+  if (
+    pathname === `${basePath}/files` ||
+    pathname.startsWith(`${basePath}/files/`)
+  ) {
+    return "files";
+  }
+  if (
+    pathname === `${basePath}/memory` ||
+    pathname.startsWith(`${basePath}/memory/`)
+  ) {
+    return "memory";
   }
   if (
     pathname === `${basePath}/compliance` ||
@@ -64,9 +96,7 @@ function activeClientSection({
   if (pathname === basePath || pathname === `${basePath}/`) {
     if (tab === "team") return "team";
     if (
-      ["features", "channels", "email", "imessage", "slack"].includes(
-        tab ?? "",
-      )
+      ["features", "channels", "email", "imessage", "slack"].includes(tab ?? "")
     ) {
       return "settings";
     }
@@ -78,10 +108,16 @@ export function OperatorClientSidebar({
   collapsed,
   onToggleCollapse,
   clientOrgId,
+  activeImpersonation,
+  impersonationDisabled = false,
+  beforeImpersonationStart,
 }: {
   collapsed: boolean;
   onToggleCollapse: () => void;
   clientOrgId: string;
+  activeImpersonation: OperatorImpersonationTarget | null | undefined;
+  impersonationDisabled?: boolean;
+  beforeImpersonationStart?: () => Promise<boolean | void>;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -120,7 +156,20 @@ export function OperatorClientSidebar({
             active={active === "overview"}
             collapsed={collapsed}
           />
-
+          <SidebarMenuItem
+            href={`${basePath}/files`}
+            label="Files"
+            icon={FolderOpen}
+            active={active === "files"}
+            collapsed={collapsed}
+          />
+          <SidebarMenuItem
+            href={`${basePath}/memory`}
+            label="Memory"
+            icon={Brain}
+            active={active === "memory"}
+            collapsed={collapsed}
+          />
           <SectionHeader label="Insurance" collapsed={collapsed} />
           {INSURANCE_NAV_ITEMS.map((item) => (
             <SidebarMenuItem
@@ -149,6 +198,16 @@ export function OperatorClientSidebar({
             collapsed={collapsed}
           />
         </nav>
+
+        <div className="flex shrink-0 justify-center border-t border-border px-2 py-2">
+          <OperatorClientImpersonationAction
+            clientOrgId={clientOrgId}
+            activeImpersonation={activeImpersonation}
+            beforeStart={beforeImpersonationStart}
+            disabled={impersonationDisabled}
+            collapsed={collapsed}
+          />
+        </div>
       </div>
     </SidebarTooltipProvider>
   );

@@ -1,7 +1,8 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { useState } from "react";
 import {
   Building2,
   List,
@@ -14,7 +15,8 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   SectionHeader,
   SidebarHeaderLink,
@@ -27,13 +29,16 @@ import {
   MENU_ITEM_INACTIVE,
 } from "@/components/app-sidebar/nav-config";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
+import { SidebarThreadArchiveAction } from "@/components/app-sidebar/sidebar-thread-archive-action";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { useOptionalOperatorAgent } from "@/components/operator-agent/operator-agent-provider";
 import { OperatorThreadChannelIcon } from "@/components/operator-agent/operator-thread-channel";
 import {
   normalizeOperatorAgentThreads,
   operatorAgentApi,
 } from "@/lib/operator-agent-api";
 import { typeStyle } from "@/lib/typography";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 export function OperatorSidebar({
   collapsed,
@@ -54,8 +59,42 @@ export function OperatorSidebar({
 }) {
   const { signOut } = useAuthActions();
   const pathname = usePathname();
-  const rawThreads = useQuery(operatorAgentApi.listThreads, { limit: 8 });
+  const router = useRouter();
+  const controller = useOptionalOperatorAgent();
+  const rawThreads = useQuery(operatorAgentApi.listThreads, {
+    limit: 8,
+    archived: false,
+  });
   const threads = normalizeOperatorAgentThreads(rawThreads);
+  const archiveThread = useMutation(operatorAgentApi.archiveThread);
+  const [archivingThreadId, setArchivingThreadId] = useState<string | null>(
+    null,
+  );
+
+  async function handleArchiveThread(threadId: string, isActive: boolean) {
+    setArchivingThreadId(threadId);
+    try {
+      await archiveThread({ threadId });
+      if (controller?.activeThreadId === threadId) {
+        controller.setActiveThreadId(null);
+      }
+      if (isActive) {
+        const nextThread = threads.find((thread) => thread.id !== threadId);
+        router.push(
+          nextThread
+            ? `/operator/threads/${nextThread.id}`
+            : "/operator/threads",
+        );
+      }
+      toast.success("Thread archived");
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not archive the thread"),
+      );
+    } finally {
+      setArchivingThreadId(null);
+    }
+  }
 
   return (
     <SidebarTooltipProvider>
@@ -108,6 +147,11 @@ export function OperatorSidebar({
                   <span className="min-w-0 flex-1 truncate">
                     {thread.title}
                   </span>
+                  <SidebarThreadArchiveAction
+                    disabled={archivingThreadId !== null}
+                    pending={archivingThreadId === thread.id}
+                    onArchive={() => handleArchiveThread(thread.id, isActive)}
+                  />
                 </Link>
               );
             })}

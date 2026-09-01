@@ -8,6 +8,7 @@ import {
   internalAction,
   mutation,
   query,
+  type ActionCtx,
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
@@ -31,11 +32,45 @@ import {
   type OperatorToolRole,
 } from "./lib/operatorAgentToolRegistry";
 import { buildOperatorRunCheckpointSummary } from "./lib/operatorAgentContinuation";
+import { lookupMapboxAddress } from "./lib/mapboxAddress";
 import {
   requireOperator,
   requireOperatorForUser,
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
+import {
+  createClientFileFromOperatorAttachment,
+  updateClientFileByOperator,
+} from "./lib/clientFiles";
+import {
+  createProcurementFileItemByOperator,
+  createProcurementOutreachByOperator,
+  createProcurementRequestByOperator,
+  getProcurementEmailThreadDetails,
+  getProcurementRequestDetails,
+  listProcurementEmailThreads,
+  listProcurementRequestSummaries,
+  updateProcurementEmailThreadByOperator,
+  updateProcurementFileItemByOperator,
+  updateProcurementOutreachByOperator,
+  updateProcurementRequestByOperator,
+} from "./procurementRequests";
+import {
+  createCompanyMemoryByOperator,
+  deleteCompanyMemoryByOperator,
+  updateCompanyMemoryByOperator,
+} from "./orgMemory";
+import {
+  createProcurementMemoryByOperator,
+  deleteProcurementMemoryByOperator,
+  listProcurementMemory,
+  updateProcurementMemoryByOperator,
+  type ProcurementMemoryKind,
+} from "./procurementMemory";
+import {
+  isCompanyContextMemory,
+  rankOrgMemoryForQuery,
+} from "./lib/orgMemoryPolicy";
 
 const operatorChannelValidator = v.union(
   v.literal("chat"),
@@ -57,6 +92,18 @@ const pageContextValidator = v.object({
   entityId: v.optional(v.string()),
   summary: v.optional(v.string()),
 });
+
+const operatorToolExecutionArgs = {
+  operatorUserId: v.id("users"),
+  runId: v.id("operatorAgentRuns"),
+  threadId: v.id("operatorAgentThreads"),
+  threadMessageId: v.id("operatorAgentMessages"),
+  toolName: v.string(),
+  input: v.any(),
+  inputHash: v.string(),
+  idempotencyKey: v.string(),
+  channel: operatorChannelValidator,
+};
 
 const ACTIVE_RUN_STATUSES = new Set([
   "queued",
@@ -111,12 +158,109 @@ type DirectToolOutcome =
     }
   | { status: "failed"; error: string };
 
+type OperatorActionToolResult = {
+  result: unknown;
+  attachments?: OperatorAttachment[];
+};
+
+const OPERATOR_RICH_ACTION_TOOLS = new Set<OperatorAgentToolName>([
+  "lookup_policy",
+  "compare_coverages",
+  "lookup_policy_section",
+  "attach_policy_document",
+  "confirm_policy_fact",
+  "lookup_compliance_requirements",
+  "read_client_file",
+  "attach_client_file",
+  "search_thread_history",
+  "read_thread_attachment",
+]);
+
 function boundedJson(value: unknown, maximum = 8_000) {
   try {
     return JSON.stringify(value).slice(0, maximum);
   } catch {
     return String(value).slice(0, maximum);
   }
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function selectedRecordFields(
+  value: unknown,
+  fields: readonly string[],
+): Record<string, unknown> {
+  const record = recordValue(value);
+  if (!record) return {};
+  return Object.fromEntries(
+    fields.flatMap((field) =>
+      record[field] === undefined ? [] : [[field, record[field]]],
+    ),
+  );
+}
+
+export function normalizeOperatorCoiBatch(
+  value: unknown,
+): OperatorActionToolResult {
+  const batch = recordValue(value) ?? {};
+  const rows = Array.isArray(batch.results) ? batch.results : [];
+  const certificates = rows.map((row) =>
+    selectedRecordFields(row, [
+      "status",
+      "message",
+      "policyId",
+      "fileId",
+      "fileName",
+      "size",
+      "certificateId",
+      "policyCertificateId",
+      "certificateVersionId",
+      "holderId",
+      "versionNumber",
+      "requestKind",
+      "additionalInsuredName",
+      "requiredChanges",
+      "reasonCode",
+      "reason",
+      "evidence",
+      "emailDraft",
+      "brokerHandoffOffered",
+      "rebuildStatus",
+    ]),
+  );
+  const attachments = certificates.flatMap((certificate) => {
+    if (
+      typeof certificate.fileId !== "string" ||
+      typeof certificate.fileName !== "string"
+    ) {
+      return [];
+    }
+    return [
+      {
+        fileId: certificate.fileId as Id<"_storage">,
+        filename: certificate.fileName,
+        contentType: "application/pdf",
+        size: typeof certificate.size === "number" ? certificate.size : 0,
+      },
+    ];
+  });
+  return {
+    result: {
+      ...selectedRecordFields(batch, [
+        "status",
+        "generationBatchId",
+        "requirementSourceDocumentId",
+        "holder",
+      ]),
+      certificates,
+      gaps: Array.isArray(batch.gaps) ? batch.gaps : [],
+    },
+    attachments: attachments.length > 0 ? attachments : undefined,
+  };
 }
 
 async function validateOperatorAttachments(
@@ -190,6 +334,62 @@ async function validateOperatorAttachments(
     });
   }
   return normalized;
+}
+
+async function attachGeneratedOperatorArtifacts(
+  ctx: MutationCtx,
+  args: {
+    operatorUserId: Id<"users">;
+    threadId: Id<"operatorAgentThreads">;
+    messageId: Id<"operatorAgentMessages">;
+    attachments: OperatorAttachment[] | undefined;
+  },
+) {
+  if (!args.attachments?.length) return undefined;
+  const normalized: OperatorAttachment[] = [];
+  for (const attachment of args.attachments.slice(
+    0,
+    MAX_AGENT_ATTACHMENT_FILES,
+  )) {
+    const metadata = await ctx.db.system.get("_storage", attachment.fileId);
+    if (!metadata) continue;
+    const value = {
+      fileId: attachment.fileId,
+      filename: normalizeAgentAttachmentFilename(attachment.filename),
+      contentType: normalizeAgentAttachmentContentType(
+        attachment.contentType,
+        metadata.contentType || "application/octet-stream",
+      ),
+      size: metadata.size,
+    };
+    normalized.push(value);
+    const existing = await ctx.db
+      .query("operatorAgentAttachments")
+      .withIndex("thread_file", (index) =>
+        index.eq("threadId", args.threadId).eq("fileId", value.fileId),
+      )
+      .first();
+    if (!existing) {
+      await ctx.db.insert("operatorAgentAttachments", {
+        ...value,
+        operatorUserId: args.operatorUserId,
+        threadId: args.threadId,
+        messageId: args.messageId,
+        createdAt: dayjs().valueOf(),
+      });
+    }
+  }
+  if (normalized.length === 0) return undefined;
+  const message = await ctx.db.get(args.messageId);
+  const byFile = new Map(
+    [...(message?.attachments ?? []), ...normalized].map((attachment) => [
+      String(attachment.fileId),
+      attachment,
+    ]),
+  );
+  const merged = [...byFile.values()];
+  await ctx.db.patch(args.messageId, { attachments: merged });
+  return merged;
 }
 
 function parseStoredOutput(value: string | undefined) {
@@ -266,6 +466,170 @@ function normalizePolicyId(ctx: QueryCtx | MutationCtx, value: unknown) {
   const policyId = ctx.db.normalizeId("policies", value);
   if (!policyId) throw new Error("Invalid policy ID");
   return policyId;
+}
+
+function normalizeClientFileId(ctx: QueryCtx | MutationCtx, value: unknown) {
+  if (typeof value !== "string") throw new Error("Client file ID is required");
+  const clientFileId = ctx.db.normalizeId("clientFiles", value);
+  if (!clientFileId) throw new Error("Invalid client file ID");
+  return clientFileId;
+}
+
+function normalizeOrgMemoryId(ctx: QueryCtx | MutationCtx, value: unknown) {
+  if (typeof value !== "string")
+    throw new Error("Company memory ID is required");
+  const memoryId = ctx.db.normalizeId("orgMemory", value);
+  if (!memoryId) throw new Error("Invalid company memory ID");
+  return memoryId;
+}
+
+function normalizeProcurementMemoryId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement memory ID is required");
+  }
+  const memoryId = ctx.db.normalizeId("procurementMemory", value);
+  if (!memoryId) throw new Error("Invalid procurement memory ID");
+  return memoryId;
+}
+
+function normalizeProcurementRequestId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement request ID is required");
+  }
+  const requestId = ctx.db.normalizeId("procurementRequests", value);
+  if (!requestId) throw new Error("Invalid procurement request ID");
+  return requestId;
+}
+
+function normalizeProcurementOutreachId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement broker outreach ID is required");
+  }
+  const outreachId = ctx.db.normalizeId("procurementBrokerOutreaches", value);
+  if (!outreachId) throw new Error("Invalid procurement broker outreach ID");
+  return outreachId;
+}
+
+function normalizeProcurementFileItemId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement file item ID is required");
+  }
+  const fileItemId = ctx.db.normalizeId("procurementFileItems", value);
+  if (!fileItemId) throw new Error("Invalid procurement file item ID");
+  return fileItemId;
+}
+
+function normalizeProcurementEmailThreadId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement email thread ID is required");
+  }
+  const emailThreadId = ctx.db.normalizeId("procurementEmailThreads", value);
+  if (!emailThreadId) throw new Error("Invalid procurement email thread ID");
+  return emailThreadId;
+}
+
+function procurementRequestStatus(value: unknown) {
+  switch (value) {
+    case "draft":
+    case "marketing":
+    case "quote_review":
+    case "client_decision":
+    case "accepted":
+    case "closed":
+    case "cancelled":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function procurementOutreachStatus(value: unknown) {
+  switch (value) {
+    case "request_sent":
+    case "can_handle":
+    case "cannot_handle":
+    case "quote_received":
+    case "quote_accepted":
+    case "quote_rejected":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function procurementFilePurpose(value: unknown) {
+  switch (value) {
+    case "requirements":
+    case "application":
+    case "requested_document":
+    case "quote":
+    case "correspondence":
+    case "other":
+      return value;
+    default:
+      throw new Error("Invalid procurement file purpose");
+  }
+}
+
+function procurementFileStatus(value: unknown) {
+  switch (value) {
+    case "requested":
+    case "available":
+    case "sent":
+    case "received":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function procurementEmailCategory(value: unknown) {
+  switch (value) {
+    case "broker":
+    case "client":
+    case "internal":
+    case "mixed":
+    case "other":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function procurementMemoryKind(value: unknown): ProcurementMemoryKind {
+  switch (value) {
+    case "placement_preference":
+    case "broker_appetite":
+    case "submission_requirement":
+    case "market_observation":
+      return value;
+    default:
+      throw new Error("Invalid procurement memory kind");
+  }
+}
+
+function normalizeStorageId(ctx: QueryCtx | MutationCtx, value: unknown) {
+  if (typeof value !== "string") {
+    throw new Error("Attachment file ID is required");
+  }
+  const fileId = ctx.db.system.normalizeId("_storage", value);
+  if (!fileId) throw new Error("Invalid attachment file ID");
+  return fileId;
 }
 
 async function requireOperatorThread(
@@ -515,8 +879,12 @@ async function enqueueOperatorMessage(
   });
   await ctx.db.patch(args.threadId, {
     lastMessageAt: now,
+    archivedAt: undefined,
+    archiveState: undefined,
     updatedAt: now,
-    ...(pageContext ? { initialContext: pageContext } : {}),
+    ...(!thread.initialContext && pageContext
+      ? { initialContext: pageContext }
+      : {}),
     ...(thread.title === "New chat"
       ? { title: normalizeOperatorThreadTitle(content).slice(0, 80) }
       : {}),
@@ -529,6 +897,8 @@ async function executeToolDomain(
   ctx: MutationCtx,
   args: {
     operatorUserId: Id<"users">;
+    threadId: Id<"operatorAgentThreads">;
+    channel: OperatorChannel;
     toolName: OperatorAgentToolName;
     input: Record<string, unknown>;
   },
@@ -719,6 +1089,231 @@ async function executeToolDomain(
       archived: Boolean(policy.deletedAt),
       fileName: policy.fileName,
     };
+  }
+
+  if (toolName === "list_client_files") {
+    const orgId = normalizeOrganizationId(ctx, input.orgId);
+    const organization = await ctx.db.get(orgId);
+    if (!organization || organization.type !== "client") {
+      throw new Error("Client organization not found");
+    }
+    const limit = typeof input.limit === "number" ? input.limit : 25;
+    const files = await ctx.db
+      .query("clientFiles")
+      .withIndex("organization", (index) => index.eq("orgId", orgId))
+      .order("desc")
+      .take(limit);
+    return {
+      files: await Promise.all(
+        files.map(async (file) => {
+          const policy = file.policyId ? await ctx.db.get(file.policyId) : null;
+          return {
+            clientFileId: file._id,
+            name: file.name,
+            originalName: file.originalName,
+            contentType: file.contentType,
+            size: file.size,
+            clientVisible: file.clientVisible,
+            policyId: file.policyId,
+            policyNumber: policy?.policyNumber,
+            carrier: policy?.carrier,
+            nameStatus: file.nameStatus,
+            createdAt: file.createdAt,
+          };
+        }),
+      ),
+      bounded: files.length === limit,
+    };
+  }
+
+  if (toolName === "lookup_client_memory") {
+    const orgId = normalizeOrganizationId(ctx, input.orgId);
+    const organization = await ctx.db.get(orgId);
+    if (!organization || organization.type !== "client") {
+      throw new Error("Client organization not found");
+    }
+    const rows = await ctx.db
+      .query("orgMemory")
+      .withIndex("organization", (index) => index.eq("orgId", orgId))
+      .take(500);
+    const now = dayjs().valueOf();
+    const facts = rows.filter(
+      (memory) =>
+        (!memory.expiresAt || memory.expiresAt > now) &&
+        isCompanyContextMemory({
+          type: memory.type,
+          content: memory.content,
+          orgName: organization.name,
+          policyId: memory.policyId,
+          provenance: memory.provenance,
+        }),
+    );
+    return {
+      facts: rankOrgMemoryForQuery(
+        typeof input.query === "string" ? input.query : "",
+        facts,
+        typeof input.limit === "number" ? input.limit : 50,
+      ),
+    };
+  }
+
+  if (toolName === "create_client_memory") {
+    return await createCompanyMemoryByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      orgId: normalizeOrganizationId(ctx, input.orgId),
+      content: typeof input.content === "string" ? input.content : "",
+      source: args.channel === "mcp" ? "mcp" : "operator",
+    });
+  }
+
+  if (toolName === "update_client_memory") {
+    return await updateCompanyMemoryByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      id: normalizeOrgMemoryId(ctx, input.memoryId),
+      content: typeof input.content === "string" ? input.content : "",
+      source: args.channel === "mcp" ? "mcp" : "operator",
+    });
+  }
+
+  if (toolName === "delete_client_memory") {
+    return await deleteCompanyMemoryByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      id: normalizeOrgMemoryId(ctx, input.memoryId),
+    });
+  }
+
+  if (toolName === "lookup_procurement_memory") {
+    const clientOrgId = normalizeOrganizationId(ctx, input.orgId);
+    const rows = await listProcurementMemory(ctx, {
+      clientOrgId,
+      requestId: input.procurementRequestId
+        ? normalizeProcurementRequestId(ctx, input.procurementRequestId)
+        : undefined,
+      kind: input.kind ? procurementMemoryKind(input.kind) : undefined,
+      query: normalizedOptionalText(input.query),
+      limit: typeof input.limit === "number" ? input.limit : undefined,
+    });
+    return { memories: rows };
+  }
+
+  if (toolName === "create_procurement_memory") {
+    return await createProcurementMemoryByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      clientOrgId: normalizeOrganizationId(ctx, input.orgId),
+      kind: procurementMemoryKind(input.kind),
+      content: typeof input.content === "string" ? input.content : "",
+      source: args.channel === "mcp" ? "mcp" : "operator_agent",
+      requestId: input.procurementRequestId
+        ? normalizeProcurementRequestId(ctx, input.procurementRequestId)
+        : undefined,
+      outreachId: input.procurementOutreachId
+        ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
+        : undefined,
+      brokerOrgId: input.brokerOrgId
+        ? normalizeOrganizationId(ctx, input.brokerOrgId)
+        : undefined,
+      sourceRef: normalizedOptionalText(input.sourceRef),
+      confidence:
+        typeof input.confidence === "number" ? input.confidence : undefined,
+    });
+  }
+
+  if (toolName === "update_procurement_memory") {
+    return await updateProcurementMemoryByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      id: normalizeProcurementMemoryId(ctx, input.procurementMemoryId),
+      kind: input.kind ? procurementMemoryKind(input.kind) : undefined,
+      content: typeof input.content === "string" ? input.content : undefined,
+      requestId:
+        input.procurementRequestId === null
+          ? null
+          : input.procurementRequestId
+            ? normalizeProcurementRequestId(ctx, input.procurementRequestId)
+            : undefined,
+      outreachId:
+        input.procurementOutreachId === null
+          ? null
+          : input.procurementOutreachId
+            ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
+            : undefined,
+      brokerOrgId:
+        input.brokerOrgId === null
+          ? null
+          : input.brokerOrgId
+            ? normalizeOrganizationId(ctx, input.brokerOrgId)
+            : undefined,
+      confidence:
+        input.confidence === null
+          ? null
+          : typeof input.confidence === "number"
+            ? input.confidence
+            : undefined,
+    });
+  }
+
+  if (toolName === "delete_procurement_memory") {
+    return await deleteProcurementMemoryByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      id: normalizeProcurementMemoryId(ctx, input.procurementMemoryId),
+    });
+  }
+
+  if (toolName === "list_procurement_requests") {
+    const clientOrgId = normalizeOrganizationId(ctx, input.orgId);
+    const limit = typeof input.limit === "number" ? input.limit : 50;
+    const requests = await listProcurementRequestSummaries(ctx, {
+      clientOrgId,
+      query: normalizedOptionalText(input.query),
+      status: procurementRequestStatus(input.status),
+      limit,
+    });
+    return { requests, bounded: requests.length === limit };
+  }
+
+  if (toolName === "get_procurement_request") {
+    const requestId = normalizeProcurementRequestId(
+      ctx,
+      input.procurementRequestId,
+    );
+    return await getProcurementRequestDetails(ctx, requestId);
+  }
+
+  if (toolName === "get_procurement_forwarding_address") {
+    const requestId = normalizeProcurementRequestId(
+      ctx,
+      input.procurementRequestId,
+    );
+    const details = await getProcurementRequestDetails(ctx, requestId);
+    return {
+      procurementRequestId: requestId,
+      forwardingAddress: details.request.forwardingAddress,
+    };
+  }
+
+  if (toolName === "list_procurement_email_threads") {
+    const requestId = normalizeProcurementRequestId(
+      ctx,
+      input.procurementRequestId,
+    );
+    const request = await ctx.db.get(requestId);
+    if (!request) throw new Error("Procurement request not found");
+    const limit = typeof input.limit === "number" ? input.limit : 50;
+    const threads = await listProcurementEmailThreads(ctx, {
+      clientOrgId: request.clientOrgId,
+      requestId,
+      limit,
+    });
+    return { threads, bounded: threads.length === limit };
+  }
+
+  if (toolName === "get_procurement_email_thread") {
+    const emailThreadId = normalizeProcurementEmailThreadId(
+      ctx,
+      input.procurementEmailThreadId,
+    );
+    const thread = await getProcurementEmailThreadDetails(ctx, emailThreadId);
+    if (!thread) throw new Error("Procurement email thread not found");
+    return thread;
   }
 
   if (toolName === "list_extraction_issues") {
@@ -1026,6 +1621,247 @@ async function executeToolDomain(
     return { status: "scheduled", policyId, previousStatus: status };
   }
 
+  if (toolName === "create_procurement_request") {
+    return await createProcurementRequestByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      clientOrgId: normalizeOrganizationId(ctx, input.orgId),
+      title: typeof input.title === "string" ? input.title : "",
+      requestSummary:
+        typeof input.requestSummary === "string" ? input.requestSummary : "",
+      requirements:
+        typeof input.requirements === "string" ? input.requirements : "",
+      targetEffectiveDate: normalizedOptionalText(input.targetEffectiveDate),
+      status: procurementRequestStatus(input.status),
+      replacingPolicyId: input.replacingPolicyId
+        ? normalizePolicyId(ctx, input.replacingPolicyId)
+        : undefined,
+      resultingPolicyId: input.resultingPolicyId
+        ? normalizePolicyId(ctx, input.resultingPolicyId)
+        : undefined,
+      source: "agent",
+    });
+  }
+
+  if (toolName === "update_procurement_request") {
+    return await updateProcurementRequestByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      title: typeof input.title === "string" ? input.title : undefined,
+      requestSummary:
+        typeof input.requestSummary === "string"
+          ? input.requestSummary
+          : undefined,
+      requirements:
+        typeof input.requirements === "string" ? input.requirements : undefined,
+      targetEffectiveDate:
+        input.targetEffectiveDate === null
+          ? null
+          : normalizedOptionalText(input.targetEffectiveDate),
+      status: procurementRequestStatus(input.status),
+      replacingPolicyId:
+        input.replacingPolicyId === null
+          ? null
+          : input.replacingPolicyId
+            ? normalizePolicyId(ctx, input.replacingPolicyId)
+            : undefined,
+      resultingPolicyId:
+        input.resultingPolicyId === null
+          ? null
+          : input.resultingPolicyId
+            ? normalizePolicyId(ctx, input.resultingPolicyId)
+            : undefined,
+      source: "agent",
+    });
+  }
+
+  if (toolName === "create_procurement_broker_outreach") {
+    return await createProcurementOutreachByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      brokerOrgId: input.brokerOrgId
+        ? normalizeOrganizationId(ctx, input.brokerOrgId)
+        : undefined,
+      brokerName: typeof input.brokerName === "string" ? input.brokerName : "",
+      contactName: normalizedOptionalText(input.contactName),
+      contactEmail: normalizedOptionalText(input.contactEmail),
+      contactPhone: normalizedOptionalText(input.contactPhone),
+      status: procurementOutreachStatus(input.status),
+      applicationUrl: normalizedOptionalText(input.applicationUrl),
+      applicationQuestions: Array.isArray(input.applicationQuestions)
+        ? input.applicationQuestions.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : undefined,
+      notes: normalizedOptionalText(input.notes),
+      quoteSummary: normalizedOptionalText(input.quoteSummary),
+      quoteAmount:
+        typeof input.quoteAmount === "number" ? input.quoteAmount : undefined,
+      quoteCurrency: normalizedOptionalText(input.quoteCurrency),
+      quoteUrl: normalizedOptionalText(input.quoteUrl),
+      source: "agent",
+    });
+  }
+
+  if (toolName === "update_procurement_broker_outreach") {
+    return await updateProcurementOutreachByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      outreachId: normalizeProcurementOutreachId(
+        ctx,
+        input.procurementOutreachId,
+      ),
+      brokerOrgId:
+        input.brokerOrgId === null
+          ? null
+          : input.brokerOrgId
+            ? normalizeOrganizationId(ctx, input.brokerOrgId)
+            : undefined,
+      brokerName:
+        typeof input.brokerName === "string" ? input.brokerName : undefined,
+      contactName:
+        input.contactName === null
+          ? null
+          : normalizedOptionalText(input.contactName),
+      contactEmail:
+        input.contactEmail === null
+          ? null
+          : normalizedOptionalText(input.contactEmail),
+      contactPhone:
+        input.contactPhone === null
+          ? null
+          : normalizedOptionalText(input.contactPhone),
+      status: procurementOutreachStatus(input.status),
+      applicationUrl:
+        input.applicationUrl === null
+          ? null
+          : normalizedOptionalText(input.applicationUrl),
+      applicationQuestions: Array.isArray(input.applicationQuestions)
+        ? input.applicationQuestions.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : undefined,
+      notes: input.notes === null ? null : normalizedOptionalText(input.notes),
+      quoteSummary:
+        input.quoteSummary === null
+          ? null
+          : normalizedOptionalText(input.quoteSummary),
+      quoteAmount:
+        input.quoteAmount === null
+          ? null
+          : typeof input.quoteAmount === "number"
+            ? input.quoteAmount
+            : undefined,
+      quoteCurrency:
+        input.quoteCurrency === null
+          ? null
+          : normalizedOptionalText(input.quoteCurrency),
+      quoteUrl:
+        input.quoteUrl === null ? null : normalizedOptionalText(input.quoteUrl),
+      source: "agent",
+    });
+  }
+
+  if (toolName === "create_procurement_file_item") {
+    return await createProcurementFileItemByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      outreachId: input.procurementOutreachId
+        ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
+        : undefined,
+      clientFileId: input.clientFileId
+        ? normalizeClientFileId(ctx, input.clientFileId)
+        : undefined,
+      purpose: procurementFilePurpose(input.purpose),
+      label: typeof input.label === "string" ? input.label : "",
+      status: procurementFileStatus(input.status),
+      notes: normalizedOptionalText(input.notes),
+      source: "agent",
+    });
+  }
+
+  if (toolName === "update_procurement_file_item") {
+    return await updateProcurementFileItemByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      fileItemId: normalizeProcurementFileItemId(
+        ctx,
+        input.procurementFileItemId,
+      ),
+      outreachId:
+        input.procurementOutreachId === null
+          ? null
+          : input.procurementOutreachId
+            ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
+            : undefined,
+      clientFileId:
+        input.clientFileId === null
+          ? null
+          : input.clientFileId
+            ? normalizeClientFileId(ctx, input.clientFileId)
+            : undefined,
+      purpose:
+        input.purpose === undefined
+          ? undefined
+          : procurementFilePurpose(input.purpose),
+      label: typeof input.label === "string" ? input.label : undefined,
+      status: procurementFileStatus(input.status),
+      notes: input.notes === null ? null : normalizedOptionalText(input.notes),
+      source: "agent",
+    });
+  }
+
+  if (toolName === "update_procurement_email_thread") {
+    return await updateProcurementEmailThreadByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      emailThreadId: normalizeProcurementEmailThreadId(
+        ctx,
+        input.procurementEmailThreadId,
+      ),
+      category: procurementEmailCategory(input.category),
+      requestId: input.procurementRequestId
+        ? normalizeProcurementRequestId(ctx, input.procurementRequestId)
+        : undefined,
+      source: "agent",
+    });
+  }
+
+  if (toolName === "add_client_file") {
+    const orgId = normalizeOrganizationId(ctx, input.orgId);
+    const attachmentFileId = normalizeStorageId(ctx, input.attachmentFileId);
+    const name = typeof input.name === "string" ? input.name : "";
+    const associatedPolicyId = input.policyId
+      ? normalizePolicyId(ctx, input.policyId)
+      : undefined;
+    return await createClientFileFromOperatorAttachment(ctx, {
+      operatorUserId: args.operatorUserId,
+      threadId: args.threadId,
+      orgId,
+      attachmentFileId,
+      name,
+      clientVisible: input.clientVisible === true,
+      policyId: associatedPolicyId,
+    });
+  }
+
+  if (toolName === "update_client_file") {
+    const clientFileId = normalizeClientFileId(ctx, input.clientFileId);
+    const associatedPolicyId =
+      input.policyId === null
+        ? null
+        : input.policyId
+          ? normalizePolicyId(ctx, input.policyId)
+          : undefined;
+    return await updateClientFileByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      clientFileId,
+      name: typeof input.name === "string" ? input.name : undefined,
+      clientVisible:
+        typeof input.clientVisible === "boolean"
+          ? input.clientVisible
+          : undefined,
+      policyId: associatedPolicyId,
+      source: "agent",
+    });
+  }
+
   if (toolName === "update_organization_profile") {
     const orgId = normalizeOrganizationId(ctx, input.orgId);
     const organization = await ctx.db.get(orgId);
@@ -1145,6 +1981,113 @@ async function executeToolDomain(
   throw new Error(`Unsupported operator tool: ${toolName}`);
 }
 
+function operatorCertificateSource(channel: OperatorChannel) {
+  if (channel === "slack" || channel === "imessage" || channel === "mcp") {
+    return channel;
+  }
+  return "agent" as const;
+}
+
+async function executeToolActionDomain(
+  ctx: ActionCtx,
+  args: {
+    operatorUserId: Id<"users">;
+    threadId: Id<"operatorAgentThreads">;
+    toolName: OperatorAgentToolName;
+    input: Record<string, unknown>;
+    channel: OperatorChannel;
+  },
+): Promise<OperatorActionToolResult> {
+  if (OPERATOR_RICH_ACTION_TOOLS.has(args.toolName)) {
+    return (await ctx.runAction(
+      internal.actions.operatorAgentRichTools.runInternal,
+      args,
+    )) as OperatorActionToolResult;
+  }
+
+  if (args.toolName === "lookup_address") {
+    const query = normalizedOptionalText(args.input.query);
+    if (!query) throw new Error("Address is required");
+    const accessToken =
+      process.env.MAPBOX_ACCESS_TOKEN?.trim() ||
+      process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim();
+    if (!accessToken) {
+      return {
+        result: {
+          status: "unavailable",
+          query,
+          candidates: [],
+          message:
+            "Mapbox address validation is not configured. Preserve the operator's original address and do not claim it was validated.",
+        },
+      };
+    }
+    return {
+      result: await lookupMapboxAddress({
+        query,
+        countryCode: normalizedOptionalText(args.input.countryCode),
+        accessToken,
+      }),
+    };
+  }
+
+  if (args.toolName === "generate_coi") {
+    const target = await ctx.runQuery(
+      internal.operatorAgent.resolveOperatorCoiTargetInternal,
+      {
+        operatorUserId: args.operatorUserId,
+        input: args.input,
+      },
+    );
+    const certificateHolder = normalizedOptionalText(
+      args.input.certificateHolder,
+    );
+    const holderName = certificateHolder?.split(/\r?\n/)[0]?.trim();
+    const requestedEndorsements = Array.isArray(
+      args.input.requestedEndorsements,
+    )
+      ? args.input.requestedEndorsements.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : undefined;
+    const batch: unknown = await ctx.runAction(
+      internal.certificates.generateBatchForOrg,
+      {
+        orgId: target.orgId,
+        primaryPolicyId: target.primaryPolicyId,
+        requirementSourceDocumentId:
+          target.requirementSourceDocumentId ?? undefined,
+        requirementId: target.requirementId ?? undefined,
+        holderName,
+        certificateHolder,
+        holderContactName: normalizedOptionalText(args.input.holderContactName),
+        holderEmail: normalizedOptionalText(args.input.holderEmail),
+        holderPhone: normalizedOptionalText(args.input.holderPhone),
+        addressLine1: normalizedOptionalText(args.input.addressLine1),
+        addressLine2: normalizedOptionalText(args.input.addressLine2),
+        city: normalizedOptionalText(args.input.city),
+        state: normalizedOptionalText(args.input.state),
+        postalCode: normalizedOptionalText(args.input.postalCode),
+        country: normalizedOptionalText(args.input.country),
+        requestText: normalizedOptionalText(args.input.requestText),
+        descriptionOfOperations: normalizedOptionalText(
+          args.input.descriptionOfOperations,
+        ),
+        requestedEndorsements,
+        additionalInsuredName: normalizedOptionalText(
+          args.input.additionalInsuredName,
+        ),
+        forceReissue: args.input.explicitReissue === true ? true : undefined,
+        source: operatorCertificateSource(args.channel),
+        createdByUserId: args.operatorUserId,
+      },
+    );
+    return normalizeOperatorCoiBatch(batch);
+  }
+
+  throw new Error(`Unsupported operator action tool: ${args.toolName}`);
+}
+
 async function executeOperatorTool(ctx: MutationCtx, args: ExecuteToolArgs) {
   const operator = await requireOperatorForUser(ctx, args.operatorUserId);
   const run = await ctx.db.get(args.runId);
@@ -1159,6 +2102,9 @@ async function executeOperatorTool(ctx: MutationCtx, args: ExecuteToolArgs) {
     allowShared: true,
   });
   const spec = getOperatorAgentToolSpec(args.toolName);
+  if (spec.execution !== "mutation") {
+    throw new Error(`Operator tool ${args.toolName} requires action execution`);
+  }
   assertOperatorRole(operator.profile.role, spec.requiredRole);
   const input = parseOperatorAgentToolInput(args.toolName, args.input);
   const expectedHash = await actionConfirmationFingerprint({
@@ -1278,6 +2224,8 @@ async function executeOperatorTool(ctx: MutationCtx, args: ExecuteToolArgs) {
   try {
     const result = await executeToolDomain(ctx, {
       operatorUserId: args.operatorUserId,
+      threadId: args.threadId,
+      channel: args.channel,
       toolName: args.toolName as OperatorAgentToolName,
       input,
     });
@@ -1300,22 +2248,30 @@ async function executeOperatorTool(ctx: MutationCtx, args: ExecuteToolArgs) {
 }
 
 export const listThreads = query({
-  args: { limit: v.optional(v.number()) },
+  args: {
+    limit: v.optional(v.number()),
+    archived: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
+    const archived = args.archived === true;
     const [owned, shared] = await Promise.all([
       ctx.db
         .query("operatorAgentThreads")
-        .withIndex("owner_activity", (index) =>
-          index.eq("ownerUserId", operator.userId),
+        .withIndex("owner_archive", (index) =>
+          index
+            .eq("ownerUserId", operator.userId)
+            .eq("archiveState", archived ? "archived" : undefined),
         )
         .order("desc")
         .take(limit),
       ctx.db
         .query("operatorAgentThreads")
-        .withIndex("visibility_activity", (index) =>
-          index.eq("visibility", "shared"),
+        .withIndex("visibility_archive", (index) =>
+          index
+            .eq("visibility", "shared")
+            .eq("archiveState", archived ? "archived" : undefined),
         )
         .order("desc")
         .take(limit),
@@ -1327,6 +2283,39 @@ export const listThreads = query({
     ]
       .sort((left, right) => right.lastMessageAt - left.lastMessageAt)
       .slice(0, limit);
+  },
+});
+
+export const archiveThread = mutation({
+  args: { threadId: v.id("operatorAgentThreads") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    await requireOperatorThread(ctx, args.threadId, operator.userId, {
+      allowShared: true,
+    });
+    const now = dayjs().valueOf();
+    await ctx.db.patch(args.threadId, {
+      archivedAt: now,
+      archiveState: "archived",
+      updatedAt: now,
+    });
+    return { archivedAt: now };
+  },
+});
+
+export const unarchiveThread = mutation({
+  args: { threadId: v.id("operatorAgentThreads") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    await requireOperatorThread(ctx, args.threadId, operator.userId, {
+      allowShared: true,
+    });
+    await ctx.db.patch(args.threadId, {
+      archivedAt: undefined,
+      archiveState: undefined,
+      updatedAt: dayjs().valueOf(),
+    });
+    return { restored: true };
   },
 });
 
@@ -1731,6 +2720,73 @@ async function confirmOperatorAction(
     updatedAt: now,
   });
   const parsedInput = JSON.parse(payload.input) as unknown;
+  const spec = getOperatorAgentToolSpec(payload.toolName);
+  assertOperatorRole(operator.profile.role, spec.requiredRole);
+  if (spec.execution === "action") {
+    const input = parseOperatorAgentToolInput(payload.toolName, parsedInput);
+    const expectedHash = await actionConfirmationFingerprint({
+      toolName: payload.toolName,
+      toolVersion: spec.version,
+      input,
+    });
+    if (
+      payload.toolVersion !== spec.version ||
+      expectedHash !== payload.inputHash
+    ) {
+      throw new Error("Operator tool changed before confirmed execution");
+    }
+    const ledger = await ctx.db
+      .query("agentActionAuditEvents")
+      .withIndex("idempotency", (index) =>
+        index
+          .eq("operatorUserId", operator.userId)
+          .eq("idempotencyKey", payload.idempotencyKey),
+      )
+      .unique();
+    if (
+      !ledger ||
+      ledger.action !== payload.toolName ||
+      ledger.inputHash !== payload.inputHash ||
+      ledger.operatorConfirmationId !== confirmation._id
+    ) {
+      throw new Error("Operator action audit does not match confirmation");
+    }
+    if (ledger.status === "succeeded") {
+      return { status: "needs_refresh" as const, runId: run._id };
+    }
+    await ctx.db.patch(ledger._id, {
+      status: "pending",
+      updatedAt: now,
+    });
+    await ctx.db.patch(run.agentMessageId, {
+      content: "",
+      status: "processing",
+      updatedAt: now,
+    });
+    await ctx.db.patch(run._id, {
+      status: "running",
+      checkpoint: {
+        iteration: run.checkpoint?.iteration ?? 0,
+        executionCount: run.checkpoint?.executionCount ?? 0,
+        summary: run.checkpoint?.summary,
+        lastToolName: payload.toolName,
+      },
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.operatorAgent.executeConfirmedActionToolInternal,
+      {
+        runId: run._id,
+        confirmationId: confirmation._id,
+      },
+    );
+    return {
+      status: "queued" as const,
+      runId: run._id,
+      content: `Confirmed: ${payload.summary}. Continuing the operator task.`,
+    };
+  }
   const result = await executeOperatorTool(ctx, {
     operatorUserId: operator.userId,
     runId: run._id,
@@ -1845,6 +2901,323 @@ export const confirmActionInternal = internalMutation({
     ...confirmActionArgs,
   },
   handler: confirmOperatorAction,
+});
+
+export const validateConfirmedActionToolExecutionInternal = internalQuery({
+  args: {
+    runId: v.id("operatorAgentRuns"),
+    confirmationId: v.id("operatorAgentConfirmations"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    const confirmation = await ctx.db.get(args.confirmationId);
+    if (
+      !run ||
+      !confirmation ||
+      confirmation.payload.kind !== "operator_tool_action" ||
+      confirmation.payload.runId !== run._id ||
+      confirmation.threadId !== run.threadId ||
+      confirmation.operatorUserId !== run.operatorUserId ||
+      confirmation.status !== "completed"
+    ) {
+      throw new Error("Confirmed operator action not found");
+    }
+    await requireOperatorForUser(ctx, run.operatorUserId);
+    const thread = await requireOperatorThread(
+      ctx,
+      run.threadId,
+      run.operatorUserId,
+      {
+        allowShared: true,
+      },
+    );
+    if (run.status !== "running" || run.cancellationRequestedAt) {
+      throw new Error("Operator agent run is no longer active");
+    }
+    const payload = confirmation.payload;
+    const spec = getOperatorAgentToolSpec(payload.toolName);
+    if (spec.execution !== "action" || spec.confirmation !== "exact") {
+      throw new Error("Confirmed operator tool is not action-backed");
+    }
+    const input = parseOperatorAgentToolInput(
+      payload.toolName,
+      JSON.parse(payload.input),
+    );
+    const expectedHash = await actionConfirmationFingerprint({
+      toolName: payload.toolName,
+      toolVersion: spec.version,
+      input,
+    });
+    if (
+      payload.toolVersion !== spec.version ||
+      payload.inputHash !== expectedHash
+    ) {
+      throw new Error("Confirmed operator tool input changed");
+    }
+    const ledger = await ctx.db
+      .query("agentActionAuditEvents")
+      .withIndex("idempotency", (index) =>
+        index
+          .eq("operatorUserId", run.operatorUserId)
+          .eq("idempotencyKey", payload.idempotencyKey),
+      )
+      .unique();
+    if (
+      !ledger ||
+      ledger.action !== payload.toolName ||
+      ledger.inputHash !== payload.inputHash ||
+      ledger.operatorConfirmationId !== confirmation._id ||
+      ledger.status !== "pending"
+    ) {
+      throw new Error("Confirmed operator action audit is not pending");
+    }
+    return {
+      operatorUserId: run.operatorUserId,
+      threadId: run.threadId,
+      toolName: payload.toolName as OperatorAgentToolName,
+      input,
+      channel:
+        thread.channel === "slack" ||
+        thread.channel === "imessage" ||
+        thread.channel === "mcp"
+          ? thread.channel
+          : ("chat" as const),
+    };
+  },
+});
+
+export const finishConfirmedActionToolInternal = internalMutation({
+  args: {
+    runId: v.id("operatorAgentRuns"),
+    confirmationId: v.id("operatorAgentConfirmations"),
+    result: v.optional(v.any()),
+    attachments: v.optional(v.array(operatorAttachmentValidator)),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    const confirmation = await ctx.db.get(args.confirmationId);
+    if (
+      !run ||
+      !confirmation ||
+      confirmation.payload.kind !== "operator_tool_action" ||
+      confirmation.payload.runId !== run._id ||
+      confirmation.threadId !== run.threadId ||
+      confirmation.operatorUserId !== run.operatorUserId ||
+      confirmation.status !== "completed"
+    ) {
+      throw new Error("Confirmed operator action not found");
+    }
+    const payload = confirmation.payload;
+    const ledger = await ctx.db
+      .query("agentActionAuditEvents")
+      .withIndex("idempotency", (index) =>
+        index
+          .eq("operatorUserId", run.operatorUserId)
+          .eq("idempotencyKey", payload.idempotencyKey),
+      )
+      .unique();
+    if (!ledger || ledger.action !== payload.toolName) {
+      throw new Error("Operator action audit not found");
+    }
+    if (ledger.status === "succeeded") {
+      return {
+        status: run.status,
+        result: {
+          status: "succeeded" as const,
+          result: parseStoredOutput(ledger.output),
+          idempotent: true,
+        },
+      };
+    }
+    const now = dayjs().valueOf();
+    const error = args.error?.slice(0, 1_000);
+    const succeeded = !error;
+    const outcome = succeeded
+      ? { status: "succeeded" as const, result: args.result, idempotent: false }
+      : { status: "failed" as const, error };
+    await ctx.db.patch(ledger._id, {
+      status: succeeded ? "succeeded" : "failed",
+      output: succeeded ? boundedJson(args.result) : ledger.output,
+      error,
+      updatedAt: now,
+    });
+    if (succeeded) {
+      await attachGeneratedOperatorArtifacts(ctx, {
+        operatorUserId: run.operatorUserId,
+        threadId: run.threadId,
+        messageId: run.agentMessageId,
+        attachments: args.attachments,
+      });
+      if (payload.toolName === "generate_coi") {
+        const certificates = recordValue(args.result)?.certificates;
+        const firstPolicyId = Array.isArray(certificates)
+          ? normalizedOptionalText(recordValue(certificates[0])?.policyId)
+          : undefined;
+        const policyId = firstPolicyId
+          ? ctx.db.normalizeId("policies", firstPolicyId)
+          : null;
+        const policy = policyId ? await ctx.db.get(policyId) : null;
+        await writeOperatorAudit(ctx, {
+          operatorUserId: run.operatorUserId,
+          type: "setup_write",
+          targetOrgId: policy?.orgId,
+          summary: payload.summary,
+          metadata: {
+            domain: "operator_agent",
+            operation: "generate_coi",
+            status: recordValue(args.result)?.status,
+            policyId,
+          },
+        });
+      }
+      if (payload.toolName === "confirm_policy_fact") {
+        const parsedInput = JSON.parse(payload.input) as Record<
+          string,
+          unknown
+        >;
+        const policyId = ctx.db.normalizeId(
+          "policies",
+          String(parsedInput.policyId ?? ""),
+        );
+        const policy = policyId ? await ctx.db.get(policyId) : null;
+        await writeOperatorAudit(ctx, {
+          operatorUserId: run.operatorUserId,
+          type: "setup_write",
+          targetOrgId: policy?.orgId,
+          summary: payload.summary,
+          metadata: {
+            domain: "operator_agent",
+            operation: "confirm_policy_fact",
+            policyId,
+          },
+        });
+      }
+    }
+
+    const toolCall = {
+      name: payload.toolName,
+      input: boundedJson(JSON.parse(payload.input), 500),
+      output: boundedJson(outcome, 500),
+    };
+    const currentMessage = await ctx.db.get(run.agentMessageId);
+    const usedTools = [
+      ...new Set([...(currentMessage?.usedTools ?? []), payload.toolName]),
+    ];
+    const toolCalls = [...(currentMessage?.toolCalls ?? []), toolCall].slice(
+      -100,
+    );
+    if (run.status === "cancelled" || run.cancellationRequestedAt) {
+      return { status: "cancelled" as const, result: outcome };
+    }
+    if (!succeeded) {
+      const content = `Could not complete ${payload.summary}: ${error}`;
+      await ctx.db.patch(run.agentMessageId, {
+        content,
+        status: "error",
+        usedTools,
+        toolCalls,
+        updatedAt: now,
+      });
+      await ctx.db.patch(run._id, {
+        status: "failed",
+        lastError: error,
+        completedAt: now,
+        checkpoint: {
+          iteration: run.checkpoint?.iteration ?? 0,
+          executionCount: (run.checkpoint?.executionCount ?? 0) + 1,
+          summary: content.slice(0, 1_000),
+          lastToolName: payload.toolName,
+        },
+        updatedAt: now,
+      });
+      await ctx.db.patch(run.threadId, { lastMessageAt: now, updatedAt: now });
+      return { status: "failed" as const, result: outcome, content };
+    }
+    if (run.executionKind === "goal") {
+      await ctx.db.patch(run.agentMessageId, {
+        content: "",
+        status: "processing",
+        usedTools,
+        toolCalls,
+        updatedAt: now,
+      });
+      await ctx.db.patch(run._id, {
+        status: "queued",
+        checkpoint: {
+          iteration: run.checkpoint?.iteration ?? 0,
+          executionCount: (run.checkpoint?.executionCount ?? 0) + 1,
+          summary: buildOperatorRunCheckpointSummary({
+            previous: run.checkpoint?.summary,
+            audit: {
+              usedTools: [payload.toolName],
+              completedTools: [payload.toolName],
+              toolCalls: [toolCall],
+              workflowOutcomes: [],
+            },
+          }),
+          lastToolName: payload.toolName,
+        },
+        updatedAt: now,
+      });
+      await ctx.scheduler.runAfter(0, internal.operatorAgentRunner.run, {
+        runId: run._id,
+      });
+      return { status: "queued" as const, result: outcome };
+    }
+
+    const content = `Completed: ${payload.summary}.`;
+    await ctx.db.patch(run.agentMessageId, {
+      content,
+      status: undefined,
+      usedTools,
+      toolCalls,
+      updatedAt: now,
+    });
+    await ctx.db.patch(run._id, {
+      status: "completed",
+      completedAt: now,
+      checkpoint: {
+        iteration: run.checkpoint?.iteration ?? 0,
+        executionCount: (run.checkpoint?.executionCount ?? 0) + 1,
+        summary: content,
+        lastToolName: payload.toolName,
+      },
+      updatedAt: now,
+    });
+    await ctx.db.patch(run.threadId, { lastMessageAt: now, updatedAt: now });
+    return { status: "completed" as const, result: outcome, content };
+  },
+});
+
+export const executeConfirmedActionToolInternal = internalAction({
+  args: {
+    runId: v.id("operatorAgentRuns"),
+    confirmationId: v.id("operatorAgentConfirmations"),
+  },
+  handler: async (ctx, args): Promise<unknown> => {
+    try {
+      const execution = await ctx.runQuery(
+        internal.operatorAgent.validateConfirmedActionToolExecutionInternal,
+        args,
+      );
+      const output = await executeToolActionDomain(ctx, execution);
+      return await ctx.runMutation(
+        internal.operatorAgent.finishConfirmedActionToolInternal,
+        {
+          ...args,
+          result: output.result,
+          attachments: output.attachments,
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return await ctx.runMutation(
+        internal.operatorAgent.finishConfirmedActionToolInternal,
+        { ...args, error: message },
+      );
+    }
+  },
 });
 
 export const getPendingConfirmationInternal = internalQuery({
@@ -1983,6 +3356,89 @@ export const getRunResultForOperatorInternal = internalQuery({
             toolCalls: response.toolCalls,
           }
         : undefined,
+    };
+  },
+});
+
+export const resolveOperatorCoiTargetInternal = internalQuery({
+  args: {
+    operatorUserId: v.id("users"),
+    input: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await requireOperatorForUser(ctx, args.operatorUserId);
+    const input = parseOperatorAgentToolInput("generate_coi", args.input);
+    const policyReference = normalizedOptionalText(input.policyId);
+    const sourceReference = normalizedOptionalText(
+      input.requirementSourceDocumentId,
+    );
+    const requirementReference = normalizedOptionalText(input.requirementId);
+    const requirementsMode = Boolean(sourceReference || requirementReference);
+    if (Boolean(policyReference) === requirementsMode) {
+      throw new Error(
+        "Choose either one policy or one requirements source for certificate generation",
+      );
+    }
+
+    if (policyReference) {
+      const primaryPolicyId = ctx.db.normalizeId("policies", policyReference);
+      if (!primaryPolicyId) throw new Error("Invalid policy ID");
+      const policy = await ctx.db.get(primaryPolicyId);
+      if (!policy?.orgId || policy.deletedAt)
+        throw new Error("Policy not found");
+      const organization = await ctx.db.get(policy.orgId);
+      if (!organization || organization.type !== "client") {
+        throw new Error("Client organization not found");
+      }
+      const holderName = normalizedOptionalText(input.certificateHolder)
+        ?.split(/\r?\n/)[0]
+        ?.trim();
+      if (!holderName) throw new Error("Certificate holder is required");
+      return {
+        orgId: policy.orgId,
+        primaryPolicyId,
+      };
+    }
+
+    const requirementSourceDocumentId = sourceReference
+      ? (ctx.db.normalizeId("requirementSourceDocuments", sourceReference) ??
+        undefined)
+      : undefined;
+    if (sourceReference && !requirementSourceDocumentId) {
+      throw new Error("Invalid requirements source ID");
+    }
+    const requirementId = requirementReference
+      ? (ctx.db.normalizeId("insuranceRequirements", requirementReference) ??
+        undefined)
+      : undefined;
+    if (requirementReference && !requirementId) {
+      throw new Error("Invalid requirement ID");
+    }
+    const [source, requirement] = await Promise.all([
+      requirementSourceDocumentId
+        ? ctx.db.get(requirementSourceDocumentId)
+        : null,
+      requirementId ? ctx.db.get(requirementId) : null,
+    ]);
+    if (requirementSourceDocumentId && (!source || source.archivedAt)) {
+      throw new Error("Requirements source not found");
+    }
+    if (requirementId && (!requirement || requirement.status !== "active")) {
+      throw new Error("Requirement not found");
+    }
+    if (source && requirement && requirement.sourceDocumentId !== source._id) {
+      throw new Error("Requirement does not belong to the requirements source");
+    }
+    const orgId = source?.orgId ?? requirement?.orgId;
+    if (!orgId) throw new Error("Requirements source not found");
+    const organization = await ctx.db.get(orgId);
+    if (!organization || organization.type !== "client") {
+      throw new Error("Client organization not found");
+    }
+    return {
+      orgId,
+      requirementSourceDocumentId,
+      requirementId,
     };
   },
 });
@@ -2129,6 +3585,175 @@ export const prepareDirectToolInvocationInternal = internalMutation({
   },
 });
 
+export const prepareUnconfirmedActionToolInternal = internalMutation({
+  args: operatorToolExecutionArgs,
+  handler: async (ctx, args) => {
+    const operator = await requireOperatorForUser(ctx, args.operatorUserId);
+    const run = await ctx.db.get(args.runId);
+    if (
+      !run ||
+      run.operatorUserId !== args.operatorUserId ||
+      run.threadId !== args.threadId ||
+      run.agentMessageId !== args.threadMessageId
+    ) {
+      throw new Error("Operator agent run not found");
+    }
+    await requireOperatorThread(ctx, args.threadId, args.operatorUserId, {
+      allowShared: true,
+    });
+    const spec = getOperatorAgentToolSpec(args.toolName);
+    assertOperatorRole(operator.profile.role, spec.requiredRole);
+    if (
+      spec.execution !== "action" ||
+      spec.confirmation !== "none" ||
+      spec.effect !== "read"
+    ) {
+      throw new Error("This operator tool cannot run as an unconfirmed action");
+    }
+    const input = parseOperatorAgentToolInput(args.toolName, args.input);
+    const expectedHash = await actionConfirmationFingerprint({
+      toolName: args.toolName,
+      toolVersion: spec.version,
+      input,
+    });
+    if (expectedHash !== args.inputHash) {
+      throw new Error("Operator tool input changed before execution");
+    }
+    const existing = await ctx.db
+      .query("agentActionAuditEvents")
+      .withIndex("idempotency", (index) =>
+        index
+          .eq("operatorUserId", args.operatorUserId)
+          .eq("idempotencyKey", args.idempotencyKey),
+      )
+      .unique();
+    if (existing) {
+      if (
+        existing.inputHash !== args.inputHash ||
+        existing.action !== args.toolName
+      ) {
+        throw new Error("Idempotency key was already used for another action");
+      }
+      if (existing.status === "succeeded") {
+        return {
+          status: "succeeded" as const,
+          result: parseStoredOutput(existing.output),
+          idempotent: true,
+        };
+      }
+      throw new Error("Operator action is already in progress");
+    }
+    if (run.status !== "running" || run.cancellationRequestedAt) {
+      throw new Error("Operator agent run is no longer active");
+    }
+    const target = spec.target(input);
+    const now = dayjs().valueOf();
+    const auditId = await ctx.db.insert("agentActionAuditEvents", {
+      operatorThreadId: args.threadId,
+      operatorMessageId: args.threadMessageId,
+      runId: args.runId,
+      actorKind: "operator",
+      operatorUserId: args.operatorUserId,
+      authorizationKind: "operator",
+      action: args.toolName,
+      toolVersion: spec.version,
+      capability: spec.capability,
+      effect: spec.effect,
+      idempotencyKey: args.idempotencyKey,
+      inputHash: args.inputHash,
+      targetKind: target.kind,
+      targetId: target.id,
+      channel: args.channel,
+      input: boundedJson(input),
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { status: "execute" as const, auditId, input };
+  },
+});
+
+export const finishUnconfirmedActionToolInternal = internalMutation({
+  args: {
+    auditId: v.id("agentActionAuditEvents"),
+    result: v.optional(v.any()),
+    attachments: v.optional(v.array(operatorAttachmentValidator)),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const audit = await ctx.db.get(args.auditId);
+    if (!audit) throw new Error("Operator action audit not found");
+    const now = dayjs().valueOf();
+    if (args.error) {
+      await ctx.db.patch(audit._id, {
+        status: "failed",
+        error: args.error.slice(0, 1_000),
+        updatedAt: now,
+      });
+      return;
+    }
+    await ctx.db.patch(audit._id, {
+      status: "succeeded",
+      output: boundedJson(args.result),
+      error: undefined,
+      updatedAt: now,
+    });
+    if (
+      audit.operatorUserId &&
+      audit.operatorThreadId &&
+      audit.operatorMessageId &&
+      args.attachments?.length
+    ) {
+      await attachGeneratedOperatorArtifacts(ctx, {
+        operatorUserId: audit.operatorUserId,
+        threadId: audit.operatorThreadId,
+        messageId: audit.operatorMessageId,
+        attachments: args.attachments,
+      });
+    }
+  },
+});
+
+export const executeUnconfirmedActionToolInternal = internalAction({
+  args: operatorToolExecutionArgs,
+  handler: async (ctx, args): Promise<DirectToolOutcome> => {
+    const prepared = await ctx.runMutation(
+      internal.operatorAgent.prepareUnconfirmedActionToolInternal,
+      args,
+    );
+    if (prepared.status === "succeeded") return prepared;
+    try {
+      const output = await executeToolActionDomain(ctx, {
+        operatorUserId: args.operatorUserId,
+        threadId: args.threadId,
+        toolName: args.toolName as OperatorAgentToolName,
+        input: prepared.input,
+        channel: args.channel,
+      });
+      await ctx.runMutation(
+        internal.operatorAgent.finishUnconfirmedActionToolInternal,
+        {
+          auditId: prepared.auditId,
+          result: output.result,
+          attachments: output.attachments,
+        },
+      );
+      return {
+        status: "succeeded" as const,
+        result: output.result,
+        idempotent: false,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await ctx.runMutation(
+        internal.operatorAgent.finishUnconfirmedActionToolInternal,
+        { auditId: prepared.auditId, error: message },
+      );
+      return { status: "failed" as const, error: message };
+    }
+  },
+});
+
 export const invokeRegisteredToolInternal = internalAction({
   args: {
     operatorUserId: v.id("users"),
@@ -2179,17 +3804,32 @@ export const invokeRegisteredToolInternal = internalAction({
               channel: args.channel,
             },
           )
-        : await ctx.runMutation(internal.operatorAgent.executeToolInternal, {
-            operatorUserId: args.operatorUserId,
-            runId: invocation.runId,
-            threadId: invocation.threadId,
-            threadMessageId: invocation.agentMessageId,
-            toolName: args.toolName,
-            input,
-            inputHash,
-            idempotencyKey: args.idempotencyKey,
-            channel: args.channel,
-          });
+        : spec.execution === "action"
+          ? await ctx.runAction(
+              internal.operatorAgent.executeUnconfirmedActionToolInternal,
+              {
+                operatorUserId: args.operatorUserId,
+                runId: invocation.runId,
+                threadId: invocation.threadId,
+                threadMessageId: invocation.agentMessageId,
+                toolName: args.toolName,
+                input,
+                inputHash,
+                idempotencyKey: args.idempotencyKey,
+                channel: args.channel,
+              },
+            )
+          : await ctx.runMutation(internal.operatorAgent.executeToolInternal, {
+              operatorUserId: args.operatorUserId,
+              runId: invocation.runId,
+              threadId: invocation.threadId,
+              threadMessageId: invocation.agentMessageId,
+              toolName: args.toolName,
+              input,
+              inputHash,
+              idempotencyKey: args.idempotencyKey,
+              channel: args.channel,
+            });
     const content =
       outcome.status === "confirmation_required"
         ? `Confirmation required: ${summary}.`
@@ -2230,6 +3870,69 @@ export const getRunContextInternal = internalQuery({
       .order("desc")
       .take(96);
     return { run, thread, messages: messages.reverse() };
+  },
+});
+
+export const searchThreadHistoryInternal = internalQuery({
+  args: {
+    operatorUserId: v.id("users"),
+    threadId: v.id("operatorAgentThreads"),
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireOperatorForUser(ctx, args.operatorUserId);
+    await requireOperatorThread(ctx, args.threadId, args.operatorUserId, {
+      allowShared: true,
+    });
+    const limit = Math.max(1, Math.min(args.limit ?? 5, 8));
+    const messages = await ctx.db
+      .query("operatorAgentMessages")
+      .withSearchIndex("content", (index) =>
+        index.search("content", args.query).eq("threadId", args.threadId),
+      )
+      .take(limit);
+    return messages.map((message) => ({
+      messageId: message._id,
+      role: message.role,
+      userName: message.userName,
+      content: message.content.slice(0, 2_000),
+      attachments: (message.attachments ?? []).map((attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        size: attachment.size,
+      })),
+      createdAt: message.createdAt,
+    }));
+  },
+});
+
+export const getThreadAttachmentInternal = internalQuery({
+  args: {
+    operatorUserId: v.id("users"),
+    threadId: v.id("operatorAgentThreads"),
+    messageId: v.id("operatorAgentMessages"),
+    filename: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireOperatorForUser(ctx, args.operatorUserId);
+    await requireOperatorThread(ctx, args.threadId, args.operatorUserId, {
+      allowShared: true,
+    });
+    const message = await ctx.db.get(args.messageId);
+    if (!message || message.threadId !== args.threadId) return null;
+    const attachment = message.attachments?.find(
+      (candidate) => candidate.filename === args.filename,
+    );
+    if (!attachment) return null;
+    const registered = await ctx.db
+      .query("operatorAgentAttachments")
+      .withIndex("thread_file", (index) =>
+        index.eq("threadId", args.threadId).eq("fileId", attachment.fileId),
+      )
+      .first();
+    if (!registered || registered.messageId !== message._id) return null;
+    return attachment;
   },
 });
 
@@ -2422,15 +4125,7 @@ export const requestToolConfirmationInternal = internalMutation({
 
 export const executeToolInternal = internalMutation({
   args: {
-    operatorUserId: v.id("users"),
-    runId: v.id("operatorAgentRuns"),
-    threadId: v.id("operatorAgentThreads"),
-    threadMessageId: v.id("operatorAgentMessages"),
-    toolName: v.string(),
-    input: v.any(),
-    inputHash: v.string(),
-    idempotencyKey: v.string(),
-    channel: operatorChannelValidator,
+    ...operatorToolExecutionArgs,
     confirmationId: v.optional(v.id("operatorAgentConfirmations")),
   },
   handler: executeOperatorTool,

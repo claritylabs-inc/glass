@@ -1863,7 +1863,17 @@ function operatorMcpTools(identity: OperatorMcpIdentity) {
   });
 }
 
-const MCP_TOOLS = [
+type TenantMcpToolCatalogEntry = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  effect?: "read" | "write";
+  openWorld?: boolean;
+  destructive?: boolean;
+  idempotent?: boolean;
+};
+
+const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
   {
     name: "list_policies",
     description:
@@ -2082,6 +2092,7 @@ const MCP_TOOLS = [
         { required: ["requirementId"] },
       ],
     },
+    effect: "write",
   },
   {
     name: "list_threads",
@@ -2124,6 +2135,7 @@ const MCP_TOOLS = [
       },
       required: ["message"],
     },
+    openWorld: true,
   },
   {
     name: "ask_spot",
@@ -2144,6 +2156,7 @@ const MCP_TOOLS = [
       },
       required: ["message"],
     },
+    openWorld: true,
   },
   {
     name: "list_email_drafts",
@@ -2193,6 +2206,7 @@ const MCP_TOOLS = [
       },
       required: ["to", "subject", "body"],
     },
+    effect: "write",
   },
   {
     name: "update_email_draft",
@@ -2227,6 +2241,7 @@ const MCP_TOOLS = [
       },
       required: ["draftId", "to", "subject", "body"],
     },
+    effect: "write",
   },
   {
     name: "send_email_draft",
@@ -2241,6 +2256,9 @@ const MCP_TOOLS = [
       },
       required: ["draftId"],
     },
+    effect: "write",
+    openWorld: true,
+    idempotent: false,
   },
   {
     name: "send_email_drafts",
@@ -2257,6 +2275,9 @@ const MCP_TOOLS = [
       },
       required: ["draftIds"],
     },
+    effect: "write",
+    openWorld: true,
+    idempotent: false,
   },
   {
     name: "cancel_email_draft",
@@ -2271,6 +2292,88 @@ const MCP_TOOLS = [
       },
       required: ["draftId"],
     },
+    effect: "write",
+  },
+  {
+    name: "list_client_files",
+    description:
+      "List client-visible shared files across the caller's readable client scope, optionally narrowed to one exact client organization.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        client_org_id: {
+          type: "string",
+          description: "Optional exact readable client organization ID",
+        },
+        query: { type: "string", description: "Optional filename search" },
+        limit: { type: "number", description: "Maximum results, up to 50" },
+      },
+    },
+  },
+  {
+    name: "get_client_file",
+    description:
+      "Get metadata and a temporary download URL for one exact client-visible shared file.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        client_file_id: { type: "string", description: "Exact client file ID" },
+      },
+      required: ["client_file_id"],
+    },
+  },
+  {
+    name: "list_company_memory",
+    description:
+      "List durable stable company-profile facts for the OAuth token's organization.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Optional fact search" },
+        limit: { type: "number", description: "Maximum results, up to 100" },
+      },
+    },
+  },
+  {
+    name: "create_company_memory",
+    description:
+      "Create a durable stable company-profile fact for the OAuth token's organization. Requires write scope and current org admin membership.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        content: { type: "string", description: "Stable company fact" },
+      },
+      required: ["content"],
+    },
+    effect: "write",
+  },
+  {
+    name: "update_company_memory",
+    description:
+      "Update one durable company-profile fact in the OAuth token's organization. Requires write scope and current org admin membership.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        memory_id: { type: "string", description: "Exact company memory ID" },
+        content: { type: "string", description: "Updated stable company fact" },
+      },
+      required: ["memory_id", "content"],
+    },
+    effect: "write",
+  },
+  {
+    name: "delete_company_memory",
+    description:
+      "Permanently delete one company-memory fact from the OAuth token's organization. Requires write scope and current org admin membership.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        memory_id: { type: "string", description: "Exact company memory ID" },
+      },
+      required: ["memory_id"],
+    },
+    effect: "write",
+    destructive: true,
   },
   // ── Broker tools ──
   {
@@ -2387,6 +2490,7 @@ const MCP_TOOLS = [
         "line_of_business",
       ],
     },
+    effect: "write",
   },
   {
     name: "list_vendor_compliance",
@@ -2396,21 +2500,15 @@ const MCP_TOOLS = [
   },
 ];
 
-const TENANT_MCP_WRITE_TOOLS = new Set([
-  "generate_policy_certificate",
-  "draft_email",
-  "update_email_draft",
-  "send_email_draft",
-  "send_email_drafts",
-  "cancel_email_draft",
-  "create_insurance_requirement",
-]);
-const TENANT_MCP_OPEN_WORLD_TOOLS = new Set([
-  "send_email_draft",
-  "send_email_drafts",
-]);
-const AUTHENTICATED_TENANT_MCP_TOOLS = MCP_TOOLS.map((tool) => {
-  const write = TENANT_MCP_WRITE_TOOLS.has(tool.name);
+const AUTHENTICATED_TENANT_MCP_TOOLS = MCP_TOOLS.map((entry) => {
+  const {
+    effect = "read",
+    openWorld = false,
+    destructive = false,
+    idempotent,
+    ...tool
+  } = entry;
+  const write = effect === "write";
   return {
     ...tool,
     title: tool.description.split(".")[0],
@@ -2419,12 +2517,26 @@ const AUTHENTICATED_TENANT_MCP_TOOLS = MCP_TOOLS.map((tool) => {
     ),
     annotations: {
       readOnlyHint: !write,
-      destructiveHint: false,
-      idempotentHint: !write,
-      openWorldHint: TENANT_MCP_OPEN_WORLD_TOOLS.has(tool.name),
+      destructiveHint: destructive,
+      idempotentHint: idempotent ?? !write,
+      openWorldHint: openWorld,
     },
   };
 });
+
+export function tenantMcpToolAccess(name: string) {
+  const tool = MCP_TOOLS.find((entry) => entry.name === name);
+  if (!tool) return null;
+  return {
+    effect: tool.effect ?? ("read" as const),
+    openWorld: tool.openWorld ?? false,
+    destructive: tool.destructive ?? false,
+  };
+}
+
+export function tenantMcpToolNames() {
+  return MCP_TOOLS.map((tool) => tool.name);
+}
 
 function jsonRpcResponse(
   id: string | number | null,
@@ -2670,6 +2782,101 @@ async function handleToolCall(
   const userId = identity.userId as Id<"users">;
 
   switch (name) {
+    case "list_client_files": {
+      const scope = await ctx.runQuery(
+        internal.lib.agentScope.resolveForAction,
+        {
+          orgId,
+          userId,
+          surface: "mcp",
+        },
+      );
+      const requestedOrgId =
+        typeof args.client_org_id === "string" ? args.client_org_id : undefined;
+      const orgIds = requestedOrgId
+        ? scope.readOrgIds.filter(
+            (readOrgId: Id<"organizations">) =>
+              String(readOrgId) === requestedOrgId,
+          )
+        : scope.readOrgIds;
+      if (requestedOrgId && orgIds.length === 0) {
+        throw new Error("Client organization is not in the readable scope");
+      }
+      const files = await ctx.runQuery(
+        internal.clientFiles.listVisibleInternal,
+        {
+          orgIds,
+          query: typeof args.query === "string" ? args.query : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+        },
+      );
+      return mcpTextResult(files);
+    }
+    case "get_client_file": {
+      if (typeof args.client_file_id !== "string") {
+        throw new Error("Missing client_file_id parameter");
+      }
+      const scope = await ctx.runQuery(
+        internal.lib.agentScope.resolveForAction,
+        {
+          orgId,
+          userId,
+          surface: "mcp",
+        },
+      );
+      const file = await ctx.runQuery(internal.clientFiles.getVisibleInternal, {
+        clientFileId: args.client_file_id as Id<"clientFiles">,
+        orgIds: scope.readOrgIds,
+      });
+      if (!file) throw new Error("Client file not found");
+      return mcpTextResult(file);
+    }
+    case "list_company_memory": {
+      const memories = await ctx.runQuery(internal.orgMemory.listForMcp, {
+        orgId,
+        userId,
+        query: typeof args.query === "string" ? args.query : undefined,
+        limit: typeof args.limit === "number" ? args.limit : undefined,
+      });
+      return mcpTextResult(memories);
+    }
+    case "create_company_memory": {
+      if (typeof args.content !== "string") {
+        throw new Error("Missing content parameter");
+      }
+      const memory = await ctx.runMutation(internal.orgMemory.createForMcp, {
+        orgId,
+        userId,
+        content: args.content,
+      });
+      return mcpTextResult(memory);
+    }
+    case "update_company_memory": {
+      if (
+        typeof args.memory_id !== "string" ||
+        typeof args.content !== "string"
+      ) {
+        throw new Error("memory_id and content are required");
+      }
+      const memory = await ctx.runMutation(internal.orgMemory.updateForMcp, {
+        orgId,
+        userId,
+        id: args.memory_id as Id<"orgMemory">,
+        content: args.content,
+      });
+      return mcpTextResult(memory);
+    }
+    case "delete_company_memory": {
+      if (typeof args.memory_id !== "string") {
+        throw new Error("Missing memory_id parameter");
+      }
+      const result = await ctx.runMutation(internal.orgMemory.removeForMcp, {
+        orgId,
+        userId,
+        id: args.memory_id as Id<"orgMemory">,
+      });
+      return mcpTextResult(result);
+    }
     case "list_policies": {
       const policies = (await ctx.runQuery(
         internal.policies.listAllPreviewReadableInternal,
@@ -3395,6 +3602,11 @@ http.route({
             return jsonRpcError(id, -32602, "Missing tool name");
           }
           try {
+            if (identity.principalKind === "organization") {
+              const access = tenantMcpToolAccess(toolName);
+              if (!access) throw new Error(`Unknown tool: ${toolName}`);
+              if (access.effect === "write") requireMcpWriteScope(identity);
+            }
             const result = await handleToolCall(
               ctx,
               identity,

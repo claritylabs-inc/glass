@@ -1,7 +1,4 @@
-import {
-  normalizedSearchText,
-  uniqueSearchTerms,
-} from "./searchTokenizer";
+import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
 
 export type OrgMemoryType = "fact" | "preference" | "risk_note" | "observation";
 export type OrgMemorySource =
@@ -10,7 +7,10 @@ export type OrgMemorySource =
   | "chat"
   | "email"
   | "imessage"
-  | "slack";
+  | "slack"
+  | "manual"
+  | "operator"
+  | "mcp";
 
 export type OrgMemoryProvenance = {
   kind: "organization_fact";
@@ -55,8 +55,9 @@ const UNSAFE_COMPANY_MEMORY_PATTERNS = [
 ];
 
 function orgNameTokens(orgName: string | undefined | null) {
-  return uniqueSearchTerms(orgName ?? "")
-    .filter((token) => token.length > 1 && !ORG_SUFFIXES.has(token));
+  return uniqueSearchTerms(orgName ?? "").filter(
+    (token) => token.length > 1 && !ORG_SUFFIXES.has(token),
+  );
 }
 
 export function mentionsOrganization(content: string, orgName?: string | null) {
@@ -95,8 +96,7 @@ export function rankOrgMemoryForQuery<T extends OrgMemoryContextItem>(
       return { memory, score };
     })
     .sort(
-      (a, b) =>
-        b.score - a.score || b.memory.updatedAt - a.memory.updatedAt,
+      (a, b) => b.score - a.score || b.memory.updatedAt - a.memory.updatedAt,
     )
     .slice(0, limit)
     .map(({ memory }) => memory);
@@ -111,7 +111,8 @@ export function isCompanyContextMemory(args: {
 }) {
   const content = normalizeMemoryContent(args.content);
   if (args.type !== "fact") return false;
-  if (!content || content.length > COMPANY_CONTEXT_MEMORY_MAX_LENGTH) return false;
+  if (!content || content.length > COMPANY_CONTEXT_MEMORY_MAX_LENGTH)
+    return false;
   if (args.policyId) return false;
   if (!mentionsOrganization(content, args.orgName)) return false;
   if (
@@ -121,5 +122,7 @@ export function isCompanyContextMemory(args: {
     return true;
   }
   if (/^(we|our|i|the user|user)\b/i.test(content)) return false;
-  return !UNSAFE_COMPANY_MEMORY_PATTERNS.some((pattern) => pattern.test(content));
+  return !UNSAFE_COMPANY_MEMORY_PATTERNS.some((pattern) =>
+    pattern.test(content),
+  );
 }

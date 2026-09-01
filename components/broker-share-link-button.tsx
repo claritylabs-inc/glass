@@ -37,7 +37,7 @@ export function BrokerShareLinkButton() {
   return (
     <PillButton
       size="compact"
-      variant="icon"
+      variant="secondary"
       label={copied ? "Copied" : "Copy signup link"}
       expandLabel
       onClick={handleClick}

@@ -1,12 +1,16 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import dayjs from "dayjs";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import { actionConfirmationFingerprint } from "./lib/actionConfirmationFingerprint";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 async function seedOperatorAgentFixture() {
   const t = convexTest(schema, modules);
@@ -45,7 +49,22 @@ async function seedOperatorAgentFixture() {
       type: "client",
       operatorStatus: "onboarding",
     });
-    return { firstOperatorUserId, secondOperatorUserId, orgId };
+    const policyId = await ctx.db.insert("policies", {
+      orgId,
+      carrier: "Northwoods Continental Insurance Company",
+      policyNumber: "NWC-TEC-3110-26-01",
+      linesOfBusiness: ["CGL"],
+      documentType: "policy",
+      policyYear: 2026,
+      effectiveDate: "01/01/2026",
+      expirationDate: "01/01/2027",
+      isRenewal: false,
+      coverages: [],
+      insuredName: "Operator Agent Client",
+      pipelineStatus: "complete",
+      extractionDataStage: "final",
+    });
+    return { firstOperatorUserId, secondOperatorUserId, orgId, policyId };
   });
   return { t, ...ids };
 }
@@ -119,6 +138,117 @@ describe("operator agent boundary", () => {
       },
     );
     expect(secondDm).not.toBe(firstDm);
+  });
+
+  test("retains the thread origin context across later page changes", async () => {
+    const fixture = await seedOperatorAgentFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.firstOperatorUserId}|session`,
+    });
+    const policyContext = {
+      pageType: "policy",
+      entityId: "policy-origin-id",
+      summary: "Origin policy",
+    };
+    const threadId = await operator.mutation(
+      api.operatorAgent.createThread,
+      { initialContext: policyContext },
+    );
+
+    await operator.mutation(api.operatorAgent.sendMessage, {
+      threadId,
+      content: "Generate a COI for this policy.",
+      pageContext: policyContext,
+    });
+    await operator.mutation(api.operatorAgent.sendMessage, {
+      threadId,
+      content: "Try again from here.",
+      pageContext: {
+        pageType: "operator_clients",
+        entityId: String(fixture.orgId),
+        summary: "Client organizations",
+      },
+    });
+
+    await expect(
+      operator.query(api.operatorAgent.getThread, { threadId }),
+    ).resolves.toMatchObject({
+      thread: { initialContext: policyContext },
+    });
+  });
+
+  test("separates archived threads and restores them on new activity", async () => {
+    const fixture = await seedOperatorAgentFixture();
+    const firstOperator = fixture.t.withIdentity({
+      subject: `${fixture.firstOperatorUserId}|session`,
+    });
+    const secondOperator = fixture.t.withIdentity({
+      subject: `${fixture.secondOperatorUserId}|session`,
+    });
+    const threadId = await firstOperator.mutation(
+      api.operatorAgent.createThread,
+      {},
+    );
+
+    await firstOperator.mutation(api.operatorAgent.archiveThread, { threadId });
+    await expect(
+      firstOperator.query(api.operatorAgent.listThreads, {
+        limit: 20,
+        archived: false,
+      }),
+    ).resolves.not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ _id: threadId })]),
+    );
+    await expect(
+      firstOperator.query(api.operatorAgent.listThreads, {
+        limit: 20,
+        archived: true,
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          _id: threadId,
+          archiveState: "archived",
+          archivedAt: expect.any(Number),
+        }),
+      ]),
+    );
+    await expect(
+      secondOperator.mutation(api.operatorAgent.unarchiveThread, { threadId }),
+    ).rejects.toThrow("Operator thread not found");
+
+    await firstOperator.mutation(api.operatorAgent.unarchiveThread, {
+      threadId,
+    });
+    await expect(
+      firstOperator.query(api.operatorAgent.listThreads, {
+        limit: 20,
+        archived: false,
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ _id: threadId })]),
+    );
+
+    await firstOperator.mutation(api.operatorAgent.archiveThread, { threadId });
+    await firstOperator.mutation(api.operatorAgent.sendMessage, {
+      threadId,
+      content: "Continue this archived task.",
+    });
+    const restoredThread = await firstOperator.query(
+      api.operatorAgent.getThread,
+      { threadId },
+    );
+    expect(restoredThread.thread._id).toBe(threadId);
+    expect(restoredThread.thread).not.toHaveProperty("archivedAt");
+    expect(restoredThread.thread).not.toHaveProperty("archiveState");
+    await expect(
+      firstOperator.query(api.operatorAgent.listThreads, {
+        limit: 20,
+        archived: false,
+      }),
+    ).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ _id: threadId })]),
+    );
   });
 
   test("stores multimodal message metadata and protects attachment URLs", async () => {
@@ -452,6 +582,110 @@ describe("operator agent boundary", () => {
     expect(persisted.ledgers[0]).toMatchObject({ status: "succeeded" });
   });
 
+  test("approval queues action-backed COI generation without bypassing confirmation", async () => {
+    vi.useFakeTimers();
+    const fixture = await seedOperatorAgentFixture();
+    const threadId = await fixture.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        channel: "mcp",
+        conversationKey: "mcp:certificate-test",
+      },
+    );
+    const requested = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "generate_coi",
+        input: {
+          policyId: fixture.policyId,
+          certificateHolder: "ReLease Coverage Company Inc.",
+          holderContactName: "Terry Wang",
+        },
+        idempotencyKey: "generate-release-coi-once",
+      },
+    );
+    expect(requested.outcome.status).toBe("confirmation_required");
+    if (
+      requested.outcome.status !== "confirmation_required" ||
+      !requested.outcome.confirmationId
+    ) {
+      throw new Error("Expected exact COI confirmation");
+    }
+    const confirmationId = requested.outcome.confirmationId;
+
+    await expect(
+      fixture.t.mutation(internal.operatorAgent.confirmActionInternal, {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        confirmationId,
+        decision: "approve",
+        channel: "mcp",
+      }),
+    ).resolves.toMatchObject({ status: "queued" });
+
+    const state = await fixture.t.run(async (ctx) => ({
+      confirmation: await ctx.db.get(confirmationId),
+      run: await ctx.db.get(requested.runId),
+      response: await ctx.db.get(requested.agentMessageId),
+      ledger: await ctx.db
+        .query("agentActionAuditEvents")
+        .withIndex("idempotency", (index) =>
+          index
+            .eq("operatorUserId", fixture.firstOperatorUserId)
+            .eq("idempotencyKey", "generate-release-coi-once"),
+        )
+        .unique(),
+    }));
+    expect(state.confirmation).toMatchObject({ status: "completed" });
+    expect(state.run).toMatchObject({ status: "running" });
+    expect(state.response).toMatchObject({ content: "", status: "processing" });
+    expect(state.ledger).toMatchObject({
+      action: "generate_coi",
+      capability: "operator.certificates.write",
+      status: "pending",
+    });
+
+    await fixture.t.finishAllScheduledFunctions(vi.runAllTimers);
+    const completed = await fixture.t.run(async (ctx) => ({
+      run: await ctx.db.get(requested.runId),
+      response: await ctx.db.get(requested.agentMessageId),
+      ledger: await ctx.db
+        .query("agentActionAuditEvents")
+        .withIndex("idempotency", (index) =>
+          index
+            .eq("operatorUserId", fixture.firstOperatorUserId)
+            .eq("idempotencyKey", "generate-release-coi-once"),
+        )
+        .unique(),
+    }));
+    expect(completed.run).toMatchObject({ status: "completed" });
+    expect(completed.response).toMatchObject({
+      content: expect.stringContaining("Completed: Generate COI"),
+      attachments: [
+        expect.objectContaining({
+          filename: expect.stringMatching(/\.pdf$/),
+          contentType: "application/pdf",
+        }),
+      ],
+    });
+    expect(completed.ledger).toMatchObject({ status: "succeeded" });
+    await expect(
+      fixture.t.action(
+        internal.operatorAgent.executeConfirmedActionToolInternal,
+        { runId: requested.runId, confirmationId },
+      ),
+    ).resolves.toMatchObject({
+      result: { status: "succeeded", idempotent: true },
+    });
+    await expect(
+      fixture.t.run((ctx) => ctx.db.get(completed.ledger!._id)),
+    ).resolves.toMatchObject({ status: "succeeded" });
+  });
+
   test("resumes a goal run after an exact-confirmed write", async () => {
     const fixture = await seedOperatorAgentFixture();
     const operator = fixture.t.withIdentity({
@@ -531,5 +765,98 @@ describe("operator agent boundary", () => {
       "Tool set_organization_status",
     );
     expect(state.response).toMatchObject({ content: "", status: "processing" });
+  });
+
+  test("files an exact thread attachment for a client only after confirmation", async () => {
+    const fixture = await seedOperatorAgentFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.firstOperatorUserId}|session`,
+    });
+    const fileId = await fixture.t.run((ctx) =>
+      ctx.storage.store(
+        new Blob(["Roof report for 123 Main Street"], {
+          type: "application/pdf",
+        }),
+      ),
+    );
+    const threadId = await operator.mutation(api.operatorAgent.createThread, {});
+    const upload = await operator.mutation(
+      api.operatorAgent.generateUploadUrl,
+      {},
+    );
+    await operator.mutation(api.operatorAgent.registerUpload, {
+      uploadIntentId: upload.uploadIntentId,
+      fileId,
+    });
+    await operator.mutation(api.operatorAgent.sendMessage, {
+      threadId,
+      content: "Add this roof report to the current client.",
+      attachments: [
+        {
+          fileId,
+          filename: "scan-004.pdf",
+          contentType: "application/pdf",
+          size: 31,
+          uploadIntentId: upload.uploadIntentId,
+        },
+      ],
+    });
+
+    const filed = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "add_client_file",
+        input: {
+          orgId: fixture.orgId,
+          attachmentFileId: fileId,
+          name: "123 Main Street Roof Report",
+          clientVisible: false,
+        },
+        idempotencyKey: "file-roof-report-once",
+      },
+    );
+    expect(filed.outcome.status).toBe("confirmation_required");
+    if (
+      filed.outcome.status !== "confirmation_required" ||
+      !filed.outcome.confirmationId
+    ) {
+      throw new Error("Expected exact operator confirmation");
+    }
+
+    const confirmation = await fixture.t.mutation(
+      internal.operatorAgent.confirmActionInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        confirmationId: filed.outcome.confirmationId,
+        decision: "approve",
+        channel: "mcp",
+      },
+    );
+    if (confirmation.status === "failed") {
+      throw new Error(JSON.stringify(confirmation));
+    }
+    expect(confirmation).toMatchObject({ status: "completed" });
+
+    const clientFiles = await fixture.t.run((ctx) =>
+      ctx.db
+        .query("clientFiles")
+        .withIndex("organization", (index) =>
+          index.eq("orgId", fixture.orgId),
+        )
+        .collect(),
+    );
+    expect(clientFiles).toHaveLength(1);
+    expect(clientFiles[0]).toMatchObject({
+      fileId,
+      name: "123 Main Street Roof Report.pdf",
+      originalName: "scan-004.pdf",
+      clientVisible: false,
+      nameSource: "agent",
+      nameStatus: "ready",
+    });
   });
 });

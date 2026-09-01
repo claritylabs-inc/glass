@@ -7,9 +7,8 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
+import { useParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { StatusTag } from "@/components/ui/status-tag";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
@@ -33,10 +32,7 @@ export function useClientWorkspaceActions() {
 
 export function ClientWorkspaceShell({ children }: { children: ReactNode }) {
   const params = useParams<{ clientOrgId?: string }>();
-  const pathname = usePathname();
   const clientOrgId = params.clientOrgId;
-  const isClientRoot =
-    !!clientOrgId && pathname === `/clients/${clientOrgId}`;
   const [pageActions, setPageActions] = useState<ReactNode>(null);
   const [rightPanel, setRightPanel] = useState<ReactNode>(null);
   const [breadcrumbExtra, setBreadcrumbExtra] = useState<ReactNode>(null);
@@ -50,11 +46,6 @@ export function ClientWorkspaceShell({ children }: { children: ReactNode }) {
       : "skip",
   );
 
-  const status =
-    (clientOrg as { onboardingComplete?: boolean } | undefined)
-      ?.onboardingComplete
-      ? "active"
-      : "onboarding";
   const clientName =
     (clientOrg as { name?: string } | undefined)?.name?.trim() || "Client";
 
@@ -95,16 +86,7 @@ export function ClientWorkspaceShell({ children }: { children: ReactNode }) {
             </span>
           ) : undefined
         }
-        actions={
-          <>
-            {clientOrg && isClientRoot ? (
-              <StatusTag tone={status === "active" ? "success" : "warning"}>
-                {status === "active" ? "Active" : "Onboarding"}
-              </StatusTag>
-            ) : null}
-            {pageActions}
-          </>
-        }
+        actions={pageActions}
         rightPanel={rightPanel}
         disablePersistentChat
       >

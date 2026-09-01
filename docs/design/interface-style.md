@@ -24,22 +24,45 @@ The interface should feel calm, precise, and trustworthy.
 - Use color to communicate action, status, or brand identity, not to decorate.
 - Remove labels, badges, icons, and helper text that repeat nearby information.
 
+## Operator portal composition
+
+The operator portal is a compact working surface. Its app-shell breadcrumb is
+the page identity, so route content must not repeat that title or add a page
+subtitle. Persistent status tags belong in the overview or active-tab body.
+
+- Use `TabsList variant="pill"` for route-level operator tabs.
+- Do not repeat the active tab name in a panel header or add a card subtitle
+  that only explains the tab.
+- Present record facts with `OperationalLabelValueList` and
+  `OperationalLabelValueRow`. Avoid asymmetric multi-column or jigsaw detail
+  layouts. When a record mixes short facts with long prose, group the compact
+  value pairs in the first card and the long-form rows in a separate card
+  below.
+- Keep overview tables focused on the few fields needed to identify, compare,
+  and prioritize records. When selecting a row can open a right-side preview,
+  move summaries, identifiers, secondary counts, links, and other record
+  details into that panel instead of packing them into table cells.
+- Give a request-specific forwarding address its own bounded value-pair card,
+  separate from imported message rows.
+- Name navigation actions for a specific destination. Omit vague labels such
+  as “All client email.”
+
 ## System owners
 
 Use the shared owner before writing a local version of the same pattern.
 
-| Concern | Owner |
-| --- | --- |
-| Theme and color tokens | `app/globals.css` |
-| Typography roles | `lib/typography.ts` and [typography.md](./typography.md) |
-| Persistent grouped content | `components/ui/operational-panel.tsx` |
-| Clickable bounded rows or tiles | `components/ui/action-surface.tsx` |
-| Generic self-contained content card (exception) | `components/ui/card.tsx` |
-| Product action buttons | `components/ui/pill-button.tsx` |
-| Inputs and selection controls | `components/ui/input.tsx`, `textarea.tsx`, `select.tsx`, and `searchable-select.tsx` |
-| Tabs, tables, dialogs, and popovers | Matching primitives under `components/ui/` |
-| Page and auxiliary-panel spacing | `components/app-shell.tsx` and `components/app-shell-panel-layout.tsx` |
-| Continuous corner rendering | `components/ui/smooth-corners-provider.tsx` and `lib/smooth-corners/` |
+| Concern                                         | Owner                                                                                |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Theme and color tokens                          | `app/globals.css`                                                                    |
+| Typography roles                                | `lib/typography.ts` and [typography.md](./typography.md)                             |
+| Persistent grouped content                      | `components/ui/operational-panel.tsx`                                                |
+| Clickable bounded rows or tiles                 | `components/ui/action-surface.tsx`                                                   |
+| Generic self-contained content card (exception) | `components/ui/card.tsx`                                                             |
+| Product action buttons                          | `components/ui/pill-button.tsx`                                                      |
+| Inputs and selection controls                   | `components/ui/input.tsx`, `textarea.tsx`, `select.tsx`, and `searchable-select.tsx` |
+| Tabs, tables, dialogs, and popovers             | Matching primitives under `components/ui/`; operator route tabs use the pill variant |
+| Page and auxiliary-panel spacing                | `components/app-shell.tsx` and `components/app-shell-panel-layout.tsx`               |
+| Continuous corner rendering                     | `components/ui/smooth-corners-provider.tsx` and `lib/smooth-corners/`                |
 
 If a shared primitive and this guide disagree, update them together. Do not
 patch a single screen into a third visual convention.
@@ -50,14 +73,14 @@ All browser colors must come from semantic theme tokens or a shared domain
 owner. Do not add neutral hex, RGB, or light-only colors in component classes.
 Every surface must be checked in light and dark themes.
 
-| Surface | Default use |
-| --- | --- |
-| `bg-background` | Page canvas, app panes, drawers, and full-height sidebars; dark mode uses charcoal rather than black |
-| `bg-card` | A persistent bounded panel or grouped record surface |
-| `bg-popover` | Menus, popovers, and form controls through their shared primitives |
-| `bg-muted` or a foreground tint from 2% to 6% | Selected, hovered, or deliberately quiet subregions |
-| `bg-brand` / `text-brand-foreground` | Primary action, normally through `PillButton` |
-| Semantic success, warning, and destructive tokens | Status and risk only |
+| Surface                                           | Default use                                                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `bg-background`                                   | Page canvas, app panes, drawers, and full-height sidebars; dark mode uses charcoal rather than black |
+| `bg-card`                                         | A persistent bounded panel or grouped record surface                                                 |
+| `bg-popover`                                      | Menus, popovers, and form controls through their shared primitives                                   |
+| `bg-muted` or a foreground tint from 2% to 6%     | Selected, hovered, or deliberately quiet subregions                                                  |
+| `bg-brand` / `text-brand-foreground`              | Primary action, normally through `PillButton`                                                        |
+| Semantic success, warning, and destructive tokens | Status and risk only                                                                                 |
 
 Rules:
 
@@ -78,15 +101,15 @@ Borders are one physical pixel and use semantic, theme-adaptive tokens. Dark
 mode borders are intentionally brighter than their light-mode counterparts so
 structure remains visible on low-luminance surfaces.
 
-| Strength | Class | Use |
-| --- | --- | --- |
-| Subtle | `border-border-subtle` | Skeletons and deliberately low-priority separators |
-| Structural | `border-border` | Shell edges, panel outlines, section dividers, and row separators |
-| Interactive resting | `border-input` | Inputs, secondary buttons, and clickable bounded surfaces |
-| Emphasized or floating | `border-border-emphasized` or `ring-1 ring-border-emphasized` | Popovers, selected outlines, and surfaces above the page |
-| Interactive hover | `border-border-hover` | Hover feedback for an outlined control |
-| Interactive focus | `border-border-focus` with `ring-1 ring-input` | Keyboard or editing focus |
-| Status | Semantic color at low opacity, usually `/20` | Warning, error, or success boundary |
+| Strength               | Class                                                         | Use                                                               |
+| ---------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Subtle                 | `border-border-subtle`                                        | Skeletons and deliberately low-priority separators                |
+| Structural             | `border-border`                                               | Shell edges, panel outlines, section dividers, and row separators |
+| Interactive resting    | `border-input`                                                | Inputs, secondary buttons, and clickable bounded surfaces         |
+| Emphasized or floating | `border-border-emphasized` or `ring-1 ring-border-emphasized` | Popovers, selected outlines, and surfaces above the page          |
+| Interactive hover      | `border-border-hover`                                         | Hover feedback for an outlined control                            |
+| Interactive focus      | `border-border-focus` with `ring-1 ring-input`                | Keyboard or editing focus                                         |
+| Status                 | Semantic color at low opacity, usually `/20`                  | Warning, error, or success boundary                               |
 
 Additional rules:
 
@@ -108,14 +131,14 @@ separate ideas use a larger gap. Use the established 4 px scale for layout.
 Two-pixel steps such as 6, 10, or 14 px are reserved for shared component
 contracts, not ad hoc page rhythm.
 
-| Space | Tailwind | Default use |
-| --- | --- | --- |
-| 4–6 px | `gap-1`, `gap-1.5` | Icon internals and compact control content |
-| 8 px | `gap-2` | Label/help pairs, compact menu content, and closely related controls |
-| 12 px | `gap-3` | Content inside a row or compact group |
-| 16 px | `gap-4`, `p-4` | Default panel body and ordinary section rhythm |
-| 20–24 px | `gap-5`, `gap-6` | Separate form groups or major page sections |
-| 32 px and above | `gap-8`, `p-8` | Empty states and deliberate large-section separation |
+| Space           | Tailwind           | Default use                                                          |
+| --------------- | ------------------ | -------------------------------------------------------------------- |
+| 4–6 px          | `gap-1`, `gap-1.5` | Icon internals and compact control content                           |
+| 8 px            | `gap-2`            | Label/help pairs, compact menu content, and closely related controls |
+| 12 px           | `gap-3`            | Content inside a row or compact group                                |
+| 16 px           | `gap-4`, `p-4`     | Default panel body and ordinary section rhythm                       |
+| 20–24 px        | `gap-5`, `gap-6`   | Separate form groups or major page sections                          |
+| 32 px and above | `gap-8`, `p-8`     | Empty states and deliberate large-section separation                 |
 
 Use these container contracts:
 
@@ -142,15 +165,16 @@ body, and rows together. Avoid a sequence of unrelated `px-3`, `px-4`, and
 Choose a container based on the information relationship, not on a desire to
 fill empty space.
 
-| Need | Pattern |
-| --- | --- |
-| A page section with no extra boundary | Semantic `section` plus spacing |
-| Grouped details, settings, or a bounded list | `OperationalPanel` |
-| A panel title, description, or action | `OperationalPanelHeader` |
-| Repeated records in one group | `OperationalItem`, a divided list, or `Table` |
-| A whole bounded region that is clickable | `ActionSurfaceButton` or `ActionSurfaceLink` |
-| A proper empty result with an optional action | `EmptyStateCard` |
-| A temporary choice or contextual control | `Popover`, `DropdownMenu`, or `Dialog` |
+| Need                                          | Pattern                                                    |
+| --------------------------------------------- | ---------------------------------------------------------- |
+| A page section with no extra boundary         | Semantic `section` plus spacing                            |
+| Grouped details, settings, or a bounded list  | `OperationalPanel`                                         |
+| A panel title, description, or action         | `OperationalPanelHeader`                                   |
+| Standard record facts or value pairs          | `OperationalLabelValueList` and `OperationalLabelValueRow` |
+| Repeated records in one group                 | `OperationalItem`, a divided list, or `Table`              |
+| A whole bounded region that is clickable      | `ActionSurfaceButton` or `ActionSurfaceLink`               |
+| A proper empty result with an optional action | `EmptyStateCard`                                           |
+| A temporary choice or contextual control      | `Popover`, `DropdownMenu`, or `Dialog`                     |
 
 The generic `Card` component is not the default application container. Use it
 only when the content is genuinely a self-contained object with card-specific
@@ -163,18 +187,20 @@ Card rules:
 - Do not place a card inside a card. Use a divider, subsection heading, or flat
   row unless the inner surface is an independent interactive tool.
 - Do not wrap a table or list in both a generic card and an operational panel.
+- When an active tab already names the content, omit the panel header and its
+  subtitle.
 - A hover treatment means the whole surface is actionable. A static panel must
   not look clickable.
 - Keep repeated records in one shared outline so they scan as a set.
 
 ## Corners and shape
 
-| Shape | Use |
-| --- | --- |
-| `rounded-md` | Small structural controls, menu items, and compact nested rows |
-| `rounded-lg` | Default panels, fields, action surfaces, and standard controls |
-| `rounded-xl` | Dialogs, prominent composers, and temporary elevated surfaces |
-| `rounded-full` | Pill buttons, badges, avatars, and circular icon wells only |
+| Shape          | Use                                                            |
+| -------------- | -------------------------------------------------------------- |
+| `rounded-md`   | Small structural controls, menu items, and compact nested rows |
+| `rounded-lg`   | Default panels, fields, action surfaces, and standard controls |
+| `rounded-xl`   | Dialogs, prominent composers, and temporary elevated surfaces  |
+| `rounded-full` | Pill buttons, badges, avatars, and circular icon wells only    |
 
 Spot applies continuous corners globally. Use the standard radius utilities
 and let the smooth-corner owner render them. Do not add custom clip paths or
@@ -200,8 +226,9 @@ Follow [the typography guide](./typography.md). Browser callsites choose a
 semantic role with `typeStyle()` and keep only color, spacing, alignment,
 wrapping, and truncation local.
 
-- A page should have one clear primary heading, even when the visual role is
-  compact.
+- A page must have one clear accessible identity. Operator portal routes use
+  the app-shell breadcrumb; other product surfaces normally use one primary
+  heading.
 - Primary values use foreground color; metadata and explanation use muted
   foreground.
 - Do not make important metadata tiny. If it affects a decision, give it a
@@ -222,12 +249,12 @@ wrapping, and truncation local.
   triggers, and non-destructive navigation—not for a locally styled action.
 - A region should have one visually primary action. Additional actions are
   secondary, ghost, or placed in an overflow menu.
-- App top bars order status or presence first, then secondary utility, view,
-  recovery, and reversible archive actions, with at most one create or
-  generate primary action at the right edge. Primary actions keep both their
-  icon and short label visible.
+- App top bars give every `PillButton` the compact size and use only primary or
+  secondary treatments. Order secondary utility, view, recovery, and reversible
+  archive actions before at most one create or generate primary action at the
+  right edge. Primary actions keep both their icon and short label visible.
 - Compact secondary app-top-bar actions use `PillButton` with
-  `variant="icon"`, `expandLabel`, a nonempty `label`, and an icon child. They
+  `variant="secondary"`, `expandLabel`, a nonempty `label`, and an icon child. They
   reveal the label on keyboard focus and fine-pointer hover, remain compact on
   coarse pointers, and respect reduced-motion preferences. Do not use this
   expanding treatment for dense close, remove, or structural controls.
@@ -263,7 +290,11 @@ A standard bounded section:
   <OperationalPanelHeader
     title="Organization"
     description="Identity shown to your clients."
-    action={<PillButton variant="secondary" size="compact">Edit</PillButton>}
+    action={
+      <PillButton variant="secondary" size="compact">
+        Edit
+      </PillButton>
+    }
   />
   <OperationalPanelBody>{children}</OperationalPanelBody>
 </OperationalPanel>
@@ -277,6 +308,15 @@ A repeated list uses one outline and shared dividers:
     <OperationalItem key={row.id}>{/* row content */}</OperationalItem>
   ))}
 </OperationalPanel>
+```
+
+Standard record facts use one value-pair outline:
+
+```tsx
+<OperationalLabelValueList>
+  <OperationalLabelValueRow label="Status" value={status} />
+  <OperationalLabelValueRow label="Updated" value={updatedAt} />
+</OperationalLabelValueList>
 ```
 
 A local hand-built equivalent should be rare. If it appears repeatedly, move

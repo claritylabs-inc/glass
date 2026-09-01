@@ -804,7 +804,7 @@ export function PolicyDetailBody({
         {!operatorMode && !readOnly && !isArchived && (
           <PillButton
             size="compact"
-            variant="icon"
+            variant="secondary"
             label={reExtracting ? "Re-extracting…" : "Re-extract"}
             expandLabel
             disabled={isProcessingPolicy || reExtracting || cancelingExtraction}
@@ -820,7 +820,7 @@ export function PolicyDetailBody({
         {operatorMode && !readOnly && !isArchived ? (
           <PillButton
             size="compact"
-            variant="icon"
+            variant="secondary"
             label="Re-extract"
             expandLabel
             disabled={isProcessingPolicy}
@@ -839,7 +839,7 @@ export function PolicyDetailBody({
         {!readOnly && !isArchived && (
           <PillButton
             size="compact"
-            variant="icon"
+            variant="secondary"
             label="Archive"
             expandLabel
             onClick={() => setShowArchiveDialog(true)}

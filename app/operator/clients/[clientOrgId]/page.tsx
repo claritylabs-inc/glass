@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -65,7 +65,6 @@ import {
   ClientCompanyDetails,
   type OperatorClientRelatedLegalEntity,
 } from "./client-company-details";
-import { OperatorClientImpersonationAction } from "./operator-client-impersonation-action";
 import {
   OperatorClientSettingsTabs,
   parseOperatorClientSection,
@@ -130,22 +129,18 @@ function ClientWorkspace({
   client,
   supportDetails,
   brokers,
-  activeImpersonation,
   setShellActions,
   setRightPanel,
+  registerBeforeImpersonationStart,
 }: {
   client: OperatorClientRow;
   supportDetails: ClientSupportDetails;
   brokers: OperatorBrokerRow[];
-  activeImpersonation:
-    | {
-        targetOrgId: string;
-        targetOrgType: "broker" | "client";
-      }
-    | null
-    | undefined;
   setShellActions: (actions: React.ReactNode) => void;
   setRightPanel: (panel: React.ReactNode) => void;
+  registerBeforeImpersonationStart: (
+    handler: (() => Promise<boolean>) | null,
+  ) => void;
 }) {
   const clientOrgId = client._id;
   const router = useRouter();
@@ -303,51 +298,28 @@ function ClientWorkspace({
   }
 
   useEffect(() => {
-    const impersonationAction = (
-      <OperatorClientImpersonationAction
-        clientOrgId={clientOrgId}
-        activeImpersonation={activeImpersonation}
-        beforeStart={saveClientSettingsNow}
-        disabled={busy}
-      />
-    );
-
     if (activeTab === "overview") {
-      setShellActions(
-        <>
-          <AutoSaveStatus status={combinedSaveStatus} />
-          {impersonationAction}
-        </>,
-      );
+      setShellActions(<AutoSaveStatus status={combinedSaveStatus} />);
     } else if (activeTab === "team") {
       setShellActions(
-        <>
-          {impersonationAction}
-          <PillButton
-            size="compact"
-            onClick={() => setTeamInviteOpen(true)}
-          >
-            <UserPlus className="size-3.5" />
-            Invite member
-          </PillButton>
-        </>,
+        <PillButton size="compact" onClick={() => setTeamInviteOpen(true)}>
+          <UserPlus className="size-3.5" />
+          Invite member
+        </PillButton>,
       );
     } else {
-      setShellActions(impersonationAction);
+      setShellActions(null);
     }
 
     return () => {
       setShellActions(null);
     };
-  }, [
-    activeImpersonation,
-    activeTab,
-    busy,
-    clientOrgId,
-    combinedSaveStatus,
-    saveClientSettingsNow,
-    setShellActions,
-  ]);
+  }, [activeTab, combinedSaveStatus, setShellActions]);
+
+  useEffect(() => {
+    registerBeforeImpersonationStart(saveClientSettingsNow);
+    return () => registerBeforeImpersonationStart(null);
+  }, [registerBeforeImpersonationStart, saveClientSettingsNow]);
 
   return (
     <>
@@ -606,6 +578,15 @@ export default function OperatorClientPage() {
   const [workspaceActions, setWorkspaceActions] =
     useState<React.ReactNode>(null);
   const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
+  const beforeImpersonationStartRef = useRef<(() => Promise<boolean>) | null>(
+    null,
+  );
+  const registerBeforeImpersonationStart = useCallback(
+    (handler: (() => Promise<boolean>) | null) => {
+      beforeImpersonationStartRef.current = handler;
+    },
+    [],
+  );
   const client = clients?.find((item) => item._id === clientOrgId) ?? null;
   const activeTab = parseOperatorClientSection(searchParams.get("tab"));
   const breadcrumbSection =
@@ -617,15 +598,7 @@ export default function OperatorClientPage() {
 
   return (
     <AppShell
-      actions={
-        workspaceActions ?? (
-          <OperatorClientImpersonationAction
-            clientOrgId={clientOrgId}
-            activeImpersonation={current?.activeImpersonation}
-            disabled={!client}
-          />
-        )
-      }
+      actions={workspaceActions}
       breadcrumbDetail={
         breadcrumbSection ? (
           <span className="flex min-w-0 items-center gap-1.5">
@@ -650,6 +623,11 @@ export default function OperatorClientPage() {
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
           clientOrgId={clientOrgId}
+          activeImpersonation={current?.activeImpersonation}
+          impersonationDisabled={!client}
+          beforeImpersonationStart={async () =>
+            beforeImpersonationStartRef.current?.()
+          }
         />
       )}
       customSidebarStorageKey="operator-sidebar"
@@ -685,9 +663,9 @@ export default function OperatorClientPage() {
           client={client}
           supportDetails={supportDetails}
           brokers={brokers ?? []}
-          activeImpersonation={current?.activeImpersonation}
           setShellActions={setWorkspaceActions}
           setRightPanel={setRightPanel}
+          registerBeforeImpersonationStart={registerBeforeImpersonationStart}
         />
       )}
     </AppShell>

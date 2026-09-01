@@ -14,7 +14,6 @@ import {
 } from "@/lib/sync/operator-cached-queries";
 import { typeStyle } from "@/lib/typography";
 import { OperatorClientSidebar } from "../../operator-client-sidebar";
-import { OperatorClientImpersonationAction } from "../../operator-client-impersonation-action";
 
 export default function OperatorClientPolicyDetailPage() {
   const { clientOrgId, id } = useParams<{
@@ -31,26 +30,9 @@ export default function OperatorClientPolicyDetailPage() {
   const activeImpersonation = current?.activeImpersonation ?? null;
   const basePath = `/operator/clients/${clientOrgId}/policies`;
 
-  const impersonationAction = (
-    <OperatorClientImpersonationAction
-      clientOrgId={clientOrgId}
-      activeImpersonation={activeImpersonation}
-      disabled={!client}
-    />
-  );
-
   return (
     <AppShell
-      actions={
-        policyActions ? (
-          <>
-            {impersonationAction}
-            {policyActions}
-          </>
-        ) : (
-          impersonationAction
-        )
-      }
+      actions={policyActions}
       breadcrumbDetail={
         <span className="flex min-w-0 items-center gap-1.5">
           <Link
@@ -84,6 +66,8 @@ export default function OperatorClientPolicyDetailPage() {
           collapsed={collapsed}
           onToggleCollapse={onToggleCollapse}
           clientOrgId={clientOrgId}
+          activeImpersonation={activeImpersonation}
+          impersonationDisabled={!client}
         />
       )}
       customSidebarStorageKey="operator-sidebar"

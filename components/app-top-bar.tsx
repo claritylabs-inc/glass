@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import { BrokerShareLinkButton } from "@/components/broker-share-link-button";
+import { PillButtonSizeProvider } from "@/components/ui/pill-button";
 import { typeStyle } from "@/lib/typography";
 
 const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
@@ -157,19 +158,21 @@ export function AppTopBar({
       </div>
 
       {/* Presence + actions */}
-      <div
-        className="flex shrink-0 items-center gap-2"
-        data-slot="app-top-bar-actions"
-      >
-        {presenceUsers && presenceUsers.length > 0 && (
-          <>
-            <PresenceAvatars users={presenceUsers} />
-            <div className="w-px h-4 bg-foreground/10" />
-          </>
-        )}
-        {showBrokerShare ? <BrokerShareLinkButton /> : null}
-        {actions}
-      </div>
+      <PillButtonSizeProvider size="compact">
+        <div
+          className="flex shrink-0 items-center gap-2"
+          data-slot="app-top-bar-actions"
+        >
+          {presenceUsers && presenceUsers.length > 0 && (
+            <>
+              <PresenceAvatars users={presenceUsers} />
+              <div className="w-px h-4 bg-foreground/10" />
+            </>
+          )}
+          {showBrokerShare ? <BrokerShareLinkButton /> : null}
+          {actions}
+        </div>
+      </PillButtonSizeProvider>
     </header>
   );
 }

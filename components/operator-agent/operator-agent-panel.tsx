@@ -57,6 +57,7 @@ import {
   operatorPageContextFromPathname,
   operatorPageContextKey,
   operatorPageContextLabel,
+  operatorPageContextsShareScope,
 } from "./operator-page-context";
 import { useOptionalOperatorAgent } from "./operator-agent-provider";
 import { OperatorThreadChannelIcon } from "./operator-thread-channel";
@@ -414,7 +415,10 @@ export function OperatorAgentPanel({
   const [confirmationBusyId, setConfirmationBusyId] = useState<string | null>(
     null,
   );
-  const rawThreads = useQuery(operatorAgentApi.listThreads, { limit: 40 });
+  const rawThreads = useQuery(operatorAgentApi.listThreads, {
+    limit: 40,
+    archived: false,
+  });
   const threads = useMemo(
     () => normalizeOperatorAgentThreads(rawThreads),
     [rawThreads],
@@ -441,10 +445,24 @@ export function OperatorAgentPanel({
   );
   const currentPageContext =
     variant === "rail" ? (registeredPageContext ?? fallbackPageContext) : null;
+  const recentContextThreads = useMemo(
+    () =>
+      currentPageContext
+        ? threads.filter(
+            (thread) =>
+              thread.initialContext &&
+              operatorPageContextsShareScope(
+                thread.initialContext,
+                currentPageContext,
+              ),
+          )
+        : threads,
+    [currentPageContext, threads],
+  );
   const currentPageContextKey = currentPageContext
     ? operatorPageContextKey(currentPageContext)
     : null;
-  const attachedPageContext =
+  const availablePageContext =
     currentPageContext &&
     currentPageContextKey !== controller?.detachedPageContextKey
       ? currentPageContext
@@ -453,6 +471,8 @@ export function OperatorAgentPanel({
     detail.thread ??
     threads.find((thread) => thread.id === activeThreadId) ??
     null;
+  const retainedThreadContext = activeThread?.initialContext ?? null;
+  const displayedPageContext = retainedThreadContext ?? availablePageContext;
   const running = detail.activeRun || submitting;
 
   useEffect(() => {
@@ -469,12 +489,12 @@ export function OperatorAgentPanel({
   const startNewThread = useCallback(async () => {
     if (!controller) throw new Error("Operator agent is unavailable");
     const result = await createThread(
-      attachedPageContext ? { initialContext: attachedPageContext } : {},
+      availablePageContext ? { initialContext: availablePageContext } : {},
     );
     const newThreadId = result;
     controller.setActiveThreadId(newThreadId);
     return newThreadId;
-  }, [attachedPageContext, controller, createThread]);
+  }, [availablePageContext, controller, createThread]);
 
   const startNewThreadFromUi = useCallback(async () => {
     try {
@@ -538,7 +558,9 @@ export function OperatorAgentPanel({
           threadId: targetThreadId,
           content: text || "(attached files)",
           ...(attachments.length > 0 ? { attachments } : {}),
-          ...(attachedPageContext ? { pageContext: attachedPageContext } : {}),
+          ...(!retainedThreadContext && availablePageContext
+            ? { pageContext: availablePageContext }
+            : {}),
         });
       } catch (error) {
         if (uploadedIntents.length > 0) {
@@ -557,8 +579,8 @@ export function OperatorAgentPanel({
       }
     },
     [
-      attachedPageContext,
       activeThreadId,
+      availablePageContext,
       controller,
       generateUploadUrl,
       registerUpload,
@@ -566,6 +588,7 @@ export function OperatorAgentPanel({
       sendMessage,
       startNewThread,
       submitting,
+      retainedThreadContext,
     ],
   );
 
@@ -652,9 +675,9 @@ export function OperatorAgentPanel({
                     <Spinner className="text-muted-foreground" />
                     <span className="sr-only">Loading tasks</span>
                   </DropdownMenuItem>
-                ) : threads.length === 0 ? (
+                ) : recentContextThreads.length === 0 ? (
                   <DropdownMenuItem disabled className="py-3">
-                    No operator tasks yet.
+                    No tasks for this page.
                   </DropdownMenuItem>
                 ) : (
                   <DropdownMenuRadioGroup
@@ -664,7 +687,7 @@ export function OperatorAgentPanel({
                       controller.setActiveThreadId(threadId);
                     }}
                   >
-                    {threads.map((thread) => (
+                    {recentContextThreads.map((thread) => (
                       <DropdownMenuRadioItem
                         key={thread.id}
                         value={thread.id}
@@ -705,9 +728,9 @@ export function OperatorAgentPanel({
         </header>
       ) : null}
 
-      {variant === "rail" && currentPageContext ? (
+      {variant === "rail" && (retainedThreadContext || currentPageContext) ? (
         <div className="flex min-h-10 shrink-0 items-center border-b border-border px-3 py-1.5">
-          {attachedPageContext ? (
+          {displayedPageContext ? (
             <div
               className={cn(
                 "flex min-w-0 items-center gap-1.5 rounded-full border border-input px-2.5 py-1 text-muted-foreground",
@@ -715,19 +738,22 @@ export function OperatorAgentPanel({
               )}
             >
               <span className="truncate">
-                Using {operatorPageContextLabel(attachedPageContext)}
+                {retainedThreadContext ? "Thread context: " : "Using "}
+                {operatorPageContextLabel(displayedPageContext)}
               </span>
-              <button
-                type="button"
-                aria-label="Remove current page context"
-                className="shrink-0 transition-colors hover:text-foreground"
-                onClick={() =>
-                  currentPageContextKey &&
-                  controller.detachPageContext(currentPageContextKey)
-                }
-              >
-                <X className="size-3" />
-              </button>
+              {!retainedThreadContext ? (
+                <button
+                  type="button"
+                  aria-label="Remove current page context"
+                  className="shrink-0 transition-colors hover:text-foreground"
+                  onClick={() =>
+                    currentPageContextKey &&
+                    controller.detachPageContext(currentPageContextKey)
+                  }
+                >
+                  <X className="size-3" />
+                </button>
+              ) : null}
             </div>
           ) : (
             <PillButton
@@ -746,7 +772,7 @@ export function OperatorAgentPanel({
         activeThreadId={activeThreadId}
         loading={Boolean(activeThreadId && rawThread === undefined)}
         detail={detail}
-        contextual={Boolean(attachedPageContext)}
+        contextual={Boolean(displayedPageContext)}
         confirmationBusyId={confirmationBusyId}
         onSelectPrompt={(prompt) => promptRef.current?.setValueAndFocus(prompt)}
         onDecision={(confirmation, decision) =>

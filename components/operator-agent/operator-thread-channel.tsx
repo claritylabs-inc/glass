@@ -1,4 +1,4 @@
-import { MessageCircle, MessageSquare, SquareTerminal } from "lucide-react";
+import { Globe, MessageCircle, SquareTerminal } from "lucide-react";
 import { SiSlack } from "react-icons/si";
 
 import type { OperatorAgentThread } from "@/lib/operator-agent-api";
@@ -22,5 +22,5 @@ export function OperatorThreadChannelIcon({
   if (channel === "slack") return <SiSlack className={className} />;
   if (channel === "imessage") return <MessageCircle className={className} />;
   if (channel === "mcp") return <SquareTerminal className={className} />;
-  return <MessageSquare className={className} />;
+  return <Globe className={className} />;
 }

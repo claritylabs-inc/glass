@@ -38,8 +38,7 @@ export function useFileDrop<T extends HTMLElement = HTMLElement>(
   return { dragging, handlers };
 }
 
-interface FileDropZoneProps {
-  onFile: (file: File) => void;
+type FileDropZoneProps = {
   accept?: string;
   disabled?: boolean;
   /** Primary headline shown at rest. */
@@ -53,10 +52,23 @@ interface FileDropZoneProps {
   /** Tailwind padding override for the zone. */
   padding?: string;
   className?: string;
-}
+} & (
+  | {
+      onFile: (file: File) => void;
+      onFiles?: never;
+      multiple?: false;
+    }
+  | {
+      onFile?: never;
+      onFiles: (files: File[]) => void;
+      multiple: true;
+    }
+);
 
 export function FileDropZone({
   onFile,
+  onFiles,
+  multiple = false,
   accept = "application/pdf,.pdf",
   disabled = false,
   idleLabel,
@@ -67,9 +79,17 @@ export function FileDropZone({
   className = "",
 }: FileDropZoneProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const selectFiles = (files: FileList) => {
+    const selected = Array.from(files);
+    if (onFiles) {
+      onFiles(multiple ? selected : selected.slice(0, 1));
+      return;
+    }
+    const file = selected[0];
+    if (file) onFile?.(file);
+  };
   const { dragging, handlers } = useFileDrop<HTMLButtonElement>((files) => {
-    const file = files[0];
-    if (file) onFile(file);
+    selectFiles(files);
   });
 
   const label = disabled
@@ -102,10 +122,10 @@ export function FileDropZone({
         ref={inputRef}
         type="file"
         accept={accept}
+        multiple={multiple}
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) onFile(file);
+          if (e.target.files?.length) selectFiles(e.target.files);
           e.currentTarget.value = "";
         }}
       />

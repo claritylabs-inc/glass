@@ -2,10 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 
-import {
-  usePageContext,
-  type PageContext,
-} from "@/hooks/use-page-context";
+import { usePageContext, type PageContext } from "@/hooks/use-page-context";
 
 export function OperatorPageContextRegistration({
   context,
@@ -38,11 +35,34 @@ export function operatorPageContextLabel(context: PageContext) {
   return context.summary?.trim() || context.pageType.replaceAll("_", " ");
 }
 
+export function operatorPageContextsShareScope(
+  left: PageContext,
+  right: PageContext,
+) {
+  if (left.entityId || right.entityId) {
+    return Boolean(left.entityId && left.entityId === right.entityId);
+  }
+  return left.pageType === right.pageType;
+}
+
 export function operatorPageContextFromPathname(
   pathname: string,
 ): PageContext | null {
   const segments = pathname.split("/").filter(Boolean);
   if (segments[0] !== "operator") return null;
+
+  if (
+    segments[1] === "clients" &&
+    segments[2] &&
+    segments[3] === "policies" &&
+    segments[4]
+  ) {
+    return {
+      pageType: "policy",
+      entityId: segments[4],
+      summary: "Current policy",
+    };
+  }
 
   if (segments[1] === "policies" && segments[2]) {
     return {

@@ -1042,6 +1042,9 @@ export default defineSchema({
       v.literal("email"),
       v.literal("imessage"),
       v.literal("slack"),
+      v.literal("manual"),
+      v.literal("operator"),
+      v.literal("mcp"),
     ),
     policyId: v.optional(v.id("policies")),
     sourceRef: v.optional(v.string()),
@@ -2643,6 +2646,227 @@ export default defineSchema({
     .index("organization", ["orgId"])
     .index("file", ["fileId"]),
 
+  // Operator-managed client dropbox. These records are separate from policy
+  // source files because they may be unrelated to a policy and have their own
+  // client-visibility contract.
+  clientFiles: defineTable({
+    orgId: v.id("organizations"),
+    fileId: v.id("_storage"),
+    name: v.string(),
+    originalName: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    clientVisible: v.boolean(),
+    policyId: v.optional(v.id("policies")),
+    uploadedByUserId: v.optional(v.id("users")),
+    uploadedBySide: v.union(
+      v.literal("operator"),
+      v.literal("procurement_email"),
+    ),
+    nameSource: v.union(
+      v.literal("original"),
+      v.literal("ai"),
+      v.literal("operator"),
+      v.literal("agent"),
+    ),
+    nameStatus: v.union(
+      v.literal("pending"),
+      v.literal("ready"),
+      v.literal("failed"),
+    ),
+    nameInferenceError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("organization", ["orgId", "createdAt"])
+    .index("visibility", ["orgId", "clientVisible", "createdAt"])
+    .index("storage", ["fileId"])
+    .index("policy", ["policyId", "createdAt"]),
+
+  clientFileUploadIntents: defineTable({
+    operatorUserId: v.id("users"),
+    clientOrgId: v.id("organizations"),
+    fileId: v.optional(v.id("_storage")),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("operator_expiration", ["operatorUserId", "expiresAt"])
+    .index("storage", ["fileId"]),
+
+  procurementRequests: defineTable({
+    clientOrgId: v.id("organizations"),
+    title: v.string(),
+    requestSummary: v.string(),
+    requirements: v.string(),
+    targetEffectiveDate: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("marketing"),
+      v.literal("quote_review"),
+      v.literal("client_decision"),
+      v.literal("accepted"),
+      v.literal("closed"),
+      v.literal("cancelled"),
+    ),
+    replacingPolicyId: v.optional(v.id("policies")),
+    resultingPolicyId: v.optional(v.id("policies")),
+    inboxToken: v.string(),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("organization", ["clientOrgId", "updatedAt"])
+    .index("status", ["clientOrgId", "status", "updatedAt"])
+    .index("inbox", ["inboxToken"]),
+
+  procurementBrokerOutreaches: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    brokerName: v.string(),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    status: v.union(
+      v.literal("request_sent"),
+      v.literal("can_handle"),
+      v.literal("cannot_handle"),
+      v.literal("quote_received"),
+      v.literal("quote_accepted"),
+      v.literal("quote_rejected"),
+    ),
+    applicationUrl: v.optional(v.string()),
+    applicationQuestions: v.array(v.string()),
+    notes: v.optional(v.string()),
+    quoteSummary: v.optional(v.string()),
+    quoteAmount: v.optional(v.number()),
+    quoteCurrency: v.optional(v.string()),
+    quoteUrl: v.optional(v.string()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "updatedAt"])
+    .index("organization", ["clientOrgId", "updatedAt"])
+    .index("broker", ["brokerOrgId", "updatedAt"]),
+
+  procurementEmailThreads: defineTable({
+    clientOrgId: v.id("organizations"),
+    addressedRequestId: v.id("procurementRequests"),
+    requestId: v.id("procurementRequests"),
+    normalizedSubject: v.string(),
+    subject: v.string(),
+    category: v.union(
+      v.literal("broker"),
+      v.literal("client"),
+      v.literal("internal"),
+      v.literal("mixed"),
+      v.literal("other"),
+    ),
+    categorySource: v.union(v.literal("auto"), v.literal("operator")),
+    categoryReason: v.optional(v.string()),
+    participantEmails: v.array(v.string()),
+    latestMessageAt: v.number(),
+    messageCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("organization", ["clientOrgId", "latestMessageAt"])
+    .index("request", ["requestId", "latestMessageAt"])
+    .index("addressed", ["addressedRequestId", "latestMessageAt"])
+    .index("subject", ["clientOrgId", "normalizedSubject", "latestMessageAt"]),
+
+  procurementEmailMessages: defineTable({
+    threadId: v.id("procurementEmailThreads"),
+    clientOrgId: v.id("organizations"),
+    addressedRequestId: v.id("procurementRequests"),
+    resendEmailId: v.optional(v.string()),
+    messageId: v.optional(v.string()),
+    inReplyTo: v.optional(v.string()),
+    references: v.array(v.string()),
+    subject: v.string(),
+    fromName: v.optional(v.string()),
+    fromEmail: v.string(),
+    toAddresses: v.array(v.string()),
+    ccAddresses: v.array(v.string()),
+    bccAddresses: v.array(v.string()),
+    currentText: v.string(),
+    bodyHtml: v.optional(v.string()),
+    forwarded: v.optional(v.any()),
+    clientFileIds: v.array(v.id("clientFiles")),
+    receivedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("thread", ["threadId", "receivedAt"])
+    .index("resend", ["resendEmailId"])
+    .index("message", ["messageId"])
+    .index("request", ["addressedRequestId", "receivedAt"]),
+
+  procurementFileItems: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
+    clientFileId: v.optional(v.id("clientFiles")),
+    sourceEmailMessageId: v.optional(v.id("procurementEmailMessages")),
+    purpose: v.union(
+      v.literal("requirements"),
+      v.literal("application"),
+      v.literal("requested_document"),
+      v.literal("quote"),
+      v.literal("correspondence"),
+      v.literal("other"),
+    ),
+    label: v.string(),
+    status: v.union(
+      v.literal("requested"),
+      v.literal("available"),
+      v.literal("sent"),
+      v.literal("received"),
+    ),
+    notes: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "updatedAt"])
+    .index("outreach", ["outreachId", "updatedAt"])
+    .index("file", ["clientFileId", "updatedAt"])
+    .index("email", ["sourceEmailMessageId"]),
+
+  procurementMemory: defineTable({
+    clientOrgId: v.id("organizations"),
+    kind: v.union(
+      v.literal("placement_preference"),
+      v.literal("broker_appetite"),
+      v.literal("submission_requirement"),
+      v.literal("market_observation"),
+    ),
+    content: v.string(),
+    source: v.union(
+      v.literal("manual"),
+      v.literal("operator_agent"),
+      v.literal("mcp"),
+      v.literal("email"),
+      v.literal("procurement_outcome"),
+    ),
+    requestId: v.optional(v.id("procurementRequests")),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
+    brokerOrgId: v.optional(v.id("organizations")),
+    sourceRef: v.optional(v.string()),
+    confidence: v.optional(v.number()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("client", ["clientOrgId", "updatedAt"])
+    .index("request", ["requestId", "updatedAt"])
+    .index("broker", ["brokerOrgId", "updatedAt"])
+    .index("source", ["clientOrgId", "sourceRef"]),
+
   policyVersions: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
@@ -4079,11 +4303,16 @@ export default defineSchema({
     ),
     lastMessageAt: v.number(),
     archivedAt: v.optional(v.number()),
+    archiveState: v.optional(v.literal("archived")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("owner_activity", ["ownerUserId", "lastMessageAt"])
-    .index("visibility_activity", ["visibility", "lastMessageAt"])
+    .index("owner_archive", ["ownerUserId", "archiveState", "lastMessageAt"])
+    .index("visibility_archive", [
+      "visibility",
+      "archiveState",
+      "lastMessageAt",
+    ])
     .index("owner_conversation", ["ownerUserId", "channel", "conversationKey"])
     .index("channel_conversation", ["channel", "conversationKey"]),
 
@@ -4146,7 +4375,11 @@ export default defineSchema({
   })
     .index("thread", ["threadId"])
     .index("thread_dedupe", ["threadId", "dedupeKey"])
-    .index("reply", ["replyToMessageId"]),
+    .index("reply", ["replyToMessageId"])
+    .searchIndex("content", {
+      searchField: "content",
+      filterFields: ["threadId"],
+    }),
 
   operatorAgentAttachments: defineTable({
     fileId: v.id("_storage"),

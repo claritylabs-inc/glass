@@ -254,7 +254,7 @@ export function OrganizationSection() {
         {profileCanReset ? (
           <PillButton
             type="button"
-            variant="icon"
+            variant="secondary"
             size="compact"
             label={restoringProfile ? "Restoring…" : "Use extracted"}
             expandLabel
@@ -269,7 +269,7 @@ export function OrganizationSection() {
           </PillButton>
         ) : null}
         <PillButton
-          variant="icon"
+          variant="secondary"
           size="compact"
           label={extracting ? "Extracting…" : "Extract from website"}
           expandLabel

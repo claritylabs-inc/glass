@@ -15,6 +15,7 @@ type OperatorClientImpersonationActionProps = {
   activeImpersonation: OperatorImpersonationTarget | null | undefined;
   beforeStart?: () => Promise<boolean | void>;
   disabled?: boolean;
+  collapsed: boolean;
 };
 
 export function OperatorClientImpersonationAction({
@@ -22,6 +23,7 @@ export function OperatorClientImpersonationAction({
   activeImpersonation,
   beforeStart,
   disabled = false,
+  collapsed,
 }: OperatorClientImpersonationActionProps) {
   const { startImpersonation, status: startStatus } =
     useStartOperatorImpersonation();
@@ -60,32 +62,46 @@ export function OperatorClientImpersonationAction({
     }
   }
 
+  const label = busy
+    ? isImpersonating
+      ? "Stopping…"
+      : "Starting…"
+    : isImpersonating
+      ? "Stop impersonating"
+      : startStatus === "retry"
+        ? "Retry impersonation"
+        : "Impersonate";
+  const icon = busy ? Loader2 : isImpersonating ? LogOut : UserRoundCog;
+  const Icon = icon;
+
+  if (collapsed) {
+    return (
+      <PillButton
+        type="button"
+        size="compact"
+        variant="secondary"
+        iconOnly
+        label={label}
+        disabled={disabled || busy}
+        onClick={() => void toggleImpersonation()}
+      >
+        <Icon className={busy ? "size-3.5 animate-spin" : "size-3.5"} />
+      </PillButton>
+    );
+  }
+
   return (
     <PillButton
+      type="button"
       size="compact"
-      variant="icon"
-      label={
-        busy
-          ? isImpersonating
-            ? "Stopping…"
-            : "Starting…"
-          : isImpersonating
-            ? "Stop impersonating"
-            : startStatus === "retry"
-              ? "Retry impersonation"
-              : "Impersonate"
-      }
-      expandLabel
+      variant="secondary"
+      label={label}
       disabled={disabled || busy}
+      className="w-full"
       onClick={() => void toggleImpersonation()}
     >
-      {busy ? (
-        <Loader2 className="size-3.5 animate-spin" />
-      ) : isImpersonating ? (
-        <LogOut className="size-3.5" />
-      ) : (
-        <UserRoundCog className="size-3.5" />
-      )}
+      <Icon className={busy ? "size-3.5 animate-spin" : "size-3.5"} />
+      {label}
     </PillButton>
   );
 }
