@@ -15,13 +15,24 @@ import {
   MAX_AGENT_ATTACHMENT_FILES,
   normalizeAgentAttachmentFilename,
 } from "../lib/agentAttachmentLimits";
+import {
+  isLegacyOperatorSlackTitle,
+  slackChannelTitlePrefix,
+} from "../lib/slackThreadTitle";
 
 const WORKER_TIMEOUT_MS = 30_000;
+const CHANNEL_NAME_TIMEOUT_MS = 3_000;
 const internalApi = internal as any;
 
 type OperatorAuthorizedEvent = {
   event: Doc<"slackInboundEvents">;
   operatorUserId: Id<"users">;
+};
+
+type OperatorChannelThreadResult = {
+  threadId: Id<"operatorAgentThreads">;
+  created: boolean;
+  title: string;
 };
 
 function operatorSlackContent(event: Doc<"slackInboundEvents">) {
@@ -125,14 +136,28 @@ async function processOperatorBatch(
     internalApi.operatorSlack.authorizeBatch,
     { eventIds },
   )) as OperatorAuthorizedEvent[];
+  const firstAuthorizedEvent = authorized[0]?.event;
+  const channelName = firstAuthorizedEvent?.isDirectMessage
+    ? undefined
+    : await resolveSlackChannelName(firstAuthorizedEvent).catch((error) => {
+        console.warn("[slack] Could not resolve operator channel name", error);
+        return undefined;
+      });
   for (const { event, operatorUserId } of authorized) {
     let refreshedEvent = (await ctx.runQuery(
       internalApi.slack.getInboundEvent,
       { eventId: event._id },
     )) as Doc<"slackInboundEvents"> | null;
     if (!refreshedEvent) continue;
-    const threadId = await ctx.runMutation(
-      internalApi.operatorAgent.createOrGetChannelThreadInternal,
+    const titlePrefix = slackChannelTitlePrefix({
+      channelId: refreshedEvent.channelId,
+      channelName,
+    });
+    const initialTitle = refreshedEvent.isDirectMessage
+      ? `Slack DM · ${refreshedEvent.senderDisplayName ?? refreshedEvent.senderUserId}`
+      : titlePrefix;
+    const channelThread = (await ctx.runMutation(
+      internalApi.operatorAgent.createOrGetChannelThreadWithStatusInternal,
       {
         operatorUserId,
         channel: "slack",
@@ -141,12 +166,11 @@ async function processOperatorBatch(
           refreshedEvent.channelId,
           refreshedEvent.threadTs,
         ].join(":"),
-        title: refreshedEvent.isDirectMessage
-          ? `Slack DM · ${refreshedEvent.senderDisplayName ?? refreshedEvent.senderUserId}`
-          : `Slack · ${refreshedEvent.channelId}`,
+        title: initialTitle,
         shared: !refreshedEvent.isDirectMessage,
       },
-    );
+    )) as OperatorChannelThreadResult;
+    const threadId = channelThread.threadId;
     const content = operatorSlackContent(refreshedEvent);
     const confirmation = await handleOperatorChannelConfirmation(ctx, {
       operatorUserId,
@@ -173,6 +197,18 @@ async function processOperatorBatch(
     const inboundAttachments =
       refreshedEvent.attachments ??
       (refreshedEvent.attachment ? [refreshedEvent.attachment] : []);
+    const titleGeneration =
+      !refreshedEvent.isDirectMessage &&
+      (channelThread.created ||
+        isLegacyOperatorSlackTitle(
+          channelThread.title,
+          refreshedEvent.channelId,
+        ))
+        ? {
+            expectedTitle: channelThread.title,
+            titlePrefix,
+          }
+        : undefined;
     const queued = await ctx.runMutation(
       internalApi.operatorAgent.enqueueMessageInternal,
       {
@@ -195,6 +231,12 @@ async function processOperatorBatch(
         ),
       },
     );
+    if (titleGeneration) {
+      await ctx.runMutation(
+        internalApi.operatorAgent.scheduleSlackThreadTitleInternal,
+        { threadId, ...titleGeneration },
+      );
+    }
     const result = await waitForOperatorAgentRun(
       ctx,
       operatorUserId,
@@ -216,6 +258,31 @@ function workerConfig() {
   const secret = process.env.SLACK_WORKER_SECRET?.trim();
   if (!url || !secret) throw new Error("Slack worker is not configured");
   return { url: url.replace(/\/$/, ""), secret };
+}
+
+async function resolveSlackChannelName(
+  event: Doc<"slackInboundEvents"> | undefined,
+) {
+  if (!event) return undefined;
+  const worker = workerConfig();
+  const response = await fetch(`${worker.url}/channel`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${worker.secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      teamId: event.teamId,
+      channelId: event.channelId,
+    }),
+    signal: AbortSignal.timeout(CHANNEL_NAME_TIMEOUT_MS),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    channelId?: string;
+    name?: string;
+  };
+  if (!response.ok || result.channelId !== event.channelId) return undefined;
+  return result.name?.trim() || undefined;
 }
 
 async function fetchAttachment(

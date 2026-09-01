@@ -3,6 +3,12 @@ import {
   fallbackTitle,
   normalizeGeneratedTitle,
 } from "../convex/actions/threadTitle";
+import {
+  isLegacyOperatorSlackTitle,
+  slackChannelTitlePrefix,
+  slackThreadTitle,
+  slackThreadTitleSeed,
+} from "../convex/lib/slackThreadTitle";
 
 describe("thread title generation", () => {
   it("removes recipient noise while preserving Unicode work terms", () => {
@@ -24,5 +30,31 @@ describe("thread title generation", () => {
     expect(normalizeGeneratedTitle("Résumé Politique Tokyo")).toBe(
       "Résumé Politique Tokyo",
     );
+  });
+
+  it("combines a friendly Slack channel with a concise generated topic", () => {
+    const prefix = slackChannelTitlePrefix({
+      channelId: "C05UNKNOWN",
+      channelName: "renewal-support",
+    });
+
+    expect(prefix).toBe("#renewal-support");
+    expect(slackThreadTitle(prefix, "Review Cyber Renewal")).toBe(
+      "#renewal-support · Review Cyber Renewal",
+    );
+    expect(
+      slackChannelTitlePrefix({ channelId: "C05UNKNOWN" }),
+    ).toBe("#C05UNKNOWN");
+  });
+
+  it("removes Slack mentions from the title seed and recognizes legacy titles", () => {
+    expect(
+      slackThreadTitleSeed(
+        "<@U-SPOT>   summarize the property coverage exclusions",
+      ),
+    ).toBe("summarize the property coverage exclusions");
+    expect(isLegacyOperatorSlackTitle("Slack · C05UNKNOWN", "C05UNKNOWN"))
+      .toBe(true);
+    expect(isLegacyOperatorSlackTitle("#renewals", "C05UNKNOWN")).toBe(false);
   });
 });

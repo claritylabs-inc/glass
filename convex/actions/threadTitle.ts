@@ -4,9 +4,16 @@ import { v } from "convex/values";
 import { z } from "zod";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { generateObjectForOrg } from "../lib/models";
+import {
+  generateObjectForOrg,
+  generateObjectForPublicTask,
+} from "../lib/models";
 import { logAiError } from "../lib/aiUtils";
 import { tokenizeSearchText } from "../lib/searchTokenizer";
+import {
+  slackThreadTitle,
+  slackThreadTitleSeed,
+} from "../lib/slackThreadTitle";
 
 export const TITLE_SYSTEM_PROMPT = `You are a thread title generator for an insurance work assistant.
 
@@ -23,6 +30,20 @@ Rules:
 - Never include raw email addresses, email domains, usernames, file IDs, generated IDs, or local-part fragments.
 - For certificate of insurance work, use a compact action title such as "Generate COI", "Update COI", "Draft COI", or "Send COI".
 - Good examples: "Generate COI", "Send COI", "GL Coverage Limits", "Cyber Liability Policy", "Endorsement Follow Up", "Renewal Timeline".`;
+
+export const SLACK_TITLE_SYSTEM_PROMPT = `You are a Slack thread title generator for an insurance work assistant.
+
+Given the initial message in a Slack thread, output a compact topic that makes the conversation easy to find later.
+
+Rules:
+- Return the title field only. Do not include analysis or explanation.
+- Do not output analysis, reasoning, steps, headings, lists, or Markdown.
+- Use title case.
+- Use 3-4 words whenever the message provides enough context.
+- Name the actual request, deliverable, policy topic, or operational issue.
+- Do not repeat the Slack channel, sender, or conversational framing.
+- Never include Slack mentions, raw email addresses, URLs, usernames, file IDs, generated IDs, or local-part fragments.
+- Good examples: "Review Cyber Renewal", "Summarize Coverage Exclusions", "Update Certificate Holder", "Confirm Property Deductible".`;
 
 const ThreadTitleOutputSchema = z.object({
   title: z.string().min(1).max(80),
@@ -81,6 +102,42 @@ type TitleContext = {
   }>;
   assistantReply?: string;
 };
+
+type ThreadTitleGenerationArgs = {
+  seed: string;
+  context: TitleContext;
+  titlePrefix?: string;
+};
+
+async function generateThreadTitle(
+  generateObject: (options: {
+    schema: typeof ThreadTitleOutputSchema;
+    maxOutputTokens: number;
+    system: string;
+    prompt: string;
+  }) => Promise<{ object: z.infer<typeof ThreadTitleOutputSchema> }>,
+  args: ThreadTitleGenerationArgs,
+) {
+  let subject = fallbackTitle(args.seed);
+  const result = await generateObject({
+    schema: ThreadTitleOutputSchema,
+    maxOutputTokens: 16,
+    system: args.titlePrefix
+      ? SLACK_TITLE_SYSTEM_PROMPT
+      : TITLE_SYSTEM_PROMPT,
+    prompt: buildTitlePromptContent(args.context),
+  });
+  const generated = normalizeGeneratedTitle(result.object.title);
+  if (generated) subject = generated;
+  return args.titlePrefix
+    ? slackThreadTitle(args.titlePrefix, subject)
+    : subject;
+}
+
+function fallbackThreadTitle(seed: string, prefix?: string) {
+  const fallback = fallbackTitle(seed);
+  return prefix ? slackThreadTitle(prefix, fallback) : fallback;
+}
 
 function stripStructuredTitleNoise(input: string): string {
   return input
@@ -189,6 +246,8 @@ export const generate = internalAction({
   args: {
     threadId: v.id("threads"),
     userMessageId: v.optional(v.id("threadMessages")),
+    expectedTitle: v.optional(v.string()),
+    titlePrefix: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     try {
@@ -196,16 +255,20 @@ export const generate = internalAction({
         id: args.threadId,
       });
       if (!thread) return;
-      if (thread.title && thread.title !== "New chat") return;
+      const expectedTitle = args.expectedTitle ?? "New chat";
+      if (thread.title !== expectedTitle) return;
 
       const message = args.userMessageId
         ? await ctx.runQuery(internal.threads.getMessageInternal, {
             id: args.userMessageId,
           })
         : undefined;
-      const seed = (message?.content ?? "").trim();
+      const rawSeed = (message?.content ?? "").trim();
+      const seed = args.titlePrefix
+        ? slackThreadTitleSeed(rawSeed)
+        : rawSeed;
       if (!seed) return;
-      const promptContent = buildTitlePromptContent({
+      const context = {
         userMessage: seed,
         initialContext: thread.initialContext,
         attachments: message?.attachments?.flatMap(
@@ -219,33 +282,79 @@ export const generate = internalAction({
                 ]
               : [],
         ),
-      });
+      };
 
-      let title = fallbackTitle(seed);
+      let title: string;
       try {
-        const result = await generateObjectForOrg(ctx, thread.orgId, "summary", {
-          schema: ThreadTitleOutputSchema,
-          maxOutputTokens: 16,
-          system: TITLE_SYSTEM_PROMPT,
-          prompt: promptContent,
-        });
-        const generated = normalizeGeneratedTitle(result.object.title);
-        if (generated) title = generated;
+        title = await generateThreadTitle(
+          (options) =>
+            generateObjectForOrg(ctx, thread.orgId, "summary", options),
+          { seed, context, titlePrefix: args.titlePrefix },
+        );
       } catch (err) {
         logAiError("threadTitle.generateText", err, { threadId: args.threadId });
+        title = fallbackThreadTitle(seed, args.titlePrefix);
       }
-
-      const latest = await ctx.runQuery(internal.threads.getInternal, {
-        id: args.threadId,
-      });
-      if (!latest || (latest.title && latest.title !== "New chat")) return;
 
       await ctx.runMutation(internal.threads.updateTitleInternal, {
         threadId: args.threadId,
         title,
+        expectedTitle,
       });
     } catch (err) {
       logAiError("threadTitle.generate", err, { threadId: args.threadId });
+    }
+  },
+});
+
+export const generateOperatorSlack = internalAction({
+  args: {
+    threadId: v.id("operatorAgentThreads"),
+    expectedTitle: v.string(),
+    titlePrefix: v.string(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const context = await ctx.runQuery(
+        internal.operatorAgent.getSlackThreadTitleContextInternal,
+        { threadId: args.threadId, expectedTitle: args.expectedTitle },
+      );
+      if (!context) return;
+      const seed = slackThreadTitleSeed(context.message.content);
+      if (!seed) return;
+      const titleContext = {
+        userMessage: seed,
+        attachments: context.message.attachments?.map(
+          (attachment: { filename: string; contentType?: string }) => ({
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+          }),
+        ),
+      };
+      let title: string;
+      try {
+        title = await generateThreadTitle(
+          (options) => generateObjectForPublicTask(ctx, "summary", options),
+          { seed, context: titleContext, titlePrefix: args.titlePrefix },
+        );
+      } catch (error) {
+        logAiError("threadTitle.generateOperatorSlackText", error, {
+          threadId: args.threadId,
+        });
+        title = fallbackThreadTitle(seed, args.titlePrefix);
+      }
+      await ctx.runMutation(
+        internal.operatorAgent.updateSlackThreadTitleInternal,
+        {
+          threadId: args.threadId,
+          expectedTitle: args.expectedTitle,
+          title,
+        },
+      );
+    } catch (error) {
+      logAiError("threadTitle.generateOperatorSlack", error, {
+        threadId: args.threadId,
+      });
     }
   },
 });

@@ -70,6 +70,7 @@ type OpenViewRequest = {
 
 type AttachmentRequest = { teamId: string; fileId: string };
 type ActorRequest = { teamId: string; userId: string };
+type ChannelRequest = { teamId: string; channelId: string };
 type ConnectChannelRequest = {
   clientSlug: string;
   inviteEmail: string;
@@ -856,6 +857,38 @@ async function resolveSlackActor(input: ActorRequest) {
   }
 }
 
+async function resolveSlackChannel(input: ChannelRequest) {
+  if (!input.teamId || !input.channelId) {
+    throw new Error("teamId and channelId are required");
+  }
+  if (mode === "mock") {
+    const current = mockCurrentChannelsByTeam.get(input.teamId);
+    return {
+      teamId: input.teamId,
+      channelId: input.channelId,
+      name:
+        current?.id === input.channelId
+          ? current.name
+          : input.channelId.toLowerCase(),
+    };
+  }
+  const installation = await slackInstallation(input.teamId);
+  const result = await slackFormApi<
+    SlackResponse & { channel?: SlackChannelPayload }
+  >("conversations.info", installation.botToken, {
+    channel: input.channelId,
+    include_num_members: false,
+  });
+  if (result.channel?.id !== input.channelId || !result.channel.name) {
+    throw new Error("Slack channel metadata is unavailable");
+  }
+  return {
+    teamId: input.teamId,
+    channelId: input.channelId,
+    name: result.channel.name,
+  };
+}
+
 function channelName(clientSlug: string) {
   const slug = clientSlug
     .toLowerCase()
@@ -1306,6 +1339,13 @@ const server = http.createServer(async (request, response) => {
         response,
         200,
         await resolveSlackActor(await readJson<ActorRequest>(request)),
+      );
+    }
+    if (request.method === "POST" && request.url === "/channel") {
+      return json(
+        response,
+        200,
+        await resolveSlackChannel(await readJson<ChannelRequest>(request)),
       );
     }
     if (request.method === "POST" && request.url === "/connect-channel") {

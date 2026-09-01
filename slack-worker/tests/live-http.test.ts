@@ -178,6 +178,16 @@ before(async () => {
         },
       });
     }
+    if (request.url === "/api/conversations.info") {
+      return respond(response, {
+        ok: true,
+        channel: {
+          id: body.channel,
+          name: "client-service",
+          is_member: true,
+        },
+      });
+    }
     if (request.url === "/api/conversations.create") {
       return respond(response, {
         ok: true,
@@ -349,6 +359,23 @@ describe("native Slack worker HTTP adapter", () => {
         path: "/api/users.info",
         authorization: "Bearer xoxb-customer",
         body: { user: "U-CUSTOMER" },
+      },
+    );
+    const channel = await workerRequest("/channel", {
+      teamId: "T-CUSTOMER",
+      channelId: "C-CUSTOMER",
+    });
+    assert.deepEqual(await channel.json(), {
+      teamId: "T-CUSTOMER",
+      channelId: "C-CUSTOMER",
+      name: "client-service",
+    });
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/conversations.info"),
+      {
+        path: "/api/conversations.info",
+        authorization: "Bearer xoxb-customer",
+        body: { channel: "C-CUSTOMER", include_num_members: "false" },
       },
     );
   });

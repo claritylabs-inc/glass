@@ -1238,9 +1238,18 @@ export const touchThread = internalMutation({
 });
 
 export const updateTitleInternal = internalMutation({
-  args: { threadId: v.id("threads"), title: v.string() },
+  args: {
+    threadId: v.id("threads"),
+    title: v.string(),
+    expectedTitle: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    if (args.expectedTitle !== undefined) {
+      const thread = await ctx.db.get(args.threadId);
+      if (!thread || thread.title !== args.expectedTitle) return false;
+    }
     await ctx.db.patch(args.threadId, { title: args.title });
+    return true;
   },
 });
 

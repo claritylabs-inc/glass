@@ -70,6 +70,33 @@ async function seedOperatorAgentFixture() {
 }
 
 describe("operator agent boundary", () => {
+  test("reports whether a channel thread was newly created", async () => {
+    const fixture = await seedOperatorAgentFixture();
+    const args = {
+      operatorUserId: fixture.firstOperatorUserId,
+      channel: "slack" as const,
+      conversationKey: "T-CLARITY:C-RENEWALS:thread-title",
+      title: "#renewals",
+      shared: true,
+    };
+
+    const created = await fixture.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadWithStatusInternal,
+      args,
+    );
+    const existing = await fixture.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadWithStatusInternal,
+      args,
+    );
+
+    expect(created).toMatchObject({ created: true, title: "#renewals" });
+    expect(existing).toEqual({
+      threadId: created.threadId,
+      created: false,
+      title: "#renewals",
+    });
+  });
+
   test("shares private Slack channel threads without sharing DMs", async () => {
     const fixture = await seedOperatorAgentFixture();
     const firstOperator = fixture.t.withIdentity({
