@@ -271,6 +271,7 @@ describe("Conductor local Convex selection", () => {
         convexCloud: 55003,
         convexSite: 55004,
         slack: 55005,
+        operatorImessage: 55006,
       });
     } finally {
       if (previousPort === undefined) delete process.env.CONDUCTOR_PORT;
@@ -291,6 +292,7 @@ describe("Conductor local Convex selection", () => {
         EXTRACTION_WORKER_URL: "http://127.0.0.1:55001",
         IMESSAGE_WORKER_URL: "http://127.0.0.1:55002",
         SLACK_WORKER_URL: "http://127.0.0.1:55005",
+        OPERATOR_IMESSAGE_WORKER_URL: "http://127.0.0.1:55006",
       });
     } finally {
       if (previousPort === undefined) delete process.env.CONDUCTOR_PORT;

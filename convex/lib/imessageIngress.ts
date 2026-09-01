@@ -27,8 +27,15 @@ export type StoredImessageAttachmentRecord = {
 
 const SUPPORTED_IMESSAGE_ATTACHMENT_MIME_TYPES = new Set([
   "application/pdf",
+  "application/json",
+  "application/xml",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain",
   "text/csv",
+  "text/markdown",
+  "text/tab-separated-values",
   "image/jpeg",
   "image/png",
   "image/webp",
@@ -51,6 +58,30 @@ export const MAX_IMESSAGE_AUDIO_BYTES = 20 * 1024 * 1024;
 
 export function normalizeImessageAttachmentMimeType(mimeType: string): string {
   return mimeType.toLowerCase().split(";", 1)[0]?.trim() || "";
+}
+
+export function resolveImessageAttachmentMimeType(
+  attachment: Pick<RawImessageAttachment, "mimeType" | "name">,
+): string {
+  const normalized = normalizeImessageAttachmentMimeType(attachment.mimeType);
+  if (normalized && normalized !== "application/octet-stream") {
+    return normalized;
+  }
+  const lowerName = attachment.name.toLowerCase();
+  if (lowerName.endsWith(".xlsx")) {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+  if (lowerName.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  if (lowerName.endsWith(".pptx")) {
+    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  }
+  if (lowerName.endsWith(".csv")) return "text/csv";
+  if (lowerName.endsWith(".tsv")) return "text/tab-separated-values";
+  if (lowerName.endsWith(".md")) return "text/markdown";
+  if (lowerName.endsWith(".json")) return "application/json";
+  return normalized;
 }
 
 export function isImessageAudioAttachment(
@@ -142,7 +173,7 @@ export async function storeImessageAttachments(
 ): Promise<StoredImessageAttachmentRecord[]> {
   const attachmentRecords: StoredImessageAttachmentRecord[] = [];
   for (const attachment of attachments ?? []) {
-    const mimeType = normalizeImessageAttachmentMimeType(attachment.mimeType);
+    const mimeType = resolveImessageAttachmentMimeType(attachment);
     if (!SUPPORTED_IMESSAGE_ATTACHMENT_MIME_TYPES.has(mimeType)) {
       console.warn("[imessage] Ignoring unsupported attachment type", {
         filename: attachment.name,

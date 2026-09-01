@@ -8,6 +8,7 @@ import {
   generateAgentTextForOrg,
   generateTextForOrg,
   generateTextForPublicTask,
+  getAgentLanguageModelForOperatorTask,
   getModelAndRouteForSettingsSnapshot,
 } from "./models";
 
@@ -57,22 +58,28 @@ describe("Convex cl-router generation integration", () => {
   });
 
   test("reuses resolved broker and global snapshot precedence for direct fallback", () => {
-    const resolved = getModelAndRouteForSettingsSnapshot({
-      routes: {
-        classification: { provider: "openai", model: "gpt-5-mini" },
-        extraction_quality: {
-          provider: "fireworks",
-          model: "accounts/fireworks/models/deepseek-v4-flash",
+    const resolved = getModelAndRouteForSettingsSnapshot(
+      {
+        routes: {
+          classification: { provider: "openai", model: "gpt-5-mini" },
+          extraction_quality: {
+            provider: "fireworks",
+            model: "accounts/fireworks/models/deepseek-v4-flash",
+          },
+          extraction_coverage_cleanup: {
+            provider: "openai",
+            model: "gpt-5.4-mini",
+          },
         },
-        extraction_coverage_cleanup: { provider: "openai", model: "gpt-5.4-mini" },
+        routeSources: {
+          classification: "broker",
+          extraction_quality: "global",
+          extraction_coverage_cleanup: "static",
+        },
+        providerKeys: { openai: "broker-openai-key" },
       },
-      routeSources: {
-        classification: "broker",
-        extraction_quality: "global",
-        extraction_coverage_cleanup: "static",
-      },
-      providerKeys: { openai: "broker-openai-key" },
-    }, "classification");
+      "classification",
+    );
 
     expect(resolved).toMatchObject({
       route: { provider: "openai", model: "gpt-5-mini" },
@@ -83,13 +90,54 @@ describe("Convex cl-router generation integration", () => {
     });
   });
 
+  test("keeps operator-agent resolution direct when cl-router is enabled globally", async () => {
+    vi.stubEnv("CL_ROUTER_TASKS", "*");
+    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
+    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
+    vi.stubEnv("OPENAI_API_KEY", "operator-openai-key");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const route = { provider: "openai" as const, model: "gpt-5.6-terra" };
+    const ctx = { runQuery: vi.fn(async () => route) };
+
+    const resolved = await getAgentLanguageModelForOperatorTask(
+      ctx as never,
+      "chat_vision",
+      {
+        sessionKey: "operator-thread-1",
+        taskKind: "operator_agent",
+        trace: {
+          traceId: "operator-run-1",
+          label: "operator-agent",
+          phase: "run",
+          channel: "mcp",
+        },
+      },
+    );
+
+    expect(resolved).toMatchObject({
+      route,
+      fallbackRoute: route,
+      routeSource: "global",
+      transport: "direct",
+      routerResponses: [],
+      routerFailures: [],
+    });
+    expect(ctx.runQuery).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test("routes structured classification with the Convex settings snapshot", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "classification");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    const fetchMock = vi.fn(async () => Response.json(routerResponse({
-      disposition: "deliver",
-    })));
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        routerResponse({
+          disposition: "deliver",
+        }),
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const ctx = routerContext();
 
@@ -126,7 +174,10 @@ describe("Convex cl-router generation integration", () => {
         routing: { policyVersion: "policy-v1" },
       },
     });
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
     expect(JSON.parse(init.body as string)).toMatchObject({
       tenantId: "glass",
       orgId: "org-1",
@@ -155,16 +206,18 @@ describe("Convex cl-router generation integration", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(generateObjectForOrg(
-      routerContext() as never,
-      "org-1" as Id<"organizations">,
-      "classification",
-      {
-        schema: z.object({ disposition: z.enum(["deliver", "hold"]) }),
-        prompt: "Should this policy be delivered?",
-        abortSignal: controller.signal,
-      },
-    )).rejects.toMatchObject({
+    await expect(
+      generateObjectForOrg(
+        routerContext() as never,
+        "org-1" as Id<"organizations">,
+        "classification",
+        {
+          schema: z.object({ disposition: z.enum(["deliver", "hold"]) }),
+          prompt: "Should this policy be delivered?",
+          abortSignal: controller.signal,
+        },
+      ),
+    ).rejects.toMatchObject({
       name: "ClRouterRequestError",
       kind: "aborted",
     });
@@ -175,7 +228,9 @@ describe("Convex cl-router generation integration", () => {
     vi.stubEnv("CL_ROUTER_TASKS", "classification");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    const fetchMock = vi.fn(async () => Response.json(routerResponse("deliver")));
+    const fetchMock = vi.fn(async () =>
+      Response.json(routerResponse("deliver")),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await generateTextForOrg(
@@ -200,7 +255,9 @@ describe("Convex cl-router generation integration", () => {
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
     vi.stubEnv("OPENAI_API_KEY", "operator-openai-key");
-    const fetchMock = vi.fn(async () => Response.json(routerResponse("deliver")));
+    const fetchMock = vi.fn(async () =>
+      Response.json(routerResponse("deliver")),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const ctx = {
       runQuery: vi.fn(async () => ({
@@ -309,62 +366,75 @@ describe("Convex cl-router generation integration", () => {
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
     const fetchMock = vi
       .fn()
-      .mockImplementationOnce(async () => Response.json({
-        ...routerResponse({
-          text: "",
-          toolCalls: [{
-            toolCallId: "call-1",
-            toolName: "lookup_policy",
-            input: { policyNumber: "GL-100" },
-          }],
+      .mockImplementationOnce(async () =>
+        Response.json({
+          ...routerResponse({
+            text: "",
+            toolCalls: [
+              {
+                toolCallId: "call-1",
+                toolName: "lookup_policy",
+                input: { policyNumber: "GL-100" },
+              },
+            ],
+          }),
+          finishReason: "tool-calls",
         }),
-        finishReason: "tool-calls",
-      }))
-      .mockImplementationOnce(async () => Response.json({
-        error: {
-          code: "router_candidates_exhausted",
-          message: "Every eligible provider candidate failed",
-          retryable: true,
-          executionStarted: true,
-          requestId: "failed-request-2",
-          attempts: [{
-            attempt: 1,
-            provider: "fireworks",
-            model: "accounts/fireworks/models/deepseek-v4-flash-0731",
-            outcome: "error",
-            errorCode: "provider_500",
-          }],
-        },
-      }, { status: 502 }));
+      )
+      .mockImplementationOnce(async () =>
+        Response.json(
+          {
+            error: {
+              code: "router_candidates_exhausted",
+              message: "Every eligible provider candidate failed",
+              retryable: true,
+              executionStarted: true,
+              requestId: "failed-request-2",
+              attempts: [
+                {
+                  attempt: 1,
+                  provider: "fireworks",
+                  model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+                  outcome: "error",
+                  errorCode: "provider_500",
+                },
+              ],
+            },
+          },
+          { status: 502 },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const ctx = routerContext();
 
-    await expect(generateAgentTextForOrg(
-      ctx as never,
-      "org-1" as Id<"organizations">,
-      "chat",
-      {
-        prompt: "Find GL-100.",
-        tools: {
-          lookup_policy: tool({
-            inputSchema: z.object({ policyNumber: z.string() }),
-            execute: async () => ({ carrier: "Acme" }),
-          }),
+    await expect(
+      generateAgentTextForOrg(
+        ctx as never,
+        "org-1" as Id<"organizations">,
+        "chat",
+        {
+          prompt: "Find GL-100.",
+          tools: {
+            lookup_policy: tool({
+              inputSchema: z.object({ policyNumber: z.string() }),
+              execute: async () => ({ carrier: "Acme" }),
+            }),
+          },
+          stopWhen: stepCountIs(2),
         },
-        stopWhen: stepCountIs(2),
-      },
-      {
-        taskKind: "query_reason",
-        sessionKey: "thread-1",
-        trace: {
-          traceId: "agent-message-failed",
-          parentRequestId: "user-message-1",
-          label: "test.agent",
-          phase: "query_reason",
-          channel: "imessage",
+        {
+          taskKind: "query_reason",
+          sessionKey: "thread-1",
+          trace: {
+            traceId: "agent-message-failed",
+            parentRequestId: "user-message-1",
+            label: "test.agent",
+            phase: "query_reason",
+            channel: "imessage",
+          },
         },
-      },
-    )).rejects.toMatchObject({
+      ),
+    ).rejects.toMatchObject({
       routerCode: "router_candidates_exhausted",
       requestId: "failed-request-2",
     });
@@ -383,13 +453,15 @@ describe("Convex cl-router generation integration", () => {
       routerStatus: 502,
       routerRetryable: true,
       routerExecutionStarted: true,
-      failureAttempts: [{
-        attempt: 1,
-        provider: "fireworks",
-        model: "accounts/fireworks/models/deepseek-v4-flash-0731",
-        outcome: "error",
-        errorCode: "provider_500",
-      }],
+      failureAttempts: [
+        {
+          attempt: 1,
+          provider: "fireworks",
+          model: "accounts/fireworks/models/deepseek-v4-flash-0731",
+          outcome: "error",
+          errorCode: "provider_500",
+        },
+      ],
     });
   });
 
@@ -401,20 +473,22 @@ describe("Convex cl-router generation integration", () => {
     vi.stubGlobal("fetch", fetchMock);
     const ctx = routerContext();
 
-    await expect(generateTextForOrg(
-      ctx as never,
-      "org-1" as Id<"organizations">,
-      "classification",
-      {
-        prompt: "Classify this delivery.",
-        tools: {
-          classify_delivery: tool({
-            description: "Classify the delivery",
-            inputSchema: z.object({ disposition: z.string() }),
-          }),
+    await expect(
+      generateTextForOrg(
+        ctx as never,
+        "org-1" as Id<"organizations">,
+        "classification",
+        {
+          prompt: "Classify this delivery.",
+          tools: {
+            classify_delivery: tool({
+              description: "Classify the delivery",
+              inputSchema: z.object({ disposition: z.string() }),
+            }),
+          },
         },
-      },
-    )).rejects.toMatchObject({
+      ),
+    ).rejects.toMatchObject({
       name: "ClRouterRequestError",
       kind: "configuration",
       message: expect.stringContaining("cannot preserve"),
@@ -431,10 +505,8 @@ describe("Convex cl-router generation integration", () => {
     vi.stubGlobal("fetch", fetchMock);
     const ctx = routerContext();
 
-    await expect(generateTextForPublicTask(
-      ctx as never,
-      "chat",
-      {
+    await expect(
+      generateTextForPublicTask(ctx as never, "chat", {
         prompt: "Help this prospect.",
         tools: {
           collect_lead: tool({
@@ -442,8 +514,8 @@ describe("Convex cl-router generation integration", () => {
             inputSchema: z.object({ email: z.string() }),
           }),
         },
-      },
-    )).rejects.toMatchObject({
+      }),
+    ).rejects.toMatchObject({
       name: "ClRouterRequestError",
       kind: "configuration",
       message: expect.stringContaining("language-model tool loop"),
@@ -460,17 +532,19 @@ describe("Convex cl-router generation integration", () => {
     vi.stubGlobal("fetch", fetchMock);
     const ctx = routerContext();
 
-    await expect(generateObjectForOrg(
-      ctx as never,
-      "org-1" as Id<"organizations">,
-      "classification",
-      {
-        schema: z.object({ disposition: z.string() }),
-        prompt: "Classify this delivery.",
-        temperature: 0,
-      },
-      { taskKind: "query_classify" },
-    )).rejects.toMatchObject({
+    await expect(
+      generateObjectForOrg(
+        ctx as never,
+        "org-1" as Id<"organizations">,
+        "classification",
+        {
+          schema: z.object({ disposition: z.string() }),
+          prompt: "Classify this delivery.",
+          temperature: 0,
+        },
+        { taskKind: "query_classify" },
+      ),
+    ).rejects.toMatchObject({
       name: "ClRouterRequestError",
       kind: "configuration",
       message: expect.stringContaining("query_classify"),
@@ -483,9 +557,14 @@ describe("Convex cl-router generation integration", () => {
     vi.stubEnv("CL_ROUTER_TASKS", "query_classify");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
     vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    const fetchMock = vi.fn()
-      .mockImplementationOnce(async () => Response.json(routerResponse("public")))
-      .mockImplementationOnce(async () => Response.json(routerResponse({ allowed: true })));
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () =>
+        Response.json(routerResponse("public")),
+      )
+      .mockImplementationOnce(async () =>
+        Response.json(routerResponse({ allowed: true })),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const ctx = routerContext();
 

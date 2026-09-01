@@ -17,6 +17,10 @@ import {
   isSlackOperatorClassification,
   slackActorUserId,
 } from "./lib/slackInteractions";
+import {
+  getOperatorSlackConfig,
+  isApprovedOperatorSlackChannel,
+} from "./lib/operatorSlackConfig";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -264,6 +268,124 @@ async function primaryBinding(
   return isSlackBindingReachable(binding) ? binding : null;
 }
 
+async function claimOperatorInbound(
+  ctx: MutationCtx,
+  args: {
+    eventKey: string;
+    providerEventId?: string;
+    spectrumMessageId?: string;
+    teamId: string;
+    channelId: string;
+    threadTs: string;
+    replyThreadTs?: string;
+    messageTs: string;
+    senderTeamId?: string;
+    senderUserId: string;
+    senderDisplayName?: string;
+    senderEmail?: string;
+    content: string;
+    attachment?: {
+      providerFileId: string;
+      filename: string;
+      contentType: string;
+      size?: number;
+    };
+    attachments?: Array<{
+      providerFileId: string;
+      filename: string;
+      contentType: string;
+      size?: number;
+    }>;
+    eventType: "message" | "edit" | "delete";
+    isDirectMessage?: boolean;
+    isPrivateChannel?: boolean;
+    receivedAt: number;
+  },
+) {
+  const config = getOperatorSlackConfig();
+  if (!config.enabled || !config.hostTeamId) {
+    return { duplicate: false, status: "unknown_workspace" as const };
+  }
+  if (args.teamId !== config.hostTeamId) {
+    return { duplicate: false, status: "unknown_workspace" as const };
+  }
+  if (args.eventType !== "message") {
+    return { duplicate: false, status: "ignored" as const };
+  }
+  const directMessage = args.isDirectMessage === true;
+  if (!directMessage && !isApprovedOperatorSlackChannel(args.channelId)) {
+    return { duplicate: false, status: "ignored" as const };
+  }
+  const hostInstallation = await ctx.db
+    .query("slackInstallations")
+    .withIndex("team_status", (q) =>
+      q.eq("teamId", args.teamId).eq("status", "active"),
+    )
+    .first();
+  const botUserId = hostInstallation?.botUserId ?? config.mockBotUserId;
+  const mentionsSpot = Boolean(
+    botUserId && args.content.includes(`<@${botUserId}>`),
+  );
+  if (!directMessage && !mentionsSpot) {
+    return { duplicate: false, status: "ignored" as const };
+  }
+
+  const canonicalEventKey = [
+    "operator",
+    args.teamId,
+    args.channelId,
+    args.threadTs,
+    args.messageTs,
+  ].join(":");
+  const mirroredDuplicate = await ctx.db
+    .query("slackInboundEvents")
+    .withIndex("canonical", (q) =>
+      q.eq("canonicalEventKey", canonicalEventKey),
+    )
+    .first();
+  if (mirroredDuplicate) {
+    return { duplicate: true, status: mirroredDuplicate.status };
+  }
+
+  const scheduledFor = dayjs(args.receivedAt)
+    .add(DEBOUNCE_MS, "millisecond")
+    .valueOf();
+  const queued = await ctx.db
+    .query("slackInboundEvents")
+    .withIndex("thread_schedule", (q) =>
+      q
+        .eq("connectionId", undefined)
+        .eq("channelId", args.channelId)
+        .eq("threadTs", args.threadTs)
+        .eq("status", "queued"),
+    )
+    .order("asc")
+    .take(MAX_BATCH_SIZE);
+  for (const event of queued) {
+    await ctx.db.patch(event._id, {
+      scheduledFor,
+      updatedAt: args.receivedAt,
+    });
+  }
+  const eventId = await ctx.db.insert("slackInboundEvents", {
+    ...args,
+    canonicalEventKey,
+    isPrimaryChannel: false,
+    mentionsSpot,
+    mentionedBotUserId: mentionsSpot ? botUserId : undefined,
+    status: "queued",
+    attemptCount: 0,
+    scheduledFor,
+    updatedAt: args.receivedAt,
+  });
+  await ctx.scheduler.runAt(
+    scheduledFor,
+    internal.actions.handleInboundSlack.processDebounced,
+    { eventId },
+  );
+  return { duplicate: false, status: "queued" as const, eventId };
+}
+
 function canonicalEventKey(
   connectionId: Id<"slackWorkspaceConnections">,
   args: {
@@ -451,8 +573,7 @@ export const claimInbound = internalMutation({
         if (boundConnection?.status === "active") connection = boundConnection;
       }
     }
-    if (!connection)
-      return { duplicate: false, status: "unknown_workspace" as const };
+    if (!connection) return await claimOperatorInbound(ctx, args);
     const binding = await primaryBinding(ctx, connection._id);
     const identity = channelIdentity(connection, binding, args);
     const logicalEventKey = canonicalEventKey(connection._id, {
@@ -558,8 +679,7 @@ export const claimBatch = internalMutation({
     if (
       !scheduledEvent ||
       scheduledEvent.status !== "queued" ||
-      scheduledEvent.scheduledFor > now ||
-      !scheduledEvent.connectionId
+      scheduledEvent.scheduledFor > now
     ) {
       return [];
     }
@@ -996,6 +1116,11 @@ export const prepareBatch = internalMutation({
 export const getMessage = internalQuery({
   args: { messageId: v.id("threadMessages") },
   handler: async (ctx, args) => await ctx.db.get(args.messageId),
+});
+
+export const getInboundEvent = internalQuery({
+  args: { eventId: v.id("slackInboundEvents") },
+  handler: async (ctx, args) => await ctx.db.get(args.eventId),
 });
 
 export const failEvents = internalMutation({

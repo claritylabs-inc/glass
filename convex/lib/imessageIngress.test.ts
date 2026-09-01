@@ -7,6 +7,7 @@ import {
   isImessageAudioAttachment,
   normalizeInboundImessageSender,
   normalizeImessageAttachmentMimeType,
+  resolveImessageAttachmentMimeType,
   storeImessageAttachments,
 } from "./imessageIngress";
 
@@ -55,12 +56,12 @@ describe("iMessage ingress helpers", () => {
   });
 
   test("adds current sender to participant inputs", () => {
-    expect(
-      [...buildImessageParticipantInputs({
+    expect([
+      ...buildImessageParticipantInputs({
         senderAddress: "+14155550100",
         participants: [{ address: "(415) 555-0101", displayName: "Alex" }],
-      }).values()],
-    ).toEqual([
+      }).values(),
+    ]).toEqual([
       { address: "+4155550101", displayName: "Alex" },
       { address: "+14155550100" },
     ]);
@@ -68,23 +69,25 @@ describe("iMessage ingress helpers", () => {
 
   test("stores supported attachments and ignores unsupported MIME types", async () => {
     const store = vi.fn(async () => "stored-file" as Id<"_storage">);
-    const records = await storeImessageAttachments(
-      { storage: { store } },
-      [
-        {
-          name: "policy.pdf",
-          mimeType: "application/pdf",
-          data: Buffer.from("pdf").toString("base64"),
-        },
-        {
-          name: "archive.zip",
-          mimeType: "application/zip",
-          data: Buffer.from("zip").toString("base64"),
-        },
-      ],
-    );
+    const records = await storeImessageAttachments({ storage: { store } }, [
+      {
+        name: "policy.pdf",
+        mimeType: "application/pdf",
+        data: Buffer.from("pdf").toString("base64"),
+      },
+      {
+        name: "operations.xlsx",
+        mimeType: "application/octet-stream",
+        data: Buffer.from("xlsx").toString("base64"),
+      },
+      {
+        name: "archive.zip",
+        mimeType: "application/zip",
+        data: Buffer.from("zip").toString("base64"),
+      },
+    ]);
 
-    expect(store).toHaveBeenCalledTimes(1);
+    expect(store).toHaveBeenCalledTimes(2);
     expect(records).toMatchObject([
       {
         filename: "policy.pdf",
@@ -92,26 +95,34 @@ describe("iMessage ingress helpers", () => {
         size: 3,
         fileId: "stored-file",
       },
+      {
+        filename: "operations.xlsx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size: 4,
+        fileId: "stored-file",
+      },
     ]);
+    expect(
+      resolveImessageAttachmentMimeType({
+        name: "operations.xlsx",
+        mimeType: "application/octet-stream",
+      }),
+    ).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   });
 
   test("normalizes and stores iMessage voice memo MIME types", async () => {
     const store = vi.fn(async () => "stored-audio" as Id<"_storage">);
-    const records = await storeImessageAttachments(
-      { storage: { store } },
-      [
-        {
-          name: "Audio Message.m4a",
-          mimeType: "audio/x-m4a; codecs=mp4a.40.2",
-          data: Buffer.from("audio").toString("base64"),
-        },
-      ],
-    );
+    const records = await storeImessageAttachments({ storage: { store } }, [
+      {
+        name: "Audio Message.m4a",
+        mimeType: "audio/x-m4a; codecs=mp4a.40.2",
+        data: Buffer.from("audio").toString("base64"),
+      },
+    ]);
 
     expect(
-      normalizeImessageAttachmentMimeType(
-        "audio/x-m4a; codecs=mp4a.40.2",
-      ),
+      normalizeImessageAttachmentMimeType("audio/x-m4a; codecs=mp4a.40.2"),
     ).toBe("audio/x-m4a");
     expect(isImessageAudioAttachment({ mimeType: "audio/x-m4a" })).toBe(true);
     expect(store).toHaveBeenCalledTimes(1);

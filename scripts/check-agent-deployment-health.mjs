@@ -86,6 +86,21 @@ function optionalSlackWorkerHealthUrl() {
   );
 }
 
+function optionalOperatorImessageWorkerHealthUrl() {
+  const explicit = process.env.SPOT_OPERATOR_IMESSAGE_WORKER_HEALTH_URL?.trim();
+  if (explicit) return explicit;
+  const configured = deployment.operatorImessageWorkerHealthUrlEnv
+    ? process.env[deployment.operatorImessageWorkerHealthUrlEnv]?.trim()
+    : undefined;
+  if (configured) return configured;
+  if (!deployment.operatorImessage?.required) return undefined;
+  return envOrDefault(
+    deployment.operatorImessageWorkerHealthUrlEnv,
+    deployment.operatorImessageWorkerHealthUrl,
+    "operator iMessage worker health URL",
+  );
+}
+
 const urls = {
   convexAgentHealth:
     process.env.SPOT_CONVEX_AGENT_HEALTH_URL ??
@@ -101,6 +116,7 @@ const urls = {
       deployment.imessageWorkerHealthUrl,
       "iMessage worker health URL",
     ),
+  operatorImessageWorkerHealth: optionalOperatorImessageWorkerHealthUrl(),
   extractionWorkerHealth:
     process.env.SPOT_EXTRACTION_WORKER_HEALTH_URL ??
     envOrDefault(
@@ -240,6 +256,45 @@ const checks = [
           `slack.mode expected ${String(deployment.slack?.mode)} got ${String(payload.slack?.mode)}`,
         );
       }
+      if (deployment.operatorSlack?.required) {
+        if (payload.operatorSlack?.enabled !== true) {
+          throw new Error(
+            `operatorSlack.enabled expected true got ${String(payload.operatorSlack?.enabled)}`,
+          );
+        }
+        if (payload.operatorSlack?.hostTeamConfigured !== true) {
+          throw new Error(
+            "operatorSlack.hostTeamConfigured expected true",
+          );
+        }
+      }
+      const operatorImessageRequired = Boolean(
+        urls.operatorImessageWorkerHealth,
+      );
+      if (
+        operatorImessageRequired &&
+        payload.operatorImessage?.inboundEnabled !== true
+      ) {
+        throw new Error(
+          `operatorImessage.inboundEnabled expected true got ${String(payload.operatorImessage?.inboundEnabled)}`,
+        );
+      }
+      if (
+        payload.operatorImessage?.inboundEnabled === true &&
+        (!payload.operatorImessage?.workerUrlConfigured ||
+          !payload.operatorImessage?.workerSecretConfigured)
+      ) {
+        throw new Error("operator iMessage Convex wiring is incomplete");
+      }
+      if (
+        DEPLOYMENT_ENV === "production" &&
+        payload.operatorImessage?.inboundEnabled === true &&
+        !operatorImessageRequired
+      ) {
+        throw new Error(
+          "operator iMessage is enabled without its production health URL enforcement flip",
+        );
+      }
     },
   },
   {
@@ -249,6 +304,7 @@ const checks = [
       const expected = {
         ok: true,
         service: "spot-imessage-worker",
+        channelRole: deployment.imessage.channelRole,
         transport: deployment.imessage.transport,
         imessageEnabled: deployment.imessage.imessageEnabled,
         convexSiteConfigured: true,
@@ -275,6 +331,45 @@ const checks = [
       }
     },
   },
+  ...(urls.operatorImessageWorkerHealth
+    ? [
+        {
+          name: "Operator iMessage worker",
+          url: urls.operatorImessageWorkerHealth,
+          validate(payload) {
+            const expected = {
+              ok: true,
+              service: "spot-imessage-worker",
+              channelRole: deployment.operatorImessage.channelRole,
+              transport: deployment.operatorImessage.transport,
+              imessageEnabled: deployment.operatorImessage.imessageEnabled,
+              convexSiteConfigured: true,
+              workerSecretConfigured: true,
+              photonConfigured: deployment.operatorImessage.photonConfigured,
+            };
+            const failures = Object.entries(expected)
+              .filter(([key, value]) => payload[key] !== value)
+              .map(
+                ([key, value]) =>
+                  `${key} expected ${String(value)} got ${String(payload[key])}`,
+              );
+            if (failures.length > 0) throw new Error(failures.join("; "));
+            validateSpotEnv(payload);
+            for (const port of
+              deployment.operatorImessage.requiredHttpPorts ?? []) {
+              if (
+                !Array.isArray(payload.httpPorts) ||
+                !payload.httpPorts.includes(port)
+              ) {
+                throw new Error(
+                  `worker is not listening on required port ${port}`,
+                );
+              }
+            }
+          },
+        },
+      ]
+    : []),
   {
     name: "Extraction worker",
     url: urls.extractionWorkerHealth,

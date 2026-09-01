@@ -21,6 +21,7 @@ import { api } from "@/convex/_generated/api";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { typeStyle } from "@/lib/typography";
 
 type OperatorCurrent = FunctionReturnType<typeof api.operator.current>;
 
@@ -57,19 +58,26 @@ function OperatorProfileShell({
 function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
   const updateProfile = useMutation(api.users.updateProfile);
   const [name, setName] = useState(current.user.name ?? "");
+  const [phone, setPhone] = useState(current.user.phone ?? "");
   const email = current.user.email ?? current.profile.email;
   const accessLevel = current.profile.role === "owner" ? "Owner" : "Operator";
 
   const saveProfile = useCallback(
-    async ({ name: nextName }: { name: string }) => {
-      await updateProfile({ name: nextName });
+    async ({
+      name: nextName,
+      phone: nextPhone,
+    }: {
+      name: string;
+      phone: string;
+    }) => {
+      await updateProfile({ name: nextName, phone: nextPhone });
     },
     [updateProfile],
   );
   const profileAutoSave = useLocalFirstAutoSave({
     mutationName: `operator.profile.${current.user._id}`,
-    args: { name: name.trim() },
-    valueKey: name.trim(),
+    args: { name: name.trim(), phone: phone.trim() },
+    valueKey: JSON.stringify([name.trim(), phone.trim()]),
     autoSave: false,
     flush: saveProfile,
     errorMessage: (error) =>
@@ -105,10 +113,27 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
                   />
                 </div>
                 <div>
-                  <Label
-                    htmlFor="operator-profile-email"
-                    className="mb-1.5"
+                  <Label htmlFor="operator-profile-phone" className="mb-1.5">
+                    iMessage phone
+                  </Label>
+                  <Input
+                    id="operator-profile-phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value)}
+                    onBlur={() => void profileAutoSave.saveNow()}
+                    placeholder="+1 202 555 0100"
+                    autoComplete="tel"
+                  />
+                  <p
+                    className={`mt-1.5 text-muted-foreground ${typeStyle("caption.default")}`}
                   >
+                    Messages from this number can use the internal operator
+                    agent.
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="operator-profile-email" className="mb-1.5">
                     Email
                   </Label>
                   <Input
@@ -119,10 +144,7 @@ function OperatorProfileContent({ current }: { current: OperatorCurrent }) {
                   />
                 </div>
                 <div>
-                  <Label
-                    htmlFor="operator-profile-access"
-                    className="mb-1.5"
-                  >
+                  <Label htmlFor="operator-profile-access" className="mb-1.5">
                     Access level
                   </Label>
                   <Input

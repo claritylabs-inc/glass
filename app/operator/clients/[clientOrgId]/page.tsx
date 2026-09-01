@@ -16,6 +16,7 @@ import {
   type FeatureFlagId,
 } from "@/convex/lib/featureFlags";
 import { AppShell } from "@/components/app-shell";
+import { OperatorPageContextRegistration } from "@/components/operator-agent/operator-page-context";
 import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
 import { FeatureFlagToggleRow } from "@/components/settings/feature-flag-toggle-row";
 import {
@@ -656,6 +657,13 @@ export default function OperatorClientPage() {
       disableCommandPalette
       showBrokerShare={false}
     >
+      <OperatorPageContextRegistration
+        context={{
+          pageType: "operator_client",
+          entityId: clientOrgId,
+          summary: client ? `Client: ${client.name}` : "Current client",
+        }}
+      />
       {clients === undefined || supportDetails === undefined ? (
         <OperationalPanel>
           <div className="flex h-40 items-center justify-center text-muted-foreground">

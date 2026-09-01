@@ -17,7 +17,9 @@ function canonicalize(value: unknown): unknown {
   );
 }
 
-async function confirmationFingerprint(value: unknown): Promise<string> {
+export async function actionConfirmationFingerprint(
+  value: unknown,
+): Promise<string> {
   const bytes = new TextEncoder().encode(JSON.stringify(canonicalize(value)));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)]
@@ -37,7 +39,7 @@ export async function pendingEmailDraftFingerprint(
     | "referencedPolicyIds"
   >,
 ): Promise<string> {
-  return confirmationFingerprint({
+  return actionConfirmationFingerprint({
     recipientEmail: draft.recipientEmail.trim().toLowerCase(),
     ccAddresses: (draft.ccAddresses ?? []).map((value) =>
       value.trim().toLowerCase(),

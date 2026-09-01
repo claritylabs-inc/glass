@@ -46,13 +46,17 @@ export function AppShellPanelLayout({
   entityPanel,
   main,
   pdfPanel,
+  preserveAuxiliaryPixelWidths = false,
   rightPanel,
+  rightPanelLabel = "Resize detail panel",
   storageUserId,
 }: {
   entityPanel?: ReactNode;
   main: ReactNode;
   pdfPanel?: ReactNode;
+  preserveAuxiliaryPixelWidths?: boolean;
   rightPanel?: ReactNode;
+  rightPanelLabel?: string;
   storageUserId?: string;
 }) {
   const hasEntityPanel = Boolean(entityPanel);
@@ -77,7 +81,7 @@ export function AppShellPanelLayout({
       content: rightPanel,
       defaultWidth: 420,
       id: "right",
-      label: "Resize detail panel",
+      label: rightPanelLabel,
       maxWidth: 760,
       minWidth: 320,
     });
@@ -95,7 +99,8 @@ export function AppShellPanelLayout({
     });
   }
 
-  const useEqualLayout = auxiliaryPanels.length >= 2;
+  const useEqualLayout =
+    auxiliaryPanels.length >= 2 && !preserveAuxiliaryPixelWidths;
   const equalSize = `${100 / (auxiliaryPanels.length + 1)}%`;
   const panelIds = useMemo(
     () => [

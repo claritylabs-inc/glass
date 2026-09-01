@@ -1059,6 +1059,17 @@ function mockSlackChannels(input: ListChannelsRequest) {
       isPrivate: false,
       isShared: false,
     },
+    ...(input.teamId === "T-CLARITY-FIXTURE"
+      ? [
+          {
+            id: "G-OPERATOR-FIXTURE",
+            name: "spot-operators",
+            isMember: true,
+            isPrivate: true,
+            isShared: false,
+          },
+        ]
+      : []),
   ];
   return channels.filter(
     (channel, index) =>

@@ -4,12 +4,245 @@ import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { formatSlackAnswerText } from "../lib/slackBlocks";
+import { isApprovedOperatorSlackChannel } from "../lib/operatorSlackConfig";
+import {
+  handleOperatorChannelConfirmation,
+  waitForOperatorAgentRun,
+} from "../lib/operatorAgentChannel";
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 10;
 const MAX_ATTACHMENT_AGGREGATE_BYTES = 50 * 1024 * 1024;
 const WORKER_TIMEOUT_MS = 30_000;
 const internalApi = internal as any;
+
+type OperatorAuthorizedEvent = {
+  event: Doc<"slackInboundEvents">;
+  operatorUserId: Id<"users">;
+};
+
+async function operatorChannelIsSafe(event: Doc<"slackInboundEvents">) {
+  if (event.isDirectMessage) return true;
+  if (!isApprovedOperatorSlackChannel(event.channelId)) return false;
+  const worker = workerConfig();
+  const response = await fetch(`${worker.url}/channels`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${worker.secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ teamId: event.teamId }),
+    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    channels?: Array<{
+      id: string;
+      isMember: boolean;
+      isPrivate: boolean;
+      isShared: boolean;
+    }>;
+  };
+  if (!response.ok) return false;
+  const channel = result.channels?.find(({ id }) => id === event.channelId);
+  return Boolean(
+    channel?.isMember && channel.isShared === false,
+  );
+}
+
+function operatorSlackContent(event: Doc<"slackInboundEvents">) {
+  const withoutMention = event.mentionedBotUserId
+    ? event.content.replace(
+        new RegExp(`<@${event.mentionedBotUserId}>`, "gi"),
+        "",
+      )
+    : event.content;
+  const trimmed = withoutMention.trim();
+  if (trimmed) return trimmed;
+  const filenames = (
+    event.attachments ?? (event.attachment ? [event.attachment] : [])
+  ).map(({ filename }) => filename);
+  return filenames.length > 0
+    ? `[Attached ${filenames.join(", ")}]`
+    : "Please help with this.";
+}
+
+async function sendOperatorSlackResponse(
+  ctx: ActionCtx,
+  args: {
+    event: Doc<"slackInboundEvents">;
+    runId: Id<"operatorAgentRuns">;
+    response: {
+      content?: string;
+      attachments?: Array<{
+        fileId?: Id<"_storage">;
+        filename: string;
+        contentType: string;
+      }>;
+    };
+  },
+) {
+  const attachments = await Promise.all(
+    (args.response.attachments ?? []).flatMap((attachment) =>
+      attachment.fileId ? [attachment] : [],
+    ).map(async (attachment) => ({
+      filename: attachment.filename,
+      contentType: attachment.contentType,
+      url: await ctx.storage.getUrl(attachment.fileId!),
+    })),
+  );
+  const availableAttachments = attachments.flatMap((attachment) =>
+    attachment.url ? [{ ...attachment, url: attachment.url }] : [],
+  );
+  if (availableAttachments.length !== attachments.length) {
+    throw new Error("An operator Slack attachment URL is unavailable");
+  }
+  const content = args.response.content?.trim() ||
+    (availableAttachments.length > 0
+      ? ""
+      : "I couldn't complete that request.");
+  const worker = workerConfig();
+  const response = await fetch(`${worker.url}/send`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${worker.secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      clientMessageId: `operator-agent:${args.runId}:${args.event.eventKey}`,
+      teamId: args.event.teamId,
+      channelId: args.event.channelId,
+      threadTs: args.event.isDirectMessage
+        ? args.event.replyThreadTs
+        : args.event.threadTs,
+      mrkdwnText: formatSlackAnswerText(content),
+      attachments: availableAttachments,
+    }),
+    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    sending?: boolean;
+    attachmentFailures?: Array<{ filename: string; error: string }>;
+  };
+  if (!response.ok) {
+    throw new Error(result.error ?? `Slack worker returned ${response.status}`);
+  }
+  if (response.status === 202 || result.sending) {
+    throw new Error("Slack worker is still processing this send");
+  }
+  if (result.attachmentFailures?.length) {
+    throw new Error(
+      result.attachmentFailures
+        .map(({ filename, error }) => `${filename}: ${error}`)
+        .join("; "),
+    );
+  }
+}
+
+async function processOperatorBatch(
+  ctx: ActionCtx,
+  batch: Array<Doc<"slackInboundEvents">>,
+) {
+  const eventIds = batch.map(({ _id }) => _id);
+  await Promise.all(batch.map((event) => enrichActor(ctx, event)));
+  const unsafeEventIds = (
+    await Promise.all(
+      batch.map(async (event) => ({
+        eventId: event._id,
+        safe: await operatorChannelIsSafe(event),
+      })),
+    )
+  ).flatMap(({ eventId, safe }) => (safe ? [] : [eventId]));
+  if (unsafeEventIds.length > 0) {
+    await ctx.runMutation(internalApi.operatorSlack.ignoreEvents, {
+      eventIds: unsafeEventIds,
+    });
+  }
+  const authorized = (await ctx.runMutation(
+    internalApi.operatorSlack.authorizeBatch,
+    { eventIds },
+  )) as OperatorAuthorizedEvent[];
+  for (const { event, operatorUserId } of authorized) {
+    await fetchAttachment(ctx, event);
+    const refreshedEvent = (await ctx.runQuery(
+      internalApi.slack.getInboundEvent,
+      { eventId: event._id },
+    )) as Doc<"slackInboundEvents"> | null;
+    if (!refreshedEvent) continue;
+    const threadId = await ctx.runMutation(
+      internalApi.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId,
+        channel: "slack",
+        conversationKey: [
+          refreshedEvent.teamId,
+          refreshedEvent.channelId,
+          refreshedEvent.threadTs,
+        ].join(":"),
+        title: refreshedEvent.isDirectMessage
+          ? `Slack DM · ${refreshedEvent.senderDisplayName ?? refreshedEvent.senderUserId}`
+          : `Slack · ${refreshedEvent.channelId}`,
+      },
+    );
+    const content = operatorSlackContent(refreshedEvent);
+    const confirmation = await handleOperatorChannelConfirmation(ctx, {
+      operatorUserId,
+      threadId,
+      channel: "slack",
+      content,
+    });
+    if (confirmation) {
+      await sendOperatorSlackResponse(ctx, {
+        event: refreshedEvent,
+        runId: confirmation.runId,
+        response: { content: confirmation.content },
+      });
+      await ctx.runMutation(internalApi.operatorSlack.completeEvent, {
+        eventId: refreshedEvent._id,
+      });
+      continue;
+    }
+    const inboundAttachments = refreshedEvent.attachments ??
+      (refreshedEvent.attachment ? [refreshedEvent.attachment] : []);
+    const queued = await ctx.runMutation(
+      internalApi.operatorAgent.enqueueMessageInternal,
+      {
+        operatorUserId,
+        threadId,
+        channel: "slack",
+        content,
+        dedupeKey:
+          refreshedEvent.canonicalEventKey ?? refreshedEvent.eventKey,
+        attachments: inboundAttachments.flatMap((attachment) =>
+          attachment.fileId
+            ? [
+                {
+                  fileId: attachment.fileId,
+                  filename: attachment.filename,
+                  contentType: attachment.contentType,
+                  size: attachment.size ?? 0,
+                },
+              ]
+            : [],
+        ),
+      },
+    );
+    const result = await waitForOperatorAgentRun(
+      ctx,
+      operatorUserId,
+      queued.runId,
+    );
+    await sendOperatorSlackResponse(ctx, {
+      event: refreshedEvent,
+      runId: queued.runId,
+      response: result.response ?? {},
+    });
+    await ctx.runMutation(internalApi.operatorSlack.completeEvent, {
+      eventId: refreshedEvent._id,
+    });
+  }
+}
 
 function workerConfig() {
   const url = process.env.SLACK_WORKER_URL?.trim();
@@ -139,6 +372,18 @@ export const processDebounced = internalAction({
       args,
     )) as Array<Doc<"slackInboundEvents">>;
     if (batch.length === 0) return;
+    if (!batch[0]?.connectionId) {
+      try {
+        await processOperatorBatch(ctx, batch);
+      } catch (error) {
+        await ctx.runMutation(internalApi.slack.failEvents, {
+          eventIds: batch.map(({ _id }) => _id),
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+      return;
+    }
     const eventIds = batch.map((event: Doc<"slackInboundEvents">) => event._id);
     let presentationMessageId: Id<"threadMessages"> | undefined;
     try {

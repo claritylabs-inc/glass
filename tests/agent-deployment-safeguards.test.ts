@@ -44,6 +44,10 @@ function convexHealth(expectedClSdkVersion: string) {
       enabled: true,
       mode: "slack",
     },
+    operatorSlack: {
+      enabled: true,
+      hostTeamConfigured: true,
+    },
   };
 }
 
@@ -52,6 +56,7 @@ function imessageHealth() {
     ok: true,
     service: "spot-imessage-worker",
     spotEnv: "production",
+    channelRole: "customer",
     transport: "imessage",
     imessageEnabled: true,
     convexSiteConfigured: true,

@@ -17,8 +17,11 @@ import {
   EXTRACTION_QUALITY_MODEL,
   LANGUAGE_MODEL_CATALOG,
   MODEL_DISPLAY_NAMES,
+  MODEL_TASKS,
+  OPERATOR_AGENT_MODEL_ROUTE_ID,
   OPERATOR_MODEL_ROUTE_GROUPS,
   OPERATOR_WEB_RETRIEVAL_PROVIDERS,
+  ROUTER_MODEL_ROUTE_IDS,
   defaultModelRouteForId,
   directProviderModelForRoute,
   isRetiredModelRoute,
@@ -49,24 +52,39 @@ describe("model routing", () => {
       model: FIREWORKS_MODEL_IDS.deepseekV4Flash,
     });
 
-    expect(modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat_vision)).toBe(true);
-    expect(modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat)).toBe(false);
     expect(
-      modelRouteSupportsTask("voice_transcription", MODEL_ROUTING.voice_transcription),
+      modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat_vision),
+    ).toBe(true);
+    expect(modelRouteSupportsTask("chat_vision", MODEL_ROUTING.chat)).toBe(
+      false,
+    );
+    expect(
+      modelRouteSupportsTask(
+        "voice_transcription",
+        MODEL_ROUTING.voice_transcription,
+      ),
     ).toBe(true);
     expect(modelCapabilitiesForRoute(MODEL_ROUTING.chat_vision)).toMatchObject({
       supportsImageInput: true,
     });
-    expect(modelCapabilitiesForRoute(MODEL_ROUTING.voice_transcription)).toMatchObject({
+    expect(
+      modelCapabilitiesForRoute(MODEL_ROUTING.voice_transcription),
+    ).toMatchObject({
       supportsAudioInput: true,
     });
   });
 
   test("maps SDK task kinds to their host tasks", () => {
-    expect(modelTaskForCall("extraction", "extraction_classify")).toBe("classification");
-    expect(modelTaskForCall("extraction", "extraction_long_list")).toBe("extraction");
+    expect(modelTaskForCall("extraction", "extraction_classify")).toBe(
+      "classification",
+    );
+    expect(modelTaskForCall("extraction", "extraction_long_list")).toBe(
+      "extraction",
+    );
     expect(modelTaskForCall("chat_vision", "query_reason")).toBe("chat_vision");
-    expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe("analysis");
+    expect(modelTaskForCall("extraction", "pce_impact_analysis")).toBe(
+      "analysis",
+    );
   });
 
   test("keeps operator extraction routes distinct and source-tree output untruncated", () => {
@@ -78,7 +96,9 @@ describe("model routing", () => {
       provider: "openai",
       model: "gpt-5.4-mini",
     });
-    const operatorTasks = OPERATOR_MODEL_ROUTE_GROUPS.flatMap((group) => group.tasks);
+    const operatorTasks = OPERATOR_MODEL_ROUTE_GROUPS.flatMap(
+      (group) => group.tasks,
+    );
     expect(operatorTasks).toEqual(
       expect.arrayContaining([
         "extraction_quality",
@@ -91,6 +111,20 @@ describe("model routing", () => {
       modelCapabilitiesForRoute(MODEL_ROUTING.extraction)?.taskOutputTokens
         ?.extraction_operational_profile,
     ).toBe(32_768);
+  });
+
+  test("keeps the operator agent on a dedicated image-capable manual route", () => {
+    const operatorTasks = OPERATOR_MODEL_ROUTE_GROUPS.flatMap(
+      (group) => group.tasks,
+    );
+    const suggestedRoute = defaultModelRouteForId(
+      OPERATOR_AGENT_MODEL_ROUTE_ID,
+    );
+
+    expect(operatorTasks).toContain(OPERATOR_AGENT_MODEL_ROUTE_ID);
+    expect(MODEL_TASKS).not.toContain(OPERATOR_AGENT_MODEL_ROUTE_ID);
+    expect(ROUTER_MODEL_ROUTE_IDS).not.toContain(OPERATOR_AGENT_MODEL_ROUTE_ID);
+    expect(modelRouteSupportsTask("chat_vision", suggestedRoute)).toBe(true);
   });
 
   test("recognizes retired models without rejecting active routes", () => {
@@ -139,9 +173,13 @@ describe("model routing", () => {
   });
 
   test("normalizes generated text from root and step-level results", () => {
-    expect(generatedTextFromResult({ text: "direct answer" })).toBe("direct answer");
+    expect(generatedTextFromResult({ text: "direct answer" })).toBe(
+      "direct answer",
+    );
     expect(
-      generatedTextFromResult({ steps: [{ text: "first" }, { text: "final" }] }),
+      generatedTextFromResult({
+        steps: [{ text: "first" }, { text: "final" }],
+      }),
     ).toBe("final");
     expect(generatedTextFromResult({ steps: [{ toolCalls: [] }] })).toBe("");
     expect(generatedTextFromResult(undefined)).toBe("");
@@ -155,8 +193,12 @@ describe("model routing", () => {
       workflowOutcomes: [],
     };
 
-    expect(agentRunCompletionTelemetry({ text: "", finishReason: "stop" }, audit))
-      .toMatchObject({ status: "incomplete", completionIssue: "empty_response" });
+    expect(
+      agentRunCompletionTelemetry({ text: "", finishReason: "stop" }, audit),
+    ).toMatchObject({
+      status: "incomplete",
+      completionIssue: "empty_response",
+    });
     expect(
       agentRunCompletionTelemetry(
         { text: "Partial answer", finishReason: "length" },
@@ -207,7 +249,10 @@ describe("model routing", () => {
 describe("model fallback policy", () => {
   test.each([
     [{ statusCode: 503, message: "temporarily unavailable" }, true],
-    [{ statusCode: 404, executionStarted: true, message: "model not found" }, false],
+    [
+      { statusCode: 404, executionStarted: true, message: "model not found" },
+      false,
+    ],
     [{ statusCode: 400, message: "invalid tool schema" }, false],
   ])("classifies pre-execution availability failures", (error, expected) => {
     expect(isPreExecutionFallbackEligibleError(error)).toBe(expected);
@@ -215,13 +260,19 @@ describe("model fallback policy", () => {
 
   test("uses only routes with direct-provider support", () => {
     expect(
-      directProviderModelForRoute({ provider: "deepseek", model: "deepseek-v4-flash" }),
+      directProviderModelForRoute({
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+      }),
     ).toBeNull();
     expect(directProviderModelForRoute(MODEL_ROUTING.extraction)).toBe(
       FIREWORKS_MODEL_IDS.deepseekV4Flash,
     );
     expect(
-      directProviderModelForRoute({ provider: "anthropic", model: "claude-haiku-4.5" }),
+      directProviderModelForRoute({
+        provider: "anthropic",
+        model: "claude-haiku-4.5",
+      }),
     ).toBe("claude-haiku-4-5-20251001");
   });
 

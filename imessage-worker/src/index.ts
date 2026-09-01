@@ -16,6 +16,7 @@ import {
   sendToConvex,
   isImessageConvexTimeout,
   type ImessageAppCard,
+  type ImessageChannelRole,
   type ImessageDeliveryFailure,
   type ImessageResponseAttachment,
 } from "./convex.js";
@@ -123,23 +124,44 @@ type AttachmentDownload =
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const PROJECT_ID = process.env.PHOTON_PROJECT_ID;
-const PROJECT_SECRET = process.env.PHOTON_PROJECT_SECRET;
+const CHANNEL_ROLE = (
+  process.env.IMESSAGE_CHANNEL_ROLE?.trim() || "customer"
+) as ImessageChannelRole;
+if (CHANNEL_ROLE !== "customer" && CHANNEL_ROLE !== "operator") {
+  console.error("IMESSAGE_CHANNEL_ROLE must be customer or operator");
+  process.exit(1);
+}
+const OPERATOR_CHANNEL = CHANNEL_ROLE === "operator";
+const PROJECT_ID = OPERATOR_CHANNEL
+  ? process.env.OPERATOR_PHOTON_PROJECT_ID
+  : process.env.PHOTON_PROJECT_ID;
+const PROJECT_SECRET = OPERATOR_CHANNEL
+  ? process.env.OPERATOR_PHOTON_PROJECT_SECRET
+  : process.env.PHOTON_PROJECT_SECRET;
 const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL;
-const WORKER_SECRET = process.env.IMESSAGE_WORKER_SECRET ?? "";
+const WORKER_SECRET = OPERATOR_CHANNEL
+  ? (process.env.OPERATOR_IMESSAGE_WORKER_SECRET ?? "")
+  : (process.env.IMESSAGE_WORKER_SECRET ?? "");
 const SPOT_ENV =
   process.env.SPOT_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
-const IMESSAGE_ENABLED = process.env.IMESSAGE_ENABLED === "true";
+const IMESSAGE_ENABLED = OPERATOR_CHANNEL
+  ? process.env.OPERATOR_IMESSAGE_ENABLED === "true"
+  : process.env.IMESSAGE_ENABLED === "true";
 const SPECTRUM_PROVIDER = process.env.SPECTRUM_PROVIDER;
 const USE_TERMINAL =
   SPECTRUM_PROVIDER === "terminal" ||
   (!IMESSAGE_ENABLED && SPECTRUM_PROVIDER !== "imessage");
 const TRANSPORT = USE_TERMINAL ? "terminal" : "imessage";
 const TERMINAL_FROM_PHONE =
-  process.env.IMESSAGE_TERMINAL_FROM_PHONE ??
+  (OPERATOR_CHANNEL
+    ? process.env.OPERATOR_IMESSAGE_TERMINAL_FROM_PHONE
+    : process.env.IMESSAGE_TERMINAL_FROM_PHONE) ??
   process.env.DEV_IMESSAGE_FROM_PHONE ??
   "";
-const TERMINAL_SPACE_ID = process.env.IMESSAGE_TERMINAL_SPACE_ID ?? "chat-1";
+const TERMINAL_SPACE_ID =
+  (OPERATOR_CHANNEL
+    ? process.env.OPERATOR_IMESSAGE_TERMINAL_SPACE_ID
+    : process.env.IMESSAGE_TERMINAL_SPACE_ID) ?? "chat-1";
 const TERMINAL_IDENTITIES = {
   broker: process.env.IMESSAGE_TERMINAL_BROKER_PHONE ?? TERMINAL_FROM_PHONE,
   client: process.env.IMESSAGE_TERMINAL_CLIENT_PHONE ?? "+12025550102",
@@ -167,27 +189,41 @@ const sendIdempotencyKeys = new Map<
 
 if (TRANSPORT === "imessage" && !IMESSAGE_ENABLED) {
   console.error(
-    "IMESSAGE_ENABLED must be true before connecting to Photon iMessage",
+    `${OPERATOR_CHANNEL ? "OPERATOR_IMESSAGE_ENABLED" : "IMESSAGE_ENABLED"} must be true before connecting to Photon iMessage`,
   );
   process.exit(1);
 }
 if (TRANSPORT === "imessage" && (!PROJECT_ID || !PROJECT_SECRET)) {
-  console.error("PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET are required");
+  console.error(
+    OPERATOR_CHANNEL
+      ? "OPERATOR_PHOTON_PROJECT_ID and OPERATOR_PHOTON_PROJECT_SECRET are required"
+      : "PHOTON_PROJECT_ID and PHOTON_PROJECT_SECRET are required",
+  );
   process.exit(1);
 }
 if (!CONVEX_SITE_URL) {
   console.error("CONVEX_SITE_URL is required");
   process.exit(1);
 }
+if (!WORKER_SECRET) {
+  console.error(
+    OPERATOR_CHANNEL
+      ? "OPERATOR_IMESSAGE_WORKER_SECRET is required"
+      : "IMESSAGE_WORKER_SECRET is required",
+  );
+  process.exit(1);
+}
 if (TRANSPORT === "terminal" && !TERMINAL_FROM_PHONE) {
   console.error(
-    "IMESSAGE_TERMINAL_FROM_PHONE is required for terminal mode so Convex can route to a Spot user",
+    `${OPERATOR_CHANNEL ? "OPERATOR_IMESSAGE_TERMINAL_FROM_PHONE" : "IMESSAGE_TERMINAL_FROM_PHONE"} is required for terminal mode so Convex can route to a Spot user`,
   );
   process.exit(1);
 }
 if (
   TRANSPORT === "terminal" &&
-  Object.values(TERMINAL_IDENTITIES).some((phone) => !isE164Phone(phone))
+  (OPERATOR_CHANNEL
+    ? !isE164Phone(TERMINAL_FROM_PHONE)
+    : Object.values(TERMINAL_IDENTITIES).some((phone) => !isE164Phone(phone)))
 ) {
   console.error(
     "Spectrum terminal identities must use valid E.164 phone numbers",
@@ -818,11 +854,15 @@ async function startSpectrum(): Promise<SpectrumInstance> {
         terminal.config({
           commands: [
             { name: "/whoami", description: "Show the configured test phone" },
-            {
-              name: "/as",
-              description:
-                "Switch sender: /as broker, /as client, or /as public",
-            },
+            ...(OPERATOR_CHANNEL
+              ? []
+              : [
+                  {
+                    name: "/as",
+                    description:
+                      "Switch sender: /as broker, /as client, or /as public",
+                  },
+                ]),
           ],
         }),
       ],
@@ -870,6 +910,7 @@ async function main() {
       sendJson(res, 200, {
         ok: true,
         service: "spot-imessage-worker",
+        channelRole: CHANNEL_ROLE,
         spotEnv: SPOT_ENV,
         transport: TRANSPORT,
         imessageEnabled: IMESSAGE_ENABLED,
@@ -959,7 +1000,7 @@ async function main() {
           return;
         }
 
-        if (TRANSPORT === "terminal") {
+        if (TRANSPORT === "terminal" && !OPERATOR_CHANNEL) {
           const terminalClient = terminal(app);
           const space = await terminalClient.space.get(TERMINAL_SPACE_ID);
           await space.send(
@@ -1276,7 +1317,7 @@ async function main() {
         }
 
         const result = await withTypingIndicator(space, async () => {
-          return await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, {
+          return await sendToConvex(CONVEX_SITE_URL!, WORKER_SECRET, CHANNEL_ROLE, {
             fromPhone,
             messageText,
             chatGuid: chatSnapshot.chatGuid,
@@ -1311,7 +1352,7 @@ async function main() {
           await sendResponseText(space, message, result.response);
         }
 
-        if (result.sendContactCard) {
+        if (CHANNEL_ROLE === "customer" && result.sendContactCard) {
           try {
             await sendSpotContactCard(space);
           } catch (err) {
@@ -1334,10 +1375,15 @@ async function main() {
           result.threadMessageId &&
           CONVEX_SITE_URL
         ) {
-          await reportImessageDeliveryEvent(CONVEX_SITE_URL, WORKER_SECRET, {
-            threadMessageId: result.threadMessageId,
-            attachmentFailures,
-          });
+          await reportImessageDeliveryEvent(
+            CONVEX_SITE_URL,
+            WORKER_SECRET,
+            CHANNEL_ROLE,
+            {
+              threadMessageId: result.threadMessageId,
+              attachmentFailures,
+            },
+          );
         }
 
         if (result.leaveGroup && result.chatGuid && TRANSPORT === "imessage") {

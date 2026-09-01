@@ -1,7 +1,7 @@
 import { query } from "./_generated/server";
 import {
-  MODEL_ROUTE_IDS,
   MODEL_ROUTE_LABELS,
+  ROUTER_MODEL_ROUTE_IDS,
   PROVIDER_LABELS,
 } from "./lib/modelCatalog";
 import { resolvePublicModelDefaults } from "./modelSettings";
@@ -15,7 +15,7 @@ export const list = query({
   handler: async (ctx) => {
     const config = await resolvePublicModelDefaults(ctx);
     return {
-      routes: MODEL_ROUTE_IDS.map((task) => {
+      routes: ROUTER_MODEL_ROUTE_IDS.map((task) => {
         const route = config.routes[task];
         return {
           task,

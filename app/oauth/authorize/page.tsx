@@ -25,6 +25,19 @@ function friendlyError(raw: string): string {
   return "Something went wrong. Please try again.";
 }
 
+function authorizationServerIssuer(resource?: string) {
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_CONVEX_SITE_URL?.trim();
+  try {
+    return configuredSiteUrl
+      ? new URL(configuredSiteUrl).origin
+      : resource
+        ? new URL(resource).origin
+        : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default function OAuthAuthorizePage() {
   const searchParams = useSearchParams();
   const { signIn } = useAuthActions();
@@ -38,9 +51,15 @@ export default function OAuthAuthorizePage() {
   const state = searchParams.get("state") ?? "";
   const responseType = searchParams.get("response_type") ?? "";
   const scope = searchParams.get("scope") ?? undefined;
+  const resource = searchParams.get("resource") ?? undefined;
 
   // Validate required params
-  const paramsValid = responseType === "code" && clientId && redirectUri && codeChallenge && codeChallengeMethod === "S256";
+  const paramsValid =
+    responseType === "code" &&
+    clientId &&
+    redirectUri &&
+    codeChallenge &&
+    codeChallengeMethod === "S256";
 
   // Login state
   const [loginStep, setLoginStep] = useState<"email" | "code">("email");
@@ -70,6 +89,8 @@ export default function OAuthAuthorizePage() {
       const url = new URL(redirectUri);
       url.searchParams.set("error", errorCode);
       if (state) url.searchParams.set("state", state);
+      const issuer = authorizationServerIssuer(resource);
+      if (issuer) url.searchParams.set("iss", issuer);
       window.location.assign(url.toString());
     } catch {
       // Invalid redirect URI — just show error
@@ -115,10 +136,13 @@ export default function OAuthAuthorizePage() {
         redirectUri,
         codeChallenge,
         scope,
+        resource,
       });
       const url = new URL(redirectUri);
       url.searchParams.set("code", authCode);
       if (state) url.searchParams.set("state", state);
+      const issuer = authorizationServerIssuer(resource);
+      if (issuer) url.searchParams.set("iss", issuer);
       const target = url.toString();
       setRedirectUrl(target);
       setRedirecting(true);
@@ -137,7 +161,10 @@ export default function OAuthAuthorizePage() {
   if (!paramsValid) {
     return (
       <AuthShell>
-        <AuthCard title="Invalid request" subtitle="This authorization request could not be completed.">
+        <AuthCard
+          title="Invalid request"
+          subtitle="This authorization request could not be completed."
+        >
           <div className="text-center">
             <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
             <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
@@ -162,70 +189,109 @@ export default function OAuthAuthorizePage() {
   if (!isAuthenticated) {
     return (
       <AuthShell>
-        <AuthCard title="Authorize app" subtitle="Sign in to connect your Spot account.">
-
-            {loginStep === "email" ? (
-              <form onSubmit={handleEmailSubmit} className="space-y-4">
-                <div>
-                  <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@example.com"
-                    required
-                    autoFocus
-                    className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
-                  />
-                </div>
-                {error && (
-                  <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>
-                    {error}
-                  </p>
-                )}
-                <PillButton type="submit" disabled={sendingCode || !email} className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}>
-                  {sendingCode ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {sendingCode ? "Sending code..." : "Send verification code"}
-                  {!sendingCode ? <ArrowRight className="h-4 w-4" /> : null}
-                </PillButton>
-              </form>
-            ) : (
-              <form onSubmit={handleCodeSubmit} className="space-y-4">
-                <div>
-                  <label htmlFor="oauth-verification-code" className={`text-muted-foreground block mb-2 ${typeStyle("label.field")}`}>
-                    Verification Code
-                  </label>
-                  <OtpField id="oauth-verification-code" value={code} onValueChange={setCode} autoFocus required />
-                  <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
-                    We sent a 6-digit code to{" "}
-                    <span className={`text-foreground ${typeStyle("body.medium")}`}>{email}</span>
-                  </p>
-                </div>
-                {error && (
-                  <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>
-                    {error}
-                  </p>
-                )}
-                <div className="flex flex-col gap-3 pt-1">
-                  <PillButton type="submit" disabled={verifying || code.length < 6} className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}>
-                    {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {verifying ? "Verifying..." : "Verify and continue"}
-                    {!verifying ? <ArrowRight className="h-4 w-4" /> : null}
-                  </PillButton>
-                  <PillButton
-                    type="button"
-                    variant="secondary"
-                    onClick={() => { setLoginStep("email"); setCode(""); setError(""); }}
-                    className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
+        <AuthCard
+          title="Authorize app"
+          subtitle="Sign in to connect your Spot account."
+        >
+          {loginStep === "email" ? (
+            <form onSubmit={handleEmailSubmit} className="space-y-4">
+              <div>
+                <label
+                  className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}
+                >
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  required
+                  autoFocus
+                  className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
+                />
+              </div>
+              {error && (
+                <p
+                  className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}
+                >
+                  {error}
+                </p>
+              )}
+              <PillButton
+                type="submit"
+                disabled={sendingCode || !email}
+                className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
+              >
+                {sendingCode ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {sendingCode ? "Sending code..." : "Send verification code"}
+                {!sendingCode ? <ArrowRight className="h-4 w-4" /> : null}
+              </PillButton>
+            </form>
+          ) : (
+            <form onSubmit={handleCodeSubmit} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="oauth-verification-code"
+                  className={`text-muted-foreground block mb-2 ${typeStyle("label.field")}`}
+                >
+                  Verification Code
+                </label>
+                <OtpField
+                  id="oauth-verification-code"
+                  value={code}
+                  onValueChange={setCode}
+                  autoFocus
+                  required
+                />
+                <p
+                  className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}
+                >
+                  We sent a 6-digit code to{" "}
+                  <span
+                    className={`text-foreground ${typeStyle("body.medium")}`}
                   >
-                    <ArrowLeft className="h-4 w-4" />
-                    Use a different email
-                  </PillButton>
-                </div>
-              </form>
-            )}
+                    {email}
+                  </span>
+                </p>
+              </div>
+              {error && (
+                <p
+                  className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}
+                >
+                  {error}
+                </p>
+              )}
+              <div className="flex flex-col gap-3 pt-1">
+                <PillButton
+                  type="submit"
+                  disabled={verifying || code.length < 6}
+                  className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
+                >
+                  {verifying ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {verifying ? "Verifying..." : "Verify and continue"}
+                  {!verifying ? <ArrowRight className="h-4 w-4" /> : null}
+                </PillButton>
+                <PillButton
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setLoginStep("email");
+                    setCode("");
+                    setError("");
+                  }}
+                  className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Use a different email
+                </PillButton>
+              </div>
+            </form>
+          )}
         </AuthCard>
       </AuthShell>
     );
@@ -233,102 +299,166 @@ export default function OAuthAuthorizePage() {
 
   // Authenticated — show consent screen
   const cardTitle = redirecting ? "Connected" : "Authorize app";
-  const cardSubtitle = redirecting && clientInfo
-    ? `Redirecting you back to ${clientInfo.clientName}...`
-    : clientInfo
-      ? `${clientInfo.clientName} wants to access your Spot account.`
-      : "Review this request before continuing.";
+  const cardSubtitle =
+    redirecting && clientInfo
+      ? `Redirecting you back to ${clientInfo.clientName}...`
+      : clientInfo
+        ? clientInfo.principalKind === "operator"
+          ? `${clientInfo.clientName} wants secure access to the internal Spot operator.`
+          : `${clientInfo.clientName} wants to access your Spot account.`
+        : "Review this request before continuing.";
 
   return (
     <AuthShell>
       <AuthCard title={cardTitle} subtitle={cardSubtitle}>
-          {clientInfo === undefined ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : clientInfo === null ? (
-            <div className="text-center py-4">
-              <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-              <h2 className={`mb-1 text-foreground ${typeStyle("heading.section")}`}>Unknown application</h2>
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-                This application is not registered or the redirect URI doesn&apos;t match.
+        {clientInfo === undefined ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : clientInfo === null ? (
+          <div className="text-center py-4">
+            <X className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <h2
+              className={`mb-1 text-foreground ${typeStyle("heading.section")}`}
+            >
+              Unknown application
+            </h2>
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+              This application is not registered or the redirect URI
+              doesn&apos;t match.
+            </p>
+          </div>
+        ) : redirecting ? (
+          <div className="space-y-4">
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+              If you&apos;re not redirected automatically,{" "}
+              <a
+                href={redirectUrl}
+                className={`text-foreground hover:underline ${typeStyle("control.button")}`}
+              >
+                click here
+              </a>
+              . You can also close this window.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <div
+              className={`text-muted-foreground ${typeStyle("body.default")}`}
+            >
+              <p className={`mb-2 text-foreground ${typeStyle("body.medium")}`}>
+                This will allow the app to:
               </p>
-            </div>
-          ) : redirecting ? (
-            <div className="space-y-4">
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-                If you&apos;re not redirected automatically,{" "}
-                <a href={redirectUrl} className={`text-foreground hover:underline ${typeStyle("control.button")}`}>
-                  click here
-                </a>
-                . You can also close this window.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div className={`text-muted-foreground ${typeStyle("body.default")}`}>
-                <p className={`mb-2 text-foreground ${typeStyle("body.medium")}`}>
-                  This will allow the app to:
-                </p>
-                <ul className={`space-y-1.5 text-muted-foreground ${typeStyle("body.default")}`}>
-                  <li className="flex items-start gap-2">
-                    <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Read your policies
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Access conversation threads
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Ask questions via Spot AI
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                    Read and update org memory
-                  </li>
-                  {(scope ?? "").split(" ").includes("write") && (
+              <ul
+                className={`space-y-1.5 text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                {clientInfo.principalKind === "operator" ? (
+                  <>
                     <li className="flex items-start gap-2">
-                      <span className="text-foreground/30 mt-0.5">&#x2022;</span>
-                      Modify your insurance data (write access)
+                      <span className="text-foreground/30 mt-0.5">
+                        &#x2022;
+                      </span>
+                      Inspect organizations, policies, extraction, routing, and
+                      channel health
                     </li>
-                  )}
-                </ul>
-                {scope && (
-                  <p className={`mt-2 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
-                    Requested scopes: {scope}
-                  </p>
+                    <li className="flex items-start gap-2">
+                      <span className="text-foreground/30 mt-0.5">
+                        &#x2022;
+                      </span>
+                      Run durable operator tasks and continue them across
+                      environments
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-foreground/30 mt-0.5">
+                        &#x2022;
+                      </span>
+                      Propose protected changes for your explicit confirmation
+                    </li>
+                    {resource ? (
+                      <li className="flex items-start gap-2">
+                        <span className="text-foreground/30 mt-0.5">
+                          &#x2022;
+                        </span>
+                        Use credentials bound only to {resource}
+                      </li>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <li className="flex items-start gap-2">
+                      <span className="text-foreground/30 mt-0.5">
+                        &#x2022;
+                      </span>
+                      Read your policies
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-foreground/30 mt-0.5">
+                        &#x2022;
+                      </span>
+                      Access conversation threads
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-foreground/30 mt-0.5">
+                        &#x2022;
+                      </span>
+                      Ask questions via Spot AI
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-foreground/30 mt-0.5">
+                        &#x2022;
+                      </span>
+                      Read and update org memory
+                    </li>
+                  </>
                 )}
-              </div>
-
-              {error && (
-                <p className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}>
-                  {error}
+                {(scope ?? "").split(" ").includes("write") && (
+                  <li className="flex items-start gap-2">
+                    <span className="text-foreground/30 mt-0.5">&#x2022;</span>
+                    Modify your insurance data (write access)
+                  </li>
+                )}
+              </ul>
+              {scope && (
+                <p
+                  className={`mt-2 text-muted-foreground/60 ${typeStyle("caption.default")}`}
+                >
+                  Requested scopes: {scope}
                 </p>
               )}
-
-              <div className="flex flex-col gap-3">
-                <PillButton
-                  type="button"
-                  onClick={handleAllow}
-                  disabled={authorizing}
-                  className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
-                >
-                  {authorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {authorizing ? "Authorizing..." : "Allow"}
-                </PillButton>
-                <PillButton
-                  type="button"
-                  variant="secondary"
-                  onClick={handleDeny}
-                  disabled={authorizing}
-                  className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
-                >
-                  Deny
-                </PillButton>
-              </div>
             </div>
-          )}
+
+            {error && (
+              <p
+                className={`px-1 py-1 text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="flex flex-col gap-3">
+              <PillButton
+                type="button"
+                onClick={handleAllow}
+                disabled={authorizing}
+                className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
+              >
+                {authorizing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {authorizing ? "Authorizing..." : "Allow"}
+              </PillButton>
+              <PillButton
+                type="button"
+                variant="secondary"
+                onClick={handleDeny}
+                disabled={authorizing}
+                className={`h-12 w-full justify-center shadow-none ${typeStyle("control.button")}`}
+              >
+                Deny
+              </PillButton>
+            </div>
+          </div>
+        )}
       </AuthCard>
     </AuthShell>
   );

@@ -2,7 +2,13 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
-import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  action,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -34,7 +40,10 @@ import {
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
 
-const brokerStatusValidator = v.union(v.literal("onboarding"), v.literal("live"));
+const brokerStatusValidator = v.union(
+  v.literal("onboarding"),
+  v.literal("live"),
+);
 const orgRoleValidator = v.union(v.literal("admin"), v.literal("member"));
 const operatorClientUserValidator = v.object({
   email: v.string(),
@@ -125,7 +134,10 @@ async function assertNoActiveOperatorImpersonationForPolicyWrite(
 }
 
 function normalizeSlug(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/^-+|-+$/g, "");
 }
 
 function slugFromName(name: string) {
@@ -135,7 +147,9 @@ function slugFromName(name: string) {
 function normalizeHandle(value: string | undefined) {
   const raw = value?.trim().toLowerCase() ?? "";
   const withoutDomain = raw.includes("@") ? raw.split("@")[0] : raw;
-  const normalized = withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+  const normalized = withoutDomain
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/^-+|-+$/g, "");
   return normalized || undefined;
 }
 
@@ -151,7 +165,9 @@ function validateAgentHandle(handle: string | undefined) {
     throw new Error("Agent handle must be 3-30 characters");
   }
   if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(handle)) {
-    throw new Error("Agent handle must start with a letter and end with a letter or number");
+    throw new Error(
+      "Agent handle must start with a letter and end with a letter or number",
+    );
   }
 }
 
@@ -320,13 +336,15 @@ function appendExtractionStopLog(
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
 function stringArray(value: unknown) {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    ? value.filter(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
     : [];
 }
 
@@ -345,8 +363,17 @@ function operatorCoverageName(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const name = normalizeCoverageName(value);
   if (!name) return undefined;
-  if (/^(?:limit of liability|deductible|retroactive date|aggregate|claim|proceeding|source)$/i.test(name)) return undefined;
-  if (/\$[\d,.]+/.test(name) && /\b(?:limit|liability|deductible|aggregate|claim|policy)\b/i.test(name)) return undefined;
+  if (
+    /^(?:limit of liability|deductible|retroactive date|aggregate|claim|proceeding|source)$/i.test(
+      name,
+    )
+  )
+    return undefined;
+  if (
+    /\$[\d,.]+/.test(name) &&
+    /\b(?:limit|liability|deductible|aggregate|claim|policy)\b/i.test(name)
+  )
+    return undefined;
   return name;
 }
 
@@ -357,13 +384,12 @@ function coverageSourceContext(
 ) {
   if (!node) return undefined;
   const excluded = new Set(
-    [
-      coverage.name,
-      coverage.limit,
-      coverage.deductible,
-      coverage.premium,
-    ]
-      .map((value) => typeof value === "string" ? normalizeCoverageContextText(value).toLowerCase() : "")
+    [coverage.name, coverage.limit, coverage.deductible, coverage.premium]
+      .map((value) =>
+        typeof value === "string"
+          ? normalizeCoverageContextText(value).toLowerCase()
+          : "",
+      )
       .filter(Boolean),
   );
   const cells = children
@@ -376,13 +402,24 @@ function coverageSourceContext(
     }))
     .filter((cell) => {
       if (!cell.value || excluded.has(cell.value.toLowerCase())) return false;
-      if (/^\$?[\d,.]+(?:\s*\/\s*\$?[\d,.]+)?(?:\s*\([^)]*\))?$/i.test(cell.value)) return false;
-      if (/^(each claim limit|aggregate limit|deductible|premium|retroactive date)$/i.test(cell.label)) return false;
+      if (
+        /^\$?[\d,.]+(?:\s*\/\s*\$?[\d,.]+)?(?:\s*\([^)]*\))?$/i.test(cell.value)
+      )
+        return false;
+      if (
+        /^(each claim limit|aggregate limit|deductible|premium|retroactive date)$/i.test(
+          cell.label,
+        )
+      )
+        return false;
       return true;
     });
-  const preferred = contextCells.find((cell) =>
-    /\b(coverage|part|class|description|item|subject|type|column 1)\b/i.test(cell.label),
-  ) ?? contextCells[0];
+  const preferred =
+    contextCells.find((cell) =>
+      /\b(coverage|part|class|description|item|subject|type|column 1)\b/i.test(
+        cell.label,
+      ),
+    ) ?? contextCells[0];
   if (preferred) {
     return preferred.label && !/^column\s+\d+$/i.test(preferred.label)
       ? `${preferred.label}: ${preferred.value}`
@@ -398,12 +435,16 @@ async function policyWithOperatorCoverageContext(
 ) {
   const profile = recordValue(policy?.operationalProfile);
   const coverages = Array.isArray(profile?.coverages)
-    ? profile.coverages.map(recordValue).filter((item): item is Record<string, unknown> => Boolean(item))
+    ? profile.coverages
+        .map(recordValue)
+        .filter((item): item is Record<string, unknown> => Boolean(item))
     : [];
   if (!policy || !profile || coverages.length === 0) return policy;
 
   const coverageNodeIds = [
-    ...new Set(coverages.flatMap((coverage) => stringArray(coverage.sourceNodeIds))),
+    ...new Set(
+      coverages.flatMap((coverage) => stringArray(coverage.sourceNodeIds)),
+    ),
   ].slice(0, 80);
   if (coverageNodeIds.length === 0) return policy;
 
@@ -439,7 +480,8 @@ async function policyWithOperatorCoverageContext(
           entry?.node ?? undefined,
           entry?.children ?? [],
         );
-        const name = operatorCoverageName(coverage.name) ?? operatorCoverageName(context);
+        const name =
+          operatorCoverageName(coverage.name) ?? operatorCoverageName(context);
         return name ? { ...coverage, name } : coverage;
       }),
     },
@@ -461,7 +503,10 @@ function roleForBootstrapEmail(email: string): "operator" | "owner" {
   return "operator";
 }
 
-async function countBrokerClients(ctx: QueryCtx, brokerOrgId: Id<"organizations">) {
+async function countBrokerClients(
+  ctx: QueryCtx,
+  brokerOrgId: Id<"organizations">,
+) {
   const clients = await ctx.db
     .query("organizations")
     .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
@@ -474,7 +519,9 @@ async function getOrgAdmin(ctx: QueryCtx, orgId: Id<"organizations">) {
     .query("orgMemberships")
     .withIndex("organization", (q) => q.eq("orgId", orgId))
     .take(20);
-  const adminMembership = memberships.find((membership) => membership.role === "admin");
+  const adminMembership = memberships.find(
+    (membership) => membership.role === "admin",
+  );
   return adminMembership ? await ctx.db.get(adminMembership.userId) : null;
 }
 
@@ -557,16 +604,18 @@ export const current = query({
         _id: operator.user._id,
         name: operator.user.name,
         email: operator.user.email,
+        phone: operator.user.phone,
       },
       profile: operator.profile,
-      activeImpersonation: activeImpersonation && targetOrg
-        ? {
-            ...activeImpersonation,
-            targetOrgName: targetOrg.name,
-            targetOrgType: targetOrg.type ?? "client",
-            targetOrgOperatorStatus: targetOrg.operatorStatus ?? "live",
-          }
-        : null,
+      activeImpersonation:
+        activeImpersonation && targetOrg
+          ? {
+              ...activeImpersonation,
+              targetOrgName: targetOrg.name,
+              targetOrgType: targetOrg.type ?? "client",
+              targetOrgOperatorStatus: targetOrg.operatorStatus ?? "live",
+            }
+          : null,
     };
   },
 });
@@ -578,15 +627,25 @@ export const clearAllAgentMemory = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     if (args.confirmation !== CLEAR_AGENT_MEMORY_CONFIRMATION) {
-      throw new Error(`Confirmation must be ${CLEAR_AGENT_MEMORY_CONFIRMATION}`);
+      throw new Error(
+        `Confirmation must be ${CLEAR_AGENT_MEMORY_CONFIRMATION}`,
+      );
     }
 
-    await ctx.scheduler.runAfter(0, internalApi.memoryMaintenance.clearTableBatch, {
-      table: "orgMemory",
-    });
-    await ctx.scheduler.runAfter(0, internalApi.memoryMaintenance.clearTableBatch, {
-      table: "conversationTurns",
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      internalApi.memoryMaintenance.clearTableBatch,
+      {
+        table: "orgMemory",
+      },
+    );
+    await ctx.scheduler.runAfter(
+      0,
+      internalApi.memoryMaintenance.clearTableBatch,
+      {
+        table: "conversationTurns",
+      },
+    );
     await writeOperatorAudit(ctx, {
       operatorUserId: operator.userId,
       type: "memory_cleared",
@@ -624,8 +683,12 @@ export const listBrokers = query({
           .query("orgMemberships")
           .withIndex("organization", (q) => q.eq("orgId", broker._id))
           .take(20);
-        const adminMembership = memberships.find((membership) => membership.role === "admin");
-        const admin = adminMembership ? await ctx.db.get(adminMembership.userId) : null;
+        const adminMembership = memberships.find(
+          (membership) => membership.role === "admin",
+        );
+        const admin = adminMembership
+          ? await ctx.db.get(adminMembership.userId)
+          : null;
         return {
           _id: broker._id,
           name: broker.name,
@@ -653,7 +716,9 @@ async function listOperatorClientRows(ctx: QueryCtx) {
   return await Promise.all(
     clients.map(async (client) => {
       const admin = await getOrgAdmin(ctx, client._id);
-      const broker = client.brokerOrgId ? await ctx.db.get(client.brokerOrgId) : null;
+      const broker = client.brokerOrgId
+        ? await ctx.db.get(client.brokerOrgId)
+        : null;
       return {
         _id: client._id,
         name: client.name,
@@ -798,62 +863,92 @@ export const listExtractionTraces = query({
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 200), 500));
     const sessions = args.policyId
       ? await ctx.db
-        .query("policyExtractionTraceSessions")
-        .withIndex("policy_started", (q) => {
-          const byPolicy = q.eq("policyId", args.policyId!);
-          if (args.dateFrom !== undefined && args.dateTo !== undefined) return byPolicy.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
-          if (args.dateFrom !== undefined) return byPolicy.gte("startedAt", args.dateFrom);
-          if (args.dateTo !== undefined) return byPolicy.lte("startedAt", args.dateTo);
-          return byPolicy;
-        })
-        .order("desc")
-        .take(limit)
-      : args.orgId
-      ? await ctx.db
-        .query("policyExtractionTraceSessions")
-        .withIndex("organization_started", (q) => {
-          const byOrg = q.eq("orgId", args.orgId!);
-          if (args.dateFrom !== undefined && args.dateTo !== undefined) return byOrg.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
-          if (args.dateFrom !== undefined) return byOrg.gte("startedAt", args.dateFrom);
-          if (args.dateTo !== undefined) return byOrg.lte("startedAt", args.dateTo);
-          return byOrg;
-        })
-        .order("desc")
-        .take(limit)
-      : args.status
-        ? await ctx.db
           .query("policyExtractionTraceSessions")
-          .withIndex("status_started", (q) => {
-            const byStatus = q.eq("status", args.status!);
-            if (args.dateFrom !== undefined && args.dateTo !== undefined) return byStatus.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
-            if (args.dateFrom !== undefined) return byStatus.gte("startedAt", args.dateFrom);
-            if (args.dateTo !== undefined) return byStatus.lte("startedAt", args.dateTo);
-            return byStatus;
+          .withIndex("policy_started", (q) => {
+            const byPolicy = q.eq("policyId", args.policyId!);
+            if (args.dateFrom !== undefined && args.dateTo !== undefined)
+              return byPolicy
+                .gte("startedAt", args.dateFrom)
+                .lte("startedAt", args.dateTo);
+            if (args.dateFrom !== undefined)
+              return byPolicy.gte("startedAt", args.dateFrom);
+            if (args.dateTo !== undefined)
+              return byPolicy.lte("startedAt", args.dateTo);
+            return byPolicy;
           })
           .order("desc")
           .take(limit)
-        : await ctx.db
-          .query("policyExtractionTraceSessions")
-          .withIndex("started", (q) => {
-            if (args.dateFrom !== undefined && args.dateTo !== undefined) return q.gte("startedAt", args.dateFrom).lte("startedAt", args.dateTo);
-            if (args.dateFrom !== undefined) return q.gte("startedAt", args.dateFrom);
-            if (args.dateTo !== undefined) return q.lte("startedAt", args.dateTo);
-            return q;
-          })
-          .order("desc")
-          .take(limit);
+      : args.orgId
+        ? await ctx.db
+            .query("policyExtractionTraceSessions")
+            .withIndex("organization_started", (q) => {
+              const byOrg = q.eq("orgId", args.orgId!);
+              if (args.dateFrom !== undefined && args.dateTo !== undefined)
+                return byOrg
+                  .gte("startedAt", args.dateFrom)
+                  .lte("startedAt", args.dateTo);
+              if (args.dateFrom !== undefined)
+                return byOrg.gte("startedAt", args.dateFrom);
+              if (args.dateTo !== undefined)
+                return byOrg.lte("startedAt", args.dateTo);
+              return byOrg;
+            })
+            .order("desc")
+            .take(limit)
+        : args.status
+          ? await ctx.db
+              .query("policyExtractionTraceSessions")
+              .withIndex("status_started", (q) => {
+                const byStatus = q.eq("status", args.status!);
+                if (args.dateFrom !== undefined && args.dateTo !== undefined)
+                  return byStatus
+                    .gte("startedAt", args.dateFrom)
+                    .lte("startedAt", args.dateTo);
+                if (args.dateFrom !== undefined)
+                  return byStatus.gte("startedAt", args.dateFrom);
+                if (args.dateTo !== undefined)
+                  return byStatus.lte("startedAt", args.dateTo);
+                return byStatus;
+              })
+              .order("desc")
+              .take(limit)
+          : await ctx.db
+              .query("policyExtractionTraceSessions")
+              .withIndex("started", (q) => {
+                if (args.dateFrom !== undefined && args.dateTo !== undefined)
+                  return q
+                    .gte("startedAt", args.dateFrom)
+                    .lte("startedAt", args.dateTo);
+                if (args.dateFrom !== undefined)
+                  return q.gte("startedAt", args.dateFrom);
+                if (args.dateTo !== undefined)
+                  return q.lte("startedAt", args.dateTo);
+                return q;
+              })
+              .order("desc")
+              .take(limit);
     const filtered = sessions
       .filter((session) => !args.status || session.status === args.status)
       .filter((session) => !args.policyId || session.policyId === args.policyId)
-      .filter((session) => args.dateFrom === undefined || session.startedAt >= args.dateFrom!)
-      .filter((session) => args.dateTo === undefined || session.startedAt <= args.dateTo!)
+      .filter(
+        (session) =>
+          args.dateFrom === undefined || session.startedAt >= args.dateFrom!,
+      )
+      .filter(
+        (session) =>
+          args.dateTo === undefined || session.startedAt <= args.dateTo!,
+      )
       .slice(0, limit);
 
-    const orgIds = Array.from(new Set(filtered.map((session) => session.orgId)));
-    const orgRows = await Promise.all(orgIds.map(async (orgId) => {
-      const org = await ctx.db.get(orgId);
-      return [orgId, org] as const;
-    }));
+    const orgIds = Array.from(
+      new Set(filtered.map((session) => session.orgId)),
+    );
+    const orgRows = await Promise.all(
+      orgIds.map(async (orgId) => {
+        const org = await ctx.db.get(orgId);
+        return [orgId, org] as const;
+      }),
+    );
     const orgsById = new Map(orgRows);
 
     return filtered.map((session) => {
@@ -1041,7 +1136,9 @@ export const getExtractionTrace = query({
     const policy = await policyWithOperatorCoverageContext(ctx, rawPolicy);
     const eventsTruncated = eventsWithExtra.length > OPERATOR_TRACE_EVENT_LIMIT;
     const events = eventsWithExtra.slice(0, OPERATOR_TRACE_EVENT_LIMIT);
-    const fileUrl = policy?.fileId ? await ctx.storage.getUrl(policy.fileId) : null;
+    const fileUrl = policy?.fileId
+      ? await ctx.storage.getUrl(policy.fileId)
+      : null;
     return {
       session: {
         ...session,
@@ -1049,9 +1146,17 @@ export const getExtractionTrace = query({
         orgType: org?.type ?? "client",
         policyLabel: policy
           ? [
-              policy.carrier && policy.carrier !== "Extracting..." ? policy.carrier : null,
-              policy.policyNumber && policy.policyNumber !== "Extracting..." ? policy.policyNumber : null,
-            ].filter(Boolean).join(" · ") || policy.fileName || "Extracting..."
+              policy.carrier && policy.carrier !== "Extracting..."
+                ? policy.carrier
+                : null,
+              policy.policyNumber && policy.policyNumber !== "Extracting..."
+                ? policy.policyNumber
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") ||
+            policy.fileName ||
+            "Extracting..."
           : "Deleted policy",
         fileName: session.fileName ?? policy?.fileName,
         documentType: policy?.documentType ?? "policy",
@@ -1066,27 +1171,42 @@ export const getExtractionTrace = query({
 
 export const rerunExtraction = action({
   args: { policyId: v.id("policies") },
-  handler: async (ctx, args): Promise<{ success: boolean; traceId?: string }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ success: boolean; traceId?: string }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    const access = await ctx.runQuery(internalApi.operator.requireOperatorPolicyWriteForUserInternal, {
-      userId,
-      policyId: args.policyId,
-    }) as { pipelineStatus?: string };
-    if (access.pipelineStatus === "running" || access.pipelineStatus === "paused") {
+    const access = (await ctx.runQuery(
+      internalApi.operator.requireOperatorPolicyWriteForUserInternal,
+      {
+        userId,
+        policyId: args.policyId,
+      },
+    )) as { pipelineStatus?: string };
+    if (
+      access.pipelineStatus === "running" ||
+      access.pipelineStatus === "paused"
+    ) {
       throw new Error("An extraction is already running for this policy.");
     }
 
-    const result = await ctx.runAction(internalApi.actions.policyExtraction.retryPolicyExtraction, {
-      policyId: args.policyId,
-      mode: "full",
-    }) as { success?: boolean; traceId?: string } | undefined;
-    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
-      operatorUserId: userId,
-      policyId: args.policyId,
-      operation: "full_extraction",
-      metadata: result?.traceId ? { traceId: result.traceId } : undefined,
-    });
+    const result = (await ctx.runAction(
+      internalApi.actions.policyExtraction.retryPolicyExtraction,
+      {
+        policyId: args.policyId,
+        mode: "full",
+      },
+    )) as { success?: boolean; traceId?: string } | undefined;
+    await ctx.runMutation(
+      internalApi.operator.recordPolicyExtractionOperationInternal,
+      {
+        operatorUserId: userId,
+        policyId: args.policyId,
+        operation: "full_extraction",
+        metadata: result?.traceId ? { traceId: result.traceId } : undefined,
+      },
+    );
     return { success: true, traceId: result?.traceId };
   },
 });
@@ -1099,12 +1219,17 @@ export const backfillCoverageRecovery = action({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    const access = await ctx.runQuery(internalApi.operator.requireOperatorPolicyWriteForUserInternal, {
-      userId,
-      policyId: args.policyId,
-    }) as { pipelineStatus?: string };
+    const access = (await ctx.runQuery(
+      internalApi.operator.requireOperatorPolicyWriteForUserInternal,
+      {
+        userId,
+        policyId: args.policyId,
+      },
+    )) as { pipelineStatus?: string };
     if (access.pipelineStatus !== "complete") {
-      throw new Error("Coverage recovery requires a complete policy extraction.");
+      throw new Error(
+        "Coverage recovery requires a complete policy extraction.",
+      );
     }
     const result = await ctx.runAction(
       internalApi.actions.policyExtraction.backfillStoredCoverageRecovery,
@@ -1113,12 +1238,15 @@ export const backfillCoverageRecovery = action({
         force: args.force === true,
       },
     );
-    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
-      operatorUserId: userId,
-      policyId: args.policyId,
-      operation: "coverage_recovery",
-      metadata: result,
-    });
+    await ctx.runMutation(
+      internalApi.operator.recordPolicyExtractionOperationInternal,
+      {
+        operatorUserId: userId,
+        policyId: args.policyId,
+        operation: "coverage_recovery",
+        metadata: result,
+      },
+    );
     return result;
   },
 });
@@ -1128,10 +1256,13 @@ export const rerunSupplementaryExtraction = action({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    const access = await ctx.runQuery(internalApi.operator.requireOperatorPolicyWriteForUserInternal, {
-      userId,
-      policyId: args.policyId,
-    }) as { pipelineStatus?: string };
+    const access = (await ctx.runQuery(
+      internalApi.operator.requireOperatorPolicyWriteForUserInternal,
+      {
+        userId,
+        policyId: args.policyId,
+      },
+    )) as { pipelineStatus?: string };
     if (access.pipelineStatus !== "complete") {
       throw new Error(
         "Supplementary extraction requires a complete policy extraction.",
@@ -1141,12 +1272,15 @@ export const rerunSupplementaryExtraction = action({
       internalApi.actions.extractSupplementary.extractOne,
       { policyId: args.policyId, force: true },
     );
-    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
-      operatorUserId: userId,
-      policyId: args.policyId,
-      operation: "supplementary_extraction",
-      metadata: result,
-    });
+    await ctx.runMutation(
+      internalApi.operator.recordPolicyExtractionOperationInternal,
+      {
+        operatorUserId: userId,
+        policyId: args.policyId,
+        operation: "supplementary_extraction",
+        metadata: result,
+      },
+    );
     return result;
   },
 });
@@ -1156,10 +1290,10 @@ export const rebuildPolicySearchIndex = action({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    const access = await ctx.runQuery(
+    const access = (await ctx.runQuery(
       internalApi.operator.requireOperatorPolicyWriteForUserInternal,
       { userId, policyId: args.policyId },
-    ) as { orgId: Id<"organizations">; pipelineStatus?: string };
+    )) as { orgId: Id<"organizations">; pipelineStatus?: string };
     if (access.pipelineStatus !== "complete") {
       throw new Error("Search indexing requires a complete policy extraction.");
     }
@@ -1167,12 +1301,15 @@ export const rebuildPolicySearchIndex = action({
       internalApi.actions.rechunkPolicy.rechunkOne,
       { policyId: args.policyId, orgId: access.orgId },
     );
-    await ctx.runMutation(internalApi.operator.recordPolicyExtractionOperationInternal, {
-      operatorUserId: userId,
-      policyId: args.policyId,
-      operation: "search_index",
-      metadata: result,
-    });
+    await ctx.runMutation(
+      internalApi.operator.recordPolicyExtractionOperationInternal,
+      {
+        operatorUserId: userId,
+        policyId: args.policyId,
+        operation: "search_index",
+        metadata: result,
+      },
+    );
     return result;
   },
 });
@@ -1281,26 +1418,60 @@ export const checkBrokerSetupIdentifiers = query({
     const slugStatus = slug
       ? await (async () => {
           if (slug.length < 3 || slug.length > 40) {
-            return { available: false, normalized: slug, reason: "Slug must be 3-40 characters", mode: "unavailable" as const };
+            return {
+              available: false,
+              normalized: slug,
+              reason: "Slug must be 3-40 characters",
+              mode: "unavailable" as const,
+            };
           }
           if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) {
-            return { available: false, normalized: slug, reason: "Slug must start and end with a letter or number", mode: "unavailable" as const };
+            return {
+              available: false,
+              normalized: slug,
+              reason: "Slug must start and end with a letter or number",
+              mode: "unavailable" as const,
+            };
           }
           const slugOrg = await ctx.db
             .query("organizations")
             .withIndex("slug", (q) => q.eq("slug", slug))
             .first();
-          if (!slugOrg) return { available: true, normalized: slug, mode: "available" as const };
+          if (!slugOrg)
+            return {
+              available: true,
+              normalized: slug,
+              mode: "available" as const,
+            };
           slugOrgId = slugOrg._id;
           if (args.ownerOrgId) {
             return slugOrg._id === args.ownerOrgId
-              ? { available: true, normalized: slug, mode: "available" as const }
-              : { available: false, normalized: slug, reason: "Slug is already taken", mode: "unavailable" as const };
+              ? {
+                  available: true,
+                  normalized: slug,
+                  mode: "available" as const,
+                }
+              : {
+                  available: false,
+                  normalized: slug,
+                  reason: "Slug is already taken",
+                  mode: "unavailable" as const,
+                };
           }
           if (slugOrg.type === "broker") {
-            return { available: true, normalized: slug, reason: "Existing broker will be updated", mode: "updates_existing" as const };
+            return {
+              available: true,
+              normalized: slug,
+              reason: "Existing broker will be updated",
+              mode: "updates_existing" as const,
+            };
           }
-          return { available: false, normalized: slug, reason: "Slug is already used by a non-broker org", mode: "unavailable" as const };
+          return {
+            available: false,
+            normalized: slug,
+            reason: "Slug is already used by a non-broker org",
+            mode: "unavailable" as const,
+          };
         })()
       : null;
 
@@ -1312,7 +1483,10 @@ export const checkBrokerSetupIdentifiers = query({
             return {
               available: false,
               normalized: agentHandle,
-              reason: error instanceof Error ? error.message : "Agent handle is invalid",
+              reason:
+                error instanceof Error
+                  ? error.message
+                  : "Agent handle is invalid",
               mode: "unavailable" as const,
             };
           }
@@ -1321,17 +1495,40 @@ export const checkBrokerSetupIdentifiers = query({
             .withIndex("handle", (q) => q.eq("agentHandle", agentHandle))
             .first();
           if (!existingByHandle) {
-            return { available: true, normalized: agentHandle, mode: "available" as const };
+            return {
+              available: true,
+              normalized: agentHandle,
+              mode: "available" as const,
+            };
           }
           if (args.ownerOrgId) {
             return existingByHandle._id === args.ownerOrgId
-              ? { available: true, normalized: agentHandle, mode: "available" as const }
-              : { available: false, normalized: agentHandle, reason: "Agent handle is already taken", mode: "unavailable" as const };
+              ? {
+                  available: true,
+                  normalized: agentHandle,
+                  mode: "available" as const,
+                }
+              : {
+                  available: false,
+                  normalized: agentHandle,
+                  reason: "Agent handle is already taken",
+                  mode: "unavailable" as const,
+                };
           }
           if (slugOrgId && existingByHandle._id === slugOrgId) {
-            return { available: true, normalized: agentHandle, reason: "Existing broker will be updated", mode: "updates_existing" as const };
+            return {
+              available: true,
+              normalized: agentHandle,
+              reason: "Existing broker will be updated",
+              mode: "updates_existing" as const,
+            };
           }
-          return { available: false, normalized: agentHandle, reason: "Agent handle is already taken", mode: "unavailable" as const };
+          return {
+            available: false,
+            normalized: agentHandle,
+            reason: "Agent handle is already taken",
+            mode: "unavailable" as const,
+          };
         })()
       : null;
 
@@ -1351,7 +1548,9 @@ export const checkUserPhoneAvailabilities = query({
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     if (args.users.length > OPERATOR_CLIENT_USER_LIMIT) {
-      throw new Error(`Check at most ${OPERATOR_CLIENT_USER_LIMIT} phone numbers`);
+      throw new Error(
+        `Check at most ${OPERATOR_CLIENT_USER_LIMIT} phone numbers`,
+      );
     }
 
     return await Promise.all(
@@ -1398,7 +1597,9 @@ export const createBroker = action({
   handler: async (ctx, args): Promise<{ brokerOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
+    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
+      userId,
+    });
 
     const adminEmail = normalizeOperatorEmail(args.adminEmail);
     if (!adminEmail || isBootstrapOperatorEmail(adminEmail)) {
@@ -1450,7 +1651,9 @@ export const createSoloClient = action({
   handler: async (ctx, args): Promise<{ clientOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
+    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
+      userId,
+    });
 
     const submittedUsers = args.users ?? [
       ...(args.adminEmail
@@ -1491,10 +1694,9 @@ export const createSoloClient = action({
       }
       if (normalizedPhone) phones.add(normalizedPhone);
     }
-    await ctx.runQuery(
-      internalApi.operator.validateSoloClientUsersInternal,
-      { users: users.map(({ email, phone }) => ({ email, phone })) },
-    );
+    await ctx.runQuery(internalApi.operator.validateSoloClientUsersInternal, {
+      users: users.map(({ email, phone }) => ({ email, phone })),
+    });
 
     const now = dayjs().valueOf();
     const provisionedUsers: Array<{
@@ -1517,7 +1719,8 @@ export const createSoloClient = action({
         },
         shouldLinkViaEmail: true,
       });
-      if (!account.user) throw new Error(`Could not create client user ${user.email}`);
+      if (!account.user)
+        throw new Error(`Could not create client user ${user.email}`);
       provisionedUsers.push({
         userId: account.user._id,
         email: user.email,
@@ -1528,15 +1731,18 @@ export const createSoloClient = action({
     }
 
     const website = normalizeWebsiteUrl(args.website);
-    const result = await ctx.runMutation(internalApi.operator.createSoloClientInternal, {
-      operatorUserId: userId,
-      users: provisionedUsers,
-      client: {
-        name: args.name,
-        brokerOrgId: args.brokerOrgId,
-        website,
+    const result = await ctx.runMutation(
+      internalApi.operator.createSoloClientInternal,
+      {
+        operatorUserId: userId,
+        users: provisionedUsers,
+        client: {
+          name: args.name,
+          brokerOrgId: args.brokerOrgId,
+          website,
+        },
       },
-    });
+    );
     if (website) {
       await ctx.scheduler.runAfter(
         0,
@@ -1559,7 +1765,8 @@ export const setBrokerStatus = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const broker = await ctx.db.get(args.brokerOrgId);
-    if (!broker || broker.type !== "broker") throw new Error("Broker not found");
+    if (!broker || broker.type !== "broker")
+      throw new Error("Broker not found");
     const previous = broker.operatorStatus ?? "live";
     await ctx.db.patch(args.brokerOrgId, { operatorStatus: args.status });
     await writeOperatorAudit(ctx, {
@@ -1580,7 +1787,8 @@ export const setSoloClientStatus = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const client = await ctx.db.get(args.clientOrgId);
-    if (!client || client.type !== "client") throw new Error("Client not found");
+    if (!client || client.type !== "client")
+      throw new Error("Client not found");
     const previous = client.operatorStatus ?? "live";
     await ctx.db.patch(args.clientOrgId, { operatorStatus: args.status });
     await writeOperatorAudit(ctx, {
@@ -1606,10 +1814,15 @@ export const setClientFeatureFlag = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const client = await ctx.db.get(args.clientOrgId);
-    if (!client || client.type !== "client") throw new Error("Client not found");
+    if (!client || client.type !== "client")
+      throw new Error("Client not found");
     assertFeatureFlagAllowedForOrg(args.flagId, client);
     await ctx.db.patch(args.clientOrgId, {
-      featureFlags: setFeatureFlagPatch(client.featureFlags, args.flagId, args.enabled),
+      featureFlags: setFeatureFlagPatch(
+        client.featureFlags,
+        args.flagId,
+        args.enabled,
+      ),
     });
     await writeOperatorAudit(ctx, {
       operatorUserId: operator.userId,
@@ -1634,7 +1847,8 @@ export const updateClientSettings = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const client = await ctx.db.get(args.clientOrgId);
-    if (!client || client.type !== "client") throw new Error("Client not found");
+    if (!client || client.type !== "client")
+      throw new Error("Client not found");
     const name = args.name.trim();
     if (!name) throw new Error("Organization name is required");
 
@@ -1685,7 +1899,8 @@ export const updateBrokerSettings = mutation({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const broker = await ctx.db.get(args.brokerOrgId);
-    if (!broker || broker.type !== "broker") throw new Error("Broker not found");
+    if (!broker || broker.type !== "broker")
+      throw new Error("Broker not found");
 
     const slug = args.slug ? normalizeSlug(args.slug) : undefined;
     if (slug) {
@@ -1738,7 +1953,9 @@ export const launchBroker = action({
   handler: async (ctx, args): Promise<{ loginUrl: string }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
+    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
+      userId,
+    });
     const launch: {
       brokerOrgId: Id<"organizations">;
       name: string;
@@ -1746,7 +1963,10 @@ export const launchBroker = action({
       adminUserId?: Id<"users">;
       adminEmail?: string;
       adminName?: string;
-    } | null = await ctx.runQuery(internalApi.operator.getBrokerLaunchContextInternal, args);
+    } | null = await ctx.runQuery(
+      internalApi.operator.getBrokerLaunchContextInternal,
+      args,
+    );
     if (!launch) throw new Error("Broker launch context not found");
     if (!launch.adminEmail) throw new Error("Broker has no admin email");
 
@@ -1784,7 +2004,8 @@ export const launchBroker = action({
       },
       { retries: 2 },
     );
-    if (!result.ok) throw new Error(`Failed to send launch email: ${result.error}`);
+    if (!result.ok)
+      throw new Error(`Failed to send launch email: ${result.error}`);
     await ctx.runMutation(internalApi.operator.markBrokerLaunchedInternal, {
       brokerOrgId: args.brokerOrgId,
       operatorUserId: userId,
@@ -1799,14 +2020,19 @@ export const launchSoloClient = action({
     clientOrgId: v.id("organizations"),
     adminUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, args): Promise<{
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
     loginUrl: string;
     recipientEmail: string;
     adminUserId: Id<"users">;
   }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, { userId });
+    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
+      userId,
+    });
     const launch: {
       clientOrgId: Id<"organizations">;
       name: string;
@@ -1855,7 +2081,8 @@ export const launchSoloClient = action({
       },
       { retries: 2 },
     );
-    if (!result.ok) throw new Error(`Failed to send launch email: ${result.error}`);
+    if (!result.ok)
+      throw new Error(`Failed to send launch email: ${result.error}`);
     await ctx.runMutation(internalApi.operator.markSoloClientLaunchedInternal, {
       clientOrgId: args.clientOrgId,
       operatorUserId: userId,
@@ -1958,7 +2185,9 @@ export const cleanupRemovedProgramAdminData = mutation({
     > = {};
     for (const table of REMOVED_PROGRAM_ADMIN_TABLES) {
       tableResults[table] = await deleteUnsafeTableBatch(ctx, table);
-      if (tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
+      if (
+        tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE
+      ) {
         await ctx.scheduler.runAfter(
           0,
           internal.operator.cleanupRemovedProgramAdminDataInternal,
@@ -1972,7 +2201,10 @@ export const cleanupRemovedProgramAdminData = mutation({
     let deletedRelatedRows = 0;
     for (const org of orgs) {
       if (!isRemovedProgramAdminOrg(org)) continue;
-      deletedRelatedRows += await deleteRemovedProgramAdminOrgData(ctx, org._id);
+      deletedRelatedRows += await deleteRemovedProgramAdminOrgData(
+        ctx,
+        org._id,
+      );
       deletedProgramAdminOrgs += 1;
     }
 
@@ -2029,7 +2261,9 @@ export const cleanupRemovedPolicyChangeData = mutation({
     }
     for (const table of REMOVED_POLICY_CHANGE_TABLES) {
       tableResults[table] = await deleteUnsafeTableBatch(ctx, table);
-      if (tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
+      if (
+        tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE
+      ) {
         await ctx.scheduler.runAfter(
           0,
           internal.operator.cleanupRemovedPolicyChangeDataInternal,
@@ -2058,9 +2292,10 @@ export const cleanupRemovedPolicyChangeDataInternal = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const result = args.mode === "links"
-      ? await unsetPolicyChangeLinkBatch(ctx, args.table)
-      : await deleteUnsafeTableBatch(ctx, args.table);
+    const result =
+      args.mode === "links"
+        ? await unsetPolicyChangeLinkBatch(ctx, args.table)
+        : await deleteUnsafeTableBatch(ctx, args.table);
     const count = "updated" in result ? result.updated : result.deleted;
     if (count === 500) {
       await ctx.scheduler.runAfter(
@@ -2204,8 +2439,11 @@ export const upsertBrokerInternal = internalMutation({
     await assertCustomerUser(ctx, args.adminUserId);
     const brokerName = args.broker.name.trim();
     if (!brokerName) throw new Error("Broker name is required");
-    const slug = args.broker.slug ? normalizeSlug(args.broker.slug) : slugFromName(brokerName);
-    if (slug.length < 3 || slug.length > 40) throw new Error("Slug must be 3-40 characters");
+    const slug = args.broker.slug
+      ? normalizeSlug(args.broker.slug)
+      : slugFromName(brokerName);
+    if (slug.length < 3 || slug.length > 40)
+      throw new Error("Slug must be 3-40 characters");
     if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) {
       throw new Error("Slug must start and end with a letter or number");
     }
@@ -2237,7 +2475,8 @@ export const upsertBrokerInternal = internalMutation({
       onboardingComplete: true,
       operatorStatus: "onboarding" as const,
     };
-    const brokerOrgId = existingBySlug?._id ?? await ctx.db.insert("organizations", patch);
+    const brokerOrgId =
+      existingBySlug?._id ?? (await ctx.db.insert("organizations", patch));
     if (existingBySlug) await ctx.db.patch(brokerOrgId, patch);
 
     const existingAdminMembership = await ctx.db
@@ -2251,7 +2490,8 @@ export const upsertBrokerInternal = internalMutation({
         .query("orgMemberships")
         .withIndex("user", (q) => q.eq("userId", args.adminUserId))
         .first();
-      if (otherMembership) throw new Error("Broker admin already belongs to another organization");
+      if (otherMembership)
+        throw new Error("Broker admin already belongs to another organization");
       await ctx.db.insert("orgMemberships", {
         orgId: brokerOrgId,
         userId: args.adminUserId,
@@ -2318,7 +2558,9 @@ export const createSoloClientInternal = internalMutation({
     }
     const clientName = args.client.name.trim();
     if (!clientName) throw new Error("Client name is required");
-    const broker = args.client.brokerOrgId ? await ctx.db.get(args.client.brokerOrgId) : null;
+    const broker = args.client.brokerOrgId
+      ? await ctx.db.get(args.client.brokerOrgId)
+      : null;
     if (args.client.brokerOrgId && (!broker || broker.type !== "broker")) {
       throw new Error("Broker not found");
     }
@@ -2350,7 +2592,11 @@ export const createSoloClientInternal = internalMutation({
         throw new Error(`${email} already belongs to another organization`);
       }
 
-      const phone = await normalizeAvailableUserPhone(ctx, input.phone, input.userId);
+      const phone = await normalizeAvailableUserPhone(
+        ctx,
+        input.phone,
+        input.userId,
+      );
       if (phone && seenPhones.has(phone)) {
         throw new Error("Use a different phone number for each client user");
       }
@@ -2422,8 +2668,12 @@ export const getBrokerLaunchContextInternal = internalQuery({
       .query("orgMemberships")
       .withIndex("organization", (q) => q.eq("orgId", args.brokerOrgId))
       .collect();
-    const adminMembership = memberships.find((membership) => membership.role === "admin");
-    const admin = adminMembership ? await ctx.db.get(adminMembership.userId) : null;
+    const adminMembership = memberships.find(
+      (membership) => membership.role === "admin",
+    );
+    const admin = adminMembership
+      ? await ctx.db.get(adminMembership.userId)
+      : null;
     return {
       brokerOrgId: broker._id,
       name: broker.name,
@@ -2448,10 +2698,7 @@ export const getSoloClientLaunchContextInternal = internalQuery({
       .withIndex("organization", (q) => q.eq("orgId", args.clientOrgId))
       .take(200);
     const targetMembership = args.adminUserId
-      ? memberships.find(
-          (membership) =>
-            membership.userId === args.adminUserId,
-        )
+      ? memberships.find((membership) => membership.userId === args.adminUserId)
       : memberships.find((membership) => membership.role === "admin");
     if (
       !targetMembership ||
@@ -2480,8 +2727,12 @@ export const markBrokerLaunchedInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const broker = await ctx.db.get(args.brokerOrgId);
-    if (!broker || broker.type !== "broker") throw new Error("Broker not found");
-    await ctx.db.patch(args.brokerOrgId, { operatorStatus: "live", onboardingComplete: true });
+    if (!broker || broker.type !== "broker")
+      throw new Error("Broker not found");
+    await ctx.db.patch(args.brokerOrgId, {
+      operatorStatus: "live",
+      onboardingComplete: true,
+    });
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "broker_launch_email_sent",
@@ -2502,9 +2753,13 @@ export const markSoloClientLaunchedInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const client = await ctx.db.get(args.clientOrgId);
-    if (!client || client.type !== "client") throw new Error("Client not found");
+    if (!client || client.type !== "client")
+      throw new Error("Client not found");
     const wasLive = (client.operatorStatus ?? "live") === "live";
-    await ctx.db.patch(args.clientOrgId, { operatorStatus: "live", onboardingComplete: true });
+    await ctx.db.patch(args.clientOrgId, {
+      operatorStatus: "live",
+      onboardingComplete: true,
+    });
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "client_launch_email_sent",

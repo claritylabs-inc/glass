@@ -152,6 +152,7 @@ jobs:
           RAILWAY_STATUS_CONTEXTS: |
             Spot - spot-extraction-worker
             Spot - imessage-worker
+            ${{ vars.SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL != '' && 'Spot - operator-imessage-worker' || '' }}
             Spot - slack-worker
             Spot - spot-mailbox-scan-worker
 
@@ -162,6 +163,7 @@ jobs:
           AGENT_HEALTH_RETRY_DELAY_MS: 10000
           SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL: ${{ vars.SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL }}
           SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL: ${{ vars.SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL }}
+          SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL: ${{ vars.SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL }}
 
       - name: Verify release is still the branch head
         env:
