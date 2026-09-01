@@ -135,12 +135,16 @@ provider failures degrade health and retry with bounded exponential backoff.
 Reconciliation covers event-delivery gaps, but it cannot infer an unknown
 replacement channel ID.
 
-Every outbound path checks current connection, binding, and membership health
-before contacting the worker. Provider authorization and channel errors become
-structured lifecycle evidence, stop retry leasing, and leave terminal delivery
-rows visible. Reinstall must target the retained workspace and reverify scopes
-and bot identity. A channel is restored only by verification of the same ID or
-an audited rebind; canonical threads and automation preferences are preserved.
+Replies to Slack-delivered client and operator events require a healthy
+workspace connection, then target the exact delivered channel without a second
+channel-inventory, membership, privacy, sharing, or binding-health gate.
+Inventory and binding health remain setup, canonical-support, web-mirror, and
+proactive-destination metadata rather than invocation authorization. Provider
+authorization and channel errors become structured lifecycle evidence, stop
+retry leasing, and leave terminal delivery rows visible. Reinstall must target
+the retained workspace and reverify scopes and bot identity. A support channel
+is restored only by verification of the same ID or an audited rebind; canonical
+threads and automation preferences are preserved.
 
 ## Direct Web API transport
 
@@ -195,7 +199,6 @@ Convex requires:
 | `SLACK_CLARITY_TEAM_ID`                   | Clarity host workspace ID                                        |
 | `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret                              |
 | `OPERATOR_SLACK_ENABLED`                  | Enable internal operator DMs and host-channel mentions           |
-| `OPERATOR_SLACK_CHANNEL_IDS`              | Comma-separated allowlist for internal host channels             |
 | `NEXT_PUBLIC_APP_URL` or `APP_URL`        | Post-OAuth settings redirect                                     |
 
 The Railway worker requires `SPOT_ENV`, `SLACK_WORKER_MODE`,
@@ -225,14 +228,12 @@ After customer workspace and persisted Slack Connect binding resolution have
 failed, Convex may route a Clarity App Home DM or host-channel mention to the
 operator agent only when `OPERATOR_SLACK_ENABLED=true`, `users.info` resolves
 the sender to the Clarity team, and that exact Slack identity belongs to an
-active Spot operator. Channel metadata must prove the bot is a member and the
-channel is private and not shared or Slack Connect.
-`OPERATOR_SLACK_CHANNEL_IDS` must explicitly include each eligible internal
-channel; an empty list leaves channel mentions disabled while DMs continue to
-work. Exact `approve` or `reject` replies resolve the one pending confirmation
-in that operator-owned
-conversation. Unknown users, bots, external workspaces, shared channels, and
-other replies fail closed.
+active Spot operator. Convex does not query channel inventory or apply channel
+ID, type, privacy, sharing, or membership filters; Slack event delivery is the
+authority for where the installed app is present. Exact `approve` or `reject`
+replies resolve the one pending confirmation in that operator-owned
+conversation. Unknown users, bots, external workspaces, and other replies fail
+closed.
 
 For a local operator-channel fixture after the default Conductor dev run is
 ready:
@@ -263,9 +264,10 @@ DM route.
    name-based reassociation; an operator must make an audited rebind when Slack
    cannot authoritatively update the ID.
 7. Designate the automatic alerts-and-delivery channel and confirm its health.
-   Spot still responds in every joined channel; this selection affects only
-   automatic alerts and document delivery. Safe customer alerts and policy
-   delivery default on; vendor alerts default off.
+   Spot still responds in any channel where Slack delivers the installed app's
+   events; neither this selection nor the synchronized inventory limits chat.
+   The selection affects only automatic alerts and document delivery. Safe
+   customer alerts and policy delivery default on; vendor alerts default off.
 
 Support-channel messages are canonical from connection onward. A mention starts
 or resumes AI, unmentioned customer replies continue an active thread, an

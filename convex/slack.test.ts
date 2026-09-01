@@ -13,6 +13,7 @@ import {
   prepareBatch,
 } from "./slack";
 import { processDebounced } from "./actions/handleInboundSlack";
+import { authorizeBatch as authorizeOperatorSlackBatch } from "./operatorSlack";
 import {
   claimOAuthState,
   createOAuthState,
@@ -46,6 +47,7 @@ const markFailedFn = markFailed as any;
 const markSentFn = markSent as any;
 const notifyInternalFn = notifyInternal as any;
 const processDebouncedFn = processDebounced as any;
+const authorizeOperatorSlackBatchFn = authorizeOperatorSlackBatch as any;
 const BASE_TIME = dayjs().add(1, "minute").valueOf();
 
 beforeEach(() => {
@@ -189,6 +191,96 @@ async function ingest(
 }
 
 describe("Slack channel state and authorization", () => {
+  test("queues an operator mention without channel eligibility settings", async () => {
+    vi.stubEnv("OPERATOR_SLACK_ENABLED", "true");
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-CLARITY");
+    vi.stubEnv("OPERATOR_SLACK_BOT_USER_ID", "U-SPOT");
+    const t = convexTest(schema, modules);
+    const operatorUserId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        name: "Internal Operator",
+        email: "internal@spot.insure",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId,
+        email: "internal@spot.insure",
+        role: "operator",
+        status: "active",
+        slackTeamId: "T-CLARITY",
+        slackUserId: "U-INTERNAL",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return userId;
+    });
+
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "operator-public-channel",
+      teamId: "T-CLARITY",
+      channelId: "C-PUBLIC",
+      threadTs: "1800000000.010",
+      messageTs: "1800000000.010",
+      senderTeamId: "T-CLARITY",
+      senderUserId: "U-INTERNAL",
+      content: "<@U-SPOT> update the client",
+      eventType: "message",
+      isPrivateChannel: false,
+      receivedAt: BASE_TIME,
+    })) as {
+      eventId: Id<"slackInboundEvents">;
+      status: string;
+    };
+    expect(claim.status).toBe("queued");
+
+    await t.run((ctx) =>
+      ctx.db.patch(claim.eventId, {
+        status: "processing",
+        senderIsBot: false,
+      }),
+    );
+    await expect(
+      t.mutation(authorizeOperatorSlackBatchFn, {
+        eventIds: [claim.eventId],
+      }),
+    ).resolves.toMatchObject([{ operatorUserId }]);
+  });
+
+  test("routes a client mention when stored host-channel health is stale", async () => {
+    const t = convexTest(schema, modules);
+    const { connectionId } = await seedSlack(t);
+    await t.run(async (ctx) => {
+      const binding = await ctx.db.query("slackChannelBindings").first();
+      if (!binding) throw new Error("Slack binding fixture is missing");
+      await ctx.db.patch(binding._id, { status: "unavailable" });
+    });
+
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "client-host-channel-stale-health",
+      teamId: "T-SPOT",
+      channelId: "C-HOST",
+      threadTs: "1800000000.011",
+      messageTs: "1800000000.011",
+      senderTeamId: "T-CUSTOMER",
+      senderUserId: "U-CUSTOMER",
+      content: "<@U-SPOT> review this policy",
+      eventType: "message",
+      isPrivateChannel: true,
+      receivedAt: BASE_TIME,
+    })) as {
+      eventId: Id<"slackInboundEvents">;
+      status: string;
+    };
+
+    expect(claim.status).toBe("queued");
+    await expect(t.run((ctx) => ctx.db.get(claim.eventId))).resolves.toMatchObject(
+      {
+        connectionId,
+        isPrimaryChannel: true,
+      },
+    );
+  });
+
   test("keeps pre-rebrand mention events actionable during the widening release", async () => {
     const t = convexTest(schema, modules);
     await seedSlack(t);
@@ -645,7 +737,7 @@ describe("Slack channel state and authorization", () => {
     });
   });
 
-  test("ignores unrelated channel traffic until a mention opens an active thread", async () => {
+  test("accepts a mention in any Slack-delivered client channel", async () => {
     const t = convexTest(schema, modules);
     const { connectionId } = await seedSlack(t);
     const threadTs = "1800000000.333";

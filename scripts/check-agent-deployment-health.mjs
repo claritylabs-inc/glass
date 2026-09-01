@@ -270,11 +270,6 @@ const checks = [
             "operatorSlack.hostTeamConfigured expected true",
           );
         }
-        if (!(payload.operatorSlack?.approvedChannelCount > 0)) {
-          throw new Error(
-            "operatorSlack.approvedChannelCount expected at least 1",
-          );
-        }
       }
       const operatorImessageRequired = Boolean(
         urls.operatorImessageWorkerHealth,
