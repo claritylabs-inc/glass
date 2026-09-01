@@ -69,6 +69,11 @@ Multiparty Slack DMs are not supported. Use a channel or a one-to-one DM.
 In a busy channel, keep each request in its own Slack thread. That preserves the
 right context and keeps unrelated conversations from being combined.
 
+An unmentioned top-level message stays quiet. If a later reply in that message's
+thread mentions `@Spot`, Spot starts there, uses the earlier thread messages as
+context, and continues responding to later replies without another mention.
+Spot's own messages never activate or continue a thread.
+
 ## Ask for a human or close a request
 
 To pause the AI and request human help, mention Spot and send one of these as

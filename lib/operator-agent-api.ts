@@ -46,6 +46,7 @@ type BackendRun = {
 
 type BackendConfirmation = {
   _id: string;
+  promptMessageId: string;
   summary: string;
   toolName: string;
   effect:
@@ -55,8 +56,14 @@ type BackendConfirmation = {
     | "access_change"
     | "global_change"
     | "destructive";
-  targetKind?: string;
-  targetId?: string;
+  state:
+    | "pending"
+    | "approved"
+    | "cancelled"
+    | "expired"
+    | "superseded"
+    | "unavailable";
+  actionable: boolean;
   expiresAt: number;
 };
 
@@ -67,7 +74,7 @@ type GetThreadResult = {
   thread: BackendThread;
   messages: BackendMessage[];
   activeRun: BackendRun | null;
-  pendingConfirmation: BackendConfirmation | null;
+  confirmations: BackendConfirmation[];
 };
 type CreateThreadArgs = { initialContext?: PageContext };
 type SendMessageArgs = {
@@ -115,8 +122,11 @@ export type OperatorAgentThread = {
 
 export type OperatorAgentConfirmation = {
   id: string;
+  promptMessageId: string;
   title: string;
   destructive: boolean;
+  state: BackendConfirmation["state"];
+  actionable: boolean;
 };
 
 export type OperatorAgentMessage = {
@@ -134,7 +144,7 @@ export type OperatorAgentThreadDetail = {
   thread: OperatorAgentThread | null;
   messages: OperatorAgentMessage[];
   activeRun: boolean;
-  pendingConfirmation?: OperatorAgentConfirmation;
+  confirmations: OperatorAgentConfirmation[];
 };
 
 export const operatorAgentApi = {
@@ -215,13 +225,15 @@ function normalizeThread(thread: BackendThread): OperatorAgentThread {
 }
 
 function normalizeConfirmation(
-  confirmation: BackendConfirmation | null,
-): OperatorAgentConfirmation | undefined {
-  if (!confirmation) return undefined;
+  confirmation: BackendConfirmation,
+): OperatorAgentConfirmation {
   return {
     id: confirmation._id,
+    promptMessageId: confirmation.promptMessageId,
     title: confirmation.summary,
     destructive: confirmation.effect === "destructive",
+    state: confirmation.state,
+    actionable: confirmation.actionable,
   };
 }
 
@@ -235,7 +247,12 @@ export function normalizeOperatorAgentThread(
   value: GetThreadResult | undefined,
 ): OperatorAgentThreadDetail {
   if (!value) {
-    return { thread: null, messages: [], activeRun: false };
+    return {
+      thread: null,
+      messages: [],
+      activeRun: false,
+      confirmations: [],
+    };
   }
   return {
     thread: normalizeThread(value.thread),
@@ -250,6 +267,6 @@ export function normalizeOperatorAgentThread(
       attachments: message.attachments,
     })),
     activeRun: value.activeRun !== null,
-    pendingConfirmation: normalizeConfirmation(value.pendingConfirmation),
+    confirmations: value.confirmations.map(normalizeConfirmation),
   };
 }

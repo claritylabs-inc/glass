@@ -1380,7 +1380,7 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
 
   return (
     <div
-      className={`flex items-start gap-2.5 max-w-lg w-fit ${isOwnMessage ? "ml-auto flex-row-reverse" : ""}`}
+      className={`flex items-start gap-2.5 max-w-[min(32rem,100%)] w-fit ${isOwnMessage ? "ml-auto flex-row-reverse" : ""}`}
     >
       <div
         className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
@@ -1441,11 +1441,23 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
             channel={msg.channel}
             isOwnMessage={Boolean(isOwnMessage)}
           >
-            <PromptReferenceText
-              content={cleanContent}
-              references={promptReferences}
-              className="block"
-            />
+            {msg.channel === "slack" ? (
+              <ProseMarkdown
+                sourceFormat="slack-mrkdwn"
+                gfm
+                breaks
+                className={MARKDOWN_STYLES}
+                components={markdownComponents}
+              >
+                {cleanContent}
+              </ProseMarkdown>
+            ) : (
+              <PromptReferenceText
+                content={cleanContent}
+                references={promptReferences}
+                className="block"
+              />
+            )}
             {quoted && (
               <>
                 <button

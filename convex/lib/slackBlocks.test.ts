@@ -1,12 +1,57 @@
 import { describe, expect, test } from "vitest";
 import type { Id } from "../_generated/dataModel";
 import {
+  buildOperatorSlackConfirmationBlocks,
+  buildOperatorSlackConfirmationResolvedBlocks,
   buildSlackClassicFinalBlocks,
   buildSlackFinalBlocks,
   formatSlackAnswerText,
 } from "./slackBlocks";
 
 describe("Slack Block Kit renderers", () => {
+  test("renders operator confirmations as human-readable Slack controls", () => {
+    const confirmationId =
+      "q97dk6d86fgsdtpnqxbp0s6w2h8dgzf0" as Id<"operatorAgentConfirmations">;
+    const summary =
+      'Create procurement request "1305 Carroll Avenue Building Purchase" for organization Sigillo Supply';
+    const blocks = buildOperatorSlackConfirmationBlocks({
+      confirmationId,
+      summary,
+      destructive: false,
+    });
+
+    expect(blocks[0]).toMatchObject({
+      type: "section",
+      text: {
+        text: expect.stringContaining("Sigillo Supply"),
+      },
+    });
+    expect((blocks[0] as any).text.text).not.toContain(confirmationId);
+    expect(blocks[1]).toMatchObject({
+      type: "actions",
+      elements: [
+        {
+          action_id: "spot_operator_confirmation_reject",
+          value: confirmationId,
+          text: { text: "Cancel" },
+        },
+        {
+          action_id: "spot_operator_confirmation_approve",
+          value: confirmationId,
+          text: { text: "Confirm" },
+          style: "primary",
+        },
+      ],
+    });
+
+    const resolved = buildOperatorSlackConfirmationResolvedBlocks({
+      summary,
+      decision: "approve",
+    });
+    expect(JSON.stringify(resolved)).toContain("Confirmed");
+    expect(JSON.stringify(resolved)).not.toContain("actions");
+  });
+
   test("renders an accessible final answer with trace, policy action, handoff, and feedback", () => {
     const blocks = buildSlackFinalBlocks({
       message: {

@@ -10,6 +10,7 @@ import {
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
+import { slackMrkdwnToMarkdown } from "@/lib/slack-mrkdwn";
 import {
   remarkConfidence,
   protectConfidenceMarkersForStreaming,
@@ -34,8 +35,10 @@ const BASE_STYLES =
   "[&_h2]:mt-3 [&_h2]:mb-1 " +
   "[&_h3]:mt-2.5 [&_h3]:mb-0.5 " +
   "[&_h4]:mt-2 [&_h4]:mb-0.5 " +
+  "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-border-emphasized [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground " +
   "[&_hr]:my-3 [&_hr]:border-input " +
   "[&_code]:bg-foreground/[0.04] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded " +
+  "[&_pre]:my-3 [&_pre]:overflow-x-auto " +
   "[&_table]:w-full [&_table]:border-collapse " +
   "[&_th]:text-left [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:border-b [&_th]:border-border-emphasized [&_th]:bg-foreground/[0.03] [&_th]:whitespace-nowrap [&_th]:text-muted-foreground/60 " +
   "[&_td]:px-2.5 [&_td]:py-1.5 [&_td]:border-b [&_td]:border-border [&_td]:whitespace-nowrap [&_tr:last-child_td]:border-b-0 " +
@@ -52,11 +55,15 @@ const COMPACT_STYLES =
   "[&_h2]:mt-2 [&_h2]:mb-0.5 " +
   "[&_h3]:mt-1.5 [&_h3]:mb-0.5 " +
   "[&_h4]:mt-1 [&_h4]:mb-0.5 " +
+  "[&_blockquote]:my-1.5 [&_blockquote]:border-l-2 [&_blockquote]:border-border-emphasized [&_blockquote]:pl-2.5 [&_blockquote]:text-muted-foreground " +
+  "[&_pre]:my-2 [&_pre]:overflow-x-auto " +
   "[&_hr]:my-2 [&_hr]:border-input";
 
 export type ProseMarkdownProps = {
   children: string;
   className?: string;
+  /** Source syntax to normalize before rendering (default: Markdown). */
+  sourceFormat?: "markdown" | "slack-mrkdwn";
   /** Use compact spacing for quoted/reply content */
   compact?: boolean;
   /** Enable GFM tables (default: false) */
@@ -177,6 +184,7 @@ function useMarkdownComponents({
 export function ProseMarkdown({
   children,
   className,
+  sourceFormat = "markdown",
   compact = false,
   gfm = false,
   breaks = false,
@@ -184,6 +192,13 @@ export function ProseMarkdown({
   confidenceFullView = false,
   components,
 }: ProseMarkdownProps) {
+  const source = useMemo(
+    () =>
+      sourceFormat === "slack-mrkdwn"
+        ? slackMrkdwnToMarkdown(children)
+        : children,
+    [children, sourceFormat],
+  );
   const plugins = useMemo(() => {
     const next = [];
     if (gfm) next.push(remarkGfm);
@@ -207,7 +222,7 @@ export function ProseMarkdown({
       )}
     >
       <Markdown remarkPlugins={plugins} components={mergedComponents}>
-        {children}
+        {source}
       </Markdown>
     </div>
   );
@@ -216,6 +231,7 @@ export function ProseMarkdown({
 export function StreamingProseMarkdown({
   children,
   className,
+  sourceFormat = "markdown",
   compact = false,
   gfm = false,
   breaks = false,
@@ -223,6 +239,13 @@ export function StreamingProseMarkdown({
   confidenceFullView = false,
   components,
 }: ProseMarkdownProps) {
+  const source = useMemo(
+    () =>
+      sourceFormat === "slack-mrkdwn"
+        ? slackMrkdwnToMarkdown(children)
+        : children,
+    [children, sourceFormat],
+  );
   const plugins = useMemo(() => {
     const next = [];
     if (gfm) next.push(defaultRemarkPlugins.gfm);
@@ -259,7 +282,7 @@ export function StreamingProseMarkdown({
         remarkPlugins={plugins}
         components={mergedComponents as StreamdownComponents}
       >
-        {children}
+        {source}
       </Streamdown>
     </div>
   );

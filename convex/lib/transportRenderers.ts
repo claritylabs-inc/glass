@@ -34,7 +34,7 @@ function safeLink(href: string): string | null {
 
 class SlackMrkdwnRenderer extends Renderer {
   override code({ text }: Tokens.Code) {
-    return `\`\`\`${escapeSlackText(text)}\`\`\`\n`;
+    return `\`\`\`${escapeSlackText(text)}\`\`\`\n\n`;
   }
 
   override blockquote({ tokens }: Tokens.Blockquote) {
@@ -43,7 +43,7 @@ class SlackMrkdwnRenderer extends Renderer {
       .trim()
       .split("\n")
       .map((line) => `> ${line}`)
-      .join("\n")}\n`;
+      .join("\n")}\n\n`;
   }
 
   override html({ text }: Tokens.HTML | Tokens.Tag) {
@@ -51,11 +51,11 @@ class SlackMrkdwnRenderer extends Renderer {
   }
 
   override heading({ tokens }: Tokens.Heading) {
-    return `*${this.parser.parseInline(tokens)}*\n`;
+    return `*${this.parser.parseInline(tokens)}*\n\n`;
   }
 
   override hr() {
-    return "────────\n";
+    return "────────\n\n";
   }
 
   override list(token: Tokens.List) {
@@ -64,14 +64,41 @@ class SlackMrkdwnRenderer extends Renderer {
         const marker = token.ordered
           ? `${Number(token.start ?? 1) + index}.`
           : "•";
-        const body = this.parser.parse(item.tokens).trim().replaceAll("\n", "\n  ");
-        return `${marker} ${body}`;
+        return `${marker} ${this.listitem(item).replaceAll(
+          "\n",
+          `\n${" ".repeat(marker.length + 1)}`,
+        )}`;
       })
-      .join("\n")}\n`;
+      .join("\n")}\n\n`;
   }
 
+  /** Keep every block inside an item on its own line so nested lists stay readable. */
   override listitem(item: Tokens.ListItem) {
-    return this.parser.parse(item.tokens);
+    const task = item.task
+      ? this.checkbox({ type: "checkbox", raw: "", checked: item.checked === true })
+      : "";
+    return `${task}${item.tokens
+      .filter((token) => token.type !== "checkbox")
+      .map((token) => this.parser.parse([token]).trim())
+      .filter((block) => block.length > 0)
+      .join(item.loose ? "\n\n" : "\n")}`;
+  }
+
+  override checkbox({ checked }: Tokens.Checkbox) {
+    return checked ? "[x] " : "[ ] ";
+  }
+
+  override table(token: Tokens.Table) {
+    const cell = (candidate: Tokens.TableCell) =>
+      this.parser.parseInline(candidate.tokens).trim();
+    const header = token.header
+      .map((candidate) => {
+        const text = cell(candidate);
+        return text ? `*${text}*` : text;
+      })
+      .join(" | ");
+    const rows = token.rows.map((row) => row.map(cell).join(" | "));
+    return `${[header, ...rows].filter(Boolean).join("\n")}\n\n`;
   }
 
   override paragraph({ tokens }: Tokens.Paragraph) {
@@ -101,7 +128,9 @@ class SlackMrkdwnRenderer extends Renderer {
   override link({ href, tokens }: Tokens.Link) {
     const label = this.parser.parseInline(tokens);
     const safeHref = safeLink(href);
-    return safeHref ? `<${escapeSlackText(safeHref)}|${label}>` : label;
+    if (!safeHref) return label;
+    const target = escapeSlackText(safeHref);
+    return target === label ? `<${target}>` : `<${target}|${label}>`;
   }
 
   override image({ href, text }: Tokens.Image) {
@@ -110,8 +139,10 @@ class SlackMrkdwnRenderer extends Renderer {
     return safeHref ? `<${escapeSlackText(safeHref)}|${label}>` : label;
   }
 
-  override text({ text }: Tokens.Text | Tokens.Escape) {
-    return escapeSlackText(text);
+  override text(token: Tokens.Text | Tokens.Escape) {
+    return "tokens" in token && token.tokens
+      ? this.parser.parseInline(token.tokens)
+      : escapeSlackText(token.text);
   }
 }
 
@@ -128,6 +159,8 @@ function renderWith(renderer: Renderer, markdown: string): string {
 export function renderSlackMrkdwn(markdown: string): string {
   return renderWith(new SlackMrkdwnRenderer(), markdown)
     .replace(EMOJI_SEQUENCE, "")
+    .replace(/[^\S\n]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 

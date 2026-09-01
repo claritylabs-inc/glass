@@ -797,16 +797,33 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       requirements: z.string().min(1).max(20_000),
       targetEffectiveDate: z.string().max(10).optional(),
       status: procurementRequestStatus.optional(),
-      replacingPolicyId: policyId.optional(),
-      resultingPolicyId: policyId.optional(),
+      replacingPolicyId: policyId
+        .describe(
+          "Exact existing policy ID returned by a policy read tool. Omit for a new purchase or when no policy is being replaced; never use an organization ID.",
+        )
+        .optional(),
+      resultingPolicyId: policyId
+        .describe(
+          "Exact bound policy ID returned by a policy read tool. Omit until this procurement request has produced a policy; never use an organization ID.",
+        )
+        .optional(),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
     requiredRole: "operator",
     confirmation: "exact",
     target: (input) => ({ kind: "organization", id: input.orgId }),
-    summarize: (input) =>
-      `Create procurement request ${JSON.stringify(input.title)} for organization ${input.orgId}`,
+    summarize: (input) => {
+      const policyLinks = [
+        input.replacingPolicyId
+          ? `replacing policy ${input.replacingPolicyId}`
+          : null,
+        input.resultingPolicyId
+          ? `resulting policy ${input.resultingPolicyId}`
+          : null,
+      ].filter(Boolean);
+      return `Create procurement request ${JSON.stringify(input.title)} for organization ${input.orgId}${policyLinks.length ? ` with ${policyLinks.join(" and ")}` : ""}`;
+    },
   }),
   update_procurement_request: defineOperatorTool({
     version: 1,

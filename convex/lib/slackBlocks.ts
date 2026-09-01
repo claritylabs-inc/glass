@@ -74,6 +74,68 @@ export function formatSlackAnswerText(value: string): string {
   return renderSlackMrkdwn(value);
 }
 
+export function buildOperatorSlackConfirmationBlocks(args: {
+  confirmationId: Id<"operatorAgentConfirmations">;
+  summary: string;
+  destructive: boolean;
+}): SlackBlock[] {
+  const summary = truncate(escapeMrkdwn(args.summary.trim()), 2_800);
+  const accessibleSummary = truncate(args.summary.trim(), 60);
+  return [
+    {
+      type: "section",
+      block_id: blockId("spot-operator-confirmation", args.confirmationId),
+      text: {
+        type: "mrkdwn",
+        text: `*Confirmation required*\n${summary}`,
+      },
+    },
+    {
+      type: "actions",
+      block_id: blockId(
+        "spot-operator-confirmation-actions",
+        args.confirmationId,
+      ),
+      elements: [
+        {
+          type: "button",
+          action_id: "spot_operator_confirmation_reject",
+          value: args.confirmationId,
+          text: { type: "plain_text", text: "Cancel" },
+          accessibility_label: `Cancel ${accessibleSummary}`,
+        },
+        {
+          type: "button",
+          action_id: "spot_operator_confirmation_approve",
+          value: args.confirmationId,
+          text: { type: "plain_text", text: "Confirm" },
+          accessibility_label: `Confirm ${accessibleSummary}`,
+          style: args.destructive ? "danger" : "primary",
+        },
+      ],
+    },
+  ];
+}
+
+export function buildOperatorSlackConfirmationResolvedBlocks(args: {
+  summary: string;
+  decision: "approve" | "reject";
+}): SlackBlock[] {
+  return [
+    {
+      type: "section",
+      block_id: blockId("spot-operator-confirmation-resolved", args.decision),
+      text: {
+        type: "mrkdwn",
+        text: `*${args.decision === "approve" ? "Confirmed" : "Cancelled"}*\n${truncate(
+          escapeMrkdwn(args.summary.trim()),
+          2_800,
+        )}`,
+      },
+    },
+  ];
+}
+
 function displayDate(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);

@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import dayjs from "dayjs";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
   claimBatch,
@@ -12,8 +13,14 @@ import {
   failEvents,
   prepareBatch,
 } from "./slack";
-import { processDebounced } from "./actions/handleInboundSlack";
-import { authorizeBatch as authorizeOperatorSlackBatch } from "./operatorSlack";
+import {
+  processDebounced,
+  processOperatorConfirmationInteraction,
+} from "./actions/handleInboundSlack";
+import {
+  authorizeBatch as authorizeOperatorSlackBatch,
+  authorizeConfirmationInteraction as authorizeOperatorSlackConfirmation,
+} from "./operatorSlack";
 import {
   claimOAuthState,
   createOAuthState,
@@ -28,6 +35,7 @@ import {
   markSent,
 } from "./slackOutbound";
 import { notifyInternal } from "./lib/notify";
+import { slackThreadContextText } from "./lib/slackThreadContext";
 
 const modules = import.meta.glob("./**/*.ts");
 const claimInboundFn = claimInbound as any;
@@ -47,7 +55,11 @@ const markFailedFn = markFailed as any;
 const markSentFn = markSent as any;
 const notifyInternalFn = notifyInternal as any;
 const processDebouncedFn = processDebounced as any;
+const processOperatorConfirmationInteractionFn =
+  processOperatorConfirmationInteraction as any;
 const authorizeOperatorSlackBatchFn = authorizeOperatorSlackBatch as any;
+const authorizeOperatorSlackConfirmationFn =
+  authorizeOperatorSlackConfirmation as any;
 const BASE_TIME = dayjs().add(1, "minute").valueOf();
 
 beforeEach(() => {
@@ -191,6 +203,302 @@ async function ingest(
 }
 
 describe("Slack channel state and authorization", () => {
+  test("marks operator Slack requests as active and then complete", async () => {
+    vi.stubEnv("OPERATOR_SLACK_ENABLED", "true");
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-SPOT");
+    vi.stubEnv("OPERATOR_SLACK_BOT_USER_ID", "U-SPOT");
+    vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example");
+    vi.stubEnv("SLACK_WORKER_SECRET", "test-secret");
+    const t = convexTest(schema, modules);
+    const { operatorUserId } = await seedSlack(t);
+    const channelId = "C-OPERATOR";
+    const threadTs = "1800000000.001";
+    await t.run(async (ctx) => {
+      const threadId = await ctx.db.insert("operatorAgentThreads", {
+        ownerUserId: operatorUserId,
+        visibility: "shared",
+        channel: "slack",
+        conversationKey: `T-SPOT:${channelId}:${threadTs}`,
+        title: "Slack operator request",
+        lastMessageAt: BASE_TIME,
+        createdAt: BASE_TIME,
+        updatedAt: BASE_TIME,
+      });
+      const userMessageId = await ctx.db.insert("operatorAgentMessages", {
+        threadId,
+        ownerUserId: operatorUserId,
+        channel: "slack",
+        role: "user",
+        content: "Update the client",
+        createdAt: BASE_TIME,
+        updatedAt: BASE_TIME,
+      });
+      const agentMessageId = await ctx.db.insert("operatorAgentMessages", {
+        threadId,
+        ownerUserId: operatorUserId,
+        channel: "slack",
+        role: "agent",
+        content: "Confirmation required",
+        status: "processing",
+        createdAt: BASE_TIME,
+        updatedAt: BASE_TIME,
+      });
+      const runId = await ctx.db.insert("operatorAgentRuns", {
+        threadId,
+        operatorUserId,
+        userMessageId,
+        agentMessageId,
+        objective: "Update the client",
+        status: "waiting_confirmation",
+        createdAt: BASE_TIME,
+        updatedAt: BASE_TIME,
+      });
+      const confirmationId = await ctx.db.insert(
+        "operatorAgentConfirmations",
+        {
+          threadId,
+          operatorUserId,
+          promptMessageId: agentMessageId,
+          payload: {
+            kind: "operator_tool_action",
+            runId,
+            toolName: "update_organization",
+            toolVersion: 1,
+            input: "{}",
+            inputHash: "test-input",
+            idempotencyKey: "operator-slack-confirmation",
+            capability: "operator.organization.write",
+            effect: "reversible_write",
+            requiredRole: "operator",
+            summary: "Update the client",
+          },
+          status: "pending",
+          expiresAt: BASE_TIME + 60_000,
+          createdAt: BASE_TIME,
+          updatedAt: BASE_TIME,
+        },
+      );
+      await ctx.db.patch(runId, {
+        checkpoint: {
+          iteration: 1,
+          executionCount: 1,
+          pendingConfirmationId: confirmationId,
+        },
+      });
+    });
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "operator-reaction-lifecycle",
+      teamId: "T-SPOT",
+      channelId,
+      threadTs,
+      messageTs: "1800000000.002",
+      senderTeamId: "T-SPOT",
+      senderUserId: "U-OPERATOR",
+      content: "reject",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    })) as { eventId: Id<"slackInboundEvents"> };
+    await t.run((ctx) => ctx.db.patch(claim.eventId, { scheduledFor: 0 }));
+    const reactions: Array<{
+      operation: string;
+      body: Record<string, unknown>;
+    }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const operation = new URL(String(input)).pathname;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (operation.startsWith("/reaction/")) {
+          reactions.push({ operation, body });
+          return Response.json({ ok: true });
+        }
+        if (operation === "/actor") {
+          return Response.json({
+            teamId: "T-SPOT",
+            userId: "U-OPERATOR",
+            displayName: "Spot Operator",
+            isBot: false,
+            botUserId: "U-SPOT",
+          });
+        }
+        if (operation === "/thread-context") {
+          return Response.json({ messages: [], truncated: false });
+        }
+        if (operation === "/send") {
+          return Response.json({ messageId: "1800000000.003" });
+        }
+        throw new Error(`Unexpected worker path ${operation}`);
+      }),
+    );
+
+    await expect(
+      t.action(processDebouncedFn, { eventId: claim.eventId }),
+    ).resolves.toBeNull();
+
+    expect(reactions).toEqual([
+      {
+        operation: "/reaction/add",
+        body: {
+          teamId: "T-SPOT",
+          channelId,
+          messageTs: "1800000000.002",
+          name: "eyes",
+        },
+      },
+      {
+        operation: "/reaction/add",
+        body: {
+          teamId: "T-SPOT",
+          channelId,
+          messageTs: "1800000000.002",
+          name: "white_check_mark",
+        },
+      },
+      {
+        operation: "/reaction/remove",
+        body: {
+          teamId: "T-SPOT",
+          channelId,
+          messageTs: "1800000000.002",
+          name: "eyes",
+        },
+      },
+    ]);
+    await expect(
+      t.run(async (ctx) => (await ctx.db.get(claim.eventId))?.status),
+    ).resolves.toBe("completed");
+  });
+
+  test("retains uncaptured source-thread messages as private model context", async () => {
+    const t = convexTest(schema, modules);
+    await seedSlack(t);
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "thread-context-current",
+      teamId: "T-CUSTOMER",
+      channelId: "C-PRIMARY",
+      threadTs: "1800000000.000",
+      messageTs: "1800000000.100",
+      senderTeamId: "T-CUSTOMER",
+      senderUserId: "U-CUSTOMER",
+      content: "<@U-SPOT> create the request",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    })) as { eventId: Id<"slackInboundEvents"> };
+
+    const prepared = await t.mutation(prepareBatchFn, {
+      eventIds: [claim.eventId],
+      slackThreadContext: {
+        messages: [
+          {
+            messageTs: "1800000000.000",
+            senderUserId: "U-CUSTOMER",
+            content: "Original commercial property quote requirements",
+          },
+          {
+            messageTs: "1800000000.100",
+            senderUserId: "U-CUSTOMER",
+            content: "<@U-SPOT> create the request",
+          },
+        ],
+        truncated: false,
+      },
+    });
+    expect(prepared).not.toBeNull();
+    const userMessageId = prepared?.userMessageId as
+      | Id<"threadMessages">
+      | undefined;
+    const message = userMessageId
+      ? await t.run((ctx) => ctx.db.get(userMessageId))
+      : null;
+    expect(slackThreadContextText(message?.toolArtifacts)).toContain(
+      "Original commercial property quote requirements",
+    );
+    expect(slackThreadContextText(message?.toolArtifacts)).not.toContain(
+      "create the request",
+    );
+  });
+
+  test("activates an ignored channel thread from a mentioned reply", async () => {
+    const t = convexTest(schema, modules);
+    const { connectionId } = await seedSlack(t);
+    const threadTs = "1800000000.005";
+    const root = await t.mutation(claimInboundFn, {
+      eventKey: "quiet-channel-root",
+      teamId: "T-CUSTOMER",
+      channelId: "C-OTHER",
+      threadTs,
+      messageTs: threadTs,
+      senderTeamId: "T-CUSTOMER",
+      senderUserId: "U-CUSTOMER",
+      content: "We should review the building purchase",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    });
+    expect(root).toMatchObject({ status: "ignored" });
+    expect(root).not.toHaveProperty("eventId");
+
+    const mentioned = (await t.mutation(claimInboundFn, {
+      eventKey: "mentioned-channel-reply",
+      teamId: "T-CUSTOMER",
+      channelId: "C-OTHER",
+      threadTs,
+      messageTs: "1800000000.006",
+      senderTeamId: "T-CUSTOMER",
+      senderUserId: "U-CUSTOMER",
+      content: "<@U-SPOT> can you help with this?",
+      eventType: "message",
+      receivedAt: BASE_TIME + 1,
+    })) as { eventId: Id<"slackInboundEvents">; status: string };
+    const followup = (await t.mutation(claimInboundFn, {
+      eventKey: "unmentioned-channel-followup",
+      teamId: "T-CUSTOMER",
+      channelId: "C-OTHER",
+      threadTs,
+      messageTs: "1800000000.007",
+      senderTeamId: "T-CUSTOMER",
+      senderUserId: "U-CUSTOMER",
+      content: "The effective date should be next month",
+      eventType: "message",
+      receivedAt: BASE_TIME + 2,
+    })) as { eventId: Id<"slackInboundEvents">; status: string };
+    expect(mentioned.status).toBe("queued");
+    expect(followup.status).toBe("queued");
+
+    await expect(
+      t.mutation(prepareBatchFn, {
+        eventIds: [mentioned.eventId, followup.eventId],
+      }),
+    ).resolves.not.toBeNull();
+    const state = await t.run(async (ctx) => {
+      const thread = await ctx.db
+        .query("threads")
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-OTHER")
+            .eq("slackThreadTs", threadTs),
+        )
+        .unique();
+      const messages = thread
+        ? await ctx.db
+            .query("threadMessages")
+            .withIndex("thread", (q) => q.eq("threadId", thread._id))
+            .order("asc")
+            .take(10)
+        : [];
+      return { thread, messages };
+    });
+    expect(state.thread?.slackState).toBe("active");
+    expect(
+      state.messages
+        .filter((message) => message.role === "user")
+        .map((message) => message.content),
+    ).toEqual([
+      "<@U-SPOT> can you help with this?",
+      "The effective date should be next month",
+    ]);
+  });
+
   test("queues an operator mention without channel eligibility settings", async () => {
     vi.stubEnv("OPERATOR_SLACK_ENABLED", "true");
     vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-CLARITY");
@@ -244,6 +552,237 @@ describe("Slack channel state and authorization", () => {
         eventIds: [claim.eventId],
       }),
     ).resolves.toMatchObject([{ operatorUserId }]);
+  });
+
+  test("continues an activated operator thread without repeated mentions", async () => {
+    vi.stubEnv("OPERATOR_SLACK_ENABLED", "true");
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-SPOT");
+    vi.stubEnv("OPERATOR_SLACK_BOT_USER_ID", "U-SPOT");
+    const t = convexTest(schema, modules);
+    const { operatorUserId } = await seedSlack(t);
+    const threadTs = "1800000000.015";
+    const root = await t.mutation(claimInboundFn, {
+      eventKey: "quiet-operator-root",
+      teamId: "T-SPOT",
+      channelId: "C-OPERATOR",
+      threadTs,
+      messageTs: threadTs,
+      senderTeamId: "T-SPOT",
+      senderUserId: "U-OPERATOR",
+      content: "This client needs a procurement request",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    });
+    expect(root).toMatchObject({ status: "ignored" });
+
+    const mentioned = (await t.mutation(claimInboundFn, {
+      eventKey: "mentioned-operator-reply",
+      teamId: "T-SPOT",
+      channelId: "C-OPERATOR",
+      threadTs,
+      messageTs: "1800000000.016",
+      senderTeamId: "T-SPOT",
+      senderUserId: "U-OPERATOR",
+      content: "<@U-SPOT> create it",
+      eventType: "message",
+      receivedAt: BASE_TIME + 1,
+    })) as { eventId: Id<"slackInboundEvents">; status: string };
+    const immediateFollowup = (await t.mutation(claimInboundFn, {
+      eventKey: "immediate-operator-followup",
+      teamId: "T-SPOT",
+      channelId: "C-OPERATOR",
+      threadTs,
+      messageTs: "1800000000.017",
+      senderTeamId: "T-SPOT",
+      senderUserId: "U-OPERATOR",
+      content: "Use next month as the effective date",
+      eventType: "message",
+      receivedAt: BASE_TIME + 2,
+    })) as { eventId: Id<"slackInboundEvents">; status: string };
+    expect(mentioned.status).toBe("queued");
+    expect(immediateFollowup.status).toBe("queued");
+
+    await t.run(async (ctx) => {
+      await Promise.all(
+        [mentioned.eventId, immediateFollowup.eventId].map((eventId) =>
+          ctx.db.patch(eventId, { status: "processing", senderIsBot: false }),
+        ),
+      );
+    });
+    await expect(
+      t.mutation(authorizeOperatorSlackBatchFn, {
+        eventIds: [mentioned.eventId, immediateFollowup.eventId],
+      }),
+    ).resolves.toMatchObject([
+      { operatorUserId, event: { eventKey: "mentioned-operator-reply" } },
+      { operatorUserId, event: { eventKey: "immediate-operator-followup" } },
+    ]);
+    await t.mutation(internal.operatorSlack.completeEvent, {
+      eventId: mentioned.eventId,
+    });
+    await t.mutation(internal.operatorSlack.completeEvent, {
+      eventId: immediateFollowup.eventId,
+    });
+
+    await t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId,
+        channel: "slack",
+        conversationKey: `T-SPOT:C-OPERATOR:${threadTs}`,
+        shared: true,
+      },
+    );
+    const botEcho = await t.mutation(claimInboundFn, {
+      eventKey: "operator-bot-echo",
+      teamId: "T-SPOT",
+      channelId: "C-OPERATOR",
+      threadTs,
+      messageTs: "1800000000.0175",
+      senderTeamId: "T-SPOT",
+      senderUserId: "U-SPOT",
+      content: "The request is ready",
+      eventType: "message",
+      receivedAt: BASE_TIME + 2.5,
+    });
+    expect(botEcho).toMatchObject({ status: "ignored" });
+    expect(botEcho).not.toHaveProperty("eventId");
+
+    const laterFollowup = (await t.mutation(claimInboundFn, {
+      eventKey: "later-operator-followup",
+      teamId: "T-SPOT",
+      channelId: "C-OPERATOR",
+      threadTs,
+      messageTs: "1800000000.018",
+      senderTeamId: "T-SPOT",
+      senderUserId: "U-OPERATOR",
+      content: "approve",
+      eventType: "message",
+      receivedAt: BASE_TIME + 3,
+    })) as { eventId: Id<"slackInboundEvents">; status: string };
+    expect(laterFollowup.status).toBe("queued");
+    await t.run((ctx) =>
+      ctx.db.patch(laterFollowup.eventId, {
+        status: "processing",
+        senderIsBot: false,
+      }),
+    );
+    await expect(
+      t.mutation(authorizeOperatorSlackBatchFn, {
+        eventIds: [laterFollowup.eventId],
+      }),
+    ).resolves.toMatchObject([
+      { operatorUserId, event: { content: "approve" } },
+    ]);
+  });
+
+  test("binds Slack confirmation controls to the exact operator and channel", async () => {
+    vi.stubEnv("OPERATOR_SLACK_ENABLED", "true");
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-SPOT");
+    vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example");
+    vi.stubEnv("SLACK_WORKER_SECRET", "worker-secret");
+    const t = convexTest(schema, modules);
+    const { clientOrgId, operatorUserId } = await seedSlack(t);
+    const threadId = await t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId,
+        channel: "slack",
+        conversationKey: "T-SPOT:C-OPERATOR:1800000000.010",
+        shared: true,
+      },
+    );
+    const requested = await t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId,
+        threadId,
+        channel: "slack",
+        toolName: "set_organization_status",
+        input: { orgId: clientOrgId, status: "live" },
+        idempotencyKey: "slack-confirmation-control",
+      },
+    );
+    if (
+      requested.outcome.status !== "confirmation_required" ||
+      !requested.outcome.confirmationId
+    ) {
+      throw new Error("Expected an operator confirmation");
+    }
+
+    const authorized = await t.query(
+      authorizeOperatorSlackConfirmationFn,
+      {
+        teamId: "T-SPOT",
+        actorTeamId: "T-SPOT",
+        slackUserId: "U-OPERATOR",
+        channelId: "C-OPERATOR",
+        confirmationId: requested.outcome.confirmationId,
+      },
+    );
+    expect(authorized).toMatchObject({
+      operatorUserId,
+      threadId,
+      confirmationId: requested.outcome.confirmationId,
+      summary: "Set organization Cove status to live",
+      destructive: false,
+    });
+    await expect(
+      t.query(authorizeOperatorSlackConfirmationFn, {
+        teamId: "T-SPOT",
+        actorTeamId: "T-SPOT",
+        slackUserId: "U-SOMEONE-ELSE",
+        channelId: "C-OPERATOR",
+        confirmationId: requested.outcome.confirmationId,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      t.query(authorizeOperatorSlackConfirmationFn, {
+        teamId: "T-SPOT",
+        actorTeamId: "T-SPOT",
+        slackUserId: "U-OPERATOR",
+        channelId: "C-DIFFERENT",
+        confirmationId: requested.outcome.confirmationId,
+      }),
+    ).resolves.toBeNull();
+
+    const workerFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ messageId: "1800000000.200" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", workerFetch);
+    await expect(
+      t.action(processOperatorConfirmationInteractionFn, {
+        operatorUserId,
+        threadId,
+        confirmationId: requested.outcome.confirmationId,
+        decision: "approve",
+        teamId: "T-SPOT",
+        channelId: "C-OPERATOR",
+        messageTs: "1800000000.150",
+        threadTs: "1800000000.010",
+        summary: authorized.summary,
+      }),
+    ).resolves.toMatchObject({ status: "completed" });
+    expect(workerFetch).toHaveBeenCalledTimes(2);
+    expect(workerFetch.mock.calls[0]?.[0]).toBe(
+      "https://slack-worker.example/message/update",
+    );
+    const updateBody = JSON.parse(
+      String((workerFetch.mock.calls[0]?.[1] as RequestInit | undefined)?.body),
+    );
+    expect(JSON.stringify(updateBody.blocks)).toContain("Confirmed");
+    expect(JSON.stringify(updateBody.blocks)).not.toContain(
+      "spot_operator_confirmation_approve",
+    );
+    expect(workerFetch.mock.calls[1]?.[0]).toBe(
+      "https://slack-worker.example/send",
+    );
+    await expect(t.run((ctx) => ctx.db.get(clientOrgId))).resolves.toMatchObject(
+      { operatorStatus: "live" },
+    );
   });
 
   test("routes a client mention when stored host-channel health is stale", async () => {
@@ -1112,6 +1651,8 @@ describe("Slack channel state and authorization", () => {
       content: "Spot response",
       senderUserId: "U-SPOT",
     });
+    expect(bot.claim).toMatchObject({ status: "ignored" });
+    expect(bot.claim).not.toHaveProperty("eventId");
     expect(bot.prepared).toBeNull();
 
     const claimed = (await t.mutation(claimInboundFn, {

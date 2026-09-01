@@ -2,12 +2,25 @@ import { describe, expect, test } from "vitest";
 
 import { normalizeOperatorCoiBatch } from "../operatorAgent";
 import { generateCoiInputSchema, lookupAddressInputSchema } from "./chatTools";
+import { OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES } from "./operatorAgentConfirmationPreflight";
 import {
   getOperatorAgentToolSpec,
+  operatorAgentToolCatalog,
   parseOperatorAgentToolInput,
 } from "./operatorAgentToolRegistry";
 
 describe("operator certificate tools", () => {
+  test("requires a registered preflight for every exact-confirmed tool", () => {
+    const exactConfirmedTools = operatorAgentToolCatalog()
+      .filter((tool) => tool.confirmation === "exact")
+      .map((tool) => tool.name)
+      .sort();
+
+    expect([...OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES].sort()).toEqual(
+      exactConfirmedTools,
+    );
+  });
+
   test("reuses the shared COI and address schemas with the correct effects", () => {
     const address = getOperatorAgentToolSpec("lookup_address");
     const generate = getOperatorAgentToolSpec("generate_coi");
@@ -141,6 +154,22 @@ describe("operator procurement tools", () => {
       confirmation: "exact",
       execution: "mutation",
     });
+  });
+
+  test("shows procurement policy links in the exact confirmation", () => {
+    const spec = getOperatorAgentToolSpec("create_procurement_request");
+    const input = parseOperatorAgentToolInput("create_procurement_request", {
+      orgId: "organization-1",
+      title: "Building purchase",
+      requestSummary: "Arrange coverage for the acquisition.",
+      requirements: "Property and liability coverage.",
+      replacingPolicyId: "policy-1",
+      resultingPolicyId: "policy-2",
+    });
+
+    expect(spec.summarize(input)).toBe(
+      'Create procurement request "Building purchase" for organization organization-1 with replacing policy policy-1 and resulting policy policy-2',
+    );
   });
 });
 

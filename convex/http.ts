@@ -26,6 +26,7 @@ import {
 } from "./lib/slackPayload";
 import { verifySlackRequest } from "./lib/slackSecurity";
 import {
+  operatorSlackConfirmationDecision,
   parseSlackInteraction,
   slackActionToken,
 } from "./lib/slackInteractions";
@@ -209,6 +210,47 @@ http.route({
         console.warn("[slack] Rejected feedback submission", error);
       }
       return jsonResponse({ response_action: "clear" });
+    }
+    const operatorDecision = operatorSlackConfirmationDecision(
+      payload.actionId,
+    );
+    if (operatorDecision) {
+      if (!payload.messageTs) {
+        return jsonResponse({ error: "Invalid operator confirmation" }, 400);
+      }
+      try {
+        const authorized = await ctx.runQuery(
+          internalApi.operatorSlack.authorizeConfirmationInteraction,
+          {
+            teamId: payload.teamId,
+            actorTeamId: payload.actorTeamId,
+            slackUserId: payload.userId,
+            channelId: payload.channelId,
+            confirmationId: payload.value,
+          },
+        );
+        if (authorized) {
+          await ctx.scheduler.runAfter(
+            0,
+            internalApi.actions.handleInboundSlack
+              .processOperatorConfirmationInteraction,
+            {
+              operatorUserId: authorized.operatorUserId,
+              threadId: authorized.threadId,
+              confirmationId: authorized.confirmationId,
+              decision: operatorDecision,
+              teamId: payload.teamId,
+              channelId: payload.channelId,
+              messageTs: payload.messageTs,
+              threadTs: payload.threadTs,
+              summary: authorized.summary,
+            },
+          );
+        }
+      } catch (error) {
+        console.warn("[slack] Rejected operator confirmation", error);
+      }
+      return jsonResponse({ ok: true });
     }
     const action = slackActionToken(payload.actionId, payload.value);
     if (!action) return jsonResponse({ error: "Invalid Slack action" }, 400);

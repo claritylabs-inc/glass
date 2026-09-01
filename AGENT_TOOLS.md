@@ -14,7 +14,7 @@ When any source above adds, removes, renames, or materially changes a tool, upda
 
 ## Operator agent registry
 
-The operator registry currently contains 48 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
+The operator registry currently contains 48 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. Exact-confirmed tools run the shared reference preflight in `convex/lib/operatorAgentConfirmationPreflight.ts` before the confirmation is shown, and the write revalidates the same references at execution. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
 
 The internal Slack adapter exposes this registry through App Home DMs and direct mentions from any channel delivered by the installed Clarity host app. Convex applies no channel allowlist, type, privacy, sharing, or membership gate. Customer connection and Slack Connect binding resolution takes precedence, and every invocation still requires an active operator profile linked to the exact host-workspace Slack identity.
 
