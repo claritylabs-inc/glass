@@ -1,11 +1,13 @@
 import {
-  MAX_AGENT_ATTACHMENT_AGGREGATE_BYTES,
-  MAX_AGENT_ATTACHMENT_BYTES,
   MAX_AGENT_ATTACHMENT_FILES,
+  MAX_OPERATOR_MCP_INLINE_AGGREGATE_BYTES,
+  MAX_OPERATOR_MCP_INLINE_ATTACHMENT_BYTES,
+  normalizeAgentAttachmentContentType,
+  normalizeAgentAttachmentFilename,
 } from "./agentAttachmentLimits";
 
 const MAX_BASE64_INPUT_CHARS =
-  Math.ceil(MAX_AGENT_ATTACHMENT_BYTES / 3) * 4 + 4_096;
+  Math.ceil(MAX_OPERATOR_MCP_INLINE_ATTACHMENT_BYTES / 3) * 4 + 4_096;
 
 export type DecodedOperatorMcpAttachment = {
   filename: string;
@@ -15,7 +17,7 @@ export type DecodedOperatorMcpAttachment = {
 
 function decodeBase64(value: string, filename: string): Uint8Array {
   if (value.length > MAX_BASE64_INPUT_CHARS) {
-    throw new Error(`${filename} exceeds the 25 MB file limit`);
+    throw new Error(`${filename} exceeds the 12 MB MCP inline file limit`);
   }
   const compact = value.replace(/\s/g, "");
   if (
@@ -33,8 +35,8 @@ function decodeBase64(value: string, filename: string): Uint8Array {
   } catch {
     throw new Error(`${filename} has invalid base64 data`);
   }
-  if (binary.length > MAX_AGENT_ATTACHMENT_BYTES) {
-    throw new Error(`${filename} exceeds the 25 MB file limit`);
+  if (binary.length > MAX_OPERATOR_MCP_INLINE_ATTACHMENT_BYTES) {
+    throw new Error(`${filename} exceeds the 12 MB MCP inline file limit`);
   }
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -63,15 +65,17 @@ export function decodeOperatorMcpAttachments(
     const attachment = value as Record<string, unknown>;
     const rawFilename =
       typeof attachment.filename === "string" ? attachment.filename.trim() : "";
-    const filename = rawFilename.replace(/\\/g, "/").split("/").at(-1)?.trim();
-    if (!filename || filename.length > 255 || filename.includes("\0")) {
-      throw new Error("Attachment filenames must be 1–255 characters");
-    }
-    const contentType =
+    const filename = normalizeAgentAttachmentFilename(
+      rawFilename.replace(/\\/g, "/").split("/").at(-1) ?? "",
+    );
+    const rawContentType =
       typeof attachment.content_type === "string"
         ? attachment.content_type.trim()
         : "";
-    if (contentType.length > 200 || /[\u0000-\u001f\u007f]/.test(contentType)) {
+    let contentType: string;
+    try {
+      contentType = normalizeAgentAttachmentContentType(rawContentType);
+    } catch {
       throw new Error(`${filename} has an invalid content_type`);
     }
     if (typeof attachment.data_base64 !== "string") {
@@ -79,14 +83,14 @@ export function decodeOperatorMcpAttachments(
     }
     const bytes = decodeBase64(attachment.data_base64, filename);
     aggregateSize += bytes.byteLength;
-    if (aggregateSize > MAX_AGENT_ATTACHMENT_AGGREGATE_BYTES) {
+    if (aggregateSize > MAX_OPERATOR_MCP_INLINE_AGGREGATE_BYTES) {
       throw new Error(
-        "Operator task attachments exceed the 50 MB message limit",
+        "Operator task attachments exceed the 14 MB MCP inline message limit",
       );
     }
     decoded.push({
       filename,
-      contentType: contentType || "application/octet-stream",
+      contentType,
       bytes,
     });
   }

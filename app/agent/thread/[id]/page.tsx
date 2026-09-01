@@ -29,15 +29,7 @@ export default function ThreadPage({
   const { id } = use(params);
   const threadId = id as Id<"threads">;
   const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
-  const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
   const presenceUsers = usePresence(`thread:${id}`);
-  const agentBranding =
-    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
-      ? {
-          name: `${viewerOrg.brokerOrg.name} Agent`,
-          iconUrl: viewerOrg.brokerOrg.iconUrl,
-        }
-      : undefined;
   // Thread metadata lifted from child components for AppShell header
   const [threadMeta, setThreadMeta] = useState<{
     detail: React.ReactNode;
@@ -76,7 +68,6 @@ export default function ThreadPage({
               onRightPanel={setRightPanel}
               viewerId={viewer?._id}
               viewerEmail={viewer?.email ?? undefined}
-              agentBranding={agentBranding}
             />
           </div>
         </div>

@@ -23,7 +23,24 @@ function writeJson(res: ServerResponse, payload: unknown) {
   res.end(JSON.stringify(payload));
 }
 
-function convexHealth(expectedClSdkVersion: string) {
+function convexHealth(
+  expectedClSdkVersion: string,
+  options: {
+    operatorImessageContactPhoneConfigured?: boolean;
+    operatorImessageEnabled?: boolean;
+    operatorSlackApprovedChannelCount?: number;
+    operatorSlackEnabled?: boolean;
+    operatorAgentModelConfigured?: boolean;
+  } = {},
+) {
+  const operatorImessageContactPhoneConfigured =
+    options.operatorImessageContactPhoneConfigured ?? true;
+  const operatorImessageEnabled = options.operatorImessageEnabled ?? true;
+  const operatorSlackEnabled = options.operatorSlackEnabled ?? true;
+  const operatorSlackApprovedChannelCount =
+    options.operatorSlackApprovedChannelCount ?? 1;
+  const operatorAgentModelConfigured =
+    options.operatorAgentModelConfigured ?? true;
   return {
     ok: true,
     spotEnv: "production",
@@ -45,8 +62,18 @@ function convexHealth(expectedClSdkVersion: string) {
       mode: "slack",
     },
     operatorSlack: {
-      enabled: true,
+      enabled: operatorSlackEnabled,
       hostTeamConfigured: true,
+      approvedChannelCount: operatorSlackApprovedChannelCount,
+    },
+    operatorAgent: {
+      modelConfigured: operatorAgentModelConfigured,
+    },
+    operatorImessage: {
+      inboundEnabled: operatorImessageEnabled,
+      contactPhoneConfigured: operatorImessageContactPhoneConfigured,
+      workerUrlConfigured: true,
+      workerSecretConfigured: true,
     },
   };
 }
@@ -63,6 +90,14 @@ function imessageHealth() {
     workerSecretConfigured: true,
     photonConfigured: true,
     httpPorts: [3001],
+  };
+}
+
+function operatorImessageHealth() {
+  return {
+    ...imessageHealth(),
+    channelRole: "operator",
+    httpPorts: [],
   };
 }
 
@@ -122,6 +157,7 @@ async function runAgentHealth(convexPath: string, clRouterPath = "/cl-router") {
         AGENT_HEALTH_RETRY_DELAY_MS: "1",
         SPOT_CONVEX_AGENT_HEALTH_URL: `${healthBaseUrl}${convexPath}`,
         SPOT_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/imessage`,
+        SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL: `${healthBaseUrl}/operator-imessage`,
         SPOT_EXTRACTION_WORKER_HEALTH_URL: `${healthBaseUrl}/extraction-worker`,
         SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL: `${healthBaseUrl}/slack-worker`,
         SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL: `${healthBaseUrl}${clRouterPath}`,
@@ -137,7 +173,40 @@ beforeAll(async () => {
       return writeJson(res, convexHealth(expectedClSdkSpec));
     if (req.url === "/convex-stale-sdk")
       return writeJson(res, convexHealth("^0.0.0"));
+    if (req.url === "/convex-operator-slack-disabled")
+      return writeJson(
+        res,
+        convexHealth(expectedClSdkSpec, { operatorSlackEnabled: false }),
+      );
+    if (req.url === "/convex-operator-slack-allowlist-missing")
+      return writeJson(
+        res,
+        convexHealth(expectedClSdkSpec, {
+          operatorSlackApprovedChannelCount: 0,
+        }),
+      );
+    if (req.url === "/convex-operator-imessage-disabled")
+      return writeJson(
+        res,
+        convexHealth(expectedClSdkSpec, { operatorImessageEnabled: false }),
+      );
+    if (req.url === "/convex-operator-imessage-number-missing")
+      return writeJson(
+        res,
+        convexHealth(expectedClSdkSpec, {
+          operatorImessageContactPhoneConfigured: false,
+        }),
+      );
+    if (req.url === "/convex-operator-model-missing")
+      return writeJson(
+        res,
+        convexHealth(expectedClSdkSpec, {
+          operatorAgentModelConfigured: false,
+        }),
+      );
     if (req.url === "/imessage") return writeJson(res, imessageHealth());
+    if (req.url === "/operator-imessage")
+      return writeJson(res, operatorImessageHealth());
     if (req.url === "/extraction-worker")
       return writeJson(res, extractionWorkerHealth(expectedClSdkSpec));
     if (req.url === "/slack-worker") return writeJson(res, slackWorkerHealth());
@@ -178,6 +247,33 @@ describe("agent deployment safeguards", () => {
       "[agent-health] production deployment health passed",
     );
   });
+
+  it.each([
+    ["model route", "/convex-operator-model-missing", "operatorAgent.modelConfigured"],
+    ["Slack", "/convex-operator-slack-disabled", "operatorSlack.enabled"],
+    [
+      "Slack without a channel allowlist",
+      "/convex-operator-slack-allowlist-missing",
+      "operatorSlack.approvedChannelCount",
+    ],
+    [
+      "iMessage",
+      "/convex-operator-imessage-disabled",
+      "operatorImessage.inboundEnabled",
+    ],
+    [
+      "iMessage without a contact number",
+      "/convex-operator-imessage-number-missing",
+      "operatorImessage.contactPhoneConfigured",
+    ],
+  ])(
+    "blocks production when operator %s is disabled",
+    async (_channel, path, expectedError) => {
+      await expect(runAgentHealth(path)).rejects.toMatchObject({
+        stderr: expect.stringContaining(expectedError),
+      });
+    },
+  );
 
   it("accepts deployment health only when Convex, worker health, and package spec agree", async () => {
     const result = await runAgentHealth("/convex-aligned");

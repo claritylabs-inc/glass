@@ -195,7 +195,7 @@ Convex requires:
 | `SLACK_CLARITY_TEAM_ID`                   | Clarity host workspace ID                                        |
 | `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret                              |
 | `OPERATOR_SLACK_ENABLED`                  | Enable internal operator DMs and host-channel mentions           |
-| `OPERATOR_SLACK_CHANNEL_IDS`              | Optional comma-separated host-channel narrowing                  |
+| `OPERATOR_SLACK_CHANNEL_IDS`              | Comma-separated allowlist for internal host channels             |
 | `NEXT_PUBLIC_APP_URL` or `APP_URL`        | Post-OAuth settings redirect                                     |
 
 The Railway worker requires `SPOT_ENV`, `SLACK_WORKER_MODE`,
@@ -217,16 +217,20 @@ cannot prove that OAuth installation exists.
 Internal operator chat reuses this same Clarity host installation and worker.
 Production release health requires `OPERATOR_SLACK_ENABLED=true` and a
 configured `SLACK_CLARITY_TEAM_ID`; the shared worker and active host
-installation remain covered by the existing Slack health contract.
+installation remain covered by the existing Slack health contract. The `main`
+release workflow sets `OPERATOR_SLACK_ENABLED=true` on production Convex before
+running that health gate, so a release cannot promote with operator Slack
+silently disabled.
 After customer workspace and persisted Slack Connect binding resolution have
 failed, Convex may route a Clarity App Home DM or host-channel mention to the
 operator agent only when `OPERATOR_SLACK_ENABLED=true`, `users.info` resolves
 the sender to the Clarity team, and that exact Slack identity belongs to an
 active Spot operator. Channel metadata must prove the bot is a member and the
-channel is not shared or Slack Connect. An empty
-`OPERATOR_SLACK_CHANNEL_IDS` permits every such Clarity channel; set the list
-only to narrow the allowed internal channels. Exact `approve` or `reject`
-replies resolve the one pending confirmation in that operator-owned
+channel is private and not shared or Slack Connect.
+`OPERATOR_SLACK_CHANNEL_IDS` must explicitly include each eligible internal
+channel; an empty list leaves channel mentions disabled while DMs continue to
+work. Exact `approve` or `reject` replies resolve the one pending confirmation
+in that operator-owned
 conversation. Unknown users, bots, external workspaces, shared channels, and
 other replies fail closed.
 

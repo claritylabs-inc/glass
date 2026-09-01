@@ -120,11 +120,20 @@ jobs:
       - name: Deploy production Convex
         if: github.ref_name == 'main'
         run: |
+          if [[ ! "$OPERATOR_IMESSAGE_CONTACT_PHONE" =~ ^\+[1-9][0-9]{7,14}$ ]]; then
+            echo "SPOT_PRODUCTION_OPERATOR_IMESSAGE_CONTACT_PHONE must be configured as an E.164 number"
+            exit 1
+          fi
           npx convex deploy --yes
           sdk_version="$(node -p "require('./extraction-worker/package.json').dependencies['@claritylabs/cl-sdk']")"
           npx convex env set EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION "$sdk_version"
+          npx convex env set OPERATOR_SLACK_ENABLED true
+          npx convex env set OPERATOR_IMESSAGE_ENABLED true
+          npx convex env set OPERATOR_IMESSAGE_TERMINAL_ENABLED false
+          npx convex env set OPERATOR_IMESSAGE_CONTACT_PHONE "$OPERATOR_IMESSAGE_CONTACT_PHONE"
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          OPERATOR_IMESSAGE_CONTACT_PHONE: ${{ vars.SPOT_PRODUCTION_OPERATOR_IMESSAGE_CONTACT_PHONE }}
 
   release-ready-production:
     if: always() && github.ref_name == 'main'
@@ -152,7 +161,7 @@ jobs:
           RAILWAY_STATUS_CONTEXTS: |
             Spot - spot-extraction-worker
             Spot - imessage-worker
-            ${{ vars.SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL != '' && 'Spot - operator-imessage-worker' || '' }}
+            Spot - operator-imessage-worker
             Spot - slack-worker
             Spot - spot-mailbox-scan-worker
 

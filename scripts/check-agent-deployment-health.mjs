@@ -245,6 +245,9 @@ const checks = [
         );
       }
       convexAgentPayload = payload;
+      if (payload.operatorAgent?.modelConfigured !== true) {
+        throw new Error("operatorAgent.modelConfigured expected true");
+      }
       const slackEnabled = payload.slack?.enabled ?? false;
       if (slackEnabled !== deployment.slack?.enabled) {
         throw new Error(
@@ -267,6 +270,11 @@ const checks = [
             "operatorSlack.hostTeamConfigured expected true",
           );
         }
+        if (!(payload.operatorSlack?.approvedChannelCount > 0)) {
+          throw new Error(
+            "operatorSlack.approvedChannelCount expected at least 1",
+          );
+        }
       }
       const operatorImessageRequired = Boolean(
         urls.operatorImessageWorkerHealth,
@@ -277,6 +285,14 @@ const checks = [
       ) {
         throw new Error(
           `operatorImessage.inboundEnabled expected true got ${String(payload.operatorImessage?.inboundEnabled)}`,
+        );
+      }
+      if (
+        operatorImessageRequired &&
+        payload.operatorImessage?.contactPhoneConfigured !== true
+      ) {
+        throw new Error(
+          "operatorImessage.contactPhoneConfigured expected true",
         );
       }
       if (

@@ -27,7 +27,7 @@ export type AgentAttachment = {
 export type AgentAttachmentContentPart =
   | { type: "text"; text: string }
   | { type: "image"; image: string; mediaType: string }
-  | { type: "file"; data: string; mediaType: string };
+  | { type: "file"; data: string; mediaType: string; filename?: string };
 
 export { MAX_AGENT_ATTACHMENT_TEXT_CHARS } from "./agentAttachmentLimits";
 
@@ -60,7 +60,10 @@ function isImageAttachment(filename: string, contentType: string) {
   const lowerName = filename.toLowerCase();
   const type = contentType.toLowerCase();
   return (
-    type.startsWith("image/") ||
+    type === "image/jpeg" ||
+    type === "image/png" ||
+    type === "image/gif" ||
+    type === "image/webp" ||
     lowerName.endsWith(".jpg") ||
     lowerName.endsWith(".jpeg") ||
     lowerName.endsWith(".png") ||
@@ -81,17 +84,39 @@ function isPresentationAttachment(filename: string, contentType: string) {
   return type.includes("presentationml") || lowerName.endsWith(".pptx");
 }
 
-function bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
-  return buffer.buffer.slice(
-    buffer.byteOffset,
-    buffer.byteOffset + buffer.byteLength,
-  ) as ArrayBuffer;
+const OFFICE_ARCHIVE_MAX_ENTRIES = 2_000;
+const OFFICE_ARCHIVE_MAX_UNCOMPRESSED_BYTES = 32 * 1024 * 1024;
+const OFFICE_ARCHIVE_MAX_ENTRY_BYTES = 12 * 1024 * 1024;
+
+async function loadBoundedOfficeArchive(buffer: Buffer): Promise<JSZip> {
+  const zip = await JSZip.loadAsync(buffer);
+  let entryCount = 0;
+  let uncompressedBytes = 0;
+  zip.forEach((_path, file) => {
+    if (file.dir) return;
+    entryCount += 1;
+    const size = (file as unknown as { _data?: { uncompressedSize?: number } })
+      ._data?.uncompressedSize;
+    if (!Number.isSafeInteger(size) || size === undefined || size < 0) {
+      throw new Error("Office attachment has unverifiable archive metadata");
+    }
+    if (size > OFFICE_ARCHIVE_MAX_ENTRY_BYTES) {
+      throw new Error("Office attachment contains an oversized archive entry");
+    }
+    uncompressedBytes += size;
+  });
+  if (entryCount > OFFICE_ARCHIVE_MAX_ENTRIES) {
+    throw new Error("Office attachment contains too many archive entries");
+  }
+  if (uncompressedBytes > OFFICE_ARCHIVE_MAX_UNCOMPRESSED_BYTES) {
+    throw new Error("Office attachment expands beyond the model-input limit");
+  }
+  return zip;
 }
 
 async function docxBufferToText(buffer: Buffer): Promise<string> {
-  const result = await mammoth.extractRawText({
-    arrayBuffer: bufferToArrayBuffer(buffer),
-  });
+  await loadBoundedOfficeArchive(buffer);
+  const result = await mammoth.extractRawText({ buffer });
   return result.value.trim();
 }
 
@@ -105,7 +130,7 @@ function decodeXmlEntities(value: string): string {
 }
 
 async function pptxBufferToText(buffer: Buffer): Promise<string> {
-  const zip = await JSZip.loadAsync(buffer);
+  const zip = await loadBoundedOfficeArchive(buffer);
   const slidePaths = Object.keys(zip.files)
     .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
     .sort((a, b) => {
@@ -148,7 +173,18 @@ function boundedTextPart(args: {
 }): AgentAttachmentContentPart | null {
   const text = args.text.trim();
   const remaining = args.remainingTextChars.value;
-  if (!text || remaining <= 0) return null;
+  if (!text) {
+    return {
+      type: "text",
+      text: `--- ${args.label}: ${args.filename} ---\nNo readable text was extracted from this file.\n--- ${args.endLabel} ---`,
+    };
+  }
+  if (remaining <= 0) {
+    return {
+      type: "text",
+      text: `--- ${args.label}: ${args.filename} ---\nThis file was omitted because the shared attachment text budget was exhausted.\n--- ${args.endLabel} ---`,
+    };
+  }
   const clipped = text.length > remaining ? text.slice(0, remaining) : text;
   args.remainingTextChars.value -= clipped.length;
   const suffix =
@@ -212,7 +248,14 @@ export async function buildAgentAttachmentParts(
     if (!attachment.fileId) continue;
     try {
       const blob = await ctx.storage.get(attachment.fileId);
-      if (!blob) continue;
+      if (!blob) {
+        parts.push({
+          type: "text",
+          text: `--- Attachment unavailable: ${attachment.filename} ---\nThe stored file is no longer available.\n--- End unavailable attachment ---`,
+        });
+        names.push(attachment.filename);
+        continue;
+      }
       if (
         attachment.size > MAX_AGENT_ATTACHMENT_BYTES ||
         blob.size > MAX_AGENT_ATTACHMENT_BYTES
@@ -263,9 +306,14 @@ export async function buildAgentAttachmentParts(
           if (part) parts.push(part);
         } else {
           parts.push({
+            type: "text",
+            text: `--- PDF attachment: ${attachment.filename} ---`,
+          });
+          parts.push({
             type: "file",
             data: buffer.toString("base64"),
             mediaType: "application/pdf",
+            filename: attachment.filename,
           });
         }
         names.push(attachment.filename);
@@ -273,6 +321,10 @@ export async function buildAgentAttachmentParts(
         isImageAttachment(attachment.filename, attachment.contentType)
       ) {
         if (!options.includeRichParts) continue;
+        parts.push({
+          type: "text",
+          text: `--- Image attachment: ${attachment.filename} ---`,
+        });
         parts.push({
           type: "image",
           image: buffer.toString("base64"),
@@ -285,6 +337,7 @@ export async function buildAgentAttachmentParts(
       } else if (
         isXlsxSpreadsheetAttachment(attachment.filename, attachment.contentType)
       ) {
+        await loadBoundedOfficeArchive(buffer);
         const part = boundedTextPart({
           filename: attachment.filename,
           label: "Spreadsheet attachment",

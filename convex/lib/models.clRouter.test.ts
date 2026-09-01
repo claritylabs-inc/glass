@@ -118,6 +118,7 @@ describe("Convex cl-router generation integration", () => {
     expect(resolved).toMatchObject({
       route,
       fallbackRoute: route,
+      allowFallback: false,
       routeSource: "global",
       transport: "direct",
       routerResponses: [],

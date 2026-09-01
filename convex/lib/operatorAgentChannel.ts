@@ -33,7 +33,7 @@ export async function handleOperatorChannelConfirmation(
     },
   );
   if (!confirmation) return null;
-  return await ctx.runMutation(
+  const result = await ctx.runMutation(
     internalApi.operatorAgent.confirmActionInternal,
     {
       operatorUserId: args.operatorUserId,
@@ -43,6 +43,17 @@ export async function handleOperatorChannelConfirmation(
       decision,
     },
   );
+  if (result.status !== "queued") return result;
+  const completed = await waitForOperatorAgentRun(
+    ctx,
+    args.operatorUserId,
+    result.runId,
+  );
+  return {
+    ...result,
+    content: completed.response?.content ?? result.content,
+    response: completed.response,
+  };
 }
 
 export async function waitForOperatorAgentRun(

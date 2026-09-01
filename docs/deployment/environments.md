@@ -77,6 +77,13 @@ also belong to the matching active production operator user. The inbound route
 normalizes that number and accepts it only when both Photon registration and the
 Spot operator identity match; unknown and customer numbers fail closed.
 
+Copy the assigned shared line into the GitHub Actions variable
+`SPOT_PRODUCTION_OPERATOR_IMESSAGE_CONTACT_PHONE` as an E.164 number. The
+`main` release workflow writes it to Convex as
+`OPERATOR_IMESSAGE_CONTACT_PHONE`; authenticated operators see the formatted
+number and their own linked sender number under `/operator/channels`. The
+number is never exposed through a public browser environment variable.
+
 Configure that Railway service with root directory `/imessage-worker` and
 `imessage-worker/railway.operator.json`. Set `SPOT_ENV=production`,
 `SPECTRUM_PROVIDER=imessage`, `OPERATOR_IMESSAGE_ENABLED=true`, and
@@ -86,12 +93,13 @@ service's `OPERATOR_IMESSAGE_WORKER_URL`. Production must keep
 `OPERATOR_IMESSAGE_TERMINAL_ENABLED` unset or false. Publish the service health
 URL through the GitHub Actions variable
 `SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL`.
-Until the separate Photon project and Railway service have been provisioned,
-leave that variable unset. The release barrier and compatibility audit then
-remain merge-safe and continue enforcing the four established workers. Setting
-the variable is the explicit enforcement flip: it adds the exact-commit
-`Spot - operator-imessage-worker` status and requires both the operator worker
-health contract and matching fail-closed Convex operator iMessage wiring.
+Before merging the rollout, configure both production GitHub Actions variables
+and set the Railway service's `OPERATOR_IMESSAGE_ENABLED=true`. Every `main`
+release then requires the exact-commit `Spot - operator-imessage-worker`
+status, sets Convex `OPERATOR_SLACK_ENABLED=true` and
+`OPERATOR_IMESSAGE_ENABLED=true`, clears the terminal-mode flag, and requires
+the operator worker health contract, contact number, and fail-closed Convex
+wiring before production promotion.
 
 Slack environment/app setup and the client-owned policy-delivery migration are
 documented in [Slack privileged service channel](./slack.md). Production owns
@@ -212,22 +220,26 @@ deliberately running a local router.
 
 1. Run root CI, worker builds, Convex typecheck, and the cl-router OpenAPI and
    full checks.
-2. Deploy cl-router and migrate its Postgres database before enabling any task
+2. In the target environment, explicitly save an image-capable direct-provider
+   route for `operator_agent` and confirm its provider key is present. The
+   operator route is environment-local, is excluded from cl-router snapshots,
+   and intentionally fails health and inference closed when it is missing.
+3. Deploy cl-router and migrate its Postgres database before enabling any task
    flag in a caller.
-3. Configure the same bearer secret in the caller and router for that lane.
-4. Confirm `GET /health` and the Spot deployment health audit.
-5. Validate the task family in shared dev, then enable it through an explicitly
+4. Configure the same bearer secret in the caller and router for that lane.
+5. Confirm `GET /health` and the Spot deployment health audit.
+6. Validate the task family in shared dev, then enable it through an explicitly
    controlled production rollout. Compare route, error, latency, token, cost,
    tool completion, and workflow-failure telemetry with the direct baseline in
    `/operator/routing`.
-6. Keep the router environment panic and diagnostic overrides off. Use the
+7. Keep the router environment panic and diagnostic overrides off. Use the
    `/operator/routing` global freeze toggle when autonomous route changes should
    pause or resume, then verify the new posture in the same dashboard.
-7. Review tool and structured-output compatibility plus calibrated workflow
+8. Review tool and structured-output compatibility plus calibrated workflow
    quality before enabling autonomous selection for a task family. Introduce
    read-only `chat`/`chat_vision` traffic before side-effectful `email_reply` or
    `mailbox_coordinator`.
-8. For rollback, clear `CL_ROUTER_TASKS` for staged task families. Authenticated
+9. For rollback, clear `CL_ROUTER_TASKS` for staged task families. Authenticated
    `query_reason` remains router-owned while router credentials are configured;
    use an operator model override for a targeted route, the operator global
    freeze for autonomous-routing incidents, or remove the router inference

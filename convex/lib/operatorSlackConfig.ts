@@ -23,5 +23,19 @@ export function getOperatorSlackConfig(): OperatorSlackConfig {
 
 export function isApprovedOperatorSlackChannel(channelId: string): boolean {
   const { approvedChannelIds } = getOperatorSlackConfig();
-  return approvedChannelIds.size === 0 || approvedChannelIds.has(channelId);
+  return approvedChannelIds.has(channelId);
+}
+
+export function isSafeOperatorSlackConversation(args: {
+  isDirectMessage: boolean;
+  isMember?: boolean;
+  isPrivate?: boolean;
+  isShared?: boolean;
+}): boolean {
+  if (args.isDirectMessage) return true;
+  return (
+    args.isMember === true &&
+    args.isPrivate === true &&
+    args.isShared === false
+  );
 }

@@ -179,6 +179,7 @@ type ResolvedModelRoute = {
   routeSource?: string;
   transport?: ModelTransport;
   fallbackRoute: ModelRoute;
+  allowFallback?: boolean;
 };
 
 type AiGenerateTextOptions = Parameters<typeof import("ai").generateText>[0];
@@ -2130,6 +2131,7 @@ async function generateAgentTextForResolvedModel(
       taskKind,
       primaryRoute: resolved.route,
       fallbackRoute: resolved.fallbackRoute,
+      allowFallback: resolved.allowFallback,
     });
     if (
       !fallbackRoute ||
@@ -2345,6 +2347,7 @@ export async function getAgentLanguageModelForOperatorTask(
     routeSource: "global",
     transport: "direct",
     fallbackRoute: route,
+    allowFallback: false,
     routerResponses: [],
     routerFailures: [],
   };

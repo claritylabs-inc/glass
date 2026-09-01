@@ -1,6 +1,5 @@
 import { httpRouter } from "convex/server";
 import dayjs from "dayjs";
-import { z } from "zod";
 import { httpAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -8,11 +7,17 @@ import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import {
   getImessageWorkerUrl,
+  getOperatorImessageContactPhone,
   isImessageInboundEnabled,
   isOperatorImessageInboundEnabled,
+  isOperatorImessageTerminalEnabled,
 } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { getEmailDeliveryMode } from "./lib/resend";
+import {
+  MAX_AGENT_ATTACHMENT_FILES,
+  MAX_OPERATOR_IMESSAGE_ACTION_BASE64_CHARS,
+} from "./lib/agentAttachmentLimits";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import { canAccessThread } from "./lib/threadAccess";
 import {
@@ -49,6 +54,7 @@ import {
 } from "./lib/apiDto";
 import { OPERATOR_AGENT_TOOL_REGISTRY } from "./lib/operatorAgentToolRegistry";
 import { decodeOperatorMcpAttachments } from "./lib/operatorMcpAttachments";
+import { buildOperatorMcpToolCatalog } from "./lib/operatorMcpToolCatalog";
 const http = httpRouter();
 const internalApi = internal as any;
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -317,6 +323,7 @@ http.route({
     const slackEnabled = process.env.SLACK_ENABLED === "true";
     const operatorSlack = getOperatorSlackConfig();
     const operatorImessageEnabled = isOperatorImessageInboundEnabled();
+    const operatorImessageTerminalEnabled = isOperatorImessageTerminalEnabled();
     const slackMode = getSlackMode();
     const slackHostInstallation =
       slackEnabled && slackMode === "slack"
@@ -328,7 +335,18 @@ http.route({
     const slackLifecycleHealth = slackEnabled
       ? await ctx.runQuery(internalApi.slackLifecycle.getHealthSummary, {})
       : null;
+    let operatorAgentModelConfigured = false;
+    try {
+      await ctx.runQuery(
+        internalApi.modelSettings.resolveOperatorAgentRoute,
+        {},
+      );
+      operatorAgentModelConfigured = true;
+    } catch {
+      operatorAgentModelConfigured = false;
+    }
     const checks = {
+      operatorAgentModelConfigured,
       imessageInboundEnabled: isImessageInboundEnabled(),
       imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
       imessageWorkerSecretConfigured: Boolean(
@@ -340,6 +358,10 @@ http.route({
       operatorImessageWorkerSecretConfigured:
         !operatorImessageEnabled ||
         Boolean(process.env.OPERATOR_IMESSAGE_WORKER_SECRET),
+      operatorImessageContactPhoneConfigured:
+        !operatorImessageEnabled ||
+        operatorImessageTerminalEnabled ||
+        Boolean(getOperatorImessageContactPhone()),
       emailInboundWebhookSecretConfigured: Boolean(
         process.env.RESEND_WEBHOOK_SECRET,
       ),
@@ -372,6 +394,8 @@ http.route({
         !operatorSlack.enabled || Boolean(operatorSlack.hostTeamId),
       operatorSlackBaseChannelConfigured:
         !operatorSlack.enabled || slackEnabled,
+      operatorSlackChannelAllowlistConfigured:
+        !operatorSlack.enabled || operatorSlack.approvedChannelIds.size > 0,
     };
     const ok = Object.values(checks).every(Boolean);
     return new Response(
@@ -391,6 +415,7 @@ http.route({
         },
         operatorImessage: {
           inboundEnabled: operatorImessageEnabled,
+          contactPhoneConfigured: Boolean(getOperatorImessageContactPhone()),
           workerUrlConfigured: Boolean(
             process.env.OPERATOR_IMESSAGE_WORKER_URL,
           ),
@@ -401,7 +426,10 @@ http.route({
         operatorSlack: {
           enabled: operatorSlack.enabled,
           hostTeamConfigured: Boolean(operatorSlack.hostTeamId),
-          channelNarrowingCount: operatorSlack.approvedChannelIds.size,
+          approvedChannelCount: operatorSlack.approvedChannelIds.size,
+        },
+        operatorAgent: {
+          modelConfigured: operatorAgentModelConfigured,
         },
         slack: {
           enabled: slackEnabled,
@@ -641,6 +669,27 @@ http.route({
       return jsonResponse(
         { error: "Operator iMessage supports direct conversations only" },
         400,
+      );
+    }
+    if ((body.attachments?.length ?? 0) > MAX_AGENT_ATTACHMENT_FILES) {
+      return jsonResponse(
+        {
+          error: `Operator iMessage supports at most ${MAX_AGENT_ATTACHMENT_FILES} attachments`,
+        },
+        413,
+      );
+    }
+    const encodedAttachmentChars = (body.attachments ?? []).reduce(
+      (total, attachment) => total + attachment.data.length,
+      0,
+    );
+    if (encodedAttachmentChars > MAX_OPERATOR_IMESSAGE_ACTION_BASE64_CHARS) {
+      return jsonResponse(
+        {
+          error:
+            "Operator iMessage attachments exceed the 3.5 million-character encoded transport limit (about 2.5 MB decoded)",
+        },
+        413,
       );
     }
     const operatorIdentity = await ctx.runQuery(
@@ -1807,182 +1856,12 @@ function mcpOAuthSecuritySchemes(scopes: Array<"read" | "write">) {
   return [{ type: "oauth2" as const, scopes }];
 }
 
-function operatorMcpTools() {
-  const registeredTools = Object.entries(OPERATOR_AGENT_TOOL_REGISTRY).map(
-    ([name, spec]) => {
-      const write = spec.effect !== "read";
-      const inputSchema = z.toJSONSchema(spec.inputSchema) as Record<
-        string,
-        unknown
-      >;
-      delete inputSchema.$schema;
-      inputSchema.properties = {
-        ...((inputSchema.properties as Record<string, unknown> | undefined) ??
-          {}),
-        idempotency_key: {
-          type: "string",
-          maxLength: 200,
-          description:
-            "Optional caller-generated unique key for safe retries of this exact invocation",
-        },
-      };
-      return {
-        name,
-        title: spec.description.split(".")[0],
-        description: spec.description,
-        inputSchema,
-        securitySchemes: mcpOAuthSecuritySchemes(
-          write ? ["read", "write"] : ["read"],
-        ),
-        annotations: {
-          readOnlyHint: !write,
-          destructiveHint: spec.effect === "destructive",
-          idempotentHint: spec.effect === "read",
-          openWorldHint: false,
-        },
-      };
-    },
-  );
-
-  return [
-    ...registeredTools,
-    {
-      name: "run_operator_task",
-      title: "Run a durable operator task",
-      description:
-        "Start or continue a durable internal Spot operator task. The agent can investigate across operator systems, invoke registered tools, pause for exact confirmation, and resume on any internal channel.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          objective: {
-            type: "string",
-            description: "The concrete operator objective to complete",
-          },
-          thread_id: {
-            type: "string",
-            description: "Optional operator thread ID to continue",
-          },
-          conversation_key: {
-            type: "string",
-            description:
-              "Optional stable client conversation key when no thread ID is available",
-          },
-          attachments: {
-            type: "array",
-            maxItems: 10,
-            description:
-              "Optional PDF, spreadsheet, image, document, or text files for the operator agent to inspect",
-            items: {
-              type: "object",
-              properties: {
-                filename: {
-                  type: "string",
-                  description: "Original filename including its extension",
-                },
-                content_type: {
-                  type: "string",
-                  description:
-                    "Optional MIME type; filename detection is used when omitted",
-                },
-                data_base64: {
-                  type: "string",
-                  description: "The complete file encoded as base64",
-                },
-              },
-              required: ["filename", "data_base64"],
-            },
-          },
-          idempotency_key: {
-            type: "string",
-            maxLength: 200,
-            description:
-              "Optional caller-generated unique key for safe retries of this exact task",
-          },
-        },
-        required: ["objective"],
-      },
-      securitySchemes: mcpOAuthSecuritySchemes(["read", "write"]),
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
-    },
-    {
-      name: "get_operator_run",
-      title: "Get an operator task result",
-      description:
-        "Read the current state, response, checkpoint, and pending confirmation for an operator run.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          run_id: { type: "string", description: "Operator run ID" },
-        },
-        required: ["run_id"],
-      },
-      securitySchemes: mcpOAuthSecuritySchemes(["read"]),
-      annotations: {
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    {
-      name: "cancel_operator_run",
-      title: "Cancel an operator task",
-      description: "Request cancellation of a queued or active operator run.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          run_id: { type: "string", description: "Operator run ID" },
-        },
-        required: ["run_id"],
-      },
-      securitySchemes: mcpOAuthSecuritySchemes(["read", "write"]),
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-    {
-      name: "confirm_operator_action",
-      title: "Approve or reject an operator action",
-      description:
-        "Resolve a pending exact operator confirmation. Approval executes only the fingerprinted action shown by the agent.",
-      inputSchema: {
-        type: "object" as const,
-        properties: {
-          confirmation_id: {
-            type: "string",
-            description: "Pending confirmation ID",
-          },
-          thread_id: {
-            type: "string",
-            description: "Operator thread containing the confirmation",
-          },
-          decision: {
-            type: "string",
-            enum: ["approve", "reject"],
-          },
-        },
-        required: ["thread_id", "confirmation_id", "decision"],
-      },
-      securitySchemes: mcpOAuthSecuritySchemes(["read", "write"]),
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false,
-      },
-    },
-  ];
+function operatorMcpTools(identity: OperatorMcpIdentity) {
+  return buildOperatorMcpToolCatalog({
+    canWrite: mcpCanWrite(identity),
+    operatorRole: identity.operatorRole,
+  });
 }
-
-const OPERATOR_MCP_TOOLS = operatorMcpTools();
 
 const MCP_TOOLS = [
   {
@@ -3505,7 +3384,7 @@ http.route({
           return jsonRpcResponse(id, {
             tools:
               identity.principalKind === "operator"
-                ? OPERATOR_MCP_TOOLS
+                ? operatorMcpTools(identity)
                 : AUTHENTICATED_TENANT_MCP_TOOLS,
           });
         }

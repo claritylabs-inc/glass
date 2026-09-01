@@ -15,11 +15,13 @@ import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { useStickToBottom } from "use-stick-to-bottom";
 
+import { AgentThinkingBubble } from "@/components/agent-thread/agent-thinking-bubble";
 import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input/prompt-input";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import {
+  ChatInputOverlay,
   SpotPromptInput,
   type SpotPromptInputHandle,
 } from "@/components/spot-prompt-input";
@@ -36,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import type { Id } from "@/convex/_generated/dataModel";
 import { usePageContext } from "@/hooks/use-page-context";
 import {
   normalizeOperatorAgentThread,
@@ -43,7 +46,10 @@ import {
   operatorAgentApi,
   type OperatorAgentAttachment,
   type OperatorAgentConfirmation,
+  type OperatorAgentMessage,
+  type OperatorAgentThreadDetail,
 } from "@/lib/operator-agent-api";
+import { formatDisplayDateTime } from "@/lib/date-format";
 import { uploadPromptFiles } from "@/lib/thread-prompt";
 import { typeStyle } from "@/lib/typography";
 import { cn } from "@/lib/utils";
@@ -53,6 +59,7 @@ import {
   operatorPageContextLabel,
 } from "./operator-page-context";
 import { useOptionalOperatorAgent } from "./operator-agent-provider";
+import { OperatorThreadChannelIcon } from "./operator-thread-channel";
 
 const EMPTY_PROMPTS = [
   "Find an account, policy, or operational issue",
@@ -68,6 +75,9 @@ const CONTEXT_PROMPTS = [
 
 const OPERATOR_ATTACHMENT_MAX_FILES = 10;
 const OPERATOR_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+const OPERATOR_ATTACHMENT_MAX_AGGREGATE_BYTES = 50 * 1024 * 1024;
+const OPERATOR_ATTACHMENT_ACCEPT =
+  ".pdf,.xlsx,.csv,.tsv,.txt,.md,.markdown,.json,.xml,.docx,.pptx,.jpg,.jpeg,.png,.gif,.webp";
 
 function OperatorMessageAttachments({
   threadId,
@@ -120,7 +130,7 @@ function ConfirmationCard({
   onDecision: (decision: "approve" | "reject") => void;
 }) {
   return (
-    <div className="mt-3 border-l-2 border-border-emphasized pl-3">
+    <div className="border-l-2 border-border-emphasized pl-3">
       <p className={cn("text-foreground", typeStyle("body.medium"))}>
         {confirmation.title}
       </p>
@@ -190,15 +200,216 @@ function EmptyThread({
   );
 }
 
-export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
-  const controller = useOptionalOperatorAgent();
-  const pathname = usePathname();
-  const { context: registeredPageContext } = usePageContext();
-  const promptRef = useRef<SpotPromptInputHandle>(null);
+function operatorBubbleChannel(channel: OperatorAgentMessage["channel"]) {
+  return channel === "mcp" ? "chat" : channel;
+}
+
+function operatorInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+}
+
+function OperatorMessageRow({
+  threadId,
+  message,
+  showThinking,
+}: {
+  threadId: string;
+  message: OperatorAgentMessage;
+  showThinking: boolean;
+}) {
+  const bubbleChannel = operatorBubbleChannel(message.channel);
+  const content =
+    message.content.trim() ||
+    (message.status === "error"
+      ? "The operator task failed."
+      : message.status === "cancelled"
+        ? "Task stopped."
+        : "");
+  const attachments = message.attachments?.length ? (
+    <OperatorMessageAttachments
+      threadId={threadId}
+      attachments={message.attachments}
+    />
+  ) : null;
+
+  if (message.role === "assistant") {
+    if (!showThinking && !content && !attachments) return null;
+
+    return (
+      <div className="w-full">
+        {showThinking ? (
+          <AgentThinkingBubble />
+        ) : (
+          <ThreadMessageBubble
+            role="agent"
+            channel={bubbleChannel}
+            isError={message.status === "error"}
+          >
+            {content ? (
+              <ProseMarkdown
+                gfm
+                breaks
+                compact={message.channel === "imessage"}
+              >
+                {content}
+              </ProseMarkdown>
+            ) : null}
+            {attachments}
+          </ThreadMessageBubble>
+        )}
+      </div>
+    );
+  }
+
+  const displayName = message.userName?.trim() || "Operator";
+
+  return (
+    <div className="ml-auto flex w-fit max-w-lg flex-row-reverse items-start gap-2.5">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/8">
+        <span className={cn("text-foreground/60", typeStyle("caption.medium"))}>
+          {operatorInitials(displayName)}
+        </span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1 flex min-w-0 items-center justify-end gap-2">
+          <p
+            className={cn(
+              "min-w-0 max-w-[min(24rem,70vw)] truncate text-muted-foreground/50",
+              typeStyle("caption.medium"),
+            )}
+            title={displayName}
+          >
+            {displayName}
+          </p>
+          <OperatorThreadChannelIcon
+            channel={message.channel}
+            className="size-3 shrink-0 text-muted-foreground/45"
+          />
+          <span className="text-muted-foreground/30">·</span>
+          <span
+            className={cn(
+              "shrink-0 text-muted-foreground/45",
+              typeStyle("caption.default"),
+            )}
+          >
+            {formatDisplayDateTime(message.createdAt)}
+          </span>
+        </div>
+        <ThreadMessageBubble
+          role="user"
+          channel={bubbleChannel}
+          isOwnMessage
+          isError={message.status === "error"}
+        >
+          {content ? <p className="whitespace-pre-wrap">{content}</p> : null}
+          {attachments}
+        </ThreadMessageBubble>
+      </div>
+    </div>
+  );
+}
+
+function OperatorConversation({
+  variant,
+  activeThreadId,
+  loading,
+  detail,
+  contextual,
+  confirmationBusyId,
+  onSelectPrompt,
+  onDecision,
+  composer,
+}: {
+  variant: "rail" | "page";
+  activeThreadId: string | null;
+  loading: boolean;
+  detail: OperatorAgentThreadDetail;
+  contextual: boolean;
+  confirmationBusyId: string | null;
+  onSelectPrompt: (prompt: string) => void;
+  onDecision: (
+    confirmation: OperatorAgentConfirmation,
+    decision: "approve" | "reject",
+  ) => void;
+  composer: ReactNode;
+}) {
   const { contentRef, scrollRef, scrollToBottom } = useStickToBottom({
     initial: "instant",
     resize: "instant",
   });
+
+  useEffect(() => {
+    if (detail.messages.length === 0) return;
+    void scrollToBottom("instant");
+  }, [activeThreadId, detail.messages.length, scrollToBottom]);
+
+  const confirmation = detail.pendingConfirmation;
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={scrollRef}
+        className="absolute inset-0 overflow-y-auto scrollbar-hide p-4 pr-5"
+      >
+        <div
+          ref={contentRef}
+          className="mx-auto min-h-full w-full max-w-3xl space-y-4"
+        >
+          {loading ? (
+            <div className="flex min-h-40 items-center justify-center">
+              <Spinner className="text-muted-foreground" />
+            </div>
+          ) : detail.messages.length === 0 ? (
+            <EmptyThread contextual={contextual} onSelect={onSelectPrompt} />
+          ) : (
+            detail.messages.map((message) => (
+              <OperatorMessageRow
+                key={message.id}
+                threadId={activeThreadId ?? ""}
+                message={message}
+                showThinking={message.status === "processing" && !confirmation}
+              />
+            ))
+          )}
+          {confirmation ? (
+            <div className="w-full">
+              <ConfirmationCard
+                confirmation={confirmation}
+                busy={confirmationBusyId === confirmation.id}
+                onDecision={(decision) => onDecision(confirmation, decision)}
+              />
+            </div>
+          ) : null}
+          {detail.messages.length > 0 ? <div className="h-40" /> : null}
+        </div>
+      </div>
+      <ChatInputOverlay compact={variant === "rail"}>
+        {composer}
+      </ChatInputOverlay>
+    </div>
+  );
+}
+
+export function OperatorAgentPanel({
+  pagePanel,
+  variant = "rail",
+  threadId,
+  showHeader = true,
+}: {
+  pagePanel?: ReactNode;
+  variant?: "rail" | "page";
+  threadId?: string;
+  showHeader?: boolean;
+}) {
+  const controller = useOptionalOperatorAgent();
+  const pathname = usePathname();
+  const { context: registeredPageContext } = usePageContext();
+  const promptRef = useRef<SpotPromptInputHandle>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmationBusyId, setConfirmationBusyId] = useState<string | null>(
     null,
@@ -208,7 +419,7 @@ export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
     () => normalizeOperatorAgentThreads(rawThreads),
     [rawThreads],
   );
-  const activeThreadId = controller?.activeThreadId ?? null;
+  const activeThreadId = threadId ?? controller?.activeThreadId ?? null;
   const rawThread = useQuery(
     operatorAgentApi.getThread,
     activeThreadId ? { threadId: activeThreadId } : "skip",
@@ -219,6 +430,8 @@ export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
   );
   const createThread = useMutation(operatorAgentApi.createThread);
   const generateUploadUrl = useMutation(operatorAgentApi.generateUploadUrl);
+  const registerUpload = useMutation(operatorAgentApi.registerUpload);
+  const discardUploads = useMutation(operatorAgentApi.discardUploads);
   const sendMessage = useMutation(operatorAgentApi.sendMessage);
   const cancelRun = useMutation(operatorAgentApi.cancelRun);
   const confirmAction = useMutation(operatorAgentApi.confirmAction);
@@ -226,7 +439,8 @@ export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
     () => operatorPageContextFromPathname(pathname),
     [pathname],
   );
-  const currentPageContext = registeredPageContext ?? fallbackPageContext;
+  const currentPageContext =
+    variant === "rail" ? (registeredPageContext ?? fallbackPageContext) : null;
   const currentPageContextKey = currentPageContext
     ? operatorPageContextKey(currentPageContext)
     : null;
@@ -239,36 +453,38 @@ export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
     detail.thread ??
     threads.find((thread) => thread.id === activeThreadId) ??
     null;
-  const threadConfirmation = detail.pendingConfirmation;
   const running = detail.activeRun || submitting;
 
   useEffect(() => {
-    if (!controller || controller.activeThreadId || threads.length === 0)
+    if (
+      threadId ||
+      !controller ||
+      controller.activeThreadId ||
+      threads.length === 0
+    )
       return;
     controller.setActiveThreadId(threads[0].id);
-  }, [controller, threads]);
-
-  useEffect(() => {
-    if (detail.messages.length === 0) return;
-    void scrollToBottom("instant");
-  }, [detail.messages.length, scrollToBottom]);
+  }, [controller, threadId, threads]);
 
   const startNewThread = useCallback(async () => {
-    if (!controller) return null;
+    if (!controller) throw new Error("Operator agent is unavailable");
+    const result = await createThread(
+      attachedPageContext ? { initialContext: attachedPageContext } : {},
+    );
+    const newThreadId = result;
+    controller.setActiveThreadId(newThreadId);
+    return newThreadId;
+  }, [attachedPageContext, controller, createThread]);
+
+  const startNewThreadFromUi = useCallback(async () => {
     try {
-      const result = await createThread(
-        attachedPageContext ? { initialContext: attachedPageContext } : {},
-      );
-      const threadId = result;
-      controller.setActiveThreadId(threadId);
-      return threadId;
+      await startNewThread();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not start a task",
       );
-      return null;
     }
-  }, [attachedPageContext, controller, createThread]);
+  }, [startNewThread]);
 
   const submit = useCallback(
     async (message: PromptInputMessage) => {
@@ -276,38 +492,77 @@ export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
       if ((!text && message.files.length === 0) || !controller || submitting)
         return;
       setSubmitting(true);
+      const uploadedIntents: Array<{
+        uploadIntentId: Id<"operatorAgentUploadIntents">;
+        fileId?: Id<"_storage">;
+      }> = [];
       try {
-        const threadId = controller.activeThreadId ?? (await startNewThread());
-        if (!threadId) return;
+        const targetThreadId = activeThreadId ?? (await startNewThread());
         const attachments = await uploadPromptFiles(
           message.files,
           generateUploadUrl,
+          {
+            failOnUploadError: true,
+            maxAggregateSize: OPERATOR_ATTACHMENT_MAX_AGGREGATE_BYTES,
+            onUploadTarget: (target) => {
+              if (typeof target !== "string") {
+                uploadedIntents.push({
+                  uploadIntentId: target.uploadIntentId,
+                });
+              }
+            },
+            onUploaded: (attachment) => {
+              if (attachment.uploadIntentId) {
+                const tracked = uploadedIntents.find(
+                  ({ uploadIntentId }) =>
+                    uploadIntentId === attachment.uploadIntentId,
+                );
+                if (tracked) tracked.fileId = attachment.fileId;
+              }
+            },
+            finalizeUpload: async (attachment) => {
+              if (!attachment.uploadIntentId) {
+                throw new Error("Operator attachment upload intent is missing");
+              }
+              await registerUpload({
+                uploadIntentId: attachment.uploadIntentId,
+                fileId: attachment.fileId,
+              });
+            },
+          },
         );
         if (attachments.length !== message.files.length) {
           throw new Error("One or more files could not be uploaded");
         }
         await sendMessage({
-          threadId,
+          threadId: targetThreadId,
           content: text || "(attached files)",
           ...(attachments.length > 0 ? { attachments } : {}),
           ...(attachedPageContext ? { pageContext: attachedPageContext } : {}),
         });
-        void scrollToBottom("smooth");
       } catch (error) {
+        if (uploadedIntents.length > 0) {
+          await discardUploads({ uploads: uploadedIntents }).catch(
+            () => undefined,
+          );
+        }
         toast.error(
           error instanceof Error
             ? error.message
             : "The operator task could not be sent",
         );
+        throw error;
       } finally {
         setSubmitting(false);
       }
     },
     [
       attachedPageContext,
+      activeThreadId,
       controller,
       generateUploadUrl,
-      scrollToBottom,
+      registerUpload,
+      discardUploads,
       sendMessage,
       startNewThread,
       submitting,
@@ -355,91 +610,102 @@ export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
 
   return (
     <div
-      className="relative flex h-full min-h-0 w-full flex-col border-l border-border bg-background"
-      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      className={cn(
+        "relative flex h-full min-h-0 w-full flex-col bg-background",
+        variant === "rail" && "border-l border-border",
+      )}
+      style={
+        variant === "rail"
+          ? { paddingTop: "env(safe-area-inset-top, 0px)" }
+          : undefined
+      }
     >
-      <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={(props) => (
-              <button
-                {...props}
-                type="button"
-                className={cn(
-                  "flex min-w-0 flex-1 items-center gap-1.5 text-left text-foreground outline-none focus-visible:underline focus-visible:underline-offset-4",
-                  typeStyle("body.medium"),
-                )}
-              >
-                <span className="truncate">
-                  {activeThread?.title ?? "Operator agent"}
-                </span>
-                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-              </button>
-            )}
-          />
-          <DropdownMenuContent
-            align="start"
-            sideOffset={6}
-            className="max-h-80 w-72 max-w-[calc(100vw-1.5rem)]"
-          >
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>Recent tasks</DropdownMenuLabel>
-              {rawThreads === undefined ? (
-                <DropdownMenuItem disabled className="h-16 justify-center">
-                  <Spinner className="text-muted-foreground" />
-                  <span className="sr-only">Loading tasks</span>
-                </DropdownMenuItem>
-              ) : threads.length === 0 ? (
-                <DropdownMenuItem disabled className="py-3">
-                  No operator tasks yet.
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuRadioGroup
-                  value={activeThreadId}
-                  onValueChange={(threadId) => {
-                    if (typeof threadId !== "string") return;
-                    controller.setActiveThreadId(threadId);
-                  }}
+      {showHeader ? (
+        <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={(props) => (
+                <button
+                  {...props}
+                  type="button"
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-1.5 text-left text-foreground outline-none focus-visible:underline focus-visible:underline-offset-4",
+                    typeStyle("body.medium"),
+                  )}
                 >
-                  {threads.map((thread) => (
-                    <DropdownMenuRadioItem
-                      key={thread.id}
-                      value={thread.id}
-                      className="items-start py-1.5"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-foreground">
-                          {thread.title}
-                        </span>
-                        {thread.lastMessageAt ? (
-                          <span
-                            className={cn(
-                              "block text-muted-foreground",
-                              typeStyle("label.tag"),
-                            )}
-                          >
-                            {dayjs(thread.lastMessageAt).format("MMM D, h:mm A")}
-                          </span>
-                        ) : null}
-                      </span>
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
+                  <span className="truncate">
+                    {activeThread?.title ?? "Operator agent"}
+                  </span>
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                </button>
               )}
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <PillButton
-          variant="icon"
-          iconOnly
-          label="New operator task"
-          onClick={() => void startNewThread()}
-        >
-          <Plus className="size-4" />
-        </PillButton>
-      </header>
+            />
+            <DropdownMenuContent
+              align="start"
+              sideOffset={6}
+              className="max-h-80 w-72 max-w-[calc(100vw-1.5rem)]"
+            >
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Recent tasks</DropdownMenuLabel>
+                {rawThreads === undefined ? (
+                  <DropdownMenuItem disabled className="h-16 justify-center">
+                    <Spinner className="text-muted-foreground" />
+                    <span className="sr-only">Loading tasks</span>
+                  </DropdownMenuItem>
+                ) : threads.length === 0 ? (
+                  <DropdownMenuItem disabled className="py-3">
+                    No operator tasks yet.
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuRadioGroup
+                    value={activeThreadId}
+                    onValueChange={(threadId) => {
+                      if (typeof threadId !== "string") return;
+                      controller.setActiveThreadId(threadId);
+                    }}
+                  >
+                    {threads.map((thread) => (
+                      <DropdownMenuRadioItem
+                        key={thread.id}
+                        value={thread.id}
+                        className="items-start py-1.5"
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-foreground">
+                            {thread.title}
+                          </span>
+                          {thread.lastMessageAt ? (
+                            <span
+                              className={cn(
+                                "block text-muted-foreground",
+                                typeStyle("label.tag"),
+                              )}
+                            >
+                              {dayjs(thread.lastMessageAt).format(
+                                "MMM D, h:mm A",
+                              )}
+                            </span>
+                          ) : null}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                )}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <PillButton
+            variant="icon"
+            iconOnly
+            label="New operator task"
+            onClick={() => void startNewThreadFromUi()}
+          >
+            <Plus className="size-4" />
+          </PillButton>
+        </header>
+      ) : null}
 
-      {currentPageContext ? (
+      {variant === "rail" && currentPageContext ? (
         <div className="flex min-h-10 shrink-0 items-center border-b border-border px-3 py-1.5">
           {attachedPageContext ? (
             <div
@@ -475,105 +741,33 @@ export function OperatorAgentPanel({ pagePanel }: { pagePanel?: ReactNode }) {
         </div>
       ) : null}
 
-      <div
-        ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto scrollbar-hide"
-      >
-        <div ref={contentRef} className="min-h-full space-y-5 px-4 py-4">
-          {activeThreadId && rawThread === undefined ? (
-            <div className="flex min-h-40 items-center justify-center">
-              <Spinner className="text-muted-foreground" />
-            </div>
-          ) : detail.messages.length === 0 ? (
-            <EmptyThread
-              contextual={Boolean(attachedPageContext)}
-              onSelect={(prompt) => promptRef.current?.setValueAndFocus(prompt)}
-            />
-          ) : (
-            detail.messages.map((message) => {
-              return (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "flex",
-                    message.role === "user" ? "justify-end pl-10" : "pr-4",
-                  )}
-                >
-                  <div
-                    className={
-                      message.role === "user" ? "max-w-[92%]" : "w-full"
-                    }
-                  >
-                    <ThreadMessageBubble
-                      role={message.role === "user" ? "user" : "agent"}
-                      isOwnMessage={message.role === "user"}
-                      isError={message.status === "error"}
-                    >
-                      {message.content ? (
-                        message.role === "assistant" ? (
-                          <ProseMarkdown gfm breaks>
-                            {message.content}
-                          </ProseMarkdown>
-                        ) : (
-                          <p className="whitespace-pre-wrap">
-                            {message.content}
-                          </p>
-                        )
-                      ) : null}
-                      {message.attachments?.length && activeThreadId ? (
-                        <OperatorMessageAttachments
-                          threadId={activeThreadId}
-                          attachments={message.attachments}
-                        />
-                      ) : null}
-                    </ThreadMessageBubble>
-                  </div>
-                </div>
-              );
-            })
-          )}
-          {threadConfirmation ? (
-            <ConfirmationCard
-              confirmation={threadConfirmation}
-              busy={confirmationBusyId === threadConfirmation.id}
-              onDecision={(decision) =>
-                void decide(threadConfirmation, decision)
-              }
-            />
-          ) : null}
-          {detail.activeRun && !threadConfirmation ? (
-            <div
-              className={cn(
-                "flex items-center gap-2 text-muted-foreground",
-                typeStyle("caption.default"),
-              )}
-            >
-              <Spinner className="size-3.5" />
-              Working…
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div
-        className="shrink-0 border-t border-border px-3 pt-3"
-        style={{
-          paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        <SpotPromptInput
-          ref={promptRef}
-          onSubmit={submit}
-          onStop={() => void stop()}
-          placeholder="Ask the operator agent…"
-          multipleAttachments
-          maxFiles={OPERATOR_ATTACHMENT_MAX_FILES}
-          maxFileSize={OPERATOR_ATTACHMENT_MAX_BYTES}
-          onAttachmentError={(message) => toast.error(message)}
-          status={running ? "submitted" : undefined}
-          submittedLabel="Working"
-        />
-      </div>
+      <OperatorConversation
+        variant={variant}
+        activeThreadId={activeThreadId}
+        loading={Boolean(activeThreadId && rawThread === undefined)}
+        detail={detail}
+        contextual={Boolean(attachedPageContext)}
+        confirmationBusyId={confirmationBusyId}
+        onSelectPrompt={(prompt) => promptRef.current?.setValueAndFocus(prompt)}
+        onDecision={(confirmation, decision) =>
+          void decide(confirmation, decision)
+        }
+        composer={
+          <SpotPromptInput
+            ref={promptRef}
+            onSubmit={submit}
+            onStop={() => void stop()}
+            placeholder="Ask the operator agent…"
+            attachmentAccept={OPERATOR_ATTACHMENT_ACCEPT}
+            multipleAttachments
+            maxFiles={OPERATOR_ATTACHMENT_MAX_FILES}
+            maxFileSize={OPERATOR_ATTACHMENT_MAX_BYTES}
+            onAttachmentError={(message) => toast.error(message)}
+            status={running ? "submitted" : undefined}
+            submittedLabel="Working"
+          />
+        }
+      />
 
       {pagePanel ? (
         <div className="absolute inset-0 z-10 bg-background">{pagePanel}</div>

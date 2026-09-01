@@ -16,6 +16,8 @@ import {
   MAX_AGENT_ATTACHMENT_AGGREGATE_BYTES,
   MAX_AGENT_ATTACHMENT_BYTES,
   MAX_AGENT_ATTACHMENT_FILES,
+  normalizeAgentAttachmentContentType,
+  normalizeAgentAttachmentFilename,
 } from "./lib/agentAttachmentLimits";
 import {
   assertFeatureFlagAllowedForOrg,
@@ -28,6 +30,7 @@ import {
   type OperatorAgentToolName,
   type OperatorToolRole,
 } from "./lib/operatorAgentToolRegistry";
+import { buildOperatorRunCheckpointSummary } from "./lib/operatorAgentContinuation";
 import {
   requireOperator,
   requireOperatorForUser,
@@ -46,6 +49,7 @@ const operatorAttachmentValidator = v.object({
   filename: v.string(),
   contentType: v.string(),
   size: v.number(),
+  uploadIntentId: v.optional(v.id("operatorAgentUploadIntents")),
 });
 
 const pageContextValidator = v.object({
@@ -59,6 +63,9 @@ const ACTIVE_RUN_STATUSES = new Set([
   "running",
   "waiting_confirmation",
 ]);
+const MAX_OPERATOR_MESSAGE_CHARS = 20_000;
+const MAX_OPERATOR_CONVERSATION_KEY_CHARS = 500;
+const MAX_OPERATOR_DEDUPE_KEY_CHARS = 500;
 
 type OperatorChannel = "chat" | "slack" | "imessage" | "mcp";
 
@@ -67,6 +74,7 @@ type OperatorAttachment = {
   filename: string;
   contentType: string;
   size: number;
+  uploadIntentId?: Id<"operatorAgentUploadIntents">;
 };
 
 type ExecuteToolArgs = {
@@ -113,7 +121,9 @@ function boundedJson(value: unknown, maximum = 8_000) {
 
 async function validateOperatorAttachments(
   ctx: MutationCtx,
+  operatorUserId: Id<"users">,
   attachments: OperatorAttachment[] | undefined,
+  options: { requireUploadIntent?: boolean } = {},
 ): Promise<OperatorAttachment[] | undefined> {
   if (!attachments?.length) return undefined;
   if (attachments.length > MAX_AGENT_ATTACHMENT_FILES) {
@@ -129,6 +139,31 @@ async function validateOperatorAttachments(
     const fileKey = String(attachment.fileId);
     if (seen.has(fileKey)) throw new Error("Duplicate operator attachment");
     seen.add(fileKey);
+    const existingReference = await ctx.db
+      .query("operatorAgentAttachments")
+      .withIndex("file", (index) => index.eq("fileId", attachment.fileId))
+      .first();
+    if (
+      existingReference &&
+      existingReference.operatorUserId !== operatorUserId
+    ) {
+      throw new Error("Operator attachment belongs to another operator");
+    }
+    const uploadIntent = attachment.uploadIntentId
+      ? await ctx.db.get(attachment.uploadIntentId)
+      : null;
+    if (options.requireUploadIntent || attachment.uploadIntentId) {
+      if (
+        !uploadIntent ||
+        uploadIntent.operatorUserId !== operatorUserId ||
+        uploadIntent.expiresAt <= dayjs().valueOf() ||
+        uploadIntent.fileId !== attachment.fileId
+      ) {
+        throw new Error(
+          "Operator attachment upload intent is invalid or expired",
+        );
+      }
+    }
     const metadata = await ctx.db.system.get("_storage", attachment.fileId);
     if (!metadata) throw new Error("Operator attachment was not uploaded");
     if (metadata.size > MAX_AGENT_ATTACHMENT_BYTES) {
@@ -140,17 +175,17 @@ async function validateOperatorAttachments(
     if (aggregateSize > MAX_AGENT_ATTACHMENT_AGGREGATE_BYTES) {
       throw new Error("Operator attachments exceed the 50 MB message limit");
     }
-    const filename = attachment.filename.trim();
-    if (!filename || filename.length > 255) {
-      throw new Error("Operator attachment filenames must be 1–255 characters");
+    const filename = normalizeAgentAttachmentFilename(attachment.filename);
+    if (uploadIntent) {
+      await ctx.db.delete(uploadIntent._id);
     }
     normalized.push({
       fileId: attachment.fileId,
       filename,
-      contentType:
-        attachment.contentType.trim() ||
-        metadata.contentType ||
-        "application/octet-stream",
+      contentType: normalizeAgentAttachmentContentType(
+        attachment.contentType,
+        metadata.contentType || "application/octet-stream",
+      ),
       size: metadata.size,
     });
   }
@@ -179,6 +214,44 @@ function normalizedOptionalText(value: unknown) {
   if (value === null) return undefined;
   if (typeof value !== "string") return undefined;
   return value.trim() || undefined;
+}
+
+function normalizeOperatorPageContext(
+  context:
+    | { pageType: string; entityId?: string; summary?: string }
+    | undefined,
+) {
+  if (!context) return undefined;
+  const pageType = context.pageType.trim();
+  const entityId = context.entityId?.trim() || undefined;
+  const summary = context.summary?.trim() || undefined;
+  if (!pageType || pageType.length > 100) {
+    throw new Error("Operator page type must be 1–100 characters");
+  }
+  if (entityId && entityId.length > 200) {
+    throw new Error("Operator page entity ID must be at most 200 characters");
+  }
+  if (summary && summary.length > 500) {
+    throw new Error("Operator page summary must be at most 500 characters");
+  }
+  return {
+    pageType,
+    ...(entityId ? { entityId } : {}),
+    ...(summary ? { summary } : {}),
+  };
+}
+
+function normalizeOperatorConversationKey(value: string) {
+  const conversationKey = value.trim();
+  if (!conversationKey) throw new Error("Conversation key is required");
+  if (conversationKey.length > MAX_OPERATOR_CONVERSATION_KEY_CHARS) {
+    throw new Error("Conversation key is too long");
+  }
+  return conversationKey;
+}
+
+function normalizeOperatorThreadTitle(value: string | undefined) {
+  return value?.trim().replace(/\s+/g, " ").slice(0, 200) || "New chat";
 }
 
 function normalizeOrganizationId(ctx: QueryCtx | MutationCtx, value: unknown) {
@@ -226,17 +299,19 @@ async function insertOperatorThread(
       summary?: string;
     };
     conversationKey?: string;
+    visibility?: "private" | "shared";
   },
 ) {
   const now = dayjs().valueOf();
+  const initialContext = normalizeOperatorPageContext(args.initialContext);
   return ctx.db.insert("operatorAgentThreads", {
     ownerUserId: args.operatorUserId,
-    visibility: "private",
+    visibility: args.visibility ?? "private",
     conversationKey: args.conversationKey,
-    title: args.title?.trim() || "New chat",
+    title: normalizeOperatorThreadTitle(args.title),
     lastMessageAt: now,
     channel: args.channel,
-    initialContext: args.initialContext,
+    initialContext,
     createdAt: now,
     updatedAt: now,
   });
@@ -305,7 +380,7 @@ async function invalidatePendingOperatorConfirmations(
     .withIndex("thread_status", (index) =>
       index.eq("threadId", threadId).eq("status", "pending"),
     )
-    .collect();
+    .take(100);
   const now = dayjs().valueOf();
   await Promise.all(
     pending.map((confirmation) =>
@@ -333,15 +408,26 @@ async function enqueueOperatorMessage(
       entityId?: string;
       summary?: string;
     };
+    requireUploadIntent?: boolean;
   },
 ) {
   const thread = await requireOperatorThread(
     ctx,
     args.threadId,
     args.operatorUserId,
+    { allowShared: true },
   );
   const content = args.content.trim();
   if (!content) throw new Error("Message content is required");
+  if (content.length > MAX_OPERATOR_MESSAGE_CHARS) {
+    throw new Error(
+      `Operator messages must be at most ${MAX_OPERATOR_MESSAGE_CHARS.toLocaleString()} characters`,
+    );
+  }
+  if (args.dedupeKey && args.dedupeKey.length > MAX_OPERATOR_DEDUPE_KEY_CHARS) {
+    throw new Error("Operator message dedupe key is too long");
+  }
+  const pageContext = normalizeOperatorPageContext(args.pageContext);
 
   if (args.dedupeKey) {
     const existing = await ctx.db
@@ -363,7 +449,12 @@ async function enqueueOperatorMessage(
     }
   }
 
-  const attachments = await validateOperatorAttachments(ctx, args.attachments);
+  const attachments = await validateOperatorAttachments(
+    ctx,
+    args.operatorUserId,
+    args.attachments,
+    { requireUploadIntent: args.requireUploadIntent },
+  );
 
   await cancelActiveRunsForThread(ctx, args.threadId, "superseded");
   await invalidatePendingOperatorConfirmations(
@@ -387,6 +478,17 @@ async function enqueueOperatorMessage(
     createdAt: now,
     updatedAt: now,
   });
+  await Promise.all(
+    (attachments ?? []).map((attachment) =>
+      ctx.db.insert("operatorAgentAttachments", {
+        ...attachment,
+        operatorUserId: args.operatorUserId,
+        threadId: args.threadId,
+        messageId: userMessageId,
+        createdAt: now,
+      }),
+    ),
+  );
   const agentMessageId = await ctx.db.insert("operatorAgentMessages", {
     threadId: args.threadId,
     ownerUserId: args.operatorUserId,
@@ -404,6 +506,7 @@ async function enqueueOperatorMessage(
     operatorUserId: args.operatorUserId,
     userMessageId,
     agentMessageId,
+    executionKind: "goal",
     objective: content,
     status: "queued",
     checkpoint: { iteration: 0, executionCount: 0 },
@@ -413,8 +516,10 @@ async function enqueueOperatorMessage(
   await ctx.db.patch(args.threadId, {
     lastMessageAt: now,
     updatedAt: now,
-    ...(args.pageContext ? { initialContext: args.pageContext } : {}),
-    ...(thread.title === "New chat" ? { title: content.slice(0, 80) } : {}),
+    ...(pageContext ? { initialContext: pageContext } : {}),
+    ...(thread.title === "New chat"
+      ? { title: normalizeOperatorThreadTitle(content).slice(0, 80) }
+      : {}),
   });
   await ctx.scheduler.runAfter(0, internal.operatorAgentRunner.run, { runId });
   return { messageId: userMessageId, runId, duplicate: false };
@@ -477,11 +582,11 @@ async function executeToolDomain(
       ctx.db
         .query("orgMemberships")
         .withIndex("organization", (index) => index.eq("orgId", orgId))
-        .collect(),
+        .take(5_001),
       ctx.db
         .query("policies")
         .withIndex("organization", (index) => index.eq("orgId", orgId))
-        .collect(),
+        .take(5_001),
     ]);
     return {
       orgId,
@@ -495,9 +600,15 @@ async function executeToolDomain(
       brokerOrgId: organization.brokerOrgId,
       featureFlags: organization.featureFlags,
       onboardingComplete: organization.onboardingComplete,
-      memberCount: memberships.length,
-      policyCount: policies.filter((policy) => !policy.deletedAt).length,
-      archivedPolicyCount: policies.filter((policy) => policy.deletedAt).length,
+      memberCount: Math.min(memberships.length, 5_000),
+      policyCount: policies
+        .slice(0, 5_000)
+        .filter((policy) => !policy.deletedAt).length,
+      archivedPolicyCount: policies
+        .slice(0, 5_000)
+        .filter((policy) => policy.deletedAt).length,
+      countsAreLowerBounds:
+        memberships.length > 5_000 || policies.length > 5_000,
     };
   }
 
@@ -553,7 +664,7 @@ async function executeToolDomain(
     const policies = await ctx.db
       .query("policies")
       .withIndex("organization", (index) => index.eq("orgId", orgId))
-      .collect();
+      .take(2_000);
     return policies
       .filter((policy) => includeArchived || !policy.deletedAt)
       .filter((policy) => {
@@ -1044,7 +1155,9 @@ async function executeOperatorTool(ctx: MutationCtx, args: ExecuteToolArgs) {
   ) {
     throw new Error("Operator agent run not found");
   }
-  await requireOperatorThread(ctx, args.threadId, args.operatorUserId);
+  await requireOperatorThread(ctx, args.threadId, args.operatorUserId, {
+    allowShared: true,
+  });
   const spec = getOperatorAgentToolSpec(args.toolName);
   assertOperatorRole(operator.profile.role, spec.requiredRole);
   const input = parseOperatorAgentToolInput(args.toolName, args.input);
@@ -1191,13 +1304,29 @@ export const listThreads = query({
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    return ctx.db
-      .query("operatorAgentThreads")
-      .withIndex("owner_activity", (index) =>
-        index.eq("ownerUserId", operator.userId),
-      )
-      .order("desc")
-      .take(limit);
+    const [owned, shared] = await Promise.all([
+      ctx.db
+        .query("operatorAgentThreads")
+        .withIndex("owner_activity", (index) =>
+          index.eq("ownerUserId", operator.userId),
+        )
+        .order("desc")
+        .take(limit),
+      ctx.db
+        .query("operatorAgentThreads")
+        .withIndex("visibility_activity", (index) =>
+          index.eq("visibility", "shared"),
+        )
+        .order("desc")
+        .take(limit),
+    ]);
+    return [
+      ...new Map(
+        [...owned, ...shared].map((thread) => [thread._id, thread]),
+      ).values(),
+    ]
+      .sort((left, right) => right.lastMessageAt - left.lastMessageAt)
+      .slice(0, limit);
   },
 });
 
@@ -1237,6 +1366,7 @@ export const getThread = query({
       runs.find((run) => ACTIVE_RUN_STATUSES.has(run.status)) ?? null;
     const confirmationIsCurrent =
       pendingConfirmation &&
+      pendingConfirmation.operatorUserId === operator.userId &&
       pendingConfirmation.expiresAt > dayjs().valueOf() &&
       activeRun?.status === "waiting_confirmation" &&
       activeRun.checkpoint?.pendingConfirmationId === pendingConfirmation._id;
@@ -1275,8 +1405,134 @@ export const createThread = mutation({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireOperator(ctx);
-    return ctx.storage.generateUploadUrl();
+    const operator = await requireOperator(ctx);
+    const now = dayjs().valueOf();
+    const expiresAt = dayjs(now).add(30, "minute").valueOf();
+    const uploadIntentId = await ctx.db.insert("operatorAgentUploadIntents", {
+      operatorUserId: operator.userId,
+      expiresAt,
+      createdAt: now,
+    });
+    await ctx.scheduler.runAt(
+      expiresAt,
+      internal.operatorAgent.cleanupUploadIntentInternal,
+      { uploadIntentId },
+    );
+    return {
+      uploadUrl: await ctx.storage.generateUploadUrl(),
+      uploadIntentId,
+    };
+  },
+});
+
+export const registerUpload = mutation({
+  args: {
+    uploadIntentId: v.id("operatorAgentUploadIntents"),
+    fileId: v.id("_storage"),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const intent = await ctx.db.get(args.uploadIntentId);
+    if (
+      !intent ||
+      intent.operatorUserId !== operator.userId ||
+      intent.expiresAt <= dayjs().valueOf() ||
+      (intent.fileId && intent.fileId !== args.fileId)
+    ) {
+      throw new Error(
+        "Operator attachment upload intent is invalid or expired",
+      );
+    }
+    const existingReference = await ctx.db
+      .query("operatorAgentAttachments")
+      .withIndex("file", (index) => index.eq("fileId", args.fileId))
+      .first();
+    if (existingReference?.operatorUserId !== undefined) {
+      throw new Error("Operator attachment is already owned");
+    }
+    const metadata = await ctx.db.system.get("_storage", args.fileId);
+    if (!metadata) throw new Error("Operator attachment was not uploaded");
+    await ctx.db.patch(intent._id, { fileId: args.fileId });
+    return { registered: true as const };
+  },
+});
+
+export const discardUploads = mutation({
+  args: {
+    uploads: v.array(
+      v.object({
+        uploadIntentId: v.id("operatorAgentUploadIntents"),
+        fileId: v.optional(v.id("_storage")),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    let discarded = 0;
+    for (const upload of args.uploads.slice(0, 10)) {
+      const intent = await ctx.db.get(upload.uploadIntentId);
+      if (!intent || intent.operatorUserId !== operator.userId) {
+        continue;
+      }
+      if (intent.fileId && upload.fileId && intent.fileId !== upload.fileId) {
+        continue;
+      }
+      const fileId = intent.fileId ?? upload.fileId;
+      if (fileId) {
+        const reference = await ctx.db
+          .query("operatorAgentAttachments")
+          .withIndex("file", (index) => index.eq("fileId", fileId))
+          .first();
+        if (!reference) await ctx.storage.delete(fileId);
+      }
+      await ctx.db.delete(intent._id);
+      discarded += 1;
+    }
+    return { discarded };
+  },
+});
+
+export const cleanupUploadIntentInternal = internalMutation({
+  args: { uploadIntentId: v.id("operatorAgentUploadIntents") },
+  handler: async (ctx, args) => {
+    const intent = await ctx.db.get(args.uploadIntentId);
+    if (!intent) return { deleted: false as const };
+    const now = dayjs().valueOf();
+    if (intent.expiresAt > now) {
+      await ctx.scheduler.runAt(
+        intent.expiresAt,
+        internal.operatorAgent.cleanupUploadIntentInternal,
+        args,
+      );
+      return { deleted: false as const };
+    }
+    if (intent.fileId) {
+      const fileId = intent.fileId;
+      const reference = await ctx.db
+        .query("operatorAgentAttachments")
+        .withIndex("file", (index) => index.eq("fileId", fileId))
+        .first();
+      if (!reference) await ctx.storage.delete(fileId);
+    }
+    await ctx.db.delete(intent._id);
+    return { deleted: true as const };
+  },
+});
+
+export const deleteUnreferencedAttachmentsInternal = internalMutation({
+  args: { fileIds: v.array(v.id("_storage")) },
+  handler: async (ctx, args) => {
+    let deleted = 0;
+    for (const fileId of args.fileIds.slice(0, MAX_AGENT_ATTACHMENT_FILES)) {
+      const reference = await ctx.db
+        .query("operatorAgentAttachments")
+        .withIndex("file", (index) => index.eq("fileId", fileId))
+        .first();
+      if (reference) continue;
+      await ctx.storage.delete(fileId);
+      deleted += 1;
+    }
+    return { deleted };
   },
 });
 
@@ -1290,16 +1546,13 @@ export const getAttachmentUrl = query({
     await requireOperatorThread(ctx, args.threadId, operator.userId, {
       allowShared: true,
     });
-    const messages = await ctx.db
-      .query("operatorAgentMessages")
-      .withIndex("thread", (index) => index.eq("threadId", args.threadId))
-      .collect();
-    const attached = messages.some((message) =>
-      (message.attachments ?? []).some(
-        (attachment) => attachment.fileId === args.fileId,
-      ),
-    );
-    return attached ? ctx.storage.getUrl(args.fileId) : null;
+    const attachment = await ctx.db
+      .query("operatorAgentAttachments")
+      .withIndex("thread_file", (index) =>
+        index.eq("threadId", args.threadId).eq("fileId", args.fileId),
+      )
+      .first();
+    return attachment ? ctx.storage.getUrl(args.fileId) : null;
   },
 });
 
@@ -1326,6 +1579,7 @@ export const sendMessage = mutation({
       content: args.content,
       pageContext: args.pageContext,
       attachments: args.attachments,
+      requireUploadIntent: Boolean(args.attachments?.length),
     });
     return { threadId, ...result };
   },
@@ -1335,7 +1589,9 @@ export const cancelRun = mutation({
   args: { threadId: v.id("operatorAgentThreads") },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
-    await requireOperatorThread(ctx, args.threadId, operator.userId);
+    await requireOperatorThread(ctx, args.threadId, operator.userId, {
+      allowShared: true,
+    });
     const cancelled = await cancelActiveRunsForThread(
       ctx,
       args.threadId,
@@ -1367,6 +1623,7 @@ async function confirmOperatorAction(
     ctx,
     args.threadId,
     operator.userId,
+    { allowShared: true },
   );
   const channel =
     args.channel ??
@@ -1487,6 +1744,54 @@ async function confirmOperatorAction(
     confirmationId: confirmation._id,
   });
   const succeeded = result.status === "succeeded";
+  if (succeeded && run.executionKind === "goal") {
+    const toolCall = {
+      name: payload.toolName,
+      input: boundedJson(parsedInput, 500),
+      output: boundedJson(result, 500),
+    };
+    const currentMessage = await ctx.db.get(run.agentMessageId);
+    const usedTools = [
+      ...new Set([...(currentMessage?.usedTools ?? []), payload.toolName]),
+    ];
+    const toolCalls = [...(currentMessage?.toolCalls ?? []), toolCall].slice(
+      -100,
+    );
+    await ctx.db.patch(run.agentMessageId, {
+      content: "",
+      status: "processing",
+      usedTools,
+      toolCalls,
+      updatedAt: now,
+    });
+    await ctx.db.patch(run._id, {
+      status: "queued",
+      checkpoint: {
+        iteration: run.checkpoint?.iteration ?? 0,
+        executionCount: (run.checkpoint?.executionCount ?? 0) + 1,
+        summary: buildOperatorRunCheckpointSummary({
+          previous: run.checkpoint?.summary,
+          audit: {
+            usedTools: [payload.toolName],
+            completedTools: [payload.toolName],
+            toolCalls: [toolCall],
+            workflowOutcomes: [],
+          },
+        }),
+        lastToolName: payload.toolName,
+      },
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(0, internal.operatorAgentRunner.run, {
+      runId: run._id,
+    });
+    return {
+      status: "queued" as const,
+      runId: run._id,
+      result,
+      content: `Confirmed: ${payload.summary}. Continuing the operator task.`,
+    };
+  }
   await ctx.db.patch(run._id, {
     status: succeeded ? "completed" : "failed",
     completedAt: now,
@@ -1549,7 +1854,9 @@ export const getPendingConfirmationInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     await requireOperatorForUser(ctx, args.operatorUserId);
-    await requireOperatorThread(ctx, args.threadId, args.operatorUserId);
+    await requireOperatorThread(ctx, args.threadId, args.operatorUserId, {
+      allowShared: true,
+    });
     const confirmation = await ctx.db
       .query("operatorAgentConfirmations")
       .withIndex("thread_status", (index) =>
@@ -1595,26 +1902,41 @@ export const createOrGetChannelThreadInternal = internalMutation({
     ),
     conversationKey: v.string(),
     title: v.optional(v.string()),
+    shared: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     await requireOperatorForUser(ctx, args.operatorUserId);
-    const conversationKey = args.conversationKey.trim();
-    if (!conversationKey) throw new Error("Conversation key is required");
-    const existing = await ctx.db
-      .query("operatorAgentThreads")
-      .withIndex("owner_conversation", (index) =>
-        index
-          .eq("ownerUserId", args.operatorUserId)
-          .eq("channel", args.channel)
-          .eq("conversationKey", conversationKey),
-      )
-      .unique();
+    const conversationKey = normalizeOperatorConversationKey(
+      args.conversationKey,
+    );
+    if (args.shared && args.channel !== "slack") {
+      throw new Error("Only Slack channel conversations may be shared");
+    }
+    const existing = args.shared
+      ? await ctx.db
+          .query("operatorAgentThreads")
+          .withIndex("channel_conversation", (index) =>
+            index
+              .eq("channel", args.channel)
+              .eq("conversationKey", conversationKey),
+          )
+          .unique()
+      : await ctx.db
+          .query("operatorAgentThreads")
+          .withIndex("owner_conversation", (index) =>
+            index
+              .eq("ownerUserId", args.operatorUserId)
+              .eq("channel", args.channel)
+              .eq("conversationKey", conversationKey),
+          )
+          .unique();
     if (existing) return existing._id;
     return insertOperatorThread(ctx, {
       operatorUserId: args.operatorUserId,
       channel: args.channel,
       title: args.title,
       conversationKey,
+      visibility: args.shared ? "shared" : "private",
     });
   },
 });
@@ -1645,7 +1967,9 @@ export const getRunResultForOperatorInternal = internalQuery({
     if (!run || run.operatorUserId !== args.operatorUserId) {
       throw new Error("Operator agent run not found");
     }
-    await requireOperatorThread(ctx, run.threadId, args.operatorUserId);
+    await requireOperatorThread(ctx, run.threadId, args.operatorUserId, {
+      allowShared: true,
+    });
     const response = await ctx.db.get(run.agentMessageId);
     return {
       run,
@@ -1670,7 +1994,9 @@ export const cancelRunInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     await requireOperatorForUser(ctx, args.operatorUserId);
-    await requireOperatorThread(ctx, args.threadId, args.operatorUserId);
+    await requireOperatorThread(ctx, args.threadId, args.operatorUserId, {
+      allowShared: true,
+    });
     const cancelled = await cancelActiveRunsForThread(
       ctx,
       args.threadId,
@@ -1699,6 +2025,12 @@ export const prepareDirectToolInvocationInternal = internalMutation({
     await requireOperatorForUser(ctx, args.operatorUserId);
     const idempotencyKey = args.idempotencyKey.trim();
     if (!idempotencyKey) throw new Error("Idempotency key is required");
+    if (idempotencyKey.length > MAX_OPERATOR_DEDUPE_KEY_CHARS) {
+      throw new Error("Idempotency key is too long");
+    }
+    if (args.summary.trim().length > MAX_OPERATOR_MESSAGE_CHARS) {
+      throw new Error("Operator tool summary is too long");
+    }
     const existingLedger = await ctx.db
       .query("agentActionAuditEvents")
       .withIndex("idempotency", (index) =>
@@ -1722,10 +2054,13 @@ export const prepareDirectToolInvocationInternal = internalMutation({
 
     let threadId = args.threadId;
     if (threadId) {
-      await requireOperatorThread(ctx, threadId, args.operatorUserId);
+      await requireOperatorThread(ctx, threadId, args.operatorUserId, {
+        allowShared: true,
+      });
     } else {
-      const conversationKey =
-        args.conversationKey?.trim() || `${args.channel}:direct`;
+      const conversationKey = normalizeOperatorConversationKey(
+        args.conversationKey || `${args.channel}:direct`,
+      );
       const existingThread = await ctx.db
         .query("operatorAgentThreads")
         .withIndex("owner_conversation", (index) =>
@@ -1775,6 +2110,7 @@ export const prepareDirectToolInvocationInternal = internalMutation({
       operatorUserId: args.operatorUserId,
       userMessageId,
       agentMessageId,
+      executionKind: "direct_tool",
       objective: args.summary,
       status: "running",
       checkpoint: { iteration: 0, executionCount: 0 },
@@ -1886,6 +2222,7 @@ export const getRunContextInternal = internalQuery({
       ctx,
       run.threadId,
       run.operatorUserId,
+      { allowShared: true },
     );
     const messages = await ctx.db
       .query("operatorAgentMessages")
@@ -1907,7 +2244,7 @@ export const markRunStartedInternal = internalMutation({
     const now = dayjs().valueOf();
     await ctx.db.patch(run._id, {
       status: "running",
-      startedAt: now,
+      startedAt: run.startedAt ?? now,
       updatedAt: now,
     });
     return true;
@@ -1936,7 +2273,9 @@ export const requestToolConfirmationInternal = internalMutation({
     ) {
       throw new Error("Operator agent run not found");
     }
-    await requireOperatorThread(ctx, args.threadId, args.operatorUserId);
+    await requireOperatorThread(ctx, args.threadId, args.operatorUserId, {
+      allowShared: true,
+    });
     const spec = getOperatorAgentToolSpec(args.toolName);
     assertOperatorRole(operator.profile.role, spec.requiredRole);
     if (spec.confirmation !== "exact" || spec.effect === "read") {
@@ -2067,6 +2406,7 @@ export const requestToolConfirmationInternal = internalMutation({
       checkpoint: {
         iteration: (run.checkpoint?.iteration ?? 0) + 1,
         executionCount: (run.checkpoint?.executionCount ?? 0) + 1,
+        summary: run.checkpoint?.summary,
         lastToolName: args.toolName,
         pendingConfirmationId: confirmationId,
       },
@@ -2118,12 +2458,20 @@ export const completeRunInternal = internalMutation({
       return { status: "cancelled" as const };
     }
     const waiting = run.status === "waiting_confirmation";
+    const currentMessage = await ctx.db.get(run.agentMessageId);
+    const usedTools = [
+      ...new Set([...(currentMessage?.usedTools ?? []), ...args.usedTools]),
+    ];
+    const toolCalls = [
+      ...(currentMessage?.toolCalls ?? []),
+      ...args.toolCalls,
+    ].slice(-100);
     await ctx.db.patch(run.agentMessageId, {
       content: args.content,
       status: undefined,
       routerRequestId: args.routerRequestId,
-      usedTools: args.usedTools.length > 0 ? args.usedTools : undefined,
-      toolCalls: args.toolCalls.length > 0 ? args.toolCalls : undefined,
+      usedTools: usedTools.length > 0 ? usedTools : undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
       updatedAt: now,
     });
     await ctx.db.patch(run.threadId, { lastMessageAt: now, updatedAt: now });
@@ -2133,7 +2481,8 @@ export const completeRunInternal = internalMutation({
         completedAt: now,
         checkpoint: {
           iteration: (run.checkpoint?.iteration ?? 0) + 1,
-          executionCount: args.toolCalls.length,
+          executionCount:
+            (run.checkpoint?.executionCount ?? 0) + args.toolCalls.length,
           summary: args.content.slice(0, 1_000),
           lastToolName: args.usedTools.at(-1),
         },
@@ -2145,6 +2494,60 @@ export const completeRunInternal = internalMutation({
         ? ("waiting_confirmation" as const)
         : ("completed" as const),
     };
+  },
+});
+
+export const continueRunInternal = internalMutation({
+  args: {
+    runId: v.id("operatorAgentRuns"),
+    summary: v.string(),
+    usedTools: v.array(v.string()),
+    toolCalls: v.array(
+      v.object({
+        name: v.string(),
+        input: v.optional(v.string()),
+        output: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run) return null;
+    if (run.status === "waiting_confirmation") {
+      return { status: "waiting_confirmation" as const };
+    }
+    if (run.status !== "running" || run.cancellationRequestedAt) {
+      return { status: "not_continued" as const };
+    }
+    const message = await ctx.db.get(run.agentMessageId);
+    const usedTools = [
+      ...new Set([...(message?.usedTools ?? []), ...args.usedTools]),
+    ];
+    const toolCalls = [...(message?.toolCalls ?? []), ...args.toolCalls].slice(
+      -100,
+    );
+    const now = dayjs().valueOf();
+    await ctx.db.patch(run.agentMessageId, {
+      status: "processing",
+      usedTools: usedTools.length > 0 ? usedTools : undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      updatedAt: now,
+    });
+    await ctx.db.patch(run._id, {
+      status: "queued",
+      checkpoint: {
+        iteration: (run.checkpoint?.iteration ?? 0) + 1,
+        executionCount:
+          (run.checkpoint?.executionCount ?? 0) + args.toolCalls.length,
+        summary: args.summary.slice(-6_000),
+        lastToolName: args.usedTools.at(-1),
+      },
+      updatedAt: now,
+    });
+    await ctx.scheduler.runAfter(0, internal.operatorAgentRunner.run, {
+      runId: run._id,
+    });
+    return { status: "queued" as const };
   },
 });
 

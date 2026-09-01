@@ -50,7 +50,7 @@ describe("global model route overrides", () => {
   it("fails closed until the required direct operator route is configured", async () => {
     const t = convexTest(schema, modules);
     const now = dayjs().valueOf();
-    const operatorUserId = await t.run(async (ctx) => {
+    const { operatorUserId, settingsId, orgId } = await t.run(async (ctx) => {
       const userId = await ctx.db.insert("users", {
         email: "routing-operator@example.com",
         accountKind: "operator",
@@ -63,17 +63,47 @@ describe("global model route overrides", () => {
         createdAt: now,
         updatedAt: now,
       });
-      await ctx.db.insert("globalModelSettings", {
+      const globalSettingsId = await ctx.db.insert("globalModelSettings", {
         key: "default",
         routes: {
           operator_agent: defaultModelRouteForId("operator_agent"),
         },
-        explicitRouteOverrides: ["operator_agent"],
+        explicitRouteOverrides: [],
         updatedBy: userId,
         updatedAt: now,
       });
-      return userId;
+      const organizationId = await ctx.db.insert("organizations", {
+        name: "Routing Test Client",
+        type: "client",
+      });
+      return {
+        operatorUserId: userId,
+        settingsId: globalSettingsId,
+        orgId: organizationId,
+      };
     });
+
+    vi.stubEnv("OPENAI_API_KEY", "operator-openai-key");
+    await expect(
+      t.query(internal.modelSettings.resolveOperatorAgentRoute, {}),
+    ).rejects.toThrow("Operator agent model is not configured");
+    const manuallyChosenRoute = {
+      provider: "openai" as const,
+      model: "gpt-5.5",
+    };
+    await t.run((ctx) =>
+      ctx.db.patch(settingsId, {
+        routes: { operator_agent: manuallyChosenRoute },
+      }),
+    );
+    await expect(
+      t.query(internal.modelSettings.resolveOperatorAgentRoute, {}),
+    ).rejects.toThrow("Operator agent model is not configured");
+    await t.run((ctx) =>
+      ctx.db.patch(settingsId, {
+        explicitRouteOverrides: ["operator_agent"],
+      }),
+    );
 
     vi.stubEnv("OPENAI_API_KEY", "");
     await expect(
@@ -83,7 +113,15 @@ describe("global model route overrides", () => {
     vi.stubEnv("OPENAI_API_KEY", "operator-openai-key");
     await expect(
       t.query(internal.modelSettings.resolveOperatorAgentRoute, {}),
-    ).resolves.toEqual(defaultModelRouteForId("operator_agent"));
+    ).resolves.toEqual(manuallyChosenRoute);
+    const [orgSnapshot, publicSnapshot] = await Promise.all([
+      t.query(internal.modelSettings.resolveForOrg, { orgId }),
+      t.query(internal.modelSettings.resolvePublicDefaults, {}),
+    ]);
+    expect(orgSnapshot?.routes).not.toHaveProperty("operator_agent");
+    expect(orgSnapshot?.routeSources).not.toHaveProperty("operator_agent");
+    expect(publicSnapshot.routes).not.toHaveProperty("operator_agent");
+    expect(publicSnapshot.routeSources).not.toHaveProperty("operator_agent");
 
     const operator = t.withIdentity({ subject: `${operatorUserId}|session` });
     await expect(

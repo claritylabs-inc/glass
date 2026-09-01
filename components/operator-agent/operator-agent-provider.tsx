@@ -52,7 +52,9 @@ export function OperatorAgentProvider({
   const pathname = usePathname();
   const { scope } = useSpotSync();
   const enabled =
-    pathname.startsWith("/operator") && !pathname.startsWith("/operator/login");
+    pathname.startsWith("/operator") &&
+    !pathname.startsWith("/operator/login") &&
+    !pathname.startsWith("/operator/threads");
   const [open, setOpen] = useState(true);
   const [activeThreadIdState, setActiveThreadIdState] = useState<string | null>(
     null,

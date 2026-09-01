@@ -1471,18 +1471,33 @@ export const SpotPromptInput = forwardRef<
 /**
  * Overlay footer layout for chat pages where the input sits above scrollable content.
  */
-export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
+export function ChatInputOverlay({
+  children,
+  compact = false,
+}: {
+  children: React.ReactNode;
+  compact?: boolean;
+}) {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
       <InputOverlayFade />
       <div className="relative h-16" aria-hidden="true" />
       <div
-        className="relative pointer-events-auto px-4 pt-2 md:px-6 lg:px-8"
+        className={cn(
+          "relative pointer-events-auto pt-2",
+          compact ? "px-3" : "px-4 md:px-6 lg:px-8",
+        )}
         style={{
-          paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
+          paddingBottom: compact
+            ? "calc(0.75rem + env(safe-area-inset-bottom, 0px))"
+            : "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="mx-auto w-full max-w-3xl">{children}</div>
+        <div
+          className={cn("mx-auto w-full", compact ? "max-w-none" : "max-w-3xl")}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

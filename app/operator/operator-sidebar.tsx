@@ -1,8 +1,10 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
+import { useQuery } from "convex/react";
 import {
   Building2,
+  List,
   LogOut,
   MessageSquareText,
   ScrollText,
@@ -11,13 +13,27 @@ import {
   User,
   Users,
 } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   SectionHeader,
+  SidebarHeaderLink,
   SidebarMenuItem,
   SidebarTooltipProvider,
 } from "@/components/app-sidebar/nav-item";
+import {
+  MENU_ITEM_ACTIVE,
+  MENU_ITEM_BASE,
+  MENU_ITEM_INACTIVE,
+} from "@/components/app-sidebar/nav-config";
 import { SidebarHeader } from "@/components/app-sidebar/sidebar-header";
 import { LogoIcon } from "@/components/ui/logo-icon";
+import { OperatorThreadChannelIcon } from "@/components/operator-agent/operator-thread-channel";
+import {
+  normalizeOperatorAgentThreads,
+  operatorAgentApi,
+} from "@/lib/operator-agent-api";
+import { typeStyle } from "@/lib/typography";
 
 export function OperatorSidebar({
   collapsed,
@@ -27,6 +43,7 @@ export function OperatorSidebar({
   collapsed: boolean;
   onToggleCollapse: () => void;
   active:
+    | "threads"
     | "brokers"
     | "clients"
     | "demo-leads"
@@ -36,6 +53,9 @@ export function OperatorSidebar({
     | "profile";
 }) {
   const { signOut } = useAuthActions();
+  const pathname = usePathname();
+  const rawThreads = useQuery(operatorAgentApi.listThreads, { limit: 8 });
+  const threads = normalizeOperatorAgentThreads(rawThreads);
 
   return (
     <SidebarTooltipProvider>
@@ -47,6 +67,52 @@ export function OperatorSidebar({
         icon={<LogoIcon size={15} static />}
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2">
+        {collapsed ? (
+          <SidebarMenuItem
+            href="/operator/threads"
+            label="Threads"
+            icon={List}
+            active={active === "threads"}
+            collapsed
+          />
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-3 pb-1.5 pt-3">
+              <span
+                className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}
+              >
+                Threads
+              </span>
+              <SidebarHeaderLink
+                href="/operator/threads"
+                label="All threads"
+                icon={List}
+                active={pathname === "/operator/threads"}
+              />
+            </div>
+            {threads.map((thread) => {
+              const href = `/operator/threads/${thread.id}`;
+              const isActive = pathname === href;
+              return (
+                <Link
+                  key={thread.id}
+                  href={href}
+                  className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} ${typeStyle("control.button")} ${
+                    isActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
+                  }`}
+                >
+                  <OperatorThreadChannelIcon
+                    channel={thread.channel}
+                    className="size-3.5 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {thread.title}
+                  </span>
+                </Link>
+              );
+            })}
+          </>
+        )}
         <SectionHeader label="Accounts" collapsed={collapsed} />
         <div className="flex flex-col gap-1">
           <SidebarMenuItem

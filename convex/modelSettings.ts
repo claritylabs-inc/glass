@@ -342,7 +342,13 @@ function explicitGlobalRoutes(
 export function explicitOperatorAgentRoute(
   settings: Doc<"globalModelSettings"> | null,
 ): ModelRoute | null {
-  return explicitGlobalRoutes(settings)[OPERATOR_AGENT_MODEL_ROUTE_ID] ?? null;
+  const route = (settings?.routes as GlobalRoutes | undefined)?.[
+    OPERATOR_AGENT_MODEL_ROUTE_ID
+  ];
+  return route &&
+    settings?.explicitRouteOverrides?.includes(OPERATOR_AGENT_MODEL_ROUTE_ID)
+    ? route
+    : null;
 }
 
 function availableLanguageModels(provider: ModelProvider) {

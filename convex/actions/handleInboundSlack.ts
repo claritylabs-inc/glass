@@ -10,10 +10,14 @@ import {
   handleOperatorChannelConfirmation,
   waitForOperatorAgentRun,
 } from "../lib/operatorAgentChannel";
+import {
+  MAX_AGENT_ATTACHMENT_AGGREGATE_BYTES,
+  MAX_AGENT_ATTACHMENT_BYTES,
+  MAX_AGENT_ATTACHMENT_FILES,
+  normalizeAgentAttachmentFilename,
+} from "../lib/agentAttachmentLimits";
+import { isSafeOperatorSlackConversation } from "../lib/operatorSlackConfig";
 
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-const MAX_ATTACHMENT_COUNT = 10;
-const MAX_ATTACHMENT_AGGREGATE_BYTES = 50 * 1024 * 1024;
 const WORKER_TIMEOUT_MS = 30_000;
 const internalApi = internal as any;
 
@@ -23,7 +27,9 @@ type OperatorAuthorizedEvent = {
 };
 
 async function operatorChannelIsSafe(event: Doc<"slackInboundEvents">) {
-  if (event.isDirectMessage) return true;
+  if (event.isDirectMessage) {
+    return isSafeOperatorSlackConversation({ isDirectMessage: true });
+  }
   if (!isApprovedOperatorSlackChannel(event.channelId)) return false;
   const worker = workerConfig();
   const response = await fetch(`${worker.url}/channels`, {
@@ -45,9 +51,12 @@ async function operatorChannelIsSafe(event: Doc<"slackInboundEvents">) {
   };
   if (!response.ok) return false;
   const channel = result.channels?.find(({ id }) => id === event.channelId);
-  return Boolean(
-    channel?.isMember && channel.isShared === false,
-  );
+  return isSafeOperatorSlackConversation({
+    isDirectMessage: false,
+    isMember: channel?.isMember,
+    isPrivate: channel?.isPrivate,
+    isShared: channel?.isShared,
+  });
 }
 
 function operatorSlackContent(event: Doc<"slackInboundEvents">) {
@@ -83,13 +92,13 @@ async function sendOperatorSlackResponse(
   },
 ) {
   const attachments = await Promise.all(
-    (args.response.attachments ?? []).flatMap((attachment) =>
-      attachment.fileId ? [attachment] : [],
-    ).map(async (attachment) => ({
-      filename: attachment.filename,
-      contentType: attachment.contentType,
-      url: await ctx.storage.getUrl(attachment.fileId!),
-    })),
+    (args.response.attachments ?? [])
+      .flatMap((attachment) => (attachment.fileId ? [attachment] : []))
+      .map(async (attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        url: await ctx.storage.getUrl(attachment.fileId!),
+      })),
   );
   const availableAttachments = attachments.flatMap((attachment) =>
     attachment.url ? [{ ...attachment, url: attachment.url }] : [],
@@ -97,7 +106,8 @@ async function sendOperatorSlackResponse(
   if (availableAttachments.length !== attachments.length) {
     throw new Error("An operator Slack attachment URL is unavailable");
   }
-  const content = args.response.content?.trim() ||
+  const content =
+    args.response.content?.trim() ||
     (availableAttachments.length > 0
       ? ""
       : "I couldn't complete that request.");
@@ -164,8 +174,7 @@ async function processOperatorBatch(
     { eventIds },
   )) as OperatorAuthorizedEvent[];
   for (const { event, operatorUserId } of authorized) {
-    await fetchAttachment(ctx, event);
-    const refreshedEvent = (await ctx.runQuery(
+    let refreshedEvent = (await ctx.runQuery(
       internalApi.slack.getInboundEvent,
       { eventId: event._id },
     )) as Doc<"slackInboundEvents"> | null;
@@ -183,6 +192,7 @@ async function processOperatorBatch(
         title: refreshedEvent.isDirectMessage
           ? `Slack DM · ${refreshedEvent.senderDisplayName ?? refreshedEvent.senderUserId}`
           : `Slack · ${refreshedEvent.channelId}`,
+        shared: !refreshedEvent.isDirectMessage,
       },
     );
     const content = operatorSlackContent(refreshedEvent);
@@ -196,14 +206,20 @@ async function processOperatorBatch(
       await sendOperatorSlackResponse(ctx, {
         event: refreshedEvent,
         runId: confirmation.runId,
-        response: { content: confirmation.content },
+        response: confirmation.response ?? { content: confirmation.content },
       });
       await ctx.runMutation(internalApi.operatorSlack.completeEvent, {
         eventId: refreshedEvent._id,
       });
       continue;
     }
-    const inboundAttachments = refreshedEvent.attachments ??
+    await fetchAttachment(ctx, refreshedEvent);
+    refreshedEvent = (await ctx.runQuery(internalApi.slack.getInboundEvent, {
+      eventId: refreshedEvent._id,
+    })) as Doc<"slackInboundEvents"> | null;
+    if (!refreshedEvent) continue;
+    const inboundAttachments =
+      refreshedEvent.attachments ??
       (refreshedEvent.attachment ? [refreshedEvent.attachment] : []);
     const queued = await ctx.runMutation(
       internalApi.operatorAgent.enqueueMessageInternal,
@@ -212,8 +228,7 @@ async function processOperatorBatch(
         threadId,
         channel: "slack",
         content,
-        dedupeKey:
-          refreshedEvent.canonicalEventKey ?? refreshedEvent.eventKey,
+        dedupeKey: refreshedEvent.canonicalEventKey ?? refreshedEvent.eventKey,
         attachments: inboundAttachments.flatMap((attachment) =>
           attachment.fileId
             ? [
@@ -255,22 +270,27 @@ async function fetchAttachment(
   ctx: ActionCtx,
   event: Doc<"slackInboundEvents">,
 ) {
-  const attachments = event.attachments ??
-    (event.attachment ? [event.attachment] : []);
-  if (attachments.length > MAX_ATTACHMENT_COUNT) {
+  const attachments =
+    event.attachments ?? (event.attachment ? [event.attachment] : []);
+  if (attachments.length > MAX_AGENT_ATTACHMENT_FILES) {
     throw new Error(
-      `Slack messages may include at most ${MAX_ATTACHMENT_COUNT} attachments`,
+      `Slack messages may include at most ${MAX_AGENT_ATTACHMENT_FILES} attachments`,
     );
+  }
+  for (const attachment of attachments) {
+    normalizeAgentAttachmentFilename(attachment.filename);
   }
   const declaredBytes = attachments.reduce((total, attachment) => {
     if (attachment.size === undefined) return total;
-    if (attachment.size < 0 || attachment.size > MAX_ATTACHMENT_BYTES) {
+    if (attachment.size < 0 || attachment.size > MAX_AGENT_ATTACHMENT_BYTES) {
       throw new Error("Slack attachment exceeds the 25 MB ingestion limit");
     }
     return total + attachment.size;
   }, 0);
-  if (declaredBytes > MAX_ATTACHMENT_AGGREGATE_BYTES) {
-    throw new Error("Slack attachments exceed the 50 MB aggregate ingestion limit");
+  if (declaredBytes > MAX_AGENT_ATTACHMENT_AGGREGATE_BYTES) {
+    throw new Error(
+      "Slack attachments exceed the 50 MB aggregate ingestion limit",
+    );
   }
   const pending = attachments.filter((attachment) => !attachment.fileId);
   if (pending.length === 0) return;
@@ -297,12 +317,14 @@ async function fetchAttachment(
       throw new Error(`Slack attachment retrieval failed (${response.status})`);
     }
     const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+    if (bytes.byteLength > MAX_AGENT_ATTACHMENT_BYTES) {
       throw new Error("Slack attachment exceeds the 25 MB ingestion limit");
     }
     downloadedBytes += bytes.byteLength;
-    if (downloadedBytes > MAX_ATTACHMENT_AGGREGATE_BYTES) {
-      throw new Error("Slack attachments exceed the 50 MB aggregate ingestion limit");
+    if (downloadedBytes > MAX_AGENT_ATTACHMENT_AGGREGATE_BYTES) {
+      throw new Error(
+        "Slack attachments exceed the 50 MB aggregate ingestion limit",
+      );
     }
     downloaded.push({ attachment, bytes });
   }
@@ -310,18 +332,20 @@ async function fetchAttachment(
     const fileId = await ctx.storage.store(
       new Blob([bytes], { type: attachment.contentType }),
     );
-    await ctx.runMutation(internalApi.slack.attachInboundFile, {
-      eventId: event._id,
-      providerFileId: attachment.providerFileId,
-      fileId,
-    });
+    try {
+      await ctx.runMutation(internalApi.slack.attachInboundFile, {
+        eventId: event._id,
+        providerFileId: attachment.providerFileId,
+        fileId,
+      });
+    } catch (error) {
+      await ctx.storage.delete(fileId);
+      throw error;
+    }
   }
 }
 
-async function enrichActor(
-  ctx: ActionCtx,
-  event: Doc<"slackInboundEvents">,
-) {
+async function enrichActor(ctx: ActionCtx, event: Doc<"slackInboundEvents">) {
   const worker = workerConfig();
   const response = await fetch(`${worker.url}/actor`, {
     method: "POST",
@@ -388,16 +412,16 @@ export const processDebounced = internalAction({
     let presentationMessageId: Id<"threadMessages"> | undefined;
     try {
       await Promise.all(
-        batch.map((event: Doc<"slackInboundEvents">) => enrichActor(ctx, event)),
+        batch.map((event: Doc<"slackInboundEvents">) =>
+          enrichActor(ctx, event),
+        ),
       );
       const authorized = (await ctx.runMutation(
         internalApi.slack.authorizeBatch,
         { eventIds },
       )) as Array<Doc<"slackInboundEvents">>;
       if (authorized.length === 0) return;
-      await Promise.all(
-        authorized.map((event) => fetchAttachment(ctx, event)),
-      );
+      await Promise.all(authorized.map((event) => fetchAttachment(ctx, event)));
       const prepared = await ctx.runMutation(internalApi.slack.prepareBatch, {
         eventIds: authorized.map((event) => event._id),
       });
@@ -419,7 +443,10 @@ export const processDebounced = internalAction({
         );
         actionToken = presentation?.actionToken;
       } catch (error) {
-        console.warn("[slack] Could not start rich response presentation", error);
+        console.warn(
+          "[slack] Could not start rich response presentation",
+          error,
+        );
       }
 
       await ctx.runAction(internal.actions.processThreadChat.run, {
@@ -446,11 +473,13 @@ export const processDebounced = internalAction({
       }
       const attachments = (response.attachments ?? []).flatMap((attachment) =>
         attachment.fileId
-          ? [{
-              fileId: attachment.fileId,
-              filename: attachment.filename,
-              contentType: attachment.contentType,
-            }]
+          ? [
+              {
+                fileId: attachment.fileId,
+                filename: attachment.filename,
+                contentType: attachment.contentType,
+              },
+            ]
           : [],
       );
       if (!actionToken) {
@@ -468,7 +497,10 @@ export const processDebounced = internalAction({
           );
           actionToken = presentation?.actionToken;
         } catch (error) {
-          console.warn("[slack] Could not recover rich response presentation", error);
+          console.warn(
+            "[slack] Could not recover rich response presentation",
+            error,
+          );
         }
       }
       let deliveredRichResponse = false;
@@ -479,23 +511,31 @@ export const processDebounced = internalAction({
         );
         deliveredRichResponse = finished?.phase === "final";
       } catch (error) {
-        console.warn("[slack] Rich response failed; sending plaintext fallback", error);
+        console.warn(
+          "[slack] Rich response failed; sending plaintext fallback",
+          error,
+        );
       }
       if (!deliveredRichResponse) {
-        const fallback = await ctx.runAction(internalApi.actions.sendSlack.send, {
-          idempotencyKey: `agent:${response._id}:fallback`,
-          orgId: prepared.orgId,
-          threadId: prepared.threadId,
-          threadMessageId: response._id,
-          connectionId: prepared.connectionId,
-          channelId: prepared.channelId,
-          threadTs: prepared.threadTs,
-          keepAttachmentsTopLevel: prepared.threadTs === undefined,
-          content: response.content,
-          attachments,
-        });
+        const fallback = await ctx.runAction(
+          internalApi.actions.sendSlack.send,
+          {
+            idempotencyKey: `agent:${response._id}:fallback`,
+            orgId: prepared.orgId,
+            threadId: prepared.threadId,
+            threadMessageId: response._id,
+            connectionId: prepared.connectionId,
+            channelId: prepared.channelId,
+            threadTs: prepared.threadTs,
+            keepAttachmentsTopLevel: prepared.threadTs === undefined,
+            content: response.content,
+            attachments,
+          },
+        );
         if (fallback?.status !== "sent") {
-          throw new Error(fallback?.error ?? "Slack plaintext fallback is retrying");
+          throw new Error(
+            fallback?.error ?? "Slack plaintext fallback is retrying",
+          );
         }
         const presentation = await ctx.runQuery(
           internalApi.slackPresentation.get,

@@ -2,7 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Loader2, Pencil } from "lucide-react";
+import { parsePhoneNumberFromString } from "libphonenumber-js/min";
+import { Loader2, MessageCircle, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
@@ -72,16 +73,151 @@ function ChannelDetail({
   );
 }
 
-function OperatorChannelTabs({ children }: { children: ReactNode }) {
+function OperatorChannelTabs({
+  children,
+  imessageContent,
+}: {
+  children: ReactNode;
+  imessageContent?: ReactNode;
+}) {
   return (
-    <Tabs value="slack" className="gap-4">
+    <Tabs defaultValue="slack" className="gap-4">
       <div className="-mx-1 overflow-x-auto px-1 scrollbar-hide">
         <TabsList variant="pill" aria-label="Channel">
           <TabsTrigger value="slack">Slack</TabsTrigger>
+          <TabsTrigger value="imessage">iMessage</TabsTrigger>
         </TabsList>
       </div>
       <TabsContent value="slack">{children}</TabsContent>
+      <TabsContent value="imessage">
+        {imessageContent ?? (
+          <ChannelCard className="flex h-40 items-center justify-center text-muted-foreground">
+            <Loader2 className="size-5 animate-spin" />
+          </ChannelCard>
+        )}
+      </TabsContent>
     </Tabs>
+  );
+}
+
+function formatPhoneNumber(value: string | null) {
+  if (!value) return null;
+  const phone = parsePhoneNumberFromString(value, "US");
+  if (!phone?.isValid()) return value;
+  return phone.countryCallingCode === "1"
+    ? phone.formatNational()
+    : phone.formatInternational();
+}
+
+function OperatorImessageContent() {
+  const status = useQuery(api.agentChannels.getOperatorImessageStatus, {});
+
+  if (status === undefined) {
+    return (
+      <ChannelCard className="flex min-h-20 items-center justify-center">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      </ChannelCard>
+    );
+  }
+
+  if (!status.enabled) {
+    return (
+      <ChannelCard>
+        <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+          iMessage not enabled
+        </h2>
+      </ChannelCard>
+    );
+  }
+
+  if (status.mode === "terminal") {
+    return (
+      <ChannelCard>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+            Operator iMessage
+          </h2>
+          <StatusTag tone="info">Test mode</StatusTag>
+        </div>
+        <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
+          Start the local operator terminal with{" "}
+          <code className={typeStyle("technical.codeCompact")}>
+            npm run conductor:operator-spectrum
+          </code>
+          .
+        </p>
+      </ChannelCard>
+    );
+  }
+
+  if (!status.configured || !status.contactPhone) {
+    return (
+      <ChannelCard>
+        <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+          iMessage unavailable
+        </h2>
+        <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
+          This deployment is missing its operator number or worker configuration.
+        </p>
+      </ChannelCard>
+    );
+  }
+
+  const contactPhone = status.contactPhone;
+  const senderPhone = formatPhoneNumber(status.senderPhone);
+
+  return (
+    <section className="space-y-3" aria-label="Operator iMessage">
+      <ChannelCard>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+              Operator iMessage
+            </h2>
+            <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
+              Text this private line from the phone linked to your Spot account.
+            </p>
+          </div>
+          <StatusTag tone="success">Enabled</StatusTag>
+        </div>
+
+        <dl className="mt-3 border-t border-border">
+          <ChannelDetail label="Number to text">
+            <a
+              href={`sms:${contactPhone}`}
+              className={`underline decoration-border-emphasized underline-offset-4 hover:text-muted-foreground ${typeStyle("technical.code")}`}
+            >
+              {formatPhoneNumber(contactPhone)}
+            </a>
+          </ChannelDetail>
+          <ChannelDetail label="Your sender number">
+            {senderPhone ?? "Not linked"}
+          </ChannelDetail>
+          <ChannelDetail label="Conversation type">
+            Direct messages only
+          </ChannelDetail>
+        </dl>
+
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
+          {senderPhone ? (
+            <PillButton variant="primary" href={`sms:${contactPhone}`}>
+              <MessageCircle className="size-3.5" />
+              Open Messages
+            </PillButton>
+          ) : (
+            <PillButton variant="primary" href="/operator/profile">
+              Add your phone
+            </PillButton>
+          )}
+        </div>
+      </ChannelCard>
+
+      {senderPhone ? (
+        <p className={`px-1 text-muted-foreground ${typeStyle("caption.default")}`}>
+          Your sender number must also be registered in the Spot Operator Photon project.
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -405,7 +541,7 @@ function OperatorChannelsContent({
       rightPanel={rightPanel}
     >
       <main className="w-full">
-        <OperatorChannelTabs>
+        <OperatorChannelTabs imessageContent={<OperatorImessageContent />}>
           <section className="space-y-3" aria-label="Slack channels">
             {hostStatus === undefined ? (
               <ChannelCard className="flex min-h-20 items-center justify-center">

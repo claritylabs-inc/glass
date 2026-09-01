@@ -18,3 +18,24 @@ export const convertBlobUrlToDataUrl = async (
     return null;
   }
 };
+
+export function fileMatchesAccept(
+  file: Pick<File, "name" | "type">,
+  accept?: string,
+) {
+  if (!accept?.trim()) return true;
+
+  const filename = file.name.toLowerCase();
+  const mediaType = file.type.toLowerCase();
+  return accept
+    .split(",")
+    .map((pattern) => pattern.trim().toLowerCase())
+    .filter(Boolean)
+    .some((pattern) => {
+      if (pattern.startsWith(".")) return filename.endsWith(pattern);
+      if (pattern.endsWith("/*")) {
+        return mediaType.startsWith(pattern.slice(0, -1));
+      }
+      return mediaType === pattern;
+    });
+}

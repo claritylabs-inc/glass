@@ -5,6 +5,7 @@ import type { PageContext } from "@/hooks/use-page-context";
 
 type BackendThread = {
   _id: string;
+  channel: "chat" | "slack" | "imessage" | "mcp";
   title: string;
   createdAt: number;
   lastMessageAt: number;
@@ -13,9 +14,11 @@ type BackendThread = {
 type BackendMessage = {
   _id: string;
   role: "user" | "agent" | "system";
+  channel: "chat" | "slack" | "imessage" | "mcp";
   content: string;
   status?: "processing" | "error" | "cancelled";
   createdAt: number;
+  userName?: string;
   attachments?: BackendAttachment[];
 };
 
@@ -24,6 +27,7 @@ export type OperatorAgentAttachment = {
   filename: string;
   contentType: string;
   size: number;
+  uploadIntentId?: Id<"operatorAgentUploadIntents">;
 };
 
 type BackendAttachment = OperatorAgentAttachment;
@@ -69,6 +73,10 @@ type SendMessageArgs = {
   pageContext?: PageContext;
   attachments?: BackendAttachment[];
 };
+type OperatorUploadTarget = {
+  uploadUrl: string;
+  uploadIntentId: Id<"operatorAgentUploadIntents">;
+};
 type GetAttachmentUrlArgs = { threadId: string; fileId: Id<"_storage"> };
 type CancelRunArgs = { threadId: string };
 type ConfirmActionArgs = {
@@ -78,6 +86,12 @@ type ConfirmActionArgs = {
 };
 type ConfirmActionResult =
   | { status: "needs_refresh"; runId: string }
+  | {
+      status: "queued";
+      runId: string;
+      result: unknown;
+      content: string;
+    }
   | { status: "expired" | "rejected"; runId: string; content: string }
   | {
       status: "completed" | "failed";
@@ -88,6 +102,7 @@ type ConfirmActionResult =
 
 export type OperatorAgentThread = {
   id: string;
+  channel: "chat" | "slack" | "imessage" | "mcp";
   title: string;
   createdAt: number;
   lastMessageAt: number;
@@ -102,9 +117,11 @@ export type OperatorAgentConfirmation = {
 export type OperatorAgentMessage = {
   id: string;
   role: "user" | "assistant";
+  channel: "chat" | "slack" | "imessage" | "mcp";
   content: string;
   status?: "processing" | "error" | "cancelled";
   createdAt: number;
+  userName?: string;
   attachments?: BackendAttachment[];
 };
 
@@ -128,8 +145,26 @@ export const operatorAgentApi = {
   generateUploadUrl: makeFunctionReference<
     "mutation",
     Record<string, never>,
-    string
+    OperatorUploadTarget
   >("operatorAgent:generateUploadUrl"),
+  registerUpload: makeFunctionReference<
+    "mutation",
+    {
+      uploadIntentId: Id<"operatorAgentUploadIntents">;
+      fileId: Id<"_storage">;
+    },
+    { registered: true }
+  >("operatorAgent:registerUpload"),
+  discardUploads: makeFunctionReference<
+    "mutation",
+    {
+      uploads: Array<{
+        uploadIntentId: Id<"operatorAgentUploadIntents">;
+        fileId?: Id<"_storage">;
+      }>;
+    },
+    { discarded: number }
+  >("operatorAgent:discardUploads"),
   getAttachmentUrl: makeFunctionReference<
     "query",
     GetAttachmentUrlArgs,
@@ -155,6 +190,7 @@ export const operatorAgentApi = {
 function normalizeThread(thread: BackendThread): OperatorAgentThread {
   return {
     id: thread._id,
+    channel: thread.channel,
     title: thread.title,
     createdAt: thread.createdAt,
     lastMessageAt: thread.lastMessageAt,
@@ -189,9 +225,11 @@ export function normalizeOperatorAgentThread(
     messages: value.messages.map((message) => ({
       id: message._id,
       role: message.role === "user" ? "user" : "assistant",
+      channel: message.channel,
       content: message.content,
       status: message.status,
       createdAt: message.createdAt,
+      userName: message.userName,
       attachments: message.attachments,
     })),
     activeRun: value.activeRun !== null,

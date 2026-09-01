@@ -26,7 +26,7 @@
       "requiredHttpPorts": [3001]
     },
     "operatorImessage": {
-      "required": false,
+      "required": true,
       "serviceName": "operator-imessage-worker",
       "rootDirectory": "/imessage-worker",
       "railwayConfig": "imessage-worker/railway.operator.json",

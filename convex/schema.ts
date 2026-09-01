@@ -4084,7 +4084,8 @@ export default defineSchema({
   })
     .index("owner_activity", ["ownerUserId", "lastMessageAt"])
     .index("visibility_activity", ["visibility", "lastMessageAt"])
-    .index("owner_conversation", ["ownerUserId", "channel", "conversationKey"]),
+    .index("owner_conversation", ["ownerUserId", "channel", "conversationKey"])
+    .index("channel_conversation", ["channel", "conversationKey"]),
 
   operatorAgentMessages: defineTable({
     threadId: v.id("operatorAgentThreads"),
@@ -4146,6 +4147,29 @@ export default defineSchema({
     .index("thread", ["threadId"])
     .index("thread_dedupe", ["threadId", "dedupeKey"])
     .index("reply", ["replyToMessageId"]),
+
+  operatorAgentAttachments: defineTable({
+    fileId: v.id("_storage"),
+    operatorUserId: v.id("users"),
+    threadId: v.id("operatorAgentThreads"),
+    messageId: v.id("operatorAgentMessages"),
+    filename: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    createdAt: v.number(),
+  })
+    .index("file", ["fileId"])
+    .index("thread_file", ["threadId", "fileId"]),
+
+  operatorAgentUploadIntents: defineTable({
+    operatorUserId: v.id("users"),
+    fileId: v.optional(v.id("_storage")),
+    consumedAt: v.optional(v.number()),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("operator_expiration", ["operatorUserId", "expiresAt"])
+    .index("file", ["fileId"]),
 
   operatorAgentConfirmations: defineTable({
     threadId: v.id("operatorAgentThreads"),
@@ -4236,6 +4260,9 @@ export default defineSchema({
     operatorUserId: v.id("users"),
     userMessageId: v.id("operatorAgentMessages"),
     agentMessageId: v.id("operatorAgentMessages"),
+    executionKind: v.optional(
+      v.union(v.literal("goal"), v.literal("direct_tool")),
+    ),
     objective: v.string(),
     status: v.union(
       v.literal("queued"),

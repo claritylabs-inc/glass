@@ -6,9 +6,11 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   buildInboundImessageEventKey,
+  isImessageAudioAttachment,
   normalizeInboundImessageSender,
   storeImessageAttachments,
 } from "../lib/imessageIngress";
+import { normalizeAgentAttachmentFilename } from "../lib/agentAttachmentLimits";
 import { isOperatorImessageInboundEnabled } from "../lib/imessageConfig";
 import {
   handleOperatorChannelConfirmation,
@@ -69,14 +71,18 @@ export const processInbound = internalAction({
     }
     const fromPhone = normalizeInboundImessageSender(identity.phone);
     const chatGuid = args.chatGuid?.trim() || fromPhone;
-    const storedAttachments = await storeImessageAttachments(
-      ctx,
-      args.attachments,
+    const requestedFilenames = (args.attachments ?? []).map((attachment) =>
+      normalizeAgentAttachmentFilename(attachment.name),
     );
-    const filenames = storedAttachments.map(({ filename }) => filename);
-    const content = args.messageText.trim() ||
-      (filenames.length > 0
-        ? `[Attached ${filenames.join(", ")}]`
+    if ((args.attachments ?? []).some(isImessageAudioAttachment)) {
+      throw new Error(
+        "Operator iMessage voice memos are not supported; send text or a supported document or image instead",
+      );
+    }
+    const preliminaryContent =
+      args.messageText.trim() ||
+      (requestedFilenames.length > 0
+        ? `[Attached ${requestedFilenames.join(", ")}]`
         : "Please help with this.");
     const threadId = await ctx.runMutation(
       internalApi.operatorAgent.createOrGetChannelThreadInternal,
@@ -91,7 +97,7 @@ export const processInbound = internalAction({
       operatorUserId: identity.operatorUserId,
       threadId,
       channel: "imessage",
-      content,
+      content: preliminaryContent,
     });
     if (confirmation) {
       return {
@@ -102,33 +108,61 @@ export const processInbound = internalAction({
     const eventKey = buildInboundImessageEventKey({
       fromPhone,
       chatGuid,
-      messageText: content,
+      messageText: args.messageText.trim(),
       sourceMessageId: args.sourceMessageId,
       receivedAt: args.receivedAt,
       attachments: args.attachments,
     });
-    const queued = await ctx.runMutation(
-      internalApi.operatorAgent.enqueueMessageInternal,
-      {
-        operatorUserId: identity.operatorUserId,
-        threadId,
-        channel: "imessage",
-        content,
-        dedupeKey: `operator-imessage:${eventKey}`,
-        attachments: storedAttachments.flatMap((attachment) =>
-          attachment.fileId
-            ? [
-                {
-                  fileId: attachment.fileId,
-                  filename: attachment.filename,
-                  contentType: attachment.contentType,
-                  size: attachment.size,
-                },
-              ]
-            : [],
-        ),
-      },
+    const storedAttachments = await storeImessageAttachments(
+      ctx,
+      args.attachments,
     );
+    const filenames = storedAttachments.map(({ filename }) => filename);
+    const content =
+      args.messageText.trim() ||
+      (filenames.length > 0
+        ? `[Attached ${filenames.join(", ")}]`
+        : "Please help with this.");
+    const storedFileIds = storedAttachments.flatMap((attachment) =>
+      attachment.fileId ? [attachment.fileId] : [],
+    );
+    let queued;
+    try {
+      queued = await ctx.runMutation(
+        internalApi.operatorAgent.enqueueMessageInternal,
+        {
+          operatorUserId: identity.operatorUserId,
+          threadId,
+          channel: "imessage",
+          content,
+          dedupeKey: `operator-imessage:${eventKey}`,
+          attachments: storedAttachments.flatMap((attachment) =>
+            attachment.fileId
+              ? [
+                  {
+                    fileId: attachment.fileId,
+                    filename: attachment.filename,
+                    contentType: attachment.contentType,
+                    size: attachment.size,
+                  },
+                ]
+              : [],
+          ),
+        },
+      );
+    } catch (error) {
+      await ctx.runMutation(
+        internalApi.operatorAgent.deleteUnreferencedAttachmentsInternal,
+        { fileIds: storedFileIds },
+      );
+      throw error;
+    }
+    if (queued.duplicate && storedFileIds.length > 0) {
+      await ctx.runMutation(
+        internalApi.operatorAgent.deleteUnreferencedAttachmentsInternal,
+        { fileIds: storedFileIds },
+      );
+    }
     const result = await waitForOperatorAgentRun(
       ctx,
       identity.operatorUserId,
@@ -136,23 +170,25 @@ export const processInbound = internalAction({
     );
     const response = result.response;
     const attachments = await Promise.all(
-      (response?.attachments ?? []).flatMap(
-        (attachment: {
-          fileId?: Id<"_storage">;
-          filename: string;
-          contentType: string;
-        }) => (attachment.fileId ? [attachment] : []),
-      ).map(
-        async (attachment: {
-          fileId: Id<"_storage">;
-          filename: string;
-          contentType: string;
-        }) => ({
-          url: await ctx.storage.getUrl(attachment.fileId),
-          filename: attachment.filename,
-          mimeType: attachment.contentType,
-        }),
-      ),
+      (response?.attachments ?? [])
+        .flatMap(
+          (attachment: {
+            fileId?: Id<"_storage">;
+            filename: string;
+            contentType: string;
+          }) => (attachment.fileId ? [attachment] : []),
+        )
+        .map(
+          async (attachment: {
+            fileId: Id<"_storage">;
+            filename: string;
+            contentType: string;
+          }) => ({
+            url: await ctx.storage.getUrl(attachment.fileId),
+            filename: attachment.filename,
+            mimeType: attachment.contentType,
+          }),
+        ),
     );
     const attachmentFailures = attachments.flatMap((attachment) =>
       attachment.url
@@ -166,7 +202,8 @@ export const processInbound = internalAction({
     );
     if (attachmentFailures.length > 0 && response?.messageId) {
       await ctx.runMutation(
-        internalApi.operatorAgent.recordImessageAttachmentDeliveryFailureInternal,
+        internalApi.operatorAgent
+          .recordImessageAttachmentDeliveryFailureInternal,
         {
           operatorMessageId: response.messageId,
           stage: "url_resolution",
