@@ -19,6 +19,7 @@ import type * as actions_backfillLinesOfBusiness from "../actions/backfillLinesO
 import type * as actions_cleanupLegacyLineOfBusinessFields from "../actions/cleanupLegacyLineOfBusinessFields.js";
 import type * as actions_clientFileNaming from "../actions/clientFileNaming.js";
 import type * as actions_compactThreadHistory from "../actions/compactThreadHistory.js";
+import type * as actions_companyInformationExtraction from "../actions/companyInformationExtraction.js";
 import type * as actions_complianceRequirements from "../actions/complianceRequirements.js";
 import type * as actions_complianceReview from "../actions/complianceReview.js";
 import type * as actions_connectedEmail from "../actions/connectedEmail.js";
@@ -88,6 +89,7 @@ import type * as clientFiles from "../clientFiles.js";
 import type * as clientInvitations from "../clientInvitations.js";
 import type * as clientInvitationsTest from "../clientInvitationsTest.js";
 import type * as clients from "../clients.js";
+import type * as companyInformation from "../companyInformation.js";
 import type * as compliance from "../compliance.js";
 import type * as connectedEmail from "../connectedEmail.js";
 import type * as connectedEmailAutomation from "../connectedEmailAutomation.js";
@@ -160,6 +162,7 @@ import type * as lib_clientFileNames from "../lib/clientFileNames.js";
 import type * as lib_clientFiles from "../lib/clientFiles.js";
 import type * as lib_coiAttachmentGuards from "../lib/coiAttachmentGuards.js";
 import type * as lib_coiGenerator from "../lib/coiGenerator.js";
+import type * as lib_companyInformationExtraction from "../lib/companyInformationExtraction.js";
 import type * as lib_complianceAgent from "../lib/complianceAgent.js";
 import type * as lib_complianceCheck from "../lib/complianceCheck.js";
 import type * as lib_complianceRequirementMigration from "../lib/complianceRequirementMigration.js";
@@ -353,6 +356,7 @@ declare const fullApi: ApiFromModules<{
   "actions/cleanupLegacyLineOfBusinessFields": typeof actions_cleanupLegacyLineOfBusinessFields;
   "actions/clientFileNaming": typeof actions_clientFileNaming;
   "actions/compactThreadHistory": typeof actions_compactThreadHistory;
+  "actions/companyInformationExtraction": typeof actions_companyInformationExtraction;
   "actions/complianceRequirements": typeof actions_complianceRequirements;
   "actions/complianceReview": typeof actions_complianceReview;
   "actions/connectedEmail": typeof actions_connectedEmail;
@@ -422,6 +426,7 @@ declare const fullApi: ApiFromModules<{
   clientInvitations: typeof clientInvitations;
   clientInvitationsTest: typeof clientInvitationsTest;
   clients: typeof clients;
+  companyInformation: typeof companyInformation;
   compliance: typeof compliance;
   connectedEmail: typeof connectedEmail;
   connectedEmailAutomation: typeof connectedEmailAutomation;
@@ -494,6 +499,7 @@ declare const fullApi: ApiFromModules<{
   "lib/clientFiles": typeof lib_clientFiles;
   "lib/coiAttachmentGuards": typeof lib_coiAttachmentGuards;
   "lib/coiGenerator": typeof lib_coiGenerator;
+  "lib/companyInformationExtraction": typeof lib_companyInformationExtraction;
   "lib/complianceAgent": typeof lib_complianceAgent;
   "lib/complianceCheck": typeof lib_complianceCheck;
   "lib/complianceRequirementMigration": typeof lib_complianceRequirementMigration;

@@ -7,6 +7,11 @@ import { agentStepsValidator } from "./lib/agentSteps";
 import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
 import { certificateRequirementSnapshotValidator } from "./lib/certificateRequirementPlan";
 import {
+  companyInformationOrganizationFactValidator,
+  companyInformationProcurementFactValidator,
+  companyInformationProfileValidator,
+} from "./lib/companyInformationExtraction";
+import {
   emailContentValidator,
   pendingEmailAttachmentKindValidator,
   pendingEmailAttachmentValidator,
@@ -317,7 +322,7 @@ const organizationProfileOverridesValidator = v.object({
   additionalNamedInsureds: v.optional(v.array(v.string())),
 });
 
-const orgProfileFactSourceValidator = v.object({
+const policyOrgProfileFactSourceValidator = v.object({
   policyId: v.id("policies"),
   fieldPath: v.string(),
   fieldGroup: v.string(),
@@ -339,6 +344,33 @@ const orgProfileFactSourceValidator = v.object({
   policyYear: v.optional(v.number()),
   observedAt: v.number(),
 });
+
+const companyInformationProfileFactSourceValidator = v.object({
+  sourceKind: v.union(
+    v.literal("client_file"),
+    v.literal("procurement_email_thread"),
+  ),
+  sourceRef: v.string(),
+  clientFileId: v.optional(v.id("clientFiles")),
+  procurementEmailThreadId: v.optional(v.id("procurementEmailThreads")),
+  fieldPath: v.string(),
+  fieldGroup: v.string(),
+  displayValue: v.string(),
+  normalizedValue: v.string(),
+  valueKind: v.union(
+    v.literal("string"),
+    v.literal("address"),
+    v.literal("list"),
+  ),
+  evidence: v.string(),
+  confidence: v.number(),
+  observedAt: v.number(),
+});
+
+const orgProfileFactSourceValidator = v.union(
+  policyOrgProfileFactSourceValidator,
+  companyInformationProfileFactSourceValidator,
+);
 
 const orgProfileScalarFactValidator = v.object({
   value: v.string(),
@@ -1048,6 +1080,7 @@ export default defineSchema({
     ),
     policyId: v.optional(v.id("policies")),
     sourceRef: v.optional(v.string()),
+    sourceRefs: v.optional(v.array(v.string())),
     confidence: v.optional(v.number()),
     observedAt: v.optional(v.number()),
     expiresAt: v.optional(v.number()),
@@ -2675,6 +2708,10 @@ export default defineSchema({
       v.literal("failed"),
     ),
     nameInferenceError: v.optional(v.string()),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.id("users")),
+    deletedAt: v.optional(v.number()),
+    deletedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -2770,6 +2807,10 @@ export default defineSchema({
     participantEmails: v.array(v.string()),
     latestMessageAt: v.number(),
     messageCount: v.number(),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.id("users")),
+    deletedAt: v.optional(v.number()),
+    deletedByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -2850,13 +2891,16 @@ export default defineSchema({
       v.literal("operator_agent"),
       v.literal("mcp"),
       v.literal("email"),
+      v.literal("document"),
       v.literal("procurement_outcome"),
     ),
     requestId: v.optional(v.id("procurementRequests")),
     outreachId: v.optional(v.id("procurementBrokerOutreaches")),
     brokerOrgId: v.optional(v.id("organizations")),
     sourceRef: v.optional(v.string()),
+    sourceRefs: v.optional(v.array(v.string())),
     confidence: v.optional(v.number()),
+    observedAt: v.optional(v.number()),
     createdByUserId: v.id("users"),
     updatedByUserId: v.id("users"),
     createdAt: v.number(),
@@ -2866,6 +2910,44 @@ export default defineSchema({
     .index("request", ["requestId", "updatedAt"])
     .index("broker", ["brokerOrgId", "updatedAt"])
     .index("source", ["clientOrgId", "sourceRef"]),
+
+  companyInformationExtractions: defineTable({
+    orgId: v.id("organizations"),
+    sourceKind: v.union(
+      v.literal("client_file"),
+      v.literal("procurement_email_thread"),
+    ),
+    sourceRef: v.string(),
+    clientFileId: v.optional(v.id("clientFiles")),
+    procurementEmailThreadId: v.optional(v.id("procurementEmailThreads")),
+    requestId: v.optional(v.id("procurementRequests")),
+    actorUserId: v.id("users"),
+    sourceFingerprint: v.string(),
+    appliedFingerprint: v.optional(v.string()),
+    extractionVersion: v.string(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    attempts: v.number(),
+    leaseExpiresAt: v.optional(v.number()),
+    profile: v.optional(companyInformationProfileValidator),
+    organizationFacts: v.optional(
+      v.array(companyInformationOrganizationFactValidator),
+    ),
+    procurementFacts: v.optional(
+      v.array(companyInformationProcurementFactValidator),
+    ),
+    observedAt: v.number(),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("source", ["sourceRef"])
+    .index("organization", ["orgId", "updatedAt"])
+    .index("file", ["clientFileId"])
+    .index("email", ["procurementEmailThreadId"]),
 
   policyVersions: defineTable({
     orgId: v.id("organizations"),

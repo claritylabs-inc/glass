@@ -76,6 +76,7 @@ function kindLabel(kind: MemoryKind) {
 
 function sourceLabel(source: string) {
   if (source === "operator_agent") return "Operator agent";
+  if (source === "document") return "Extracted document";
   if (source === "procurement_outcome") return "Procurement outcome";
   if (source === "mcp") return "MCP";
   return source.charAt(0).toUpperCase() + source.slice(1);

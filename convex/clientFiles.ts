@@ -31,6 +31,10 @@ import {
   requireOperatorForUser,
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
+import {
+  removeClientFileCompanyInformation,
+  scheduleClientFileCompanyInformation,
+} from "./companyInformation";
 
 const CLIENT_FILE_UPLOAD_TTL_MS = 30 * 60 * 1_000;
 const MAX_CLIENT_FILE_BYTES = 50 * 1024 * 1024;
@@ -80,6 +84,10 @@ async function clientFileRow(ctx: QueryCtx, file: Doc<"clientFiles">) {
   };
 }
 
+function activeClientFile(file: Doc<"clientFiles">) {
+  return !file.archivedAt && !file.deletedAt;
+}
+
 export const list = query({
   args: {
     clientOrgId: v.id("organizations"),
@@ -104,22 +112,23 @@ export const list = query({
             index.eq("orgId", args.clientOrgId),
           )
           .order("desc")
-          .take(limit + 1)
+          .take(MAX_CLIENT_FILES_PER_PAGE + 1)
       : await ctx.db
           .query("clientFiles")
           .withIndex("visibility", (index) =>
             index.eq("orgId", args.clientOrgId).eq("clientVisible", true),
           )
           .order("desc")
-          .take(limit + 1);
+          .take(MAX_CLIENT_FILES_PER_PAGE + 1);
     const visibleRows = rows
-      .slice(0, limit)
-      .filter((file) => mayReadClientFile(access, file));
+      .filter(activeClientFile)
+      .filter((file) => mayReadClientFile(access, file))
+      .slice(0, limit);
     return {
       files: await Promise.all(
         visibleRows.map((file) => clientFileRow(ctx, file)),
       ),
-      truncated: rows.length > limit,
+      truncated: rows.filter(activeClientFile).length > limit,
       canManage,
     };
   },
@@ -129,7 +138,7 @@ export const getUrl = query({
   args: { clientFileId: v.id("clientFiles") },
   handler: async (ctx, args) => {
     const file = await ctx.db.get(args.clientFileId);
-    if (!file) return null;
+    if (!file || !activeClientFile(file)) return null;
     const access = await getOrgAccessForQuery(ctx, file.orgId, {
       allowOperator: true,
     });
@@ -159,10 +168,12 @@ export const listVisibleInternal = internalQuery({
                 index.eq("orgId", orgId).eq("clientVisible", true),
               )
               .order("desc")
-              .take(100),
+              .take(MAX_CLIENT_FILES_PER_PAGE),
           ]);
           if (!org || org.type !== "client") return [];
-          return files.map((file) => ({ file, orgName: org.name }));
+          return files
+            .filter(activeClientFile)
+            .map((file) => ({ file, orgName: org.name }));
         }),
       )
     )
@@ -200,6 +211,7 @@ export const getVisibleInternal = internalQuery({
     const file = await ctx.db.get(args.clientFileId);
     if (
       !file ||
+      !activeClientFile(file) ||
       !file.clientVisible ||
       !args.orgIds.some((orgId) => orgId === file.orgId)
     ) {
@@ -233,7 +245,7 @@ export const getForOperatorInternal = internalQuery({
     const operator = await requireOperatorForUser(ctx, args.operatorUserId);
     void operator;
     const file = await ctx.db.get(args.clientFileId);
-    if (!file) return null;
+    if (!file || !activeClientFile(file)) return null;
     const org = await ctx.db.get(file.orgId);
     if (!org || org.type !== "client") return null;
     return {
@@ -346,6 +358,7 @@ export const registerUpload = mutation({
       expectedUpdatedAt: now,
       hint: boundedClientFileHint(args.hint),
     });
+    await scheduleClientFileCompanyInformation(ctx, clientFileId);
     await writeOperatorAudit(ctx, {
       operatorUserId: operator.userId,
       type: "setup_write",
@@ -409,9 +422,81 @@ export const update = mutation({
   },
 });
 
+export const setArchived = mutation({
+  args: {
+    clientFileId: v.id("clientFiles"),
+    archived: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    await assertNoOperatorImpersonation(ctx, operator.userId);
+    const file = await ctx.db.get(args.clientFileId);
+    if (!file || file.deletedAt) throw new Error("Client file not found");
+    await requireClientOrganization(ctx, file.orgId);
+    const now = dayjs().valueOf();
+    await ctx.db.patch(file._id, {
+      archivedAt: args.archived ? now : undefined,
+      archivedByUserId: args.archived ? operator.userId : undefined,
+      updatedAt: now,
+    });
+    if (args.archived) {
+      await removeClientFileCompanyInformation(ctx, file._id);
+    } else {
+      await scheduleClientFileCompanyInformation(ctx, file._id);
+    }
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: file.orgId,
+      summary: `${args.archived ? "Archived" : "Restored"} ${file.name}`,
+      metadata: {
+        domain: "client_files",
+        clientFileId: file._id,
+        operation: args.archived ? "archive" : "restore",
+      },
+    });
+    return { clientFileId: file._id, archived: args.archived };
+  },
+});
+
+export const remove = mutation({
+  args: { clientFileId: v.id("clientFiles") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    await assertNoOperatorImpersonation(ctx, operator.userId);
+    const file = await ctx.db.get(args.clientFileId);
+    if (!file || file.deletedAt) return { deleted: false as const };
+    await requireClientOrganization(ctx, file.orgId);
+    const now = dayjs().valueOf();
+    await ctx.db.patch(file._id, {
+      deletedAt: now,
+      deletedByUserId: operator.userId,
+      archivedAt: file.archivedAt ?? now,
+      archivedByUserId: file.archivedByUserId ?? operator.userId,
+      updatedAt: now,
+    });
+    await removeClientFileCompanyInformation(ctx, file._id);
+    await writeOperatorAudit(ctx, {
+      operatorUserId: operator.userId,
+      type: "setup_write",
+      targetOrgId: file.orgId,
+      summary: `Deleted ${file.name}`,
+      metadata: {
+        domain: "client_files",
+        clientFileId: file._id,
+        operation: "delete",
+      },
+    });
+    return { deleted: true as const };
+  },
+});
+
 export const getForNamingInternal = internalQuery({
   args: { clientFileId: v.id("clientFiles") },
-  handler: async (ctx, args) => await ctx.db.get(args.clientFileId),
+  handler: async (ctx, args) => {
+    const file = await ctx.db.get(args.clientFileId);
+    return file && activeClientFile(file) ? file : null;
+  },
 });
 
 export const applyInferredNameInternal = internalMutation({
@@ -424,6 +509,7 @@ export const applyInferredNameInternal = internalMutation({
     const file = await ctx.db.get(args.clientFileId);
     if (
       !file ||
+      !activeClientFile(file) ||
       file.updatedAt !== args.expectedUpdatedAt ||
       file.nameSource !== "original"
     ) {
@@ -450,6 +536,7 @@ export const markNameInferenceFailedInternal = internalMutation({
     const file = await ctx.db.get(args.clientFileId);
     if (
       !file ||
+      !activeClientFile(file) ||
       file.updatedAt !== args.expectedUpdatedAt ||
       file.nameSource !== "original"
     ) {

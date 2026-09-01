@@ -43,6 +43,8 @@ const TABLES: TableNames[] = [
   "sourceChunks",
   "conversationTurns",
   "policyAuditLog",
+  "companyInformationExtractions",
+  "procurementMemory",
   "procurementFileItems",
   "procurementEmailMessages",
   "procurementEmailThreads",

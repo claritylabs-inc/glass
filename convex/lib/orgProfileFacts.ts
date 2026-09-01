@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { normalizeDeclarationValue } from "./declarationFacts";
 import {
@@ -306,6 +306,199 @@ function addressProfileFact(fact: DeclarationFactDoc | undefined) {
   return value ? { value, source: sourceForFact(fact) } : undefined;
 }
 
+type CompanyExtractionDoc = Doc<"companyInformationExtractions">;
+type CompanyTextProfileField =
+  | "namedInsured"
+  | "dba"
+  | "entityType"
+  | "fein"
+  | "businessNumber"
+  | "operationsDescription";
+
+const COMPANY_PROFILE_FIELD_GROUPS: Record<
+  CompanyTextProfileField,
+  string
+> = {
+  namedInsured: "insured_identity",
+  dba: "dba",
+  entityType: "entity_type",
+  fein: "fein",
+  businessNumber: "business_number",
+  operationsDescription: "operations_description",
+};
+
+function appliedCompanyExtractions(rows: CompanyExtractionDoc[]) {
+  return rows.filter((row) => row.appliedFingerprint && row.profile);
+}
+
+function newestCompanyTextFact(
+  rows: CompanyExtractionDoc[],
+  field: CompanyTextProfileField,
+) {
+  return appliedCompanyExtractions(rows)
+    .flatMap((row) => {
+      const value = row.profile?.[field];
+      return value && typeof value.value === "string"
+        ? [{ row, value }]
+        : [];
+    })
+    .sort(
+      (left, right) =>
+        right.row.observedAt - left.row.observedAt ||
+        right.value.confidence - left.value.confidence ||
+        right.row.updatedAt - left.row.updatedAt,
+    )[0];
+}
+
+function newestCompanyAddressFact(rows: CompanyExtractionDoc[]) {
+  return appliedCompanyExtractions(rows)
+    .flatMap((row) => {
+      const value = row.profile?.mailingAddress;
+      return value ? [{ row, value }] : [];
+    })
+    .sort(
+      (left, right) =>
+        right.row.observedAt - left.row.observedAt ||
+        right.value.confidence - left.value.confidence ||
+        right.row.updatedAt - left.row.updatedAt,
+    )[0];
+}
+
+function newestCompanyNamedInsuredSet(rows: CompanyExtractionDoc[]) {
+  return appliedCompanyExtractions(rows)
+    .filter((row) => (row.profile?.additionalNamedInsureds.length ?? 0) > 0)
+    .sort(
+      (left, right) =>
+        right.observedAt - left.observedAt || right.updatedAt - left.updatedAt,
+    )[0];
+}
+
+function companySource(
+  row: CompanyExtractionDoc,
+  args: {
+    fieldPath: string;
+    fieldGroup: string;
+    displayValue: string;
+    normalizedValue: string;
+    valueKind: "string" | "address" | "list";
+    evidence: string;
+    confidence: number;
+  },
+) {
+  return {
+    sourceKind: row.sourceKind,
+    sourceRef: row.sourceRef,
+    clientFileId: row.clientFileId,
+    procurementEmailThreadId: row.procurementEmailThreadId,
+    ...args,
+    observedAt: row.observedAt,
+  };
+}
+
+function companyScalarProfileFact(
+  rows: CompanyExtractionDoc[],
+  field: CompanyTextProfileField,
+) {
+  const candidate = newestCompanyTextFact(rows, field);
+  if (!candidate) return undefined;
+  const rawValue = cleanText(candidate.value.value);
+  if (!rawValue) return undefined;
+  const normalizedEntityType = normalizeIrsEntityType(rawValue);
+  const value =
+    field === "entityType" && normalizedEntityType
+      ? irsEntityTypeLabel(normalizedEntityType)
+      : rawValue;
+  return {
+    value,
+    source: companySource(candidate.row, {
+      fieldPath: `companyInformation.${field}`,
+      fieldGroup: COMPANY_PROFILE_FIELD_GROUPS[field],
+      displayValue: value,
+      normalizedValue: normalizeDeclarationValue(value),
+      valueKind: "string",
+      evidence: candidate.value.evidence,
+      confidence: candidate.value.confidence,
+    }),
+  };
+}
+
+function companyAddressProfileFact(rows: CompanyExtractionDoc[]) {
+  const candidate = newestCompanyAddressFact(rows);
+  if (!candidate) return undefined;
+  const value = compactAddress(candidate.value.value);
+  if (!value) return undefined;
+  const displayValue = value.formatted ?? JSON.stringify(value);
+  return {
+    value,
+    source: companySource(candidate.row, {
+      fieldPath: "companyInformation.mailingAddress",
+      fieldGroup: "mailing_address",
+      displayValue,
+      normalizedValue: normalizeDeclarationValue(displayValue),
+      valueKind: "address",
+      evidence: candidate.value.evidence,
+      confidence: candidate.value.confidence,
+    }),
+  };
+}
+
+function companyAdditionalNamedInsuredFacts(rows: CompanyExtractionDoc[]) {
+  const row = newestCompanyNamedInsuredSet(rows);
+  return (row?.profile?.additionalNamedInsureds ?? []).flatMap((fact) => {
+    const value = cleanText(fact.value);
+    return value
+      ? [
+          {
+            value,
+            source: companySource(row!, {
+              fieldPath: "companyInformation.additionalNamedInsureds",
+              fieldGroup: "additional_named_insured",
+              displayValue: value,
+              normalizedValue: normalizeDeclarationValue(value),
+              valueKind: "list",
+              evidence: fact.evidence,
+              confidence: fact.confidence,
+            }),
+          },
+        ]
+      : [];
+  });
+}
+
+type RankedProfileFact = {
+  source: {
+    effectiveDate?: unknown;
+    expirationDate?: unknown;
+    policyYear?: unknown;
+    observedAt?: unknown;
+  };
+};
+
+function factSourceRank(fact: RankedProfileFact | undefined) {
+  if (!fact) return 0;
+  const source = fact.source;
+  return (
+    parsedDateMs(source.effectiveDate) ??
+    parsedDateMs(source.expirationDate) ??
+    policyYearMs(source.policyYear) ??
+    (typeof source.observedAt === "number" ? source.observedAt : 0)
+  );
+}
+
+function preferNewestProfileFact<
+  PolicyFact extends RankedProfileFact,
+  CompanyFact extends RankedProfileFact,
+>(
+  policyFact: PolicyFact | undefined,
+  companyFact: CompanyFact | undefined,
+) {
+  if (!policyFact) return companyFact;
+  if (!companyFact) return policyFact;
+  return factSourceRank(companyFact) > factSourceRank(policyFact)
+    ? companyFact
+    : policyFact;
+}
+
 function normalizedEntityName(value: string | undefined): string {
   return normalizeDeclarationValue(value ?? "");
 }
@@ -385,16 +578,82 @@ export async function syncOrgProfileFromDeclarationFacts(
   if (!org) return { updated: false, reason: "org_not_found" as const };
 
   const facts = await activeOrgProfileFacts(ctx, orgId);
-  const namedInsured = scalarProfileFact(newestFact(facts, "insured_identity"));
-  const mailingAddress = addressProfileFact(newestFact(facts, "mailing_address"));
-  const dba = scalarProfileFact(newestFact(facts, "dba"));
-  const entityType = scalarProfileFact(newestFact(facts, "entity_type"));
-  const taxId = scalarProfileFact(newestFact(facts, "fein"));
-  const businessNumber = scalarProfileFact(newestFact(facts, "business_number"));
-  const operationsDescription = scalarProfileFact(newestFact(facts, "operations_description"));
-  const additionalNamedInsureds = newestFactSet(facts, "additional_named_insured")
+  const companyExtractions = await ctx.db
+    .query("companyInformationExtractions")
+    .withIndex("organization", (index) => index.eq("orgId", orgId))
+    .order("desc")
+    .take(500);
+  const policyNamedInsured = scalarProfileFact(
+    newestFact(facts, "insured_identity"),
+  );
+  const policyMailingAddress = addressProfileFact(
+    newestFact(facts, "mailing_address"),
+  );
+  const policyDba = scalarProfileFact(newestFact(facts, "dba"));
+  const policyEntityType = scalarProfileFact(newestFact(facts, "entity_type"));
+  const policyTaxId = scalarProfileFact(newestFact(facts, "fein"));
+  const policyBusinessNumber = scalarProfileFact(
+    newestFact(facts, "business_number"),
+  );
+  const policyOperationsDescription = scalarProfileFact(
+    newestFact(facts, "operations_description"),
+  );
+  const policyAdditionalNamedInsureds = newestFactSet(
+    facts,
+    "additional_named_insured",
+  )
     .map(scalarProfileFact)
     .filter((fact): fact is NonNullable<ReturnType<typeof scalarProfileFact>> => Boolean(fact));
+  const companyNamedInsured = companyScalarProfileFact(
+    companyExtractions,
+    "namedInsured",
+  );
+  const companyMailingAddress = companyAddressProfileFact(companyExtractions);
+  const companyDba = companyScalarProfileFact(companyExtractions, "dba");
+  const companyEntityType = companyScalarProfileFact(
+    companyExtractions,
+    "entityType",
+  );
+  const companyTaxId = companyScalarProfileFact(companyExtractions, "fein");
+  const companyBusinessNumber = companyScalarProfileFact(
+    companyExtractions,
+    "businessNumber",
+  );
+  const companyOperationsDescription = companyScalarProfileFact(
+    companyExtractions,
+    "operationsDescription",
+  );
+  const companyAdditionalNamedInsureds =
+    companyAdditionalNamedInsuredFacts(companyExtractions);
+
+  const namedInsured = preferNewestProfileFact(
+    policyNamedInsured,
+    companyNamedInsured,
+  );
+  const mailingAddress = preferNewestProfileFact(
+    policyMailingAddress,
+    companyMailingAddress,
+  );
+  const dba = preferNewestProfileFact(policyDba, companyDba);
+  const entityType = preferNewestProfileFact(
+    policyEntityType,
+    companyEntityType,
+  );
+  const taxId = preferNewestProfileFact(policyTaxId, companyTaxId);
+  const businessNumber = preferNewestProfileFact(
+    policyBusinessNumber,
+    companyBusinessNumber,
+  );
+  const operationsDescription = preferNewestProfileFact(
+    policyOperationsDescription,
+    companyOperationsDescription,
+  );
+  const additionalNamedInsureds =
+    companyAdditionalNamedInsureds.length > 0 &&
+    factSourceRank(companyAdditionalNamedInsureds[0]) >
+      factSourceRank(policyAdditionalNamedInsureds[0])
+      ? companyAdditionalNamedInsureds
+      : policyAdditionalNamedInsureds;
 
   const profileFacts = {
     ...(namedInsured ? { namedInsured } : {}),
@@ -433,11 +692,11 @@ export async function syncOrgProfileFromDeclarationFacts(
   }
 
   const relatedLegalEntities = mergeRelatedLegalEntities(orgRecord.relatedLegalEntities, org.name, {
-    namedInsured,
-    dba,
-    entityType,
-    taxId,
-    additionalNamedInsureds,
+    namedInsured: policyNamedInsured,
+    dba: policyDba,
+    entityType: policyEntityType,
+    taxId: policyTaxId,
+    additionalNamedInsureds: policyAdditionalNamedInsureds,
   });
   if (relatedLegalEntities) patch.relatedLegalEntities = relatedLegalEntities;
 

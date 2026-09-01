@@ -121,6 +121,41 @@ describe("procurement memory", () => {
     ).resolves.toEqual([]);
   });
 
+  test("converts edited extracted memory to manual ownership", async () => {
+    const seeded = await fixture();
+    const operator = seeded.t.withIdentity(identity(seeded.operatorUserId));
+    const id = await seeded.t.run((ctx) =>
+      ctx.db.insert("procurementMemory", {
+        clientOrgId: seeded.clientOrgId,
+        kind: "submission_requirement",
+        content: "Cove submissions require current loss runs.",
+        source: "document",
+        sourceRef: "company-information:procurement:abc123",
+        sourceRefs: ["client-file:file123"],
+        confidence: 0.97,
+        observedAt: 100,
+        createdByUserId: seeded.operatorUserId,
+        updatedByUserId: seeded.operatorUserId,
+        createdAt: 100,
+        updatedAt: 100,
+      }),
+    );
+
+    await operator.mutation(api.procurementMemory.update, {
+      id,
+      content: "Cove submissions require five years of current loss runs.",
+    });
+
+    const updated = await seeded.t.run((ctx) => ctx.db.get(id));
+    expect(updated).toMatchObject({
+      source: "manual",
+      content: "Cove submissions require five years of current loss runs.",
+    });
+    expect(updated?.sourceRef).toBeUndefined();
+    expect(updated?.sourceRefs).toBeUndefined();
+    expect(updated?.observedAt).toBeUndefined();
+  });
+
   test("rejects tenants, cross-client provenance, and impersonated writes", async () => {
     const seeded = await fixture();
     const operator = seeded.t.withIdentity(identity(seeded.operatorUserId));
