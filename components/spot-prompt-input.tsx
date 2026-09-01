@@ -155,7 +155,9 @@ function AttachmentTags({
               {file.filename}
             </span>
             {detailed ? (
-              <span className={`block text-muted-foreground/45 ${typeStyle("caption.default")}`}>
+              <span
+                className={`block text-muted-foreground/45 ${typeStyle("caption.default")}`}
+              >
                 {attachmentKindLabel(file)}
               </span>
             ) : null}
@@ -571,6 +573,11 @@ export interface SpotPromptInputProps {
   onSubmit: (message: PromptInputMessage) => void | Promise<void>;
   placeholder?: string;
   showAttach?: boolean;
+  attachmentAccept?: string;
+  multipleAttachments?: boolean;
+  maxFiles?: number;
+  maxFileSize?: number;
+  onAttachmentError?: (message: string) => void;
   defaultReferences?: PromptReference[];
   roomyOnMobile?: boolean;
   disabled?: boolean;
@@ -589,6 +596,11 @@ export const SpotPromptInput = forwardRef<
     onSubmit,
     placeholder = "Ask Spot...",
     showAttach = true,
+    attachmentAccept,
+    multipleAttachments = false,
+    maxFiles,
+    maxFileSize,
+    onAttachmentError,
     defaultReferences,
     roomyOnMobile = false,
     disabled = false,
@@ -624,8 +636,7 @@ export const SpotPromptInput = forwardRef<
   const setTokens = useCallback((action: PromptTokensAction) => {
     setTokenState((current) => ({
       ...current,
-      tokens:
-        typeof action === "function" ? action(current.tokens) : action,
+      tokens: typeof action === "function" ? action(current.tokens) : action,
     }));
   }, []);
   const setActiveTextTokenId = useCallback((textTokenId: string) => {
@@ -804,9 +815,7 @@ export const SpotPromptInput = forwardRef<
           (token): token is PromptTextToken =>
             token.type === "text" && token.id === activeTextTokenId,
         ) ??
-        tokens.find(
-          (token): token is PromptTextToken => token.type === "text",
-        );
+        tokens.find((token): token is PromptTextToken => token.type === "text");
       if (!textToken) return;
       const trigger: PromptTrigger = {
         marker,
@@ -828,7 +837,13 @@ export const SpotPromptInput = forwardRef<
       setSelectedIndex(0);
       queueTextFocus(textToken.id, marker.length);
     },
-    [activeTextTokenId, queueTextFocus, setActiveTextTokenId, setTokens, tokens],
+    [
+      activeTextTokenId,
+      queueTextFocus,
+      setActiveTextTokenId,
+      setTokens,
+      tokens,
+    ],
   );
 
   const selectTarget = useCallback(
@@ -887,7 +902,8 @@ export const SpotPromptInput = forwardRef<
     (referenceTokenId: string) => {
       setTokens((current) => {
         const referenceIndex = current.findIndex(
-          (token) => token.type === "reference" && token.id === referenceTokenId,
+          (token) =>
+            token.type === "reference" && token.id === referenceTokenId,
         );
         if (referenceIndex === -1) return current;
         const result = mergeTextAroundReference(current, referenceIndex);
@@ -1133,16 +1149,8 @@ export const SpotPromptInput = forwardRef<
         }
 
         const rect = wrapper.getBoundingClientRect();
-        const dx = Math.max(
-          rect.left - point.x,
-          0,
-          point.x - rect.right,
-        );
-        const dy = Math.max(
-          rect.top - point.y,
-          0,
-          point.y - rect.bottom,
-        );
+        const dx = Math.max(rect.left - point.x, 0, point.x - rect.right);
+        const dy = Math.max(rect.top - point.y, 0, point.y - rect.bottom);
         const distance = Math.hypot(dx, dy);
         const next = Math.max(0, 1 - distance / INPUT_INTENT_RADIUS) ** 2;
         setPointerIntent((current) =>
@@ -1200,8 +1208,7 @@ export const SpotPromptInput = forwardRef<
     },
     [],
   );
-  const hasPolicyTargets =
-    (targets?.policies.length ?? 0) > 0;
+  const hasPolicyTargets = (targets?.policies.length ?? 0) > 0;
   const hasRequirementTargets = (targets?.requirements.length ?? 0) > 0;
   const hasMailboxTargets = (targets?.mailboxes.length ?? 0) > 0;
   const hasPreparedActions =
@@ -1268,7 +1275,9 @@ export const SpotPromptInput = forwardRef<
                     <span className="flex w-5 shrink-0 items-center justify-center text-muted-foreground">
                       {referenceIcon(target.kind)}
                     </span>
-                    <span className={`min-w-0 flex-1 truncate ${typeStyle("body.medium")}`}>
+                    <span
+                      className={`min-w-0 flex-1 truncate ${typeStyle("body.medium")}`}
+                    >
                       {target.label}
                     </span>
                   </button>
@@ -1280,6 +1289,11 @@ export const SpotPromptInput = forwardRef<
         : null}
       <PromptInput
         onSubmit={handleSubmit}
+        accept={attachmentAccept}
+        multiple={multipleAttachments}
+        maxFiles={maxFiles}
+        maxFileSize={maxFileSize}
+        onError={(error) => onAttachmentError?.(error.message)}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -1313,12 +1327,7 @@ export const SpotPromptInput = forwardRef<
             textAreaRefs.current.get(textTokenId)?.focus();
           }}
         >
-          <input
-            readOnly
-            type="hidden"
-            name="message"
-            value={messageText}
-          />
+          <input readOnly type="hidden" name="message" value={messageText} />
           {tokens.map((token) =>
             token.type === "reference" ? (
               isSearchDropdownOpen ? null : (
@@ -1360,8 +1369,8 @@ export const SpotPromptInput = forwardRef<
             isCommandVariant
               ? "overflow-hidden px-3 pb-3 pt-1"
               : roomyOnMobile
-              ? "overflow-hidden px-3 sm:px-2 pb-2 sm:pb-1.5 pt-0.5 sm:pt-0"
-              : "overflow-hidden px-2 pb-1.5 pt-0"
+                ? "overflow-hidden px-3 sm:px-2 pb-2 sm:pb-1.5 pt-0.5 sm:pt-0"
+                : "overflow-hidden px-2 pb-1.5 pt-0"
           }
         >
           <PromptInputTools className="min-w-0 flex-1 overflow-hidden">
@@ -1383,7 +1392,9 @@ export const SpotPromptInput = forwardRef<
               )}
             >
               {activeTargetScopeLabel ? (
-                <span className={`min-w-0 truncate text-muted-foreground/45 ${typeStyle("caption.medium")}`}>
+                <span
+                  className={`min-w-0 truncate text-muted-foreground/45 ${typeStyle("caption.medium")}`}
+                >
                   {activeTargetScopeLabel}
                 </span>
               ) : null}
@@ -1460,18 +1471,33 @@ export const SpotPromptInput = forwardRef<
 /**
  * Overlay footer layout for chat pages where the input sits above scrollable content.
  */
-export function ChatInputOverlay({ children }: { children: React.ReactNode }) {
+export function ChatInputOverlay({
+  children,
+  compact = false,
+}: {
+  children: React.ReactNode;
+  compact?: boolean;
+}) {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
       <InputOverlayFade />
       <div className="relative h-16" aria-hidden="true" />
       <div
-        className="relative pointer-events-auto px-4 pt-2 md:px-6 lg:px-8"
+        className={cn(
+          "relative pointer-events-auto pt-2",
+          compact ? "px-3" : "px-4 md:px-6 lg:px-8",
+        )}
         style={{
-          paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
+          paddingBottom: compact
+            ? "calc(0.75rem + env(safe-area-inset-bottom, 0px))"
+            : "calc(1.25rem + env(safe-area-inset-bottom, 0px))",
         }}
       >
-        <div className="mx-auto w-full max-w-3xl">{children}</div>
+        <div
+          className={cn("mx-auto w-full", compact ? "max-w-none" : "max-w-3xl")}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

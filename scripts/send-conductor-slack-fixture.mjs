@@ -29,9 +29,11 @@ const now = dayjs();
 const messageTs = `${now.unix()}.${String(now.millisecond()).padStart(3, "0")}`;
 const threadTs = option("thread", messageTs);
 const text = option("text", "<@U-SPOT> summarize my current policy");
+const teamId = option("team", "T-COVE-FIXTURE");
+const channelId = option("channel", "C-COVE-FIXTURE");
 const payload = {
   type: "event_callback",
-  team_id: option("team", "T-COVE-FIXTURE"),
+  team_id: teamId,
   api_app_id: "A-SPOT-FIXTURE",
   event_id: `fixture-${randomUUID()}`,
   event_time: now.unix(),
@@ -40,10 +42,13 @@ const payload = {
     ts: messageTs,
     thread_ts: threadTs,
     event_ts: messageTs,
-    channel: option("channel", "C-COVE-FIXTURE"),
-    channel_type: "channel",
+    channel: channelId,
+    channel_type: option(
+      "channel-type",
+      channelId.startsWith("D") ? "im" : "channel",
+    ),
     user: option("user", "U-COVE-ADMIN"),
-    user_team: option("team", "T-COVE-FIXTURE"),
+    user_team: teamId,
     text,
   },
 };

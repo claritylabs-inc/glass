@@ -105,8 +105,7 @@ export const MODEL_TASK_LABELS: Record<ModelTask, string> = {
 };
 
 export const MODEL_TASK_DESCRIPTIONS: Record<ModelTask, string> = {
-  chat:
-    "Interactive assistant route for web chat, MCP/CLI chat, iMessage/SMS, broker portfolio Q&A, retrieval orchestration, and tool calls.",
+  chat: "Interactive assistant route for web chat, MCP/CLI chat, iMessage/SMS, broker portfolio Q&A, retrieval orchestration, and tool calls.",
   chat_vision:
     "Image-capable web and iMessage route for reading user image attachments while preserving normal chat tools and side effects.",
   voice_transcription:
@@ -288,11 +287,12 @@ export const AUDIO_TRANSCRIPTION_MODEL_CATALOG: Partial<
   openai: ["gpt-4o-transcribe", "gpt-4o-mini-transcribe"],
 };
 
-export const MODEL_ROUTING =
-  POLICY_MODEL_ROUTING satisfies Record<ModelTask, ModelRoute>;
+export const MODEL_ROUTING = POLICY_MODEL_ROUTING satisfies Record<
+  ModelTask,
+  ModelRoute
+>;
 
-export const FALLBACK_MODEL =
-  POLICY_FALLBACK_MODEL satisfies ModelRoute;
+export const FALLBACK_MODEL = POLICY_FALLBACK_MODEL satisfies ModelRoute;
 
 export const EXTRACTION_QUALITY_MODEL =
   POLICY_EXTRACTION_QUALITY_MODEL satisfies ModelRoute;
@@ -300,8 +300,7 @@ export const EXTRACTION_QUALITY_MODEL =
 export const COVERAGE_CLEANUP_MODEL =
   POLICY_COVERAGE_CLEANUP_MODEL satisfies ModelRoute;
 
-export const QUALITY_PRIMARY_TASK_KINDS =
-  POLICY_QUALITY_PRIMARY_TASK_KINDS;
+export const QUALITY_PRIMARY_TASK_KINDS = POLICY_QUALITY_PRIMARY_TASK_KINDS;
 
 export const QUALITY_ESCALATION_TASK_KINDS =
   POLICY_QUALITY_ESCALATION_TASK_KINDS;
@@ -311,20 +310,32 @@ export const EXTRACTION_QUALITY_MODEL_ROUTE_ID = "extraction_quality" as const;
 export const EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID =
   "extraction_coverage_cleanup" as const;
 export const FALLBACK_MODEL_ROUTE_ID = "fallback" as const;
+export const OPERATOR_AGENT_MODEL_ROUTE_ID = "operator_agent" as const;
 export type ModelRouteId =
   | ModelTask
+  | typeof OPERATOR_AGENT_MODEL_ROUTE_ID
   | typeof EXTRACTION_QUALITY_MODEL_ROUTE_ID
   | typeof EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID
   | typeof FALLBACK_MODEL_ROUTE_ID;
 export const MODEL_ROUTE_IDS = [
   ...MODEL_TASKS,
+  OPERATOR_AGENT_MODEL_ROUTE_ID,
   EXTRACTION_QUALITY_MODEL_ROUTE_ID,
   EXTRACTION_COVERAGE_CLEANUP_MODEL_ROUTE_ID,
   FALLBACK_MODEL_ROUTE_ID,
 ] as ModelRouteId[];
+export type RouterModelRouteId = Exclude<
+  ModelRouteId,
+  typeof OPERATOR_AGENT_MODEL_ROUTE_ID
+>;
+export const ROUTER_MODEL_ROUTE_IDS = MODEL_ROUTE_IDS.filter(
+  (routeId): routeId is RouterModelRouteId =>
+    routeId !== OPERATOR_AGENT_MODEL_ROUTE_ID,
+);
 
 export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_LABELS,
+  operator_agent: "Operator agent",
   extraction_quality: "Source tree and profile extraction",
   extraction_coverage_cleanup: "Coverage schedule cleanup",
   fallback: "Fallback model",
@@ -332,6 +343,8 @@ export const MODEL_ROUTE_LABELS: Record<ModelRouteId, string> = {
 
 export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
   ...MODEL_TASK_DESCRIPTIONS,
+  operator_agent:
+    "Required direct-provider route for the internal operator agent across the portal, Slack, iMessage, and MCP. It must support image input and is never delegated to automated routing.",
   extraction_quality:
     "Proactive primary route for source-tree generation and operational-profile extraction before any failure occurs.",
   extraction_coverage_cleanup:
@@ -341,6 +354,7 @@ export const MODEL_ROUTE_DESCRIPTIONS: Record<ModelRouteId, string> = {
 };
 
 export function defaultModelRouteForId(id: ModelRouteId): ModelRoute {
+  if (id === OPERATOR_AGENT_MODEL_ROUTE_ID) return MODEL_ROUTING.chat_vision;
   return policyDefaultModelRouteForId(id);
 }
 
@@ -402,6 +416,13 @@ export const MODEL_TASK_GROUPS = [
 ] as const satisfies readonly ModelRouteGroup<ModelTask>[];
 
 export const OPERATOR_MODEL_ROUTE_GROUPS = [
+  {
+    id: "internal_operations",
+    label: "Internal operations",
+    description:
+      "Required manually selected direct-provider routes for Clarity Labs operator workflows.",
+    tasks: [OPERATOR_AGENT_MODEL_ROUTE_ID],
+  },
   MODEL_TASK_GROUPS[0],
   MODEL_TASK_GROUPS[1],
   {
@@ -499,10 +520,9 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "deepseek-v4-flash": "DeepSeek V4 Flash",
 };
 
-export const MODEL_CAPABILITIES =
-  POLICY_MODEL_CAPABILITIES satisfies Readonly<
-    Record<string, ModelCapabilityConfig>
-  >;
+export const MODEL_CAPABILITIES = POLICY_MODEL_CAPABILITIES satisfies Readonly<
+  Record<string, ModelCapabilityConfig>
+>;
 
 export function modelCapabilitiesForRoute(
   route: ModelRoute,

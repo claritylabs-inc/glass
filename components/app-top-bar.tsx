@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import { BrokerShareLinkButton } from "@/components/broker-share-link-button";
+import { PillButtonSizeProvider } from "@/components/ui/pill-button";
 import { typeStyle } from "@/lib/typography";
 
 const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
@@ -23,6 +24,7 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
   "/operator": { label: "Clients", href: "/operator" },
+  "/operator/threads": { label: "Threads" },
   "/operator/clients": { label: "Clients", href: "/operator" },
   "/operator/brokers": { label: "Brokers" },
   "/operator/demo-leads": { label: "Demo leads" },
@@ -88,7 +90,9 @@ function PresenceAvatars({ users }: { users: PresenceUser[] }) {
         </div>
       ))}
       {users.length > 4 && (
-        <div className={`w-6 h-6 rounded-full bg-foreground/8 border-2 border-background flex items-center justify-center text-muted-foreground ${typeStyle("caption.medium")}`}>
+        <div
+          className={`w-6 h-6 rounded-full bg-foreground/8 border-2 border-background flex items-center justify-center text-muted-foreground ${typeStyle("caption.medium")}`}
+        >
           +{users.length - 4}
         </div>
       )}
@@ -127,32 +131,48 @@ export function AppTopBar({
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
         {breadcrumbDetail ? (
           <>
-            <Link href={href} className={`hidden sm:inline text-muted-foreground/60 hover:text-foreground transition-colors truncate shrink-0 ${typeStyle("control.button")}`}>
+            <Link
+              href={href}
+              className={`hidden sm:inline text-muted-foreground/60 hover:text-foreground transition-colors truncate shrink-0 ${typeStyle("control.button")}`}
+            >
               {label}
             </Link>
-            <span className={`hidden sm:inline text-muted-foreground/30 ${typeStyle("body.default")}`}>/</span>
-            <span className={`text-foreground truncate ${typeStyle("body.default")}`}>
+            <span
+              className={`hidden sm:inline text-muted-foreground/30 ${typeStyle("body.default")}`}
+            >
+              /
+            </span>
+            <span
+              className={`text-foreground truncate ${typeStyle("body.default")}`}
+            >
               {breadcrumbDetail}
             </span>
           </>
         ) : (
-          <span className={`text-foreground truncate ${typeStyle("body.medium")}`}>
+          <span
+            className={`text-foreground truncate ${typeStyle("body.medium")}`}
+          >
             {label}
           </span>
         )}
       </div>
 
       {/* Presence + actions */}
-      <div className="flex shrink-0 items-center gap-2" data-slot="app-top-bar-actions">
-        {presenceUsers && presenceUsers.length > 0 && (
-          <>
-            <PresenceAvatars users={presenceUsers} />
-            <div className="w-px h-4 bg-foreground/10" />
-          </>
-        )}
-        {showBrokerShare ? <BrokerShareLinkButton /> : null}
-        {actions}
-      </div>
+      <PillButtonSizeProvider size="compact">
+        <div
+          className="flex shrink-0 items-center gap-2"
+          data-slot="app-top-bar-actions"
+        >
+          {presenceUsers && presenceUsers.length > 0 && (
+            <>
+              <PresenceAvatars users={presenceUsers} />
+              <div className="w-px h-4 bg-foreground/10" />
+            </>
+          )}
+          {showBrokerShare ? <BrokerShareLinkButton /> : null}
+          {actions}
+        </div>
+      </PillButtonSizeProvider>
     </header>
   );
 }

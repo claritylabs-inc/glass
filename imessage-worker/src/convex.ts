@@ -1,4 +1,18 @@
-/** Typed client for the Spot Convex /imessage-inbound HTTP endpoint. */
+/** Typed client for the customer and operator Spot Convex iMessage endpoints. */
+
+export type ImessageChannelRole = "customer" | "operator";
+
+export function imessageConvexPaths(role: ImessageChannelRole) {
+  return role === "operator"
+    ? {
+        inbound: "/operator-imessage-inbound",
+        deliveryEvents: "/operator-imessage-delivery-events",
+      }
+    : {
+        inbound: "/imessage-inbound",
+        deliveryEvents: "/imessage-delivery-events",
+      };
+}
 
 export interface ImessageAttachment {
   data: string; // base64-encoded bytes
@@ -71,11 +85,13 @@ export function isImessageConvexTimeout(
 export async function sendToConvex(
   siteUrl: string,
   secret: string,
+  role: ImessageChannelRole,
   payload: ImessageRequest,
 ): Promise<ImessageResponse> {
+  const paths = imessageConvexPaths(role);
   let res: Response;
   try {
-    res = await fetch(`${siteUrl}/imessage-inbound`, {
+    res = await fetch(`${siteUrl}${paths.inbound}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -116,14 +132,16 @@ export interface ImessageDeliveryFailure {
 export async function reportImessageDeliveryEvent(
   siteUrl: string,
   secret: string,
+  role: ImessageChannelRole,
   payload: {
     threadMessageId: string;
     attachmentFailures: ImessageDeliveryFailure[];
   },
 ): Promise<boolean> {
+  const paths = imessageConvexPaths(role);
   let res: Response;
   try {
-    res = await fetch(`${siteUrl}/imessage-delivery-events`, {
+    res = await fetch(`${siteUrl}${paths.deliveryEvents}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

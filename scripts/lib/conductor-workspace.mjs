@@ -276,8 +276,8 @@ export function conductorPorts(workspaceRoot = repoRoot) {
     process.env.CONDUCTOR_PORT ?? String(configuredBasePort ?? 8080),
     10,
   );
-  if (!Number.isInteger(basePort) || basePort <= 0 || basePort > 65530) {
-    throw new Error("CONDUCTOR_PORT must be an integer between 1 and 65530");
+  if (!Number.isInteger(basePort) || basePort <= 0 || basePort > 65529) {
+    throw new Error("CONDUCTOR_PORT must be an integer between 1 and 65529");
   }
   return {
     web: basePort,
@@ -286,11 +286,12 @@ export function conductorPorts(workspaceRoot = repoRoot) {
     convexCloud: basePort + 3,
     convexSite: basePort + 4,
     slack: basePort + 5,
+    operatorImessage: basePort + 6,
   };
 }
 
 export function conductorLocalRuntimeOverrides() {
-  const { web, extraction, imessage, slack } = conductorPorts();
+  const { web, extraction, imessage, slack, operatorImessage } = conductorPorts();
   const appUrl = `http://localhost:${web}`;
   return {
     APP_SITE_URL: appUrl,
@@ -299,6 +300,7 @@ export function conductorLocalRuntimeOverrides() {
     SITE_URL: appUrl,
     EXTRACTION_WORKER_URL: `http://127.0.0.1:${extraction}`,
     IMESSAGE_WORKER_URL: `http://127.0.0.1:${imessage}`,
+    OPERATOR_IMESSAGE_WORKER_URL: `http://127.0.0.1:${operatorImessage}`,
     SLACK_WORKER_URL: `http://127.0.0.1:${slack}`,
   };
 }

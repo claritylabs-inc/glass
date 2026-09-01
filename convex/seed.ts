@@ -110,6 +110,7 @@ const LOCAL_FIXTURE = {
 
 const DEFAULT_BROKER_PHONE = "+16472921666";
 const DEFAULT_CLIENT_PHONE = "+12025550102";
+const DEFAULT_OPERATOR_PHONE = "+12025550100";
 const LOCAL_SLACK_FIXTURE = {
   clarityTeamId: "T-CLARITY-FIXTURE",
   operatorUserId: "U-SPOT-OPERATOR",
@@ -128,6 +129,7 @@ type LocalFixtureResult = {
   policyId: Id<"policies">;
   brokerPhone: string;
   clientPhone: string;
+  operatorPhone: string;
   summary: string;
 };
 
@@ -159,6 +161,7 @@ function assertLocalSeed() {
 function fixturePhones(args: {
   brokerPhone?: string;
   clientPhone?: string;
+  operatorPhone?: string;
 }) {
   const rawBrokerPhone =
     args.brokerPhone?.trim() ||
@@ -168,9 +171,14 @@ function fixturePhones(args: {
     args.clientPhone?.trim() ||
     process.env.IMESSAGE_TERMINAL_CLIENT_PHONE?.trim() ||
     DEFAULT_CLIENT_PHONE;
+  const rawOperatorPhone =
+    args.operatorPhone?.trim() ||
+    process.env.OPERATOR_IMESSAGE_TERMINAL_FROM_PHONE?.trim() ||
+    DEFAULT_OPERATOR_PHONE;
   const normalizedPhones = [
     ["brokerPhone", rawBrokerPhone],
     ["clientPhone", rawClientPhone],
+    ["operatorPhone", rawOperatorPhone],
   ] as const;
   const phones = normalizedPhones.map(([label, phone]) => {
     if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
@@ -182,11 +190,13 @@ function fixturePhones(args: {
       throw new Error(`${label} must be a valid E.164 phone number`);
     }
   });
-  const [brokerPhone, clientPhone] = phones;
-  if (brokerPhone === clientPhone) {
-    throw new Error("brokerPhone and clientPhone must be unique");
+  const [brokerPhone, clientPhone, operatorPhone] = phones;
+  if (new Set(phones).size !== phones.length) {
+    throw new Error(
+      "brokerPhone, clientPhone, and operatorPhone must be unique",
+    );
   }
-  return { brokerPhone, clientPhone };
+  return { brokerPhone, clientPhone, operatorPhone };
 }
 
 async function upsertUser(
@@ -264,6 +274,7 @@ export const seed = action({
   args: {
     brokerPhone: v.optional(v.string()),
     clientPhone: v.optional(v.string()),
+    operatorPhone: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<LocalFixtureResult> => {
     assertLocalSeed();
@@ -484,14 +495,16 @@ export const insertLocalFixture = internalMutation({
   args: {
     brokerPhone: v.optional(v.string()),
     clientPhone: v.optional(v.string()),
+    operatorPhone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = dayjs().valueOf();
-    const { brokerPhone, clientPhone } = fixturePhones(args);
+    const { brokerPhone, clientPhone, operatorPhone } = fixturePhones(args);
     const operatorUserId = await upsertUser(ctx, {
       ...LOCAL_FIXTURE.operator,
       accountKind: "operator",
       now,
+      phone: operatorPhone,
     });
     const operatorProfile = await ctx.db
       .query("operatorProfiles")
@@ -753,6 +766,7 @@ export const insertLocalFixture = internalMutation({
       policyId,
       brokerPhone,
       clientPhone,
+      operatorPhone,
       summary:
         "Seeded local fixture: Terry operator, Montgomery Risk broker with white-labeling disabled, Cove client, mock Slack service channel, stored favicon logos, and one final Cove policy",
     };

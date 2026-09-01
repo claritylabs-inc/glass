@@ -282,6 +282,10 @@ failover, cost telemetry, calibration, and autonomous policy.
 - Broker routes and keys remain org-scoped overrides. Operator global choices
   are explicit overrides; leaving a task on Automated routing gives the active
   policy control. The global fallback remains a separate safety route.
+- The internal `operator_agent` route is the exception: every environment must
+  explicitly save one image-capable direct-provider model before operator
+  traffic is enabled. It is never published to `cl-router` and never uses an
+  automatic, alternate-model, or alternate-provider fallback.
 - `convex/lib/clRouterClient.ts` owns the API contract and safe pre-response
   fallback. `convex/lib/clRouterLanguageModel.ts` preserves the Spot-side chat
   tool loop with one router stream per model step.

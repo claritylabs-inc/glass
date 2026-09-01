@@ -1,6 +1,12 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import { requireOperator } from "./lib/operatorIdentity";
@@ -25,6 +31,8 @@ import {
   MODEL_TASK_DESCRIPTIONS,
   MODEL_TASK_LABELS,
   OPERATOR_MODEL_ROUTE_GROUPS,
+  OPERATOR_AGENT_MODEL_ROUTE_ID,
+  type RouterModelRouteId,
   OPERATOR_WEB_RETRIEVAL_PROVIDERS,
   MODEL_CAPABILITIES,
   PROVIDER_LABELS,
@@ -47,7 +55,9 @@ type ProviderKeys = NonNullable<Doc<"brokerModelSettings">["providerKeys"]>;
 type Routes = NonNullable<Doc<"brokerModelSettings">["routes"]>;
 type GlobalRoutes = Partial<Record<ModelRouteId, ModelRoute>>;
 type RouteSource = "broker" | "global" | "static";
-const CONFIGURABLE_PROVIDER_SET = new Set<ModelProvider>(CONFIGURABLE_MODEL_PROVIDERS);
+const CONFIGURABLE_PROVIDER_SET = new Set<ModelProvider>(
+  CONFIGURABLE_MODEL_PROVIDERS,
+);
 
 const configurableProviderValidator = v.union(
   v.literal("openai"),
@@ -101,6 +111,7 @@ const modelTaskRoutesValidator = v.object({
 });
 
 const globalRoutesValidator = v.object({
+  operator_agent: v.optional(routeUpdateValidator),
   chat: v.optional(routeUpdateValidator),
   chat_vision: v.optional(routeUpdateValidator),
   voice_transcription: v.optional(routeUpdateValidator),
@@ -142,18 +153,24 @@ function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
       `${PROVIDER_LABELS[route.provider]} model ${route.model} is not available through direct provider routing`,
     );
   }
-  const models = routeId === "embeddings"
-    ? EMBEDDING_MODEL_CATALOG[route.provider]
-    : routeId === "voice_transcription"
-      ? AUDIO_TRANSCRIPTION_MODEL_CATALOG[route.provider]
-      : LANGUAGE_MODEL_CATALOG[route.provider];
+  const models =
+    routeId === "embeddings"
+      ? EMBEDDING_MODEL_CATALOG[route.provider]
+      : routeId === "voice_transcription"
+        ? AUDIO_TRANSCRIPTION_MODEL_CATALOG[route.provider]
+        : LANGUAGE_MODEL_CATALOG[route.provider];
   if (!models?.includes(route.model)) {
-    throw new Error(`Unsupported model ${route.model} for ${PROVIDER_LABELS[route.provider]}`);
+    throw new Error(
+      `Unsupported model ${route.model} for ${PROVIDER_LABELS[route.provider]}`,
+    );
   }
   if (
-    isModelTask(routeId) &&
-    !modelRouteSupportsTask(routeId, route)
+    routeId === OPERATOR_AGENT_MODEL_ROUTE_ID &&
+    !modelRouteSupportsTask("chat_vision", route)
   ) {
+    throw new Error("Operator agent requires an image-capable language model");
+  }
+  if (isModelTask(routeId) && !modelRouteSupportsTask(routeId, route)) {
     throw new Error(
       routeId === "voice_transcription"
         ? `${MODEL_TASK_LABELS[routeId]} requires an audio transcription model`
@@ -242,7 +259,9 @@ function providerTransport(provider: ModelProvider) {
     ...(AUDIO_TRANSCRIPTION_MODEL_CATALOG[provider] ?? []),
     ...(EMBEDDING_MODEL_CATALOG[provider] ?? []),
   ];
-  return routes.some((model) => directProviderModelForRoute({ provider, model }))
+  return routes.some((model) =>
+    directProviderModelForRoute({ provider, model }),
+  )
     ? "direct"
     : null;
 }
@@ -251,7 +270,10 @@ function globalProviderConfigured(provider: ModelProvider) {
   return providerTransport(provider) !== null;
 }
 
-function visibleRoutes(routes: Routes | undefined, keys: ProviderKeys | undefined) {
+function visibleRoutes(
+  routes: Routes | undefined,
+  keys: ProviderKeys | undefined,
+) {
   return Object.fromEntries(
     MODEL_TASKS.map((task) => {
       const route = routes?.[task];
@@ -317,6 +339,18 @@ function explicitGlobalRoutes(
   ) as GlobalRoutes;
 }
 
+export function explicitOperatorAgentRoute(
+  settings: Doc<"globalModelSettings"> | null,
+): ModelRoute | null {
+  const route = (settings?.routes as GlobalRoutes | undefined)?.[
+    OPERATOR_AGENT_MODEL_ROUTE_ID
+  ];
+  return route &&
+    settings?.explicitRouteOverrides?.includes(OPERATOR_AGENT_MODEL_ROUTE_ID)
+    ? route
+    : null;
+}
+
 function availableLanguageModels(provider: ModelProvider) {
   return (LANGUAGE_MODEL_CATALOG[provider] ?? []).filter((model) =>
     directProviderModelForRoute({ provider, model }),
@@ -366,7 +400,9 @@ function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
   }
 }
 
-function normalizeWebRetrieval(config: WebRetrievalRoute | undefined): WebRetrievalRoute {
+function normalizeWebRetrieval(
+  config: WebRetrievalRoute | undefined,
+): WebRetrievalRoute {
   if (!config) return WEB_RETRIEVAL_DEFAULT;
   if (
     config.primary === "parallel" ||
@@ -399,7 +435,10 @@ function modelCapabilityCatalog() {
           `${provider}:${model}`,
           {
             ...capabilities,
-            known: Object.prototype.hasOwnProperty.call(MODEL_CAPABILITIES, model),
+            known: Object.prototype.hasOwnProperty.call(
+              MODEL_CAPABILITIES,
+              model,
+            ),
           },
         ];
       }),
@@ -454,7 +493,9 @@ export const updateRoutes = mutation({
       if (!route) continue;
       if (!isModelTask(task)) throw new Error(`Unknown model task ${task}`);
       if (!providerKeys[route.provider]) {
-        throw new Error(`Add a ${PROVIDER_LABELS[route.provider]} API key before selecting its models`);
+        throw new Error(
+          `Add a ${PROVIDER_LABELS[route.provider]} API key before selecting its models`,
+        );
       }
       assertSupportedRoute(task, route);
     }
@@ -471,7 +512,11 @@ export const updateRoutes = mutation({
     }
 
     if (existing) {
-      await ctx.db.patch(existing._id, { routes, updatedBy: userId, updatedAt: now });
+      await ctx.db.patch(existing._id, {
+        routes,
+        updatedBy: userId,
+        updatedAt: now,
+      });
     } else {
       await ctx.db.insert("brokerModelSettings", {
         brokerOrgId,
@@ -504,7 +549,11 @@ export const updateProviderKey = mutation({
 
     const now = dayjs().valueOf();
     if (existing) {
-      await ctx.db.patch(existing._id, { providerKeys, updatedBy: userId, updatedAt: now });
+      await ctx.db.patch(existing._id, {
+        providerKeys,
+        updatedBy: userId,
+        updatedAt: now,
+      });
     } else {
       await ctx.db.insert("brokerModelSettings", {
         brokerOrgId,
@@ -541,7 +590,10 @@ export const getGlobal = query({
         description: MODEL_ROUTE_DESCRIPTIONS[id],
         isEmbedding: id === "embeddings",
         isAudio: id === "voice_transcription",
-        automatedRouting: id !== FALLBACK_MODEL_ROUTE_ID,
+        automatedRouting:
+          id !== FALLBACK_MODEL_ROUTE_ID &&
+          id !== OPERATOR_AGENT_MODEL_ROUTE_ID,
+        manualRequired: id === OPERATOR_AGENT_MODEL_ROUTE_ID,
         defaultRoute: defaultModelRouteForId(id),
       })),
       groups: OPERATOR_MODEL_ROUTE_GROUPS,
@@ -568,6 +620,11 @@ export const updateGlobalRoutes = mutation({
       .first();
 
     for (const [task, route] of Object.entries(args.routes)) {
+      if (task === OPERATOR_AGENT_MODEL_ROUTE_ID && route === null) {
+        throw new Error(
+          "Operator agent model selection is required and cannot use automated routing",
+        );
+      }
       if (!route) continue;
       if (!isModelRouteId(task)) throw new Error(`Unknown model route ${task}`);
       assertSupportedRoute(task, route);
@@ -619,6 +676,29 @@ export const updateGlobalRoutes = mutation({
   },
 });
 
+export const resolveOperatorAgentRoute = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const settings = await ctx.db
+      .query("globalModelSettings")
+      .withIndex("key", (q) => q.eq("key", "default"))
+      .first();
+    const route = explicitOperatorAgentRoute(settings);
+    if (!route) {
+      throw new Error(
+        "Operator agent model is not configured. Select a provider and image-capable model in Operator routing.",
+      );
+    }
+    assertSupportedRoute(OPERATOR_AGENT_MODEL_ROUTE_ID, route);
+    if (!routeDirectlyConfigured(route)) {
+      throw new Error(
+        `${PROVIDER_LABELS[route.provider]} is not configured for direct operator-agent inference`,
+      );
+    }
+    return route;
+  },
+});
+
 export const updateGlobalWebRetrieval = mutation({
   args: { webRetrieval: webRetrievalValidator },
   handler: async (ctx, args) => {
@@ -662,15 +742,15 @@ export const resolveForOrg = internalQuery({
       .first();
     const settings = brokerOrgId
       ? await ctx.db
-        .query("brokerModelSettings")
-        .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
-        .first()
+          .query("brokerModelSettings")
+          .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
+          .first()
       : null;
 
     const providerKeys = configurableProviderKeys(settings?.providerKeys);
     const globalRoutes = explicitGlobalRoutes(globalSettings);
-    const routes = {} as Record<ModelRouteId, ModelRoute>;
-    const routeSources = {} as Record<ModelRouteId, RouteSource>;
+    const routes = {} as Record<RouterModelRouteId, ModelRoute>;
+    const routeSources = {} as Record<RouterModelRouteId, RouteSource>;
     for (const task of MODEL_TASKS) {
       const brokerRoute = settings?.routes?.[task];
       if (
@@ -735,9 +815,9 @@ export async function resolvePublicModelDefaults(ctx: QueryCtx) {
     .withIndex("key", (q) => q.eq("key", "default"))
     .first();
   const globalRoutes = explicitGlobalRoutes(globalSettings);
-  const routes = {} as Record<ModelRouteId, ModelRoute>;
+  const routes = {} as Record<RouterModelRouteId, ModelRoute>;
   const routeSources = {} as Record<
-    ModelRouteId,
+    RouterModelRouteId,
     Extract<RouteSource, "global" | "static">
   >;
   for (const task of MODEL_TASKS) {

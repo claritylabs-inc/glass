@@ -43,11 +43,8 @@ import {
 } from "./nav-item";
 import { SidebarBrokerContact } from "./broker-contact-card";
 import { SidebarHeader } from "./sidebar-header";
-import type {
-  BrokerContact,
-  ConversationItem,
-  NavItemConfig,
-} from "./types";
+import { SidebarThreadArchiveAction } from "./sidebar-thread-archive-action";
+import type { BrokerContact, ConversationItem, NavItemConfig } from "./types";
 import { typeStyle } from "@/lib/typography";
 
 function isImessageConversation(item: ConversationItem) {
@@ -145,10 +142,7 @@ export function MainSidebarContent({
           }
         />
         {notificationsPanelOpen && !isDesktop && orgId && (
-          <NotificationsPanel
-            orgId={orgId}
-            onClose={onCloseNotifications}
-          />
+          <NotificationsPanel orgId={orgId} onClose={onCloseNotifications} />
         )}
       </div>
 
@@ -262,7 +256,9 @@ function ExpandedThreadList({
   return (
     <>
       <div className="flex items-center justify-between px-3 pb-1.5 pt-5">
-        <span className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}>
+        <span
+          className={`text-muted-foreground/50 ${typeStyle("caption.medium")}`}
+        >
           Threads
         </span>
         <div className="flex items-center gap-1">
@@ -359,7 +355,9 @@ function SidebarThreadRow({
   const threadLink = (
     <Link
       href={`/agent/thread/${item.id}`}
-      id={shortcut ? stableSidebarTooltipId(`${item.kind}-${item.id}`) : undefined}
+      id={
+        shortcut ? stableSidebarTooltipId(`${item.kind}-${item.id}`) : undefined
+      }
       className={`group flex items-center gap-2 px-3 py-1.5 ${MENU_ITEM_BASE} ${typeStyle("control.button")} ${
         isConvActive ? MENU_ITEM_ACTIVE : MENU_ITEM_INACTIVE
       }`}
@@ -384,20 +382,9 @@ function SidebarThreadRow({
         <Pin className="w-3 h-3 shrink-0 rotate-45 text-muted-foreground/35" />
       ) : null}
       {onArchiveThread ? (
-        <span className="relative h-5 w-5 shrink-0">
-          <button
-            type="button"
-            onClick={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              await onArchiveThread(item.id, isConvActive);
-            }}
-            className="absolute inset-0 flex items-center justify-center rounded text-muted-foreground/30 opacity-0 transition-[background-color,color,opacity] duration-100 hover:bg-foreground/6 hover:text-foreground group-hover:opacity-100"
-            title="Archive"
-          >
-            <Archive className="w-3 h-3" />
-          </button>
-        </span>
+        <SidebarThreadArchiveAction
+          onArchive={() => onArchiveThread(item.id, isConvActive)}
+        />
       ) : null}
     </Link>
   );

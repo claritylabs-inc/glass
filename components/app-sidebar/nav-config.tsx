@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   Building2,
   ClipboardCheck,
+  FolderOpen,
   FileText,
   Send,
   Settings,
@@ -53,6 +54,12 @@ export const INSURANCE_ITEMS: NavItemConfig[] = [
     label: "Certificates",
     icon: BadgeCheck,
     shortcut: navShortcut("e"),
+  },
+  {
+    href: "/files",
+    label: "Files",
+    icon: FolderOpen,
+    shortcut: navShortcut("f"),
   },
   {
     href: "/compliance",

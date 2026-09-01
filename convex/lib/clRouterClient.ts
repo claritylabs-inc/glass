@@ -344,6 +344,7 @@ export function shouldUseClRouterForCall(
   taskKind?: string,
   environment: ClRouterEnvironment = process.env,
 ): boolean {
+  if (taskKind === "operator_agent") return false;
   if (!SUPPORTED_TASK_SET.has(task)) return false;
   if (taskKind === "query_reason" && isClRouterConfigured(environment)) {
     return true;

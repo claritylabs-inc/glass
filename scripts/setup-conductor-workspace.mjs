@@ -324,7 +324,15 @@ if (createdLocalDeployment) {
 
 for (const name of cloudConvexSelectionKeys) delete process.env[name];
 
-const { web, extraction, imessage, slack, convexCloud, convexSite } = conductorPorts();
+const {
+  web,
+  extraction,
+  imessage,
+  slack,
+  operatorImessage,
+  convexCloud,
+  convexSite,
+} = conductorPorts();
 run(
   convex,
   [
@@ -389,6 +397,10 @@ const imessageSecret = createdLocalDeployment
   ? randomBytes(32).toString("hex")
   : optionalConvexEnv(convex, "IMESSAGE_WORKER_SECRET") ||
     randomBytes(32).toString("hex");
+const operatorImessageSecret = createdLocalDeployment
+  ? randomBytes(32).toString("hex")
+  : optionalConvexEnv(convex, "OPERATOR_IMESSAGE_WORKER_SECRET") ||
+    randomBytes(32).toString("hex");
 const slackSecret = createdLocalDeployment
   ? randomBytes(32).toString("hex")
   : optionalConvexEnv(convex, "SLACK_WORKER_SECRET") ||
@@ -407,12 +419,22 @@ const localAuthKeys =
   existingJwtPrivateKey && existingJwks
     ? { JWT_PRIVATE_KEY: existingJwtPrivateKey, JWKS: existingJwks }
     : generateLocalAuthKeys();
+const operatorTerminalPhone =
+  imessageEnv.get("OPERATOR_IMESSAGE_TERMINAL_FROM_PHONE")?.trim() ||
+  "+12025550100";
+if (!/^\+[1-9]\d{7,14}$/.test(operatorTerminalPhone)) {
+  throw new Error(
+    "OPERATOR_IMESSAGE_TERMINAL_FROM_PHONE must be an E.164 phone number",
+  );
+}
 const localAppUrl = `http://localhost:${web}`;
 const overridesPath = path.join(contextDirectory, "convex-local-overrides.env");
 
 try {
   writeRuntimeEnv("convex-local-overrides.env", {
     SPOT_ENV: "local",
+    OPERATOR_BOOTSTRAP_EMAILS: "terry@claritylabs.inc",
+    OPERATOR_OWNER_EMAILS: "terry@claritylabs.inc",
     JWT_PRIVATE_KEY: localAuthKeys.JWT_PRIVATE_KEY,
     JWKS: localAuthKeys.JWKS,
     MAPBOX_ACCESS_TOKEN:
@@ -427,9 +449,16 @@ try {
     IMESSAGE_TERMINAL_PUBLIC_PHONE: terminalPublicPhone,
     IMESSAGE_WORKER_URL: `http://127.0.0.1:${imessage}`,
     IMESSAGE_WORKER_SECRET: imessageSecret,
+    OPERATOR_IMESSAGE_ENABLED: "false",
+    OPERATOR_IMESSAGE_TERMINAL_ENABLED: "true",
+    OPERATOR_IMESSAGE_WORKER_URL: `http://127.0.0.1:${operatorImessage}`,
+    OPERATOR_IMESSAGE_WORKER_SECRET: operatorImessageSecret,
     SLACK_ENABLED: "true",
     SLACK_MODE: "mock",
     SLACK_CLARITY_TEAM_ID: "T-CLARITY-FIXTURE",
+    OPERATOR_SLACK_ENABLED: "true",
+    OPERATOR_SLACK_CHANNEL_IDS: "G-OPERATOR-FIXTURE",
+    OPERATOR_SLACK_BOT_USER_ID: "U-SPOT",
     SLACK_WORKER_URL: `http://127.0.0.1:${slack}`,
     SLACK_WORKER_SECRET: slackSecret,
     SLACK_SIGNING_SECRET: slackWebhookSecret,
@@ -455,6 +484,7 @@ if (createdLocalDeployment) {
     JSON.stringify({
       brokerPhone: terminalPhone,
       clientPhone: terminalClientPhone,
+      operatorPhone: operatorTerminalPhone,
     }),
   ]);
 }
@@ -485,6 +515,7 @@ writeRuntimeEnv("extraction-worker.env", {
 });
 writeRuntimeEnv("imessage-worker.env", {
   SPOT_ENV: "local",
+  IMESSAGE_CHANNEL_ROLE: "customer",
   IMESSAGE_ENABLED: "false",
   SPECTRUM_PROVIDER: "terminal",
   CONVEX_SITE_URL: localUrls.site,
@@ -495,6 +526,19 @@ writeRuntimeEnv("imessage-worker.env", {
   IMESSAGE_TERMINAL_PUBLIC_PHONE: terminalPublicPhone,
   IMESSAGE_TERMINAL_SPACE_ID:
     imessageEnv.get("IMESSAGE_TERMINAL_SPACE_ID")?.trim() || "chat-1",
+});
+writeRuntimeEnv("operator-imessage-worker.env", {
+  SPOT_ENV: "local",
+  IMESSAGE_CHANNEL_ROLE: "operator",
+  OPERATOR_IMESSAGE_ENABLED: "false",
+  OPERATOR_IMESSAGE_TERMINAL_ENABLED: "true",
+  SPECTRUM_PROVIDER: "terminal",
+  CONVEX_SITE_URL: localUrls.site,
+  OPERATOR_IMESSAGE_WORKER_SECRET: operatorImessageSecret,
+  OPERATOR_IMESSAGE_TERMINAL_FROM_PHONE: operatorTerminalPhone,
+  IMESSAGE_TERMINAL_SPACE_ID:
+    imessageEnv.get("OPERATOR_IMESSAGE_TERMINAL_SPACE_ID")?.trim() ||
+    "operator-chat-1",
 });
 writeRuntimeEnv("slack-worker.env", {
   SPOT_ENV: "local",
@@ -512,5 +556,5 @@ if (process.env.CONDUCTOR_IS_LOCAL !== "0") {
 }
 
 console.log(
-  "\nConductor workspace ready with its own local Convex database. Run the default Dev template to start Spot, Convex, extraction, the Slack mock worker, and automatic email/OTP capture. Start Spectrum separately with npm run conductor:spectrum.",
+  "\nConductor workspace ready with its own local Convex database. Run the default Dev template to start Spot, Convex, extraction, the Slack mock worker, and automatic email/OTP capture. Start customer Spectrum with npm run conductor:spectrum or operator Spectrum with npm run conductor:operator-spectrum.",
 );

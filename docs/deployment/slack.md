@@ -194,6 +194,8 @@ Convex requires:
 | `SLACK_OAUTH_REDIRECT_URI`                | Optional callback override                                       |
 | `SLACK_CLARITY_TEAM_ID`                   | Clarity host workspace ID                                        |
 | `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret                              |
+| `OPERATOR_SLACK_ENABLED`                  | Enable internal operator DMs and host-channel mentions           |
+| `OPERATOR_SLACK_CHANNEL_IDS`              | Comma-separated allowlist for internal host channels             |
 | `NEXT_PUBLIC_APP_URL` or `APP_URL`        | Post-OAuth settings redirect                                     |
 
 The Railway worker requires `SPOT_ENV`, `SLACK_WORKER_MODE`,
@@ -211,6 +213,36 @@ health must report `tokenBrokerConfigured`, `outboundEnabled`,
 The Convex agent health endpoint separately verifies that the Clarity host
 workspace has an active encrypted installation; worker configuration alone
 cannot prove that OAuth installation exists.
+
+Internal operator chat reuses this same Clarity host installation and worker.
+Production release health requires `OPERATOR_SLACK_ENABLED=true` and a
+configured `SLACK_CLARITY_TEAM_ID`; the shared worker and active host
+installation remain covered by the existing Slack health contract. The `main`
+release workflow sets `OPERATOR_SLACK_ENABLED=true` on production Convex before
+running that health gate, so a release cannot promote with operator Slack
+silently disabled.
+After customer workspace and persisted Slack Connect binding resolution have
+failed, Convex may route a Clarity App Home DM or host-channel mention to the
+operator agent only when `OPERATOR_SLACK_ENABLED=true`, `users.info` resolves
+the sender to the Clarity team, and that exact Slack identity belongs to an
+active Spot operator. Channel metadata must prove the bot is a member and the
+channel is private and not shared or Slack Connect.
+`OPERATOR_SLACK_CHANNEL_IDS` must explicitly include each eligible internal
+channel; an empty list leaves channel mentions disabled while DMs continue to
+work. Exact `approve` or `reject` replies resolve the one pending confirmation
+in that operator-owned
+conversation. Unknown users, bots, external workspaces, shared channels, and
+other replies fail closed.
+
+For a local operator-channel fixture after the default Conductor dev run is
+ready:
+
+```bash
+npm run conductor:slack-fixture -- --team T-CLARITY-FIXTURE --channel G-OPERATOR-FIXTURE --user U-SPOT-OPERATOR --text "<@U-SPOT> summarize operator status"
+```
+
+Use a `D...` channel ID, or pass `--channel-type im`, to exercise the App Home
+DM route.
 
 ## Onboarding and operating model
 

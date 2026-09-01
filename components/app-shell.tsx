@@ -5,10 +5,13 @@ import {
   Fragment,
   Suspense,
   isValidElement,
-  useState,
   useCallback,
+  useEffect,
+  useRef,
+  useState,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { PanelRightClose } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppShellPanelLayout } from "@/components/app-shell-panel-layout";
 import {
@@ -20,6 +23,10 @@ import {
 } from "@/components/app-shell-sidebar-layout";
 import { AppTopBar, type PresenceUser } from "@/components/app-top-bar";
 import { OperatorImpersonationBanner } from "@/components/operator-impersonation-banner";
+import { OperatorAgentPanel } from "@/components/operator-agent/operator-agent-panel";
+import { useOptionalOperatorAgent } from "@/components/operator-agent/operator-agent-provider";
+import { LogoIcon } from "@/components/ui/logo-icon";
+import { PillButton } from "@/components/ui/pill-button";
 
 import { PdfProvider, usePdf } from "@/components/pdf-context";
 import { PageContextProvider } from "@/hooks/use-page-context";
@@ -34,6 +41,7 @@ import {
   openCommandPalette,
 } from "@/components/command-palette";
 import dynamic from "next/dynamic";
+import { useMediaQuery } from "@/components/app-sidebar/utils";
 
 const PdfPanel = dynamic(
   () =>
@@ -121,9 +129,48 @@ function ShellContent({
   );
   const { isPdfOpen, fileUrl } = usePdf();
   const { preview: entityPreview } = useEntityPreview();
+  const operatorAgent = useOptionalOperatorAgent();
+  const viewportReady = useMediaQuery("(min-width: 0px)");
+  const isLarge = useMediaQuery("(min-width: 1024px)");
+  const isExtraLarge = useMediaQuery("(min-width: 1280px)");
+  const hasRoomForPreviewAndAgent = useMediaQuery("(min-width: 1800px)");
   const hasPdfPanel = isPdfOpen && !!fileUrl;
   const hasEntityPanel = !!entityPreview;
   const hasRightPanel = hasVisibleRightPanel(rightPanel);
+  const constrainedPreviewOpen =
+    isExtraLarge &&
+    !hasRoomForPreviewAndAgent &&
+    (hasPdfPanel || hasEntityPanel);
+  const previewWasOpenRef = useRef(false);
+  const operatorAgentPinned = Boolean(
+    viewportReady &&
+      operatorAgent?.open &&
+      isExtraLarge &&
+      !constrainedPreviewOpen,
+  );
+  const operatorAgentOverlayVisible = Boolean(
+    viewportReady &&
+      operatorAgent?.open &&
+      !operatorAgentPinned,
+  );
+
+  useEffect(() => {
+    const previewJustOpened =
+      constrainedPreviewOpen && !previewWasOpenRef.current;
+    previewWasOpenRef.current = constrainedPreviewOpen;
+    if (!previewJustOpened) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      if (operatorAgent?.open) operatorAgent.close();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [constrainedPreviewOpen, operatorAgent]);
+
+  useEffect(() => {
+    if (!operatorAgent?.open || !mobileOpen) return;
+    const frame = window.requestAnimationFrame(() => setMobileOpen(false));
+    return () => window.cancelAnimationFrame(frame);
+  }, [mobileOpen, operatorAgent?.open]);
 
   const updateCustomSidebarPreference = useCallback(
     (update: (current: AppSidebarPreference) => AppSidebarPreference) => {
@@ -177,12 +224,44 @@ function ShellContent({
     collapsed: false,
     onToggleCollapse: toggleCustomSidebarCollapse,
   });
+  const operatorAgentToggle = operatorAgent?.enabled ? (
+    <PillButton
+      variant="primary"
+      size="compact"
+      iconOnly
+      label={
+        operatorAgent.open ? "Minimize operator agent" : "Open operator agent"
+      }
+      aria-pressed={operatorAgent.open}
+      onClick={operatorAgent.toggle}
+    >
+      {operatorAgent.open ? (
+        <PanelRightClose className="size-3.5" />
+      ) : (
+        <LogoIcon size={15} static />
+      )}
+    </PillButton>
+  ) : null;
+  const effectiveRightPanel = operatorAgentPinned ? (
+    <OperatorAgentPanel pagePanel={hasRightPanel ? rightPanel : undefined} />
+  ) : operatorAgentOverlayVisible ? (
+    undefined
+  ) : hasRightPanel ? (
+    rightPanel
+  ) : undefined;
   const panelLayout = (
     <AppShellPanelLayout
       main={
         <>
           <AppTopBar
-            actions={actions}
+            actions={
+              operatorAgentToggle || actions ? (
+                <>
+                  {actions}
+                  {operatorAgentToggle}
+                </>
+              ) : undefined
+            }
             breadcrumbDetail={breadcrumbDetail}
             presenceUsers={presenceUsers}
             showBrokerShare={showBrokerShare}
@@ -199,7 +278,11 @@ function ShellContent({
         </>
       }
       entityPanel={hasEntityPanel ? <EntityPreviewPanel /> : undefined}
-      rightPanel={hasRightPanel ? rightPanel : undefined}
+      rightPanel={effectiveRightPanel}
+      rightPanelLabel={
+        operatorAgentPinned ? "Resize operator agent" : undefined
+      }
+      preserveAuxiliaryPixelWidths={operatorAgentPinned}
       pdfPanel={hasPdfPanel ? <PdfPanel /> : undefined}
       storageUserId={storageUserId}
     />
@@ -235,7 +318,7 @@ function ShellContent({
                     animate={{ x: 0 }}
                     exit={{ x: -280 }}
                     transition={{ duration: 0.12, ease: [0.2, 0, 0, 1] }}
-                    className="fixed bottom-0 left-0 top-0 z-50 w-[260px] border-r border-border bg-background lg:hidden"
+                    className="fixed bottom-0 left-0 top-0 z-50 flex w-[260px] flex-col border-r border-border bg-background lg:hidden"
                   >
                     {renderedMobileCustomSidebar}
                   </motion.aside>
@@ -258,6 +341,36 @@ function ShellContent({
           </>
         )}
       </div>
+      <AnimatePresence>
+        {operatorAgentOverlayVisible ? (
+          <>
+            {isLarge ? (
+              <motion.button
+                type="button"
+                aria-label="Close operator agent"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="fixed inset-x-0 bottom-0 top-12 z-30 bg-black/20"
+                onClick={() => operatorAgent?.close()}
+              />
+            ) : null}
+            <motion.aside
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 24 }}
+              transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+              className="fixed bottom-0 right-0 top-12 z-40 flex w-[420px] max-lg:left-0 max-lg:w-full"
+              aria-label="Operator agent"
+            >
+              <OperatorAgentPanel
+                pagePanel={hasRightPanel ? rightPanel : undefined}
+              />
+            </motion.aside>
+          </>
+        ) : null}
+      </AnimatePresence>
       <OperatorImpersonationBanner />
     </div>
   );

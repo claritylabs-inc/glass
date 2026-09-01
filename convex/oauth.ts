@@ -8,6 +8,7 @@ import {
 } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
+import { getActiveOperatorProfile } from "./lib/operatorIdentity";
 import {
   normalizeRequestedScopes,
   parseScopesFromToken,
@@ -37,7 +38,72 @@ function base64UrlEncode(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function normalizeMcpResource(resource: string | undefined) {
+  if (!resource) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(resource);
+  } catch {
+    throw new Error("invalid_target: invalid resource");
+  }
+  const isLocalDevelopmentResource =
+    parsed.protocol === "http:" &&
+    (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1");
+  if (
+    (parsed.protocol !== "https:" && !isLocalDevelopmentResource) ||
+    parsed.pathname !== "/mcp"
+  ) {
+    throw new Error(
+      "invalid_target: resource must be an HTTPS MCP endpoint (HTTP localhost is allowed for development)",
+    );
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error(
+      "invalid_target: resource must not contain a query or fragment",
+    );
+  }
+  const normalizedResource = `${parsed.origin}/mcp`;
+  const configuredSiteUrl = process.env.CONVEX_SITE_URL?.trim();
+  if (configuredSiteUrl) {
+    let configuredOrigin: string;
+    try {
+      configuredOrigin = new URL(configuredSiteUrl).origin;
+    } catch {
+      throw new Error("server_error: CONVEX_SITE_URL is invalid");
+    }
+    if (normalizedResource !== `${configuredOrigin}/mcp`) {
+      throw new Error(
+        "invalid_target: resource must be this authorization server's MCP endpoint",
+      );
+    }
+  }
+  return normalizedResource;
+}
+
+async function resolveOAuthPrincipal(
+  ctx: Parameters<typeof requireOrgAccess>[0],
+) {
+  const operator = await getActiveOperatorProfile(ctx);
+  if (operator) {
+    return {
+      principalKind: "operator" as const,
+      userId: operator.userId,
+      orgId: undefined,
+    };
+  }
+
+  const { userId, orgId } = await requireOrgAccess(ctx);
+  return {
+    principalKind: "organization" as const,
+    userId,
+    orgId,
+  };
 }
 
 // ── Internal functions (called by HTTP actions) ──
@@ -82,6 +148,7 @@ export const exchangeAuthCode = internalMutation({
     clientId: v.string(),
     redirectUri: v.string(),
     codeVerifier: v.string(),
+    resource: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const codeHash = await sha256Hex(args.codeRaw);
@@ -92,9 +159,15 @@ export const exchangeAuthCode = internalMutation({
 
     if (!codeRecord) throw new Error("invalid_grant");
     if (codeRecord.usedAt) throw new Error("invalid_grant");
-    if (codeRecord.expiresAt < dayjs().valueOf()) throw new Error("invalid_grant");
+    if (codeRecord.expiresAt < dayjs().valueOf())
+      throw new Error("invalid_grant");
     if (codeRecord.clientId !== args.clientId) throw new Error("invalid_grant");
-    if (codeRecord.redirectUri !== args.redirectUri) throw new Error("invalid_grant");
+    if (codeRecord.redirectUri !== args.redirectUri)
+      throw new Error("invalid_grant");
+    const resource = normalizeMcpResource(args.resource);
+    if (codeRecord.resource && resource !== codeRecord.resource) {
+      throw new Error("invalid_grant");
+    }
 
     // PKCE S256 verification
     const encoder = new TextEncoder();
@@ -121,7 +194,9 @@ export const exchangeAuthCode = internalMutation({
       refreshTokenHash,
       clientId: args.clientId,
       userId: codeRecord.userId,
-      orgId: codeRecord.orgId,
+      ...(codeRecord.orgId ? { orgId: codeRecord.orgId } : {}),
+      principalKind: codeRecord.principalKind ?? "organization",
+      ...(codeRecord.resource ? { resource: codeRecord.resource } : {}),
       scope: stringifyScopes(scopes),
       scopes,
       expiresAt: now + 60 * 60 * 1000,
@@ -150,9 +225,40 @@ export const validateAccessToken = internalQuery({
     if (token.revokedAt) return null;
     if (token.expiresAt < dayjs().valueOf()) return null;
 
+    const principalKind = token.principalKind ?? "organization";
+    if (principalKind === "operator") {
+      const [user, profile] = await Promise.all([
+        ctx.db.get(token.userId),
+        ctx.db
+          .query("operatorProfiles")
+          .withIndex("user", (q) => q.eq("userId", token.userId))
+          .first(),
+      ]);
+      if (
+        !user ||
+        user.accountKind !== "operator" ||
+        !profile ||
+        profile.status !== "active"
+      ) {
+        return null;
+      }
+      return {
+        userId: token.userId,
+        orgId: undefined,
+        principalKind,
+        operatorRole: profile.role,
+        resource: token.resource,
+        clientId: token.clientId,
+      };
+    }
+
+    if (!token.orgId) return null;
+
     return {
       userId: token.userId,
       orgId: token.orgId,
+      principalKind,
+      resource: token.resource,
       clientId: token.clientId,
     };
   },
@@ -170,9 +276,35 @@ export const validateAccessTokenWithScopes = internalQuery({
     if (token.revokedAt) return null;
     if (token.expiresAt < dayjs().valueOf()) return null;
 
+    const principalKind = token.principalKind ?? "organization";
+    let operatorRole: "operator" | "owner" | undefined;
+    if (principalKind === "operator") {
+      const [user, profile] = await Promise.all([
+        ctx.db.get(token.userId),
+        ctx.db
+          .query("operatorProfiles")
+          .withIndex("user", (q) => q.eq("userId", token.userId))
+          .first(),
+      ]);
+      if (
+        !user ||
+        user.accountKind !== "operator" ||
+        !profile ||
+        profile.status !== "active"
+      ) {
+        return null;
+      }
+      operatorRole = profile.role;
+    } else if (!token.orgId) {
+      return null;
+    }
+
     return {
       userId: token.userId,
       orgId: token.orgId,
+      principalKind,
+      operatorRole,
+      resource: token.resource,
       clientId: token.clientId,
       tokenId: token._id,
       scopes: parseScopesFromToken(token.scopes, token.scope),
@@ -184,14 +316,13 @@ export const refreshAccessToken = internalMutation({
   args: {
     refreshTokenRaw: v.string(),
     clientId: v.string(),
+    resource: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const refreshHash = await sha256Hex(args.refreshTokenRaw);
     const token = await ctx.db
       .query("oauthTokens")
-      .withIndex("refresh_token", (q) =>
-        q.eq("refreshTokenHash", refreshHash),
-      )
+      .withIndex("refresh_token", (q) => q.eq("refreshTokenHash", refreshHash))
       .first();
 
     if (!token) throw new Error("invalid_grant");
@@ -201,6 +332,10 @@ export const refreshAccessToken = internalMutation({
       throw new Error("invalid_grant");
     }
     if (token.clientId !== args.clientId) throw new Error("invalid_grant");
+    const resource = normalizeMcpResource(args.resource);
+    if (token.resource && resource !== token.resource) {
+      throw new Error("invalid_grant");
+    }
 
     const scopes = parseScopesFromToken(token.scopes, token.scope);
     await ctx.db.patch(token._id, { revokedAt: now });
@@ -215,7 +350,9 @@ export const refreshAccessToken = internalMutation({
       refreshTokenHash,
       clientId: args.clientId,
       userId: token.userId,
-      orgId: token.orgId,
+      ...(token.orgId ? { orgId: token.orgId } : {}),
+      principalKind: token.principalKind ?? "organization",
+      ...(token.resource ? { resource: token.resource } : {}),
       scope: stringifyScopes(scopes),
       scopes,
       expiresAt: now + 60 * 60 * 1000,
@@ -254,7 +391,7 @@ export const getClientInfo = query({
   },
   handler: async (ctx, args) => {
     // Requires auth (Convex query context provides it)
-    await requireOrgAccess(ctx);
+    const principal = await resolveOAuthPrincipal(ctx);
 
     const client = await ctx.db
       .query("oauthClients")
@@ -269,6 +406,7 @@ export const getClientInfo = query({
     return {
       clientName: client.clientName,
       clientId: client.clientId,
+      principalKind: principal.principalKind,
     };
   },
 });
@@ -279,10 +417,17 @@ export const createAuthorizationCode = mutation({
     redirectUri: v.string(),
     codeChallenge: v.string(),
     scope: v.optional(v.string()),
+    resource: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const { principalKind, userId, orgId } = await resolveOAuthPrincipal(ctx);
     const scopes = normalizeRequestedScopes(args.scope);
+    const resource = normalizeMcpResource(args.resource);
+    if (principalKind === "operator" && !resource) {
+      throw new Error(
+        "invalid_target: operator authorization requires an MCP resource",
+      );
+    }
 
     // Verify client exists and redirect_uri matches
     const client = await ctx.db
@@ -302,7 +447,9 @@ export const createAuthorizationCode = mutation({
       codeHash,
       clientId: args.clientId,
       userId,
-      orgId,
+      ...(orgId ? { orgId } : {}),
+      principalKind,
+      ...(resource ? { resource } : {}),
       redirectUri: args.redirectUri,
       codeChallenge: args.codeChallenge,
       scope: stringifyScopes(scopes),
@@ -329,7 +476,12 @@ export const listConnectedApps = query({
     // Group by clientId, show only active (non-revoked) tokens
     const activeByClient = new Map<
       string,
-      { clientId: string; createdAt: number; expiresAt: number; tokenId: Id<"oauthTokens"> }
+      {
+        clientId: string;
+        createdAt: number;
+        expiresAt: number;
+        tokenId: Id<"oauthTokens">;
+      }
     >();
 
     for (const t of tokens) {

@@ -19,6 +19,10 @@ import {
   searchConnectedEmail,
   sendConnectedVendorInvite,
 } from "../lib/chatTools";
+import {
+  filterToolsForWriteAccess,
+  MAILBOX_COORDINATOR_WRITE_TOOL_NAMES,
+} from "../lib/mcpAgentToolAccess";
 import { mailboxTaskOutcome } from "../lib/workflows/mailboxTasks";
 
 const MailboxPlanSchema = z.object({
@@ -37,15 +41,14 @@ const MailboxEvidenceSchema = z.object({
         from: z.string().nullable(),
         date: z.string().nullable(),
         reason: z.string().nullable(),
-        attachments: z
-          .array(
-            z.object({
-              filename: z.string(),
-              contentType: z.string().nullable(),
-              size: z.number().nullable(),
-              reason: z.string().nullable(),
-            }),
-          ),
+        attachments: z.array(
+          z.object({
+            filename: z.string(),
+            contentType: z.string().nullable(),
+            size: z.number().nullable(),
+            reason: z.string().nullable(),
+          }),
+        ),
       }),
     )
     .max(8),
@@ -67,6 +70,14 @@ type MailboxSearchLog = {
     attachmentCount?: number;
   }>;
 };
+
+function mailboxResultTimestamp(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
+  const date = (value as Record<string, unknown>).date;
+  if (typeof date !== "string") return 0;
+  const parsed = dayjs(date);
+  return parsed.isValid() ? parsed.valueOf() : 0;
+}
 
 function formatMailboxProgressText(plan: { summary: string; steps: string[] }) {
   return `I’m checking the mailbox now: ${plan.summary}`;
@@ -99,7 +110,9 @@ async function sendMailboxStatusText(params: {
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      console.warn(`[mailboxCoordinator] Status text failed ${response.status}: ${body}`);
+      console.warn(
+        `[mailboxCoordinator] Status text failed ${response.status}: ${body}`,
+      );
       return false;
     }
     return true;
@@ -120,6 +133,7 @@ export const runInternal = internalAction({
     routingParentId: v.optional(v.string()),
     statusToPhone: v.optional(v.string()),
     statusChatGuid: v.optional(v.string()),
+    canWrite: v.optional(v.boolean()),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<Record<string, unknown>> => {
@@ -152,12 +166,16 @@ export const runInternal = internalAction({
       label?: string;
       host: string;
     }>;
-    const searchAccountRows = selectedAccountRows.length > 0
-      ? selectedAccountRows
-      : accessibleAccountRows;
+    const searchAccountRows =
+      selectedAccountRows.length > 0
+        ? selectedAccountRows
+        : accessibleAccountRows;
     const selectedMailboxContext = selectedAccountRows.length
       ? `\n\nUSER-SELECTED MAILBOXES: Restrict mailbox search to these accounts unless the user explicitly asks to broaden it:\n${selectedAccountRows
-          .map((account) => `- ${account.label || account.emailAddress} (${account.emailAddress}, ID:${account._id})`)
+          .map(
+            (account) =>
+              `- ${account.label || account.emailAddress} (${account.emailAddress}, ID:${account._id})`,
+          )
           .join("\n")}`
       : "";
     const evidenceEmails: Array<Record<string, unknown>> = [];
@@ -182,13 +200,21 @@ export const runInternal = internalAction({
     const rememberAttachmentEvidence = (value: unknown) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) return;
       const record = value as Record<string, unknown>;
-      if (typeof record.emailRef !== "string" || typeof record.filename !== "string") return;
+      if (
+        typeof record.emailRef !== "string" ||
+        typeof record.filename !== "string"
+      )
+        return;
       evidenceAttachments.push(record);
     };
-    const planResult = await generateObjectForOrg(ctx, args.orgId, "mailbox_coordinator", {
-      schema: MailboxPlanSchema,
-      maxOutputTokens: 768,
-      system: `You are planning a Spot mailbox subagent task. Produce a concise operational plan before any mailbox search/read/import work runs.
+    const planResult = await generateObjectForOrg(
+      ctx,
+      args.orgId,
+      "mailbox_coordinator",
+      {
+        schema: MailboxPlanSchema,
+        maxOutputTokens: 768,
+        system: `You are planning a Spot mailbox subagent task. Produce a concise operational plan before any mailbox search/read/import work runs.
 
 Rules:
 - Do not claim work has been completed.
@@ -196,8 +222,9 @@ Rules:
 - Describe a search strategy with specific search terms and date windows when the task is investigative.
 - Keep the summary short and user-facing.
 - Steps should be concrete and scan-friendly.`,
-      prompt: args.task + selectedMailboxContext,
-    });
+        prompt: args.task + selectedMailboxContext,
+      },
+    );
     const plan = planResult.object;
     await sendMailboxStatusText({
       toPhone: args.statusToPhone,
@@ -210,21 +237,25 @@ Rules:
         id: args.chatMessageId,
         content: formatMailboxProgressText(plan),
         usedTools: ["coordinate_mailbox_task"],
-        toolCalls: [{
-          name: "coordinate_mailbox_task",
-          input: JSON.stringify({ task: args.task }).slice(0, 500),
-        }],
-        toolArtifacts: [{
-          type: "mailbox_task",
-          data: {
-            status: "running",
-            plan,
-            searches: [],
-            evidence: { emails: [] },
-            mailboxErrors: [],
-            toolCalls: [],
+        toolCalls: [
+          {
+            name: "coordinate_mailbox_task",
+            input: JSON.stringify({ task: args.task }).slice(0, 500),
           },
-        }],
+        ],
+        toolArtifacts: [
+          {
+            type: "mailbox_task",
+            data: {
+              status: "running",
+              plan,
+              searches: [],
+              evidence: { emails: [] },
+              mailboxErrors: [],
+              toolCalls: [],
+            },
+          },
+        ],
       });
     }
 
@@ -260,210 +291,280 @@ ${plan.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}
 - User-selected mailbox scope:
 ${selectedAccountRows.length ? selectedAccountRows.map((account) => `  - ${account.label || account.emailAddress} (${account.emailAddress})`).join("\n") : searchAccountRows.length ? searchAccountRows.map((account) => `  - ${account.label || account.emailAddress} (${account.emailAddress})`).join("\n") : "  - No accessible connected mailboxes."}
 - Keep the final answer concise and action-focused.`,
-      messages: [{ role: "user", content: args.task + selectedMailboxContext }],
-      tools: {
-        search_connected_email: {
-          ...searchConnectedEmail,
-          execute: async (input: {
-            query?: string;
-            mailbox?: string;
-            sinceDays?: number;
-            dateFrom?: string;
-            dateTo?: string;
-            limit?: number;
-          }): Promise<unknown> => {
-            const limit = Math.min(Math.max(input.limit ?? 10, 1), 25);
-            const rows = searchAccountRows.length > 0
-              ? (
-                  await Promise.all(
-                    searchAccountRows.map(async (account) => {
-                      const accountRows = await ctx.runAction(internal.actions.connectedEmail.searchInternal, {
-                        orgId: args.orgId,
-                        userId: args.userId,
-                        accountId: account._id,
-                        query: input.query,
-                        mailbox: input.mailbox,
-                        sinceDays: input.sinceDays,
-                        dateFrom: input.dateFrom,
-                        dateTo: input.dateTo,
-                        limit,
-                      }) as unknown[];
-                      const matches = accountRows.filter((row) => {
-                        if (!row || typeof row !== "object" || Array.isArray(row)) return false;
-                        return (row as Record<string, unknown>).type !== "mailbox_search_error";
-                      });
-                      const errors = accountRows.length - matches.length;
-                      mailboxSearches.push({
-                        accountEmail: account.emailAddress,
-                        mailbox: input.mailbox ?? "INBOX",
-                        query: input.query,
-                        dateFrom: input.dateFrom,
-                        dateTo: input.dateTo,
-                        resultCount: matches.length,
-                        errorCount: errors,
-                        identified: matches.slice(0, 5).map((row) => {
-                          const record = row as Record<string, unknown>;
-                          return {
-                            subject: typeof record.subject === "string" ? record.subject : "(no subject)",
-                            from: typeof record.from === "string" ? record.from : undefined,
-                            date: typeof record.date === "string" ? record.date : undefined,
-                            attachmentCount: typeof record.attachmentCount === "number" ? record.attachmentCount : undefined,
-                          };
-                        }),
-                      });
-                      return accountRows;
-                    }),
-                  )
-                )
-                  .flat()
-                  .sort((a: any, b: any) => {
-                    const aTime = a?.date ? dayjs(a.date).valueOf() : 0;
-                    const bTime = b?.date ? dayjs(b.date).valueOf() : 0;
-                    return bTime - aTime;
-                  })
-                  .slice(0, limit)
-              : [{
-                  type: "mailbox_search_error" as const,
-                  mailbox: input.mailbox ?? "INBOX",
-                  message: "No connected email account is available",
-                  hint: "Connect a mailbox in Settings → Email, or select an accessible mailbox before asking Spot to search.",
-                }];
-            if (searchAccountRows.length === 0) {
-              mailboxSearches.push({
-                mailbox: input.mailbox ?? "INBOX",
-                query: input.query,
-                dateFrom: input.dateFrom,
-                dateTo: input.dateTo,
-                resultCount: 0,
-                errorCount: 1,
-                identified: [],
-              });
-            }
-            const windowLabel = input.dateFrom || input.dateTo
-              ? ` from ${input.dateFrom ?? "the earliest available date"} to ${input.dateTo ?? "now"}`
-              : "";
-            rememberEmailEvidence(rows, input.query ? `Matched search "${input.query}"${windowLabel}` : `Matched mailbox search${windowLabel}`);
-            return rows;
-          },
-        },
-        read_connected_email: {
-          ...readConnectedEmail,
-          execute: async (input: { emailRef: string }): Promise<unknown> => {
-            const email = await ctx.runAction(internal.actions.connectedEmail.readInternal, {
-              orgId: args.orgId,
-              userId: args.userId,
-              emailRef: input.emailRef,
-            });
-            rememberEmailEvidence(email, "Read by mailbox coordinator");
-            return email;
-          },
-        },
-        read_connected_email_attachment: {
-          ...readConnectedEmailAttachment,
-          execute: async (input: { emailRef: string; filename: string }): Promise<unknown> => {
-            const attachment = await ctx.runAction(internal.actions.connectedEmail.readAttachmentInternal, {
-              orgId: args.orgId,
-              userId: args.userId,
-              emailRef: input.emailRef,
-              filename: input.filename,
-            });
-            rememberAttachmentEvidence(attachment);
-            return attachment;
-          },
-        },
-        import_connected_email_policy_attachments: {
-          ...importConnectedEmailPolicyAttachments,
-          execute: async (input: { emailRef: string; filenames?: string[] }): Promise<unknown> =>
-            await ctx.runAction(
-              internal.actions.connectedEmail.importPolicyAttachmentsInternal,
-              {
-                orgId: args.orgId,
-                userId: args.userId,
-                emailRef: input.emailRef,
-                filenames: input.filenames,
+        messages: [
+          { role: "user", content: args.task + selectedMailboxContext },
+        ],
+        tools: filterToolsForWriteAccess(
+          {
+            search_connected_email: {
+              ...searchConnectedEmail,
+              execute: async (input: {
+                query?: string;
+                mailbox?: string;
+                sinceDays?: number;
+                dateFrom?: string;
+                dateTo?: string;
+                limit?: number;
+              }): Promise<unknown> => {
+                const limit = Math.min(Math.max(input.limit ?? 10, 1), 25);
+                const rows =
+                  searchAccountRows.length > 0
+                    ? (
+                        await Promise.all(
+                          searchAccountRows.map(async (account) => {
+                            const accountRows = (await ctx.runAction(
+                              internal.actions.connectedEmail.searchInternal,
+                              {
+                                orgId: args.orgId,
+                                userId: args.userId,
+                                accountId: account._id,
+                                query: input.query,
+                                mailbox: input.mailbox,
+                                sinceDays: input.sinceDays,
+                                dateFrom: input.dateFrom,
+                                dateTo: input.dateTo,
+                                limit,
+                              },
+                            )) as unknown[];
+                            const matches = accountRows.filter((row) => {
+                              if (
+                                !row ||
+                                typeof row !== "object" ||
+                                Array.isArray(row)
+                              )
+                                return false;
+                              return (
+                                (row as Record<string, unknown>).type !==
+                                "mailbox_search_error"
+                              );
+                            });
+                            const errors = accountRows.length - matches.length;
+                            mailboxSearches.push({
+                              accountEmail: account.emailAddress,
+                              mailbox: input.mailbox ?? "INBOX",
+                              query: input.query,
+                              dateFrom: input.dateFrom,
+                              dateTo: input.dateTo,
+                              resultCount: matches.length,
+                              errorCount: errors,
+                              identified: matches.slice(0, 5).map((row) => {
+                                const record = row as Record<string, unknown>;
+                                return {
+                                  subject:
+                                    typeof record.subject === "string"
+                                      ? record.subject
+                                      : "(no subject)",
+                                  from:
+                                    typeof record.from === "string"
+                                      ? record.from
+                                      : undefined,
+                                  date:
+                                    typeof record.date === "string"
+                                      ? record.date
+                                      : undefined,
+                                  attachmentCount:
+                                    typeof record.attachmentCount === "number"
+                                      ? record.attachmentCount
+                                      : undefined,
+                                };
+                              }),
+                            });
+                            return accountRows;
+                          }),
+                        )
+                      )
+                        .flat()
+                        .sort(
+                          (a, b) =>
+                            mailboxResultTimestamp(b) -
+                            mailboxResultTimestamp(a),
+                        )
+                        .slice(0, limit)
+                    : [
+                        {
+                          type: "mailbox_search_error" as const,
+                          mailbox: input.mailbox ?? "INBOX",
+                          message: "No connected email account is available",
+                          hint: "Connect a mailbox in Settings → Email, or select an accessible mailbox before asking Spot to search.",
+                        },
+                      ];
+                if (searchAccountRows.length === 0) {
+                  mailboxSearches.push({
+                    mailbox: input.mailbox ?? "INBOX",
+                    query: input.query,
+                    dateFrom: input.dateFrom,
+                    dateTo: input.dateTo,
+                    resultCount: 0,
+                    errorCount: 1,
+                    identified: [],
+                  });
+                }
+                const windowLabel =
+                  input.dateFrom || input.dateTo
+                    ? ` from ${input.dateFrom ?? "the earliest available date"} to ${input.dateTo ?? "now"}`
+                    : "";
+                rememberEmailEvidence(
+                  rows,
+                  input.query
+                    ? `Matched search "${input.query}"${windowLabel}`
+                    : `Matched mailbox search${windowLabel}`,
+                );
+                return rows;
               },
-            ),
-        },
-        import_connected_email_requirement_attachments: {
-          ...importConnectedEmailRequirementAttachments,
-          execute: async (input: {
-            emailRef: string;
-            filenames?: string[];
-            includeEmailBody?: boolean;
-            sourceType?: "lease_agreement" | "client_contract" | "vendor_requirements" | "other";
-            scope?: "vendors" | "own_org";
-          }): Promise<unknown> =>
-            await ctx.runAction(
-              internal.actions.connectedEmail.importRequirementAttachmentsInternal,
-              {
-                orgId: args.orgId,
-                userId: args.userId,
-                emailRef: input.emailRef,
-                filenames: input.filenames,
-                includeEmailBody: input.includeEmailBody,
-                sourceType: input.sourceType,
-                scope: input.scope,
+            },
+            read_connected_email: {
+              ...readConnectedEmail,
+              execute: async (input: {
+                emailRef: string;
+              }): Promise<unknown> => {
+                const email = await ctx.runAction(
+                  internal.actions.connectedEmail.readInternal,
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    emailRef: input.emailRef,
+                  },
+                );
+                rememberEmailEvidence(email, "Read by mailbox coordinator");
+                return email;
               },
-            ),
-        },
-        save_connected_email_attachments_to_thread: {
-          ...saveConnectedEmailAttachmentsToThread,
-          execute: async (input: { emailRef: string; filenames?: string[] }): Promise<unknown> => {
-            if (!args.threadId) {
-              return {
-                status: "thread_unavailable" as const,
-                message: "This mailbox task is not attached to a reusable Spot thread.",
-              };
-            }
-            return await ctx.runAction(
-              internal.actions.connectedEmail.saveAttachmentsToThreadInternal,
-              {
-                orgId: args.orgId,
-                userId: args.userId,
-                threadId: args.threadId,
-                emailRef: input.emailRef,
-                filenames: input.filenames,
+            },
+            read_connected_email_attachment: {
+              ...readConnectedEmailAttachment,
+              execute: async (input: {
+                emailRef: string;
+                filename: string;
+              }): Promise<unknown> => {
+                const attachment = await ctx.runAction(
+                  internal.actions.connectedEmail.readAttachmentInternal,
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    emailRef: input.emailRef,
+                    filename: input.filename,
+                  },
+                );
+                rememberAttachmentEvidence(attachment);
+                return attachment;
               },
-            );
+            },
+            import_connected_email_policy_attachments: {
+              ...importConnectedEmailPolicyAttachments,
+              execute: async (input: {
+                emailRef: string;
+                filenames?: string[];
+              }): Promise<unknown> =>
+                await ctx.runAction(
+                  internal.actions.connectedEmail
+                    .importPolicyAttachmentsInternal,
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    emailRef: input.emailRef,
+                    filenames: input.filenames,
+                  },
+                ),
+            },
+            import_connected_email_requirement_attachments: {
+              ...importConnectedEmailRequirementAttachments,
+              execute: async (input: {
+                emailRef: string;
+                filenames?: string[];
+                includeEmailBody?: boolean;
+                sourceType?:
+                  | "lease_agreement"
+                  | "client_contract"
+                  | "vendor_requirements"
+                  | "other";
+                scope?: "vendors" | "own_org";
+              }): Promise<unknown> =>
+                await ctx.runAction(
+                  internal.actions.connectedEmail
+                    .importRequirementAttachmentsInternal,
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    emailRef: input.emailRef,
+                    filenames: input.filenames,
+                    includeEmailBody: input.includeEmailBody,
+                    sourceType: input.sourceType,
+                    scope: input.scope,
+                  },
+                ),
+            },
+            save_connected_email_attachments_to_thread: {
+              ...saveConnectedEmailAttachmentsToThread,
+              execute: async (input: {
+                emailRef: string;
+                filenames?: string[];
+              }): Promise<unknown> => {
+                if (!args.threadId) {
+                  return {
+                    status: "thread_unavailable" as const,
+                    message:
+                      "This mailbox task is not attached to a reusable Spot thread.",
+                  };
+                }
+                return await ctx.runAction(
+                  internal.actions.connectedEmail
+                    .saveAttachmentsToThreadInternal,
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    threadId: args.threadId,
+                    emailRef: input.emailRef,
+                    filenames: input.filenames,
+                  },
+                );
+              },
+            },
+            save_connected_email_message_to_thread: {
+              ...saveConnectedEmailMessageToThread,
+              execute: async (input: {
+                emailRef: string;
+                filename?: string;
+              }): Promise<unknown> => {
+                if (!args.threadId) {
+                  return {
+                    status: "thread_unavailable" as const,
+                    message:
+                      "This mailbox task is not attached to a reusable Spot thread.",
+                  };
+                }
+                return await ctx.runAction(
+                  internal.actions.connectedEmail.saveMessageToThreadInternal,
+                  {
+                    orgId: args.orgId,
+                    userId: args.userId,
+                    threadId: args.threadId,
+                    emailRef: input.emailRef,
+                    filename: input.filename,
+                  },
+                );
+              },
+            },
+            send_connected_vendor_invite: {
+              ...sendConnectedVendorInvite,
+              execute: async (input: {
+                vendorEmail: string;
+                relationshipLabel?: string;
+                note?: string;
+              }): Promise<unknown> =>
+                await ctx.runAction(
+                  internal.connectedOrgs.requestVendorAccessByEmailInternal,
+                  {
+                    clientOrgId: args.orgId,
+                    requestedByUserId: args.userId,
+                    vendorEmail: input.vendorEmail,
+                    relationshipLabel: input.relationshipLabel,
+                    note: input.note,
+                  },
+                ),
+            },
           },
-        },
-        save_connected_email_message_to_thread: {
-          ...saveConnectedEmailMessageToThread,
-          execute: async (input: { emailRef: string; filename?: string }): Promise<unknown> => {
-            if (!args.threadId) {
-              return {
-                status: "thread_unavailable" as const,
-                message: "This mailbox task is not attached to a reusable Spot thread.",
-              };
-            }
-            return await ctx.runAction(
-              internal.actions.connectedEmail.saveMessageToThreadInternal,
-              {
-                orgId: args.orgId,
-                userId: args.userId,
-                threadId: args.threadId,
-                emailRef: input.emailRef,
-                filename: input.filename,
-              },
-            );
-          },
-        },
-        send_connected_vendor_invite: {
-          ...sendConnectedVendorInvite,
-          execute: async (input: {
-            vendorEmail: string;
-            relationshipLabel?: string;
-            note?: string;
-          }): Promise<unknown> =>
-            await ctx.runAction(internal.connectedOrgs.requestVendorAccessByEmailInternal, {
-              clientOrgId: args.orgId,
-              requestedByUserId: args.userId,
-              vendorEmail: input.vendorEmail,
-              relationshipLabel: input.relationshipLabel,
-              note: input.note,
-            }),
-        },
-      },
+          args.canWrite,
+          MAILBOX_COORDINATOR_WRITE_TOOL_NAMES,
+        ),
       },
       {
         taskKind: "mailbox_coordinate",

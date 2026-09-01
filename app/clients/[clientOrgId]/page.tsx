@@ -7,6 +7,7 @@ import {
   OperationalDetailRow,
   OperationalPanel,
 } from "@/components/ui/operational-panel";
+import { StatusTag } from "@/components/ui/status-tag";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import { typeStyle } from "@/lib/typography";
 
@@ -29,9 +30,20 @@ export default function ClientDetailsPage() {
     ["Context", (client as { context?: string }).context],
   ];
   const filled = rows.filter(([, v]) => v);
+  const active = Boolean(
+    (client as { onboardingComplete?: boolean }).onboardingComplete,
+  );
 
   return (
     <OperationalPanel as="div" className="px-5 py-1">
+      <OperationalDetailRow
+        label="Status"
+        value={
+          <StatusTag tone={active ? "success" : "warning"}>
+            {active ? "Active" : "Onboarding"}
+          </StatusTag>
+        }
+      />
       {filled.length === 0 ? (
         <p className={`py-3 text-muted-foreground ${typeStyle("body.default")}`}>
           No details yet.

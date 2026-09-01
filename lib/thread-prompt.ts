@@ -13,7 +13,15 @@ export type ThreadPromptAttachment = {
   contentType: string;
   size: number;
   fileId: Id<"_storage">;
+  uploadIntentId?: Id<"operatorAgentUploadIntents">;
 };
+
+type PromptUploadTarget =
+  | string
+  | {
+      uploadUrl: string;
+      uploadIntentId: Id<"operatorAgentUploadIntents">;
+    };
 
 type PromptReferenceKind = NonNullable<
   PromptInputMessage["references"]
@@ -76,32 +84,60 @@ export function promptReferenceIds(
 
 export async function uploadPromptFiles(
   files: FileUIPart[],
-  generateUploadUrl: () => Promise<string>,
+  generateUploadUrl: () => Promise<PromptUploadTarget>,
+  options: {
+    failOnUploadError?: boolean;
+    maxAggregateSize?: number;
+    finalizeUpload?: (attachment: ThreadPromptAttachment) => Promise<void>;
+    onUploaded?: (attachment: ThreadPromptAttachment) => void;
+    onUploadTarget?: (target: PromptUploadTarget) => void;
+  } = {},
 ): Promise<ThreadPromptAttachment[]> {
   const attachments: ThreadPromptAttachment[] = [];
+  let aggregateSize = 0;
 
   for (const file of files) {
-    const uploadUrl = await generateUploadUrl();
     const blob = await fetch(file.url).then((response) => response.blob());
+    aggregateSize += blob.size;
+    if (
+      options.maxAggregateSize !== undefined &&
+      aggregateSize > options.maxAggregateSize
+    ) {
+      throw new Error("Attachments exceed the 50 MB message limit");
+    }
     const contentType = inferAttachmentContentType(
       file.filename,
       file.mediaType,
     );
+    const target = await generateUploadUrl();
+    options.onUploadTarget?.(target);
+    const uploadUrl = typeof target === "string" ? target : target.uploadUrl;
     const response = await fetch(uploadUrl, {
       method: "POST",
       headers: { "Content-Type": contentType },
       body: blob,
     });
 
-    if (!response.ok) continue;
+    if (!response.ok) {
+      if (options.failOnUploadError) {
+        throw new Error(`Attachment upload failed (${response.status})`);
+      }
+      continue;
+    }
 
     const { storageId } = (await response.json()) as { storageId: string };
-    attachments.push({
+    const uploaded: ThreadPromptAttachment = {
       filename: file.filename ?? "file",
       contentType,
       size: blob.size,
       fileId: storageId as Id<"_storage">,
-    });
+      ...(typeof target === "string"
+        ? {}
+        : { uploadIntentId: target.uploadIntentId }),
+    };
+    options.onUploaded?.(uploaded);
+    await options.finalizeUpload?.(uploaded);
+    attachments.push(uploaded);
   }
 
   return attachments;

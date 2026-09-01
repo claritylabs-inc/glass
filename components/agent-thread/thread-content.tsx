@@ -69,7 +69,6 @@ import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { NewChatEmptyState } from "@/components/new-chat-empty-state";
 import { LogoIcon } from "@/components/ui/logo-icon";
-import { BrandIcon } from "@/components/ui/brand-icon";
 import {
   PromptReferenceText,
   type PromptReference,
@@ -78,6 +77,7 @@ import {
 import { ThreadAttachmentChip } from "@/components/agent-thread/thread-attachment-chip";
 import { usePdf } from "@/components/pdf-context";
 import { ThreadMessageBubble } from "@/components/agent-thread/message-bubble";
+import { AgentThinkingBubble } from "@/components/agent-thread/agent-thinking-bubble";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import {
   optimisticPromptAttachments,
@@ -986,7 +986,7 @@ function UnifiedThreadActions({
     <>
       <PillButton
         size="compact"
-        variant="icon"
+        variant="secondary"
         onClick={handleCopyThread}
         label="Copy thread"
         expandLabel
@@ -995,7 +995,7 @@ function UnifiedThreadActions({
       </PillButton>
       <PillButton
         size="compact"
-        variant="icon"
+        variant="secondary"
         onClick={handleArchiveToggle}
         label={isArchived ? "Unarchive" : "Archive"}
         expandLabel
@@ -1129,26 +1129,6 @@ function PendingSendCountdown({
   );
 }
 
-export function AgentThinkingBubble() {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-label="Spot is thinking"
-      className="inline-flex h-9 items-center gap-1 rounded-lg bg-foreground/[0.03] px-3"
-    >
-      {[0, 160, 320].map((delay) => (
-        <span
-          key={delay}
-          aria-hidden
-          className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/45 motion-reduce:animate-none"
-          style={{ animationDelay: `${delay}ms` }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function WebMessageReceipt({
   status,
 }: {
@@ -1180,7 +1160,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   mirroredToImessage,
   threadContext,
   brokerPerspective,
-  agentBranding,
   collapseEmailMessages,
   onOpenEmail,
   openEmailMessageId,
@@ -1198,8 +1177,6 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   threadContext?: { pageType: string; entityId?: string; summary?: string };
   /** When true, render agent messages as if sent "by the broker" — right-aligned. */
   brokerPerspective?: boolean;
-  /** Optional branding — when set, replaces generic "Spot" + asterisk on agent bubble. */
-  agentBranding?: { name: string; iconUrl?: string | null };
   collapseEmailMessages?: boolean;
   onOpenEmail?: (message: ThreadMessage) => void;
   openEmailMessageId?: Id<"threadMessages"> | null;
@@ -1228,47 +1205,20 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
   // then publishes one complete response like the other conversation channels.
   if (msg.role === "agent" && msg.status === "processing") {
     return (
-      <div className="flex w-full items-start gap-2.5">
-        <div
-          className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
-            agentBranding?.iconUrl ? "bg-transparent" : "bg-primary-light/15"
-          }`}
-        >
-          {agentBranding?.iconUrl ? (
-            <BrandIcon
-              src={agentBranding.iconUrl}
-              name={agentBranding.name}
-              size="md"
-              className="rounded-full"
-            />
-          ) : (
-            <LogoIcon
-              size={14}
-              static
-              className="text-primary-light"
-            />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <p className={`text-muted-foreground/60 ${typeStyle("caption.medium")}`}>
-              {agentBranding?.name ?? "Spot"}
-            </p>
-            {channelIcon}
-            <CancelButton messageId={msg._id} show />
-          </div>
-
+      <div className="w-full">
+        <div className="flex items-center gap-2">
           <AgentThinkingBubble />
-          {relatedEmailMessages.length > 0 ? (
-            <div className="mt-3">
-              <EmailStackCard
-                messages={relatedEmailMessages}
-                onOpen={onOpenEmail}
-                isOpenMessageId={openEmailMessageId}
-              />
-            </div>
-          ) : null}
+          <CancelButton messageId={msg._id} show />
         </div>
+        {relatedEmailMessages.length > 0 ? (
+          <div className="mt-3">
+            <EmailStackCard
+              messages={relatedEmailMessages}
+              onOpen={onOpenEmail}
+              isOpenMessageId={openEmailMessageId}
+            />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -1329,130 +1279,84 @@ export const UnifiedMessageBubble = memo(function UnifiedMessageBubble({
       }
     }
     return (
-      <div>
-        <div
-          className={`flex w-full items-start gap-2.5 ${brokerPerspective ? "ml-auto flex-row-reverse" : ""}`}
-        >
-          <div
-            className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${
-              agentBranding?.iconUrl ? "bg-transparent" : "bg-primary-light/15"
-            }`}
-          >
-            {agentBranding?.iconUrl ? (
-              <BrandIcon
-                src={agentBranding.iconUrl}
-                name={agentBranding.name}
-                size="md"
-                className="rounded-full"
-              />
-            ) : (
-              <LogoIcon size={14} static className="text-primary-light" />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div
-              className={`flex items-center gap-2 mb-1 ${brokerPerspective ? "justify-end" : ""}`}
+      <div className={brokerPerspective ? "ml-auto w-full max-w-lg" : "w-full"}>
+        {collapseEmailMessages && msg.channel === "email" ? (
+          <EmailSummaryCard
+            message={msg}
+            onOpen={onOpenEmail}
+            isOpen={openEmailMessageId === msg._id}
+          />
+        ) : (
+          <>
+            <ThreadMessageBubble
+              role="agent"
+              channel={msg.channel}
+              isError={isError}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <p className={`shrink-0 text-muted-foreground/60 ${typeStyle("caption.medium")}`}>
-                  {agentBranding?.name ?? "Spot"}
-                </p>
-                {msg.channel === "email" && !collapseEmailMessages ? (
-                  <EmailRecipientMeta
-                    toAddresses={msg.toAddresses}
-                    ccAddresses={msg.ccAddresses}
-                  />
-                ) : null}
-                {channelIcon}
-                <span className="text-muted-foreground/30">·</span>
-                <span className={`text-muted-foreground/45 ${typeStyle("caption.default")}`}>
-                  {formatDisplayDateTime(time)}
-                </span>
+              <ProseMarkdown
+                gfm
+                breaks
+                compact={msg.channel === "imessage"}
+                className={markdownStylesForChannel(msg.channel)}
+                components={markdownComponents}
+              >
+                {displayContent}
+              </ProseMarkdown>
+            </ThreadMessageBubble>
+            {msg.channel === "slack" &&
+            msg.slackDeliveryStatus !== undefined &&
+            msg.slackDeliveryStatus !== "sent" ? (
+              <StatusTag
+                tone={
+                  msg.slackDeliveryStatus === "failed" ? "danger" : "info"
+                }
+                className="mt-2"
+              >
+                {msg.slackDeliveryStatus === "failed"
+                  ? "Not delivered to Slack"
+                  : "Delivering to Slack"}
+              </StatusTag>
+            ) : null}
+            <MessageFooterActions
+              refs={allRefs}
+              citedSections={citedSections}
+              citedCoverageNames={citedCoverageNames}
+              citedSourceSpanIds={citedSourceSpanIds}
+              attachments={msg.attachments}
+              threadId={msg.threadId}
+              mailboxArtifacts={mailboxArtifacts}
+              messageId={msg._id}
+              onOpenMailboxArtifact={onOpenMailboxArtifact}
+              openMailboxArtifactRef={openMailboxArtifactRef}
+              copyContent={stripConfidenceMarkers(displayContent)}
+              retryMessageId={
+                msg.channel === "chat" || msg.channel === "imessage"
+                  ? msg._id
+                  : undefined
+              }
+              rightAligned={brokerPerspective}
+            />
+            <VendorComplianceArtifacts
+              messageId={msg._id}
+              artifacts={msg.toolArtifacts}
+              openArtifactRef={openVendorComplianceArtifactRef}
+              onOpenArtifact={onOpenVendorCompliance}
+            />
+            <CertificateHoldArtifacts artifacts={msg.toolArtifacts} />
+            {relatedEmailMessages.length > 0 ? (
+              <div className="mt-4">
+                <EmailStackCard
+                  messages={relatedEmailMessages}
+                  onOpen={onOpenEmail}
+                  isOpenMessageId={openEmailMessageId}
+                />
               </div>
-            </div>
-            {collapseEmailMessages && msg.channel === "email" ? (
-              <EmailSummaryCard
-                message={msg}
-                onOpen={onOpenEmail}
-                isOpen={openEmailMessageId === msg._id}
-              />
-            ) : (
-              <>
-                <ThreadMessageBubble
-                  role="agent"
-                  channel={msg.channel}
-                  isError={isError}
-                >
-                  <ProseMarkdown
-                    gfm
-                    breaks
-                    compact={msg.channel === "imessage"}
-                    className={markdownStylesForChannel(msg.channel)}
-                    components={markdownComponents}
-                  >
-                    {displayContent}
-                  </ProseMarkdown>
-                </ThreadMessageBubble>
-                {msg.channel === "slack" &&
-                msg.slackDeliveryStatus !== undefined &&
-                msg.slackDeliveryStatus !== "sent" ? (
-                  <StatusTag
-                    tone={
-                      msg.slackDeliveryStatus === "failed"
-                        ? "danger"
-                        : "info"
-                    }
-                    className="mt-2"
-                  >
-                    {msg.slackDeliveryStatus === "failed"
-                      ? "Not delivered to Slack"
-                      : "Delivering to Slack"}
-                  </StatusTag>
-                ) : null}
-                <MessageFooterActions
-                  refs={allRefs}
-                  citedSections={citedSections}
-                  citedCoverageNames={citedCoverageNames}
-                  citedSourceSpanIds={citedSourceSpanIds}
-                  attachments={msg.attachments}
-                  threadId={msg.threadId}
-                  mailboxArtifacts={mailboxArtifacts}
-                  messageId={msg._id}
-                  onOpenMailboxArtifact={onOpenMailboxArtifact}
-                  openMailboxArtifactRef={openMailboxArtifactRef}
-                  copyContent={stripConfidenceMarkers(displayContent)}
-                  retryMessageId={
-                    msg.channel === "chat" || msg.channel === "imessage"
-                      ? msg._id
-                      : undefined
-                  }
-                  rightAligned={brokerPerspective}
-                />
-                <VendorComplianceArtifacts
-                  messageId={msg._id}
-                  artifacts={msg.toolArtifacts}
-                  openArtifactRef={openVendorComplianceArtifactRef}
-                  onOpenArtifact={onOpenVendorCompliance}
-                />
-                <CertificateHoldArtifacts
-                  artifacts={msg.toolArtifacts}
-                />
-                {relatedEmailMessages.length > 0 ? (
-                  <div className="mt-4">
-                    <EmailStackCard
-                      messages={relatedEmailMessages}
-                      onOpen={onOpenEmail}
-                      isOpenMessageId={openEmailMessageId}
-                    />
-                  </div>
-                ) : null}
-              </>
-            )}
-            {msg.status === "pending_send" && msg.pendingEmailId && (
-              <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
-            )}
-          </div>
-        </div>
+            ) : null}
+          </>
+        )}
+        {msg.status === "pending_send" && msg.pendingEmailId && (
+          <PendingSendCountdown pendingEmailId={msg.pendingEmailId} />
+        )}
       </div>
     );
   }
@@ -1759,7 +1663,6 @@ export function UnifiedThreadContent({
   onRightPanel,
   viewerId,
   viewerEmail,
-  agentBranding,
 }: {
   threadId: Id<"threads">;
   onMeta?: (meta: {
@@ -1769,7 +1672,6 @@ export function UnifiedThreadContent({
   onRightPanel?: (panel: React.ReactNode | null) => void;
   viewerId?: string;
   viewerEmail?: string;
-  agentBranding?: { name: string; iconUrl?: string | null };
 }) {
   const thread = useCachedQuery("threads.get.current", api.threads.get, {
     id: threadId,
@@ -2276,7 +2178,6 @@ export function UnifiedThreadContent({
                   threadContext={
                     isFirstUser ? thread?.initialContext : undefined
                   }
-                  agentBranding={agentBranding}
                   collapseEmailMessages={collapseEmailMessages}
                   onOpenEmail={handleOpenEmail}
                   openEmailMessageId={openEmailMessageId}

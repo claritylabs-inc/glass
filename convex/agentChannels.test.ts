@@ -7,6 +7,7 @@ import {
   finishSlackSetup,
   get,
   getForOperator,
+  getOperatorImessageStatus,
   getSlackHostStatus,
   listOperatorSlackIdentities,
   setOperatorSlackIdentity,
@@ -24,6 +25,7 @@ const cancelSlackSetupFn = cancelSlackSetup as any;
 const finishSlackSetupFn = finishSlackSetup as any;
 const getFn = get as any;
 const getForOperatorFn = getForOperator as any;
+const getOperatorImessageStatusFn = getOperatorImessageStatus as any;
 const getSlackHostStatusFn = getSlackHostStatus as any;
 const listOperatorSlackIdentitiesFn = listOperatorSlackIdentities as any;
 const setOperatorSlackIdentityFn = setOperatorSlackIdentity as any;
@@ -40,6 +42,45 @@ afterEach(() => {
 });
 
 describe("agent channel settings", () => {
+  test("shows an enabled operator the private iMessage line and linked sender number", async () => {
+    vi.stubEnv("OPERATOR_IMESSAGE_ENABLED", "true");
+    vi.stubEnv(
+      "OPERATOR_IMESSAGE_WORKER_URL",
+      "https://operator-imessage.example.test",
+    );
+    vi.stubEnv("OPERATOR_IMESSAGE_WORKER_SECRET", "worker-secret");
+    vi.stubEnv("OPERATOR_IMESSAGE_CONTACT_PHONE", "+12025550199");
+    const t = convexTest(schema, modules);
+    const operatorUserId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        email: "operator@claritylabs.test",
+        phone: "+14155550123",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId,
+        email: "operator@claritylabs.test",
+        role: "operator",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return userId;
+    });
+
+    await expect(
+      t
+        .withIdentity({ subject: `${operatorUserId}|session` })
+        .query(getOperatorImessageStatusFn, {}),
+    ).resolves.toEqual({
+      enabled: true,
+      mode: "imessage",
+      configured: true,
+      contactPhone: "+12025550199",
+      senderPhone: "+14155550123",
+    });
+  });
+
   test("reports mock Slack as configured without requiring live OAuth", async () => {
     vi.stubEnv("SLACK_MODE", "mock");
     vi.stubEnv("SLACK_ENABLED", "true");

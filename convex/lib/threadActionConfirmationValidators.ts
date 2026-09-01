@@ -30,6 +30,28 @@ const requirementClassificationValidator = v.object({
   confidence: v.number(),
 });
 
+export const operatorToolActionConfirmationPayloadValidator = v.object({
+  kind: v.literal("operator_tool_action"),
+  runId: v.id("operatorAgentRuns"),
+  toolName: v.string(),
+  toolVersion: v.number(),
+  input: v.string(),
+  inputHash: v.string(),
+  idempotencyKey: v.string(),
+  capability: v.string(),
+  effect: v.union(
+    v.literal("reversible_write"),
+    v.literal("external_send"),
+    v.literal("access_change"),
+    v.literal("global_change"),
+    v.literal("destructive"),
+  ),
+  requiredRole: v.union(v.literal("operator"), v.literal("owner")),
+  targetKind: v.optional(v.string()),
+  targetId: v.optional(v.string()),
+  summary: v.string(),
+});
+
 export const threadActionConfirmationPayloadValidator = v.union(
   v.object({
     kind: v.literal("draft_snapshot"),

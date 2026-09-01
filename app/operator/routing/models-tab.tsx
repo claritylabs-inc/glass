@@ -67,6 +67,7 @@ type TaskConfig = {
   isEmbedding: boolean;
   isAudio: boolean;
   automatedRouting: boolean;
+  manualRequired: boolean;
   defaultRoute: Route;
 };
 type TaskGroupConfig = {
@@ -86,6 +87,7 @@ type Settings = {
 
 const AUTOMATED_VALUE = "__automated__";
 const DEFAULT_ROUTE_VALUE = "__default_route__";
+const MANUAL_REQUIRED_VALUE = "__manual_required__";
 const PROVIDER_SELECT_WIDTH_CLASS = "w-full xl:w-44";
 const MODEL_SELECT_WIDTH_CLASS = "w-full xl:w-[30rem]";
 const PROVIDER_PRIORITY: ProviderId[] = [
@@ -197,14 +199,20 @@ export function ModelsTab() {
         : (item?.languageModels ?? []);
   }
 
+  function modelsForTaskProvider(task: TaskConfig, provider: ProviderId) {
+    const models = modelsForProvider(provider, task.isEmbedding, task.isAudio);
+    if (!task.manualRequired) return models;
+    return models.filter(
+      (model) =>
+        modelCapabilities[capabilityKey({ provider, model })]
+          ?.supportsImageInput === true,
+    );
+  }
+
   function providersForTask(task: TaskConfig, selectedProvider: ProviderId) {
     return [...(settings?.providers ?? [])]
       .filter((provider) => {
-        const hasModels = modelsForProvider(
-          provider.id,
-          task.isEmbedding,
-          task.isAudio,
-        ).length > 0;
+        const hasModels = modelsForTaskProvider(task, provider.id).length > 0;
         return (
           hasModels && (provider.configured || provider.id === selectedProvider)
         );
@@ -216,11 +224,7 @@ export function ModelsTab() {
   }
 
   function modelsForSelectedRoute(task: TaskConfig, route: Route) {
-    const models = modelsForProvider(
-      route.provider,
-      task.isEmbedding,
-      task.isAudio,
-    );
+    const models = modelsForTaskProvider(task, route.provider);
     return models.includes(route.model) ? models : [route.model, ...models];
   }
 
@@ -243,9 +247,7 @@ export function ModelsTab() {
     <div className="grid gap-4">
       {settings.groups.map((group) => {
         const tasks = group.tasks
-          .map((taskId) =>
-            settings.tasks.find((task) => task.id === taskId),
-          )
+          .map((taskId) => settings.tasks.find((task) => task.id === taskId))
           .filter((task): task is TaskConfig => !!task);
         if (tasks.length === 0) return null;
         return (
@@ -255,11 +257,12 @@ export function ModelsTab() {
               {tasks.map((task) => {
                 const route = settings.routes[task.id] ?? null;
                 const automated = task.automatedRouting && route === null;
+                const manualSelectionMissing =
+                  task.manualRequired && route === null;
                 const saving = savingTask === task.id;
 
                 const selectedRoute = route ?? task.defaultRoute;
-                const selectedProvider =
-                  providersById[selectedRoute.provider];
+                const selectedProvider = providersById[selectedRoute.provider];
                 const providerOptions = providersForTask(
                   task,
                   selectedRoute.provider,
@@ -280,22 +283,43 @@ export function ModelsTab() {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className={`text-foreground ${typeStyle("body.medium")}`}>
+                        <p
+                          className={`text-foreground ${typeStyle("body.medium")}`}
+                        >
                           {task.label}
                         </p>
-                        {route ? (
-                          <span className={`rounded-full bg-muted/55 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}>
-                            Override
+                        {task.manualRequired || route ? (
+                          <span
+                            className={`rounded-full bg-muted/55 px-2 py-0.5 text-muted-foreground ${typeStyle("label.tag")}`}
+                          >
+                            {manualSelectionMissing
+                              ? "Required"
+                              : task.manualRequired
+                                ? "Manual"
+                                : "Override"}
                           </span>
                         ) : null}
                       </div>
+                      {task.manualRequired ? (
+                        <p
+                          className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                        >
+                          {task.description}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex w-full flex-col gap-2 justify-self-start xl:w-auto xl:flex-row xl:justify-self-end">
                       {saving ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground xl:self-center" />
                       ) : null}
                       <Select
-                        value={automated ? AUTOMATED_VALUE : selectedRoute.provider}
+                        value={
+                          automated
+                            ? AUTOMATED_VALUE
+                            : manualSelectionMissing
+                              ? MANUAL_REQUIRED_VALUE
+                              : selectedRoute.provider
+                        }
                         onValueChange={(nextProvider) => {
                           if (!nextProvider) return;
                           if (
@@ -306,11 +330,7 @@ export function ModelsTab() {
                             return;
                           }
                           const provider = nextProvider as ProviderId;
-                          const models = modelsForProvider(
-                            provider,
-                            task.isEmbedding,
-                            task.isAudio,
-                          );
+                          const models = modelsForTaskProvider(task, provider);
                           const model = models.includes(selectedRoute.model)
                             ? selectedRoute.model
                             : models[0];
@@ -324,9 +344,17 @@ export function ModelsTab() {
                             {automated ? (
                               <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
                                 <Shuffle className="size-4 shrink-0" />
-                                <span className={`truncate ${typeStyle("body.large")}`}>
+                                <span
+                                  className={`truncate ${typeStyle("body.large")}`}
+                                >
                                   Automated routing
                                 </span>
+                              </span>
+                            ) : manualSelectionMissing ? (
+                              <span
+                                className={`text-muted-foreground ${typeStyle("body.large")}`}
+                              >
+                                Choose provider
                               </span>
                             ) : (
                               <span className="flex min-w-0 items-center gap-2">
@@ -334,7 +362,9 @@ export function ModelsTab() {
                                   provider={selectedRoute.provider}
                                   size={15}
                                 />
-                                <span className={`truncate ${typeStyle("body.large")}`}>
+                                <span
+                                  className={`truncate ${typeStyle("body.large")}`}
+                                >
                                   {selectedProvider?.label ??
                                     selectedRoute.provider}
                                 </span>
@@ -343,6 +373,11 @@ export function ModelsTab() {
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="min-w-56">
+                          {manualSelectionMissing ? (
+                            <SelectItem value={MANUAL_REQUIRED_VALUE} disabled>
+                              Choose a direct provider
+                            </SelectItem>
+                          ) : null}
                           {task.automatedRouting ? (
                             <>
                               <SelectItem value={AUTOMATED_VALUE}>
@@ -353,7 +388,7 @@ export function ModelsTab() {
                               </SelectItem>
                               <SelectSeparator />
                             </>
-                          ) : route ? (
+                          ) : route && !task.manualRequired ? (
                             <>
                               <SelectItem value={DEFAULT_ROUTE_VALUE}>
                                 <span className="text-muted-foreground">
@@ -374,10 +409,14 @@ export function ModelsTab() {
                                   provider={provider.id}
                                   size={15}
                                 />
-                                <span className={`truncate ${typeStyle("body.large")}`}>
+                                <span
+                                  className={`truncate ${typeStyle("body.large")}`}
+                                >
                                   {provider.label}
                                 </span>
-                                <span className={`ml-auto shrink-0 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
+                                <span
+                                  className={`ml-auto shrink-0 text-muted-foreground/60 ${typeStyle("caption.default")}`}
+                                >
                                   {providerTransportLabel(provider)}
                                 </span>
                               </span>
@@ -386,7 +425,13 @@ export function ModelsTab() {
                         </SelectContent>
                       </Select>
                       <Select
-                        value={automated ? AUTOMATED_VALUE : selectedRoute.model}
+                        value={
+                          automated
+                            ? AUTOMATED_VALUE
+                            : manualSelectionMissing
+                              ? MANUAL_REQUIRED_VALUE
+                              : selectedRoute.model
+                        }
                         onValueChange={(model) => {
                           if (!model) return;
                           commitSelectedRoute({
@@ -394,16 +439,24 @@ export function ModelsTab() {
                             model,
                           });
                         }}
-                        disabled={saving || automated}
+                        disabled={saving || automated || manualSelectionMissing}
                       >
                         <SelectTrigger className={MODEL_SELECT_WIDTH_CLASS}>
                           <SelectValue>
                             {automated ? (
                               <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
                                 <Shuffle className="size-4 shrink-0" />
-                                <span className={`min-w-0 truncate ${typeStyle("body.default")}`}>
+                                <span
+                                  className={`min-w-0 truncate ${typeStyle("body.default")}`}
+                                >
                                   Router selects the model
                                 </span>
+                              </span>
+                            ) : manualSelectionMissing ? (
+                              <span
+                                className={`text-muted-foreground ${typeStyle("body.default")}`}
+                              >
+                                Choose provider first
                               </span>
                             ) : (
                               <span className="flex min-w-0 items-center gap-2">
@@ -422,15 +475,18 @@ export function ModelsTab() {
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="min-w-[min(42rem,calc(100vw-2rem))]">
+                          {manualSelectionMissing ? (
+                            <SelectItem value={MANUAL_REQUIRED_VALUE} disabled>
+                              Choose a provider first
+                            </SelectItem>
+                          ) : null}
                           {modelOptions.map((model) => {
                             const optionRoute = {
                               provider: selectedRoute.provider,
                               model,
                             };
                             const capability =
-                              modelCapabilities[
-                                capabilityKey(optionRoute)
-                              ];
+                              modelCapabilities[capabilityKey(optionRoute)];
                             return (
                               <SelectItem key={model} value={model}>
                                 <span className="flex min-w-0 flex-1 items-center justify-between gap-4">
@@ -446,11 +502,10 @@ export function ModelsTab() {
                                       {getModelDisplayName(optionRoute)}
                                     </span>
                                   </span>
-                                  <span className={`shrink-0 text-muted-foreground/60 ${typeStyle("caption.default")}`}>
-                                    {capabilitySummary(
-                                      capability,
-                                      task.id,
-                                    )}
+                                  <span
+                                    className={`shrink-0 text-muted-foreground/60 ${typeStyle("caption.default")}`}
+                                  >
+                                    {capabilitySummary(capability, task.id)}
                                   </span>
                                 </span>
                               </SelectItem>

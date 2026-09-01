@@ -7,6 +7,7 @@
     "clRouterHealthUrlEnv": "SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL",
     "extractionWorkerHealthUrl": "https://spot-extraction-worker-production.up.railway.app/health",
     "imessageWorkerHealthUrl": "https://spot-production-4618.up.railway.app/health",
+    "operatorImessageWorkerHealthUrlEnv": "SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL",
     "slackWorkerHealthUrlEnv": "SPOT_PRODUCTION_SLACK_WORKER_HEALTH_URL",
     "slack": {
       "appId": "A0BMW4TG7JB",
@@ -14,11 +15,26 @@
       "mode": "slack",
       "required": true
     },
+    "operatorSlack": {
+      "required": true
+    },
     "imessage": {
+      "channelRole": "customer",
       "transport": "imessage",
       "imessageEnabled": true,
       "photonConfigured": true,
       "requiredHttpPorts": [3001]
+    },
+    "operatorImessage": {
+      "required": true,
+      "serviceName": "operator-imessage-worker",
+      "rootDirectory": "/imessage-worker",
+      "railwayConfig": "imessage-worker/railway.operator.json",
+      "channelRole": "operator",
+      "transport": "imessage",
+      "imessageEnabled": true,
+      "photonConfigured": true,
+      "requiredHttpPorts": []
     },
     "email": {
       "deliveryMode": "live",
@@ -43,7 +59,19 @@
       "mode": "mock",
       "required": true
     },
+    "operatorSlack": {
+      "required": true
+    },
     "imessage": {
+      "channelRole": "customer",
+      "transport": "terminal",
+      "imessageEnabled": false,
+      "photonConfigured": false,
+      "requiredHttpPorts": []
+    },
+    "operatorImessage": {
+      "required": false,
+      "channelRole": "operator",
       "transport": "terminal",
       "imessageEnabled": false,
       "photonConfigured": false,

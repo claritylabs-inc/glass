@@ -21,7 +21,6 @@ import {
 } from "@/lib/sync/operator-cached-queries";
 import { typeStyle } from "@/lib/typography";
 import { OperatorClientSidebar } from "../operator-client-sidebar";
-import { OperatorClientImpersonationAction } from "../operator-client-impersonation-action";
 import { OperatorCertificatesWorkspace } from "../certificates/operator-certificates-workspace";
 
 export default function OperatorClientCompliancePage() {
@@ -30,14 +29,6 @@ export default function OperatorClientCompliancePage() {
   const clients = useCachedOperatorClients();
   const client = clients?.find((row) => row._id === clientOrgId) ?? null;
   const activeImpersonation = current?.activeImpersonation ?? null;
-
-  const impersonationAction = (
-    <OperatorClientImpersonationAction
-      clientOrgId={clientOrgId}
-      activeImpersonation={activeImpersonation}
-      disabled={!client}
-    />
-  );
 
   const breadcrumb = (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -68,13 +59,14 @@ export default function OperatorClientCompliancePage() {
       collapsed={collapsed}
       onToggleCollapse={onToggleCollapse}
       clientOrgId={clientOrgId}
+      activeImpersonation={activeImpersonation}
+      impersonationDisabled={!client}
     />
   );
 
   if (clients === undefined) {
     return (
       <AppShell
-        actions={impersonationAction}
         breadcrumbDetail={breadcrumb}
         customSidebar={sidebar}
         customSidebarStorageKey="operator-sidebar"
@@ -94,7 +86,6 @@ export default function OperatorClientCompliancePage() {
   if (!client) {
     return (
       <AppShell
-        actions={impersonationAction}
         breadcrumbDetail={breadcrumb}
         customSidebar={sidebar}
         customSidebarStorageKey="operator-sidebar"
@@ -141,16 +132,7 @@ export default function OperatorClientCompliancePage() {
         children,
       }: ComplianceWorkspaceShellArgs) => (
         <AppShell
-          actions={
-            actions ? (
-              <>
-                {impersonationAction}
-                {actions}
-              </>
-            ) : (
-              impersonationAction
-            )
-          }
+          actions={actions}
           breadcrumbDetail={breadcrumb}
           rightPanel={rightPanel}
           customSidebar={sidebar}

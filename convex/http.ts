@@ -7,10 +7,17 @@ import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import {
   getImessageWorkerUrl,
+  getOperatorImessageContactPhone,
   isImessageInboundEnabled,
+  isOperatorImessageInboundEnabled,
+  isOperatorImessageTerminalEnabled,
 } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
 import { getEmailDeliveryMode } from "./lib/resend";
+import {
+  MAX_AGENT_ATTACHMENT_FILES,
+  MAX_OPERATOR_IMESSAGE_ACTION_BASE64_CHARS,
+} from "./lib/agentAttachmentLimits";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
 import { canAccessThread } from "./lib/threadAccess";
 import {
@@ -23,6 +30,7 @@ import {
   slackActionToken,
 } from "./lib/slackInteractions";
 import { getSlackMode } from "./lib/slackConfig";
+import { getOperatorSlackConfig } from "./lib/operatorSlackConfig";
 import {
   type McpPolicySummarySource,
   policyMatchesMcpFilters,
@@ -44,6 +52,9 @@ import {
   toPolicyStatsDto,
   toPolicyVersionDto,
 } from "./lib/apiDto";
+import { OPERATOR_AGENT_TOOL_REGISTRY } from "./lib/operatorAgentToolRegistry";
+import { decodeOperatorMcpAttachments } from "./lib/operatorMcpAttachments";
+import { buildOperatorMcpToolCatalog } from "./lib/operatorMcpToolCatalog";
 const http = httpRouter();
 const internalApi = internal as any;
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -310,6 +321,9 @@ http.route({
   method: "GET",
   handler: httpAction(async (ctx) => {
     const slackEnabled = process.env.SLACK_ENABLED === "true";
+    const operatorSlack = getOperatorSlackConfig();
+    const operatorImessageEnabled = isOperatorImessageInboundEnabled();
+    const operatorImessageTerminalEnabled = isOperatorImessageTerminalEnabled();
     const slackMode = getSlackMode();
     const slackHostInstallation =
       slackEnabled && slackMode === "slack"
@@ -321,12 +335,33 @@ http.route({
     const slackLifecycleHealth = slackEnabled
       ? await ctx.runQuery(internalApi.slackLifecycle.getHealthSummary, {})
       : null;
+    let operatorAgentModelConfigured = false;
+    try {
+      await ctx.runQuery(
+        internalApi.modelSettings.resolveOperatorAgentRoute,
+        {},
+      );
+      operatorAgentModelConfigured = true;
+    } catch {
+      operatorAgentModelConfigured = false;
+    }
     const checks = {
+      operatorAgentModelConfigured,
       imessageInboundEnabled: isImessageInboundEnabled(),
       imessageWorkerUrlConfigured: Boolean(getImessageWorkerUrl()),
       imessageWorkerSecretConfigured: Boolean(
         process.env.IMESSAGE_WORKER_SECRET,
       ),
+      operatorImessageWorkerUrlConfigured:
+        !operatorImessageEnabled ||
+        Boolean(process.env.OPERATOR_IMESSAGE_WORKER_URL),
+      operatorImessageWorkerSecretConfigured:
+        !operatorImessageEnabled ||
+        Boolean(process.env.OPERATOR_IMESSAGE_WORKER_SECRET),
+      operatorImessageContactPhoneConfigured:
+        !operatorImessageEnabled ||
+        operatorImessageTerminalEnabled ||
+        Boolean(getOperatorImessageContactPhone()),
       emailInboundWebhookSecretConfigured: Boolean(
         process.env.RESEND_WEBHOOK_SECRET,
       ),
@@ -355,6 +390,12 @@ http.route({
         slackMode === "mock" ||
         process.env.SPOT_ENV === "local" ||
         Boolean(process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET),
+      operatorSlackHostTeamConfigured:
+        !operatorSlack.enabled || Boolean(operatorSlack.hostTeamId),
+      operatorSlackBaseChannelConfigured:
+        !operatorSlack.enabled || slackEnabled,
+      operatorSlackChannelAllowlistConfigured:
+        !operatorSlack.enabled || operatorSlack.approvedChannelIds.size > 0,
     };
     const ok = Object.values(checks).every(Boolean);
     return new Response(
@@ -371,6 +412,24 @@ http.route({
             process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION ?? null,
           expectedClSdkVersion:
             process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION ?? null,
+        },
+        operatorImessage: {
+          inboundEnabled: operatorImessageEnabled,
+          contactPhoneConfigured: Boolean(getOperatorImessageContactPhone()),
+          workerUrlConfigured: Boolean(
+            process.env.OPERATOR_IMESSAGE_WORKER_URL,
+          ),
+          workerSecretConfigured: Boolean(
+            process.env.OPERATOR_IMESSAGE_WORKER_SECRET,
+          ),
+        },
+        operatorSlack: {
+          enabled: operatorSlack.enabled,
+          hostTeamConfigured: Boolean(operatorSlack.hostTeamId),
+          approvedChannelCount: operatorSlack.approvedChannelIds.size,
+        },
+        operatorAgent: {
+          modelConfigured: operatorAgentModelConfigured,
         },
         slack: {
           enabled: slackEnabled,
@@ -556,6 +615,176 @@ http.route({
 });
 
 http.route({
+  path: "/operator-imessage-inbound",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    if (!isOperatorImessageInboundEnabled()) {
+      return jsonResponse(
+        { error: "Operator iMessage inbound is not configured" },
+        404,
+      );
+    }
+    const secret = process.env.OPERATOR_IMESSAGE_WORKER_SECRET?.trim();
+    if (!secret) {
+      return jsonResponse(
+        { error: "Operator iMessage worker secret is not configured" },
+        503,
+      );
+    }
+    if (request.headers.get("Authorization") !== `Bearer ${secret}`) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+
+    let body: {
+      fromPhone?: string;
+      messageText?: string;
+      chatGuid?: string;
+      isGroup?: boolean;
+      chatTitle?: string;
+      participantsUnavailable?: boolean;
+      participants?: Array<{ address: string; displayName?: string }>;
+      sourceMessageId?: string;
+      receivedAt?: number;
+      recoveryFailure?: {
+        stage: "raw_message" | "attachment_download";
+        error: string;
+      };
+      attachments?: Array<{ data: string; mimeType: string; name: string }>;
+    };
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "Invalid JSON" }, 400);
+    }
+    if (
+      !body.fromPhone?.trim() ||
+      (typeof body.messageText !== "string" && !body.attachments?.length)
+    ) {
+      return jsonResponse(
+        { error: "fromPhone and messageText or attachments are required" },
+        400,
+      );
+    }
+    if (body.isGroup === true) {
+      return jsonResponse(
+        { error: "Operator iMessage supports direct conversations only" },
+        400,
+      );
+    }
+    if ((body.attachments?.length ?? 0) > MAX_AGENT_ATTACHMENT_FILES) {
+      return jsonResponse(
+        {
+          error: `Operator iMessage supports at most ${MAX_AGENT_ATTACHMENT_FILES} attachments`,
+        },
+        413,
+      );
+    }
+    const encodedAttachmentChars = (body.attachments ?? []).reduce(
+      (total, attachment) => total + attachment.data.length,
+      0,
+    );
+    if (encodedAttachmentChars > MAX_OPERATOR_IMESSAGE_ACTION_BASE64_CHARS) {
+      return jsonResponse(
+        {
+          error:
+            "Operator iMessage attachments exceed the 3.5 million-character encoded transport limit (about 2.5 MB decoded)",
+        },
+        413,
+      );
+    }
+    const operatorIdentity = await ctx.runQuery(
+      (internal as any).operatorImessage.resolveIdentity,
+      { fromPhone: body.fromPhone },
+    );
+    if (!operatorIdentity) {
+      return jsonResponse({ error: "Operator sender is not authorized" }, 403);
+    }
+
+    try {
+      const result = await ctx.runAction(
+        (internal as any).actions.handleInboundOperatorImessage.processInbound,
+        {
+          fromPhone: body.fromPhone,
+          messageText: body.messageText ?? "",
+          chatGuid: body.chatGuid,
+          isGroup: body.isGroup,
+          chatTitle: body.chatTitle,
+          participantsUnavailable: body.participantsUnavailable,
+          participants: body.participants,
+          sourceMessageId: body.sourceMessageId,
+          receivedAt: body.receivedAt,
+          recoveryFailure: body.recoveryFailure,
+          attachments: body.attachments,
+        },
+      );
+      return jsonResponse(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("not authorized")) {
+        return jsonResponse(
+          { error: "Operator sender is not authorized" },
+          403,
+        );
+      }
+      console.error("[operator-imessage-inbound] Error:", error);
+      return jsonResponse({ error: "Internal server error" }, 500);
+    }
+  }),
+});
+
+http.route({
+  path: "/operator-imessage-delivery-events",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const secret = process.env.OPERATOR_IMESSAGE_WORKER_SECRET?.trim();
+    if (!secret) {
+      return jsonResponse(
+        { error: "Operator iMessage worker secret is not configured" },
+        503,
+      );
+    }
+    if (request.headers.get("Authorization") !== `Bearer ${secret}`) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
+    let body: {
+      threadMessageId?: string;
+      attachmentFailures?: Array<{ filename?: string; error?: string }>;
+    };
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "Invalid JSON" }, 400);
+    }
+    const threadMessageId = body.threadMessageId?.trim();
+    const failures = (body.attachmentFailures ?? [])
+      .map((failure) => ({
+        filename: failure.filename?.trim() ?? "",
+        error: failure.error?.trim() || undefined,
+      }))
+      .filter((failure) => failure.filename);
+    if (!threadMessageId || failures.length === 0) {
+      return jsonResponse(
+        { error: "threadMessageId and attachmentFailures are required" },
+        400,
+      );
+    }
+    const recorded = await ctx.runMutation(
+      (internal as any).operatorAgent
+        .recordImessageAttachmentDeliveryFailureInternal,
+      {
+        operatorMessageId: threadMessageId as Id<"operatorAgentMessages">,
+        stage: "worker_delivery",
+        failures,
+      },
+    );
+    if (!recorded) {
+      return jsonResponse({ error: "Operator message not found" }, 404);
+    }
+    return jsonResponse({ ok: true });
+  }),
+});
+
+http.route({
   path: "/cron/connected-email/scan",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
@@ -610,6 +839,7 @@ http.route({
         resource: `${issuer}/mcp`,
         authorization_servers: [issuer],
         scopes_supported: ["read", "write"],
+        resource_documentation: `${getAuthSiteUrl()}/operator`,
       }),
       { headers: { "Content-Type": "application/json" } },
     );
@@ -633,6 +863,7 @@ http.route({
         registration_endpoint: `${issuer}/oauth/register`,
         revocation_endpoint: `${issuer}/oauth/revoke`,
         response_types_supported: ["code"],
+        authorization_response_iss_parameter_supported: true,
         grant_types_supported: ["authorization_code", "refresh_token"],
         scopes_supported: ["read", "write"],
         code_challenge_methods_supported: ["S256"],
@@ -775,6 +1006,7 @@ http.route({
         const clientId = params.get("client_id");
         const redirectUri = params.get("redirect_uri");
         const codeVerifier = params.get("code_verifier");
+        const resource = params.get("resource") ?? undefined;
 
         if (!code || !clientId || !redirectUri || !codeVerifier) {
           return new Response(
@@ -791,6 +1023,7 @@ http.route({
           clientId,
           redirectUri,
           codeVerifier,
+          resource,
         });
 
         return new Response(JSON.stringify(result), {
@@ -800,6 +1033,7 @@ http.route({
       } else if (grantType === "refresh_token") {
         const refreshToken = params.get("refresh_token");
         const clientId = params.get("client_id");
+        const resource = params.get("resource") ?? undefined;
 
         if (!refreshToken || !clientId) {
           return new Response(
@@ -816,6 +1050,7 @@ http.route({
           {
             refreshTokenRaw: refreshToken,
             clientId,
+            resource,
           },
         );
 
@@ -836,6 +1071,15 @@ http.route({
           status: 400,
           headers: responseHeaders,
         });
+      }
+      if (message.startsWith("invalid_target:")) {
+        return new Response(
+          JSON.stringify({
+            error: "invalid_target",
+            error_description: message.slice("invalid_target:".length).trim(),
+          }),
+          { status: 400, headers: responseHeaders },
+        );
       }
       return new Response(
         JSON.stringify({ error: "server_error", error_description: message }),
@@ -875,11 +1119,24 @@ http.route({
 
 // ── MCP API Routes ──
 
-type McpIdentity = {
+type OrganizationMcpIdentity = {
+  principalKind: "organization";
   userId: string;
   orgId: string;
   scopes?: ("read" | "write")[];
+  tokenId?: string;
 };
+
+type OperatorMcpIdentity = {
+  principalKind: "operator";
+  userId: string;
+  orgId?: undefined;
+  operatorRole: "operator" | "owner";
+  scopes?: ("read" | "write")[];
+  tokenId?: string;
+};
+
+type McpIdentity = OrganizationMcpIdentity | OperatorMcpIdentity;
 
 async function sha256Hex(input: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -905,6 +1162,7 @@ async function requireMcpAuth(
     runMutation: (...args: any[]) => Promise<any>;
   },
   request: Request,
+  options: { allowOperator?: boolean } = {},
 ): Promise<McpIdentity> {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -934,9 +1192,52 @@ async function requireMcpAuth(
         },
       });
     }
+    const expectedResource = `${new URL(request.url).origin}/mcp`;
+    if (result.resource && result.resource !== expectedResource) {
+      throw new Response("Token audience does not match this MCP server", {
+        status: 401,
+        headers: {
+          ...JSON_HEADERS,
+          "WWW-Authenticate": `Bearer error="invalid_token", resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"`,
+        },
+      });
+    }
+    if (result.principalKind === "operator") {
+      if (!result.operatorRole || result.resource !== expectedResource) {
+        throw new Response("Invalid operator token", {
+          status: 401,
+          headers: {
+            ...JSON_HEADERS,
+            "WWW-Authenticate": mcpResourceMetadataAuthenticateHeader(request),
+          },
+        });
+      }
+      if (!options.allowOperator) {
+        throw new Response(
+          JSON.stringify({
+            error: "forbidden",
+            error_description:
+              "Operator credentials are only accepted by the MCP protocol endpoint",
+          }),
+          { status: 403, headers: JSON_HEADERS },
+        );
+      }
+      return {
+        principalKind: "operator",
+        userId: result.userId,
+        operatorRole: result.operatorRole,
+        tokenId: result.tokenId,
+        scopes: result.scopes ?? ["read"],
+      };
+    }
+    if (!result.orgId) {
+      throw new Response("Invalid organization token", { status: 401 });
+    }
     return {
+      principalKind: "organization",
       userId: result.userId,
       orgId: result.orgId,
+      tokenId: result.tokenId,
       scopes: result.scopes ?? ["read"],
     };
   }
@@ -1551,7 +1852,28 @@ http.route({
 // ── MCP Streamable HTTP Transport ──
 // Single endpoint implementing MCP protocol over HTTP for remote clients (Claude.ai, etc.)
 
-const MCP_TOOLS = [
+function mcpOAuthSecuritySchemes(scopes: Array<"read" | "write">) {
+  return [{ type: "oauth2" as const, scopes }];
+}
+
+function operatorMcpTools(identity: OperatorMcpIdentity) {
+  return buildOperatorMcpToolCatalog({
+    canWrite: mcpCanWrite(identity),
+    operatorRole: identity.operatorRole,
+  });
+}
+
+type TenantMcpToolCatalogEntry = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  effect?: "read" | "write";
+  openWorld?: boolean;
+  destructive?: boolean;
+  idempotent?: boolean;
+};
+
+const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
   {
     name: "list_policies",
     description:
@@ -1770,6 +2092,7 @@ const MCP_TOOLS = [
         { required: ["requirementId"] },
       ],
     },
+    effect: "write",
   },
   {
     name: "list_threads",
@@ -1812,6 +2135,7 @@ const MCP_TOOLS = [
       },
       required: ["message"],
     },
+    openWorld: true,
   },
   {
     name: "ask_spot",
@@ -1832,6 +2156,7 @@ const MCP_TOOLS = [
       },
       required: ["message"],
     },
+    openWorld: true,
   },
   {
     name: "list_email_drafts",
@@ -1881,6 +2206,7 @@ const MCP_TOOLS = [
       },
       required: ["to", "subject", "body"],
     },
+    effect: "write",
   },
   {
     name: "update_email_draft",
@@ -1915,6 +2241,7 @@ const MCP_TOOLS = [
       },
       required: ["draftId", "to", "subject", "body"],
     },
+    effect: "write",
   },
   {
     name: "send_email_draft",
@@ -1929,6 +2256,9 @@ const MCP_TOOLS = [
       },
       required: ["draftId"],
     },
+    effect: "write",
+    openWorld: true,
+    idempotent: false,
   },
   {
     name: "send_email_drafts",
@@ -1945,6 +2275,9 @@ const MCP_TOOLS = [
       },
       required: ["draftIds"],
     },
+    effect: "write",
+    openWorld: true,
+    idempotent: false,
   },
   {
     name: "cancel_email_draft",
@@ -1959,6 +2292,88 @@ const MCP_TOOLS = [
       },
       required: ["draftId"],
     },
+    effect: "write",
+  },
+  {
+    name: "list_client_files",
+    description:
+      "List client-visible shared files across the caller's readable client scope, optionally narrowed to one exact client organization.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        client_org_id: {
+          type: "string",
+          description: "Optional exact readable client organization ID",
+        },
+        query: { type: "string", description: "Optional filename search" },
+        limit: { type: "number", description: "Maximum results, up to 50" },
+      },
+    },
+  },
+  {
+    name: "get_client_file",
+    description:
+      "Get metadata and a temporary download URL for one exact client-visible shared file.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        client_file_id: { type: "string", description: "Exact client file ID" },
+      },
+      required: ["client_file_id"],
+    },
+  },
+  {
+    name: "list_company_memory",
+    description:
+      "List durable stable company-profile facts for the OAuth token's organization.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Optional fact search" },
+        limit: { type: "number", description: "Maximum results, up to 100" },
+      },
+    },
+  },
+  {
+    name: "create_company_memory",
+    description:
+      "Create a durable stable company-profile fact for the OAuth token's organization. Requires write scope and current org admin membership.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        content: { type: "string", description: "Stable company fact" },
+      },
+      required: ["content"],
+    },
+    effect: "write",
+  },
+  {
+    name: "update_company_memory",
+    description:
+      "Update one durable company-profile fact in the OAuth token's organization. Requires write scope and current org admin membership.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        memory_id: { type: "string", description: "Exact company memory ID" },
+        content: { type: "string", description: "Updated stable company fact" },
+      },
+      required: ["memory_id", "content"],
+    },
+    effect: "write",
+  },
+  {
+    name: "delete_company_memory",
+    description:
+      "Permanently delete one company-memory fact from the OAuth token's organization. Requires write scope and current org admin membership.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        memory_id: { type: "string", description: "Exact company memory ID" },
+      },
+      required: ["memory_id"],
+    },
+    effect: "write",
+    destructive: true,
   },
   // ── Broker tools ──
   {
@@ -2075,6 +2490,7 @@ const MCP_TOOLS = [
         "line_of_business",
       ],
     },
+    effect: "write",
   },
   {
     name: "list_vendor_compliance",
@@ -2083,6 +2499,44 @@ const MCP_TOOLS = [
     inputSchema: { type: "object" as const, properties: {} },
   },
 ];
+
+const AUTHENTICATED_TENANT_MCP_TOOLS = MCP_TOOLS.map((entry) => {
+  const {
+    effect = "read",
+    openWorld = false,
+    destructive = false,
+    idempotent,
+    ...tool
+  } = entry;
+  const write = effect === "write";
+  return {
+    ...tool,
+    title: tool.description.split(".")[0],
+    securitySchemes: mcpOAuthSecuritySchemes(
+      write ? ["read", "write"] : ["read"],
+    ),
+    annotations: {
+      readOnlyHint: !write,
+      destructiveHint: destructive,
+      idempotentHint: idempotent ?? !write,
+      openWorldHint: openWorld,
+    },
+  };
+});
+
+export function tenantMcpToolAccess(name: string) {
+  const tool = MCP_TOOLS.find((entry) => entry.name === name);
+  if (!tool) return null;
+  return {
+    effect: tool.effect ?? ("read" as const),
+    openWorld: tool.openWorld ?? false,
+    destructive: tool.destructive ?? false,
+  };
+}
+
+export function tenantMcpToolNames() {
+  return MCP_TOOLS.map((tool) => tool.name);
+}
 
 function jsonRpcResponse(
   id: string | number | null,
@@ -2104,21 +2558,325 @@ function jsonRpcError(
   );
 }
 
+function mcpTextResult(value: unknown) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
+  };
+}
+
+type McpToolContext = Pick<
+  ActionCtx,
+  "runQuery" | "runMutation" | "runAction" | "storage"
+>;
+
+type StoredOperatorMcpAttachment = {
+  fileId: Id<"_storage">;
+  filename: string;
+  contentType: string;
+  size: number;
+};
+
+async function deleteOperatorMcpAttachments(
+  ctx: McpToolContext,
+  attachments: StoredOperatorMcpAttachment[],
+) {
+  await Promise.all(
+    attachments.map((attachment) =>
+      ctx.storage.delete(attachment.fileId).catch(() => undefined),
+    ),
+  );
+}
+
+async function storeOperatorMcpAttachments(
+  ctx: McpToolContext,
+  input: unknown,
+): Promise<StoredOperatorMcpAttachment[]> {
+  const decoded = decodeOperatorMcpAttachments(input);
+  const stored: StoredOperatorMcpAttachment[] = [];
+  try {
+    for (const attachment of decoded) {
+      const contents = new ArrayBuffer(attachment.bytes.byteLength);
+      new Uint8Array(contents).set(attachment.bytes);
+      const fileId = await ctx.storage.store(
+        new Blob([contents], { type: attachment.contentType }),
+      );
+      stored.push({
+        fileId,
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        size: attachment.bytes.byteLength,
+      });
+    }
+    return stored;
+  } catch (error) {
+    await deleteOperatorMcpAttachments(ctx, stored);
+    throw error;
+  }
+}
+
+async function handleOperatorMcpToolCall(
+  ctx: McpToolContext,
+  identity: OperatorMcpIdentity,
+  name: string,
+  args: Record<string, unknown>,
+) {
+  const operatorUserId = identity.userId as Id<"users">;
+  const suppliedIdempotencyKey =
+    typeof args.idempotency_key === "string" ? args.idempotency_key.trim() : "";
+  if (suppliedIdempotencyKey.length > 200) {
+    throw new Error("idempotency_key must be at most 200 characters");
+  }
+  const requestKey = `mcp:${identity.userId}:${
+    suppliedIdempotencyKey || crypto.randomUUID()
+  }`;
+
+  if (name in OPERATOR_AGENT_TOOL_REGISTRY) {
+    const spec =
+      OPERATOR_AGENT_TOOL_REGISTRY[
+        name as keyof typeof OPERATOR_AGENT_TOOL_REGISTRY
+      ];
+    if (spec.effect !== "read") requireMcpWriteScope(identity);
+    const result = await ctx.runAction(
+      (internal as any).operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId,
+        conversationKey: `mcp:${identity.tokenId ?? identity.userId}`,
+        channel: "mcp",
+        toolName: name,
+        input: args,
+        idempotencyKey: requestKey,
+      },
+    );
+    return mcpTextResult(result);
+  }
+
+  if (name === "run_operator_task") {
+    requireMcpWriteScope(identity);
+    const objective =
+      typeof args.objective === "string" ? args.objective.trim() : "";
+    if (!objective) throw new Error("Missing objective parameter");
+    const attachments = await storeOperatorMcpAttachments(
+      ctx,
+      args.attachments,
+    );
+    try {
+      let threadId =
+        typeof args.thread_id === "string"
+          ? (args.thread_id as Id<"operatorAgentThreads">)
+          : undefined;
+      if (!threadId) {
+        const conversationKey =
+          typeof args.conversation_key === "string" &&
+          args.conversation_key.trim()
+            ? args.conversation_key.trim()
+            : `mcp:${identity.tokenId ?? identity.userId}`;
+        threadId = await ctx.runMutation(
+          (internal as any).operatorAgent.createOrGetChannelThreadInternal,
+          {
+            operatorUserId,
+            channel: "mcp",
+            conversationKey,
+            title: "External operator agent",
+          },
+        );
+      }
+      const queued = await ctx.runMutation(
+        (internal as any).operatorAgent.enqueueMessageInternal,
+        {
+          operatorUserId,
+          threadId,
+          channel: "mcp",
+          content: objective,
+          dedupeKey: requestKey,
+          attachments: attachments.length ? attachments : undefined,
+        },
+      );
+      if (queued.duplicate) {
+        await deleteOperatorMcpAttachments(ctx, attachments);
+      }
+      return mcpTextResult({ threadId, ...queued });
+    } catch (error) {
+      await deleteOperatorMcpAttachments(ctx, attachments);
+      throw error;
+    }
+  }
+
+  if (name === "get_operator_run") {
+    const runId =
+      typeof args.run_id === "string"
+        ? (args.run_id as Id<"operatorAgentRuns">)
+        : undefined;
+    if (!runId) throw new Error("Missing run_id parameter");
+    const result = await ctx.runQuery(
+      (internal as any).operatorAgent.getRunResultForOperatorInternal,
+      { operatorUserId, runId },
+    );
+    return mcpTextResult(result);
+  }
+
+  if (name === "cancel_operator_run") {
+    requireMcpWriteScope(identity);
+    const runId =
+      typeof args.run_id === "string"
+        ? (args.run_id as Id<"operatorAgentRuns">)
+        : undefined;
+    if (!runId) throw new Error("Missing run_id parameter");
+    const current = await ctx.runQuery(
+      (internal as any).operatorAgent.getRunResultForOperatorInternal,
+      { operatorUserId, runId },
+    );
+    const threadId = current?.run?.threadId as
+      | Id<"operatorAgentThreads">
+      | undefined;
+    if (!threadId) throw new Error("Operator run not found");
+    const result = await ctx.runMutation(
+      (internal as any).operatorAgent.cancelRunInternal,
+      { operatorUserId, threadId },
+    );
+    return mcpTextResult({ runId, threadId, ...result });
+  }
+
+  if (name === "confirm_operator_action") {
+    requireMcpWriteScope(identity);
+    const threadId =
+      typeof args.thread_id === "string"
+        ? (args.thread_id as Id<"operatorAgentThreads">)
+        : undefined;
+    const confirmationId =
+      typeof args.confirmation_id === "string"
+        ? (args.confirmation_id as Id<"operatorAgentConfirmations">)
+        : undefined;
+    const decision = args.decision;
+    if (!threadId || !confirmationId) {
+      throw new Error("thread_id and confirmation_id are required");
+    }
+    if (decision !== "approve" && decision !== "reject") {
+      throw new Error("decision must be approve or reject");
+    }
+    const result = await ctx.runMutation(
+      (internal as any).operatorAgent.confirmActionInternal,
+      {
+        operatorUserId,
+        threadId,
+        confirmationId,
+        decision,
+        channel: "mcp",
+      },
+    );
+    return mcpTextResult(result);
+  }
+
+  throw new Error(`Unknown operator tool: ${name}`);
+}
+
 async function handleToolCall(
-  ctx: {
-    runQuery: (...args: any[]) => Promise<any>;
-    runMutation: (...args: any[]) => Promise<any>;
-    runAction: (...args: any[]) => Promise<any>;
-    storage: { getUrl: (storageId: Id<"_storage">) => Promise<string | null> };
-  },
+  ctx: McpToolContext,
   identity: McpIdentity,
   name: string,
   args: Record<string, unknown>,
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+  if (identity.principalKind === "operator") {
+    return handleOperatorMcpToolCall(ctx, identity, name, args);
+  }
   const orgId = identity.orgId as Id<"organizations">;
   const userId = identity.userId as Id<"users">;
 
   switch (name) {
+    case "list_client_files": {
+      const scope = await ctx.runQuery(
+        internal.lib.agentScope.resolveForAction,
+        {
+          orgId,
+          userId,
+          surface: "mcp",
+        },
+      );
+      const requestedOrgId =
+        typeof args.client_org_id === "string" ? args.client_org_id : undefined;
+      const orgIds = requestedOrgId
+        ? scope.readOrgIds.filter(
+            (readOrgId: Id<"organizations">) =>
+              String(readOrgId) === requestedOrgId,
+          )
+        : scope.readOrgIds;
+      if (requestedOrgId && orgIds.length === 0) {
+        throw new Error("Client organization is not in the readable scope");
+      }
+      const files = await ctx.runQuery(
+        internal.clientFiles.listVisibleInternal,
+        {
+          orgIds,
+          query: typeof args.query === "string" ? args.query : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+        },
+      );
+      return mcpTextResult(files);
+    }
+    case "get_client_file": {
+      if (typeof args.client_file_id !== "string") {
+        throw new Error("Missing client_file_id parameter");
+      }
+      const scope = await ctx.runQuery(
+        internal.lib.agentScope.resolveForAction,
+        {
+          orgId,
+          userId,
+          surface: "mcp",
+        },
+      );
+      const file = await ctx.runQuery(internal.clientFiles.getVisibleInternal, {
+        clientFileId: args.client_file_id as Id<"clientFiles">,
+        orgIds: scope.readOrgIds,
+      });
+      if (!file) throw new Error("Client file not found");
+      return mcpTextResult(file);
+    }
+    case "list_company_memory": {
+      const memories = await ctx.runQuery(internal.orgMemory.listForMcp, {
+        orgId,
+        userId,
+        query: typeof args.query === "string" ? args.query : undefined,
+        limit: typeof args.limit === "number" ? args.limit : undefined,
+      });
+      return mcpTextResult(memories);
+    }
+    case "create_company_memory": {
+      if (typeof args.content !== "string") {
+        throw new Error("Missing content parameter");
+      }
+      const memory = await ctx.runMutation(internal.orgMemory.createForMcp, {
+        orgId,
+        userId,
+        content: args.content,
+      });
+      return mcpTextResult(memory);
+    }
+    case "update_company_memory": {
+      if (
+        typeof args.memory_id !== "string" ||
+        typeof args.content !== "string"
+      ) {
+        throw new Error("memory_id and content are required");
+      }
+      const memory = await ctx.runMutation(internal.orgMemory.updateForMcp, {
+        orgId,
+        userId,
+        id: args.memory_id as Id<"orgMemory">,
+        content: args.content,
+      });
+      return mcpTextResult(memory);
+    }
+    case "delete_company_memory": {
+      if (typeof args.memory_id !== "string") {
+        throw new Error("Missing memory_id parameter");
+      }
+      const result = await ctx.runMutation(internal.orgMemory.removeForMcp, {
+        orgId,
+        userId,
+        id: args.memory_id as Id<"orgMemory">,
+      });
+      return mcpTextResult(result);
+    }
     case "list_policies": {
       const policies = (await ctx.runQuery(
         internal.policies.listAllPreviewReadableInternal,
@@ -2450,7 +3208,10 @@ async function handleToolCall(
         orgId,
         userId,
         message: args.message as string,
-        threadId: (args.threadId as string) ?? undefined,
+        threadId:
+          typeof args.threadId === "string"
+            ? (args.threadId as Id<"threads">)
+            : undefined,
         canWrite: mcpCanWrite(identity),
       });
       return {
@@ -2776,7 +3537,9 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireMcpAuth(ctx, request);
+      const identity = await requireMcpAuth(ctx, request, {
+        allowOperator: true,
+      });
       const body = await request.json();
 
       // Handle JSON-RPC 2.0
@@ -2819,11 +3582,18 @@ http.route({
               ],
             },
             instructions:
-              "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and org info. Use ask_spot for complex insurance questions.",
+              identity.principalKind === "operator"
+                ? "This is Spot's authenticated internal operator agent. Use typed tools for exact reads and changes, or run_operator_task for durable multi-step work. Protected writes pause for exact confirmation and can be resumed from another internal channel."
+                : "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and org info. Use ask_spot for complex insurance questions.",
           });
         }
         case "tools/list": {
-          return jsonRpcResponse(id, { tools: MCP_TOOLS });
+          return jsonRpcResponse(id, {
+            tools:
+              identity.principalKind === "operator"
+                ? operatorMcpTools(identity)
+                : AUTHENTICATED_TENANT_MCP_TOOLS,
+          });
         }
         case "tools/call": {
           const toolName = params?.name;
@@ -2832,6 +3602,11 @@ http.route({
             return jsonRpcError(id, -32602, "Missing tool name");
           }
           try {
+            if (identity.principalKind === "organization") {
+              const access = tenantMcpToolAccess(toolName);
+              if (!access) throw new Error(`Unknown tool: ${toolName}`);
+              if (access.effect === "write") requireMcpWriteScope(identity);
+            }
             const result = await handleToolCall(
               ctx,
               identity,
@@ -2840,14 +3615,25 @@ http.route({
             );
             return jsonRpcResponse(id, result);
           } catch (toolErr: unknown) {
+            const message =
+              toolErr instanceof Error ? toolErr.message : String(toolErr);
             return jsonRpcResponse(id, {
               content: [
                 {
                   type: "text",
-                  text: `Error: ${toolErr instanceof Error ? toolErr.message : String(toolErr)}`,
+                  text: `Error: ${message}`,
                 },
               ],
               isError: true,
+              ...(message.startsWith("insufficient_scope:")
+                ? {
+                    _meta: {
+                      "mcp/www_authenticate": [
+                        `Bearer error="insufficient_scope", scope="write", resource_metadata="${new URL(request.url).origin}/.well-known/oauth-protected-resource"`,
+                      ],
+                    },
+                  }
+                : {}),
             });
           }
         }
@@ -2891,9 +3677,55 @@ http.route({
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     try {
-      const identity = await requireMcpAuth(ctx, request);
+      const identity = await requireMcpAuth(ctx, request, {
+        allowOperator: true,
+      });
       const body = await request.json();
-      const { message, threadId } = body;
+      const { message, threadId, attachments: attachmentInputs } = body;
+
+      if (identity.principalKind === "operator") {
+        requireMcpWriteScope(identity);
+        const operatorUserId = identity.userId as Id<"users">;
+        const attachments = await storeOperatorMcpAttachments(
+          ctx,
+          attachmentInputs,
+        );
+        const operatorMessage =
+          typeof message === "string" ? message.trim() : "";
+        if (!operatorMessage && attachments.length === 0) {
+          return jsonResponse({ error: "Missing message or attachments" }, 400);
+        }
+        try {
+          const operatorThreadId = threadId
+            ? (threadId as Id<"operatorAgentThreads">)
+            : await ctx.runMutation(
+                (internal as any).operatorAgent
+                  .createOrGetChannelThreadInternal,
+                {
+                  operatorUserId,
+                  channel: "mcp",
+                  conversationKey: `mcp:${identity.tokenId ?? identity.userId}`,
+                  title: "External operator agent",
+                },
+              );
+          const queued = await ctx.runMutation(
+            (internal as any).operatorAgent.enqueueMessageInternal,
+            {
+              operatorUserId,
+              threadId: operatorThreadId,
+              channel: "mcp",
+              content: operatorMessage || "(attached files)",
+              dedupeKey: `mcp-ask:${crypto.randomUUID()}`,
+              attachments: attachments.length ? attachments : undefined,
+            },
+          );
+          return jsonResponse({ threadId: operatorThreadId, ...queued }, 202);
+        } catch (error) {
+          await deleteOperatorMcpAttachments(ctx, attachments);
+          throw error;
+        }
+      }
+
       if (!message) return jsonResponse({ error: "Missing message" }, 400);
 
       const result = await ctx.runAction(internal.actions.mcpChat.run, {
@@ -3224,6 +4056,33 @@ async function requireApiAuth(
         },
       },
       401,
+    );
+  }
+
+  if (tokenData.principalKind === "operator" || !tokenData.orgId) {
+    throw jsonResponse(
+      {
+        error: {
+          code: "forbidden",
+          message:
+            "Operator access tokens are only valid for the MCP protocol endpoint",
+          request_id: requestId,
+        },
+      },
+      403,
+    );
+  }
+  if (tokenData.resource) {
+    throw jsonResponse(
+      {
+        error: {
+          code: "forbidden",
+          message:
+            "Resource-bound access tokens are only valid for their MCP endpoint",
+          request_id: requestId,
+        },
+      },
+      403,
     );
   }
 

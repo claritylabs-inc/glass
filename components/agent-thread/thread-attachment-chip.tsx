@@ -22,6 +22,7 @@ export function ThreadAttachmentChip({
   className,
   size = "default",
   onOpen,
+  resolvedUrl,
   isLoading = false,
   disabled = false,
   unavailableTitle,
@@ -31,23 +32,26 @@ export function ThreadAttachmentChip({
   className?: string;
   size?: "default" | "compact";
   onOpen?: () => void;
+  resolvedUrl?: string | null;
   isLoading?: boolean;
   disabled?: boolean;
   unavailableTitle?: string;
 }) {
   const { openWithUrl } = usePdf();
-  const url = useCachedQuery(
+  const storedUrl = useCachedQuery(
     "threads.getAttachmentUrl",
     api.threads.getAttachmentUrl,
     threadId && attachment.fileId
       ? { threadId, fileId: attachment.fileId }
       : "skip",
   );
+  const url = resolvedUrl === undefined ? storedUrl : resolvedUrl;
   const isPdf =
     attachment.contentType?.toLowerCase().includes("pdf") ||
     attachment.filename.toLowerCase().endsWith(".pdf");
   const isCompact = size === "compact";
-  const handleOpen = onOpen ?? (isPdf && url ? () => openWithUrl(url) : undefined);
+  const handleOpen =
+    onOpen ?? (isPdf && url ? () => openWithUrl(url) : undefined);
   const canOpen = Boolean(handleOpen || url);
 
   const title = canOpen

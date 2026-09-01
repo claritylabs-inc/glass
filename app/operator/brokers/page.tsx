@@ -340,7 +340,7 @@ export default function OperatorBrokersPage() {
     <>
       {current?.activeImpersonation ? (
         <PillButton
-          variant="icon"
+          variant="secondary"
           size="compact"
           label="Stop impersonating"
           expandLabel

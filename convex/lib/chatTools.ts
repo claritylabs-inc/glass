@@ -135,6 +135,35 @@ export const lookupCompanyContext = tool({
   }),
 });
 
+export const lookupClientFiles = tool({
+  description:
+    "List client-visible files from the readable client organizations. Use this for shared contracts, schedules, reports, forms, and other miscellaneous documents that are not bound policy PDFs.",
+  inputSchema: z.object({
+    orgId: z
+      .string()
+      .optional()
+      .describe("Optional exact readable client organization ID."),
+    query: z.string().max(200).optional(),
+    limit: z.number().int().min(1).max(20).optional(),
+  }),
+});
+
+export const readClientFile = tool({
+  description:
+    "Read one exact client-visible shared file after lookup_client_files identifies it. Returns bounded extracted text for supported documents.",
+  inputSchema: z.object({
+    clientFileId: z.string().min(1).describe("Exact client file ID."),
+  }),
+});
+
+export const attachClientFile = tool({
+  description:
+    "Attach one exact client-visible shared file to the response after lookup_client_files identifies it.",
+  inputSchema: z.object({
+    clientFileId: z.string().min(1).describe("Exact client file ID."),
+  }),
+});
+
 export const compareCoverages = tool({
   description:
     "Compare two policies side by side — lines of business, limits, deductibles, and premium.",
@@ -322,25 +351,29 @@ export const lookupPolicySection = tool({
   }),
 });
 
+export const LOOKUP_ADDRESS_DESCRIPTION =
+  "Validate and standardize a user-provided postal address with Mapbox before saving it or passing it to generate_coi. Use the returned structured fields only when Mapbox validates the first candidate. If the result is ambiguous or not found, ask the user to confirm a complete address instead of guessing.";
+
+export const lookupAddressInputSchema = z.object({
+  query: z
+    .string()
+    .min(3)
+    .max(256)
+    .describe(
+      "Full address exactly as the user supplied it, including city, region, postal code, and country when available.",
+    ),
+  countryCode: z
+    .string()
+    .regex(/^[A-Za-z]{2}$/)
+    .optional()
+    .describe(
+      "Optional ISO 3166-1 alpha-2 country code used only to disambiguate the lookup, such as US or CA.",
+    ),
+});
+
 export const lookupAddress = tool({
-  description:
-    "Validate and standardize a user-provided postal address with Mapbox before saving it or passing it to generate_coi. Use the returned structured fields only when Mapbox validates the first candidate. If the result is ambiguous or not found, ask the user to confirm a complete address instead of guessing.",
-  inputSchema: z.object({
-    query: z
-      .string()
-      .min(3)
-      .max(256)
-      .describe(
-        "Full address exactly as the user supplied it, including city, region, postal code, and country when available.",
-      ),
-    countryCode: z
-      .string()
-      .regex(/^[A-Za-z]{2}$/)
-      .optional()
-      .describe(
-        "Optional ISO 3166-1 alpha-2 country code used only to disambiguate the lookup, such as US or CA.",
-      ),
-  }),
+  description: LOOKUP_ADDRESS_DESCRIPTION,
+  inputSchema: lookupAddressInputSchema,
 });
 
 export const attachPolicyDocument = tool({
@@ -355,109 +388,113 @@ export const attachPolicyDocument = tool({
   }),
 });
 
+export const GENERATE_COI_DESCRIPTION =
+  "Generate certificate PDFs in exactly one of two modes. Policy mode uses policyId plus a holder and includes all available policy coverages; when the user provides an address, call lookup_address first. Requirements mode uses requirementSourceDocumentId or one requirementId; the saved source supplies the holder and Spot creates the necessary certificates from matching policies with only the relevant coverages. Do not combine these modes. Additional-insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Spot gates the certificate and returns a drafted broker email.";
+
+export const generateCoiInputSchema = z.object({
+  policyId: z
+    .string()
+    .optional()
+    .describe("Policy-mode reference. Omit in requirements mode."),
+  requirementSourceDocumentId: z
+    .string()
+    .optional()
+    .describe(
+      "Requirements-mode source ID returned by lookup_compliance_requirements. The source provides the holder and all active requirements.",
+    ),
+  requirementId: z
+    .string()
+    .optional()
+    .describe(
+      "Requirements-mode exact requirement ID. Spot uses its connected source and generates only for this requirement.",
+    ),
+  certificateHolder: z
+    .string()
+    .optional()
+    .describe(
+      "Certificate holder name. Include the address in this block only when the user already provided it.",
+    ),
+  holderContactName: z
+    .string()
+    .optional()
+    .describe(
+      "Specific certificate holder contact name or attention line when the user provides one",
+    ),
+  holderEmail: z
+    .string()
+    .optional()
+    .describe(
+      "Certificate holder email address only when the user explicitly asks Spot to email/send the certificate or already provides the email. Do not ask for this for ordinary certificate generation.",
+    ),
+  holderPhone: z
+    .string()
+    .optional()
+    .describe(
+      "Certificate holder phone number only when the user provides one",
+    ),
+  addressLine1: z
+    .string()
+    .optional()
+    .describe(
+      "Certificate holder street address line 1 when the user provides it.",
+    ),
+  addressLine2: z
+    .string()
+    .optional()
+    .describe(
+      "Certificate holder street address line 2 when the user provides it.",
+    ),
+  city: z
+    .string()
+    .optional()
+    .describe("Certificate holder city when provided."),
+  state: z
+    .string()
+    .optional()
+    .describe("Certificate holder state/province when provided."),
+  postalCode: z
+    .string()
+    .optional()
+    .describe("Certificate holder postal code when provided."),
+  country: z
+    .string()
+    .optional()
+    .describe("Certificate holder country when provided."),
+  requestText: z
+    .string()
+    .optional()
+    .describe(
+      "The user's full certificate request. Include explicit endorsement-bearing wording only if the user asked for it.",
+    ),
+  descriptionOfOperations: z
+    .string()
+    .optional()
+    .describe(
+      "Source-backed description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not invent this wording. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status.",
+    ),
+  requestedEndorsements: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Specific endorsement requests only when the user explicitly asks for them, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee. Do not invent extra wording.",
+    ),
+  additionalInsuredName: z
+    .string()
+    .optional()
+    .describe(
+      "Name of the requested additional insured when the user asks to add or show one on the certificate.",
+    ),
+  explicitReissue: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set true only when the user explicitly asks to reissue/regenerate a new certificate version even if one already exists for this holder and current policy version",
+    ),
+});
+
 export const generateCoi = tool({
-  description:
-    "Generate certificate PDFs in exactly one of two modes. Policy mode uses policyId plus a holder and includes all available policy coverages; when the user provides an address, call lookup_address first. Requirements mode uses requirementSourceDocumentId or one requirementId; the saved source supplies the holder and Spot creates the necessary certificates from matching policies with only the relevant coverages. Do not combine these modes. Additional-insured, waiver, primary/non-contributory, loss payee, and mortgagee requests issue only when existing policy evidence supports them; otherwise Spot gates the certificate and returns a drafted broker email.",
-  inputSchema: z.object({
-    policyId: z
-      .string()
-      .optional()
-      .describe("Policy-mode reference. Omit in requirements mode."),
-    requirementSourceDocumentId: z
-      .string()
-      .optional()
-      .describe(
-        "Requirements-mode source ID returned by lookup_compliance_requirements. The source provides the holder and all active requirements.",
-      ),
-    requirementId: z
-      .string()
-      .optional()
-      .describe(
-        "Requirements-mode exact requirement ID. Spot uses its connected source and generates only for this requirement.",
-      ),
-    certificateHolder: z
-      .string()
-      .optional()
-      .describe(
-        "Certificate holder name. Include the address in this block only when the user already provided it.",
-      ),
-    holderContactName: z
-      .string()
-      .optional()
-      .describe(
-        "Specific certificate holder contact name or attention line when the user provides one",
-      ),
-    holderEmail: z
-      .string()
-      .optional()
-      .describe(
-        "Certificate holder email address only when the user explicitly asks Spot to email/send the certificate or already provides the email. Do not ask for this for ordinary certificate generation.",
-      ),
-    holderPhone: z
-      .string()
-      .optional()
-      .describe(
-        "Certificate holder phone number only when the user provides one",
-      ),
-    addressLine1: z
-      .string()
-      .optional()
-      .describe(
-        "Certificate holder street address line 1 when the user provides it.",
-      ),
-    addressLine2: z
-      .string()
-      .optional()
-      .describe(
-        "Certificate holder street address line 2 when the user provides it.",
-      ),
-    city: z
-      .string()
-      .optional()
-      .describe("Certificate holder city when provided."),
-    state: z
-      .string()
-      .optional()
-      .describe("Certificate holder state/province when provided."),
-    postalCode: z
-      .string()
-      .optional()
-      .describe("Certificate holder postal code when provided."),
-    country: z
-      .string()
-      .optional()
-      .describe("Certificate holder country when provided."),
-    requestText: z
-      .string()
-      .optional()
-      .describe(
-        "The user's full certificate request. Include explicit endorsement-bearing wording only if the user asked for it.",
-      ),
-    descriptionOfOperations: z
-      .string()
-      .optional()
-      .describe(
-        "Source-backed description-of-operations wording to place in the certificate description box when the user explicitly provides wording or the policy source facts clearly support operations, locations, covered autos, or special items. Do not invent this wording. Do not use this for generic policy summaries, carrier names, policy numbers, limits, terms, or unsupported endorsement status.",
-      ),
-    requestedEndorsements: z
-      .array(z.string())
-      .optional()
-      .describe(
-        "Specific endorsement requests only when the user explicitly asks for them, such as additional insured, waiver of subrogation, primary and non-contributory, loss payee, or mortgagee. Do not invent extra wording.",
-      ),
-    additionalInsuredName: z
-      .string()
-      .optional()
-      .describe(
-        "Name of the requested additional insured when the user asks to add or show one on the certificate.",
-      ),
-    explicitReissue: z
-      .boolean()
-      .optional()
-      .describe(
-        "Set true only when the user explicitly asks to reissue/regenerate a new certificate version even if one already exists for this holder and current policy version",
-      ),
-  }),
+  description: GENERATE_COI_DESCRIPTION,
+  inputSchema: generateCoiInputSchema,
 });
 
 export const createImessageGroupChat = tool({

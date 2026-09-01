@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import dayjs from "dayjs";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import schema from "./schema";
 import type { Id } from "./_generated/dataModel";
 import {
@@ -34,7 +34,10 @@ async function pkceChallenge(verifier: string) {
   const bytes = new Uint8Array(hashBuffer);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 async function seedOAuthClientAndUser() {
@@ -81,6 +84,7 @@ async function createCode(options: {
   clientId: string;
   codeChallenge: string;
   scope?: string;
+  resource?: string;
 }) {
   return options.t
     .withIdentity(sessionFor(options.userId))
@@ -89,6 +93,7 @@ async function createCode(options: {
       redirectUri: REDIRECT_URI,
       codeChallenge: options.codeChallenge,
       scope: options.scope,
+      resource: options.resource,
     });
 }
 
@@ -102,10 +107,7 @@ async function getAuthCodeRecord(t: OAuthTestHandle, codeRaw: string) {
   );
 }
 
-async function validateRawAccessToken(
-  t: OAuthTestHandle,
-  accessToken: string,
-) {
+async function validateRawAccessToken(t: OAuthTestHandle, accessToken: string) {
   return t.query(validateAccessTokenWithScopesFn, {
     tokenHash: await sha256Hex(accessToken),
   });
@@ -164,13 +166,17 @@ describe("oauth scopes", () => {
       refreshTokenRaw: exchanged.refresh_token,
       clientId,
     });
-    const refreshedToken = await validateRawAccessToken(t, refreshed.access_token);
+    const refreshedToken = await validateRawAccessToken(
+      t,
+      refreshed.access_token,
+    );
 
     expect(refreshedToken?.scopes).toEqual(["read", "write"]);
   });
 
   test("rejects unsupported requested scopes", async () => {
-    const { t, userId, clientId, codeChallenge } = await seedOAuthClientAndUser();
+    const { t, userId, clientId, codeChallenge } =
+      await seedOAuthClientAndUser();
 
     await expect(
       createCode({
@@ -182,7 +188,9 @@ describe("oauth scopes", () => {
       }),
     ).rejects.toThrow("invalid_scope: unsupported scope delete");
 
-    const codes = await t.run(async (ctx) => ctx.db.query("oauthAuthCodes").collect());
+    const codes = await t.run(async (ctx) =>
+      ctx.db.query("oauthAuthCodes").collect(),
+    );
     expect(codes).toHaveLength(0);
   });
 
@@ -204,5 +212,100 @@ describe("oauth scopes", () => {
     const token = await validateRawAccessToken(t, rawToken);
 
     expect(token?.scopes).toEqual(["read", "write"]);
+  });
+});
+
+describe("operator oauth principals", () => {
+  beforeEach(() => {
+    vi.stubEnv("CONVEX_SITE_URL", "https://spot.example");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  test("issues an operator token bound to the MCP resource and revalidates status", async () => {
+    const t = convexTest(schema, modules);
+    const userId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {
+        email: "operator@example.com",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId,
+        email: "operator@example.com",
+        role: "owner",
+        status: "active",
+        createdAt: dayjs().valueOf(),
+        updatedAt: dayjs().valueOf(),
+      });
+      return userId;
+    });
+    const client = await t.mutation(registerClientFn, {
+      clientName: "Operator MCP",
+      redirectUris: [REDIRECT_URI],
+    });
+    const verifier = "operator-code-verifier";
+    const resource = "https://spot.example/mcp";
+    const codeRaw = await createCode({
+      t,
+      userId,
+      clientId: client.client_id,
+      codeChallenge: await pkceChallenge(verifier),
+      scope: "read write",
+      resource,
+    });
+
+    const exchanged = await t.mutation(exchangeAuthCodeFn, {
+      codeRaw,
+      clientId: client.client_id,
+      redirectUri: REDIRECT_URI,
+      codeVerifier: verifier,
+      resource,
+    });
+    const token = await validateRawAccessToken(t, exchanged.access_token);
+    expect(token).toMatchObject({
+      principalKind: "operator",
+      operatorRole: "owner",
+      resource,
+      scopes: ["read", "write"],
+    });
+    expect(token?.orgId).toBeUndefined();
+
+    await t.run(async (ctx) => {
+      const profile = await ctx.db
+        .query("operatorProfiles")
+        .withIndex("user", (q) => q.eq("userId", userId))
+        .unique();
+      if (!profile) throw new Error("Missing operator profile");
+      await ctx.db.patch(profile._id, {
+        status: "disabled",
+        updatedAt: dayjs().valueOf(),
+      });
+    });
+
+    expect(await validateRawAccessToken(t, exchanged.access_token)).toBeNull();
+  });
+
+  test("rejects exchanging a resource-bound code for another MCP server", async () => {
+    const { t, userId, clientId, codeChallenge, verifier } =
+      await seedOAuthClientAndUser();
+    const codeRaw = await createCode({
+      t,
+      userId,
+      clientId,
+      codeChallenge,
+      resource: "https://spot.example/mcp",
+    });
+
+    await expect(
+      t.mutation(exchangeAuthCodeFn, {
+        codeRaw,
+        clientId,
+        redirectUri: REDIRECT_URI,
+        codeVerifier: verifier,
+        resource: "https://attacker.example/mcp",
+      }),
+    ).rejects.toThrow("invalid_target");
   });
 });

@@ -10,8 +10,10 @@ Conductor worktree uses native local Convex plus local workers.
 `main`; it is not path-filtered. After validation, the workflow:
 
 1. deploys the commit's Convex functions to production;
-2. waits for the exact commit's four Railway contexts (`spot-extraction-worker`,
-   `imessage-worker`, `slack-worker`, and `spot-mailbox-scan-worker`) to report
+2. waits for the exact commit's four established Railway contexts
+   (`spot-extraction-worker`, `imessage-worker`, `slack-worker`, and
+   `spot-mailbox-scan-worker`) plus `operator-imessage-worker` after its
+   production health URL variable is configured, to report
    success, including explicit `No deployment needed` watch-path results;
 3. runs the deployed Convex, extraction, iMessage, Slack, and cl-router
    compatibility audit; and
@@ -31,7 +33,7 @@ timed-out Convex deploy, Railway status, compatibility audit, or stale-head
 check leaves the candidate unpromoted; use Vercel's explicit force-promotion
 control only for an incident-approved bypass.
 
-Railway Git autodeploy and all four service-local watch paths must remain
+Railway Git autodeploy and every provisioned service-local watch path must remain
 enabled. Unchanged workers satisfy the barrier with Railway's no-op status, and
 the mailbox cron's Railway deployment status is its release signal because it
 has no persistent HTTP process. Do not enable Railway **Wait for CI** for these
@@ -53,6 +55,52 @@ prefers `SPOT_IMESSAGE_CONTACT_PHONE` before the public Spot value. Both paths
 temporarily fall back to the corresponding legacy `GLASS_*` variables until the
 Spot values have been verified on every production target.
 
+Internal operator iMessage uses a separate Photon project and isolated route on the
+`operator-imessage-worker` Railway service
+(`21ab337b-1f74-4cac-8654-fba5187c35a3`). Its production base URL is
+`https://operator-imessage-worker-production.up.railway.app`. It reuses the
+`imessage-worker` image with `IMESSAGE_CHANNEL_ROLE=operator`, but requires distinct
+`OPERATOR_PHOTON_PROJECT_ID`, `OPERATOR_PHOTON_PROJECT_SECRET`, and
+`OPERATOR_IMESSAGE_WORKER_SECRET` values. Its Convex callbacks are
+`/operator-imessage-inbound` and `/operator-imessage-delivery-events`; do not
+point the internal number at the customer routes or copy customer Photon
+credentials into the operator service.
+
+The authenticated Photon dashboard owns a Pro `Spot Operator` project separate
+from the customer project. Pro supplies an unlimited shared iMessage route for
+up to 100 explicitly registered users; it does not allocate a dedicated public
+line. The current registered roster is intentionally limited to Terry Wang and
+Adyan Tanver. Record the project ID, one-time project secret, assigned shared
+line, and registered sender numbers in the team secret manager; never commit
+them or place them in a shared `.env` file. Each registered sender number must
+also belong to the matching active production operator user. The inbound route
+normalizes that number and accepts it only when both Photon registration and the
+Spot operator identity match; unknown and customer numbers fail closed.
+
+Copy the assigned shared line into the GitHub Actions variable
+`SPOT_PRODUCTION_OPERATOR_IMESSAGE_CONTACT_PHONE` as an E.164 number. The
+`main` release workflow writes it to Convex as
+`OPERATOR_IMESSAGE_CONTACT_PHONE`; authenticated operators see the formatted
+number and their own linked sender number under `/operator/channels`. The
+number is never exposed through a public browser environment variable.
+
+Configure that Railway service with root directory `/imessage-worker` and
+`imessage-worker/railway.operator.json`. Set `SPOT_ENV=production`,
+`SPECTRUM_PROVIDER=imessage`, `OPERATOR_IMESSAGE_ENABLED=true`, and
+`CONVEX_SITE_URL` alongside the operator-only credentials. Convex receives the
+same operator worker secret plus `OPERATOR_IMESSAGE_ENABLED=true` and the
+service's `OPERATOR_IMESSAGE_WORKER_URL`. Production must keep
+`OPERATOR_IMESSAGE_TERMINAL_ENABLED` unset or false. Publish the service health
+URL through the GitHub Actions variable
+`SPOT_PRODUCTION_OPERATOR_IMESSAGE_WORKER_HEALTH_URL`.
+Before merging the rollout, configure both production GitHub Actions variables
+and set the Railway service's `OPERATOR_IMESSAGE_ENABLED=true`. Every `main`
+release then requires the exact-commit `Spot - operator-imessage-worker`
+status, sets Convex `OPERATOR_SLACK_ENABLED=true` and
+`OPERATOR_IMESSAGE_ENABLED=true`, clears the terminal-mode flag, and requires
+the operator worker health contract, contact number, and fail-closed Convex
+wiring before production promotion.
+
 Slack environment/app setup and the client-owned policy-delivery migration are
 documented in [Slack privileged service channel](./slack.md). Production owns
 the native Slack app and live worker; shared dev and local development use the
@@ -66,10 +114,10 @@ TLS; the router never calls Convex.
 
 Every deployed lane needs matching values:
 
-| Runtime           | Required values                                                                                                                                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Convex            | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, optional `CL_ROUTER_TIMEOUT_MS`; `CL_ROUTER_ADMIN_SECRET` only when the authenticated `/operator/routing` control surface is enabled                                                                                          |
-| Extraction worker | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, `CL_ROUTER_TENANT_ID=glass` (the stable opaque compatibility key for existing router state), optional `CL_ROUTER_TIMEOUT_MS`                                                                                                   |
+| Runtime           | Required values                                                                                                                                                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Convex            | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, optional `CL_ROUTER_TIMEOUT_MS`; `CL_ROUTER_ADMIN_SECRET` only when the authenticated `/operator/routing` control surface is enabled                                                                                         |
+| Extraction worker | `CL_ROUTER_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_TASKS`, `CL_ROUTER_TENANT_ID=glass` (the stable opaque compatibility key for existing router state), optional `CL_ROUTER_TIMEOUT_MS`                                                                                                 |
 | cl-router         | `SPOT_ENV`, `DATABASE_URL`, `CL_ROUTER_SECRET`, `CL_ROUTER_ADMIN_SECRET`, `CL_ROUTER_SESSION_HMAC_SECRET`, optional emergency `CL_ROUTER_FROZEN`, optional diagnostic `CL_ROUTER_SHADOW`, optional `CL_ROUTER_POLICY_REFRESH_MS`, `CL_ROUTER_SCORING_INTERVAL_MS`, and provider keys |
 
 The inference, admin, and session-HMAC secrets must be distinct within each
@@ -172,22 +220,26 @@ deliberately running a local router.
 
 1. Run root CI, worker builds, Convex typecheck, and the cl-router OpenAPI and
    full checks.
-2. Deploy cl-router and migrate its Postgres database before enabling any task
+2. In the target environment, explicitly save an image-capable direct-provider
+   route for `operator_agent` and confirm its provider key is present. The
+   operator route is environment-local, is excluded from cl-router snapshots,
+   and intentionally fails health and inference closed when it is missing.
+3. Deploy cl-router and migrate its Postgres database before enabling any task
    flag in a caller.
-3. Configure the same bearer secret in the caller and router for that lane.
-4. Confirm `GET /health` and the Spot deployment health audit.
-5. Validate the task family in shared dev, then enable it through an explicitly
+4. Configure the same bearer secret in the caller and router for that lane.
+5. Confirm `GET /health` and the Spot deployment health audit.
+6. Validate the task family in shared dev, then enable it through an explicitly
    controlled production rollout. Compare route, error, latency, token, cost,
    tool completion, and workflow-failure telemetry with the direct baseline in
    `/operator/routing`.
-6. Keep the router environment panic and diagnostic overrides off. Use the
+7. Keep the router environment panic and diagnostic overrides off. Use the
    `/operator/routing` global freeze toggle when autonomous route changes should
    pause or resume, then verify the new posture in the same dashboard.
-7. Review tool and structured-output compatibility plus calibrated workflow
+8. Review tool and structured-output compatibility plus calibrated workflow
    quality before enabling autonomous selection for a task family. Introduce
    read-only `chat`/`chat_vision` traffic before side-effectful `email_reply` or
    `mailbox_coordinator`.
-8. For rollback, clear `CL_ROUTER_TASKS` for staged task families. Authenticated
+9. For rollback, clear `CL_ROUTER_TASKS` for staged task families. Authenticated
    `query_reason` remains router-owned while router credentials are configured;
    use an operator model override for a targeted route, the operator global
    freeze for autonomous-routing incidents, or remove the router inference

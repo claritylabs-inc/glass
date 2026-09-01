@@ -79,6 +79,15 @@ describe("cl-router feature gating", () => {
     );
     expect(shouldUseClRouterForCall("chat", "query_reason", {})).toBe(false);
   });
+
+  test("never routes the operator agent even when every router task is enabled", () => {
+    expect(
+      shouldUseClRouterForCall("chat_vision", "operator_agent", {
+        ...environment,
+        CL_ROUTER_TASKS: "*",
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("cl-router requests", () => {

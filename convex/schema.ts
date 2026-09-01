@@ -13,6 +13,7 @@ import {
   threadMessageKindValidator,
 } from "./lib/threadMessageValidators";
 import {
+  operatorToolActionConfirmationPayloadValidator,
   threadActionActorValidator,
   threadActionConfirmationPayloadValidator,
   threadActionConfirmationStatusValidator,
@@ -804,13 +805,17 @@ export default defineSchema({
     routerStatus: v.optional(v.number()),
     routerRetryable: v.optional(v.boolean()),
     routerExecutionStarted: v.optional(v.boolean()),
-    failureAttempts: v.optional(v.array(v.object({
-      attempt: v.number(),
-      provider: modelProviderValidator,
-      model: v.string(),
-      outcome: v.union(v.literal("error"), v.literal("timeout")),
-      errorCode: v.optional(v.string()),
-    }))),
+    failureAttempts: v.optional(
+      v.array(
+        v.object({
+          attempt: v.number(),
+          provider: modelProviderValidator,
+          model: v.string(),
+          outcome: v.union(v.literal("error"), v.literal("timeout")),
+          errorCode: v.optional(v.string()),
+        }),
+      ),
+    ),
     routing: v.optional(extractionTraceRoutingValidator),
     inputTokens: v.optional(v.number()),
     outputTokens: v.optional(v.number()),
@@ -899,6 +904,7 @@ export default defineSchema({
     explicitRouteOverrides: v.optional(v.array(v.string())),
     routes: v.optional(
       v.object({
+        operator_agent: v.optional(modelRouteValidator),
         chat: v.optional(modelRouteValidator),
         chat_vision: v.optional(modelRouteValidator),
         voice_transcription: v.optional(modelRouteValidator),
@@ -1036,6 +1042,9 @@ export default defineSchema({
       v.literal("email"),
       v.literal("imessage"),
       v.literal("slack"),
+      v.literal("manual"),
+      v.literal("operator"),
+      v.literal("mcp"),
     ),
     policyId: v.optional(v.id("policies")),
     sourceRef: v.optional(v.string()),
@@ -1224,10 +1233,7 @@ export default defineSchema({
   })
     .index("client_status", ["clientOrgId", "status"])
     .index("team_status", ["teamId", "status"])
-    .index("reconcile_schedule", [
-      "status",
-      "nextReconciliationAt",
-    ]),
+    .index("reconcile_schedule", ["status", "nextReconciliationAt"]),
 
   slackChannelBindings: defineTable({
     connectionId: v.optional(v.id("slackWorkspaceConnections")),
@@ -1269,10 +1275,7 @@ export default defineSchema({
     .index("connection_status", ["connectionId", "status"])
     .index("client_status", ["clientOrgId", "status"])
     .index("host_channel", ["hostTeamId", "hostChannelId"])
-    .index("connection_customer", [
-      "connectionId",
-      "customerChannelId",
-    ]),
+    .index("connection_customer", ["connectionId", "customerChannelId"]),
 
   slackChannelMemberships: defineTable({
     connectionId: v.id("slackWorkspaceConnections"),
@@ -1351,11 +1354,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("slack_identity", [
-      "connectionId",
-      "teamId",
-      "slackUserId",
-    ])
+    .index("slack_identity", ["connectionId", "teamId", "slackUserId"])
     .index("operator", ["operatorUserId"]),
 
   slackOAuthStates: defineTable({
@@ -1395,10 +1394,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("broker", ["brokerOrgId"])
-    .index("owner_client", [
-      "deliveryOwnerOrgId",
-      "clientOrgId",
-    ])
+    .index("owner_client", ["deliveryOwnerOrgId", "clientOrgId"])
     .index("broker_client", ["brokerOrgId", "clientOrgId"]),
 
   policyDeliveryRules: defineTable({
@@ -1419,10 +1415,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("broker", ["brokerOrgId"])
-    .index("owner_client", [
-      "deliveryOwnerOrgId",
-      "clientOrgId",
-    ])
+    .index("owner_client", ["deliveryOwnerOrgId", "clientOrgId"])
     .index("broker_client", ["brokerOrgId", "clientOrgId"])
     .index("broker_priority", ["brokerOrgId", "priority"]),
 
@@ -1453,22 +1446,10 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("broker_status", [
-      "brokerOrgId",
-      "status",
-      "updatedAt",
-    ])
-    .index("owner_status", [
-      "deliveryOwnerOrgId",
-      "status",
-      "updatedAt",
-    ])
+    .index("broker_status", ["brokerOrgId", "status", "updatedAt"])
+    .index("owner_status", ["deliveryOwnerOrgId", "status", "updatedAt"])
     .index("client_updated", ["clientOrgId", "updatedAt"])
-    .index("client_status", [
-      "clientOrgId",
-      "status",
-      "updatedAt",
-    ])
+    .index("client_status", ["clientOrgId", "status", "updatedAt"])
     .index("policy", ["policyId"])
     .index("thread", ["threadId"])
     .index("idempotency", ["idempotencyKey"]),
@@ -1491,10 +1472,7 @@ export default defineSchema({
   })
     .index("job", ["jobId"])
     .index("broker_created", ["brokerOrgId", "createdAt"])
-    .index("owner_created", [
-      "deliveryOwnerOrgId",
-      "createdAt",
-    ])
+    .index("owner_created", ["deliveryOwnerOrgId", "createdAt"])
     .index("client_created", ["clientOrgId", "createdAt"]),
 
   connectedOrgRelationships: defineTable({
@@ -1605,7 +1583,11 @@ export default defineSchema({
     scope: v.union(v.literal("vendors"), v.literal("own_org")),
     fileName: v.optional(v.string()),
     contentType: v.optional(v.string()),
-    status: v.union(v.literal("running"), v.literal("complete"), v.literal("error")),
+    status: v.union(
+      v.literal("running"),
+      v.literal("complete"),
+      v.literal("error"),
+    ),
     phase: v.optional(v.string()),
     parserBackend: v.optional(
       v.union(
@@ -2664,6 +2646,227 @@ export default defineSchema({
     .index("organization", ["orgId"])
     .index("file", ["fileId"]),
 
+  // Operator-managed client dropbox. These records are separate from policy
+  // source files because they may be unrelated to a policy and have their own
+  // client-visibility contract.
+  clientFiles: defineTable({
+    orgId: v.id("organizations"),
+    fileId: v.id("_storage"),
+    name: v.string(),
+    originalName: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    clientVisible: v.boolean(),
+    policyId: v.optional(v.id("policies")),
+    uploadedByUserId: v.optional(v.id("users")),
+    uploadedBySide: v.union(
+      v.literal("operator"),
+      v.literal("procurement_email"),
+    ),
+    nameSource: v.union(
+      v.literal("original"),
+      v.literal("ai"),
+      v.literal("operator"),
+      v.literal("agent"),
+    ),
+    nameStatus: v.union(
+      v.literal("pending"),
+      v.literal("ready"),
+      v.literal("failed"),
+    ),
+    nameInferenceError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("organization", ["orgId", "createdAt"])
+    .index("visibility", ["orgId", "clientVisible", "createdAt"])
+    .index("storage", ["fileId"])
+    .index("policy", ["policyId", "createdAt"]),
+
+  clientFileUploadIntents: defineTable({
+    operatorUserId: v.id("users"),
+    clientOrgId: v.id("organizations"),
+    fileId: v.optional(v.id("_storage")),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("operator_expiration", ["operatorUserId", "expiresAt"])
+    .index("storage", ["fileId"]),
+
+  procurementRequests: defineTable({
+    clientOrgId: v.id("organizations"),
+    title: v.string(),
+    requestSummary: v.string(),
+    requirements: v.string(),
+    targetEffectiveDate: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("marketing"),
+      v.literal("quote_review"),
+      v.literal("client_decision"),
+      v.literal("accepted"),
+      v.literal("closed"),
+      v.literal("cancelled"),
+    ),
+    replacingPolicyId: v.optional(v.id("policies")),
+    resultingPolicyId: v.optional(v.id("policies")),
+    inboxToken: v.string(),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("organization", ["clientOrgId", "updatedAt"])
+    .index("status", ["clientOrgId", "status", "updatedAt"])
+    .index("inbox", ["inboxToken"]),
+
+  procurementBrokerOutreaches: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    brokerOrgId: v.optional(v.id("organizations")),
+    brokerName: v.string(),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    status: v.union(
+      v.literal("request_sent"),
+      v.literal("can_handle"),
+      v.literal("cannot_handle"),
+      v.literal("quote_received"),
+      v.literal("quote_accepted"),
+      v.literal("quote_rejected"),
+    ),
+    applicationUrl: v.optional(v.string()),
+    applicationQuestions: v.array(v.string()),
+    notes: v.optional(v.string()),
+    quoteSummary: v.optional(v.string()),
+    quoteAmount: v.optional(v.number()),
+    quoteCurrency: v.optional(v.string()),
+    quoteUrl: v.optional(v.string()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "updatedAt"])
+    .index("organization", ["clientOrgId", "updatedAt"])
+    .index("broker", ["brokerOrgId", "updatedAt"]),
+
+  procurementEmailThreads: defineTable({
+    clientOrgId: v.id("organizations"),
+    addressedRequestId: v.id("procurementRequests"),
+    requestId: v.id("procurementRequests"),
+    normalizedSubject: v.string(),
+    subject: v.string(),
+    category: v.union(
+      v.literal("broker"),
+      v.literal("client"),
+      v.literal("internal"),
+      v.literal("mixed"),
+      v.literal("other"),
+    ),
+    categorySource: v.union(v.literal("auto"), v.literal("operator")),
+    categoryReason: v.optional(v.string()),
+    participantEmails: v.array(v.string()),
+    latestMessageAt: v.number(),
+    messageCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("organization", ["clientOrgId", "latestMessageAt"])
+    .index("request", ["requestId", "latestMessageAt"])
+    .index("addressed", ["addressedRequestId", "latestMessageAt"])
+    .index("subject", ["clientOrgId", "normalizedSubject", "latestMessageAt"]),
+
+  procurementEmailMessages: defineTable({
+    threadId: v.id("procurementEmailThreads"),
+    clientOrgId: v.id("organizations"),
+    addressedRequestId: v.id("procurementRequests"),
+    resendEmailId: v.optional(v.string()),
+    messageId: v.optional(v.string()),
+    inReplyTo: v.optional(v.string()),
+    references: v.array(v.string()),
+    subject: v.string(),
+    fromName: v.optional(v.string()),
+    fromEmail: v.string(),
+    toAddresses: v.array(v.string()),
+    ccAddresses: v.array(v.string()),
+    bccAddresses: v.array(v.string()),
+    currentText: v.string(),
+    bodyHtml: v.optional(v.string()),
+    forwarded: v.optional(v.any()),
+    clientFileIds: v.array(v.id("clientFiles")),
+    receivedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("thread", ["threadId", "receivedAt"])
+    .index("resend", ["resendEmailId"])
+    .index("message", ["messageId"])
+    .index("request", ["addressedRequestId", "receivedAt"]),
+
+  procurementFileItems: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
+    clientFileId: v.optional(v.id("clientFiles")),
+    sourceEmailMessageId: v.optional(v.id("procurementEmailMessages")),
+    purpose: v.union(
+      v.literal("requirements"),
+      v.literal("application"),
+      v.literal("requested_document"),
+      v.literal("quote"),
+      v.literal("correspondence"),
+      v.literal("other"),
+    ),
+    label: v.string(),
+    status: v.union(
+      v.literal("requested"),
+      v.literal("available"),
+      v.literal("sent"),
+      v.literal("received"),
+    ),
+    notes: v.optional(v.string()),
+    createdByUserId: v.optional(v.id("users")),
+    updatedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "updatedAt"])
+    .index("outreach", ["outreachId", "updatedAt"])
+    .index("file", ["clientFileId", "updatedAt"])
+    .index("email", ["sourceEmailMessageId"]),
+
+  procurementMemory: defineTable({
+    clientOrgId: v.id("organizations"),
+    kind: v.union(
+      v.literal("placement_preference"),
+      v.literal("broker_appetite"),
+      v.literal("submission_requirement"),
+      v.literal("market_observation"),
+    ),
+    content: v.string(),
+    source: v.union(
+      v.literal("manual"),
+      v.literal("operator_agent"),
+      v.literal("mcp"),
+      v.literal("email"),
+      v.literal("procurement_outcome"),
+    ),
+    requestId: v.optional(v.id("procurementRequests")),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
+    brokerOrgId: v.optional(v.id("organizations")),
+    sourceRef: v.optional(v.string()),
+    confidence: v.optional(v.number()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("client", ["clientOrgId", "updatedAt"])
+    .index("request", ["requestId", "updatedAt"])
+    .index("broker", ["brokerOrgId", "updatedAt"])
+    .index("source", ["clientOrgId", "sourceRef"]),
+
   policyVersions: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
@@ -3081,12 +3284,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("user_organization", ["userId", "orgId"])
-    .index("preference_scope", [
-      "userId",
-      "orgId",
-      "type",
-      "channel",
-    ]),
+    .index("preference_scope", ["userId", "orgId", "type", "channel"]),
 
   // ── Broker Activity ──
 
@@ -3112,11 +3310,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("broker_created", ["brokerOrgId", "createdAt"])
-    .index("broker_client", [
-      "brokerOrgId",
-      "clientOrgId",
-      "createdAt",
-    ])
+    .index("broker_client", ["brokerOrgId", "clientOrgId", "createdAt"])
     .index("client_created", ["clientOrgId", "createdAt"]),
 
   // ── Vector Search (cl-sdk 0.5.0+) ──
@@ -3698,10 +3892,7 @@ export default defineSchema({
     .index("resend", ["resendEmailId"])
     .index("reply", ["replyToMessageId"])
     .index("thread_message", ["threadId", "slackMessageTs"])
-    .index("team_message", [
-      "slackTeamId",
-      "slackMessageTs",
-    ])
+    .index("team_message", ["slackTeamId", "slackMessageTs"])
     .index("thread_dedupe", ["threadId", "dedupeKey"])
     .searchIndex("content", {
       searchField: "content",
@@ -3729,8 +3920,7 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  })
-    .index("thread", ["threadId"]),
+  }).index("thread", ["threadId"]),
 
   threadActionConfirmations: defineTable({
     orgId: v.id("organizations"),
@@ -3914,11 +4104,7 @@ export default defineSchema({
   })
     .index("event", ["eventKey"])
     .index("canonical", ["canonicalEventKey"])
-    .index("slack_thread", [
-      "connectionId",
-      "channelId",
-      "threadTs",
-    ])
+    .index("slack_thread", ["connectionId", "channelId", "threadTs"])
     .index("thread_message", [
       "connectionId",
       "channelId",
@@ -3943,10 +4129,7 @@ export default defineSchema({
     editedAt: v.number(),
   })
     .index("message_edited", ["threadMessageId", "editedAt"])
-    .index("team_message", [
-      "slackTeamId",
-      "slackMessageTs",
-    ]),
+    .index("team_message", ["slackTeamId", "slackMessageTs"]),
 
   slackOutboundSends: defineTable({
     idempotencyKey: v.string(),
@@ -3987,11 +4170,7 @@ export default defineSchema({
     .index("idempotency", ["idempotencyKey"])
     .index("message", ["threadMessageId"])
     .index("connection_status", ["connectionId", "status"])
-    .index("retry_schedule", [
-      "connectionId",
-      "status",
-      "nextAttemptAt",
-    ]),
+    .index("retry_schedule", ["connectionId", "status", "nextAttemptAt"]),
 
   slackMessagePresentations: defineTable({
     orgId: v.id("organizations"),
@@ -4077,10 +4256,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("message_actor", [
-      "threadMessageId",
-      "slackActorId",
-    ])
+    .index("message_actor", ["threadMessageId", "slackActorId"])
     .index("message_user", ["threadMessageId", "userId"])
     .index("message_sender", ["threadMessageId", "imessageSenderAddress"])
     .index("router_signal", ["routerSignalStatus", "createdAt"])
@@ -4107,10 +4283,150 @@ export default defineSchema({
     ])
     .index("client_status", ["clientOrgId", "status"]),
 
+  operatorAgentThreads: defineTable({
+    ownerUserId: v.id("users"),
+    visibility: v.union(v.literal("private"), v.literal("shared")),
+    channel: v.union(
+      v.literal("chat"),
+      v.literal("slack"),
+      v.literal("imessage"),
+      v.literal("mcp"),
+    ),
+    conversationKey: v.optional(v.string()),
+    title: v.string(),
+    initialContext: v.optional(
+      v.object({
+        pageType: v.string(),
+        entityId: v.optional(v.string()),
+        summary: v.optional(v.string()),
+      }),
+    ),
+    lastMessageAt: v.number(),
+    archivedAt: v.optional(v.number()),
+    archiveState: v.optional(v.literal("archived")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("owner_archive", ["ownerUserId", "archiveState", "lastMessageAt"])
+    .index("visibility_archive", [
+      "visibility",
+      "archiveState",
+      "lastMessageAt",
+    ])
+    .index("owner_conversation", ["ownerUserId", "channel", "conversationKey"])
+    .index("channel_conversation", ["channel", "conversationKey"]),
+
+  operatorAgentMessages: defineTable({
+    threadId: v.id("operatorAgentThreads"),
+    ownerUserId: v.id("users"),
+    channel: v.union(
+      v.literal("chat"),
+      v.literal("slack"),
+      v.literal("imessage"),
+      v.literal("mcp"),
+    ),
+    role: v.union(v.literal("user"), v.literal("agent"), v.literal("system")),
+    userId: v.optional(v.id("users")),
+    userName: v.optional(v.string()),
+    replyToMessageId: v.optional(v.id("operatorAgentMessages")),
+    dedupeKey: v.optional(v.string()),
+    content: v.string(),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          fileId: v.id("_storage"),
+          filename: v.string(),
+          contentType: v.string(),
+          size: v.number(),
+        }),
+      ),
+    ),
+    status: v.optional(
+      v.union(
+        v.literal("processing"),
+        v.literal("error"),
+        v.literal("cancelled"),
+      ),
+    ),
+    reasoning: v.optional(v.string()),
+    routerRequestId: v.optional(v.string()),
+    usedTools: v.optional(v.array(v.string())),
+    toolCalls: v.optional(
+      v.array(
+        v.object({
+          name: v.string(),
+          input: v.optional(v.string()),
+          output: v.optional(v.string()),
+        }),
+      ),
+    ),
+    toolArtifacts: v.optional(
+      v.array(
+        v.object({
+          type: v.string(),
+          data: v.any(),
+        }),
+      ),
+    ),
+    agentRunStartedAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("thread", ["threadId"])
+    .index("thread_dedupe", ["threadId", "dedupeKey"])
+    .index("reply", ["replyToMessageId"])
+    .searchIndex("content", {
+      searchField: "content",
+      filterFields: ["threadId"],
+    }),
+
+  operatorAgentAttachments: defineTable({
+    fileId: v.id("_storage"),
+    operatorUserId: v.id("users"),
+    threadId: v.id("operatorAgentThreads"),
+    messageId: v.id("operatorAgentMessages"),
+    filename: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    createdAt: v.number(),
+  })
+    .index("file", ["fileId"])
+    .index("thread_file", ["threadId", "fileId"]),
+
+  operatorAgentUploadIntents: defineTable({
+    operatorUserId: v.id("users"),
+    fileId: v.optional(v.id("_storage")),
+    consumedAt: v.optional(v.number()),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("operator_expiration", ["operatorUserId", "expiresAt"])
+    .index("file", ["fileId"]),
+
+  operatorAgentConfirmations: defineTable({
+    threadId: v.id("operatorAgentThreads"),
+    operatorUserId: v.id("users"),
+    promptMessageId: v.id("operatorAgentMessages"),
+    payload: operatorToolActionConfirmationPayloadValidator,
+    status: threadActionConfirmationStatusValidator,
+    expiresAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+    invalidatedAt: v.optional(v.number()),
+    invalidationReason: v.optional(v.string()),
+  }).index("thread_status", ["threadId", "status"]),
+
   agentActionAuditEvents: defineTable({
-    orgId: v.id("organizations"),
+    orgId: v.optional(v.id("organizations")),
     threadId: v.optional(v.id("threads")),
     threadMessageId: v.optional(v.id("threadMessages")),
+    operatorThreadId: v.optional(v.id("operatorAgentThreads")),
+    operatorMessageId: v.optional(v.id("operatorAgentMessages")),
+    runId: v.optional(v.id("operatorAgentRuns")),
+    confirmationId: v.optional(v.id("threadActionConfirmations")),
+    operatorConfirmationId: v.optional(v.id("operatorAgentConfirmations")),
     actorKind: v.union(
       v.literal("user"),
       v.literal("slack"),
@@ -4127,14 +4443,87 @@ export default defineSchema({
       v.literal("system"),
     ),
     action: v.string(),
+    toolVersion: v.optional(v.number()),
+    capability: v.optional(v.string()),
+    effect: v.optional(
+      v.union(
+        v.literal("read"),
+        v.literal("reversible_write"),
+        v.literal("external_send"),
+        v.literal("access_change"),
+        v.literal("global_change"),
+        v.literal("destructive"),
+      ),
+    ),
+    idempotencyKey: v.optional(v.string()),
+    inputHash: v.optional(v.string()),
+    targetKind: v.optional(v.string()),
+    targetId: v.optional(v.string()),
+    channel: v.optional(
+      v.union(
+        v.literal("chat"),
+        v.literal("slack"),
+        v.literal("imessage"),
+        v.literal("mcp"),
+      ),
+    ),
     input: v.optional(v.string()),
     output: v.optional(v.string()),
-    status: v.union(v.literal("succeeded"), v.literal("failed")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("awaiting_confirmation"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("denied"),
+      v.literal("cancelled"),
+    ),
+    error: v.optional(v.string()),
     createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
   })
     .index("organization_created", ["orgId", "createdAt"])
     .index("thread_created", ["threadId", "createdAt"])
-    .index("actor_created", ["slackActorId", "createdAt"]),
+    .index("operator_created", ["operatorThreadId", "createdAt"])
+    .index("actor_created", ["slackActorId", "createdAt"])
+    .index("run_created", ["runId", "createdAt"])
+    .index("idempotency", ["operatorUserId", "idempotencyKey"]),
+
+  operatorAgentRuns: defineTable({
+    threadId: v.id("operatorAgentThreads"),
+    operatorUserId: v.id("users"),
+    userMessageId: v.id("operatorAgentMessages"),
+    agentMessageId: v.id("operatorAgentMessages"),
+    executionKind: v.optional(
+      v.union(v.literal("goal"), v.literal("direct_tool")),
+    ),
+    objective: v.string(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("waiting_confirmation"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    checkpoint: v.optional(
+      v.object({
+        iteration: v.number(),
+        executionCount: v.number(),
+        summary: v.optional(v.string()),
+        lastToolName: v.optional(v.string()),
+        pendingConfirmationId: v.optional(v.id("operatorAgentConfirmations")),
+      }),
+    ),
+    cancellationRequestedAt: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("thread_status", ["threadId", "status"])
+    .index("operator_created", ["operatorUserId", "createdAt"])
+    .index("message", ["userMessageId"]),
 
   imessageInboundEvents: defineTable({
     eventKey: v.string(),
@@ -4388,7 +4777,11 @@ export default defineSchema({
     codeHash: v.string(),
     clientId: v.string(),
     userId: v.id("users"),
-    orgId: v.id("organizations"),
+    principalKind: v.optional(
+      v.union(v.literal("organization"), v.literal("operator")),
+    ),
+    orgId: v.optional(v.id("organizations")),
+    resource: v.optional(v.string()),
     redirectUri: v.string(),
     codeChallenge: v.string(),
     scope: v.optional(v.string()),
@@ -4402,7 +4795,11 @@ export default defineSchema({
     refreshTokenHash: v.optional(v.string()),
     clientId: v.string(),
     userId: v.id("users"),
-    orgId: v.id("organizations"),
+    principalKind: v.optional(
+      v.union(v.literal("organization"), v.literal("operator")),
+    ),
+    orgId: v.optional(v.id("organizations")),
+    resource: v.optional(v.string()),
     scope: v.optional(v.string()),
     expiresAt: v.number(),
     refreshExpiresAt: v.optional(v.number()),
@@ -4420,7 +4817,7 @@ export default defineSchema({
     requestId: v.string(),
     timestamp: v.number(),
     userId: v.id("users"),
-    orgId: v.id("organizations"),
+    orgId: v.optional(v.id("organizations")),
     method: v.string(),
     path: v.string(),
     status: v.number(),

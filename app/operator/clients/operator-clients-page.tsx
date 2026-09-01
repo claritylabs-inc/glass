@@ -177,7 +177,7 @@ export default function OperatorClientsScreen() {
     <>
       {current?.activeImpersonation ? (
         <PillButton
-          variant="icon"
+          variant="secondary"
           size="compact"
           label="Stop impersonating"
           expandLabel

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { isValidPhoneNumber } from "react-phone-number-input";
@@ -225,8 +226,7 @@ export default function ProfilePage() {
 
   async function saveProactiveChannels(nextChoice: ProactiveChannelChoice) {
     if (!currentOrg?.orgId) return;
-    const includesImessage =
-      nextChoice === "imessage" || nextChoice === "both";
+    const includesImessage = nextChoice === "imessage" || nextChoice === "both";
     if (includesImessage && !viewer?.phone) {
       toast.error("Add a mobile number before choosing iMessage");
       return;
@@ -375,12 +375,12 @@ export default function ProfilePage() {
                 className={`text-muted-foreground/50 mt-2 ${typeStyle("caption.default")}`}
               >
                 Company settings, broker info, and team management are in{" "}
-                <a
+                <Link
                   href="/settings"
                   className="text-foreground/60 hover:text-foreground underline"
                 >
                   Organization Settings
-                </a>
+                </Link>
                 .
               </p>
             </form>

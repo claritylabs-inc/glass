@@ -1,0 +1,650 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import {
+  Copy,
+  FileSearch,
+  Loader2,
+  Mail,
+  PanelRightOpen,
+  Plus,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { ProcurementEmailDrawer } from "@/components/procurement/procurement-shared";
+import { ProcurementMemoryWorkspace } from "@/components/procurement/procurement-memory-workspace";
+import {
+  REQUEST_STATUS_OPTIONS,
+  RequestStatusTag,
+  procurementRequestStatusLabel,
+  EmailCategoryBadge,
+  type ProcurementRequestStatus,
+} from "@/components/procurement/procurement-shared";
+import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { Input } from "@/components/ui/input";
+import {
+  OperationalLabelValueList,
+  OperationalLabelValueRow,
+  OperationalPanel,
+} from "@/components/ui/operational-panel";
+import { PillButton } from "@/components/ui/pill-button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
+import { typeStyle } from "@/lib/typography";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+
+const NO_POLICY = "__none__";
+
+type PolicyOption = {
+  policyId: Id<"policies">;
+  label: string;
+  archived: boolean;
+};
+
+type ProcurementRequestRow = {
+  _id: Id<"procurementRequests">;
+  title: string;
+  requestSummary: string;
+  requirements: string;
+  status: ProcurementRequestStatus;
+  targetEffectiveDate?: string;
+  forwardingAddress: string;
+  replacingPolicy: { label: string } | null;
+  resultingPolicy: { label: string } | null;
+  brokerCount: number;
+  quoteCount: number;
+  outstandingFileCount: number;
+  emailThreadCount: number;
+  updatedAt: number;
+};
+
+type ProcurementEmailRow = {
+  _id: Id<"procurementEmailThreads">;
+  requestId: Id<"procurementRequests">;
+  subject: string;
+  category: "broker" | "client" | "internal" | "mixed" | "other";
+  participantEmails: string[];
+  latestMessageAt: number;
+  messageCount: number;
+};
+
+function ProcurementRequestPreview({
+  request,
+  basePath,
+  onClose,
+}: {
+  request: ProcurementRequestRow;
+  basePath: string;
+  onClose: () => void;
+}) {
+  async function copyAddress() {
+    await navigator.clipboard.writeText(request.forwardingAddress);
+    toast.success("Forwarding address copied");
+  }
+
+  return (
+    <SettingsDrawer
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={request.title}
+      actions={<RequestStatusTag status={request.status} />}
+      footer={
+        <PillButton
+          href={`${basePath}/${request._id}`}
+          size="compact"
+          className="w-full sm:w-auto"
+        >
+          <PanelRightOpen className="size-3.5" />
+          Open full workspace
+        </PillButton>
+      }
+    >
+      <div className="space-y-5">
+        <OperationalLabelValueList title="Current state">
+          <OperationalLabelValueRow
+            label="Target effective date"
+            value={formatDisplayDate(request.targetEffectiveDate, "Not set")}
+          />
+          <OperationalLabelValueRow
+            label="Replaces"
+            value={request.replacingPolicy?.label ?? "No policy"}
+          />
+          <OperationalLabelValueRow
+            label="Resulting policy"
+            value={request.resultingPolicy?.label ?? "Not linked"}
+          />
+          <OperationalLabelValueRow
+            label="Broker activity"
+            value={`${request.brokerCount} ${request.brokerCount === 1 ? "broker" : "brokers"} · ${request.quoteCount} ${request.quoteCount === 1 ? "quote" : "quotes"}`}
+          />
+          <OperationalLabelValueRow
+            label="Follow-up"
+            value={`${request.outstandingFileCount} ${request.outstandingFileCount === 1 ? "file" : "files"} outstanding · ${request.emailThreadCount} email ${request.emailThreadCount === 1 ? "thread" : "threads"}`}
+          />
+          <OperationalLabelValueRow
+            label="Updated"
+            value={formatDisplayDate(request.updatedAt, "—")}
+          />
+        </OperationalLabelValueList>
+
+        <OperationalLabelValueList title="Client brief">
+          <OperationalLabelValueRow
+            label="Request"
+            value={request.requestSummary}
+            layout="stacked"
+          />
+          <OperationalLabelValueRow
+            label="Requirements"
+            value={request.requirements}
+            layout="stacked"
+          />
+        </OperationalLabelValueList>
+
+        <OperationalLabelValueList title="Forwarding email">
+          <OperationalLabelValueRow
+            label="Address"
+            layout="stacked"
+            value={
+              <span className="flex min-w-0 items-start gap-2">
+                <span className="min-w-0 flex-1 break-all">
+                  {request.forwardingAddress}
+                </span>
+                <PillButton
+                  type="button"
+                  variant="icon"
+                  iconOnly
+                  label={`Copy forwarding address for ${request.title}`}
+                  onClick={() => void copyAddress()}
+                >
+                  <Copy className="size-3.5" />
+                </PillButton>
+              </span>
+            }
+          />
+        </OperationalLabelValueList>
+      </div>
+    </SettingsDrawer>
+  );
+}
+
+function NewProcurementRequestDrawer({
+  clientOrgId,
+  policies,
+  onClose,
+  onCreated,
+}: {
+  clientOrgId: Id<"organizations">;
+  policies: PolicyOption[];
+  onClose: () => void;
+  onCreated: (requestId: Id<"procurementRequests">) => void;
+}) {
+  const createRequest = useMutation(api.procurementRequests.create);
+  const [title, setTitle] = useState("");
+  const [requestSummary, setRequestSummary] = useState("");
+  const [requirements, setRequirements] = useState("");
+  const [targetEffectiveDate, setTargetEffectiveDate] = useState("");
+  const [status, setStatus] = useState<ProcurementRequestStatus>("draft");
+  const [replacingPolicyId, setReplacingPolicyId] = useState(NO_POLICY);
+  const [saving, setSaving] = useState(false);
+
+  async function create() {
+    if (!title.trim() || !requestSummary.trim() || !requirements.trim()) {
+      toast.error("Enter a title, client request, and requirements");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await createRequest({
+        clientOrgId,
+        title,
+        requestSummary,
+        requirements,
+        targetEffectiveDate: targetEffectiveDate || undefined,
+        status,
+        replacingPolicyId:
+          replacingPolicyId === NO_POLICY
+            ? undefined
+            : (replacingPolicyId as Id<"policies">),
+      });
+      toast.success("Procurement request created");
+      onCreated(result.requestId);
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(
+          error,
+          "Failed to create procurement request",
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SettingsDrawer
+      open
+      onOpenChange={(open) => {
+        if (!open && !saving) onClose();
+      }}
+      title="New procurement request"
+      footer={
+        <>
+          <PillButton type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </PillButton>
+          <PillButton type="button" onClick={create} disabled={saving}>
+            {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+            Create request
+          </PillButton>
+        </>
+      }
+    >
+      <div className="space-y-5">
+        <label className="block space-y-1.5">
+          <span
+            className={`text-muted-foreground ${typeStyle("caption.default")}`}
+          >
+            Request title
+          </span>
+          <Input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            maxLength={200}
+            placeholder="Property renewal replacement"
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span
+            className={`text-muted-foreground ${typeStyle("caption.default")}`}
+          >
+            What the client asked for
+          </span>
+          <Textarea
+            value={requestSummary}
+            onChange={(event) => setRequestSummary(event.target.value)}
+            className="min-h-24"
+            maxLength={20_000}
+            placeholder="Capture the client’s goals and instructions in their own terms."
+          />
+        </label>
+        <label className="block space-y-1.5">
+          <span
+            className={`text-muted-foreground ${typeStyle("caption.default")}`}
+          >
+            Coverage and procurement requirements
+          </span>
+          <Textarea
+            value={requirements}
+            onChange={(event) => setRequirements(event.target.value)}
+            className="min-h-32"
+            maxLength={20_000}
+            placeholder="Limits, locations, lines of business, timing, carrier preferences, and constraints."
+          />
+        </label>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="block space-y-1.5">
+            <span
+              className={`text-muted-foreground ${typeStyle("caption.default")}`}
+            >
+              Target effective date
+            </span>
+            <Input
+              type="date"
+              value={targetEffectiveDate}
+              onChange={(event) => setTargetEffectiveDate(event.target.value)}
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span
+              className={`text-muted-foreground ${typeStyle("caption.default")}`}
+            >
+              Status
+            </span>
+            <Select
+              value={status}
+              onValueChange={(value) =>
+                setStatus(value as ProcurementRequestStatus)
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {procurementRequestStatusLabel(status)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {REQUEST_STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+        <label className="block space-y-1.5">
+          <span
+            className={`text-muted-foreground ${typeStyle("caption.default")}`}
+          >
+            Policy being replaced
+          </span>
+          <SearchableSelect
+            value={replacingPolicyId}
+            onChange={setReplacingPolicyId}
+            options={[
+              { value: NO_POLICY, label: "No policy" },
+              ...policies.map((policy) => ({
+                value: policy.policyId,
+                label: `${policy.label}${policy.archived ? " · Archived" : ""}`,
+              })),
+            ]}
+          />
+        </label>
+      </div>
+    </SettingsDrawer>
+  );
+}
+
+export function ProcurementListWorkspace({
+  clientOrgId,
+  basePath,
+  view,
+  readOnly,
+  onActions,
+  onRightPanel,
+}: {
+  clientOrgId: Id<"organizations">;
+  basePath: string;
+  view: "requests" | "emails" | "memory";
+  readOnly: boolean;
+  onActions?: (node: ReactNode) => void;
+  onRightPanel: (node: ReactNode) => void;
+}) {
+  const router = useRouter();
+  const requestRows = useQuery(api.procurementRequests.list, {
+    clientOrgId,
+    limit: 100,
+  });
+  const policyRows = useQuery(api.procurementRequests.listPolicyOptions, {
+    clientOrgId,
+  });
+  const emailRows = useQuery(api.procurementRequests.listEmailThreads, {
+    clientOrgId,
+    limit: 200,
+  });
+  const requests = useMemo(
+    () => (requestRows ?? []) as ProcurementRequestRow[],
+    [requestRows],
+  );
+  const policies = useMemo(
+    () => (policyRows ?? []) as PolicyOption[],
+    [policyRows],
+  );
+  const [selectedRequestId, setSelectedRequestId] =
+    useState<Id<"procurementRequests"> | null>(null);
+
+  const closeRightPanel = useCallback(() => {
+    setSelectedRequestId(null);
+    onRightPanel(null);
+  }, [onRightPanel]);
+  const openNewRequest = useCallback(() => {
+    setSelectedRequestId(null);
+    onRightPanel(
+      <NewProcurementRequestDrawer
+        clientOrgId={clientOrgId}
+        policies={policies}
+        onClose={closeRightPanel}
+        onCreated={(requestId) => {
+          closeRightPanel();
+          router.push(`${basePath}/${requestId}`);
+        }}
+      />,
+    );
+  }, [basePath, clientOrgId, closeRightPanel, onRightPanel, policies, router]);
+
+  const openEmail = useCallback(
+    (emailThreadId: Id<"procurementEmailThreads">) => {
+      setSelectedRequestId(null);
+      onRightPanel(
+        <ProcurementEmailDrawer
+          emailThreadId={emailThreadId}
+          requests={requests}
+          readOnly={readOnly}
+          onClose={closeRightPanel}
+        />,
+      );
+    },
+    [closeRightPanel, onRightPanel, readOnly, requests],
+  );
+
+  const openRequestPreview = useCallback(
+    (request: ProcurementRequestRow) => {
+      setSelectedRequestId(request._id);
+      onRightPanel(
+        <ProcurementRequestPreview
+          request={request}
+          basePath={basePath}
+          onClose={closeRightPanel}
+        />,
+      );
+    },
+    [basePath, closeRightPanel, onRightPanel],
+  );
+
+  useEffect(() => {
+    if (view === "memory") return;
+    onActions?.(
+      readOnly ? null : (
+        <PillButton type="button" onClick={openNewRequest}>
+          <Plus className="size-3.5" />
+          New request
+        </PillButton>
+      ),
+    );
+    return () => onActions?.(null);
+  }, [onActions, openNewRequest, readOnly, view]);
+
+  const requestsById = useMemo(
+    () => new Map(requests.map((request) => [request._id, request])),
+    [requests],
+  );
+
+  if (
+    requestRows === undefined ||
+    policyRows === undefined ||
+    emailRows === undefined
+  ) {
+    return (
+      <OperationalPanel
+        as="div"
+        className="flex h-40 items-center justify-center"
+      >
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      </OperationalPanel>
+    );
+  }
+
+  const emails = emailRows as ProcurementEmailRow[];
+
+  return (
+    <div className="space-y-6">
+      <div className="overflow-x-auto">
+        <Tabs
+          value={view}
+          onValueChange={(value) => {
+            closeRightPanel();
+            router.push(
+              value === "emails"
+                ? `${basePath}?view=emails`
+                : value === "memory"
+                  ? `${basePath}?view=memory`
+                  : basePath,
+            );
+          }}
+        >
+          <TabsList variant="pill" aria-label="Procurement view">
+            <TabsTrigger value="requests">Requests</TabsTrigger>
+            <TabsTrigger value="emails">Imported email</TabsTrigger>
+            <TabsTrigger value="memory">Memory</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {view === "memory" ? (
+        <ProcurementMemoryWorkspace
+          clientOrgId={clientOrgId}
+          requests={requests.map((request) => ({
+            _id: request._id,
+            title: request.title,
+          }))}
+          readOnly={readOnly}
+          onActions={onActions}
+          onRightPanel={onRightPanel}
+        />
+      ) : view === "requests" ? (
+        requests.length === 0 ? (
+          <EmptyStateCard
+            title="No procurement requests yet"
+            description="Create a request to centralize client requirements, broker outreach, documents, quotes, and forwarded email."
+            icon={<FileSearch className="size-6" />}
+            actionLabel={readOnly ? undefined : "New request"}
+            onAction={readOnly ? undefined : openNewRequest}
+          />
+        ) : (
+          <OperationalPanel as="div">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[52%]">Request</TableHead>
+                  <TableHead className="w-[18%]">Status</TableHead>
+                  <TableHead className="w-[18%]">Target date</TableHead>
+                  <TableHead className="w-[12%]">Updated</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {requests.map((request) => (
+                  <TableRow
+                    key={request._id}
+                    tabIndex={0}
+                    onClick={() => openRequestPreview(request)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      openRequestPreview(request);
+                    }}
+                    className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                      selectedRequestId === request._id ? "bg-muted/50" : ""
+                    }`}
+                  >
+                    <TableCell className="min-w-64 whitespace-normal">
+                      <p
+                        className={`text-foreground ${typeStyle("body.medium")}`}
+                      >
+                        {request.title}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      <RequestStatusTag status={request.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDisplayDate(
+                        request.targetEffectiveDate,
+                        "Not set",
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDisplayDate(request.updatedAt, "—")}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </OperationalPanel>
+        )
+      ) : emails.length === 0 ? (
+        <EmptyStateCard
+          title="No imported email yet"
+          description="Forward a broker or client email thread to a request’s unique address. It will appear here automatically."
+          icon={<Mail className="size-6" />}
+        />
+      ) : (
+        <OperationalPanel as="div">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Subject</TableHead>
+                <TableHead>Participant</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Request</TableHead>
+                <TableHead>Last activity</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {emails.map((email) => (
+                <TableRow key={email._id}>
+                  <TableCell className="min-w-64 whitespace-normal">
+                    <button
+                      type="button"
+                      onClick={() => openEmail(email._id)}
+                      className={`text-left text-foreground underline-offset-4 hover:underline ${typeStyle("body.medium")}`}
+                    >
+                      {email.subject}
+                    </button>
+                    <p
+                      className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                    >
+                      {email.messageCount}{" "}
+                      {email.messageCount === 1 ? "message" : "messages"}
+                    </p>
+                  </TableCell>
+                  <TableCell className="max-w-64 truncate text-muted-foreground">
+                    {email.participantEmails[0] ?? "Unknown"}
+                  </TableCell>
+                  <TableCell>
+                    <EmailCategoryBadge category={email.category} />
+                  </TableCell>
+                  <TableCell className="min-w-44 text-muted-foreground">
+                    {requestsById.get(email.requestId)?.title ??
+                      "Unknown request"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDisplayDateTime(email.latestMessageAt, "—")}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </OperationalPanel>
+      )}
+    </div>
+  );
+}

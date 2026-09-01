@@ -47,11 +47,17 @@ function OperationalPanelHeader({
       )}
     >
       <div className="min-w-0">
-        <h2 className={`min-w-0 truncate text-foreground ${typeStyle("heading.micro")}`}>
+        <h2
+          className={`min-w-0 truncate text-foreground ${typeStyle("heading.micro")}`}
+        >
           {title}
         </h2>
         {description ? (
-          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{description}</p>
+          <p
+            className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
+          >
+            {description}
+          </p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
@@ -102,7 +108,9 @@ function OperationalDetailGroup({
   return (
     <section className={className}>
       {title ? (
-        <h3 className={`mb-2 text-muted-foreground ${typeStyle("heading.micro")}`}>
+        <h3
+          className={`mb-2 text-muted-foreground ${typeStyle("heading.micro")}`}
+        >
           {title}
         </h3>
       ) : null}
@@ -123,8 +131,12 @@ function OperationalDetailRow({
   if (!value) return null;
   return (
     <div className="flex flex-col gap-1 border-t border-border py-3 first:border-t-0">
-      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>{label}</p>
-      <p className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}>
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+        {label}
+      </p>
+      <p
+        className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}
+      >
         {value}
       </p>
     </div>
@@ -142,9 +154,7 @@ function OperationalLabelValueList({
 }) {
   return (
     <OperationalPanel as="div" className={className}>
-      {title ? (
-        <OperationalPanelHeader title={title} />
-      ) : null}
+      {title ? <OperationalPanelHeader title={title} /> : null}
       <dl>{children}</dl>
     </OperationalPanel>
   );
@@ -155,11 +165,13 @@ function OperationalLabelValueRow({
   value,
   align = "left",
   layout = "responsive",
+  verticalAlign = "start",
 }: {
   label: ReactNode;
   value?: ReactNode;
   align?: "left" | "right";
   layout?: "responsive" | "stacked";
+  verticalAlign?: "start" | "center";
 }) {
   if (value === undefined || value === null || value === "") return null;
   return (
@@ -168,9 +180,14 @@ function OperationalLabelValueRow({
         "grid grid-cols-1 gap-1 border-t border-border px-4 py-3 first:border-t-0",
         layout === "responsive" &&
           "sm:grid-cols-[minmax(7.5rem,0.32fr)_minmax(0,1fr)] sm:gap-3",
+        layout === "responsive" &&
+          verticalAlign === "center" &&
+          "sm:items-center",
       )}
     >
-      <dt className={`min-w-0 text-muted-foreground ${typeStyle("label.metadata")}`}>
+      <dt
+        className={`min-w-0 text-muted-foreground ${typeStyle("label.metadata")}`}
+      >
         {label}
       </dt>
       <dd

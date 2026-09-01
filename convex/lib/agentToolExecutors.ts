@@ -12,13 +12,16 @@ import {
   generateCoi,
   lookupAddress,
   lookupCompanyContext,
+  lookupClientFiles,
   lookupComplianceRequirements,
   importRequirementAttachments,
   lookupPolicy,
   lookupPolicySection,
+  readClientFile,
   presentPolicyCard,
   readThreadAttachment,
   saveNote,
+  attachClientFile,
   searchThreadHistory,
 } from "./chatTools";
 import { COI_GENERATION_FAILED_MESSAGE } from "./actionFailures";
@@ -49,10 +52,8 @@ import { createAgentPolicyPresentationState } from "./agentPolicyPresentation";
 import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 import type { AgentToolSurface } from "./agentMessageHistory";
 import { readStoredThreadAttachment } from "./agentThreadAttachment";
-import {
-  normalizedSearchText,
-  uniqueSearchTerms,
-} from "./searchTokenizer";
+import { readStoredAgentFile } from "./storedAgentFile";
+import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
 import { importRequirementSources } from "./requirementAttachmentIntent";
 
 const COMPANY_CONTEXT_QUERY_STOP_WORDS = new Set([
@@ -696,8 +697,7 @@ export function buildAgentToolExecutors(
         ).flat();
         const queryTerms = uniqueSearchTerms(params.query ?? "", {
           minimumLength: 3,
-        })
-          .filter((term) => !COMPANY_CONTEXT_QUERY_STOP_WORDS.has(term));
+        }).filter((term) => !COMPANY_CONTEXT_QUERY_STOP_WORDS.has(term));
         const relevantMemories =
           params.query?.trim() && targetOrgIds.length > 1 && !matchedOrgByName
             ? memories.filter((memory) => {
@@ -724,6 +724,93 @@ export function buildAgentToolExecutors(
             facts.length > 0
               ? "These are durable company-profile facts only. Use policy tools for every policy fact."
               : "No matching durable company-profile facts were found. Do not infer policy facts from memory.",
+        };
+      },
+    },
+    lookup_client_files: {
+      ...lookupClientFiles,
+      execute: async (params: {
+        orgId?: string;
+        query?: string;
+        limit?: number;
+      }) => {
+        const readableOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
+        const orgIds = params.orgId
+          ? readableOrgIds.filter((orgId) => String(orgId) === params.orgId)
+          : readableOrgIds;
+        if (params.orgId && orgIds.length === 0) {
+          return {
+            files: [],
+            message: "That organization is not in the readable scope.",
+          };
+        }
+        const files = await ctx.runQuery(
+          internal.clientFiles.listVisibleInternal,
+          {
+            orgIds,
+            query: params.query,
+            limit: params.limit,
+          },
+        );
+        return { files, bounded: files.length === (params.limit ?? 20) };
+      },
+    },
+    read_client_file: {
+      ...readClientFile,
+      execute: async (params: { clientFileId: string }) => {
+        const clientFileId = params.clientFileId as Id<"clientFiles">;
+        const file = await ctx.runQuery(
+          internal.clientFiles.getVisibleInternal,
+          {
+            clientFileId,
+            orgIds: options.readOrgIds ?? options.scope.readOrgIds,
+          },
+        );
+        if (!file) {
+          return {
+            status: "unavailable" as const,
+            message:
+              "That shared client file was not found or is not visible in this scope.",
+          };
+        }
+        return await readStoredAgentFile(ctx, {
+          fileId: file.fileId,
+          filename: file.name,
+          contentType: file.contentType,
+          size: file.size,
+        });
+      },
+    },
+    attach_client_file: {
+      ...attachClientFile,
+      execute: async (params: { clientFileId: string }) => {
+        const clientFileId = params.clientFileId as Id<"clientFiles">;
+        const file = await ctx.runQuery(
+          internal.clientFiles.getVisibleInternal,
+          {
+            clientFileId,
+            orgIds: options.readOrgIds ?? options.scope.readOrgIds,
+          },
+        );
+        if (!file) {
+          return {
+            status: "unavailable" as const,
+            message:
+              "That shared client file was not found or is not visible in this scope.",
+          };
+        }
+        const attachment = {
+          filename: file.name,
+          contentType: file.contentType,
+          size: file.size,
+          fileId: file.fileId,
+          kind: "uploaded_file" as const,
+        };
+        await options.onResponseAttachment?.(attachment);
+        return {
+          status: "attached" as const,
+          clientFileId: file.clientFileId,
+          attachment,
         };
       },
     },
