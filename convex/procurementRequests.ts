@@ -434,20 +434,21 @@ export const listPolicyOptions = query({
   },
 });
 
-export async function createProcurementRequestByOperator(
+type CreateProcurementRequestArgs = {
+  operatorUserId: Id<"users">;
+  clientOrgId: Id<"organizations">;
+  title: string;
+  requestSummary: string;
+  requirements: string;
+  targetEffectiveDate?: string;
+  status?: RequestStatus;
+  replacingPolicyId?: Id<"policies">;
+  resultingPolicyId?: Id<"policies">;
+};
+
+export async function validateProcurementRequestCreateByOperator(
   ctx: MutationCtx,
-  args: {
-    operatorUserId: Id<"users">;
-    clientOrgId: Id<"organizations">;
-    title: string;
-    requestSummary: string;
-    requirements: string;
-    targetEffectiveDate?: string;
-    status?: RequestStatus;
-    replacingPolicyId?: Id<"policies">;
-    resultingPolicyId?: Id<"policies">;
-    source: "operator" | "agent";
-  },
+  args: CreateProcurementRequestArgs,
 ) {
   await requireDirectOperatorWrite(ctx, args.operatorUserId);
   const client = await requireClient(ctx, args.clientOrgId);
@@ -455,6 +456,18 @@ export async function createProcurementRequestByOperator(
     requirePolicyForRequest(ctx, args.replacingPolicyId, args.clientOrgId),
     requirePolicyForRequest(ctx, args.resultingPolicyId, args.clientOrgId),
   ]);
+  requiredText(args.title, "Title", 200);
+  requiredText(args.requestSummary, "Client request");
+  requiredText(args.requirements, "Requirements");
+  optionalDate(args.targetEffectiveDate);
+  return client;
+}
+
+export async function createProcurementRequestByOperator(
+  ctx: MutationCtx,
+  args: CreateProcurementRequestArgs & { source: "operator" | "agent" },
+) {
+  const client = await validateProcurementRequestCreateByOperator(ctx, args);
   const now = dayjs().valueOf();
   const inboxToken = await createUniqueInboxToken(ctx);
   const requestId = await ctx.db.insert("procurementRequests", {

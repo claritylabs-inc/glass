@@ -4,7 +4,11 @@ import { v } from "convex/values";
 import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { formatSlackAnswerText } from "../lib/slackBlocks";
+import {
+  buildOperatorSlackConfirmationBlocks,
+  buildOperatorSlackConfirmationResolvedBlocks,
+  formatSlackAnswerText,
+} from "../lib/slackBlocks";
 import {
   handleOperatorChannelConfirmation,
   waitForOperatorAgentRun,
@@ -19,10 +23,17 @@ import {
   isLegacyOperatorSlackTitle,
   slackChannelTitlePrefix,
 } from "../lib/slackThreadTitle";
+import {
+  MAX_SLACK_THREAD_CONTEXT_MESSAGES,
+  type SlackThreadContextSnapshot,
+} from "../lib/slackThreadContext";
+import { operatorSlackConversationKey } from "../lib/operatorSlackConfig";
 
 const WORKER_TIMEOUT_MS = 30_000;
 const CHANNEL_NAME_TIMEOUT_MS = 3_000;
 const internalApi = internal as any;
+const OPERATOR_SLACK_PROCESSING_REACTION = "eyes";
+const OPERATOR_SLACK_COMPLETE_REACTION = "white_check_mark";
 
 type OperatorAuthorizedEvent = {
   event: Doc<"slackInboundEvents">;
@@ -34,6 +45,20 @@ type OperatorChannelThreadResult = {
   created: boolean;
   title: string;
 };
+
+type OperatorSlackDelivery = {
+  teamId: string;
+  channelId: string;
+  threadTs?: string;
+};
+
+type OperatorSlackConfirmation = {
+  _id: Id<"operatorAgentConfirmations">;
+  summary: string;
+  effect: string;
+};
+
+type OperatorSlackActivityState = "processing" | "complete" | "failed";
 
 function operatorSlackContent(event: Doc<"slackInboundEvents">) {
   const withoutMention = event.mentionedBotUserId
@@ -55,8 +80,8 @@ function operatorSlackContent(event: Doc<"slackInboundEvents">) {
 async function sendOperatorSlackResponse(
   ctx: ActionCtx,
   args: {
-    event: Doc<"slackInboundEvents">;
-    runId: Id<"operatorAgentRuns">;
+    delivery: OperatorSlackDelivery;
+    clientMessageId: string;
     response: {
       content?: string;
       attachments?: Array<{
@@ -65,6 +90,7 @@ async function sendOperatorSlackResponse(
         contentType: string;
       }>;
     };
+    confirmation?: OperatorSlackConfirmation | null;
   },
 ) {
   const attachments = await Promise.all(
@@ -95,13 +121,18 @@ async function sendOperatorSlackResponse(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      clientMessageId: `operator-agent:${args.runId}:${args.event.eventKey}`,
-      teamId: args.event.teamId,
-      channelId: args.event.channelId,
-      threadTs: args.event.isDirectMessage
-        ? args.event.replyThreadTs
-        : args.event.threadTs,
+      clientMessageId: args.clientMessageId,
+      teamId: args.delivery.teamId,
+      channelId: args.delivery.channelId,
+      threadTs: args.delivery.threadTs,
       mrkdwnText: formatSlackAnswerText(content),
+      blocks: args.confirmation
+        ? buildOperatorSlackConfirmationBlocks({
+            confirmationId: args.confirmation._id,
+            summary: args.confirmation.summary,
+            destructive: args.confirmation.effect === "destructive",
+          })
+        : undefined,
       attachments: availableAttachments,
     }),
     signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
@@ -126,6 +157,104 @@ async function sendOperatorSlackResponse(
   }
 }
 
+function operatorSlackDelivery(
+  event: Doc<"slackInboundEvents">,
+): OperatorSlackDelivery {
+  return {
+    teamId: event.teamId,
+    channelId: event.channelId,
+    threadTs: event.isDirectMessage ? event.replyThreadTs : event.threadTs,
+  };
+}
+
+async function updateOperatorSlackActivity(
+  event: Pick<
+    Doc<"slackInboundEvents">,
+    "teamId" | "channelId" | "messageTs"
+  >,
+  state: OperatorSlackActivityState,
+) {
+  const reaction = async (operation: "add" | "remove", name: string) => {
+    try {
+      const worker = workerConfig();
+      const response = await fetch(`${worker.url}/reaction/${operation}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${worker.secret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          teamId: event.teamId,
+          channelId: event.channelId,
+          messageTs: event.messageTs,
+          name,
+        }),
+        signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        const result = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(
+          result.error ?? `Slack worker returned ${response.status}`,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[slack] Could not ${operation} operator ${name} reaction`,
+        error,
+      );
+    }
+  };
+
+  if (state === "processing") {
+    await reaction("add", OPERATOR_SLACK_PROCESSING_REACTION);
+    return;
+  }
+  if (state === "complete") {
+    await reaction("add", OPERATOR_SLACK_COMPLETE_REACTION);
+  }
+  await reaction("remove", OPERATOR_SLACK_PROCESSING_REACTION);
+}
+
+async function updateOperatorSlackConfirmation(
+  ctx: ActionCtx,
+  args: {
+    delivery: OperatorSlackDelivery;
+    messageTs: string;
+    summary: string;
+    decision: "approve" | "reject";
+  },
+) {
+  const worker = workerConfig();
+  const response = await fetch(`${worker.url}/message/update`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${worker.secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      teamId: args.delivery.teamId,
+      channelId: args.delivery.channelId,
+      messageTs: args.messageTs,
+      mrkdwnText: `${args.decision === "approve" ? "Confirmed" : "Cancelled"}: ${args.summary}`,
+      blocks: buildOperatorSlackConfirmationResolvedBlocks({
+        summary: args.summary,
+        decision: args.decision,
+      }),
+    }),
+    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const result = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+    throw new Error(
+      result.error ?? `Slack worker returned ${response.status}`,
+    );
+  }
+}
+
 async function processOperatorBatch(
   ctx: ActionCtx,
   batch: Array<Doc<"slackInboundEvents">>,
@@ -136,120 +265,144 @@ async function processOperatorBatch(
     internalApi.operatorSlack.authorizeBatch,
     { eventIds },
   )) as OperatorAuthorizedEvent[];
-  const firstAuthorizedEvent = authorized[0]?.event;
-  const channelName = firstAuthorizedEvent?.isDirectMessage
-    ? undefined
-    : await resolveSlackChannelName(firstAuthorizedEvent).catch((error) => {
-        console.warn("[slack] Could not resolve operator channel name", error);
-        return undefined;
+  const pendingActivity = new Map(
+    authorized.map(({ event }) => [event._id, event] as const),
+  );
+  await Promise.all(
+    authorized.map(({ event }) =>
+      updateOperatorSlackActivity(event, "processing"),
+    ),
+  );
+  try {
+    const firstAuthorizedEvent = authorized[0]?.event;
+    const channelName = firstAuthorizedEvent?.isDirectMessage
+      ? undefined
+      : await resolveSlackChannelName(firstAuthorizedEvent).catch((error) => {
+          console.warn("[slack] Could not resolve operator channel name", error);
+          return undefined;
+        });
+    const slackThreadContext = authorized.at(-1)?.event
+      ? await fetchThreadContext(authorized.at(-1)!.event)
+      : undefined;
+    for (const { event, operatorUserId } of authorized) {
+      let refreshedEvent = (await ctx.runQuery(
+        internalApi.slack.getInboundEvent,
+        { eventId: event._id },
+      )) as Doc<"slackInboundEvents"> | null;
+      if (!refreshedEvent) continue;
+      const titlePrefix = slackChannelTitlePrefix({
+        channelId: refreshedEvent.channelId,
+        channelName,
       });
-  for (const { event, operatorUserId } of authorized) {
-    let refreshedEvent = (await ctx.runQuery(
-      internalApi.slack.getInboundEvent,
-      { eventId: event._id },
-    )) as Doc<"slackInboundEvents"> | null;
-    if (!refreshedEvent) continue;
-    const titlePrefix = slackChannelTitlePrefix({
-      channelId: refreshedEvent.channelId,
-      channelName,
-    });
-    const initialTitle = refreshedEvent.isDirectMessage
-      ? `Slack DM · ${refreshedEvent.senderDisplayName ?? refreshedEvent.senderUserId}`
-      : titlePrefix;
-    const channelThread = (await ctx.runMutation(
-      internalApi.operatorAgent.createOrGetChannelThreadWithStatusInternal,
-      {
-        operatorUserId,
-        channel: "slack",
-        conversationKey: [
-          refreshedEvent.teamId,
-          refreshedEvent.channelId,
-          refreshedEvent.threadTs,
-        ].join(":"),
-        title: initialTitle,
-        shared: !refreshedEvent.isDirectMessage,
-      },
-    )) as OperatorChannelThreadResult;
-    const threadId = channelThread.threadId;
-    const content = operatorSlackContent(refreshedEvent);
-    const confirmation = await handleOperatorChannelConfirmation(ctx, {
-      operatorUserId,
-      threadId,
-      channel: "slack",
-      content,
-    });
-    if (confirmation) {
-      await sendOperatorSlackResponse(ctx, {
-        event: refreshedEvent,
-        runId: confirmation.runId,
-        response: confirmation.response ?? { content: confirmation.content },
-      });
-      await ctx.runMutation(internalApi.operatorSlack.completeEvent, {
-        eventId: refreshedEvent._id,
-      });
-      continue;
-    }
-    await fetchAttachment(ctx, refreshedEvent);
-    refreshedEvent = (await ctx.runQuery(internalApi.slack.getInboundEvent, {
-      eventId: refreshedEvent._id,
-    })) as Doc<"slackInboundEvents"> | null;
-    if (!refreshedEvent) continue;
-    const inboundAttachments =
-      refreshedEvent.attachments ??
-      (refreshedEvent.attachment ? [refreshedEvent.attachment] : []);
-    const titleGeneration =
-      !refreshedEvent.isDirectMessage &&
-      (channelThread.created ||
-        isLegacyOperatorSlackTitle(
-          channelThread.title,
-          refreshedEvent.channelId,
-        ))
-        ? {
-            expectedTitle: channelThread.title,
-            titlePrefix,
-          }
-        : undefined;
-    const queued = await ctx.runMutation(
-      internalApi.operatorAgent.enqueueMessageInternal,
-      {
+      const channelThread = (await ctx.runMutation(
+        internalApi.operatorAgent.createOrGetChannelThreadWithStatusInternal,
+        {
+          operatorUserId,
+          channel: "slack",
+          conversationKey: operatorSlackConversationKey(refreshedEvent),
+          title: refreshedEvent.isDirectMessage
+            ? `Slack DM · ${refreshedEvent.senderDisplayName ?? refreshedEvent.senderUserId}`
+            : titlePrefix,
+          shared: !refreshedEvent.isDirectMessage,
+        },
+      )) as OperatorChannelThreadResult;
+      const threadId = channelThread.threadId;
+      const content = operatorSlackContent(refreshedEvent);
+      const confirmation = await handleOperatorChannelConfirmation(ctx, {
         operatorUserId,
         threadId,
         channel: "slack",
         content,
-        dedupeKey: refreshedEvent.canonicalEventKey ?? refreshedEvent.eventKey,
-        attachments: inboundAttachments.flatMap((attachment) =>
-          attachment.fileId
-            ? [
-                {
-                  fileId: attachment.fileId,
-                  filename: attachment.filename,
-                  contentType: attachment.contentType,
-                  size: attachment.size ?? 0,
-                },
-              ]
-            : [],
-        ),
-      },
-    );
-    if (titleGeneration) {
-      await ctx.runMutation(
-        internalApi.operatorAgent.scheduleSlackThreadTitleInternal,
-        { threadId, ...titleGeneration },
+      });
+      if (confirmation) {
+        await sendOperatorSlackResponse(ctx, {
+          delivery: operatorSlackDelivery(refreshedEvent),
+          clientMessageId: `operator-agent:${confirmation.runId}:${refreshedEvent.eventKey}`,
+          response: confirmation.response ?? { content: confirmation.content },
+        });
+        await ctx.runMutation(internalApi.operatorSlack.completeEvent, {
+          eventId: refreshedEvent._id,
+        });
+        await updateOperatorSlackActivity(refreshedEvent, "complete");
+        pendingActivity.delete(event._id);
+        continue;
+      }
+      await fetchAttachment(ctx, refreshedEvent);
+      refreshedEvent = (await ctx.runQuery(internalApi.slack.getInboundEvent, {
+        eventId: refreshedEvent._id,
+      })) as Doc<"slackInboundEvents"> | null;
+      if (!refreshedEvent) continue;
+      const inboundAttachments =
+        refreshedEvent.attachments ??
+        (refreshedEvent.attachment ? [refreshedEvent.attachment] : []);
+      const titleGeneration =
+        !refreshedEvent.isDirectMessage &&
+        (channelThread.created ||
+          isLegacyOperatorSlackTitle(
+            channelThread.title,
+            refreshedEvent.channelId,
+          ))
+          ? { expectedTitle: channelThread.title, titlePrefix }
+          : undefined;
+      const queued = await ctx.runMutation(
+        internalApi.operatorAgent.enqueueMessageInternal,
+        {
+          operatorUserId,
+          threadId,
+          channel: "slack",
+          content,
+          dedupeKey: refreshedEvent.canonicalEventKey ?? refreshedEvent.eventKey,
+          slackThreadContext,
+          attachments: inboundAttachments.flatMap((attachment) =>
+            attachment.fileId
+              ? [
+                  {
+                    fileId: attachment.fileId,
+                    filename: attachment.filename,
+                    contentType: attachment.contentType,
+                    size: attachment.size ?? 0,
+                  },
+                ]
+              : [],
+          ),
+        },
       );
+      if (titleGeneration) {
+        await ctx.runMutation(
+          internalApi.operatorAgent.scheduleSlackThreadTitleInternal,
+          { threadId, ...titleGeneration },
+        );
+      }
+      const result = await waitForOperatorAgentRun(
+        ctx,
+        operatorUserId,
+        queued.runId,
+      );
+      const pendingConfirmation =
+        result.run.status === "waiting_confirmation"
+          ? ((await ctx.runQuery(
+              internalApi.operatorAgent.getPendingConfirmationInternal,
+              { operatorUserId, threadId },
+            )) as OperatorSlackConfirmation | null)
+          : null;
+      await sendOperatorSlackResponse(ctx, {
+        delivery: operatorSlackDelivery(refreshedEvent),
+        clientMessageId: `operator-agent:${queued.runId}:${refreshedEvent.eventKey}`,
+        response: result.response ?? {},
+        confirmation: pendingConfirmation,
+      });
+      await ctx.runMutation(internalApi.operatorSlack.completeEvent, {
+        eventId: refreshedEvent._id,
+      });
+      await updateOperatorSlackActivity(refreshedEvent, "complete");
+      pendingActivity.delete(event._id);
     }
-    const result = await waitForOperatorAgentRun(
-      ctx,
-      operatorUserId,
-      queued.runId,
+  } finally {
+    await Promise.all(
+      [...pendingActivity.values()].map((event) =>
+        updateOperatorSlackActivity(event, "failed"),
+      ),
     );
-    await sendOperatorSlackResponse(ctx, {
-      event: refreshedEvent,
-      runId: queued.runId,
-      response: result.response ?? {},
-    });
-    await ctx.runMutation(internalApi.operatorSlack.completeEvent, {
-      eventId: refreshedEvent._id,
-    });
   }
 }
 
@@ -283,6 +436,68 @@ async function resolveSlackChannelName(
   };
   if (!response.ok || result.channelId !== event.channelId) return undefined;
   return result.name?.trim() || undefined;
+}
+
+async function fetchThreadContext(
+  event: Doc<"slackInboundEvents">,
+): Promise<SlackThreadContextSnapshot | undefined> {
+  if (event.isDirectMessage) return undefined;
+  try {
+    const worker = workerConfig();
+    const response = await fetch(`${worker.url}/thread-context`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${worker.secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        teamId: event.teamId,
+        channelId: event.channelId,
+        threadTs: event.threadTs,
+        latestMessageTs: event.messageTs,
+      }),
+      signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      console.warn(
+        `[slack] Thread context retrieval failed (${response.status})`,
+      );
+      return undefined;
+    }
+    const payload = (await response.json()) as {
+      messages?: unknown;
+      truncated?: unknown;
+    };
+    if (!Array.isArray(payload.messages)) return undefined;
+    const messages = payload.messages
+      .slice(0, MAX_SLACK_THREAD_CONTEXT_MESSAGES)
+      .flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const message = value as Record<string, unknown>;
+        if (
+          typeof message.messageTs !== "string" ||
+          typeof message.content !== "string"
+        ) {
+          return [];
+        }
+        return [
+          {
+            messageTs: message.messageTs.slice(0, 50),
+            ...(typeof message.senderUserId === "string"
+              ? { senderUserId: message.senderUserId.slice(0, 100) }
+              : {}),
+            ...(typeof message.senderName === "string"
+              ? { senderName: message.senderName.slice(0, 200) }
+              : {}),
+            content: message.content.slice(0, 4_000),
+          },
+        ];
+      });
+    return { messages, truncated: payload.truncated === true };
+  } catch (error) {
+    console.warn("[slack] Thread context retrieval failed", error);
+    return undefined;
+  }
 }
 
 async function fetchAttachment(
@@ -440,9 +655,13 @@ export const processDebounced = internalAction({
         { eventIds },
       )) as Array<Doc<"slackInboundEvents">>;
       if (authorized.length === 0) return;
+      const slackThreadContext = authorized.at(-1)
+        ? await fetchThreadContext(authorized.at(-1)!)
+        : undefined;
       await Promise.all(authorized.map((event) => fetchAttachment(ctx, event)));
       const prepared = await ctx.runMutation(internalApi.slack.prepareBatch, {
         eventIds: authorized.map((event) => event._id),
+        slackThreadContext,
       });
       if (!prepared) return;
       presentationMessageId = prepared.agentMessageId;
@@ -588,5 +807,63 @@ export const processDebounced = internalAction({
         }
       }
     }
+  },
+});
+
+export const processOperatorConfirmationInteraction = internalAction({
+  args: {
+    operatorUserId: v.id("users"),
+    threadId: v.id("operatorAgentThreads"),
+    confirmationId: v.id("operatorAgentConfirmations"),
+    decision: v.union(v.literal("approve"), v.literal("reject")),
+    teamId: v.string(),
+    channelId: v.string(),
+    messageTs: v.string(),
+    threadTs: v.optional(v.string()),
+    summary: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const result = await ctx.runMutation(
+      internalApi.operatorAgent.confirmActionInternal,
+      {
+        operatorUserId: args.operatorUserId,
+        threadId: args.threadId,
+        confirmationId: args.confirmationId,
+        decision: args.decision,
+        channel: "slack",
+      },
+    );
+    if (result.status === "needs_refresh") return result;
+
+    const delivery = {
+      teamId: args.teamId,
+      channelId: args.channelId,
+      threadTs: args.threadTs,
+    };
+    try {
+      await updateOperatorSlackConfirmation(ctx, {
+        delivery,
+        messageTs: args.messageTs,
+        summary: args.summary,
+        decision: args.decision,
+      });
+    } catch (error) {
+      console.warn("[slack] Could not resolve operator confirmation UI", error);
+    }
+
+    const response =
+      result.status === "queued"
+        ? await waitForOperatorAgentRun(
+            ctx,
+            args.operatorUserId,
+            result.runId,
+          )
+        : { response: { content: result.content } };
+    await sendOperatorSlackResponse(ctx, {
+      delivery,
+      clientMessageId: `operator-confirmation:${args.confirmationId}:${args.decision}`,
+      response: response.response ?? {},
+    });
+    return result;
   },
 });

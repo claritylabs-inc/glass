@@ -188,6 +188,34 @@ before(async () => {
         },
       });
     }
+    if (request.url === "/api/conversations.replies") {
+      return respond(response, {
+        ok: true,
+        messages: [
+          {
+            type: "message",
+            user: "U-OPERATOR",
+            text: "Original building quote requirements",
+            ts: "1800000000.000",
+            files: [{ id: "F-APPRAISAL", name: "appraisal.pdf" }],
+          },
+          {
+            type: "message",
+            user: "U-SPOT",
+            text: "Please provide the client name.",
+            ts: "1800000000.050",
+          },
+          {
+            type: "message",
+            user: "U-OPERATOR",
+            text: "Use Sigillo Supply",
+            ts: "1800000000.100",
+          },
+        ],
+        has_more: false,
+        response_metadata: { next_cursor: "" },
+      });
+    }
     if (request.url === "/api/conversations.create") {
       return respond(response, {
         ok: true,
@@ -376,6 +404,43 @@ describe("native Slack worker HTTP adapter", () => {
         path: "/api/conversations.info",
         authorization: "Bearer xoxb-customer",
         body: { channel: "C-CUSTOMER", include_num_members: "false" },
+      },
+    );
+
+    const threadContext = await workerRequest("/thread-context", {
+      teamId: "T-CUSTOMER",
+      channelId: "C-CUSTOMER",
+      threadTs: "1800000000.000",
+      latestMessageTs: "1800000000.100",
+    });
+    assert.deepEqual(await threadContext.json(), {
+      messages: [
+        {
+          messageTs: "1800000000.000",
+          senderUserId: "U-OPERATOR",
+          content:
+            "Original building quote requirements\n[Attached appraisal.pdf]",
+        },
+        {
+          messageTs: "1800000000.100",
+          senderUserId: "U-OPERATOR",
+          content: "Use Sigillo Supply",
+        },
+      ],
+      truncated: false,
+    });
+    assert.deepEqual(
+      apiCalls.find((call) => call.path === "/api/conversations.replies"),
+      {
+        path: "/api/conversations.replies",
+        authorization: "Bearer xoxb-customer",
+        body: {
+          channel: "C-CUSTOMER",
+          ts: "1800000000.000",
+          latest: "1800000000.100",
+          inclusive: "true",
+          limit: "100",
+        },
       },
     );
   });

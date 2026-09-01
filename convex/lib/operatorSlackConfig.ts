@@ -4,6 +4,14 @@ export type OperatorSlackConfig = {
   mockBotUserId?: string;
 };
 
+export function operatorSlackConversationKey(args: {
+  teamId: string;
+  channelId: string;
+  threadTs: string;
+}) {
+  return [args.teamId, args.channelId, args.threadTs].join(":");
+}
+
 export function getOperatorSlackConfig(): OperatorSlackConfig {
   return {
     enabled: process.env.OPERATOR_SLACK_ENABLED === "true",

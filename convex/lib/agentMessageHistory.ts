@@ -1,5 +1,6 @@
 import type { JSONValue, ModelMessage } from "ai";
 import { parseWorkflowOutcome } from "./workflows/types";
+import { slackThreadContextText } from "./slackThreadContext";
 
 export type AgentToolSurface = "web" | "email" | "imessage" | "slack" | "mcp";
 
@@ -99,6 +100,7 @@ function historyMessageTokenText(message: AgentHistoryMessage): string {
     message.fromName,
     message.fromEmail,
     message.subject,
+    slackThreadContextText(message.toolArtifacts),
     message.content,
     attachmentNames,
   ]
@@ -201,7 +203,13 @@ export function buildTextModelHistory(
         : message.userName
           ? `[${message.userName}]: ${message.content}`
           : message.content;
-      return [{ role: "user", content }];
+      const slackThreadContext = slackThreadContextText(message.toolArtifacts);
+      return [
+        ...(slackThreadContext
+          ? [{ role: "user" as const, content: slackThreadContext }]
+          : []),
+        { role: "user", content },
+      ];
     }
     if (message.role !== "agent" || !message.content.trim()) return [];
     const privateHistory = buildPrivateAgentHistoryMetadata({
@@ -256,7 +264,8 @@ export function formatMessagesForThreadSummary(
       const files = (message.attachments ?? [])
         .map((attachment) => attachment.filename.trim())
         .filter(Boolean);
-      return `${speaker}: ${message.content}${
+      const slackThreadContext = slackThreadContextText(message.toolArtifacts);
+      return `${slackThreadContext ? `${slackThreadContext}\n\n` : ""}${speaker}: ${message.content}${
         files.length > 0 ? `\nFiles mentioned: ${files.join(", ")}` : ""
       }`;
     })

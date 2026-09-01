@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -38,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { StatusTag } from "@/components/ui/status-tag";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePageContext } from "@/hooks/use-page-context";
 import {
@@ -121,7 +123,7 @@ function OperatorAttachmentChip({
   );
 }
 
-function ConfirmationCard({
+function ConfirmationArtifact({
   confirmation,
   busy,
   onDecision,
@@ -130,30 +132,55 @@ function ConfirmationCard({
   busy: boolean;
   onDecision: (decision: "approve" | "reject") => void;
 }) {
+  const presentation = (() => {
+    switch (confirmation.state) {
+      case "approved":
+        return { label: "Approved", tone: "success" as const };
+      case "cancelled":
+        return { label: "Cancelled", tone: "neutral" as const };
+      case "expired":
+        return { label: "Expired", tone: "warning" as const };
+      case "superseded":
+        return { label: "Superseded", tone: "neutral" as const };
+      case "unavailable":
+        return { label: "No longer available", tone: "neutral" as const };
+      case "pending":
+        return {
+          label: confirmation.actionable
+            ? "Approval required"
+            : "Awaiting approval",
+          tone: "warning" as const,
+        };
+    }
+  })();
+
   return (
     <div className="border-l-2 border-border-emphasized pl-3">
-      <p className={cn("text-foreground", typeStyle("body.medium"))}>
+      <StatusTag tone={presentation.tone}>{presentation.label}</StatusTag>
+      <p className={cn("mt-2 text-foreground", typeStyle("body.medium"))}>
         {confirmation.title}
       </p>
-      <div className="mt-3 flex items-center gap-2">
-        <PillButton
-          size="compact"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => onDecision("reject")}
-        >
-          Cancel
-        </PillButton>
-        <PillButton
-          size="compact"
-          variant={confirmation.destructive ? "destructive" : "primary"}
-          disabled={busy}
-          onClick={() => onDecision("approve")}
-        >
-          {busy ? <Spinner className="size-3.5" /> : null}
-          Confirm
-        </PillButton>
-      </div>
+      {confirmation.state === "pending" && confirmation.actionable ? (
+        <div className="mt-3 flex items-center gap-2">
+          <PillButton
+            size="compact"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onDecision("reject")}
+          >
+            Cancel
+          </PillButton>
+          <PillButton
+            size="compact"
+            variant={confirmation.destructive ? "destructive" : "primary"}
+            disabled={busy}
+            onClick={() => onDecision("approve")}
+          >
+            {busy ? <Spinner className="size-3.5" /> : null}
+            Confirm
+          </PillButton>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -270,7 +297,7 @@ function OperatorMessageRow({
   const displayName = message.userName?.trim() || "Operator";
 
   return (
-    <div className="ml-auto flex w-fit max-w-lg flex-row-reverse items-start gap-2.5">
+    <div className="ml-auto flex w-fit max-w-[min(32rem,100%)] flex-row-reverse items-start gap-2.5">
       <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-foreground/8">
         <span className={cn("text-foreground/60", typeStyle("caption.medium"))}>
           {operatorInitials(displayName)}
@@ -307,7 +334,17 @@ function OperatorMessageRow({
           isOwnMessage
           isError={message.status === "error"}
         >
-          {content ? <p className="whitespace-pre-wrap">{content}</p> : null}
+          {content ? (
+            message.channel === "slack" ? (
+              <ProseMarkdown sourceFormat="slack-mrkdwn" gfm breaks>
+                {content}
+              </ProseMarkdown>
+            ) : (
+              <p className="whitespace-pre-wrap wrap-anywhere">
+                {content}
+              </p>
+            )
+          ) : null}
           {attachments}
         </ThreadMessageBubble>
       </div>
@@ -343,13 +380,28 @@ function OperatorConversation({
     initial: "instant",
     resize: "instant",
   });
+  const confirmationsByMessage = useMemo(() => {
+    const grouped = new Map<string, OperatorAgentConfirmation[]>();
+    for (const confirmation of detail.confirmations) {
+      const existing = grouped.get(confirmation.promptMessageId) ?? [];
+      existing.push(confirmation);
+      grouped.set(confirmation.promptMessageId, existing);
+    }
+    return grouped;
+  }, [detail.confirmations]);
+  const hasPendingConfirmation = detail.confirmations.some(
+    (confirmation) => confirmation.state === "pending",
+  );
 
   useEffect(() => {
     if (detail.messages.length === 0) return;
     void scrollToBottom("instant");
-  }, [activeThreadId, detail.messages.length, scrollToBottom]);
-
-  const confirmation = detail.pendingConfirmation;
+  }, [
+    activeThreadId,
+    detail.confirmations.length,
+    detail.messages.length,
+    scrollToBottom,
+  ]);
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -369,23 +421,30 @@ function OperatorConversation({
             <EmptyThread contextual={contextual} onSelect={onSelectPrompt} />
           ) : (
             detail.messages.map((message) => (
-              <OperatorMessageRow
-                key={message.id}
-                threadId={activeThreadId ?? ""}
-                message={message}
-                showThinking={message.status === "processing" && !confirmation}
-              />
+              <Fragment key={message.id}>
+                <OperatorMessageRow
+                  threadId={activeThreadId ?? ""}
+                  message={message}
+                  showThinking={
+                    message.status === "processing" && !hasPendingConfirmation
+                  }
+                />
+                {(confirmationsByMessage.get(message.id) ?? []).map(
+                  (confirmation) => (
+                    <div key={confirmation.id} className="w-full">
+                      <ConfirmationArtifact
+                        confirmation={confirmation}
+                        busy={confirmationBusyId === confirmation.id}
+                        onDecision={(decision) =>
+                          onDecision(confirmation, decision)
+                        }
+                      />
+                    </div>
+                  ),
+                )}
+              </Fragment>
             ))
           )}
-          {confirmation ? (
-            <div className="w-full">
-              <ConfirmationCard
-                confirmation={confirmation}
-                busy={confirmationBusyId === confirmation.id}
-                onDecision={(decision) => onDecision(confirmation, decision)}
-              />
-            </div>
-          ) : null}
           {detail.messages.length > 0 ? <div className="h-40" /> : null}
         </div>
       </div>
