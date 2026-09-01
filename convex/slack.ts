@@ -17,10 +17,7 @@ import {
   isSlackOperatorClassification,
   slackActorUserId,
 } from "./lib/slackInteractions";
-import {
-  getOperatorSlackConfig,
-  isApprovedOperatorSlackChannel,
-} from "./lib/operatorSlackConfig";
+import { getOperatorSlackConfig } from "./lib/operatorSlackConfig";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -313,9 +310,6 @@ async function claimOperatorInbound(
     return { duplicate: false, status: "ignored" as const };
   }
   const directMessage = args.isDirectMessage === true;
-  if (!directMessage && !isApprovedOperatorSlackChannel(args.channelId)) {
-    return { duplicate: false, status: "ignored" as const };
-  }
   const hostInstallation = await ctx.db
     .query("slackInstallations")
     .withIndex("team_status", (q) =>
@@ -561,6 +555,7 @@ export const claimInbound = internalMutation({
         q.eq("teamId", args.teamId).eq("status", "active"),
       )
       .first();
+    let inboundHostBinding: Doc<"slackChannelBindings"> | null = null;
     if (!connection) {
       const hostBinding = await ctx.db
         .query("slackChannelBindings")
@@ -568,13 +563,21 @@ export const claimInbound = internalMutation({
           q.eq("hostTeamId", args.teamId).eq("hostChannelId", args.channelId),
         )
         .first();
-      if (hostBinding?.status === "active" && hostBinding.connectionId) {
+      if (
+        hostBinding &&
+        hostBinding.status !== "archived" &&
+        hostBinding.connectionId
+      ) {
         const boundConnection = await ctx.db.get(hostBinding.connectionId);
-        if (boundConnection?.status === "active") connection = boundConnection;
+        if (boundConnection?.status === "active") {
+          connection = boundConnection;
+          inboundHostBinding = hostBinding;
+        }
       }
     }
     if (!connection) return await claimOperatorInbound(ctx, args);
-    const binding = await primaryBinding(ctx, connection._id);
+    const binding =
+      inboundHostBinding ?? (await primaryBinding(ctx, connection._id));
     const identity = channelIdentity(connection, binding, args);
     const logicalEventKey = canonicalEventKey(connection._id, {
       eventKey: args.eventKey,

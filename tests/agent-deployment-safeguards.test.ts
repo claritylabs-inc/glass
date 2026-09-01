@@ -28,7 +28,6 @@ function convexHealth(
   options: {
     operatorImessageContactPhoneConfigured?: boolean;
     operatorImessageEnabled?: boolean;
-    operatorSlackApprovedChannelCount?: number;
     operatorSlackEnabled?: boolean;
     operatorAgentModelConfigured?: boolean;
   } = {},
@@ -37,8 +36,6 @@ function convexHealth(
     options.operatorImessageContactPhoneConfigured ?? true;
   const operatorImessageEnabled = options.operatorImessageEnabled ?? true;
   const operatorSlackEnabled = options.operatorSlackEnabled ?? true;
-  const operatorSlackApprovedChannelCount =
-    options.operatorSlackApprovedChannelCount ?? 1;
   const operatorAgentModelConfigured =
     options.operatorAgentModelConfigured ?? true;
   return {
@@ -64,7 +61,6 @@ function convexHealth(
     operatorSlack: {
       enabled: operatorSlackEnabled,
       hostTeamConfigured: true,
-      approvedChannelCount: operatorSlackApprovedChannelCount,
     },
     operatorAgent: {
       modelConfigured: operatorAgentModelConfigured,
@@ -178,13 +174,6 @@ beforeAll(async () => {
         res,
         convexHealth(expectedClSdkSpec, { operatorSlackEnabled: false }),
       );
-    if (req.url === "/convex-operator-slack-allowlist-missing")
-      return writeJson(
-        res,
-        convexHealth(expectedClSdkSpec, {
-          operatorSlackApprovedChannelCount: 0,
-        }),
-      );
     if (req.url === "/convex-operator-imessage-disabled")
       return writeJson(
         res,
@@ -252,11 +241,6 @@ describe("agent deployment safeguards", () => {
     ["model route", "/convex-operator-model-missing", "operatorAgent.modelConfigured"],
     ["Slack", "/convex-operator-slack-disabled", "operatorSlack.enabled"],
     [
-      "Slack without a channel allowlist",
-      "/convex-operator-slack-allowlist-missing",
-      "operatorSlack.approvedChannelCount",
-    ],
-    [
       "iMessage",
       "/convex-operator-imessage-disabled",
       "operatorImessage.inboundEnabled",
@@ -267,7 +251,7 @@ describe("agent deployment safeguards", () => {
       "operatorImessage.contactPhoneConfigured",
     ],
   ])(
-    "blocks production when operator %s is disabled",
+    "blocks production for invalid operator %s configuration",
     async (_channel, path, expectedError) => {
       await expect(runAgentHealth(path)).rejects.toMatchObject({
         stderr: expect.stringContaining(expectedError),

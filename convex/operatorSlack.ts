@@ -2,10 +2,7 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import {
-  getOperatorSlackConfig,
-  isApprovedOperatorSlackChannel,
-} from "./lib/operatorSlackConfig";
+import { getOperatorSlackConfig } from "./lib/operatorSlackConfig";
 
 async function ignoreEvent(
   event: Doc<"slackInboundEvents">,
@@ -20,18 +17,6 @@ async function ignoreEvent(
   });
 }
 
-export const ignoreEvents = internalMutation({
-  args: { eventIds: v.array(v.id("slackInboundEvents")) },
-  handler: async (ctx, args) => {
-    for (const eventId of args.eventIds) {
-      const event = await ctx.db.get(eventId);
-      if (event?.status === "processing" && !event.connectionId) {
-        await ignoreEvent(event, ctx);
-      }
-    }
-  },
-});
-
 export const authorizeBatch = internalMutation({
   args: { eventIds: v.array(v.id("slackInboundEvents")) },
   handler: async (ctx, args) => {
@@ -43,9 +28,6 @@ export const authorizeBatch = internalMutation({
     for (const eventId of args.eventIds) {
       const event = await ctx.db.get(eventId);
       const directMessage = event?.isDirectMessage === true;
-      const approvedChannel = Boolean(
-        event && isApprovedOperatorSlackChannel(event.channelId),
-      );
       if (
         !event ||
         event.status !== "processing" ||
@@ -56,7 +38,7 @@ export const authorizeBatch = internalMutation({
         event.senderTeamId !== config.hostTeamId ||
         event.senderIsBot !== false ||
         event.eventType !== "message" ||
-        (!directMessage && (!approvedChannel || !event.mentionsSpot))
+        (!directMessage && !event.mentionsSpot)
       ) {
         if (event?.status === "processing" && !event.connectionId) {
           await ignoreEvent(event, ctx);

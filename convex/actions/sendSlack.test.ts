@@ -2,10 +2,61 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import schema from "../schema";
+import { getSendTarget } from "../slackOutbound";
 import { send } from "./sendSlack";
 
 const modules = import.meta.glob("../**/*.ts");
+const getSendTargetFn = getSendTarget as any;
 const sendFn = send as any;
+
+async function seedSlackConnection(
+  t: ReturnType<typeof convexTest>,
+  options: { unavailableSupportBinding?: boolean } = {},
+) {
+  return await t.run(async (ctx) => {
+    const orgId = await ctx.db.insert("organizations", {
+      name: "Cove",
+      type: "client",
+    });
+    const serviceUserId = await ctx.db.insert("users", {
+      name: "Spot Slack",
+      accountKind: "customer",
+      serviceAccountKind: "slack",
+    });
+    await ctx.db.insert("orgMemberships", {
+      orgId,
+      userId: serviceUserId,
+      role: "admin",
+    });
+    const connectionId = await ctx.db.insert("slackWorkspaceConnections", {
+      clientOrgId: orgId,
+      teamId: "T-CUSTOMER",
+      teamName: "Cove",
+      botUserId: "U-SPOT",
+      grantedScopes: ["chat:write"],
+      status: "active",
+      serviceUserId,
+      thirdPartyVisibilityAcknowledged: true,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    if (options.unavailableSupportBinding) {
+      await ctx.db.insert("slackChannelBindings", {
+        connectionId,
+        clientOrgId: orgId,
+        kind: "primary",
+        hostTeamId: "T-SPOT",
+        hostChannelId: "C-HOST",
+        customerChannelId: "C-CUSTOMER",
+        channelName: "spot-cove",
+        status: "unavailable",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    }
+    return { orgId, serviceUserId, connectionId };
+  });
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -13,44 +64,9 @@ afterEach(() => {
 });
 
 describe("sendSlack", () => {
-  test("persists and sends Block Kit even when the fallback text is empty", async () => {
+  test("sends to a Slack-delivered channel without a membership inventory row", async () => {
     const t = convexTest(schema, modules);
-    const seeded = await t.run(async (ctx) => {
-      const orgId = await ctx.db.insert("organizations", {
-        name: "Cove",
-        type: "client",
-      });
-      const serviceUserId = await ctx.db.insert("users", {
-        name: "Spot Slack",
-        accountKind: "customer",
-        serviceAccountKind: "slack",
-      });
-      const connectionId = await ctx.db.insert("slackWorkspaceConnections", {
-        clientOrgId: orgId,
-        teamId: "T-CUSTOMER",
-        teamName: "Cove",
-        botUserId: "U-SPOT",
-        grantedScopes: ["chat:write"],
-        status: "active",
-        serviceUserId,
-        thirdPartyVisibilityAcknowledged: true,
-        createdAt: 1,
-        updatedAt: 1,
-      });
-      await ctx.db.insert("slackChannelMemberships", {
-        connectionId,
-        clientOrgId: orgId,
-        channelId: "C-PRIMARY",
-        channelName: "primary",
-        isPrivate: false,
-        isShared: false,
-        status: "active",
-        lastSyncedAt: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      });
-      return { orgId, connectionId };
-    });
+    const seeded = await seedSlackConnection(t);
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(payload).toMatchObject({
@@ -75,38 +91,31 @@ describe("sendSlack", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  test("uses the exact delivered support channel despite stale binding health", async () => {
+    const t = convexTest(schema, modules);
+    const { connectionId } = await seedSlackConnection(t, {
+      unavailableSupportBinding: true,
+    });
+
+    await expect(
+      t.query(getSendTargetFn, {
+        connectionId,
+        channelId: "C-HOST",
+      }),
+    ).resolves.toMatchObject({
+      available: true,
+      teamId: "T-SPOT",
+      channelId: "C-HOST",
+    });
+  });
+
   test("threads file parts under a new text message", async () => {
     const t = convexTest(schema, modules);
-    const seeded = await t.run(async (ctx) => {
-      const orgId = await ctx.db.insert("organizations", {
-        name: "Cove",
-        type: "client",
-      });
-      const serviceUserId = await ctx.db.insert("users", {
-        name: "Spot Slack",
-        accountKind: "customer",
-        serviceAccountKind: "slack",
-      });
-      await ctx.db.insert("orgMemberships", {
-        orgId,
-        userId: serviceUserId,
-        role: "admin",
-      });
-      const connectionId = await ctx.db.insert("slackWorkspaceConnections", {
-        clientOrgId: orgId,
-        teamId: "T-CUSTOMER",
-        teamName: "Cove",
-        botUserId: "U-SPOT",
-        grantedScopes: ["chat:write"],
-        status: "active",
-        serviceUserId,
-        thirdPartyVisibilityAcknowledged: true,
-        createdAt: 1,
-        updatedAt: 1,
-      });
+    const connection = await seedSlackConnection(t);
+    const fileId = await t.run(async (ctx) => {
       await ctx.db.insert("slackChannelMemberships", {
-        connectionId,
-        clientOrgId: orgId,
+        connectionId: connection.connectionId,
+        clientOrgId: connection.orgId,
         channelId: "C-PRIMARY",
         channelName: "primary",
         isPrivate: false,
@@ -116,11 +125,11 @@ describe("sendSlack", () => {
         createdAt: 1,
         updatedAt: 1,
       });
-      const fileId = await ctx.storage.store(
+      return await ctx.storage.store(
         new Blob(["policy"], { type: "application/pdf" }),
       );
-      return { orgId, connectionId, fileId };
     });
+    const seeded = { ...connection, fileId };
     const rootMessageTs = "1800000000.700";
     const payloads: Array<Record<string, unknown>> = [];
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {

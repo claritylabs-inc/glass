@@ -394,8 +394,6 @@ http.route({
         !operatorSlack.enabled || Boolean(operatorSlack.hostTeamId),
       operatorSlackBaseChannelConfigured:
         !operatorSlack.enabled || slackEnabled,
-      operatorSlackChannelAllowlistConfigured:
-        !operatorSlack.enabled || operatorSlack.approvedChannelIds.size > 0,
     };
     const ok = Object.values(checks).every(Boolean);
     return new Response(
@@ -426,7 +424,6 @@ http.route({
         operatorSlack: {
           enabled: operatorSlack.enabled,
           hostTeamConfigured: Boolean(operatorSlack.hostTeamId),
-          approvedChannelCount: operatorSlack.approvedChannelIds.size,
         },
         operatorAgent: {
           modelConfigured: operatorAgentModelConfigured,

@@ -16,6 +16,8 @@ When any source above adds, removes, renames, or materially changes a tool, upda
 
 The operator registry currently contains 48 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
 
+The internal Slack adapter exposes this registry through App Home DMs and direct mentions from any channel delivered by the installed Clarity host app. Convex applies no channel allowlist, type, privacy, sharing, or membership gate. Customer connection and Slack Connect binding resolution takes precedence, and every invocation still requires an active operator profile linked to the exact host-workspace Slack identity.
+
 | Tool                                 | Purpose                                                                               | Capability                      | Effect           | Role     | Confirmation | Execution |
 | ------------------------------------ | ------------------------------------------------------------------------------------- | ------------------------------- | ---------------- | -------- | ------------ | --------- |
 | `search_organizations`               | Search customer and broker organizations and resolve exact IDs.                       | `operator.organizations.read`   | read             | operator | none         | mutation  |
@@ -85,6 +87,8 @@ There is no single client registry equivalent to `OPERATOR_AGENT_TOOL_REGISTRY`.
 ### Shared tools
 
 “All channels” means web, Slack, inbound email, iMessage, and MCP chat. Runtime authorization and readable/writable organization scope still apply.
+
+The client Slack adapter accepts direct mentions from any connected-workspace channel where Slack delivers the installed app's events. Channel inventory, privacy, sharing, membership, and support-binding health do not authorize an invocation or its reply; they remain metadata for setup, web-mirror privacy, support routing, and proactive destination selection. The sender must still resolve to the connected client workspace or an active Spot operator.
 
 | Tool                             | Purpose                                                                            | Availability or condition                                                       |
 | -------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |

@@ -32,7 +32,8 @@ need to approve the app installation or Slack Connect invitation.
    - **Policy and endorsement delivery**.
 
 The selected automatic channel affects only proactive posts and document
-delivery. Spot can still answer in every joined channel.
+delivery. Spot can still answer in any channel where Slack delivers events for
+the installed app. The channel list in Spot does not allow or deny chat.
 
 Client administrators and Spot operators can add Spot to visible public
 channels from the Spot settings page. For a private or Slack Connect channel,
@@ -61,7 +62,7 @@ impersonation can inspect health but cannot run recovery actions.
 | -------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Spot app **Messages** tab | Send a direct message; no mention required  | One continuous private conversation for that Slack member                           |
 | Dedicated support channel  | Mention `@Spot` to start or resume         | Your unmentioned replies continue the active thread; a Spot operator can take over |
-| Another joined channel     | Mention `@Spot` in a new message or thread | Replies in that active thread continue without repeating the mention                |
+| Any channel with Spot      | Mention `@Spot` in a new message or thread | Replies in that active thread continue without repeating the mention                |
 
 Multiparty Slack DMs are not supported. Use a channel or a one-to-one DM.
 

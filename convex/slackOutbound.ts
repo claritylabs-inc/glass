@@ -9,9 +9,7 @@ import {
 import type { Id } from "./_generated/dataModel";
 import { slackRetryDelayMs } from "./lib/slackRetry";
 import {
-  isSlackBindingReachable,
   isSlackConnectionHealthy,
-  slackBindingUnavailableReason,
   slackConnectionUnavailableReason,
 } from "./lib/slackAvailability";
 
@@ -88,34 +86,13 @@ async function resolveSendTarget(
       ? binding!.customerChannelId!
       : channelId;
   const connectionReason = slackConnectionUnavailableReason(connection);
-  const bindingReason =
-    binding && (hostMatch || customerMatch)
-      ? slackBindingUnavailableReason(binding)
-      : undefined;
-  let membershipReason: string | undefined;
-  if (!hostMatch && !customerMatch && !resolvedChannelId.startsWith("D")) {
-    const membership = await ctx.db
-      .query("slackChannelMemberships")
-      .withIndex("connection_channel", (q) =>
-        q.eq("connectionId", connection._id).eq("channelId", resolvedChannelId),
-      )
-      .first();
-    if (!membership || membership.status !== "active") {
-      membershipReason = "Slack channel membership is unavailable";
-    }
-  }
   return {
     connection,
     binding,
     channelId: resolvedChannelId,
     teamId: hostMatch ? binding!.hostTeamId : connection.teamId,
-    available:
-      isSlackConnectionHealthy(connection) &&
-      !bindingReason &&
-      (!hostMatch && !customerMatch
-        ? !membershipReason
-        : isSlackBindingReachable(binding)),
-    unavailableReason: connectionReason ?? bindingReason ?? membershipReason,
+    available: isSlackConnectionHealthy(connection),
+    unavailableReason: connectionReason,
   };
 }
 

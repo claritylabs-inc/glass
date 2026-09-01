@@ -5,7 +5,6 @@ import { internalAction, type ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { formatSlackAnswerText } from "../lib/slackBlocks";
-import { isApprovedOperatorSlackChannel } from "../lib/operatorSlackConfig";
 import {
   handleOperatorChannelConfirmation,
   waitForOperatorAgentRun,
@@ -16,7 +15,6 @@ import {
   MAX_AGENT_ATTACHMENT_FILES,
   normalizeAgentAttachmentFilename,
 } from "../lib/agentAttachmentLimits";
-import { isSafeOperatorSlackConversation } from "../lib/operatorSlackConfig";
 
 const WORKER_TIMEOUT_MS = 30_000;
 const internalApi = internal as any;
@@ -25,39 +23,6 @@ type OperatorAuthorizedEvent = {
   event: Doc<"slackInboundEvents">;
   operatorUserId: Id<"users">;
 };
-
-async function operatorChannelIsSafe(event: Doc<"slackInboundEvents">) {
-  if (event.isDirectMessage) {
-    return isSafeOperatorSlackConversation({ isDirectMessage: true });
-  }
-  if (!isApprovedOperatorSlackChannel(event.channelId)) return false;
-  const worker = workerConfig();
-  const response = await fetch(`${worker.url}/channels`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${worker.secret}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ teamId: event.teamId }),
-    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
-  });
-  const result = (await response.json().catch(() => ({}))) as {
-    channels?: Array<{
-      id: string;
-      isMember: boolean;
-      isPrivate: boolean;
-      isShared: boolean;
-    }>;
-  };
-  if (!response.ok) return false;
-  const channel = result.channels?.find(({ id }) => id === event.channelId);
-  return isSafeOperatorSlackConversation({
-    isDirectMessage: false,
-    isMember: channel?.isMember,
-    isPrivate: channel?.isPrivate,
-    isShared: channel?.isShared,
-  });
-}
 
 function operatorSlackContent(event: Doc<"slackInboundEvents">) {
   const withoutMention = event.mentionedBotUserId
@@ -156,19 +121,6 @@ async function processOperatorBatch(
 ) {
   const eventIds = batch.map(({ _id }) => _id);
   await Promise.all(batch.map((event) => enrichActor(ctx, event)));
-  const unsafeEventIds = (
-    await Promise.all(
-      batch.map(async (event) => ({
-        eventId: event._id,
-        safe: await operatorChannelIsSafe(event),
-      })),
-    )
-  ).flatMap(({ eventId, safe }) => (safe ? [] : [eventId]));
-  if (unsafeEventIds.length > 0) {
-    await ctx.runMutation(internalApi.operatorSlack.ignoreEvents, {
-      eventIds: unsafeEventIds,
-    });
-  }
   const authorized = (await ctx.runMutation(
     internalApi.operatorSlack.authorizeBatch,
     { eventIds },
