@@ -25,7 +25,7 @@ export async function generateMetadata({
     } | null;
     if (!data?.brokerName) return { title: { absolute: "Invitation" } };
     const whiteLabelingEnabled = data.whiteLabelingEnabled !== false;
-    const title = whiteLabelingEnabled ? data.brokerName : "Spot from Clarity Labs";
+    const title = whiteLabelingEnabled ? data.brokerName : "Spot";
     const description = `Join ${title} to manage your insurance and coverage.`;
     return {
       title: { absolute: title },

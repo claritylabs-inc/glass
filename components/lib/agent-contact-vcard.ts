@@ -169,9 +169,7 @@ export async function buildAgentContactVCard({
   const firstName = whiteLabeledBroker?.name ?? "Spot";
   const lastName = "Agent";
   const displayName = `${firstName} ${lastName}`;
-  const organization = whiteLabeledBroker
-    ? "powered by Clarity Labs"
-    : "from Clarity Labs";
+  const organization = "from Tools for Enlightenment";
   const iconUrl = whiteLabeledBroker?.iconUrl ?? SPOT_ICON_URL;
   const photoEntry = await buildPhotoEntry(
     iconUrl,

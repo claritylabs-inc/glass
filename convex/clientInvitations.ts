@@ -525,7 +525,7 @@ export const sendDraftInvite = action({
     const messageBlock = draft.customMessage
       ? `<tr><td style="padding:12px 40px 0 40px;"><p class="spot-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#4b5563;line-height:1.6;font-style:italic;">"${draft.customMessage.replace(/</g, "&lt;")}"</p></td></tr>`
       : "";
-    const text = `${brokerName} has invited you${draft.name ? ` (${draft.name})` : ""} to Spot.\n${draft.customMessage ? `\n"${draft.customMessage}"\n` : ""}\nAccept your invitation:\n${inviteUrl}\n\nThis link expires in 14 days.\n\n—\nSpot from Clarity Labs`;
+    const text = `${brokerName} has invited you${draft.name ? ` (${draft.name})` : ""} to Spot.\n${draft.customMessage ? `\n"${draft.customMessage}"\n` : ""}\nAccept your invitation:\n${inviteUrl}\n\nThis link expires in 14 days.\n\n—\nSpot\nfrom Tools for Enlightenment`;
     const bodyHtml = `
 <tr><td style="padding:28px 40px 0 40px;">
   <p class="spot-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">

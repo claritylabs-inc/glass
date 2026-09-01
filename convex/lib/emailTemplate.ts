@@ -9,12 +9,9 @@ import { SLACK_INSTALL_INVITE_EXPIRATION_DAYS } from "./slackOAuthPolicy";
 
 const SITE_URL = getClientPortalUrl();
 const EMAIL_ASSET_BASE_URL = getEmailAssetBaseUrl();
-const CLARITY_LABS_SITE_URL = "https://www.claritylabs.inc";
-const CLARITY_LABS_BRAND_ASSET_BASE_URL = `${CLARITY_LABS_SITE_URL}/brand`;
-const SPOT_LOCKUP_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/spot-lockup@2x.png`;
-const SPOT_LOCKUP_DARK_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/spot-lockup-light@2x.png`;
-const CLARITY_LABS_LOCKUP_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/clarity-labs-lockup@2x.png`;
-const CLARITY_LABS_LOCKUP_DARK_URL = `${CLARITY_LABS_BRAND_ASSET_BASE_URL}/clarity-labs-lockup-light@2x.png`;
+const SPOT_BRAND_ASSET_BASE_URL = "https://www.claritylabs.inc/brand";
+const SPOT_LOCKUP_URL = `${SPOT_BRAND_ASSET_BASE_URL}/spot-lockup@2x.png`;
+const SPOT_LOCKUP_DARK_URL = `${SPOT_BRAND_ASSET_BASE_URL}/spot-lockup-light@2x.png`;
 const SLACK_ADD_TO_BUTTON_URL =
   "https://platform.slack-edge.com/img/add_to_slack.png";
 const SLACK_ADD_TO_BUTTON_2X_URL =
@@ -206,24 +203,13 @@ export function buildEmailLogoHtml(branding: BrandingContext = getDefaultBrandin
 </table>`;
 }
 
-/** Canonical Clarity Labs attribution for fixed transactional emails. */
+/** Canonical publisher attribution for fixed transactional emails. */
 export function buildPlatformFooterHtml(_siteUrl: string = SITE_URL): string {
   return `
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
   <tr>
-    <td align="center" valign="middle" class="spot-email-text-muted" style="padding-right:6px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1;">
-      from
-    </td>
-    <td align="center" valign="middle">
-      <a href="${CLARITY_LABS_SITE_URL}" style="display:block;text-decoration:none;">
-        ${buildThemeAwareEmailLockup({
-          lightBackgroundUrl: CLARITY_LABS_LOCKUP_URL,
-          darkBackgroundUrl: CLARITY_LABS_LOCKUP_DARK_URL,
-          alt: "Clarity Labs",
-          width: 72,
-          height: 14,
-        })}
-      </a>
+    <td align="center" valign="middle" class="spot-email-text-muted" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1;">
+      from Tools for Enlightenment
     </td>
   </tr>
 </table>`;
