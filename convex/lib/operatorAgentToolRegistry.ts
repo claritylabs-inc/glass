@@ -80,10 +80,6 @@ const procurementEmailThreadId = z
   .string()
   .min(1)
   .describe("Exact procurement email thread ID");
-const procurementRequirementDraftId = z
-  .string()
-  .min(1)
-  .describe("Exact procurement requirement draft ID");
 const procurementProposalId = z
   .string()
   .min(1)
@@ -955,22 +951,6 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     }),
     summarize: (input) =>
       `Update procurement request ${input.procurementRequestId}`,
-  }),
-  confirm_procurement_requirement: defineOperatorTool({
-    version: 1,
-    description:
-      "Confirm one exact staged insurance-requirement draft, reusing an identical active client requirement when available and associating it with the procurement request.",
-    inputSchema: z.object({ procurementRequirementDraftId }),
-    capability: "operator.procurement.write",
-    effect: "reversible_write",
-    requiredRole: "operator",
-    confirmation: "exact",
-    target: (input) => ({
-      kind: "procurement_requirement_draft",
-      id: input.procurementRequirementDraftId,
-    }),
-    summarize: (input) =>
-      `Confirm procurement requirement draft ${input.procurementRequirementDraftId}`,
   }),
   create_procurement_proposal: defineOperatorTool({
     version: 1,

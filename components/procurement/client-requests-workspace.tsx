@@ -40,26 +40,6 @@ type ClientRequestStatus =
   | "completed"
   | "cancelled";
 
-type Requirement = { _id?: string; title: string; requirementText?: string };
-type Specification = { _id?: string; label: string; value: string };
-type RequestRow = {
-  _id: Id<"procurementRequests">;
-  title: string;
-  narrative: string;
-  status: ClientRequestStatus;
-  targetEffectiveDate?: string;
-  updatedAt: number;
-  createdAt: number;
-};
-type Activity = {
-  _id: string;
-  kind: "message" | "document" | "status";
-  body?: string;
-  fileName?: string;
-  fileUrl?: string;
-  authorSide: "operator" | "client";
-  createdAt: number;
-};
 const STATUS_LABELS: Record<ClientRequestStatus, string> = {
   submitted: "Submitted",
   information_needed: "Information needed",

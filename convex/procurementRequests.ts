@@ -175,7 +175,7 @@ async function requireRequest(ctx: Ctx, requestId: Id<"procurementRequests">) {
   return request;
 }
 
-async function requireDirectOperatorWrite(
+export async function requireDirectOperatorWrite(
   ctx: MutationCtx,
   operatorUserId: Id<"users">,
 ) {
@@ -494,6 +494,17 @@ export const list = query({
     await requireOperator(ctx);
     return await listProcurementRequestSummaries(ctx, args);
   },
+});
+
+// Narrow internal projections used by packet delivery actions.
+export const getInternal = internalQuery({
+  args: { requestId: v.id("procurementRequests") },
+  handler: async (ctx, args) => ctx.db.get(args.requestId),
+});
+
+export const getOutreachInternal = internalQuery({
+  args: { outreachId: v.id("procurementBrokerOutreaches") },
+  handler: async (ctx, args) => ctx.db.get(args.outreachId),
 });
 
 export const get = query({

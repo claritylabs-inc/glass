@@ -2788,6 +2788,8 @@ export default defineSchema({
     originalNarrative: v.optional(v.string()),
     requirementRevision: v.optional(v.number()),
     specificationRevision: v.optional(v.number()),
+    // Monotonic revision of all client/broker-visible packet content.
+    packetRevision: v.optional(v.number()),
     replacingPolicyId: v.optional(v.id("policies")),
     resultingPolicyId: v.optional(v.id("policies")),
     inboxToken: v.string(),
@@ -2842,6 +2844,7 @@ export default defineSchema({
         capturedAt: v.number(),
       }),
     ),
+    packetRevisionAtIssue: v.optional(v.number()),
     createdByUserId: v.id("users"),
     updatedByUserId: v.id("users"),
     createdAt: v.number(),
@@ -2934,6 +2937,74 @@ export default defineSchema({
     .index("request", ["requestId", "createdAt"])
     .index("client_visible", ["requestId", "clientVisible", "createdAt"])
     .index("storage", ["fileId"]),
+
+  // The procurement packet is an ordered set of markdown sections. Visibility
+  // is a single widening ladder so a broker can never see content the client
+  // cannot also see.
+  procurementPacketSections: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    key: v.string(),
+    heading: v.string(),
+    body: v.string(),
+    order: v.number(),
+    audience: v.union(v.literal("operator"), v.literal("client"), v.literal("broker")),
+    audienceProposed: v.optional(v.union(v.literal("client"), v.literal("broker"))),
+    source: v.union(
+      v.literal("manual"), v.literal("client"), v.literal("operator_agent"),
+      v.literal("email"), v.literal("document"),
+    ),
+    sourceRefs: v.optional(v.array(v.string())),
+    proposedBody: v.optional(v.string()),
+    proposedRationale: v.optional(v.string()),
+    manuallyEditedAt: v.optional(v.number()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "order"])
+    .index("request_key", ["requestId", "key"])
+    .index("audience", ["requestId", "audience", "order"]),
+
+  procurementPacketLinks: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    outreachId: v.id("procurementBrokerOutreaches"),
+    tokenHash: v.string(),
+    recipientLabel: v.string(),
+    recipientEmail: v.optional(v.string()),
+    expiresAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    packetRevisionAtIssue: v.number(),
+    lastViewedAt: v.optional(v.number()),
+    viewCount: v.number(),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("token", ["tokenHash"])
+    .index("request", ["requestId", "updatedAt"])
+    .index("outreach", ["outreachId", "updatedAt"])
+    .index("expiration", ["expiresAt"]),
+
+  procurementPacketViews: defineTable({
+    linkId: v.id("procurementPacketLinks"),
+    requestId: v.id("procurementRequests"),
+    at: v.number(),
+    path: v.string(),
+    userAgent: v.optional(v.string()),
+  }).index("link", ["linkId", "at"]),
+
+  procurementPacketUpdateRuns: defineTable({
+    requestId: v.id("procurementRequests"),
+    sourceFingerprint: v.string(),
+    status: v.union(v.literal("pending"), v.literal("running"), v.literal("complete"), v.literal("failed")),
+    leaseExpiresAt: v.optional(v.number()),
+    attempts: v.number(),
+    lastError: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("request", ["requestId", "updatedAt"]),
 
   procurementProposals: defineTable({
     requestId: v.id("procurementRequests"),
@@ -3184,6 +3255,9 @@ export default defineSchema({
       v.literal("sent"),
       v.literal("received"),
     ),
+    brokerRelease: v.optional(v.union(v.literal("hidden"), v.literal("listed"), v.literal("attached"))),
+    brokerReleaseProposed: v.optional(v.union(v.literal("listed"), v.literal("attached"))),
+    clientVisible: v.optional(v.boolean()),
     notes: v.optional(v.string()),
     createdByUserId: v.optional(v.id("users")),
     updatedByUserId: v.optional(v.id("users")),
@@ -3193,7 +3267,8 @@ export default defineSchema({
     .index("request", ["requestId", "updatedAt"])
     .index("outreach", ["outreachId", "updatedAt"])
     .index("file", ["clientFileId", "updatedAt"])
-    .index("email", ["sourceEmailMessageId"]),
+    .index("email", ["sourceEmailMessageId"])
+    .index("release", ["requestId", "brokerRelease", "updatedAt"]),
 
   procurementMemory: defineTable({
     clientOrgId: v.id("organizations"),
@@ -5133,6 +5208,7 @@ export default defineSchema({
       v.literal("email_subagent"),
       v.literal("policy_delivery"),
       v.literal("inbound_email"),
+      v.literal("procurement_packet"),
     ),
     provider: v.literal("resend"),
     deliveryMode: v.optional(v.string()),

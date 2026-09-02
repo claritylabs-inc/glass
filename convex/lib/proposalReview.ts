@@ -25,12 +25,13 @@ export const proposalReviewSchema = z.object({
   findings: z
     .array(
       z.object({
-        targetKind: z.enum(["requirement", "specification"]),
-        targetId: z.string().min(1),
+        sectionIds: z.array(z.string().min(1)).max(50).optional(),
+        targetKind: z.enum(["requirement", "specification"]).optional(),
+        targetId: z.string().min(1).optional(),
         conclusion: findingConclusionSchema,
         summary: z.string().min(1).max(1200),
         evidence: z.array(reviewEvidenceSchema).max(20),
-      }),
+      }).refine((finding) => (finding.sectionIds?.length ?? 0) > 0 || Boolean(finding.targetKind && finding.targetId), "A finding must cite a target"),
     )
     .max(200),
 });
@@ -94,14 +95,28 @@ function evidenceKey(value: AllowedEvidence) {
 export function normalizeProposalReview(
   output: ProposalReviewOutput,
   input: {
-    requirementIds: string[];
-    specificationIds: string[];
+    requirementIds?: string[];
+    specificationIds?: string[];
     extractedOffer: unknown;
+    sectionIds?: string[];
   },
 ): ProposalReviewOutput {
+  if (input.sectionIds) {
+    const allowed = new Set(input.sectionIds);
+    const findings = output.findings.flatMap((finding) => {
+      const sectionIds = (finding.sectionIds ?? []).filter((id) => allowed.has(id));
+      return sectionIds.length ? [{ ...finding, sectionIds }] : [];
+    });
+    const conclusion = findings.some((finding) => finding.conclusion === "has_gap")
+      ? "has_gaps"
+      : findings.some((finding) => finding.conclusion === "insufficient_evidence")
+        ? "insufficient_evidence"
+        : "meets_requirements";
+    return { conclusion, findings } as ProposalReviewOutput;
+  }
   const targetSets = {
-    requirement: new Set(input.requirementIds),
-    specification: new Set(input.specificationIds),
+    requirement: new Set(input.requirementIds ?? []),
+    specification: new Set(input.specificationIds ?? []),
   };
   const allowedEvidence = new Map(
     collectProposalEvidence(input.extractedOffer).map((evidence) => [
@@ -111,6 +126,7 @@ export function normalizeProposalReview(
   );
   const byTarget = new Map<string, ProposalReviewOutput["findings"][number]>();
   for (const finding of output.findings) {
+    if (!finding.targetKind || !finding.targetId) continue;
     if (!targetSets[finding.targetKind].has(finding.targetId)) continue;
     const evidence = finding.evidence.flatMap((candidate) => {
       const allowed = allowedEvidence.get(

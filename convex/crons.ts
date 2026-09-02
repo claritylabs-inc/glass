@@ -76,4 +76,11 @@ crons.cron(
   {},
 );
 
+crons.cron(
+  "sweep procurement packet links",
+  "15 4 * * *",
+  internalApi.procurementPacket.sweepExpired,
+  {},
+);
+
 export default crons;

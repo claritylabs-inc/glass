@@ -7,6 +7,7 @@ const sourceValidator = v.union(
   v.literal("email_subagent"),
   v.literal("policy_delivery"),
   v.literal("inbound_email"),
+  v.literal("procurement_packet"),
 );
 
 export const start = internalMutation({

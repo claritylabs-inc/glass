@@ -26,7 +26,8 @@ export type EmailDeliverySource =
   | "pending_email"
   | "email_subagent"
   | "policy_delivery"
-  | "inbound_email";
+  | "inbound_email"
+  | "procurement_packet";
 
 export function buildAgentEmailHtmlBody(
   body: string,

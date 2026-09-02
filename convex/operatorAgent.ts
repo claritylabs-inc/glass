@@ -62,7 +62,6 @@ import {
   listProcurementProposals,
   selectProcurementProposalByOperator,
 } from "./procurementProposals";
-import { confirmProcurementRequirementDraftByOperator } from "./procurementRequirements";
 import {
   getBrokerProfileDetails,
   listBrokerProfiles,
@@ -808,18 +807,6 @@ function normalizeProcurementEmailThreadId(
   const emailThreadId = ctx.db.normalizeId("procurementEmailThreads", value);
   if (!emailThreadId) throw new Error("Invalid procurement email thread ID");
   return emailThreadId;
-}
-
-function normalizeProcurementRequirementDraftId(
-  ctx: QueryCtx | MutationCtx,
-  value: unknown,
-) {
-  if (typeof value !== "string") {
-    throw new Error("Procurement requirement draft ID is required");
-  }
-  const id = ctx.db.normalizeId("procurementRequirementDrafts", value);
-  if (!id) throw new Error("Invalid procurement requirement draft ID");
-  return id;
 }
 
 function normalizeProcurementProposalId(
@@ -2106,16 +2093,6 @@ async function executeToolDomain(
             ? normalizePolicyId(ctx, input.resultingPolicyId)
             : undefined,
       source: "agent",
-    });
-  }
-
-  if (toolName === "confirm_procurement_requirement") {
-    return await confirmProcurementRequirementDraftByOperator(ctx, {
-      operatorUserId: args.operatorUserId,
-      draftId: normalizeProcurementRequirementDraftId(
-        ctx,
-        input.procurementRequirementDraftId,
-      ),
     });
   }
 

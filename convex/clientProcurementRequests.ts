@@ -10,6 +10,7 @@ import {
 } from "./_generated/server";
 import { getCurrentOrgAccess } from "./lib/access";
 import { createProcurementInboxToken } from "./lib/procurement";
+import { assemblePacketMarkdown, audienceIncludes } from "./lib/procurementPacket";
 
 async function createUniqueInboxToken(ctx: MutationCtx) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -68,17 +69,20 @@ async function requireVisibleRequest(
 ) {
   const access = await requireClientMembership(ctx);
   const request = await ctx.db.get(requestId);
+  const packetSections = request
+    ? await ctx.db.query("procurementPacketSections").withIndex("request", (q) => q.eq("requestId", request._id)).collect()
+    : [];
   if (
     !request ||
     request.clientOrgId !== access.orgId ||
-    !request.clientVisible
+    (!request.clientVisible && !packetSections.some((section) => audienceIncludes(section.audience, "client")))
   )
     throw new Error("Request not found");
   return { access, request };
 }
 
 async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
-  const [joins, specifications, activities, documents, resultingPolicy] =
+  const [joins, specifications, activities, documents, resultingPolicy, packetSections] =
     await Promise.all([
       ctx.db
         .query("procurementRequestRequirements")
@@ -101,6 +105,7 @@ async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
         )
         .collect(),
       request.resultingPolicyId ? ctx.db.get(request.resultingPolicyId) : null,
+      ctx.db.query("procurementPacketSections").withIndex("request", (q) => q.eq("requestId", request._id)).collect(),
     ]);
   const requirements = (
     await Promise.all(joins.map((join) => ctx.db.get(join.requirementId)))
@@ -135,6 +140,10 @@ async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
     _id: request._id,
     title: request.title,
     narrative: request.originalNarrative ?? request.requestSummary,
+    packet: {
+      markdown: assemblePacketMarkdown(packetSections, { audience: "client" }),
+      sections: packetSections.filter((section) => audienceIncludes(section.audience, "client")).sort((a, b) => a.order - b.order),
+    },
     status: clientStatus(request.status),
     createdAt: request.createdAt,
     updatedAt: request.updatedAt,
