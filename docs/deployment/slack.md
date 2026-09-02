@@ -11,7 +11,8 @@ conversation, agent actions, delivery evidence, retries, and failures.
 Spot owns one native Slack app:
 
 - `slack-worker/manifests/production.json` configures production app
-  `A0BMW4TG7JB` against `merry-platypus-82`.
+  `A0BMW4TG7JB` against the Convex HTTP origin
+  `https://actions.spot.insure` (deployment `merry-platypus-82`).
 
 Do not route Slack through Photon or Spectrum. Photon remains the production
 iMessage provider only. Shared dev and local development use the signed

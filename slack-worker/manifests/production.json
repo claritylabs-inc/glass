@@ -20,7 +20,7 @@
   },
   "oauth_config": {
     "redirect_urls": [
-      "https://merry-platypus-82.convex.site/slack/oauth/callback"
+      "https://actions.spot.insure/slack/oauth/callback"
     ],
     "scopes": {
       "bot": [
@@ -46,10 +46,10 @@
   "settings": {
     "interactivity": {
       "is_enabled": true,
-      "request_url": "https://merry-platypus-82.convex.site/slack/interactivity"
+      "request_url": "https://actions.spot.insure/slack/interactivity"
     },
     "event_subscriptions": {
-      "request_url": "https://merry-platypus-82.convex.site/slack/events",
+      "request_url": "https://actions.spot.insure/slack/events",
       "bot_events": [
         "app_mention",
         "app_uninstalled",
