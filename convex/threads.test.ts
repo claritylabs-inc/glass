@@ -19,9 +19,6 @@ const getAttachmentUrlFn = api.threads.getAttachmentUrl as any;
 const getThreadFn = api.threads.get as any;
 const listThreadsFn = api.threads.list as any;
 const messagesFn = api.threads.messages as any;
-const listForClientFn = api.threads.listForClient as any;
-const getForClientFn = api.threads.getForClient as any;
-const messagesForClientFn = api.threads.messagesForClient as any;
 const sendMessageFn = api.threads.sendMessage as any;
 const updateTitleFn = api.threads.updateTitle as any;
 const streamContentFn = api.threads.streamContent as any;
@@ -165,10 +162,12 @@ describe("threads.getAttachmentUrl", () => {
     const { t, userId, threadId, attachedFileId } =
       await seedThreadWithAttachment();
 
-    const url = await t.withIdentity(sessionFor(userId)).query(getAttachmentUrlFn, {
-      threadId,
-      fileId: attachedFileId,
-    });
+    const url = await t
+      .withIdentity(sessionFor(userId))
+      .query(getAttachmentUrlFn, {
+        threadId,
+        fileId: attachedFileId,
+      });
 
     expect(typeof url).toBe("string");
     expect(url.length).toBeGreaterThan(0);
@@ -178,14 +177,15 @@ describe("threads.getAttachmentUrl", () => {
     const { t, userId, threadId, unattachedFileId } =
       await seedThreadWithAttachment();
 
-    const url = await t.withIdentity(sessionFor(userId)).query(getAttachmentUrlFn, {
-      threadId,
-      fileId: unattachedFileId,
-    });
+    const url = await t
+      .withIdentity(sessionFor(userId))
+      .query(getAttachmentUrlFn, {
+        threadId,
+        fileId: unattachedFileId,
+      });
 
     expect(url).toBeNull();
   });
-
 });
 
 describe("Slack thread mutation boundary", () => {
@@ -316,9 +316,7 @@ describe("proactive conversation threads", () => {
     const messages = await t.run((ctx) =>
       ctx.db
         .query("threadMessages")
-        .withIndex("message", (q) =>
-          q.eq("messageId", args.idempotencyKey),
-        )
+        .withIndex("message", (q) => q.eq("messageId", args.idempotencyKey))
         .collect(),
     );
     const thread = await t.run((ctx) => ctx.db.get(first.threadId));
@@ -475,8 +473,12 @@ describe("user-private thread access", () => {
         brokerOrgId,
       });
       const ownerId = await ctx.db.insert("users", { email: "owner@acme.co" });
-      const teammateId = await ctx.db.insert("users", { email: "team@acme.co" });
-      const brokerUserId = await ctx.db.insert("users", { email: "broker@example.com" });
+      const teammateId = await ctx.db.insert("users", {
+        email: "team@acme.co",
+      });
+      const brokerUserId = await ctx.db.insert("users", {
+        email: "broker@example.com",
+      });
       await ctx.db.insert("orgMemberships", {
         orgId: clientOrgId,
         userId: ownerId,
@@ -570,10 +572,14 @@ describe("user-private thread access", () => {
     expect(teammateList.map((thread: { _id: string }) => thread._id)).toEqual([
       seeded.orgThreadId,
     ]);
-    await expect(owner.query(getThreadFn, { id: seeded.privateThreadId })).resolves.toMatchObject({
+    await expect(
+      owner.query(getThreadFn, { id: seeded.privateThreadId }),
+    ).resolves.toMatchObject({
       _id: seeded.privateThreadId,
     });
-    await expect(teammate.query(getThreadFn, { id: seeded.privateThreadId })).resolves.toBeNull();
+    await expect(
+      teammate.query(getThreadFn, { id: seeded.privateThreadId }),
+    ).resolves.toBeNull();
     const ownerMessages = await owner.query(messagesFn, {
       threadId: seeded.privateThreadId,
     });
@@ -582,7 +588,9 @@ describe("user-private thread access", () => {
     expect(ownerMessages[0]?.agentSteps).toEqual([
       { type: "tool", name: "lookup_policy", completed: true },
     ]);
-    await expect(teammate.query(messagesFn, { threadId: seeded.privateThreadId })).resolves.toEqual([]);
+    await expect(
+      teammate.query(messagesFn, { threadId: seeded.privateThreadId }),
+    ).resolves.toEqual([]);
     await expect(
       owner.query(getAttachmentUrlFn, {
         threadId: seeded.privateThreadId,
@@ -595,30 +603,6 @@ describe("user-private thread access", () => {
         fileId: seeded.fileId,
       }),
     ).resolves.toBeNull();
-  });
-
-  test("broker-of-client readers cannot see private threads or messages", async () => {
-    const seeded = await seedPrivateThreadAccess();
-    const broker = seeded.t.withIdentity(sessionFor(seeded.brokerUserId));
-
-    const threads = await broker.query(listForClientFn, {
-      clientOrgId: seeded.clientOrgId,
-    });
-    expect(threads.map((thread: { _id: string }) => thread._id)).toEqual([
-      seeded.orgThreadId,
-    ]);
-    await expect(
-      broker.query(getForClientFn, {
-        clientOrgId: seeded.clientOrgId,
-        id: seeded.privateThreadId,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      broker.query(messagesForClientFn, {
-        clientOrgId: seeded.clientOrgId,
-        threadId: seeded.privateThreadId,
-      }),
-    ).resolves.toEqual([]);
   });
 
   test("non-owners cannot mutate a private thread or its messages", async () => {
@@ -637,5 +621,19 @@ describe("user-private thread access", () => {
         content: "Leaked",
       }),
     ).rejects.toThrow("Not found");
+  });
+
+  test("broker members cannot use the tenant agent", async () => {
+    const seeded = await seedPrivateThreadAccess();
+    const broker = seeded.t.withIdentity(sessionFor(seeded.brokerUserId));
+
+    await expect(broker.query(listThreadsFn, {})).rejects.toThrow(
+      "Broker organizations have profile and team access only.",
+    );
+    await expect(
+      broker.query(getThreadFn, { id: seeded.orgThreadId }),
+    ).rejects.toThrow(
+      "Broker organizations have profile and team access only.",
+    );
   });
 });

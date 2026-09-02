@@ -1,28 +1,16 @@
 // convex/lib/notificationEmailTemplate.ts
 // Notification-email composition built on the shared shell in emailTemplate.
-import { getBrandingContext, getDefaultBranding } from "./branding";
 import { DEFAULT_CLIENT_PORTAL_URL } from "./domains";
 import { buildEmailShell, escapeHtml } from "./emailTemplate";
 
 const SITE_URL_DEFAULT = DEFAULT_CLIENT_PORTAL_URL;
 const NOTIFICATION_FROM_NAME = "Spot Notifications";
 
-export type NotificationEmailBranding =
-  | {
-      kind: "broker";
-      brokerName: string;
-      agentDisplayName: string | null;
-      accentColor: string | null;
-      logoUrl: string | null;
-    }
-  | { kind: "spot" };
-
 export interface BuildNotificationEmailArgs {
   title: string;
   body: string;
   ctaUrl: string;
   ctaLabel: string;
-  branding: NotificationEmailBranding;
   siteUrl?: string;
   threadLabel?: string;
 }
@@ -42,7 +30,6 @@ export function buildNotificationEmail(
     body,
     ctaUrl,
     ctaLabel,
-    branding,
     siteUrl = SITE_URL_DEFAULT,
     threadLabel,
   } = args;
@@ -52,15 +39,6 @@ export function buildNotificationEmail(
   const escapedCtaUrl = escapeHtml(ctaUrl);
   const escapedCtaLabel = escapeHtml(ctaLabel);
   const escapedThreadLabel = threadLabel ? escapeHtml(threadLabel) : null;
-
-  const emailBranding =
-    branding.kind === "broker"
-      ? getBrandingContext({
-          agentDisplayName: branding.brokerName,
-          brandingColor: branding.accentColor ?? undefined,
-          logoUrl: branding.logoUrl ?? undefined,
-        })
-      : getDefaultBranding();
 
   const threadHtml = escapedThreadLabel
     ? `<tr><td align="center" style="padding:24px 40px 0 40px;">
@@ -91,7 +69,6 @@ ${threadHtml}
   const html = buildEmailShell({
     title: escapedTitle,
     bodyHtml,
-    branding: emailBranding,
     siteUrl,
   });
 

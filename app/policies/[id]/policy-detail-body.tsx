@@ -57,10 +57,7 @@ import {
   PolicyDetailsEditor,
   type PolicyDetailsEditSection,
 } from "./policy-details-editor";
-import {
-  CertificatesTab,
-  ViewPdfButton,
-} from "./policy-certificates-tab";
+import { CertificatesTab, ViewPdfButton } from "./policy-certificates-tab";
 import { CertificateGeneratePanel } from "@/components/certificates/certificate-generate-panel";
 import {
   useCachedPolicyDetail,
@@ -182,8 +179,7 @@ function formatPolicyTerm(version: PolicyVersionRow) {
       version.effectiveDate,
       version.expirationDate,
       policyTermTypeFromVersionSnapshot(version.snapshot),
-    ) ||
-    "Not recorded"
+    ) || "Not recorded"
   );
 }
 
@@ -220,8 +216,12 @@ function changedFieldLabels(version: PolicyVersionRow) {
 function HistoryDatum({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>{label}</p>
-      <p className={`mt-0.5 min-w-0 break-words text-foreground ${typeStyle("body.default")}`}>
+      <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+        {label}
+      </p>
+      <p
+        className={`mt-0.5 min-w-0 break-words text-foreground ${typeStyle("body.default")}`}
+      >
         {value}
       </p>
     </div>
@@ -246,7 +246,9 @@ function ProvisionalPolicyGate({
   return (
     <OperationalPanel as="div">
       <OperationalPanelHeader title={title} description={description} />
-      <OperationalPanelBody className={`px-4 py-5 text-muted-foreground ${typeStyle("body.default")}`}>
+      <OperationalPanelBody
+        className={`px-4 py-5 text-muted-foreground ${typeStyle("body.default")}`}
+      >
         Extraction is complete for this policy. Enrichment is still running, so
         source-backed actions are held until enrichment finishes.
       </OperationalPanelBody>
@@ -273,7 +275,9 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
           <p className={`text-foreground ${typeStyle("body.medium")}`}>
             No policy history yet
           </p>
-          <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
+          <p
+            className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
+          >
             Policy versions will appear as renewals, endorsements, and
             re-extractions are recorded.
           </p>
@@ -305,19 +309,25 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
                   Version {version.versionNumber}
                 </h3>
                 {showEventKind ? (
-                  <span className={`text-muted-foreground ${typeStyle("body.default")}`}>
+                  <span
+                    className={`text-muted-foreground ${typeStyle("body.default")}`}
+                  >
                     {POLICY_VERSION_LABELS[version.versionKind]}
                   </span>
                 ) : null}
                 {index === 0 ? (
                   <StatusTag tone="success">Current</StatusTag>
                 ) : null}
-                <span className={`text-muted-foreground sm:ml-auto ${typeStyle("caption.default")}`}>
+                <span
+                  className={`text-muted-foreground sm:ml-auto ${typeStyle("caption.default")}`}
+                >
                   {formatVersionDate(version.createdAt)}
                 </span>
               </div>
               {summary ? (
-                <p className={`mt-1 max-w-4xl text-foreground ${typeStyle("body.default")}`}>
+                <p
+                  className={`mt-1 max-w-4xl text-foreground ${typeStyle("body.default")}`}
+                >
                   {summary}
                 </p>
               ) : null}
@@ -338,7 +348,9 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
               </div>
               {fields.length > 0 ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+                  <span
+                    className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                  >
                     Changed
                   </span>
                   {fields.slice(0, 5).map((field) => (
@@ -351,7 +363,9 @@ function PolicyHistoryTab({ policyId }: { policyId: Id<"policies"> }) {
                     </Badge>
                   ))}
                   {fields.length > 5 ? (
-                    <span className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+                    <span
+                      className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                    >
                       +{fields.length - 5} more
                     </span>
                   ) : null}
@@ -496,8 +510,6 @@ export function PolicyDetailBody({
   const canEditExtractedFields =
     operatorMode ||
     (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
-  const canRequestBrokerExtractionHelp =
-    !!viewerOrg?.brokerOrg && !readOnly && !isArchived;
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
   const extractionDataStage = policyDataStage(p);
   const isPolicyFinal =
@@ -893,11 +905,7 @@ export function PolicyDetailBody({
       onRightPanel(null);
       return;
     }
-    if (
-      operatorMode &&
-      showOperatorExtractionPanel &&
-      fullPolicy
-    ) {
+    if (operatorMode && showOperatorExtractionPanel && fullPolicy) {
       onRightPanel(
         <OperatorPolicyExtractionPanel
           policy={
@@ -1037,7 +1045,9 @@ export function PolicyDetailBody({
       <FadeIn when={true} staggerIndex={0} duration={0.6}>
         {isArchived && (
           <div className="mb-4 flex items-center gap-3 rounded-lg border border-input bg-foreground/[0.025] px-4 py-2.5">
-            <p className={`flex-1 text-muted-foreground ${typeStyle("body.default")}`}>
+            <p
+              className={`flex-1 text-muted-foreground ${typeStyle("body.default")}`}
+            >
               This policy is archived and excluded from active Spot workflows.
             </p>
             {!readOnly ? (
@@ -1121,7 +1131,9 @@ export function PolicyDetailBody({
 
       {!operatorMode && Boolean(p.isDemo) && !demoBannerDismissed && (
         <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
-          <p className={`text-amber-700 dark:text-amber-400 flex-1 ${typeStyle("caption.default")}`}>
+          <p
+            className={`text-amber-700 dark:text-amber-400 flex-1 ${typeStyle("caption.default")}`}
+          >
             You&apos;re viewing demo data.{" "}
             <Link
               href="/profile"
@@ -1187,7 +1199,9 @@ export function PolicyDetailBody({
               {tab.id === "review" ? (
                 <span className="inline-flex items-center gap-1.5">
                   Review
-                  <span className={`rounded-full border border-border-emphasized px-1.5 text-muted-foreground ${typeStyle("label.tag")}`}>
+                  <span
+                    className={`rounded-full border border-border-emphasized px-1.5 text-muted-foreground ${typeStyle("label.tag")}`}
+                  >
                     {reviewQuestions.length}
                   </span>
                 </span>
@@ -1199,7 +1213,9 @@ export function PolicyDetailBody({
         </TabsList>
       </Tabs>
 
-      {visibleActiveTab === "details" && operatorMode && fullPolicy === undefined ? (
+      {visibleActiveTab === "details" &&
+      operatorMode &&
+      fullPolicy === undefined ? (
         <OperationalSkeletonList rows={8} showTrailing={false} />
       ) : null}
 
@@ -1249,7 +1265,6 @@ export function PolicyDetailBody({
               }
             }
             readOnly={readOnly || isArchived}
-            canRequestBrokerHelp={canRequestBrokerExtractionHelp}
           />
         </FadeIn>
       )}

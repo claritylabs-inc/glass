@@ -24,10 +24,7 @@
   --primary-foreground: #ffffff;
   --primary-light: #a0d2fa;
   --primary-muted: #5ba3d9;
-  /* `--brand` is the themable accent used by primary CTAs. Defaults to the
-     foreground color so the platform's default (black on white) look is
-     unchanged. `BrandThemeApplier` overrides these per-broker on client
-     workspaces. */
+  /* `--brand` is the Spot accent used by primary CTAs. */
   --brand: #000000;
   --brand-foreground: #ffffff;
   --secondary: #f5f5f5;
@@ -189,10 +186,14 @@
   --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
   --font-brand: var(--font-redaction), Georgia, "Times New Roman", serif;
   --font-serif: var(--font-redaction), Georgia, "Times New Roman", serif;
-  --font-redaction35: var(--font-redaction-35), Georgia, "Times New Roman", serif;
-  --font-redaction50: var(--font-redaction-50), Georgia, "Times New Roman", serif;
-  --font-redaction70: var(--font-redaction-70), Georgia, "Times New Roman", serif;
-  --font-redaction100: var(--font-redaction-100), Georgia, "Times New Roman", serif;
+  --font-redaction35:
+    var(--font-redaction-35), Georgia, "Times New Roman", serif;
+  --font-redaction50:
+    var(--font-redaction-50), Georgia, "Times New Roman", serif;
+  --font-redaction70:
+    var(--font-redaction-70), Georgia, "Times New Roman", serif;
+  --font-redaction100:
+    var(--font-redaction-100), Georgia, "Times New Roman", serif;
 
   /* Typography scale */
   --text-tag: 0.7rem;
@@ -251,7 +252,6 @@
     -webkit-appearance: auto;
     appearance: auto;
   }
-
 }
 
 /* =============================================================================

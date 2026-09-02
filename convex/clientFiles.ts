@@ -42,10 +42,7 @@ const MAX_CLIENT_FILES_PER_PAGE = 250;
 
 function mayReadClientFile(access: OrgAccess, file: Doc<"clientFiles">) {
   if (access.accessType === "operator") return true;
-  if (
-    access.accessType !== "member" &&
-    access.accessType !== "broker_of_client"
-  ) {
+  if (access.accessType !== "member") {
     return false;
   }
   return file.clientVisible;

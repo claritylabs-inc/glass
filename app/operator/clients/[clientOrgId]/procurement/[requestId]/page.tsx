@@ -43,7 +43,10 @@ export default function OperatorProcurementRequestPage() {
   const title = request?.request.title ?? "Procurement request";
   const requestedView = searchParams.get("view");
   const view =
-    requestedView === "brokers" ||
+    requestedView === "requirements" ||
+    requestedView === "market" ||
+    requestedView === "proposals" ||
+    requestedView === "activity" ||
     requestedView === "files" ||
     requestedView === "email"
       ? requestedView

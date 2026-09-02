@@ -8,7 +8,6 @@ import type { Id } from "./_generated/dataModel";
 import {
   claimBatch,
   claimInbound,
-  createDeliveryRecord,
   enrichInboundActor,
   failEvents,
   prepareBatch,
@@ -40,7 +39,6 @@ import { slackThreadContextText } from "./lib/slackThreadContext";
 const modules = import.meta.glob("./**/*.ts");
 const claimInboundFn = claimInbound as any;
 const claimBatchFn = claimBatch as any;
-const createDeliveryRecordFn = createDeliveryRecord as any;
 const enrichInboundActorFn = enrichInboundActor as any;
 const failEventsFn = failEvents as any;
 const prepareBatchFn = prepareBatch as any;
@@ -107,7 +105,6 @@ async function seedSlack(t: ReturnType<typeof convexTest>) {
       slackEnabled: true,
       slackSafeAlertsEnabled: true,
       slackVendorAlertsEnabled: false,
-      slackPolicyDeliveryEnabled: true,
       createdAt: 1,
       updatedAt: 1,
     });
@@ -891,12 +888,12 @@ describe("Slack channel state and authorization", () => {
     };
 
     expect(claim.status).toBe("queued");
-    await expect(t.run((ctx) => ctx.db.get(claim.eventId))).resolves.toMatchObject(
-      {
-        connectionId,
-        isPrimaryChannel: true,
-      },
-    );
+    await expect(
+      t.run((ctx) => ctx.db.get(claim.eventId)),
+    ).resolves.toMatchObject({
+      connectionId,
+      isPrimaryChannel: true,
+    });
   });
 
   test("keeps pre-rebrand mention events actionable during the widening release", async () => {
@@ -1029,13 +1026,11 @@ describe("Slack channel state and authorization", () => {
         .unique(),
       thread: await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-PRIMARY")
-              .eq("slackThreadTs", "1800000000.050"),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-PRIMARY")
+            .eq("slackThreadTs", "1800000000.050"),
         )
         .unique(),
     }));
@@ -1124,13 +1119,11 @@ describe("Slack channel state and authorization", () => {
     const resolvedThread = await t.run((ctx) =>
       ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-PRIMARY")
-              .eq("slackThreadTs", "1800000000.075"),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-PRIMARY")
+            .eq("slackThreadTs", "1800000000.075"),
         )
         .unique(),
     );
@@ -1390,13 +1383,11 @@ describe("Slack channel state and authorization", () => {
     const state = await t.run(async (ctx) => {
       const thread = await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-POLICIES")
-              .eq("slackThreadTs", threadTs),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-POLICIES")
+            .eq("slackThreadTs", threadTs),
         )
         .unique();
       return {
@@ -1859,13 +1850,11 @@ describe("Slack channel state and authorization", () => {
       handoffs: await ctx.db.query("slackHandoffs").collect(),
       thread: await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-OTHER")
-              .eq("slackThreadTs", "1800000000.888"),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-OTHER")
+            .eq("slackThreadTs", "1800000000.888"),
         )
         .first(),
     }));
@@ -2085,7 +2074,8 @@ describe("Slack setup and outbound durability", () => {
       await ctx.db.patch(binding._id, {
         healthStatus: "degraded",
         providerErrorCode: "invalid_arguments",
-        providerErrorSummary: "Slack could not verify the host primary channel.",
+        providerErrorSummary:
+          "Slack could not verify the host primary channel.",
       });
     });
 
@@ -2272,60 +2262,6 @@ describe("Slack setup and outbound durability", () => {
         threadTs: "1800000000.999",
       }),
     ).rejects.toThrow("does not match the thread timestamp");
-  });
-
-  test("records a file-bearing policy delivery as one canonical Slack thread", async () => {
-    const t = convexTest(schema, modules);
-    const { clientOrgId, connectionId } = await seedSlack(t);
-    const { fileId, policyId } = await t.run(async (ctx) => ({
-      fileId: await ctx.storage.store(
-        new Blob(["policy"], { type: "application/pdf" }),
-      ),
-      policyId: await ctx.db.insert("policies", {
-        orgId: clientOrgId,
-        carrier: "Fixture Carrier",
-        policyNumber: "SLACK-1",
-        linesOfBusiness: ["CGL"],
-        documentType: "policy",
-        policyYear: 2026,
-        effectiveDate: "01/01/2026",
-        expirationDate: "01/01/2027",
-        isRenewal: false,
-        coverages: [],
-        insuredName: "Client",
-      }),
-    }));
-    const args = {
-      orgId: clientOrgId,
-      connectionId,
-      channelId: "C-PRIMARY",
-      threadTs: "1800000000.700",
-      content: "Your policy is ready.",
-      attachment: {
-        fileId,
-        filename: "policy.pdf",
-        contentType: "application/pdf",
-        size: 6,
-      },
-      policyId,
-      idempotencyKey: "policy-delivery:fixture",
-    };
-    const threadId = await t.mutation(createDeliveryRecordFn, args);
-    await expect(t.mutation(createDeliveryRecordFn, args)).resolves.toBe(
-      threadId,
-    );
-    const records = await t.run(async (ctx) => ({
-      threads: await ctx.db.query("threads").collect(),
-      messages: await ctx.db.query("threadMessages").collect(),
-    }));
-    expect(records.threads).toHaveLength(1);
-    expect(records.messages).toMatchObject([
-      {
-        channel: "slack",
-        attachments: [{ fileId, filename: "policy.pdf" }],
-        referencedPolicyIds: [policyId],
-      },
-    ]);
   });
 
   test("schedules safe alerts and keeps vendor alerts off by default", async () => {

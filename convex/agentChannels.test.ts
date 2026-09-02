@@ -279,51 +279,40 @@ describe("agent channel settings", () => {
         slackEnabled: false,
         slackSafeAlertsEnabled: true,
         slackVendorAlertsEnabled: false,
-        slackPolicyDeliveryEnabled: true,
       },
     });
   });
 
-  test("resolves broker-owned email addresses for managed clients", async () => {
+  test("does not inherit client channel access from a broker relationship", async () => {
     const t = convexTest(schema, modules);
-    const { brokerAdminUserId, clientOrgId, brokerOrgId } = await t.run(
-      async (ctx) => {
-        const brokerOrgId = await ctx.db.insert("organizations", {
-          name: "Managing Broker",
-          type: "broker",
-          agentHandle: "managing-broker",
-        });
-        const clientOrgId = await ctx.db.insert("organizations", {
-          name: "Managed Client",
-          type: "client",
-          brokerOrgId,
-          agentHandle: "unused-client-handle",
-        });
-        const brokerAdminUserId = await ctx.db.insert("users", {
-          email: "admin@broker.test",
-        });
-        await ctx.db.insert("orgMemberships", {
-          orgId: brokerOrgId,
-          userId: brokerAdminUserId,
-          role: "admin",
-        });
-        return { brokerAdminUserId, clientOrgId, brokerOrgId };
-      },
-    );
+    const { brokerAdminUserId, clientOrgId } = await t.run(async (ctx) => {
+      const brokerOrgId = await ctx.db.insert("organizations", {
+        name: "Managing Broker",
+        type: "broker",
+        agentHandle: "managing-broker",
+      });
+      const clientOrgId = await ctx.db.insert("organizations", {
+        name: "Managed Client",
+        type: "client",
+        brokerOrgId,
+        agentHandle: "unused-client-handle",
+      });
+      const brokerAdminUserId = await ctx.db.insert("users", {
+        email: "admin@broker.test",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId: brokerOrgId,
+        userId: brokerAdminUserId,
+        role: "admin",
+      });
+      return { brokerAdminUserId, clientOrgId };
+    });
 
     await expect(
       t
         .withIdentity({ subject: `${brokerAdminUserId}|session` })
         .query(getFn, { clientOrgId }),
-    ).resolves.toMatchObject({
-      agentEmailAddress: {
-        handle: "managing-broker",
-        configuredHandle: "managing-broker",
-        source: "broker",
-        ownerOrgId: brokerOrgId,
-        ownerName: "Managing Broker",
-      },
-    });
+    ).rejects.toThrow("You don’t have access to this organization");
   });
 
   test("lets operators manage only standalone client email addresses", async () => {
@@ -398,18 +387,19 @@ describe("agent channel settings", () => {
         clientOrgId: managedOrgId,
         handle: "managed-client",
       }),
-    ).rejects.toThrow(
-      "This client inherits its agent email address from its broker",
-    );
+    ).resolves.toBe("managed-client");
 
     const records = await t.run(async (ctx) => ({
       standalone: await ctx.db.get(standaloneOrgId),
+      managed: await ctx.db.get(managedOrgId),
       audits: await ctx.db.query("operatorAuditEvents").collect(),
     }));
     expect(records.standalone?.agentHandle).toBeUndefined();
+    expect(records.managed?.agentHandle).toBe("managed-client");
     expect(records.audits.map((audit) => audit.summary)).toEqual([
       "Updated agent email address for Standalone Client",
       "Updated agent email address for Standalone Client",
+      "Updated agent email address for Managed Client",
     ]);
   });
 
@@ -683,7 +673,6 @@ describe("agent channel settings", () => {
           slackEnabled: true,
           slackSafeAlertsEnabled: true,
           slackVendorAlertsEnabled: true,
-          slackPolicyDeliveryEnabled: true,
           createdAt: 1,
           updatedAt: 1,
         });
@@ -742,7 +731,6 @@ describe("agent channel settings", () => {
         slackEnabled: true,
         slackSafeAlertsEnabled: true,
         slackVendorAlertsEnabled: false,
-        slackPolicyDeliveryEnabled: true,
         updatedByUserId: adminUserId,
         createdAt: 1,
         updatedAt: 1,
@@ -758,7 +746,6 @@ describe("agent channel settings", () => {
       slackEnabled: true,
       slackSafeAlertsEnabled: true,
       slackVendorAlertsEnabled: false,
-      slackPolicyDeliveryEnabled: true,
     });
     await expect(
       admin.mutation(updateFn, {
@@ -799,7 +786,6 @@ describe("agent channel settings", () => {
       slackEnabled: false,
       slackSafeAlertsEnabled: true,
       slackVendorAlertsEnabled: false,
-      slackPolicyDeliveryEnabled: true,
     };
     await expect(
       t
@@ -845,7 +831,6 @@ describe("agent channel settings", () => {
       slackEnabled: false,
       slackSafeAlertsEnabled: true,
       slackVendorAlertsEnabled: false,
-      slackPolicyDeliveryEnabled: true,
     });
     await operator.mutation(setOperatorSlackIdentityFn, {
       teamId: "T-SPOT",
@@ -922,7 +907,6 @@ describe("agent channel settings", () => {
         slackEnabled: false,
         slackSafeAlertsEnabled: true,
         slackVendorAlertsEnabled: false,
-        slackPolicyDeliveryEnabled: true,
         createdAt: 1,
         updatedAt: 1,
       });
@@ -971,7 +955,6 @@ describe("agent channel settings", () => {
         slackEnabled: true,
         slackSafeAlertsEnabled: true,
         slackVendorAlertsEnabled: false,
-        slackPolicyDeliveryEnabled: true,
         createdAt: 1,
         updatedAt: 1,
       });

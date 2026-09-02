@@ -12,8 +12,6 @@ import {
 } from "@/lib/sync/use-cached-query";
 
 type OperatorCurrent = FunctionReturnType<typeof api.operator.current>;
-type OperatorBrokerList = FunctionReturnType<typeof api.operator.listBrokers>;
-type OperatorBrokerRow = OperatorBrokerList[number];
 type OperatorClientList = FunctionReturnType<typeof api.operator.listClients>;
 type OperatorClientRow = OperatorClientList[number];
 type OperatorGlobalModelSettings = FunctionReturnType<
@@ -67,21 +65,9 @@ type DemoSalesTranscriptListArgs = {
   limit?: number;
 };
 type GlobalRoute = GlobalRoutes[keyof GlobalRoutes];
-type OptimisticBrokerInput = {
-  brokerOrgId: Id<"organizations">;
-  name: string;
-  slug?: string;
-  website?: string;
-  agentHandle?: string;
-  adminEmail?: string;
-  adminName?: string;
-  adminPhone?: string;
-};
 type OptimisticClientInput = {
   clientOrgId: Id<"organizations">;
   name: string;
-  brokerOrgId?: Id<"organizations">;
-  brokerName?: string;
   website?: string;
   adminEmail?: string;
   adminName?: string;
@@ -107,9 +93,7 @@ export function operatorExtractionTraceListArgs(
 ): ExtractionTraceListArgs {
   return {
     status: filters.status,
-    orgId: filters.orgId
-      ? (filters.orgId as Id<"organizations">)
-      : undefined,
+    orgId: filters.orgId ? (filters.orgId as Id<"organizations">) : undefined,
     policyId: filters.policyId
       ? (filters.policyId as Id<"policies">)
       : undefined,
@@ -125,19 +109,18 @@ export function operatorDemoSalesTranscriptListArgs(
 }
 
 export function useCachedOperatorCurrent() {
-  return useCachedQuery(
-    "operator.current",
-    api.operator.current,
-    {},
-  ) as OperatorCurrent | undefined;
+  return useCachedQuery("operator.current", api.operator.current, {}) as
+    | OperatorCurrent
+    | undefined;
 }
 
 export function useCachedOperatorBrokers(search?: string) {
-  return useCachedQuery(
-    "operator.listBrokers",
-    api.operator.listBrokers,
+  const rows = useCachedQuery(
+    "brokerProfiles.list",
+    api.brokerProfiles.list,
     search ? { search } : {},
-  ) as OperatorBrokerList | undefined;
+  );
+  return rows?.map(({ broker }) => ({ _id: broker._id, name: broker.name }));
 }
 
 export function useCachedOperatorClients() {
@@ -174,9 +157,7 @@ export function useCachedOperatorExtractionTraces(
   ) as OperatorExtractionTraceList | undefined;
 }
 
-export function useCachedOperatorExtractionTraceDetail(
-  traceId: string | null,
-) {
+export function useCachedOperatorExtractionTraceDetail(traceId: string | null) {
   return useCachedQuery(
     "operator.getExtractionTrace.v4",
     api.operator.getExtractionTrace,
@@ -184,9 +165,7 @@ export function useCachedOperatorExtractionTraceDetail(
   ) as OperatorExtractionTraceDetail | undefined;
 }
 
-export function useCachedOperatorDemoSalesTranscripts(
-  limit = 250,
-) {
+export function useCachedOperatorDemoSalesTranscripts(limit = 250) {
   return useCachedQuery(
     "operator.listPublicDemoSalesTranscripts",
     api.operator.listPublicDemoSalesTranscripts,
@@ -200,83 +179,10 @@ export function useCachedOperatorDemoSalesTranscriptDetail(
   return useCachedQuery(
     "operator.getPublicDemoSalesTranscript",
     api.operator.getPublicDemoSalesTranscript,
-    transcriptId ? { id: transcriptId as Id<"publicDemoSalesTranscripts"> } : "skip",
+    transcriptId
+      ? { id: transcriptId as Id<"publicDemoSalesTranscripts"> }
+      : "skip",
   ) as OperatorDemoSalesTranscriptDetail | undefined;
-}
-
-export function useOperatorBrokerCacheActions() {
-  const upsertBrokers = useUpsertCachedQuery<OperatorBrokerList, { search?: string }>(
-    "operator.listBrokers",
-  );
-  const updateBrokers = useUpdateCachedQuery<OperatorBrokerList, { search?: string }>(
-    "operator.listBrokers",
-  );
-
-  const seedBroker = useCallback(
-    async (input: OptimisticBrokerInput) => {
-      const now = dayjs().valueOf();
-      const row = {
-        _id: input.brokerOrgId,
-        name: input.name,
-        slug: input.slug,
-        website: input.website,
-        iconStorageId: undefined,
-        iconUrl: null,
-        agentHandle: input.agentHandle,
-        operatorStatus: "onboarding",
-        onboardingComplete: true,
-        adminName: input.adminName,
-        adminEmail: input.adminEmail,
-        adminPhone: input.adminPhone,
-        clientCount: 0,
-        createdAt: now,
-      } satisfies OperatorBrokerRow;
-      await upsertBrokers({}, (current) =>
-        sortByCreatedAtDesc([
-          row,
-          ...(current ?? []).filter((broker) => broker._id !== row._id),
-        ]),
-      );
-    },
-    [upsertBrokers],
-  );
-
-  const patchBrokerStatus = useCallback(
-    async (brokerOrgId: Id<"organizations">, status: OperatorStatus) => {
-      await updateBrokers({}, (current) =>
-        current.map((broker) =>
-          broker._id === brokerOrgId
-            ? { ...broker, operatorStatus: status }
-            : broker,
-        ),
-      );
-    },
-    [updateBrokers],
-  );
-
-  const patchBrokerSettings = useCallback(
-    async (
-      brokerOrgId: Id<"organizations">,
-      patch: Partial<
-        Pick<
-          OperatorBrokerRow,
-          | "slug"
-          | "website"
-          | "adminName"
-          | "adminPhone"
-        >
-      >,
-    ) => {
-      await updateBrokers({}, (current) =>
-        current.map((broker) =>
-          broker._id === brokerOrgId ? { ...broker, ...patch } : broker,
-        ),
-      );
-    },
-    [updateBrokers],
-  );
-
-  return { seedBroker, patchBrokerStatus, patchBrokerSettings };
 }
 
 export function useOperatorClientCacheActions() {
@@ -308,8 +214,6 @@ export function useOperatorClientCacheActions() {
         adminName: input.adminName,
         adminEmail: input.adminEmail,
         adminPhone: input.adminPhone,
-        brokerOrgId: input.brokerOrgId,
-        brokerName: input.brokerName,
         createdAt: now,
       } satisfies OperatorClientRow;
       await upsertClients({}, (current) =>
@@ -342,8 +246,6 @@ export function useOperatorClientCacheActions() {
         Pick<
           OperatorClientRow,
           | "name"
-          | "brokerOrgId"
-          | "brokerName"
           | "website"
           | "agentHandle"
           | "primaryContactName"
@@ -368,9 +270,10 @@ export function useOperatorClientCacheActions() {
 }
 
 export function useOperatorGlobalModelRouteCacheActions() {
-  const updateSettings = useUpdateCachedQuery<OperatorGlobalModelSettings, EmptyArgs>(
-    "operator.modelSettings.getGlobal",
-  );
+  const updateSettings = useUpdateCachedQuery<
+    OperatorGlobalModelSettings,
+    EmptyArgs
+  >("operator.modelSettings.getGlobal");
 
   const patchRoute = useCallback(
     async (taskId: string, route: GlobalRoute) => {
@@ -390,9 +293,10 @@ export function useOperatorGlobalModelRouteCacheActions() {
 }
 
 export function useOperatorGlobalToolSettingsCacheActions() {
-  const updateSettings = useUpdateCachedQuery<OperatorGlobalModelSettings, EmptyArgs>(
-    "operator.modelSettings.getGlobal",
-  );
+  const updateSettings = useUpdateCachedQuery<
+    OperatorGlobalModelSettings,
+    EmptyArgs
+  >("operator.modelSettings.getGlobal");
 
   const patchWebRetrieval = useCallback(
     async (webRetrieval: GlobalWebRetrieval) => {

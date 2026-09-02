@@ -4,16 +4,10 @@ import {
   internalQuery,
   mutation,
   query,
-  type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
 import { requireOperator } from "./lib/operatorIdentity";
-import {
-  throwUserFacingError,
-  userFacingErrorCodes,
-} from "./lib/userFacingErrors";
 import {
   AUDIO_TRANSCRIPTION_MODEL_CATALOG,
   CONFIGURABLE_MODEL_PROVIDERS,
@@ -26,9 +20,7 @@ import {
   MODEL_ROUTE_IDS,
   MODEL_ROUTE_LABELS,
   MODEL_ROUTING,
-  MODEL_TASK_GROUPS,
   MODEL_TASKS,
-  MODEL_TASK_DESCRIPTIONS,
   MODEL_TASK_LABELS,
   OPERATOR_MODEL_ROUTE_GROUPS,
   OPERATOR_AGENT_MODEL_ROUTE_ID,
@@ -51,13 +43,9 @@ import {
   defaultModelRouteForId,
 } from "./lib/modelCatalog";
 
-type ProviderKeys = NonNullable<Doc<"brokerModelSettings">["providerKeys"]>;
-type Routes = NonNullable<Doc<"brokerModelSettings">["routes"]>;
 type GlobalRoutes = Partial<Record<ModelRouteId, ModelRoute>>;
-type RouteSource = "broker" | "global" | "static";
-const CONFIGURABLE_PROVIDER_SET = new Set<ModelProvider>(
-  CONFIGURABLE_MODEL_PROVIDERS,
-);
+type RouteSource = "global" | "static";
+type ProviderKeys = Partial<Record<ModelProvider, string>>;
 
 const configurableProviderValidator = v.union(
   v.literal("openai"),
@@ -86,28 +74,6 @@ const webRetrievalProviderValidator = v.union(
 const webRetrievalValidator = v.object({
   primary: webRetrievalProviderValidator,
   route: v.optional(routeValidator),
-});
-
-const modelTaskRoutesValidator = v.object({
-  chat: v.optional(routeUpdateValidator),
-  chat_vision: v.optional(routeUpdateValidator),
-  voice_transcription: v.optional(routeUpdateValidator),
-  email_draft: v.optional(routeUpdateValidator),
-  email_reply: v.optional(routeUpdateValidator),
-  extraction: v.optional(routeUpdateValidator),
-  extraction_preview: v.optional(routeUpdateValidator),
-  extraction_coverage_recovery: v.optional(routeUpdateValidator),
-  classification: v.optional(routeUpdateValidator),
-  requirement_extraction: v.optional(routeUpdateValidator),
-  org_memory_extraction: v.optional(routeUpdateValidator),
-  analysis: v.optional(routeUpdateValidator),
-  summary: v.optional(routeUpdateValidator),
-  triage: v.optional(routeUpdateValidator),
-  email_extraction: v.optional(routeUpdateValidator),
-  document_extraction: v.optional(routeUpdateValidator),
-  security: v.optional(routeUpdateValidator),
-  mailbox_coordinator: v.optional(routeUpdateValidator),
-  embeddings: v.optional(routeUpdateValidator),
 });
 
 const globalRoutesValidator = v.object({
@@ -179,41 +145,6 @@ function assertSupportedRoute(routeId: ModelRouteId, route: ModelRoute) {
   }
 }
 
-function isConfigurableProvider(provider: ModelProvider) {
-  return CONFIGURABLE_PROVIDER_SET.has(provider);
-}
-
-async function requireCurrentBrokerAdmin(ctx: QueryCtx | MutationCtx) {
-  const access = await requireOrgAccess(ctx);
-  if (access.role !== "admin") {
-    throwUserFacingError(
-      userFacingErrorCodes.brokerAdminRequired,
-      "Only a broker admin can manage model settings.",
-    );
-  }
-
-  if (access.org.type !== "broker") {
-    throw new Error("Expected a broker organization");
-  }
-
-  return { userId: access.userId, brokerOrgId: access.orgId };
-}
-
-function maskProviderKeys(keys: ProviderKeys | undefined) {
-  return Object.fromEntries(
-    CONFIGURABLE_MODEL_PROVIDERS.map((provider) => {
-      const value = keys?.[provider]?.trim();
-      return [
-        provider,
-        {
-          configured: !!value,
-          suffix: value ? value.slice(-4) : null,
-        },
-      ];
-    }),
-  ) as Record<ModelProvider, { configured: boolean; suffix: string | null }>;
-}
-
 function configuredEnv(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed || undefined;
@@ -268,27 +199,6 @@ function providerTransport(provider: ModelProvider) {
 
 function globalProviderConfigured(provider: ModelProvider) {
   return providerTransport(provider) !== null;
-}
-
-function visibleRoutes(
-  routes: Routes | undefined,
-  keys: ProviderKeys | undefined,
-) {
-  return Object.fromEntries(
-    MODEL_TASKS.map((task) => {
-      const route = routes?.[task];
-      return [
-        task,
-        route &&
-        !isRetiredModelRoute(route) &&
-        directProviderModelForRoute(route) &&
-        isConfigurableProvider(route.provider) &&
-        keys?.[route.provider]
-          ? route
-          : null,
-      ];
-    }),
-  ) as Record<ModelTask, ModelRoute | null>;
 }
 
 function nullableGlobalRoutes(routes: GlobalRoutes | undefined) {
@@ -369,15 +279,6 @@ function availableAudioModels(provider: ModelProvider) {
   );
 }
 
-function configurableProviderKeys(keys: ProviderKeys | undefined) {
-  return Object.fromEntries(
-    CONFIGURABLE_MODEL_PROVIDERS.flatMap((provider) => {
-      const value = keys?.[provider]?.trim();
-      return value ? [[provider, value]] : [];
-    }),
-  ) as ProviderKeys;
-}
-
 function webRetrievalEnvConfigured(provider: WebRetrievalProvider) {
   switch (provider) {
     case "parallel":
@@ -445,125 +346,6 @@ function modelCapabilityCatalog() {
     ),
   );
 }
-
-export const get = query({
-  args: {},
-  handler: async (ctx) => {
-    const { brokerOrgId } = await requireCurrentBrokerAdmin(ctx);
-    const settings = await ctx.db
-      .query("brokerModelSettings")
-      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
-      .first();
-
-    return {
-      providers: CONFIGURABLE_MODEL_PROVIDERS.map((id) => ({
-        id,
-        label: PROVIDER_LABELS[id],
-        languageModels: availableLanguageModels(id),
-        audioModels: availableAudioModels(id),
-        embeddingModels: availableEmbeddingModels(id),
-      })),
-      tasks: MODEL_TASKS.map((id) => ({
-        id,
-        label: MODEL_TASK_LABELS[id],
-        description: MODEL_TASK_DESCRIPTIONS[id],
-        isEmbedding: id === "embeddings",
-        isAudio: id === "voice_transcription",
-      })),
-      groups: MODEL_TASK_GROUPS,
-      routes: visibleRoutes(settings?.routes, settings?.providerKeys),
-      providerKeys: maskProviderKeys(settings?.providerKeys),
-      updatedAt: settings?.updatedAt ?? null,
-    };
-  },
-});
-
-export const updateRoutes = mutation({
-  args: { routes: modelTaskRoutesValidator },
-  handler: async (ctx, args) => {
-    const { userId, brokerOrgId } = await requireCurrentBrokerAdmin(ctx);
-
-    const existing = await ctx.db
-      .query("brokerModelSettings")
-      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
-      .first();
-    const providerKeys = existing?.providerKeys ?? {};
-
-    for (const [task, route] of Object.entries(args.routes)) {
-      if (!route) continue;
-      if (!isModelTask(task)) throw new Error(`Unknown model task ${task}`);
-      if (!providerKeys[route.provider]) {
-        throw new Error(
-          `Add a ${PROVIDER_LABELS[route.provider]} API key before selecting its models`,
-        );
-      }
-      assertSupportedRoute(task, route);
-    }
-
-    const now = dayjs().valueOf();
-    const routes = { ...(existing?.routes ?? {}) };
-    for (const [task, route] of Object.entries(args.routes)) {
-      if (!isModelTask(task)) continue;
-      if (route === null) {
-        delete routes[task];
-      } else if (route) {
-        routes[task] = route;
-      }
-    }
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        routes,
-        updatedBy: userId,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert("brokerModelSettings", {
-        brokerOrgId,
-        routes,
-        updatedBy: userId,
-        updatedAt: now,
-      });
-    }
-  },
-});
-
-export const updateProviderKey = mutation({
-  args: {
-    provider: configurableProviderValidator,
-    apiKey: v.union(v.string(), v.null()),
-  },
-  handler: async (ctx, args) => {
-    const { userId, brokerOrgId } = await requireCurrentBrokerAdmin(ctx);
-    const existing = await ctx.db
-      .query("brokerModelSettings")
-      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
-      .first();
-    const providerKeys = { ...(existing?.providerKeys ?? {}) };
-    const nextKey = args.apiKey?.trim() ?? "";
-    if (nextKey) {
-      providerKeys[args.provider] = nextKey;
-    } else {
-      delete providerKeys[args.provider];
-    }
-
-    const now = dayjs().valueOf();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        providerKeys,
-        updatedBy: userId,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.insert("brokerModelSettings", {
-        brokerOrgId,
-        providerKeys,
-        updatedBy: userId,
-        updatedAt: now,
-      });
-    }
-  },
-});
 
 export const getGlobal = query({
   args: {},
@@ -732,39 +514,16 @@ export const updateGlobalWebRetrieval = mutation({
 export const resolveForOrg = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) => {
-    const org = await ctx.db.get(args.orgId);
-    if (!org) return null;
-    const brokerOrgId = org.type === "broker" ? org._id : org.brokerOrgId;
+    if (!(await ctx.db.get(args.orgId))) return null;
 
     const globalSettings = await ctx.db
       .query("globalModelSettings")
       .withIndex("key", (q) => q.eq("key", "default"))
       .first();
-    const settings = brokerOrgId
-      ? await ctx.db
-          .query("brokerModelSettings")
-          .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
-          .first()
-      : null;
-
-    const providerKeys = configurableProviderKeys(settings?.providerKeys);
     const globalRoutes = explicitGlobalRoutes(globalSettings);
     const routes = {} as Record<RouterModelRouteId, ModelRoute>;
     const routeSources = {} as Record<RouterModelRouteId, RouteSource>;
     for (const task of MODEL_TASKS) {
-      const brokerRoute = settings?.routes?.[task];
-      if (
-        brokerRoute &&
-        brokerRoute.provider !== "moonshot" &&
-        !isRetiredModelRoute(brokerRoute) &&
-        directProviderModelForRoute(brokerRoute) &&
-        modelRouteSupportsTask(task, brokerRoute) &&
-        providerKeys[brokerRoute.provider]
-      ) {
-        routes[task] = brokerRoute;
-        routeSources[task] = "broker";
-        continue;
-      }
       const globalRoute = globalRoutes?.[task];
       if (
         globalRoute &&
@@ -803,7 +562,7 @@ export const resolveForOrg = internalQuery({
     return {
       routes,
       routeSources,
-      providerKeys,
+      providerKeys: {} as ProviderKeys,
       webRetrieval: normalizeWebRetrieval(globalSettings?.webRetrieval),
     };
   },

@@ -41,10 +41,9 @@ import {
   ShortcutTooltipContent,
   stableSidebarTooltipId,
 } from "./nav-item";
-import { SidebarBrokerContact } from "./broker-contact-card";
 import { SidebarHeader } from "./sidebar-header";
 import { SidebarThreadArchiveAction } from "./sidebar-thread-archive-action";
-import type { BrokerContact, ConversationItem, NavItemConfig } from "./types";
+import type { ConversationItem, NavItemConfig } from "./types";
 import { typeStyle } from "@/lib/typography";
 
 function isImessageConversation(item: ConversationItem) {
@@ -62,6 +61,7 @@ export function MainSidebarContent({
   headerOrgName,
   navItems,
   connectItems,
+  disablePersistentChat,
   notificationsPanelOpen,
   unreadCount,
   isDesktop,
@@ -69,8 +69,6 @@ export function MainSidebarContent({
   agentConversations,
   pinnedConversations,
   archivedThreadCount,
-  broker,
-  fallbackAgentHandle,
   onToggleCollapse,
   onToggleNotifications,
   onCloseNotifications,
@@ -88,6 +86,7 @@ export function MainSidebarContent({
   headerOrgName: string;
   navItems: NavItemConfig[];
   connectItems: NavItemConfig[];
+  disablePersistentChat: boolean;
   notificationsPanelOpen: boolean;
   unreadCount?: number;
   isDesktop: boolean;
@@ -95,8 +94,6 @@ export function MainSidebarContent({
   agentConversations: ConversationItem[];
   pinnedConversations: ConversationItem[];
   archivedThreadCount: number;
-  broker: BrokerContact;
-  fallbackAgentHandle?: string;
   onToggleCollapse: () => void;
   onToggleNotifications: () => void;
   onCloseNotifications: () => void;
@@ -180,32 +177,27 @@ export function MainSidebarContent({
           </>
         ) : null}
 
-        {!collapsed ? (
-          <ExpandedThreadList
-            agentConversations={agentConversations}
-            pinnedConversations={pinnedConversations}
-            archivedThreadCount={archivedThreadCount}
-            pathname={pathname}
-            onAskSpot={onAskSpot}
-            onArchiveThread={onArchiveThread}
-          />
-        ) : (
-          <CollapsedThreadList
-            agentConversations={agentConversations}
-            pinnedConversations={pinnedConversations}
-            archivedThreadCount={archivedThreadCount}
-            pathname={pathname}
-            onAskSpot={onAskSpot}
-          />
-        )}
+        {!disablePersistentChat ? (
+          !collapsed ? (
+            <ExpandedThreadList
+              agentConversations={agentConversations}
+              pinnedConversations={pinnedConversations}
+              archivedThreadCount={archivedThreadCount}
+              pathname={pathname}
+              onAskSpot={onAskSpot}
+              onArchiveThread={onArchiveThread}
+            />
+          ) : (
+            <CollapsedThreadList
+              agentConversations={agentConversations}
+              pinnedConversations={pinnedConversations}
+              archivedThreadCount={archivedThreadCount}
+              pathname={pathname}
+              onAskSpot={onAskSpot}
+            />
+          )
+        ) : null}
       </nav>
-
-      {!isBroker && !collapsed ? (
-        <SidebarBrokerContact
-          broker={broker}
-          fallbackAgentHandle={fallbackAgentHandle}
-        />
-      ) : null}
 
       <div className="border-t border-border px-2 py-2 space-y-0.5">
         {canManageSettings ? (

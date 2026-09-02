@@ -309,13 +309,11 @@ export const inventoryThreads = internalMutation({
     try {
       const page = await ctx.db
         .query("threads")
-        .withIndex(
-          "private_history",
-          (q) =>
-            q
-              .eq("createdBy", job.userId)
-              .eq("originChannel", "imessage")
-              .eq("visibility", "user_private"),
+        .withIndex("private_history", (q) =>
+          q
+            .eq("createdBy", job.userId)
+            .eq("originChannel", "imessage")
+            .eq("visibility", "user_private"),
         )
         .paginate(args.paginationOpts);
       let added = 0;
@@ -573,10 +571,7 @@ export const deleteNextTarget = internalMutation({
 
 async function unlinkByThreadId(
   ctx: MutationCtx,
-  table:
-    | "connectedEmailAutomationItems"
-    | "policyDeliveryJobs"
-    | "certificateWorkflowJobs",
+  table: "connectedEmailAutomationItems" | "certificateWorkflowJobs",
   threadId: Id<"threads">,
 ) {
   const rows = await ctx.db
@@ -667,14 +662,6 @@ export const deleteTargetBatch = internalMutation({
           )
         ) {
           await scheduleDeleteTarget(ctx, target._id);
-        } else await advance("policy_delivery");
-        return;
-      }
-      if (stage === "policy_delivery") {
-        if (
-          await unlinkByThreadId(ctx, "policyDeliveryJobs", target.threadId)
-        ) {
-          await scheduleDeleteTarget(ctx, target._id);
         } else await advance("certificate_workflow");
         return;
       }
@@ -693,9 +680,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "audit") {
         const rows = await ctx.db
           .query("agentActionAuditEvents")
-          .withIndex("thread_created", (q) =>
-            q.eq("threadId", target.threadId),
-          )
+          .withIndex("thread_created", (q) => q.eq("threadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         for (const row of rows) {
           await ctx.db.patch(row._id, {
@@ -729,9 +714,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "app_cards") {
         const rows = await ctx.db
           .query("appCardAccessLinks")
-          .withIndex("thread", (q) =>
-            q.eq("sourceThreadId", target.threadId),
-          )
+          .withIndex("thread", (q) => q.eq("sourceThreadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         for (const row of rows) {
           await ctx.db.patch(row._id, {
@@ -747,9 +730,7 @@ export const deleteTargetBatch = internalMutation({
       if (stage === "email_draft_links") {
         const rows = await ctx.db
           .query("emailDraftReviewLinks")
-          .withIndex("thread", (q) =>
-            q.eq("sourceThreadId", target.threadId),
-          )
+          .withIndex("thread", (q) => q.eq("sourceThreadId", target.threadId))
           .take(DELETE_BATCH_SIZE);
         for (const row of rows) await ctx.db.delete(row._id);
         if (rows.length) await scheduleDeleteTarget(ctx, target._id);
@@ -829,9 +810,7 @@ export const deleteTargetBatch = internalMutation({
         const rows = target.chatGuid
           ? await ctx.db
               .query("imessageInboundEvents")
-              .withIndex("chat", (q) =>
-                q.eq("chatGuid", target.chatGuid),
-              )
+              .withIndex("chat", (q) => q.eq("chatGuid", target.chatGuid))
               .filter((q) =>
                 q.and(
                   q.lte(q.field("createdAt"), job.requestedAt),

@@ -57,7 +57,9 @@ function ToggleRow({
     <div className="flex items-center justify-between gap-4 py-4">
       <div className="min-w-0">
         <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
-        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{description}</p>
+        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+          {description}
+        </p>
       </div>
       <SettingsSwitch
         checked={checked}
@@ -71,9 +73,10 @@ function ToggleRow({
 
 export function CertificateWorkflowSection() {
   const currentOrg = useCurrentOrg();
-  const result = useQuery(api.certificateWorkflowSettings.getEffectiveForCurrentOrg, {}) as
-    | SettingsResult
-    | undefined;
+  const result = useQuery(
+    api.certificateWorkflowSettings.getEffectiveForCurrentOrg,
+    {},
+  ) as SettingsResult | undefined;
 
   if (!result) {
     return (
@@ -93,25 +96,20 @@ export function CertificateWorkflowSection() {
 
 function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
   const currentOrg = useCurrentOrg();
-  const isBroker = currentOrg?.isBroker ?? false;
   const isClient = currentOrg?.orgType === "client";
   const isAdmin = currentOrg?.role === "admin";
-  const updateBrokerDefault = useMutation(
-    api.certificateWorkflowSettings.updateBrokerDefault,
-  );
   const updateClientOverride = useMutation(
     api.certificateWorkflowSettings.updateClientOverride,
   );
   const initialDraft = toDraft(result.row ?? result);
   const [draft, setDraft] = useState<SettingsDraft>(initialDraft);
-  const editable = isAdmin && (isBroker || isClient);
+  const editable = isAdmin && isClient;
 
   const autoSave = useLocalFirstAutoSave({
     mutationName: "settings.certificates.updateWorkflow",
     args: draft,
     enabled: editable,
-    flush: (args) =>
-      isBroker ? updateBrokerDefault(args) : updateClientOverride(args),
+    flush: updateClientOverride,
     errorMessage: "Certificate settings could not be saved.",
   });
 

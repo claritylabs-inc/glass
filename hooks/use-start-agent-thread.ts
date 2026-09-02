@@ -41,13 +41,9 @@ export function useStartAgentThread(cacheKeyPrefix: string) {
     markOptimisticSendFailed,
     seedOptimisticThread,
   } = useThreadCacheActions();
-  const agentBranding =
-    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false && viewerOrg?.brokerOrg
-      ? {
-          name: `${viewerOrg.brokerOrg.name} Agent`,
-          iconUrl: viewerOrg.brokerOrg.iconUrl,
-        }
-      : undefined;
+  // Client workspaces use standard Spot branding; broker branding is never
+  // inherited into a client agent thread.
+  const agentBranding = undefined;
 
   const startAgentThread = useCallback(
     async (
@@ -112,10 +108,7 @@ export function useStartAgentThread(cacheKeyPrefix: string) {
             await markOptimisticSendFailed({
               threadId,
               clientMutationId,
-              error: getUserFacingErrorMessage(
-                error,
-                "Failed to send message",
-              ),
+              error: getUserFacingErrorMessage(error, "Failed to send message"),
             });
           }
           toast.error(

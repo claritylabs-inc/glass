@@ -20,7 +20,11 @@ import {
 } from "../lib/liteparsePreprocessor";
 import type { ExtractionResult, PipelineCheckpoint } from "../lib/extraction";
 import type { ExtractOptions } from "../lib/extraction";
-import { makeEmbedTexts, makeGenerateObject, type EmbedTexts } from "../lib/sdkCallbacks";
+import {
+  makeEmbedTexts,
+  makeGenerateObject,
+  type EmbedTexts,
+} from "../lib/sdkCallbacks";
 import { modelCapabilitiesForTask } from "../lib/modelCatalog";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -55,11 +59,17 @@ import {
 import { z } from "zod";
 
 const CANCELLED_BY_USER = "Cancelled by user";
-const NON_INSURANCE_DOCUMENT_ERROR = "This document is not a bound insurance policy, binder, endorsement, renewal, or post-binding insurance document, so extraction was stopped.";
+const NON_INSURANCE_DOCUMENT_ERROR =
+  "This document is not a bound insurance policy, binder, endorsement, renewal, or post-binding insurance document, so extraction was stopped.";
 const ADVANCE_LEASE_MS = 2 * 60 * 1000;
 const ADVANCE_LEASE_HEARTBEAT_MS = 30 * 1000;
 const ADVANCE_LEASE_WATCHDOG_GRACE_MS = 15 * 1000;
-const EMBEDDING_CONCURRENCY = readBoundedIntEnv("EXTRACTION_EMBEDDING_CONCURRENCY", 8, 1, 16);
+const EMBEDDING_CONCURRENCY = readBoundedIntEnv(
+  "EXTRACTION_EMBEDDING_CONCURRENCY",
+  8,
+  1,
+  16,
+);
 const EXTERNAL_WORKER_MODE = process.env.EXTRACTION_WORKER_MODE === "external";
 const EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION =
   process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION;
@@ -106,8 +116,10 @@ type LeasedPolicyCheckpoint = {
 
 function sourceSpanIdentity(span: SourceSpanLike) {
   const table = span.table && typeof span.table === "object" ? span.table : {};
-  const metadata = span.metadata && typeof span.metadata === "object" ? span.metadata : {};
-  const sourceUnit = span.sourceUnit ?? metadata.sourceUnit ?? metadata.elementType ?? "";
+  const metadata =
+    span.metadata && typeof span.metadata === "object" ? span.metadata : {};
+  const sourceUnit =
+    span.sourceUnit ?? metadata.sourceUnit ?? metadata.elementType ?? "";
   if (sourceUnit === "page") {
     return [
       span.documentId ?? "",
@@ -127,18 +139,28 @@ function sourceSpanIdentity(span: SourceSpanLike) {
     typeof table.rowIndex === "number" ? table.rowIndex : "",
     typeof table.columnIndex === "number" ? table.columnIndex : "",
     typeof table.columnName === "string" ? table.columnName : "",
-    typeof span.text === "string" ? span.text
-      .replace(/\s+/g, " ")
-      .replace(/^SPECIMEN POLICY — FOR TESTING ONLY\s+/i, "")
-      .trim() : "",
+    typeof span.text === "string"
+      ? span.text
+          .replace(/\s+/g, " ")
+          .replace(/^SPECIMEN POLICY — FOR TESTING ONLY\s+/i, "")
+          .trim()
+      : "",
   ].join("\u001f");
 }
 
 function sourceSpanOrder(span: SourceSpanLike, fallbackIndex: number) {
-  const id = typeof span.id === "string" ? span.id : typeof span.spanId === "string" ? span.spanId : "";
+  const id =
+    typeof span.id === "string"
+      ? span.id
+      : typeof span.spanId === "string"
+        ? span.spanId
+        : "";
   const idIndex = Number(id.match(/:span:\d+:(\d+):/)?.[1]);
   return {
-    page: typeof span.pageStart === "number" ? span.pageStart : Number.MAX_SAFE_INTEGER,
+    page:
+      typeof span.pageStart === "number"
+        ? span.pageStart
+        : Number.MAX_SAFE_INTEGER,
     index: Number.isFinite(idIndex) ? idIndex : fallbackIndex,
   };
 }
@@ -155,7 +177,9 @@ function canonicalSourceSpans(sourceSpans: SourceSpanLike[]) {
   return deduped.sort((left, right) => {
     const leftOrder = sourceSpanOrder(left, sourceSpans.indexOf(left));
     const rightOrder = sourceSpanOrder(right, sourceSpans.indexOf(right));
-    return leftOrder.page - rightOrder.page || leftOrder.index - rightOrder.index;
+    return (
+      leftOrder.page - rightOrder.page || leftOrder.index - rightOrder.index
+    );
   });
 }
 
@@ -249,7 +273,10 @@ function shouldArchiveRejectedPolicy(
 
 type EmbeddingPayload = Pick<
   PolicyExtractionState,
-  "documentChunksForEmbedding" | "sourceSpansForStorage" | "sourceChunksForEmbedding" | "sourceNodesForStorage"
+  | "documentChunksForEmbedding"
+  | "sourceSpansForStorage"
+  | "sourceChunksForEmbedding"
+  | "sourceNodesForStorage"
 >;
 
 type ExternalCompletionPayload = {
@@ -285,18 +312,25 @@ function coverageRecoverySucceeded(
   state: PolicyExtractionState,
   diagnostics: unknown,
 ): diagnostics is CoverageRecoveryDiagnosticsLike & { status: "succeeded" } {
-  if (!state.coverageRecovery?.enabled || !diagnostics || typeof diagnostics !== "object") {
+  if (
+    !state.coverageRecovery?.enabled ||
+    !diagnostics ||
+    typeof diagnostics !== "object"
+  ) {
     return false;
   }
   const value = diagnostics as CoverageRecoveryDiagnosticsLike;
-  return value.version === "coverage-recovery-v2" && value.status === "succeeded";
+  return (
+    value.version === "coverage-recovery-v2" && value.status === "succeeded"
+  );
 }
 
 function coverageRecoveryLogMessage(diagnostics: unknown): string | undefined {
   if (!diagnostics || typeof diagnostics !== "object") return undefined;
   const value = diagnostics as CoverageRecoveryDiagnosticsLike;
   if (typeof value.status !== "string") return undefined;
-  const count = (candidate: unknown) => typeof candidate === "number" ? candidate : 0;
+  const count = (candidate: unknown) =>
+    typeof candidate === "number" ? candidate : 0;
   return [
     `Coverage recovery ${value.status}`,
     `${count(value.recoveredCoverageCount)} coverages`,
@@ -367,7 +401,12 @@ type ExternalCompleteArgs = {
   sections?: ExtractionCompletionManifest["sections"];
 };
 
-function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
+function readBoundedIntEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const value = Number.parseInt(raw, 10);
@@ -392,7 +431,10 @@ async function startTraceSession(
   },
 ) {
   try {
-    await ctx.runMutation((internal as any).extractionTraces.startSession, args);
+    await ctx.runMutation(
+      (internal as any).extractionTraces.startSession,
+      args,
+    );
   } catch {
     // Extraction telemetry must not block extraction.
   }
@@ -402,7 +444,14 @@ async function traceEvent(
   ctx: ActionCtx,
   traceId: string | undefined,
   event: {
-    kind: "session" | "phase" | "log" | "model_call" | "embedding_batch" | "worker" | "artifact";
+    kind:
+      | "session"
+      | "phase"
+      | "log"
+      | "model_call"
+      | "embedding_batch"
+      | "worker"
+      | "artifact";
     phase?: string;
     level?: string;
     message?: string;
@@ -484,12 +533,14 @@ function validateExternalWorkerCompatibility(args: {
   workerProtocolVersion?: string;
   clSdkVersion?: string;
 }): string | undefined {
-  const allowedProtocols = EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION === "source-tree-v2"
-    ? new Set(["source-tree-v2"])
-    : new Set(["source-tree-v1", "source-tree-v2"]);
+  const allowedProtocols =
+    EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION === "source-tree-v2"
+      ? new Set(["source-tree-v2"])
+      : new Set(["source-tree-v1", "source-tree-v2"]);
   if (
     EXPECTED_EXTERNAL_WORKER_PROTOCOL_VERSION &&
-    (!args.workerProtocolVersion || !allowedProtocols.has(args.workerProtocolVersion))
+    (!args.workerProtocolVersion ||
+      !allowedProtocols.has(args.workerProtocolVersion))
   ) {
     return [
       `External worker ${args.workerId ?? "unknown"} is incompatible`,
@@ -497,7 +548,9 @@ function validateExternalWorkerCompatibility(args: {
     ].join(" ");
   }
   if (EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION) {
-    const expected = normalizeVersionSpec(EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION);
+    const expected = normalizeVersionSpec(
+      EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION,
+    );
     const actual = normalizeVersionSpec(args.clSdkVersion);
     if (actual !== expected) {
       return [
@@ -515,12 +568,15 @@ async function runBounded<T>(
   worker: (item: T, index: number) => Promise<void>,
 ): Promise<void> {
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      await worker(items[index], index);
-    }
-  });
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        await worker(items[index], index);
+      }
+    },
+  );
   await Promise.all(workers);
 }
 
@@ -632,9 +688,9 @@ async function externalLeaseMatches(
   ctx: ActionCtx,
   args: { policyId: string; leaseId: string; state?: unknown },
 ): Promise<boolean> {
-  const job = await ctx.runQuery(internal.policies.pipelineGetJob, {
+  const job = (await ctx.runQuery(internal.policies.pipelineGetJob, {
     jobId: args.policyId,
-  }) as {
+  })) as {
     status?: string;
     checkpoint?: LeasedPolicyCheckpoint | null;
   } | null;
@@ -692,15 +748,14 @@ async function storeJsonArtifact(
     type: "application/json",
   });
   const storageId = String(await ctx.storage.store(blob));
-  const artifactId = String(await ctx.runMutation(
-    internal.policies.pipelineSaveArtifact,
-    {
+  const artifactId = String(
+    await ctx.runMutation(internal.policies.pipelineSaveArtifact, {
       jobId,
       kind,
       storageId: storageId as Id<"_storage">,
       ...metadata,
-    },
-  ));
+    }),
+  );
   return {
     artifactId,
     storageId,
@@ -729,10 +784,10 @@ async function getLatestArtifactStorageId(
     | "source_bundle"
     | "section_result",
 ): Promise<string | undefined> {
-  const artifact = await ctx.runQuery(internal.policies.pipelineGetArtifact, {
+  const artifact = (await ctx.runQuery(internal.policies.pipelineGetArtifact, {
     jobId,
     kind,
-  }) as { storageId?: string } | null;
+  })) as { storageId?: string } | null;
   return artifact?.storageId ? String(artifact.storageId) : undefined;
 }
 
@@ -748,20 +803,22 @@ async function persistEvidenceAndPromote(
     sections?: ExtractionCompletionManifest["sections"];
   },
 ) {
-  const extractorVersion = normalizeVersionSpec(args.extractorVersion)
-    ?? normalizeVersionSpec(EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION)
-    ?? "4.6.0";
+  const extractorVersion =
+    normalizeVersionSpec(args.extractorVersion) ??
+    normalizeVersionSpec(EXPECTED_EXTERNAL_WORKER_CL_SDK_VERSION) ??
+    "4.6.0";
   const ledger = buildPromotionEvidenceLedger({
     sourceSpans: args.sourceSpans,
     sourceTree: args.sourceNodes,
   });
   const protocolVersion = args.protocolVersion ?? "source-tree-v1";
-  const sourceCoverageMap = protocolVersion === "source-tree-v2"
-    ? buildPromotionSourceCoverageMap({
-        sourceSpans: args.sourceSpans,
-        sourceTree: args.sourceNodes,
-      })
-    : undefined;
+  const sourceCoverageMap =
+    protocolVersion === "source-tree-v2"
+      ? buildPromotionSourceCoverageMap({
+          sourceSpans: args.sourceSpans,
+          sourceTree: args.sourceNodes,
+        })
+      : undefined;
   const manifest = buildExtractionCompletionManifest({
     protocolVersion,
     extractorVersion,
@@ -769,10 +826,10 @@ async function persistEvidenceAndPromote(
     sourceCoverageMap,
     sections: args.sections,
   });
-  const promotionContext = await ctx.runQuery(
+  const promotionContext = (await ctx.runQuery(
     (internal as any).policies.pipelineGetPromotionContext,
     { jobId: args.policyId },
-  ) as {
+  )) as {
     runId: Id<"policyExtractionRuns">;
     leaseId: string;
     promotedAt?: number;
@@ -798,7 +855,9 @@ async function persistEvidenceAndPromote(
     ) {
       return existing;
     }
-    throw new Error("Extraction run was already promoted with different evidence");
+    throw new Error(
+      "Extraction run was already promoted with different evidence",
+    );
   }
   const artifact = await storeJsonArtifact(
     ctx,
@@ -821,20 +880,25 @@ async function persistEvidenceAndPromote(
       },
     },
   );
-  const result = await ctx.runMutation(
+  const result = (await ctx.runMutation(
     (internal as any).policies.promoteCompletedExtractionInternal,
     {
       id: args.policyId as Id<"policies">,
       runId: promotionContext.runId,
       leaseId: promotionContext.leaseId,
-      sourceBundleArtifactId: artifact.artifactId as Id<"policyExtractionArtifacts">,
+      sourceBundleArtifactId:
+        artifact.artifactId as Id<"policyExtractionArtifacts">,
       fields: args.fields,
       evidenceLedger: ledger,
       completionManifest: manifest,
     },
-  ) as {
+  )) as {
     promoted: boolean;
-    decision: { allowed: boolean; reasons: string[]; mode: "shadow" | "enforce" };
+    decision: {
+      allowed: boolean;
+      reasons: string[];
+      mode: "shadow" | "enforce";
+    };
   };
   if (!result.decision.allowed) {
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
@@ -862,7 +926,8 @@ async function storeEmbeddingPayload(
   jobId: string,
   payload: EmbeddingPayload,
 ): Promise<string> {
-  return (await storeJsonArtifact(ctx, jobId, "embedding_payload", payload)).storageId;
+  return (await storeJsonArtifact(ctx, jobId, "embedding_payload", payload))
+    .storageId;
 }
 
 async function loadExternalCompletionPayload(
@@ -873,7 +938,9 @@ async function loadExternalCompletionPayload(
 }
 
 function asOptionalId<T extends string>(value: unknown): T | undefined {
-  return typeof value === "string" && value.length > 0 ? value as T : undefined;
+  return typeof value === "string" && value.length > 0
+    ? (value as T)
+    : undefined;
 }
 
 async function loadEmbeddingPayload(
@@ -894,9 +961,10 @@ async function loadEmbeddingPayload(
       sourceNodesForStorage: state.sourceNodesForStorage,
     };
   }
-  const storageId = state.embeddingPayloadFileId
-    ?? await getLatestArtifactStorageId(ctx, jobId, "embedding_payload");
-  return await loadJsonArtifact<EmbeddingPayload>(ctx, storageId) ?? {};
+  const storageId =
+    state.embeddingPayloadFileId ??
+    (await getLatestArtifactStorageId(ctx, jobId, "embedding_payload"));
+  return (await loadJsonArtifact<EmbeddingPayload>(ctx, storageId)) ?? {};
 }
 
 async function clearArtifacts(
@@ -921,7 +989,6 @@ function stripLease(
   const { lease: _lease, ...rest } = checkpoint;
   return rest;
 }
-
 
 const extractionGateSchema = z.object({
   shouldExtract: z.boolean(),
@@ -957,7 +1024,11 @@ const scheduledAdditionalInsuredSchema = z.object({
 
 const namedAdditionalInsuredSchema = z.object({
   name: z.string(),
-  status: z.enum(["scheduled_by_endorsement", "automatic_class", "review_required"]),
+  status: z.enum([
+    "scheduled_by_endorsement",
+    "automatic_class",
+    "review_required",
+  ]),
   scope: z.string(),
   endorsementTitle: z.string().nullable(),
   sourceNodeIds: z.array(z.string()),
@@ -968,19 +1039,25 @@ const additionalInsuredEligibilitySchema = z.object({
   withoutEndorsement: z.array(additionalInsuredEligibilityTermSchema).max(12),
   requiresEndorsement: z.array(additionalInsuredEligibilityTermSchema).max(12),
   reviewRequired: z.array(additionalInsuredEligibilityTermSchema).max(8),
-  scheduledAdditionalInsureds: z.array(scheduledAdditionalInsuredSchema).max(40),
+  scheduledAdditionalInsureds: z
+    .array(scheduledAdditionalInsuredSchema)
+    .max(40),
   additionalInsureds: z.array(namedAdditionalInsuredSchema).max(60),
   overallSummary: z.string(),
 });
 
-type AdditionalInsuredEligibility = z.infer<typeof additionalInsuredEligibilitySchema>;
+type AdditionalInsuredEligibility = z.infer<
+  typeof additionalInsuredEligibilitySchema
+>;
 
 type OperationalProfileWithEligibility = PolicyOperationalProfile & {
   additionalInsuredEligibility?: AdditionalInsuredEligibility;
   additionalInsureds?: AdditionalInsuredEligibility["additionalInsureds"];
 };
 
-function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): {
+function additionalInsuredEligibilityExcerpt(
+  sourceTree: DocumentSourceNode[],
+): {
   text: string;
   count: number;
 } {
@@ -993,8 +1070,12 @@ function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): 
         node.description,
         node.textExcerpt,
         node.path,
-      ].filter(Boolean).join(" ");
-      return /\b(additional insured|insured or subsidiary|subsidiar(?:y|ies)|scheduled additional insured|certificate holder|written contract|endorsement|endorse)\b/i.test(text);
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return /\b(additional insured|insured or subsidiary|subsidiar(?:y|ies)|scheduled additional insured|certificate holder|written contract|endorsement|endorse)\b/i.test(
+        text,
+      );
     })
     .sort((left, right) => left.order - right.order)
     .slice(0, 80)
@@ -1011,7 +1092,10 @@ function additionalInsuredEligibilityExcerpt(sourceTree: DocumentSourceNode[]): 
         .slice(0, 1200),
     }));
   return {
-    text: JSON.stringify({ sourceNodes: candidateNodes }, null, 2).slice(0, 22000),
+    text: JSON.stringify({ sourceNodes: candidateNodes }, null, 2).slice(
+      0,
+      22000,
+    ),
     count: candidateNodes.length,
   };
 }
@@ -1021,7 +1105,9 @@ function validateAdditionalInsuredEligibility(
   sourceTree: DocumentSourceNode[],
 ): AdditionalInsuredEligibility {
   const validNodeIds = new Set(sourceTree.map((node) => node.id));
-  const spanIdsByNodeId = new Map(sourceTree.map((node) => [node.id, node.sourceSpanIds]));
+  const spanIdsByNodeId = new Map(
+    sourceTree.map((node) => [node.id, node.sourceSpanIds]),
+  );
   const sourceBackedScheduledRequirement = () => {
     const node = sourceTree
       .filter((candidate) => candidate.kind !== "document")
@@ -1031,84 +1117,151 @@ function validateAdditionalInsuredEligibility(
           candidate.description,
           candidate.textExcerpt,
           candidate.path,
-        ].filter(Boolean).join(" ");
-        return /\bscheduled additional insured\b/i.test(text)
-          && /\b(endorsement|endorsed|added by endorsement|subject to such endorsement)\b/i.test(text);
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return (
+          /\bscheduled additional insured\b/i.test(text) &&
+          /\b(endorsement|endorsed|added by endorsement|subject to such endorsement)\b/i.test(
+            text,
+          )
+        );
       });
     if (!node) return null;
     return {
       category: "Scheduled Additional Insureds",
-      condition: "A person or company must be scheduled, named, added, or endorsed as a Scheduled Additional Insured before Spot treats them as already added.",
-      summary: "Scheduled Additional Insured status requires endorsement-backed scheduling/naming in the policy evidence.",
+      condition:
+        "A person or company must be scheduled, named, added, or endorsed as a Scheduled Additional Insured before Spot treats them as already added.",
+      summary:
+        "Scheduled Additional Insured status requires endorsement-backed scheduling/naming in the policy evidence.",
       sourceNodeIds: [node.id],
       sourceSpanIds: node.sourceSpanIds,
     };
   };
-  const normalizeEvidence = (sourceNodeIdsInput: string[], sourceSpanIdsInput: string[]) => {
-    const sourceNodeIds = [...new Set(sourceNodeIdsInput.filter((nodeId) => validNodeIds.has(nodeId)))];
-    const sourceSpanIds = [...new Set([
-      ...sourceSpanIdsInput,
-      ...sourceNodeIds.flatMap((nodeId) => spanIdsByNodeId.get(nodeId) ?? []),
-    ].filter((spanId): spanId is string => typeof spanId === "string" && spanId.length > 0))];
+  const normalizeEvidence = (
+    sourceNodeIdsInput: string[],
+    sourceSpanIdsInput: string[],
+  ) => {
+    const sourceNodeIds = [
+      ...new Set(
+        sourceNodeIdsInput.filter((nodeId) => validNodeIds.has(nodeId)),
+      ),
+    ];
+    const sourceSpanIds = [
+      ...new Set(
+        [
+          ...sourceSpanIdsInput,
+          ...sourceNodeIds.flatMap(
+            (nodeId) => spanIdsByNodeId.get(nodeId) ?? [],
+          ),
+        ].filter(
+          (spanId): spanId is string =>
+            typeof spanId === "string" && spanId.length > 0,
+        ),
+      ),
+    ];
     return { sourceNodeIds, sourceSpanIds };
   };
-  const cleanTerms = (terms: AdditionalInsuredEligibility["withoutEndorsement"]) => terms
-    .map((term) => {
-      const evidence = normalizeEvidence(term.sourceNodeIds, term.sourceSpanIds);
-      return {
-        category: term.category.trim().slice(0, 120),
-        condition: term.condition.trim().slice(0, 500),
-        summary: term.summary.trim().slice(0, 800),
-        sourceNodeIds: evidence.sourceNodeIds,
-        sourceSpanIds: evidence.sourceSpanIds,
-      };
-    })
-    .filter((term) => term.category && term.summary && (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0));
-  const cleanScheduled = (terms: AdditionalInsuredEligibility["scheduledAdditionalInsureds"]) => terms
-    .map((term) => {
-      const evidence = normalizeEvidence(term.sourceNodeIds, term.sourceSpanIds);
-      return {
-        name: term.name.trim().slice(0, 180),
-        scope: term.scope.trim().slice(0, 700),
-        endorsementTitle: term.endorsementTitle?.trim().slice(0, 180) || null,
-        sourceNodeIds: evidence.sourceNodeIds,
-        sourceSpanIds: evidence.sourceSpanIds,
-      };
-    })
-    .filter((term) => term.name && (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0));
-  const cleanNamed = (terms: AdditionalInsuredEligibility["additionalInsureds"]) => terms
-    .map((term) => {
-      const evidence = normalizeEvidence(term.sourceNodeIds, term.sourceSpanIds);
-      return {
-        name: term.name.trim().slice(0, 180),
-        status: term.status,
-        scope: term.scope.trim().slice(0, 700),
-        endorsementTitle: term.endorsementTitle?.trim().slice(0, 180) || null,
-        sourceNodeIds: evidence.sourceNodeIds,
-        sourceSpanIds: evidence.sourceSpanIds,
-      };
-    })
-    .filter((term) => term.name && (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0));
-  const isEndorsementOnlyAdditionalInsured = (term: ReturnType<typeof cleanTerms>[number]) => {
+  const cleanTerms = (
+    terms: AdditionalInsuredEligibility["withoutEndorsement"],
+  ) =>
+    terms
+      .map((term) => {
+        const evidence = normalizeEvidence(
+          term.sourceNodeIds,
+          term.sourceSpanIds,
+        );
+        return {
+          category: term.category.trim().slice(0, 120),
+          condition: term.condition.trim().slice(0, 500),
+          summary: term.summary.trim().slice(0, 800),
+          sourceNodeIds: evidence.sourceNodeIds,
+          sourceSpanIds: evidence.sourceSpanIds,
+        };
+      })
+      .filter(
+        (term) =>
+          term.category &&
+          term.summary &&
+          (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0),
+      );
+  const cleanScheduled = (
+    terms: AdditionalInsuredEligibility["scheduledAdditionalInsureds"],
+  ) =>
+    terms
+      .map((term) => {
+        const evidence = normalizeEvidence(
+          term.sourceNodeIds,
+          term.sourceSpanIds,
+        );
+        return {
+          name: term.name.trim().slice(0, 180),
+          scope: term.scope.trim().slice(0, 700),
+          endorsementTitle: term.endorsementTitle?.trim().slice(0, 180) || null,
+          sourceNodeIds: evidence.sourceNodeIds,
+          sourceSpanIds: evidence.sourceSpanIds,
+        };
+      })
+      .filter(
+        (term) =>
+          term.name &&
+          (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0),
+      );
+  const cleanNamed = (
+    terms: AdditionalInsuredEligibility["additionalInsureds"],
+  ) =>
+    terms
+      .map((term) => {
+        const evidence = normalizeEvidence(
+          term.sourceNodeIds,
+          term.sourceSpanIds,
+        );
+        return {
+          name: term.name.trim().slice(0, 180),
+          status: term.status,
+          scope: term.scope.trim().slice(0, 700),
+          endorsementTitle: term.endorsementTitle?.trim().slice(0, 180) || null,
+          sourceNodeIds: evidence.sourceNodeIds,
+          sourceSpanIds: evidence.sourceSpanIds,
+        };
+      })
+      .filter(
+        (term) =>
+          term.name &&
+          (term.sourceNodeIds.length > 0 || term.sourceSpanIds.length > 0),
+      );
+  const isEndorsementOnlyAdditionalInsured = (
+    term: ReturnType<typeof cleanTerms>[number],
+  ) => {
     const text = [term.category, term.condition, term.summary].join(" ");
-    return /\bscheduled additional insured\b/i.test(text)
-      && /\b(endorsement|endorsed|scheduled|named|added)\b/i.test(text);
+    return (
+      /\bscheduled additional insured\b/i.test(text) &&
+      /\b(endorsement|endorsed|scheduled|named|added)\b/i.test(text)
+    );
   };
   const automaticTerms = cleanTerms(value.withoutEndorsement);
-  const movedEndorsementTerms = automaticTerms.filter(isEndorsementOnlyAdditionalInsured);
-  const withoutEndorsement = automaticTerms.filter((term) => !isEndorsementOnlyAdditionalInsured(term));
+  const movedEndorsementTerms = automaticTerms.filter(
+    isEndorsementOnlyAdditionalInsured,
+  );
+  const withoutEndorsement = automaticTerms.filter(
+    (term) => !isEndorsementOnlyAdditionalInsured(term),
+  );
   const requiresEndorsement = [
     ...cleanTerms(value.requiresEndorsement),
     ...movedEndorsementTerms.map((term) => ({
       ...term,
       category: term.category || "Scheduled Additional Insureds",
-      summary: term.summary || "Scheduled Additional Insured status requires endorsement-backed scheduling/naming in the policy evidence.",
+      summary:
+        term.summary ||
+        "Scheduled Additional Insured status requires endorsement-backed scheduling/naming in the policy evidence.",
     })),
   ];
   const scheduledRequirement = sourceBackedScheduledRequirement();
   if (
-    scheduledRequirement
-    && !requiresEndorsement.some((term) => /\bscheduled additional insured/i.test(term.category))
+    scheduledRequirement &&
+    !requiresEndorsement.some((term) =>
+      /\bscheduled additional insured/i.test(term.category),
+    )
   ) {
     requiresEndorsement.push(scheduledRequirement);
   }
@@ -1116,7 +1269,9 @@ function validateAdditionalInsuredEligibility(
     withoutEndorsement,
     requiresEndorsement,
     reviewRequired: cleanTerms(value.reviewRequired ?? []),
-    scheduledAdditionalInsureds: cleanScheduled(value.scheduledAdditionalInsureds ?? []),
+    scheduledAdditionalInsureds: cleanScheduled(
+      value.scheduledAdditionalInsureds ?? [],
+    ),
     additionalInsureds: cleanNamed(value.additionalInsureds ?? []),
     overallSummary: value.overallSummary.trim().slice(0, 1200),
   };
@@ -1175,11 +1330,11 @@ ${excerpt.text}`,
       params.sourceTree,
     );
     if (
-      eligibility.withoutEndorsement.length === 0
-      && eligibility.requiresEndorsement.length === 0
-      && eligibility.reviewRequired.length === 0
-      && eligibility.scheduledAdditionalInsureds.length === 0
-      && eligibility.additionalInsureds.length === 0
+      eligibility.withoutEndorsement.length === 0 &&
+      eligibility.requiresEndorsement.length === 0 &&
+      eligibility.reviewRequired.length === 0 &&
+      eligibility.scheduledAdditionalInsureds.length === 0 &&
+      eligibility.additionalInsureds.length === 0
     ) {
       return params.profile;
     }
@@ -1202,14 +1357,21 @@ ${excerpt.text}`,
 }
 
 function buildDocumentGateExcerpt(
-  sourceSpans: Array<{ pageStart?: number; text: string; metadata?: Record<string, unknown> }>,
+  sourceSpans: Array<{
+    pageStart?: number;
+    text: string;
+    metadata?: Record<string, unknown>;
+  }>,
 ): string {
-  const pageSpans = sourceSpans.filter((span) => span.metadata?.sourceUnit !== "section_candidate");
+  const pageSpans = sourceSpans.filter(
+    (span) => span.metadata?.sourceUnit !== "section_candidate",
+  );
   const uniquePages = new Set<number>();
   const excerpts: string[] = [];
 
   for (const span of pageSpans) {
-    const page = typeof span.pageStart === "number" ? span.pageStart : excerpts.length + 1;
+    const page =
+      typeof span.pageStart === "number" ? span.pageStart : excerpts.length + 1;
     if (uniquePages.has(page)) continue;
     uniquePages.add(page);
     const text = span.text.replace(/\s+/g, " ").trim();
@@ -1218,7 +1380,10 @@ function buildDocumentGateExcerpt(
     if (excerpts.join("\n\n").length >= 7000 || uniquePages.size >= 8) break;
   }
 
-  return excerpts.join("\n\n") || "No machine-readable text was extracted from the PDF.";
+  return (
+    excerpts.join("\n\n") ||
+    "No machine-readable text was extracted from the PDF."
+  );
 }
 
 async function classifyInsuranceExtractability(params: {
@@ -1227,14 +1392,19 @@ async function classifyInsuranceExtractability(params: {
   traceId?: string;
   policyId?: string;
   pdfBytes: Uint8Array;
-  sourceSpans: Array<{ pageStart?: number; text: string; metadata?: Record<string, unknown> }>;
+  sourceSpans: Array<{
+    pageStart?: number;
+    text: string;
+    metadata?: Record<string, unknown>;
+  }>;
 }): Promise<ExtractionGateDecision> {
   if (isSpecimenPolicyDocument(params.sourceSpans)) {
     return {
       shouldExtract: true,
       classification: "specimen_policy_document",
       confidence: 1,
-      reason: "The PDF is explicitly labeled as a specimen policy and is allowed as a testing fixture.",
+      reason:
+        "The PDF is explicitly labeled as a specimen policy and is allowed as a testing fixture.",
       detectedTitle: "Specimen policy",
     };
   }
@@ -1278,10 +1448,16 @@ function shouldRejectDocument(decision: ExtractionGateDecision): boolean {
   ) {
     return false;
   }
-  if (decision.classification === "non_insurance" && decision.confidence >= 0.5) {
+  if (
+    decision.classification === "non_insurance" &&
+    decision.confidence >= 0.5
+  ) {
     return true;
   }
-  if (decision.classification === "insurance_related_but_not_bound_policy" && decision.confidence >= 0.65) {
+  if (
+    decision.classification === "insurance_related_but_not_bound_policy" &&
+    decision.confidence >= 0.65
+  ) {
     return true;
   }
   return !decision.shouldExtract && decision.confidence >= 0.7;
@@ -1297,11 +1473,12 @@ async function notifyExtractionReviewRequired(
     questionCount: number;
   },
 ) {
-  const label = args.policyNumber && args.policyNumber !== "Unknown"
-    ? `policy ${args.policyNumber}`
-    : args.carrier
-      ? `${args.carrier} policy`
-      : "a policy";
+  const label =
+    args.policyNumber && args.policyNumber !== "Unknown"
+      ? `policy ${args.policyNumber}`
+      : args.carrier
+        ? `${args.carrier} policy`
+        : "a policy";
   await ctx.runMutation((internal as any).lib.notify.notifyInternal, {
     orgId: args.orgId,
     type: "incomplete_extraction",
@@ -1321,16 +1498,16 @@ async function advanceLeasedPhase(
 ): Promise<void> {
   const leaseId = randomUUID();
   const leaseExpiresAt = Date.now() + ADVANCE_LEASE_MS;
-  const checkpoint = await ctx.runMutation(
+  const checkpoint = (await ctx.runMutation(
     internal.policies.pipelineAcquireLease,
     { jobId, leaseId, leaseExpiresAt },
-  ) as LeasedPolicyCheckpoint | null;
+  )) as LeasedPolicyCheckpoint | null;
 
   if (!checkpoint) {
-    const reconciled = await ctx.runMutation(
+    const reconciled = (await ctx.runMutation(
       (internal as any).policies.pipelineReconcileTerminalState,
       { jobId },
-    ) as { terminal?: boolean } | null;
+    )) as { terminal?: boolean } | null;
     if (reconciled?.terminal) {
       await ctx.runMutation(
         (internal as any).extractionTraces.reconcileTerminalPolicy,
@@ -1406,11 +1583,14 @@ async function advanceLeasedPhase(
     heartbeatPromise = (async () => {
       try {
         const nextExpiresAt = Date.now() + ADVANCE_LEASE_MS;
-        const ok = await ctx.runMutation(internal.policies.pipelineExtendLease, {
-          jobId,
-          leaseId,
-          leaseExpiresAt: nextExpiresAt,
-        });
+        const ok = await ctx.runMutation(
+          internal.policies.pipelineExtendLease,
+          {
+            jobId,
+            leaseId,
+            leaseExpiresAt: nextExpiresAt,
+          },
+        );
         if (ok) {
           await scheduleWatchdog(nextExpiresAt);
         }
@@ -1516,7 +1696,9 @@ function makeMutations() {
 
 // ─── Phase factory ─────────────────────────────────────────────────────────────
 
-export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[] {
+export function makePhases(
+  convexCtx: ActionCtx,
+): Phase<PolicyExtractionState>[] {
   // ── Phase 1: load_pdf ─────────────────────────────────────────────────────────
   const loadPdfPhase: Phase<PolicyExtractionState> = {
     name: "load_pdf",
@@ -1531,7 +1713,8 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
       await pCtx.log("Loading PDF from storage…");
       const pdfBytes = await loadPdfBytes(convexCtx, state.fileId);
-      if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
+      if (!pdfBytes)
+        return { kind: "error", error: "File not found in storage" };
       await pCtx.log(`PDF ready for extraction (${pdfBytes.byteLength} bytes)`);
       return { kind: "next", nextPhase: "extract", state };
     },
@@ -1547,13 +1730,17 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       if (!state.fileId) {
-        return { kind: "error", error: "extract: missing fileId — load_pdf phase must run first" };
+        return {
+          kind: "error",
+          error: "extract: missing fileId — load_pdf phase must run first",
+        };
       }
 
       await pCtx.log("Starting policy extraction…");
 
       const pdfBytes = await loadPdfBytes(convexCtx, state.fileId);
-      if (!pdfBytes) return { kind: "error", error: "File not found in storage" };
+      if (!pdfBytes)
+        return { kind: "error", error: "File not found in storage" };
 
       const policyId = pCtx.jobId;
       const pdfSource = await preparePdfTextWithParserFallback({
@@ -1562,7 +1749,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         sourceKind: "policy_pdf",
       });
       if (pdfSource.sourceSpans.length > 0) {
-        await pCtx.log(`Prepared ${pdfSource.sourceSpans.length} ${pdfSource.parserBackend} source spans for source-grounded extraction`);
+        await pCtx.log(
+          `Prepared ${pdfSource.sourceSpans.length} ${pdfSource.parserBackend} source spans for source-grounded extraction`,
+        );
       }
 
       await pCtx.log("Checking whether the PDF is a bound policy document…");
@@ -1580,7 +1769,11 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         );
 
         if (shouldRejectDocument(gateDecision)) {
-          const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
+          const rejectionSummary =
+            `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(
+              0,
+              1000,
+            );
           if (shouldArchiveRejectedPolicy(state.policyVersionKind)) {
             await convexCtx.runMutation(
               (internal as any).policies.updateExtractionInternal,
@@ -1600,18 +1793,21 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             );
 
             if (state.fileId) {
-              await convexCtx.runMutation((internal as any).policies.updateFiles, {
-                id: policyId,
-                files: [
-                  {
-                    fileId: state.fileId as Id<"_storage">,
-                    fileName: state.fileName || "upload.pdf",
-                    fileType: "unknown",
-                    status: "not_insurance",
-                  },
-                ],
-                reconciliationStatus: "error" as const,
-              });
+              await convexCtx.runMutation(
+                (internal as any).policies.updateFiles,
+                {
+                  id: policyId,
+                  files: [
+                    {
+                      fileId: state.fileId as Id<"_storage">,
+                      fileName: state.fileName || "upload.pdf",
+                      fileType: "unknown",
+                      status: "not_insurance",
+                    },
+                  ],
+                  reconciliationStatus: "error" as const,
+                },
+              );
             }
 
             await convexCtx.runMutation(
@@ -1637,8 +1833,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         orgId: state.orgId as Id<"organizations">,
         traceId: state.traceId,
         tracePolicyId: policyId,
-        log: async (msg) => { await pCtx.log(msg); },
-        onProgress: async (msg) => { await pCtx.log(msg); },
+        log: async (msg) => {
+          await pCtx.log(msg);
+        },
+        onProgress: async (msg) => {
+          await pCtx.log(msg);
+        },
         shouldCancel: async () => isExtractionCancelled(convexCtx, policyId),
         pageScreenshots: pdfSource.pageScreenshots,
       });
@@ -1654,11 +1854,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       let result: ExtractionResult;
       try {
-        result = await extractor.extract(
-          pdfBytes,
-          policyId,
-          extractOptions,
-        );
+        result = await extractor.extract(pdfBytes, policyId, extractOptions);
       } catch (error) {
         if (isCancelledError(error)) {
           await pCtx.log("Extraction cancelled by user", "warn");
@@ -1672,21 +1868,25 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       const resultSourceSpans = Array.isArray((result as any).sourceSpans)
-        ? (result as any).sourceSpans as Array<Record<string, any>>
+        ? ((result as any).sourceSpans as Array<Record<string, any>>)
         : [];
       const resultSourceChunks = Array.isArray((result as any).sourceChunks)
-        ? (result as any).sourceChunks as Array<Record<string, any>>
+        ? ((result as any).sourceChunks as Array<Record<string, any>>)
         : [];
       const resultSourceTree = Array.isArray((result as any).sourceTree)
-        ? (result as any).sourceTree as Array<Record<string, any>>
+        ? ((result as any).sourceTree as Array<Record<string, any>>)
         : [];
-      const sourceSpans = resultSourceSpans.length > 0
-        ? resultSourceSpans
-        : pdfSource.sourceSpans as Array<Record<string, any>>;
-      const canonicalSpans = canonicalSourceSpans(sourceSpans as SourceSpanLike[]);
-      const sourceChunks = resultSourceChunks.length > 0
-        ? resultSourceChunks
-        : pdfSource.sourceChunks as Array<Record<string, any>>;
+      const sourceSpans =
+        resultSourceSpans.length > 0
+          ? resultSourceSpans
+          : (pdfSource.sourceSpans as Array<Record<string, any>>);
+      const canonicalSpans = canonicalSourceSpans(
+        sourceSpans as SourceSpanLike[],
+      );
+      const sourceChunks =
+        resultSourceChunks.length > 0
+          ? resultSourceChunks
+          : (pdfSource.sourceChunks as Array<Record<string, any>>);
       const chunks = result.chunks;
       const tokenUsage = result.tokenUsage;
       const coverageRecovery = result.coverageRecovery;
@@ -1695,7 +1895,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         `Extraction complete. Type: ${(result.document as Record<string, unknown>).type}. ${chunks.length} chunks, ${sourceSpans.length} source spans. Tokens: ${tokenUsage.inputTokens}in/${tokenUsage.outputTokens}out`,
       );
       if (result.performanceReport) {
-        const totalSeconds = Math.round(result.performanceReport.totalModelCallDurationMs / 1000);
+        const totalSeconds = Math.round(
+          result.performanceReport.totalModelCallDurationMs / 1000,
+        );
         await pCtx.log(
           `Extraction model calls: ${result.performanceReport.modelCalls.length}; total model time: ${totalSeconds}s`,
         );
@@ -1710,12 +1912,21 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         sourceSpans: canonicalSpans as Array<Record<string, any>>,
         traceId: state.traceId,
         policyId,
-        skipDeterministicCoverageRecovery: coverageRecoverySucceeded(state, coverageRecovery),
-        log: async (message, level) => { await pCtx.log(message, level); },
+        skipDeterministicCoverageRecovery: coverageRecoverySucceeded(
+          state,
+          coverageRecovery,
+        ),
+        log: async (message, level) => {
+          await pCtx.log(message, level);
+        },
       });
       result.document = processed.document as typeof result.document;
       const doc = processed.document;
-      const sourceNodes = normalizeSourceTree(resultSourceTree, canonicalSpans, policyId);
+      const sourceNodes = normalizeSourceTree(
+        resultSourceTree,
+        canonicalSpans,
+        policyId,
+      );
       const normalizedOperationalProfile = normalizeOperationalProfile(
         (result as any).operationalProfile,
         sourceNodes,
@@ -1728,14 +1939,19 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         policyId,
         sourceTree: sourceNodes,
         profile: normalizedOperationalProfile,
-        log: async (message, level) => { await pCtx.log(message, level); },
+        log: async (message, level) => {
+          await pCtx.log(message, level);
+        },
       });
       const fields = processed.fields;
       const docName = doc.policyNumber || "policy";
       const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
-      const existingPolicy = await convexCtx.runQuery(internal.policies.getInternal, {
-        id: policyId as Id<"policies">,
-      }) as {
+      const existingPolicy = (await convexCtx.runQuery(
+        internal.policies.getInternal,
+        {
+          id: policyId as Id<"policies">,
+        },
+      )) as {
         linesOfBusiness?: string[];
         carrierIdentity?: unknown;
       } | null;
@@ -1773,16 +1989,29 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
 
       await convexCtx.runMutation((internal as any).policies.updateFiles, {
         id: policyId,
-        files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+        files: [
+          {
+            fileId: state.fileId as Id<"_storage">,
+            fileName: resolvedFileName,
+            fileType: "unknown",
+            status: "complete",
+          },
+        ],
         primaryFileId: state.fileId as Id<"_storage">,
       });
 
-      const embeddingPayloadFileId = await storeEmbeddingPayload(convexCtx, policyId, {
-        documentChunksForEmbedding: chunks,
-        sourceSpansForStorage: canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
-        sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
-        sourceNodesForStorage: sourceNodes,
-      });
+      const embeddingPayloadFileId = await storeEmbeddingPayload(
+        convexCtx,
+        policyId,
+        {
+          documentChunksForEmbedding: chunks,
+          sourceSpansForStorage:
+            canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
+          sourceChunksForEmbedding:
+            sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+          sourceNodesForStorage: sourceNodes,
+        },
+      );
       const chunkIds = chunks.map((c: { id: string }) => c.id);
       const nextState: PolicyExtractionState = {
         ...promotionState,
@@ -1808,19 +2037,29 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         return { kind: "error", error: CANCELLED_BY_USER };
       }
 
-      const embeddingPayload = await loadEmbeddingPayload(convexCtx, policyId, state);
+      const embeddingPayload = await loadEmbeddingPayload(
+        convexCtx,
+        policyId,
+        state,
+      );
       const chunks = embeddingPayload.documentChunksForEmbedding;
       const sourceSpans = embeddingPayload.sourceSpansForStorage;
       const sourceChunks = embeddingPayload.sourceChunksForEmbedding;
       const sourceNodes = embeddingPayload.sourceNodesForStorage;
-      const embedTexts = makeEmbedTexts(convexCtx, state.orgId as Id<"organizations">, {
-        maxParallelCalls: EMBEDDING_CONCURRENCY,
-      });
+      const embedTexts = makeEmbedTexts(
+        convexCtx,
+        state.orgId as Id<"organizations">,
+        {
+          maxParallelCalls: EMBEDDING_CONCURRENCY,
+        },
+      );
       const isCancelled = () => isExtractionCancelled(convexCtx, policyId);
       const logEmbedWarning = (message: string) => pCtx.log(message, "warn");
 
       if (!chunks || chunks.length === 0) {
-        await pCtx.log("No chunks to embed (phase resumed or no chunks extracted)");
+        await pCtx.log(
+          "No chunks to embed (phase resumed or no chunks extracted)",
+        );
       } else {
         await pCtx.log(`Embedding ${chunks.length} chunks for vector search…`);
         await deletePolicyRowsInBatches(
@@ -1871,7 +2110,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       }
 
       if (sourceSpans?.length || sourceChunks?.length || sourceNodes?.length) {
-        await pCtx.log(`Storing ${sourceSpans?.length ?? 0} source spans, ${sourceNodes?.length ?? 0} source nodes, and ${sourceChunks?.length ?? 0} compatibility source chunks in batches of ${SOURCE_STORAGE_BATCH_SIZE}...`);
+        await pCtx.log(
+          `Storing ${sourceSpans?.length ?? 0} source spans, ${sourceNodes?.length ?? 0} source nodes, and ${sourceChunks?.length ?? 0} compatibility source chunks in batches of ${SOURCE_STORAGE_BATCH_SIZE}...`,
+        );
         await deletePolicyRowsInBatches(
           convexCtx,
           (internal as any).sourceSpans.deleteByPolicy,
@@ -1886,30 +2127,30 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
         const spanRows = (sourceSpans ?? []).map((span) => {
           const table = span.table;
           return {
-              orgId: state.orgId,
-              policyId,
-              spanId: span.id,
-              documentId: span.documentId ?? policyId,
-              sourceKind: sourceKindForStorage(span.sourceKind),
-              pageStart: span.pageStart,
-              pageEnd: span.pageEnd,
-              sectionId: span.sectionId,
-              formNumber: span.formNumber,
-              sourceUnit: span.sourceUnit ?? span.metadata?.sourceUnit,
-              parentSpanId:
-                span.parentSpanId ??
-                table?.rowSpanId ??
-                table?.tableSpanId ??
-                span.metadata?.parentSpanId ??
-                span.metadata?.rowSpanId ??
-                span.metadata?.tableSpanId,
-              table,
-              location: span.location,
-              text: span.text,
-              textHash: span.textHash ?? span.id,
-              bbox: span.bbox,
-              metadata: span.metadata,
-              createdAt: nowMs(),
+            orgId: state.orgId,
+            policyId,
+            spanId: span.id,
+            documentId: span.documentId ?? policyId,
+            sourceKind: sourceKindForStorage(span.sourceKind),
+            pageStart: span.pageStart,
+            pageEnd: span.pageEnd,
+            sectionId: span.sectionId,
+            formNumber: span.formNumber,
+            sourceUnit: span.sourceUnit ?? span.metadata?.sourceUnit,
+            parentSpanId:
+              span.parentSpanId ??
+              table?.rowSpanId ??
+              table?.tableSpanId ??
+              span.metadata?.parentSpanId ??
+              span.metadata?.rowSpanId ??
+              span.metadata?.tableSpanId,
+            table,
+            location: span.location,
+            text: span.text,
+            textHash: span.textHash ?? span.id,
+            bbox: span.bbox,
+            metadata: span.metadata,
+            createdAt: nowMs(),
           };
         });
         for (const batch of chunkItems(spanRows, SOURCE_STORAGE_BATCH_SIZE)) {
@@ -1919,7 +2160,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             { spans: batch },
           );
         }
-        if (spanRows.length) await pCtx.log(`Stored ${spanRows.length}/${spanRows.length} source spans`);
+        if (spanRows.length)
+          await pCtx.log(
+            `Stored ${spanRows.length}/${spanRows.length} source spans`,
+          );
 
         if (sourceNodes?.length) {
           const nodeRows = sourceNodes.map((node) => ({
@@ -1950,7 +2194,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             );
             storedSourceNodes += batch.length;
           }
-          await pCtx.log(`Stored ${storedSourceNodes}/${sourceNodes.length} source nodes`);
+          await pCtx.log(
+            `Stored ${storedSourceNodes}/${sourceNodes.length} source nodes`,
+          );
         }
 
         if (sourceChunks?.length) {
@@ -1965,7 +2211,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             createdAt: nowMs(),
           }));
           let storedSourceChunks = 0;
-          for (const batch of chunkItems(chunkRows, SOURCE_STORAGE_BATCH_SIZE)) {
+          for (const batch of chunkItems(
+            chunkRows,
+            SOURCE_STORAGE_BATCH_SIZE,
+          )) {
             if (await isCancelled()) throw new Error(CANCELLED_BY_USER);
             await convexCtx.runMutation(
               (internal as any).sourceSpans.insertChunksBatch,
@@ -1973,7 +2222,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             );
             storedSourceChunks += batch.length;
           }
-          await pCtx.log(`Stored ${storedSourceChunks}/${sourceChunks.length} source chunks`);
+          await pCtx.log(
+            `Stored ${storedSourceChunks}/${sourceChunks.length} source chunks`,
+          );
         }
       }
 
@@ -2007,14 +2258,21 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
       // been materialized and before downstream certificate workflows inspect it.
       let policyVersionId: Id<"policyVersions"> | undefined;
       try {
-        if (state.policyVersionKind === "re_extraction" || state.policyVersionKind === "renewal") {
+        if (
+          state.policyVersionKind === "re_extraction" ||
+          state.policyVersionKind === "renewal"
+        ) {
           policyVersionId = await convexCtx.runMutation(
             (internal as any).policyVersions.createInternal,
             {
               policyId,
               versionKind: state.policyVersionKind,
-              sourcePolicyFileIds: state.policyFileId ? [state.policyFileId as Id<"policyFiles">] : undefined,
-              sourceFileIds: state.fileId ? [state.fileId as Id<"_storage">] : undefined,
+              sourcePolicyFileIds: state.policyFileId
+                ? [state.policyFileId as Id<"policyFiles">]
+                : undefined,
+              sourceFileIds: state.fileId
+                ? [state.fileId as Id<"_storage">]
+                : undefined,
               createdByUserId: state.userId as Id<"users">,
             },
           );
@@ -2028,13 +2286,17 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           );
         }
       } catch (error) {
-        console.warn("[policyExtraction] policy version creation failed", error);
+        console.warn(
+          "[policyExtraction] policy version creation failed",
+          error,
+        );
       }
 
       if (state.policyVersionKind === "renewal" && policyVersionId) {
         try {
           await convexCtx.runMutation(
-            (internal as any).certificateWorkflowJobs.createRenewalJobsForPolicyInternal,
+            (internal as any).certificateWorkflowJobs
+              .createRenewalJobsForPolicyInternal,
             {
               orgId: state.orgId as Id<"organizations">,
               policyId,
@@ -2043,29 +2305,31 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             },
           );
         } catch (error) {
-          console.warn("[policyExtraction] renewal certificate job creation failed", error);
+          console.warn(
+            "[policyExtraction] renewal certificate job creation failed",
+            error,
+          );
         }
       }
 
       // Audit log
       try {
-        await convexCtx.runMutation(
-          (internal as any).policyAuditLog.append,
-          {
-            policyId,
-            userId: state.userId,
-            orgId: state.orgId,
-            action: "extraction_complete",
-          },
-        );
-      } catch { /* non-critical */ }
+        await convexCtx.runMutation((internal as any).policyAuditLog.append, {
+          policyId,
+          userId: state.userId,
+          orgId: state.orgId,
+          action: "extraction_complete",
+        });
+      } catch {
+        /* non-critical */
+      }
 
       // Final policy enrichment and downstream work
       try {
-        const finalPolicy = await convexCtx.runQuery(
+        const finalPolicy = (await convexCtx.runQuery(
           internal.policies.getInternal,
           { id: policyId as any },
-        ) as {
+        )) as {
           uploadedByBrokerOrgId?: string;
           orgId?: string;
           uploadedBySide?: string;
@@ -2074,25 +2338,12 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
           carrier?: string;
         } | null;
         let carrierDisplayName = finalPolicy?.carrier;
-        if (finalPolicy?.uploadedByBrokerOrgId && finalPolicy.orgId) {
-          await convexCtx.runMutation(
-            (internal as any).brokerActivity.record,
-            {
-              brokerOrgId: finalPolicy.uploadedByBrokerOrgId,
-              clientOrgId: finalPolicy.orgId,
-              type: "policy_extraction_completed" as const,
-              actorSide: "system" as const,
-              payload: { policyId, documentType: "policy", uploadedBySide: finalPolicy.uploadedBySide ?? "client" },
-              summary: "Policy extraction completed",
-            },
-          );
-        }
         if (finalPolicy?.orgId) {
           try {
-            const carrierIdentity = await convexCtx.runAction(
+            const carrierIdentity = (await convexCtx.runAction(
               internal.actions.enrichCarrierIdentity.ensureInternal,
               { policyId: policyId as Id<"policies"> },
-            ) as { success: boolean };
+            )) as { success: boolean };
             await pCtx.log(
               carrierIdentity.success
                 ? "Stored carrier branding"
@@ -2108,10 +2359,7 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
                 enrichedPolicy?.carrier ?? carrierDisplayName;
             }
           } catch (error) {
-            console.warn(
-              "[policyExtraction] carrier branding failed",
-              error,
-            );
+            console.warn("[policyExtraction] carrier branding failed", error);
             await pCtx.log("Carrier branding could not be stored", "warn");
           }
           await convexCtx.runMutation(
@@ -2122,7 +2370,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
             (internal as any).certificateHolders.populateForPolicyInternal,
             { policyId },
           );
-          const reviewQuestions = openExtractionReviewQuestions(finalPolicy.extractionReview);
+          const reviewQuestions = openExtractionReviewQuestions(
+            finalPolicy.extractionReview,
+          );
           if (reviewQuestions.length > 0) {
             await notifyExtractionReviewRequired(convexCtx, {
               orgId: finalPolicy.orgId as Id<"organizations">,
@@ -2135,12 +2385,10 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               `Created extraction review notification for ${reviewQuestions.length} coverage ${reviewQuestions.length === 1 ? "term" : "terms"}`,
             );
           }
-          await convexCtx.runMutation(
-            (internal as any).policyDelivery.enqueueInternal,
-            { policyId, sourceKind: "policy" },
-          );
         }
-      } catch { /* non-critical */ }
+      } catch {
+        /* non-critical */
+      }
 
       await pCtx.log("Post-processing complete");
       return { kind: "done" };
@@ -2185,7 +2433,9 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
     },
   });
 
-  return [loadPdfPhase, extractPhase, embedAndStorePhase, postProcessPhase].map(withTrace);
+  return [loadPdfPhase, extractPhase, embedAndStorePhase, postProcessPhase].map(
+    withTrace,
+  );
 }
 
 // ─── advance internal action ───────────────────────────────────────────────────
@@ -2204,10 +2454,13 @@ export const sweepStale = internalAction({
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const result = await ctx.runMutation((internal as any).policies.pipelineRequeueStale, {
-      olderThanMs: args.olderThanMs,
-      batchSize: args.batchSize,
-    }) as {
+    const result = (await ctx.runMutation(
+      (internal as any).policies.pipelineRequeueStale,
+      {
+        olderThanMs: args.olderThanMs,
+        batchSize: args.batchSize,
+      },
+    )) as {
       requeued: string[];
       markedError: string[];
       scanned: number;
@@ -2217,10 +2470,15 @@ export const sweepStale = internalAction({
         `Stale extraction sweep scanned ${result.scanned}; requeued ${result.requeued.length}; marked error ${result.markedError.length}`,
       );
     }
-    const traces = await ctx.runMutation(
+    const traces = (await ctx.runMutation(
       (internal as any).extractionTraces.reconcileTerminalRunningSessions,
       { batchSize: args.batchSize },
-    ) as { scanned: number; closed: string[]; closedPolicyIds: string[]; skipped: string[] };
+    )) as {
+      scanned: number;
+      closed: string[];
+      closedPolicyIds: string[];
+      skipped: string[];
+    };
     for (const policyId of traces.closedPolicyIds) {
       await ctx.runMutation(
         (internal as any).policies.pipelineReconcileTerminalState,
@@ -2253,17 +2511,15 @@ export const claimExternalJob = action({
     }
     const leaseId = `${args.workerId ?? "worker"}:${randomUUID()}`;
     const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
-    const claimed = await ctx.runMutation(
+    const claimed = (await ctx.runMutation(
       (internal as any).policies.pipelineClaimExternalWorkerJob,
       { leaseId, leaseExpiresAt },
-    ) as
-      | {
-          policyId: string;
-          checkpoint: {
-            state: PolicyExtractionState;
-          };
-        }
-      | null;
+    )) as {
+      policyId: string;
+      checkpoint: {
+        state: PolicyExtractionState;
+      };
+    } | null;
 
     if (!claimed) return null;
     const fileId = claimed.checkpoint.state.fileId;
@@ -2275,7 +2531,12 @@ export const claimExternalJob = action({
         error: "External worker claimed job without fileId",
         checkpoint: null,
       });
-      await completeTraceSession(ctx, claimed.checkpoint.state.traceId, "error", "External worker claimed job without fileId");
+      await completeTraceSession(
+        ctx,
+        claimed.checkpoint.state.traceId,
+        "error",
+        "External worker claimed job without fileId",
+      );
       return null;
     }
 
@@ -2288,7 +2549,12 @@ export const claimExternalJob = action({
         error: "External worker could not resolve source file URL",
         checkpoint: null,
       });
-      await completeTraceSession(ctx, claimed.checkpoint.state.traceId, "error", "External worker could not resolve source file URL");
+      await completeTraceSession(
+        ctx,
+        claimed.checkpoint.state.traceId,
+        "error",
+        "External worker could not resolve source file URL",
+      );
       return null;
     }
     await traceEvent(ctx, claimed.checkpoint.state.traceId, {
@@ -2308,9 +2574,12 @@ export const claimExternalJob = action({
         }
       | undefined;
     try {
-      modelSettings = await ctx.runQuery((internal as any).modelSettings.resolveForOrg, {
-        orgId: claimed.checkpoint.state.orgId as Id<"organizations">,
-      }) as typeof modelSettings;
+      modelSettings = (await ctx.runQuery(
+        (internal as any).modelSettings.resolveForOrg,
+        {
+          orgId: claimed.checkpoint.state.orgId as Id<"organizations">,
+        },
+      )) as typeof modelSettings;
     } catch (error) {
       console.warn(
         `External worker model settings unavailable for ${claimed.policyId}: ${
@@ -2347,34 +2616,38 @@ export const claimExternalPreviewJob = action({
     }
     const leaseId = `${args.workerId ?? "worker"}:preview:${randomUUID()}`;
     const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
-    const claimed = await ctx.runMutation(
+    const claimed = (await ctx.runMutation(
       (internal as any).policies.pipelineClaimExternalPreviewWorkerJob,
       { leaseId, leaseExpiresAt },
-    ) as
-      | {
-          policyId: string;
-          checkpoint: {
-            state: PolicyExtractionState;
-          };
-        }
-      | null;
+    )) as {
+      policyId: string;
+      checkpoint: {
+        state: PolicyExtractionState;
+      };
+    } | null;
 
     if (!claimed) return null;
     const fileId = claimed.checkpoint.state.fileId;
     if (!fileId) {
-      await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
-        jobId: claimed.policyId,
-        leaseId,
-      });
+      await ctx.runMutation(
+        (internal as any).policies.pipelineCompletePreviewLease,
+        {
+          jobId: claimed.policyId,
+          leaseId,
+        },
+      );
       return null;
     }
 
     const fileUrl = await ctx.storage.getUrl(fileId as Id<"_storage">);
     if (!fileUrl) {
-      await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
-        jobId: claimed.policyId,
-        leaseId,
-      });
+      await ctx.runMutation(
+        (internal as any).policies.pipelineCompletePreviewLease,
+        {
+          jobId: claimed.policyId,
+          leaseId,
+        },
+      );
       return null;
     }
     await traceEvent(ctx, claimed.checkpoint.state.traceId, {
@@ -2394,9 +2667,12 @@ export const claimExternalPreviewJob = action({
         }
       | undefined;
     try {
-      modelSettings = await ctx.runQuery((internal as any).modelSettings.resolveForOrg, {
-        orgId: claimed.checkpoint.state.orgId as Id<"organizations">,
-      }) as typeof modelSettings;
+      modelSettings = (await ctx.runQuery(
+        (internal as any).modelSettings.resolveForOrg,
+        {
+          orgId: claimed.checkpoint.state.orgId as Id<"organizations">,
+        },
+      )) as typeof modelSettings;
     } catch (error) {
       console.warn(
         `External worker preview model settings unavailable for ${claimed.policyId}: ${
@@ -2425,11 +2701,14 @@ export const heartbeatExternalJob = action({
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
     const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
-    const ok = await ctx.runMutation((internal as any).policies.pipelineExtendLease, {
-      jobId: args.policyId,
-      leaseId: args.leaseId,
-      leaseExpiresAt,
-    }) as boolean;
+    const ok = (await ctx.runMutation(
+      (internal as any).policies.pipelineExtendLease,
+      {
+        jobId: args.policyId,
+        leaseId: args.leaseId,
+        leaseExpiresAt,
+      },
+    )) as boolean;
     return { ok, leaseExpiresAt };
   },
 });
@@ -2443,11 +2722,14 @@ export const heartbeatExternalPreviewJob = action({
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
     const leaseExpiresAt = nowMs() + EXTERNAL_WORKER_LEASE_MS;
-    const ok = await ctx.runMutation((internal as any).policies.pipelineExtendPreviewLease, {
-      jobId: args.policyId,
-      leaseId: args.leaseId,
-      leaseExpiresAt,
-    }) as boolean;
+    const ok = (await ctx.runMutation(
+      (internal as any).policies.pipelineExtendPreviewLease,
+      {
+        jobId: args.policyId,
+        leaseId: args.leaseId,
+        leaseExpiresAt,
+      },
+    )) as boolean;
     return { ok, leaseExpiresAt };
   },
 });
@@ -2459,11 +2741,13 @@ export const logExternalJob = action({
     leaseId: v.string(),
     message: v.string(),
     phase: v.optional(v.string()),
-    level: v.optional(v.union(v.literal("info"), v.literal("warn"), v.literal("error"))),
+    level: v.optional(
+      v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    ),
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
-    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
+    if (!(await externalLeaseMatches(ctx, args))) return { ok: false };
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: args.policyId,
       timestamp: nowMs(),
@@ -2495,12 +2779,14 @@ export const finalizeExternalExtractionArtifact = action({
     sectionId: v.optional(v.string()),
     metadata: v.optional(v.any()),
   },
-  handler: async (ctx, args): Promise<
-    { ok: false; artifactId?: undefined } |
-    { ok: true; artifactId: string }
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    { ok: false; artifactId?: undefined } | { ok: true; artifactId: string }
   > => {
     requireExtractionWorkerSecret(args.secret);
-    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
+    if (!(await externalLeaseMatches(ctx, args))) return { ok: false };
     if (args.kind === "section_result" && !args.sectionId) {
       throw new Error("section_result artifacts require sectionId");
     }
@@ -2528,11 +2814,12 @@ export const getExternalExtractionResumeArtifacts = action({
   },
   handler: async (ctx, args) => {
     requireExtractionWorkerSecret(args.secret);
-    if (!await externalLeaseMatches(ctx, args)) return { ok: false, artifacts: [] };
-    const result = await ctx.runQuery(
+    if (!(await externalLeaseMatches(ctx, args)))
+      return { ok: false, artifacts: [] };
+    const result = (await ctx.runQuery(
       (internal as any).policies.pipelineListResumableArtifacts,
       { jobId: args.policyId },
-    ) as {
+    )) as {
       runId: Id<"policyExtractionRuns">;
       artifacts: Array<{
         _id: Id<"policyExtractionArtifacts">;
@@ -2545,15 +2832,17 @@ export const getExternalExtractionResumeArtifacts = action({
       }>;
     } | null;
     if (!result) return { ok: true, artifacts: [] };
-    const artifacts = await Promise.all(result.artifacts.map(async (artifact) => ({
-      artifactId: String(artifact._id),
-      kind: artifact.kind,
-      url: await ctx.storage.getUrl(artifact.storageId),
-      sourceFingerprint: artifact.sourceFingerprint,
-      extractorVersion: artifact.extractorVersion,
-      sectionId: artifact.sectionId,
-      metadata: artifact.metadata,
-    })));
+    const artifacts = await Promise.all(
+      result.artifacts.map(async (artifact) => ({
+        artifactId: String(artifact._id),
+        kind: artifact.kind,
+        url: await ctx.storage.getUrl(artifact.storageId),
+        sourceFingerprint: artifact.sourceFingerprint,
+        extractorVersion: artifact.extractorVersion,
+        sectionId: artifact.sectionId,
+        metadata: artifact.metadata,
+      })),
+    );
     return {
       ok: true,
       runId: String(result.runId),
@@ -2591,21 +2880,27 @@ export const recordExternalTraceEvent = action({
     costUsd: v.optional(v.union(v.number(), v.null())),
     costStatus: v.optional(v.union(v.literal("priced"), v.literal("unpriced"))),
     routingDecision: v.optional(v.string()),
-    routing: v.optional(v.object({
-      decision: v.string(),
-      candidatesConsidered: v.array(v.object({ provider: v.string(), model: v.string() })),
-      policyVersion: v.union(v.string(), v.null()),
-      cacheStickinessApplied: v.boolean(),
-      routeSource: v.optional(v.string()),
-      attemptCount: v.optional(v.number()),
-      shadowMode: v.optional(v.boolean()),
-      wouldHaveChosen: v.optional(v.object({
-        provider: v.string(),
-        model: v.string(),
+    routing: v.optional(
+      v.object({
         decision: v.string(),
-      })),
-      wouldHaveMatched: v.optional(v.boolean()),
-    })),
+        candidatesConsidered: v.array(
+          v.object({ provider: v.string(), model: v.string() }),
+        ),
+        policyVersion: v.union(v.string(), v.null()),
+        cacheStickinessApplied: v.boolean(),
+        routeSource: v.optional(v.string()),
+        attemptCount: v.optional(v.number()),
+        shadowMode: v.optional(v.boolean()),
+        wouldHaveChosen: v.optional(
+          v.object({
+            provider: v.string(),
+            model: v.string(),
+            decision: v.string(),
+          }),
+        ),
+        wouldHaveMatched: v.optional(v.boolean()),
+      }),
+    ),
     error: v.optional(v.string()),
     details: v.optional(v.any()),
   },
@@ -2650,7 +2945,7 @@ async function completeExternalExtractFromPayload(
   ctx: ActionCtx,
   args: ExternalCompleteArgs,
 ): Promise<ExternalAckResult> {
-  if (!await externalCompletionLeaseIsCurrent(ctx, args)) {
+  if (!(await externalCompletionLeaseIsCurrent(ctx, args))) {
     return { ok: false };
   }
   const state = args.state as PolicyExtractionState;
@@ -2659,17 +2954,27 @@ async function completeExternalExtractFromPayload(
     ? await loadExternalCompletionPayload(ctx, args.payloadStorageId)
     : undefined;
   if (args.payloadStorageId && !payload) {
-    throw new Error("External extraction completion payload artifact is missing");
+    throw new Error(
+      "External extraction completion payload artifact is missing",
+    );
   }
   const document = payload?.document ?? args.document;
-  const chunks = (payload?.chunks ?? args.chunks ?? []) as Array<{ id?: string }>;
-  const sourceSpans = (payload?.sourceSpans ?? args.sourceSpans ?? []) as SourceSpanLike[];
+  const chunks = (payload?.chunks ?? args.chunks ?? []) as Array<{
+    id?: string;
+  }>;
+  const sourceSpans = (payload?.sourceSpans ??
+    args.sourceSpans ??
+    []) as SourceSpanLike[];
   const canonicalSpans = canonicalSourceSpans(sourceSpans);
-  const sourceChunks = (payload?.sourceChunks ?? args.sourceChunks ?? []) as Array<{ id?: unknown }>;
+  const sourceChunks = (payload?.sourceChunks ??
+    args.sourceChunks ??
+    []) as Array<{ id?: unknown }>;
   const rawSourceTree = payload?.sourceTree ?? args.sourceTree ?? [];
-  const operationalProfileInput = payload?.operationalProfile ?? args.operationalProfile;
+  const operationalProfileInput =
+    payload?.operationalProfile ?? args.operationalProfile;
   const coverageRecovery = payload?.coverageRecovery;
-  const performanceReport = (payload?.performanceReport ?? args.performanceReport) as
+  const performanceReport = (payload?.performanceReport ??
+    args.performanceReport) as
     | {
         modelCallCount?: number;
         modelCalls?: unknown[];
@@ -2681,7 +2986,8 @@ async function completeExternalExtractFromPayload(
   const rawSections = payload?.sections ?? args.sections;
   const sections = Array.isArray(rawSections)
     ? rawSections.flatMap((value): ExtractionCompletionManifest["sections"] => {
-        if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          return [];
         const section = value as Record<string, unknown>;
         const id = section.id ?? section.sectionId;
         if (
@@ -2692,19 +2998,27 @@ async function completeExternalExtractFromPayload(
           return [];
         }
         const status = section.status;
-        if (status !== "complete" && status !== "not_applicable" && status !== "degraded") {
+        if (
+          status !== "complete" &&
+          status !== "not_applicable" &&
+          status !== "degraded"
+        ) {
           return [];
         }
-        return [{
-          id,
-          status,
-          sourceSpanIds: Array.isArray(section.sourceSpanIds)
-            ? section.sourceSpanIds.filter((spanId): spanId is string => typeof spanId === "string")
-            : [],
-          ...(typeof section.resultHash === "string" && section.resultHash
-            ? { resultHash: section.resultHash }
-            : {}),
-        }];
+        return [
+          {
+            id,
+            status,
+            sourceSpanIds: Array.isArray(section.sourceSpanIds)
+              ? section.sourceSpanIds.filter(
+                  (spanId): spanId is string => typeof spanId === "string",
+                )
+              : [],
+            ...(typeof section.resultHash === "string" && section.resultHash
+              ? { resultHash: section.resultHash }
+              : {}),
+          },
+        ];
       })
     : undefined;
   let doc = document as Record<string, unknown>;
@@ -2719,12 +3033,21 @@ async function completeExternalExtractFromPayload(
     phase: "extract",
     level: "info",
   });
-  const traceCounters = await ctx.runQuery((internal as any).extractionTraces.getSessionCounters, {
-    traceId: state.traceId,
-  }) as { modelCallCount?: number; modelDurationMs?: number } | null;
-  const modelCallCount = traceCounters?.modelCallCount || performanceReport?.modelCallCount || performanceReport?.modelCalls?.length;
+  const traceCounters = (await ctx.runQuery(
+    (internal as any).extractionTraces.getSessionCounters,
+    {
+      traceId: state.traceId,
+    },
+  )) as { modelCallCount?: number; modelDurationMs?: number } | null;
+  const modelCallCount =
+    traceCounters?.modelCallCount ||
+    performanceReport?.modelCallCount ||
+    performanceReport?.modelCalls?.length;
   if (modelCallCount) {
-    const totalModelCallDurationMs = traceCounters?.modelDurationMs ?? performanceReport?.totalModelCallDurationMs ?? 0;
+    const totalModelCallDurationMs =
+      traceCounters?.modelDurationMs ??
+      performanceReport?.totalModelCallDurationMs ??
+      0;
     const totalSeconds = Math.round(totalModelCallDurationMs / 1000);
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: policyId,
@@ -2741,7 +3064,9 @@ async function completeExternalExtractFromPayload(
       timestamp: nowMs(),
       message: recoveryLog,
       phase: "extract",
-      level: coverageRecoverySucceeded(state, coverageRecovery) ? "info" : "warn",
+      level: coverageRecoverySucceeded(state, coverageRecovery)
+        ? "info"
+        : "warn",
     });
   }
   const processed = await postProcessExtractionDocument({
@@ -2752,7 +3077,10 @@ async function completeExternalExtractFromPayload(
     traceId: state.traceId,
     policyId,
     runModelReview: false,
-    skipDeterministicCoverageRecovery: coverageRecoverySucceeded(state, coverageRecovery),
+    skipDeterministicCoverageRecovery: coverageRecoverySucceeded(
+      state,
+      coverageRecovery,
+    ),
     log: async (message, level = "info") => {
       await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
         jobId: policyId,
@@ -2764,7 +3092,11 @@ async function completeExternalExtractFromPayload(
     },
   });
   doc = processed.document;
-  const sourceNodes = normalizeSourceTree(rawSourceTree, canonicalSpans, policyId);
+  const sourceNodes = normalizeSourceTree(
+    rawSourceTree,
+    canonicalSpans,
+    policyId,
+  );
   const normalizedOperationalProfile = normalizeOperationalProfile(
     operationalProfileInput,
     sourceNodes,
@@ -2783,9 +3115,9 @@ async function completeExternalExtractFromPayload(
   }
   const docName = doc.policyNumber || "policy";
   const resolvedFileName = state.fileName || `${String(docName)}.pdf`;
-  const existingPolicy = await ctx.runQuery(internal.policies.getInternal, {
+  const existingPolicy = (await ctx.runQuery(internal.policies.getInternal, {
     id: policyId as Id<"policies">,
-  }) as {
+  })) as {
     linesOfBusiness?: string[];
     carrierIdentity?: unknown;
   } | null;
@@ -2794,7 +3126,7 @@ async function completeExternalExtractFromPayload(
     state.policyVersionKind === "renewal"
       ? { ...state, replacementPromotionStarted: true }
       : state;
-  const promotionLeaseCurrent = await ctx.runMutation(
+  const promotionLeaseCurrent = (await ctx.runMutation(
     (internal as any).policies.pipelineSaveStateForLease,
     {
       jobId: policyId,
@@ -2803,7 +3135,7 @@ async function completeExternalExtractFromPayload(
       state: promotionState,
       leaseExpiresAt: nowMs() + EXTERNAL_WORKER_LEASE_MS,
     },
-  ) as boolean;
+  )) as boolean;
   if (!promotionLeaseCurrent) {
     return { ok: false };
   }
@@ -2837,15 +3169,25 @@ async function completeExternalExtractFromPayload(
   if (state.fileId) {
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: policyId,
-      files: [{ fileId: state.fileId as Id<"_storage">, fileName: resolvedFileName, fileType: "unknown", status: "complete" }],
+      files: [
+        {
+          fileId: state.fileId as Id<"_storage">,
+          fileName: resolvedFileName,
+          fileType: "unknown",
+          status: "complete",
+        },
+      ],
       primaryFileId: state.fileId as Id<"_storage">,
     });
   }
 
   const embeddingPayloadFileId = await storeEmbeddingPayload(ctx, policyId, {
-    documentChunksForEmbedding: chunks as PolicyExtractionState["documentChunksForEmbedding"],
-    sourceSpansForStorage: canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
-    sourceChunksForEmbedding: sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
+    documentChunksForEmbedding:
+      chunks as PolicyExtractionState["documentChunksForEmbedding"],
+    sourceSpansForStorage:
+      canonicalSpans as PolicyExtractionState["sourceSpansForStorage"],
+    sourceChunksForEmbedding:
+      sourceChunks as PolicyExtractionState["sourceChunksForEmbedding"],
     sourceNodesForStorage: sourceNodes,
   });
   const nextState: PolicyExtractionState = {
@@ -2858,17 +3200,24 @@ async function completeExternalExtractFromPayload(
     fileName: resolvedFileName,
     externalWorker: undefined,
   };
-  const checkpointUpdated = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
-    jobId: policyId,
-    leaseId: args.leaseId,
-    checkpoint: {
-      nextPhase: "embed_and_store",
-      state: nextState,
-      createdAt: nowMs(),
+  const checkpointUpdated = (await ctx.runMutation(
+    (internal as any).policies.pipelineCompleteLease,
+    {
+      jobId: policyId,
+      leaseId: args.leaseId,
+      checkpoint: {
+        nextPhase: "embed_and_store",
+        state: nextState,
+        createdAt: nowMs(),
+      },
     },
-  }) as boolean;
+  )) as boolean;
   if (checkpointUpdated) {
-    await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.advance, { jobId: policyId });
+    await ctx.scheduler.runAfter(
+      0,
+      (internal as any).actions.policyExtraction.advance,
+      { jobId: policyId },
+    );
     await traceEvent(ctx, state.traceId, {
       kind: "phase",
       phase: "external_extract",
@@ -2896,10 +3245,9 @@ export const completeExternalExtract = action({
     warnings: v.optional(v.array(v.string())),
     tokenUsage: v.optional(v.any()),
     performanceReport: v.optional(v.any()),
-    protocolVersion: v.optional(v.union(
-      v.literal("source-tree-v1"),
-      v.literal("source-tree-v2"),
-    )),
+    protocolVersion: v.optional(
+      v.union(v.literal("source-tree-v1"), v.literal("source-tree-v2")),
+    ),
     extractorVersion: v.optional(v.string()),
     sections: v.optional(v.array(v.any())),
   },
@@ -2916,7 +3264,10 @@ export const completeExternalExtractFromStoredPayload = action({
     leaseId: v.string(),
     state: v.any(),
   },
-  handler: async (ctx, args): Promise<ExternalAckResult & { replayed?: boolean }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<ExternalAckResult & { replayed?: boolean }> => {
     requireExtractionWorkerSecret(args.secret);
     const payloadStorageId = await getLatestArtifactStorageId(
       ctx,
@@ -2946,18 +3297,24 @@ export const completeExternalPreview = action({
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
-    const ok = await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
-      jobId: args.policyId,
-      leaseId: args.leaseId,
-    }) as boolean;
+    const ok = (await ctx.runMutation(
+      (internal as any).policies.pipelineCompletePreviewLease,
+      {
+        jobId: args.policyId,
+        leaseId: args.leaseId,
+      },
+    )) as boolean;
     if (!ok) return { ok: false };
 
-    const updated = await ctx.runMutation((internal as any).policies.updatePreviewExtractionInternal, {
-      id: args.policyId as Id<"policies">,
-      fields: args.fields,
-      previewVersion: args.previewVersion,
-      previewModel: args.previewModel,
-    }) as { updated: boolean; reason?: string };
+    const updated = (await ctx.runMutation(
+      (internal as any).policies.updatePreviewExtractionInternal,
+      {
+        id: args.policyId as Id<"policies">,
+        fields: args.fields,
+        previewVersion: args.previewVersion,
+        previewModel: args.previewModel,
+      },
+    )) as { updated: boolean; reason?: string };
 
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: args.policyId,
@@ -2968,20 +3325,24 @@ export const completeExternalPreview = action({
       phase: "preview",
       level: updated.updated ? "info" : "warn",
     });
-    await traceEvent(ctx, (args.state as PolicyExtractionState | undefined)?.traceId, {
-      kind: "phase",
-      phase: "preview",
-      label: "external_preview_extract",
-      status: updated.updated ? "complete" : "skipped",
-      message: updated.updated
-        ? "External preview extraction completed"
-        : `External preview extraction skipped${updated.reason ? ` (${updated.reason})` : ""}`,
-      details: {
-        previewVersion: args.previewVersion,
-        previewModel: args.previewModel,
-        updated,
+    await traceEvent(
+      ctx,
+      (args.state as PolicyExtractionState | undefined)?.traceId,
+      {
+        kind: "phase",
+        phase: "preview",
+        label: "external_preview_extract",
+        status: updated.updated ? "complete" : "skipped",
+        message: updated.updated
+          ? "External preview extraction completed"
+          : `External preview extraction skipped${updated.reason ? ` (${updated.reason})` : ""}`,
+        details: {
+          previewVersion: args.previewVersion,
+          previewModel: args.previewModel,
+          updated,
+        },
       },
-    });
+    );
     return { ok: true };
   },
 });
@@ -2997,16 +3358,22 @@ export const failExternalPreviewJob = action({
   },
   handler: async (ctx, args): Promise<ExternalAckResult> => {
     requireExtractionWorkerSecret(args.secret);
-    const ok = await ctx.runMutation((internal as any).policies.pipelineCompletePreviewLease, {
-      jobId: args.policyId,
-      leaseId: args.leaseId,
-    }) as boolean;
+    const ok = (await ctx.runMutation(
+      (internal as any).policies.pipelineCompletePreviewLease,
+      {
+        jobId: args.policyId,
+        leaseId: args.leaseId,
+      },
+    )) as boolean;
     if (!ok) return { ok: false };
-    await ctx.runMutation((internal as any).policies.failPreviewExtractionInternal, {
-      id: args.policyId as Id<"policies">,
-      error: args.error,
-      previewVersion: args.previewVersion,
-    });
+    await ctx.runMutation(
+      (internal as any).policies.failPreviewExtractionInternal,
+      {
+        id: args.policyId as Id<"policies">,
+        error: args.error,
+        previewVersion: args.previewVersion,
+      },
+    );
     await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
       jobId: args.policyId,
       timestamp: nowMs(),
@@ -3014,14 +3381,18 @@ export const failExternalPreviewJob = action({
       phase: "preview",
       level: "warn",
     });
-    await traceEvent(ctx, (args.state as PolicyExtractionState | undefined)?.traceId, {
-      kind: "phase",
-      phase: "preview",
-      label: "external_preview_extract",
-      status: "error",
-      message: args.error,
-      details: { previewVersion: args.previewVersion },
-    });
+    await traceEvent(
+      ctx,
+      (args.state as PolicyExtractionState | undefined)?.traceId,
+      {
+        kind: "phase",
+        phase: "preview",
+        label: "external_preview_extract",
+        status: "error",
+        message: args.error,
+        details: { previewVersion: args.previewVersion },
+      },
+    );
     return { ok: true };
   },
 });
@@ -3036,7 +3407,7 @@ export const failExternalJob = action({
   },
   handler: async (ctx, args) => {
     requireExtractionWorkerSecret(args.secret);
-    if (!await externalLeaseMatches(ctx, args)) return { ok: false };
+    if (!(await externalLeaseMatches(ctx, args))) return { ok: false };
     const checkpoint = args.state
       ? {
           nextPhase: "extract",
@@ -3044,23 +3415,29 @@ export const failExternalJob = action({
           createdAt: nowMs(),
         }
       : null;
-    const hasReplayableCompletionPayload = args.error !== CANCELLED_BY_USER
-      ? Boolean(await getLatestArtifactStorageId(
-        ctx,
-        args.policyId,
-        "external_completion_payload",
-      ))
-      : false;
+    const hasReplayableCompletionPayload =
+      args.error !== CANCELLED_BY_USER
+        ? Boolean(
+            await getLatestArtifactStorageId(
+              ctx,
+              args.policyId,
+              "external_completion_payload",
+            ),
+          )
+        : false;
     if (checkpoint && hasReplayableCompletionPayload) {
       // Keep the same extraction run recoverable so the next worker claim can
       // replay the stored completion payload instead of recomputing models.
-      const ok = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
-        jobId: args.policyId,
-        leaseId: args.leaseId,
-        status: "running",
-        error: args.error,
-        checkpoint,
-      }) as boolean;
+      const ok = (await ctx.runMutation(
+        (internal as any).policies.pipelineCompleteLease,
+        {
+          jobId: args.policyId,
+          leaseId: args.leaseId,
+          status: "running",
+          error: args.error,
+          checkpoint,
+        },
+      )) as boolean;
       if (ok) {
         await ctx.runMutation((internal as any).policies.pipelineAppendLog, {
           jobId: args.policyId,
@@ -3072,13 +3449,16 @@ export const failExternalJob = action({
       }
       return { ok, replayable: ok };
     }
-    const ok = await ctx.runMutation((internal as any).policies.pipelineCompleteLease, {
-      jobId: args.policyId,
-      leaseId: args.leaseId,
-      status: "error",
-      error: args.error,
-      checkpoint,
-    }) as boolean;
+    const ok = (await ctx.runMutation(
+      (internal as any).policies.pipelineCompleteLease,
+      {
+        jobId: args.policyId,
+        leaseId: args.leaseId,
+        status: "error",
+        error: args.error,
+        checkpoint,
+      },
+    )) as boolean;
     if (!ok) return { ok: false };
     await completeTraceSession(
       ctx,
@@ -3096,9 +3476,9 @@ export const ensurePolicyV3SourceTree = internalAction({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const policy = await ctx.runQuery(internal.policies.getInternal, {
+    const policy = (await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as {
+    })) as {
       fileId?: Id<"_storage">;
       sourceTreeVersion?: string;
       sourceTreeStatus?: string;
@@ -3106,26 +3486,42 @@ export const ensurePolicyV3SourceTree = internalAction({
     } | null;
     if (!policy) throw new Error("Policy not found");
 
-    const hasSourceNodes = await ctx.runQuery(
-      (internal as any).sourceNodes.hasNodesForPolicy,
-      { policyId: args.policyId },
-    ).catch(() => false) as boolean;
-    if (policy.sourceTreeVersion === "v3" && policy.sourceTreeStatus === "ready" && hasSourceNodes) {
+    const hasSourceNodes = (await ctx
+      .runQuery((internal as any).sourceNodes.hasNodesForPolicy, {
+        policyId: args.policyId,
+      })
+      .catch(() => false)) as boolean;
+    if (
+      policy.sourceTreeVersion === "v3" &&
+      policy.sourceTreeStatus === "ready" &&
+      hasSourceNodes
+    ) {
       return { status: "ready" as const };
     }
-    if (policy.pipelineStatus === "running" || policy.sourceTreeStatus === "running" || policy.sourceTreeStatus === "queued") {
+    if (
+      policy.pipelineStatus === "running" ||
+      policy.sourceTreeStatus === "running" ||
+      policy.sourceTreeStatus === "queued"
+    ) {
       return { status: "running" as const };
     }
     if (!policy.fileId) {
-      await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
-        id: args.policyId,
-        fields: {
-          sourceTreeStatus: "failed",
-          sourceTreeError: "Policy source file is missing; cannot rebuild source tree.",
-          sourceTreeUpdatedAt: nowMs(),
+      await ctx.runMutation(
+        (internal as any).policies.updateExtractionInternal,
+        {
+          id: args.policyId,
+          fields: {
+            sourceTreeStatus: "failed",
+            sourceTreeError:
+              "Policy source file is missing; cannot rebuild source tree.",
+            sourceTreeUpdatedAt: nowMs(),
+          },
         },
-      });
-      return { status: "failed" as const, error: "Policy source file is missing" };
+      );
+      return {
+        status: "failed" as const,
+        error: "Policy source file is missing",
+      };
     }
 
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
@@ -3137,10 +3533,14 @@ export const ensurePolicyV3SourceTree = internalAction({
         sourceTreeUpdatedAt: nowMs(),
       },
     });
-    await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.retryPolicyExtraction, {
-      policyId: args.policyId,
-      mode: "full",
-    });
+    await ctx.scheduler.runAfter(
+      0,
+      (internal as any).actions.policyExtraction.retryPolicyExtraction,
+      {
+        policyId: args.policyId,
+        mode: "full",
+      },
+    );
     return { status: "queued" as const, reason: args.reason };
   },
 });
@@ -3150,12 +3550,14 @@ export const rematerializeSourceTreeProfile = internalAction({
     policyId: v.id("policies"),
   },
   handler: async (ctx, args) => {
-    const policy = await ctx.runQuery(internal.policies.getInternal, {
+    const policy = (await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as Record<string, unknown> | null;
+    })) as Record<string, unknown> | null;
     if (!policy) throw new Error("Policy not found");
 
-    const operationalProfile = normalizeStoredOperationalProfile(policy.operationalProfile);
+    const operationalProfile = normalizeStoredOperationalProfile(
+      policy.operationalProfile,
+    );
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
       fields: operationalProfilePolicyFields(operationalProfile, policy),
@@ -3183,9 +3585,13 @@ const SEMANTIC_SOURCE_NODE_KINDS = new Set([
   "clause",
 ]);
 
-function hasSemanticSourceHierarchy(nodes: Array<Record<string, unknown>>): boolean {
-  return nodes.some((node) =>
-    typeof node.kind === "string" && SEMANTIC_SOURCE_NODE_KINDS.has(node.kind),
+function hasSemanticSourceHierarchy(
+  nodes: Array<Record<string, unknown>>,
+): boolean {
+  return nodes.some(
+    (node) =>
+      typeof node.kind === "string" &&
+      SEMANTIC_SOURCE_NODE_KINDS.has(node.kind),
   );
 }
 
@@ -3194,9 +3600,9 @@ export const rebuildStoredSourceNodes = internalAction({
     policyId: v.id("policies"),
   },
   handler: async (ctx, args) => {
-    const policy = await ctx.runQuery(internal.policies.getInternal, {
+    const policy = (await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as {
+    })) as {
       orgId?: Id<"organizations">;
       document?: Record<string, unknown>;
       declarations?: unknown;
@@ -3207,30 +3613,29 @@ export const rebuildStoredSourceNodes = internalAction({
     if (!policy) throw new Error("Policy not found");
     if (!policy.orgId) throw new Error("Policy is missing orgId");
 
-    const spanDocs = await ctx.runQuery(
+    const spanDocs = (await ctx.runQuery(
       (internal as any).sourceSpans.listSpansByPolicyInternal,
       { policyId: args.policyId },
-    ) as Array<Record<string, any>>;
+    )) as Array<Record<string, any>>;
     if (spanDocs.length === 0) {
       throw new Error("Policy is missing stored source spans");
     }
 
     const sourceSpans = spanDocs.map((span) =>
-      sourceSpanLikeFromStoredSource(span, args.policyId)
+      sourceSpanLikeFromStoredSource(span, args.policyId),
     );
     const canonicalSpans = canonicalSourceSpans(sourceSpans);
-    const existingNodeDocs = await ctx.runQuery(
+    const existingNodeDocs = (await ctx.runQuery(
       (internal as any).sourceNodes.listByPolicyInternal,
       { policyId: args.policyId },
-    ) as Array<Record<string, any>>;
+    )) as Array<Record<string, any>>;
     const existingSourceTree = existingNodeDocs
       .map((node) => sourceNodeFromStoredSource(node, args.policyId))
       .filter(
         (
           node,
-        ): node is NonNullable<
-          ReturnType<typeof sourceNodeFromStoredSource>
-        > => Boolean(node),
+        ): node is NonNullable<ReturnType<typeof sourceNodeFromStoredSource>> =>
+          Boolean(node),
       );
     const sourceNodes = normalizeSourceTree(
       hasSemanticSourceHierarchy(existingSourceTree) ? existingSourceTree : [],
@@ -3248,17 +3653,21 @@ export const rebuildStoredSourceNodes = internalAction({
       nowMs: nowMs(),
     });
     const scopedFields = scoped.fields;
-    const scopedProjection = Object.fromEntries([
-      "coverageSchedules",
-      "premium",
-      "premiumAmount",
-      "premiumBreakdown",
-      "taxesAndFees",
-      "totalCost",
-      "totalCostAmount",
-    ].flatMap((key) => Object.prototype.hasOwnProperty.call(scopedFields, key)
-      ? [[key, scopedFields[key]]]
-      : []));
+    const scopedProjection = Object.fromEntries(
+      [
+        "coverageSchedules",
+        "premium",
+        "premiumAmount",
+        "premiumBreakdown",
+        "taxesAndFees",
+        "totalCost",
+        "totalCostAmount",
+      ].flatMap((key) =>
+        Object.prototype.hasOwnProperty.call(scopedFields, key)
+          ? [[key, scopedFields[key]]]
+          : [],
+      ),
+    );
 
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
@@ -3276,8 +3685,16 @@ export const rebuildStoredSourceNodes = internalAction({
       },
     });
 
-    await deletePolicyRowsInBatches(ctx, (internal as any).sourceSpans.deleteByPolicy, args.policyId);
-    await deletePolicyRowsInBatches(ctx, (internal as any).sourceNodes.deleteByPolicy, args.policyId);
+    await deletePolicyRowsInBatches(
+      ctx,
+      (internal as any).sourceSpans.deleteByPolicy,
+      args.policyId,
+    );
+    await deletePolicyRowsInBatches(
+      ctx,
+      (internal as any).sourceNodes.deleteByPolicy,
+      args.policyId,
+    );
     const spanRows = canonicalSpans.map((span) => {
       const table = span.table;
       return {
@@ -3313,24 +3730,24 @@ export const rebuildStoredSourceNodes = internalAction({
       });
     }
     const nodeRows = sourceNodes.map((node) => ({
-        orgId: policy.orgId,
-        policyId: args.policyId,
-        nodeId: node.id,
-        documentId: node.documentId || args.policyId,
-        parentNodeId: node.parentId,
-        kind: node.kind,
-        title: node.title,
-        description: node.description,
-        textExcerpt: node.textExcerpt,
-        sourceSpanIds: node.sourceSpanIds,
-        pageStart: node.pageStart,
-        pageEnd: node.pageEnd,
-        bbox: node.bbox,
-        order: node.order,
-        path: node.path,
-        metadata: node.metadata,
-        createdAt: nowMs(),
-      }));
+      orgId: policy.orgId,
+      policyId: args.policyId,
+      nodeId: node.id,
+      documentId: node.documentId || args.policyId,
+      parentNodeId: node.parentId,
+      kind: node.kind,
+      title: node.title,
+      description: node.description,
+      textExcerpt: node.textExcerpt,
+      sourceSpanIds: node.sourceSpanIds,
+      pageStart: node.pageStart,
+      pageEnd: node.pageEnd,
+      bbox: node.bbox,
+      order: node.order,
+      path: node.path,
+      metadata: node.metadata,
+      createdAt: nowMs(),
+    }));
     for (const batch of chunkItems(nodeRows, SOURCE_STORAGE_BATCH_SIZE)) {
       await ctx.runMutation((internal as any).sourceNodes.insertNodesBatch, {
         nodes: batch,
@@ -3341,10 +3758,16 @@ export const rebuildStoredSourceNodes = internalAction({
       ok: true,
       sourceSpanCount: canonicalSpans.length,
       sourceNodeCount: sourceNodes.length,
-      coverageCount: Array.isArray(scopedFields.coverages) ? scopedFields.coverages.length : 0,
-      coverageScheduleCount: Array.isArray(scopedFields.coverageSchedules) ? scopedFields.coverageSchedules.length : 0,
+      coverageCount: Array.isArray(scopedFields.coverages)
+        ? scopedFields.coverages.length
+        : 0,
+      coverageScheduleCount: Array.isArray(scopedFields.coverageSchedules)
+        ? scopedFields.coverageSchedules.length
+        : 0,
       topLevelCount: sourceNodes.filter((node) => {
-        const root = sourceNodes.find((candidate) => candidate.kind === "document");
+        const root = sourceNodes.find(
+          (candidate) => candidate.kind === "document",
+        );
         return root && node.parentId === root.id;
       }).length,
     };
@@ -3357,16 +3780,22 @@ export const backfillStoredCoverageRecovery = internalAction({
     force: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const policy = await ctx.runQuery(internal.policies.getInternal, {
+    const policy = (await ctx.runQuery(internal.policies.getInternal, {
       id: args.policyId,
-    }) as (Record<string, unknown> & {
-      orgId?: Id<"organizations">;
-      operationalProfile?: unknown;
-    }) | null;
+    })) as
+      | (Record<string, unknown> & {
+          orgId?: Id<"organizations">;
+          operationalProfile?: unknown;
+        })
+      | null;
     if (!policy) throw new Error("Policy not found");
     if (!policy.orgId) throw new Error("Policy is missing orgId");
 
-    const snapshot = await coverageRecoverySnapshot(ctx, policy.orgId, args.force === true);
+    const snapshot = await coverageRecoverySnapshot(
+      ctx,
+      policy.orgId,
+      args.force === true,
+    );
     if (!snapshot.enabled) {
       return { ok: false as const, status: "disabled" as const };
     }
@@ -3385,7 +3814,7 @@ export const backfillStoredCoverageRecovery = internalAction({
 
     const sourceSpans = canonicalSourceSpans(
       spanDocs.map((span) =>
-        sourceSpanLikeFromStoredSource(span, args.policyId)
+        sourceSpanLikeFromStoredSource(span, args.policyId),
       ),
     );
     const storedSourceTree = nodeDocs
@@ -3393,11 +3822,14 @@ export const backfillStoredCoverageRecovery = internalAction({
       .filter(
         (
           node,
-        ): node is NonNullable<
-          ReturnType<typeof sourceNodeFromStoredSource>
-        > => Boolean(node),
+        ): node is NonNullable<ReturnType<typeof sourceNodeFromStoredSource>> =>
+          Boolean(node),
       );
-    const sourceTree = normalizeSourceTree(storedSourceTree, sourceSpans, args.policyId);
+    const sourceTree = normalizeSourceTree(
+      storedSourceTree,
+      sourceSpans,
+      args.policyId,
+    );
     const sdkSourceSpans = sourceSpansForSdk(sourceSpans, args.policyId);
     const primaryProfile = normalizeOperationalProfile(
       policy.operationalProfile,
@@ -3414,7 +3846,9 @@ export const backfillStoredCoverageRecovery = internalAction({
         orgId: policy.orgId,
         tracePolicyId: args.policyId,
       }),
-      modelCapabilities: modelCapabilitiesForTask("extraction_coverage_recovery"),
+      modelCapabilities: modelCapabilitiesForTask(
+        "extraction_coverage_recovery",
+      ),
     });
     if (recovery.diagnostics.status !== "succeeded") {
       return {
@@ -3429,21 +3863,28 @@ export const backfillStoredCoverageRecovery = internalAction({
       sourceTree,
       sourceSpans,
     );
-    const recoveredFields = operationalProfilePolicyFields(operationalProfile, policy);
-    const recoveryProjection = Object.fromEntries([
-      "operationalProfile",
-      "coverages",
-      "coverageSchedules",
-      "premium",
-      "premiumAmount",
-      "premiumBreakdown",
-      "taxesAndFees",
-      "totalCost",
-      "totalCostAmount",
-      "linesOfBusiness",
-    ].flatMap((key) => Object.prototype.hasOwnProperty.call(recoveredFields, key)
-      ? [[key, recoveredFields[key]]]
-      : []));
+    const recoveredFields = operationalProfilePolicyFields(
+      operationalProfile,
+      policy,
+    );
+    const recoveryProjection = Object.fromEntries(
+      [
+        "operationalProfile",
+        "coverages",
+        "coverageSchedules",
+        "premium",
+        "premiumAmount",
+        "premiumBreakdown",
+        "taxesAndFees",
+        "totalCost",
+        "totalCostAmount",
+        "linesOfBusiness",
+      ].flatMap((key) =>
+        Object.prototype.hasOwnProperty.call(recoveredFields, key)
+          ? [[key, recoveredFields[key]]]
+          : [],
+      ),
+    );
 
     await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
       id: args.policyId,
@@ -3496,11 +3937,13 @@ async function rejectedByDocumentGateBeforeExternalHandoff(
     });
     const sourceSpans = converted?.sourceSpans?.length
       ? converted.sourceSpans
-      : (await preparePdfTextWithPdfJs({
-          pdfBytes,
-          documentId: params.policyId,
-          sourceKind: "policy_pdf",
-        })).sourceSpans;
+      : (
+          await preparePdfTextWithPdfJs({
+            pdfBytes,
+            documentId: params.policyId,
+            sourceKind: "policy_pdf",
+          })
+        ).sourceSpans;
     gateDecision = await classifyInsuranceExtractability({
       ctx,
       orgId: orgId as Id<"organizations">,
@@ -3527,27 +3970,25 @@ async function rejectedByDocumentGateBeforeExternalHandoff(
   });
   if (!shouldRejectDocument(gateDecision)) return false;
 
-  const rejectionSummary = `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
+  const rejectionSummary =
+    `${NON_INSURANCE_DOCUMENT_ERROR} ${gateDecision.reason}`.slice(0, 1000);
   const archivePolicy = shouldArchiveRejectedPolicy(
     params.state.policyVersionKind,
   );
   if (archivePolicy) {
-    await ctx.runMutation(
-      (internal as any).policies.updateExtractionInternal,
-      {
-        id: params.policyId,
-        fields: {
-          carrier: "Non-insurance document",
-          policyNumber: "Not applicable",
-          linesOfBusiness: ["UN"],
-          insuredName: "Not applicable",
-          effectiveDate: "Not applicable",
-          expirationDate: "Not applicable",
-          summary: rejectionSummary,
-          excludeFromSearch: true,
-        },
+    await ctx.runMutation((internal as any).policies.updateExtractionInternal, {
+      id: params.policyId,
+      fields: {
+        carrier: "Non-insurance document",
+        policyNumber: "Not applicable",
+        linesOfBusiness: ["UN"],
+        insuredName: "Not applicable",
+        effectiveDate: "Not applicable",
+        expirationDate: "Not applicable",
+        summary: rejectionSummary,
+        excludeFromSearch: true,
       },
-    );
+    });
     await ctx.runMutation((internal as any).policies.updateFiles, {
       id: params.policyId,
       files: [
@@ -3580,13 +4021,26 @@ export const startPolicyExtractionFromUpload = internalAction({
     orgId: v.id("organizations"),
     userId: v.id("users"),
     policyFileId: v.optional(v.id("policyFiles")),
-    policyVersionKind: v.optional(v.union(
-      v.literal("new_policy"),
-      v.literal("re_extraction"),
-      v.literal("renewal"),
-    )),
+    policyVersionKind: v.optional(
+      v.union(
+        v.literal("new_policy"),
+        v.literal("re_extraction"),
+        v.literal("renewal"),
+      ),
+    ),
   },
-  handler: async (ctx, { policyId, fileId, fileName, orgId, userId, policyFileId, policyVersionKind }) => {
+  handler: async (
+    ctx,
+    {
+      policyId,
+      fileId,
+      fileName,
+      orgId,
+      userId,
+      policyFileId,
+      policyVersionKind,
+    },
+  ) => {
     const coverageRecovery = await coverageRecoverySnapshot(ctx, orgId);
     const traceId = randomUUID();
     await startTraceSession(ctx, {
@@ -3608,7 +4062,8 @@ export const startPolicyExtractionFromUpload = internalAction({
         policyFileId: policyFileId ? String(policyFileId) : undefined,
         policyVersionKind,
         replacementPromotionStarted:
-          policyVersionKind === "re_extraction" || policyVersionKind === "renewal"
+          policyVersionKind === "re_extraction" ||
+          policyVersionKind === "renewal"
             ? false
             : undefined,
         coverageRecovery,
@@ -3626,10 +4081,13 @@ export const startPolicyExtractionFromUpload = internalAction({
         jobId: String(policyId),
       });
       await clearArtifacts(ctx, String(policyId));
-      await ctx.runMutation((internal as any).policies.pipelineStartExternalWorkerJob, {
-        jobId: String(policyId),
-        state: externalState,
-      });
+      await ctx.runMutation(
+        (internal as any).policies.pipelineStartExternalWorkerJob,
+        {
+          jobId: String(policyId),
+          state: externalState,
+        },
+      );
       return;
     }
 
@@ -3661,7 +4119,8 @@ export const startPolicyExtractionFromUpload = internalAction({
         policyFileId: policyFileId ? String(policyFileId) : undefined,
         policyVersionKind,
         replacementPromotionStarted:
-          policyVersionKind === "re_extraction" || policyVersionKind === "renewal"
+          policyVersionKind === "re_extraction" ||
+          policyVersionKind === "renewal"
             ? false
             : undefined,
         coverageRecovery,
@@ -3694,8 +4153,7 @@ export function policyExtractionRetrySource(params: {
   | "policyVersionKind"
   | "replacementPromotionStarted"
 > {
-  const retryState =
-    params.mode === "full" ? undefined : params.existingState;
+  const retryState = params.mode === "full" ? undefined : params.existingState;
   return {
     sourceKind: retryState?.sourceKind ?? "upload",
     fileId: retryState?.fileId ?? params.policy.fileId,
@@ -3708,20 +4166,14 @@ export function policyExtractionRetrySource(params: {
     policyVersionKind:
       params.mode === "full" ? "re_extraction" : retryState?.policyVersionKind,
     replacementPromotionStarted:
-      params.mode === "full"
-        ? false
-        : retryState?.replacementPromotionStarted,
+      params.mode === "full" ? false : retryState?.replacementPromotionStarted,
   };
 }
 
 export const retryPolicyExtraction = internalAction({
   args: {
     policyId: v.id("policies"),
-    mode: v.union(
-      v.literal("resume"),
-      v.literal("restart"),
-      v.literal("full"),
-    ),
+    mode: v.union(v.literal("resume"), v.literal("restart"), v.literal("full")),
   },
   handler: async (ctx, { policyId, mode }) => {
     const mutations = makeMutations();
@@ -3742,10 +4194,9 @@ export const retryPolicyExtraction = internalAction({
     }
 
     // Fetch policy to recover initial state for "full" restart
-    const policy = await ctx.runQuery(
-      internal.policies.getInternal,
-      { id: policyId },
-    ) as {
+    const policy = (await ctx.runQuery(internal.policies.getInternal, {
+      id: policyId,
+    })) as {
       orgId?: string;
       userId?: string;
       uploadedByUserId?: string;
@@ -3762,12 +4213,17 @@ export const retryPolicyExtraction = internalAction({
       existingState,
     });
     if (!policy.orgId) throw new Error("Policy is missing orgId");
-    const coverageRecovery = mode === "resume" && existingState?.coverageRecovery
-      ? existingState.coverageRecovery
-      : await coverageRecoverySnapshot(ctx, policy.orgId as Id<"organizations">);
-    const traceId = mode === "resume" && existingState?.traceId
-      ? existingState.traceId
-      : randomUUID();
+    const coverageRecovery =
+      mode === "resume" && existingState?.coverageRecovery
+        ? existingState.coverageRecovery
+        : await coverageRecoverySnapshot(
+            ctx,
+            policy.orgId as Id<"organizations">,
+          );
+    const traceId =
+      mode === "resume" && existingState?.traceId
+        ? existingState.traceId
+        : randomUUID();
     if (mode === "full" || !existingState?.traceId) {
       await startTraceSession(ctx, {
         traceId,
@@ -3807,10 +4263,13 @@ export const retryPolicyExtraction = internalAction({
         });
         await clearArtifacts(ctx, String(policyId));
       }
-      await ctx.runMutation((internal as any).policies.pipelineStartExternalWorkerJob, {
-        jobId: String(policyId),
-        state: nextState,
-      });
+      await ctx.runMutation(
+        (internal as any).policies.pipelineStartExternalWorkerJob,
+        {
+          jobId: String(policyId),
+          state: nextState,
+        },
+      );
       return { success: true, traceId };
     }
 

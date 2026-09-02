@@ -70,15 +70,6 @@ spot-operator provision-broker \
   --website https://acme.com
 ```
 
-Seed draft clients:
-
-```sh
-spot-operator provision-broker \
-  --name "Acme Insurance" \
-  --admin-email jane@acme.com \
-  --client "Example Co|risk@example.com|https://example.com"
-```
-
 JSON input for Codex/Claude Code:
 
 ```sh

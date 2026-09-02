@@ -7,7 +7,10 @@ const api = anyApi;
 
 export class OperatorClient {
   private readonly convex: ConvexHttpClient;
-  private readonly config: Required<Pick<OperatorConfig, "convexUrl" | "token">> & OperatorConfig;
+  private readonly config: Required<
+    Pick<OperatorConfig, "convexUrl" | "token">
+  > &
+    OperatorConfig;
 
   constructor(config: OperatorConfig) {
     this.config = requireConfig(config);
@@ -28,10 +31,10 @@ export class OperatorClient {
   async provisionBroker(body: Record<string, unknown>) {
     const normalizedBody = {
       ...body,
-      clients: Array.isArray(body.clients) ? body.clients : [],
-      markOnboardingComplete: typeof body.markOnboardingComplete === "boolean"
-        ? body.markOnboardingComplete
-        : true,
+      markOnboardingComplete:
+        typeof body.markOnboardingComplete === "boolean"
+          ? body.markOnboardingComplete
+          : true,
     };
     return await this.convex.action(api.operatorProvisioning.provisionBroker, {
       operatorAuth: signOperatorRequest({

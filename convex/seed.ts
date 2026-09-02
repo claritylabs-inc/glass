@@ -16,7 +16,6 @@ const LOCAL_FIXTURE = {
     name: "Montgomery Risk",
     slug: "montgomery-risk",
     website: "https://montgomeryrisk.com",
-    agentHandle: "montgomeryrisk",
     admin: {
       email: "terry@montgomeryrisk.com",
       name: "Terry Wang",
@@ -308,7 +307,8 @@ export const seed = action({
         installedByOperatorUserId: fixture.operatorUserId,
       },
     );
-    if (!connectionId) throw new Error("Could not seed the local Slack connection");
+    if (!connectionId)
+      throw new Error("Could not seed the local Slack connection");
     await ctx.runMutation(internal.agentChannels.bindPrimaryChannelInternal, {
       clientOrgId: fixture.clientOrgId,
       connectionId,
@@ -373,9 +373,9 @@ export const removeLocalVerificationArtifacts = internalMutation({
     const chats = (await ctx.db.query("imessageChats").collect()).filter(
       (row) => isVerificationGuid(row.chatGuid),
     );
-    const events = (await ctx.db.query("imessageInboundEvents").collect()).filter(
-      (row) => isVerificationGuid(row.chatGuid),
-    );
+    const events = (
+      await ctx.db.query("imessageInboundEvents").collect()
+    ).filter((row) => isVerificationGuid(row.chatGuid));
     const participants = (
       await ctx.db.query("imessageParticipants").collect()
     ).filter((row) => isVerificationGuid(row.chatGuid));
@@ -432,12 +432,16 @@ export const removeLocalVerificationArtifacts = internalMutation({
 export const removeLegacyDemoFixture = internalMutation({
   args: { dryRun: v.boolean() },
   handler: async (ctx, args): Promise<LegacyDemoCleanupResult> => {
-    const organizations = (await ctx.db.query("organizations").collect()).filter(
+    const organizations = (
+      await ctx.db.query("organizations").collect()
+    ).filter(
       (organization) =>
         organization.name.startsWith("[DEMO]") ||
         organization.slug?.startsWith("demo-"),
     );
-    const organizationIds = new Set(organizations.map(({ _id }) => String(_id)));
+    const organizationIds = new Set(
+      organizations.map(({ _id }) => String(_id)),
+    );
     const policies = (await ctx.db.query("policies").collect()).filter(
       (policy) => policy.orgId && organizationIds.has(String(policy.orgId)),
     );
@@ -479,7 +483,8 @@ export const removeLegacyDemoFixture = internalMutation({
 
     for (const assignment of assignments) await ctx.db.delete(assignment._id);
     for (const membership of memberships) await ctx.db.delete(membership._id);
-    for (const organization of organizations) await ctx.db.delete(organization._id);
+    for (const organization of organizations)
+      await ctx.db.delete(organization._id);
     for (const user of users) {
       const remainingMembership = await ctx.db
         .query("orgMemberships")
@@ -554,8 +559,6 @@ export const insertLocalFixture = internalMutation({
       type: "broker" as const,
       slug: LOCAL_FIXTURE.broker.slug,
       website: LOCAL_FIXTURE.broker.website,
-      agentHandle: LOCAL_FIXTURE.broker.agentHandle,
-      whiteLabelingEnabled: false,
       onboardingComplete: true,
       operatorStatus: "live" as const,
     };
@@ -567,6 +570,35 @@ export const insertLocalFixture = internalMutation({
       brokerOrgId = await ctx.db.insert("organizations", brokerFields);
     }
     await ensureMembership(ctx, brokerOrgId, brokerUserId);
+    const existingBrokerProfile = await ctx.db
+      .query("brokerProfiles")
+      .withIndex("broker", (query) => query.eq("brokerOrgId", brokerOrgId))
+      .unique();
+    const brokerProfileFields = {
+      networkStatus: "active" as const,
+      officeAddress: {
+        street1: "161 Bay Street",
+        street2: "Suite 2700",
+        city: "Toronto",
+        state: "ON",
+        postalCode: "M5J 2S1",
+        country: "Canada",
+      },
+      writingStates: ["CA", "NY", "TX"],
+      lineOfBusinessCodes: ["CYBER", "EO", "OLIB"],
+      updatedByUserId: operatorUserId,
+      updatedAt: now,
+    };
+    if (existingBrokerProfile) {
+      await ctx.db.patch(existingBrokerProfile._id, brokerProfileFields);
+    } else {
+      await ctx.db.insert("brokerProfiles", {
+        brokerOrgId,
+        ...brokerProfileFields,
+        createdByUserId: operatorUserId,
+        createdAt: now,
+      });
+    }
 
     const clientUserId = await upsertUser(ctx, {
       ...LOCAL_FIXTURE.client.admin,
@@ -583,7 +615,7 @@ export const insertLocalFixture = internalMutation({
     const clientFields = {
       name: LOCAL_FIXTURE.client.name,
       type: "client" as const,
-      brokerOrgId,
+      brokerOrgId: undefined,
       website: LOCAL_FIXTURE.client.website,
       industry: LOCAL_FIXTURE.client.industry,
       industryVertical: LOCAL_FIXTURE.client.industryVertical,
@@ -611,23 +643,8 @@ export const insertLocalFixture = internalMutation({
         query.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId),
       )
       .first();
-    const assignmentFields = {
-      orgId: brokerOrgId,
-      clientOrgId,
-      producerId: brokerUserId,
-      role: "primary" as const,
-      contactName: LOCAL_FIXTURE.broker.admin.name,
-      contactEmail: LOCAL_FIXTURE.broker.admin.email,
-      contactPhone: brokerPhone,
-      updatedAt: now,
-    };
     if (existingAssignment) {
-      await ctx.db.patch(existingAssignment._id, assignmentFields);
-    } else {
-      await ctx.db.insert("brokerClientAssignments", {
-        ...assignmentFields,
-        createdAt: now,
-      });
+      await ctx.db.delete(existingAssignment._id);
     }
 
     const policies = await ctx.db
@@ -640,9 +657,9 @@ export const insertLocalFixture = internalMutation({
     const policyFields = {
       orgId: clientOrgId,
       userId: clientUserId,
-      uploadedBySide: "broker" as const,
-      uploadedByUserId: brokerUserId,
-      uploadedByBrokerOrgId: brokerOrgId,
+      uploadedBySide: "operator" as const,
+      uploadedByUserId: operatorUserId,
+      uploadedByBrokerOrgId: undefined,
       pipelineStatus: "complete" as const,
       extractionDataStage: "final" as const,
       extractionDataStageUpdatedAt: now,
@@ -668,7 +685,9 @@ export const insertLocalFixture = internalMutation({
       effectiveDate: LOCAL_FIXTURE.policy.effectiveDate,
       expirationDate: LOCAL_FIXTURE.policy.expirationDate,
       isRenewal: false,
-      coverages: LOCAL_FIXTURE.policy.coverages.map((coverage) => ({ ...coverage })),
+      coverages: LOCAL_FIXTURE.policy.coverages.map((coverage) => ({
+        ...coverage,
+      })),
       insuredName: LOCAL_FIXTURE.policy.insuredName,
       insuredAddress: {
         ...LOCAL_FIXTURE.policy.insuredAddress,
@@ -768,7 +787,7 @@ export const insertLocalFixture = internalMutation({
       clientPhone,
       operatorPhone,
       summary:
-        "Seeded local fixture: Terry operator, Montgomery Risk broker with white-labeling disabled, Cove client, mock Slack service channel, stored favicon logos, and one final Cove policy",
+        "Seeded local fixture: Terry operator, standalone Montgomery Risk supplier profile, standalone Cove client, mock Slack service channel, stored favicon logos, and one final Cove policy",
     };
   },
 });

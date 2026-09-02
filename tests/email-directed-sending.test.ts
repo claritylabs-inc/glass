@@ -14,7 +14,10 @@ import {
   isSpotOutboundAddress,
 } from "../convex/lib/resend";
 
-function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
+function withEnv<T>(
+  values: Record<string, string | undefined>,
+  run: () => T,
+): T {
   const previous = Object.fromEntries(
     Object.keys(values).map((key) => [key, process.env[key]]),
   );
@@ -34,13 +37,10 @@ function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T
 
 describe("directed email safety", () => {
   it("falls back to the default agent identity", async () => {
-    const identity = await resolveEmailAgentIdentity(
-      {
-        runQuery: async () => null,
-        storage: { getUrl: async () => null },
-      } as never,
-      { name: "Standalone Client", type: "client" },
-    );
+    const identity = resolveEmailAgentIdentity({
+      name: "Standalone Client",
+      type: "client",
+    });
 
     expect(identity).toMatchObject({
       canSend: true,
@@ -112,5 +112,4 @@ describe("directed email safety", () => {
     expect(isPendingEmailRestoreIntent("undo cancel")).toBe(true);
     expect(isPendingEmailRestoreIntent("restore the draft")).toBe(true);
   });
-
 });

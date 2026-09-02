@@ -65,15 +65,42 @@ const procurementEmailThreadId = z
   .string()
   .min(1)
   .describe("Exact procurement email thread ID");
+const procurementRequirementDraftId = z
+  .string()
+  .min(1)
+  .describe("Exact procurement requirement draft ID");
+const procurementProposalId = z
+  .string()
+  .min(1)
+  .describe("Exact private procurement proposal ID");
+const procurementProposalReviewId = z
+  .string()
+  .min(1)
+  .describe("Exact procurement proposal review ID");
 const procurementRequestStatus = z.enum([
   "draft",
+  "submitted",
+  "gathering_information",
   "marketing",
-  "quote_review",
-  "client_decision",
-  "accepted",
-  "closed",
+  "proposal_review",
+  "binding",
+  "completed",
   "cancelled",
 ]);
+const procurementProposalConclusion = z.enum([
+  "meets_requirements",
+  "has_gaps",
+  "insufficient_evidence",
+]);
+const brokerNetworkStatus = z.enum(["prospect", "active", "inactive"]);
+const brokerOfficeAddress = z.object({
+  street1: z.string().max(300).optional(),
+  street2: z.string().max(300).optional(),
+  city: z.string().max(200).optional(),
+  state: z.string().max(100).optional(),
+  postalCode: z.string().max(40).optional(),
+  country: z.string().max(100).optional(),
+});
 const procurementOutreachStatus = z.enum([
   "request_sent",
   "can_handle",
@@ -544,6 +571,69 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) =>
       `Read procurement request ${input.procurementRequestId}`,
   }),
+  list_procurement_proposals: defineOperatorTool({
+    version: 1,
+    description:
+      "List every operator-private proposal for one exact procurement request, including broker, documents, extracted offer facts, revision lineage, and reviews. Never expose this output to a client or broker.",
+    inputSchema: z.object({ procurementRequestId }),
+    capability: "operator.procurement.read",
+    effect: "read",
+    requiredRole: "operator",
+    confirmation: "none",
+    target: (input) => ({
+      kind: "procurement_request",
+      id: input.procurementRequestId,
+    }),
+    summarize: (input) =>
+      `List private proposals for procurement request ${input.procurementRequestId}`,
+  }),
+  get_procurement_proposal: defineOperatorTool({
+    version: 1,
+    description:
+      "Read one exact operator-private proposal with its broker, outreach, documents, extracted offer, source-backed reviews, and revision lineage.",
+    inputSchema: z.object({ procurementProposalId }),
+    capability: "operator.procurement.read",
+    effect: "read",
+    requiredRole: "operator",
+    confirmation: "none",
+    target: (input) => ({
+      kind: "procurement_proposal",
+      id: input.procurementProposalId,
+    }),
+    summarize: (input) =>
+      `Read private procurement proposal ${input.procurementProposalId}`,
+  }),
+  get_broker_network_profile: defineOperatorTool({
+    version: 1,
+    description:
+      "Read one exact supplier-network broker profile, including neutral organization identity, office, writing states, exact ACORD LOBCd values, portal contacts, last outreach, and proposal count.",
+    inputSchema: z.object({ brokerOrgId: organizationId }),
+    capability: "operator.organizations.read",
+    effect: "read",
+    requiredRole: "operator",
+    confirmation: "none",
+    target: (input) => ({ kind: "organization", id: input.brokerOrgId }),
+    summarize: (input) => `Read broker network profile ${input.brokerOrgId}`,
+  }),
+  list_broker_network_profiles: defineOperatorTool({
+    version: 1,
+    description:
+      "Search the supplier-network broker directory by neutral identity, status, USPS writing state, or exact ACORD LOBCd value.",
+    inputSchema: z.object({
+      query: z.string().max(200).optional(),
+      status: brokerNetworkStatus.optional(),
+      writingState: z.string().min(2).max(2).optional(),
+      lineOfBusinessCode: z.string().min(1).max(40).optional(),
+      limit: z.number().int().min(1).max(100).optional(),
+    }),
+    capability: "operator.organizations.read",
+    effect: "read",
+    requiredRole: "operator",
+    confirmation: "none",
+    target: () => ({ kind: "platform", id: "broker-network" }),
+    summarize: (input) =>
+      `Search broker network${input.query ? ` for ${JSON.stringify(input.query)}` : ""}`,
+  }),
   get_procurement_forwarding_address: defineOperatorTool({
     version: 1,
     description:
@@ -796,6 +886,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       requirements: z.string().min(1).max(20_000),
       targetEffectiveDate: z.string().max(10).optional(),
       status: procurementRequestStatus.optional(),
+      clientVisible: z.boolean().optional(),
       replacingPolicyId: policyId
         .describe(
           "Exact existing policy ID returned by a policy read tool. Omit for a new purchase or when no policy is being replaced; never use an organization ID.",
@@ -836,6 +927,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
         requirements: z.string().min(1).max(20_000).optional(),
         targetEffectiveDate: z.string().max(10).nullable().optional(),
         status: procurementRequestStatus.optional(),
+        clientVisible: z.boolean().optional(),
         replacingPolicyId: policyId.nullable().optional(),
         resultingPolicyId: policyId.nullable().optional(),
       })
@@ -855,25 +947,31 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) =>
       `Update procurement request ${input.procurementRequestId}`,
   }),
-  create_procurement_broker_outreach: defineOperatorTool({
+  confirm_procurement_requirement: defineOperatorTool({
     version: 1,
     description:
-      "Add a contacted broker to an exact procurement request. The broker may be an external firm; preserve its name/contact snapshot and track application questions and final quote details.",
+      "Confirm one exact staged insurance-requirement draft, reusing an identical active client requirement when available and associating it with the procurement request.",
+    inputSchema: z.object({ procurementRequirementDraftId }),
+    capability: "operator.procurement.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_requirement_draft",
+      id: input.procurementRequirementDraftId,
+    }),
+    summarize: (input) =>
+      `Confirm procurement requirement draft ${input.procurementRequirementDraftId}`,
+  }),
+  create_procurement_proposal: defineOperatorTool({
+    version: 1,
+    description:
+      "Create one operator-private proposal for an exact procurement request, broker organization, and matching outreach. A revision may reference the exact superseded proposal.",
     inputSchema: z.object({
       procurementRequestId,
-      brokerOrgId: organizationId.optional(),
-      brokerName: z.string().min(1).max(200),
-      contactName: z.string().max(200).optional(),
-      contactEmail: z.string().max(320).optional(),
-      contactPhone: z.string().max(100).optional(),
-      status: procurementOutreachStatus.optional(),
-      applicationUrl: z.string().max(2_000).optional(),
-      applicationQuestions: z.array(z.string().max(1_000)).max(100).optional(),
-      notes: z.string().max(20_000).optional(),
-      quoteSummary: z.string().max(20_000).optional(),
-      quoteAmount: z.number().nonnegative().optional(),
-      quoteCurrency: z.string().max(3).optional(),
-      quoteUrl: z.string().max(2_000).optional(),
+      brokerOrgId: organizationId,
+      procurementOutreachId,
+      supersedesProposalId: procurementProposalId.optional(),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
@@ -884,17 +982,105 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       id: input.procurementRequestId,
     }),
     summarize: (input) =>
-      `Add broker ${JSON.stringify(input.brokerName)} to procurement request ${input.procurementRequestId}`,
+      `Create a private proposal for procurement request ${input.procurementRequestId} from broker ${input.brokerOrgId}`,
+  }),
+  confirm_procurement_proposal_review: defineOperatorTool({
+    version: 1,
+    description:
+      "Confirm or override only the overall conclusion of one exact current source-backed proposal review. Findings and evidence remain model-authored and auditable.",
+    inputSchema: z.object({
+      procurementProposalReviewId,
+      conclusion: procurementProposalConclusion,
+    }),
+    capability: "operator.procurement.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_proposal_review",
+      id: input.procurementProposalReviewId,
+    }),
+    summarize: (input) =>
+      `Confirm proposal review ${input.procurementProposalReviewId} as ${input.conclusion}`,
+  }),
+  select_procurement_proposal: defineOperatorTool({
+    version: 1,
+    description:
+      "Select one exact private proposal only after revalidating a current staff-confirmed review that meets every requirement; prior selected proposals on the request are cleared atomically.",
+    inputSchema: z.object({ procurementProposalId }),
+    capability: "operator.procurement.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_proposal",
+      id: input.procurementProposalId,
+    }),
+    summarize: (input) =>
+      `Select procurement proposal ${input.procurementProposalId}`,
+  }),
+  update_broker_network_profile: defineOperatorTool({
+    version: 1,
+    description:
+      "Update supplied fields on one exact supplier-network broker profile. Writing states use USPS abbreviations and lines use exact ACORD LOBCd values; omitted fields remain unchanged.",
+    inputSchema: z
+      .object({
+        brokerOrgId: organizationId,
+        networkStatus: brokerNetworkStatus.optional(),
+        officeAddress: brokerOfficeAddress.optional(),
+        writingStates: z.array(z.string().min(2).max(2)).max(60).optional(),
+        lineOfBusinessCodes: z
+          .array(z.string().min(1).max(40))
+          .max(100)
+          .optional(),
+        name: z.string().min(1).max(200).optional(),
+        website: z.string().max(2_000).nullable().optional(),
+      })
+      .refine(
+        (input) => Object.keys(input).some((key) => key !== "brokerOrgId"),
+        "At least one broker profile field is required",
+      ),
+    capability: "operator.organizations.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({ kind: "organization", id: input.brokerOrgId }),
+    summarize: (input) => `Update broker network profile ${input.brokerOrgId}`,
+  }),
+  create_procurement_broker_outreach: defineOperatorTool({
+    version: 1,
+    description:
+      "Add a real broker-network organization to an exact procurement request and preserve the selected contact snapshot and application context.",
+    inputSchema: z.object({
+      procurementRequestId,
+      brokerOrgId: organizationId,
+      contactName: z.string().max(200).optional(),
+      contactEmail: z.string().max(320).optional(),
+      contactPhone: z.string().max(100).optional(),
+      status: procurementOutreachStatus.optional(),
+      applicationUrl: z.string().max(2_000).optional(),
+      applicationQuestions: z.array(z.string().max(1_000)).max(100).optional(),
+      notes: z.string().max(20_000).optional(),
+    }),
+    capability: "operator.procurement.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_request",
+      id: input.procurementRequestId,
+    }),
+    summarize: (input) =>
+      `Add broker ${input.brokerOrgId} to procurement request ${input.procurementRequestId}`,
   }),
   update_procurement_broker_outreach: defineOperatorTool({
     version: 1,
     description:
-      "Update supplied broker outreach fields, including exact workflow status, application link/questions, requested context, and final quote details. Quote data remains after client acceptance or rejection.",
+      "Update supplied broker outreach fields, including its exact workflow status, broker/contact snapshot, application link/questions, and notes. File quote documents as private proposals instead of writing quote fields on outreach.",
     inputSchema: z
       .object({
         procurementOutreachId,
-        brokerOrgId: organizationId.nullable().optional(),
-        brokerName: z.string().min(1).max(200).optional(),
+        brokerOrgId: organizationId.optional(),
         contactName: z.string().max(200).nullable().optional(),
         contactEmail: z.string().max(320).nullable().optional(),
         contactPhone: z.string().max(100).nullable().optional(),
@@ -905,10 +1091,6 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
           .max(100)
           .optional(),
         notes: z.string().max(20_000).nullable().optional(),
-        quoteSummary: z.string().max(20_000).nullable().optional(),
-        quoteAmount: z.number().nonnegative().nullable().optional(),
-        quoteCurrency: z.string().max(3).nullable().optional(),
-        quoteUrl: z.string().max(2_000).nullable().optional(),
       })
       .refine(
         (input) =>

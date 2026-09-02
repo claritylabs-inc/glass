@@ -13,14 +13,10 @@ import type { FeatureFlagMap } from "@/convex/lib/featureFlags";
 export type ActiveOrgContext = {
   orgId: Id<"organizations">;
   orgType: "broker" | "client";
-  accessType: "member" | "broker_of_client" | "connected_client";
+  accessType: "member" | "connected_client";
   role: "admin" | "member" | undefined;
   orgName: string;
-  brokerOrgId: Id<"organizations"> | undefined;
   slug: string | undefined;
-  whiteLabelingEnabled: boolean;
-  brandingColor: string | undefined;
-  agentDisplayName: string | undefined;
   featureFlags: FeatureFlagMap | undefined;
   isOperatorImpersonation: boolean;
   isReadOnlyImpersonation: boolean;
@@ -46,7 +42,11 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
   const searchParams = useSearchParams();
   const isStoppingOperatorImpersonation = useIsStoppingOperatorImpersonation();
   const orgIdFromUrl = searchParams.get("org") as Id<"organizations"> | null;
-  const viewer = useCachedQuery("hooks.currentOrg.viewer", api.users.viewer, {});
+  const viewer = useCachedQuery(
+    "hooks.currentOrg.viewer",
+    api.users.viewer,
+    {},
+  );
   const operatorContext = useCachedQuery(
     "hooks.currentOrg.operator.current",
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,11 +74,7 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
     _id: Id<"organizations">;
     name: string;
     type?: string;
-    brokerOrgId?: Id<"organizations">;
     slug?: string;
-    whiteLabelingEnabled?: boolean;
-    brandingColor?: string;
-    agentDisplayName?: string;
     featureFlags?: FeatureFlagMap;
   };
 
@@ -91,8 +87,7 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
 
   // viewerOrg only returns an org when the viewer can access it. Cross-org
   // access type can be widened here when the server starts returning it.
-  const accessType: "member" | "broker_of_client" | "connected_client" =
-    "member";
+  const accessType: "member" | "connected_client" = "member";
   const isOperatorImpersonation =
     viewer?.accountKind === "operator" &&
     Boolean(operatorContext?.activeImpersonation);
@@ -107,11 +102,7 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
     accessType,
     role: membership.role,
     orgName: org.name,
-    brokerOrgId: org.brokerOrgId,
     slug: org.slug,
-    whiteLabelingEnabled: org.whiteLabelingEnabled !== false,
-    brandingColor: org.brandingColor,
-    agentDisplayName: org.agentDisplayName,
     featureFlags: org.featureFlags,
     isOperatorImpersonation,
     isReadOnlyImpersonation,

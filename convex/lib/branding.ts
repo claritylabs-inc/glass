@@ -1,11 +1,9 @@
 "use node";
 
 /**
- * Convex-side branding context and white-label gates.
- *
- * Owns server-safe brand names, colors, logo URLs, and email-compatible branding
- * contexts. Browser theme token generation belongs in `lib/branding.ts`; storage
- * URL attachment for org query rows belongs in `convex/lib/orgBranding.ts`.
+ * Convex-side Spot branding context for transactional email and auth flows.
+ * Browser theme token generation belongs in `lib/branding.ts`; storage URL
+ * attachment for org query rows belongs in `convex/lib/orgBranding.ts`.
  */
 
 export type BrandingContext = {
@@ -23,12 +21,6 @@ export type BrandingContext = {
   agentDisplayName: string;
 };
 
-export function isWhiteLabelingEnabled(org?: {
-  whiteLabelingEnabled?: boolean;
-} | null): boolean {
-  return org?.whiteLabelingEnabled !== false;
-}
-
 const DEFAULT_LOGO_URL = "/spot-icon.jpg";
 const DEFAULT_BRAND_COLOR = "#2563EB";
 const DEFAULT_SUPPORT_URL = "https://app.spot.insure/support";
@@ -45,23 +37,6 @@ export function getDefaultBranding(): BrandingContext {
   };
 }
 
-/**
- * Build a BrandingContext from optional org overrides.
- * All fields fall back to Spot defaults when the org has not configured them.
- */
-export function getBrandingContext(orgOverrides?: {
-  agentDisplayName?: string;
-  brandingColor?: string;
-  logoUrl?: string;
-}): BrandingContext {
-  const defaults = getDefaultBranding();
-  return {
-    ...defaults,
-    brandName: orgOverrides?.agentDisplayName ?? defaults.brandName,
-    brandColor: orgOverrides?.brandingColor ?? defaults.brandColor,
-    logoUrl: orgOverrides?.logoUrl ?? defaults.logoUrl,
-    agentDisplayName: orgOverrides?.agentDisplayName
-      ? `${orgOverrides.agentDisplayName} Agent`
-      : defaults.agentDisplayName,
-  };
+export function getBrandingContext(): BrandingContext {
+  return getDefaultBranding();
 }

@@ -25,8 +25,13 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "update_client_file",
   "create_procurement_request",
   "update_procurement_request",
+  "confirm_procurement_requirement",
   "create_procurement_broker_outreach",
   "update_procurement_broker_outreach",
+  "create_procurement_proposal",
+  "confirm_procurement_proposal_review",
+  "select_procurement_proposal",
+  "update_broker_network_profile",
   "create_procurement_file_item",
   "update_procurement_file_item",
   "update_procurement_email_thread",
@@ -386,6 +391,101 @@ async function preflightOutreachUpdate(
   validateOptionalUrl(input.quoteUrl);
 }
 
+async function preflightRequirementDraftConfirm(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const draft = await requireDocument(
+    ctx,
+    "procurementRequirementDrafts",
+    input.procurementRequirementDraftId,
+    "Requirement draft",
+  );
+  if (draft.status !== "draft") throw new Error("Requirement draft not found");
+  const request = await requireProcurementRequest(ctx, draft.requestId);
+  if (request.clientOrgId !== draft.clientOrgId) {
+    throw new Error("Requirement draft belongs to a different client");
+  }
+}
+
+async function preflightProposalCreate(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const request = await requireProcurementRequest(
+    ctx,
+    input.procurementRequestId,
+  );
+  const broker = await requireBrokerOrganization(ctx, input.brokerOrgId);
+  const outreach = await requireDocument(
+    ctx,
+    "procurementBrokerOutreaches",
+    input.procurementOutreachId,
+    "Broker outreach",
+  );
+  if (outreach.requestId !== request._id)
+    throw new Error("Outreach does not belong to this request");
+  if (!broker || outreach.brokerOrgId !== broker._id)
+    throw new Error("Proposal broker must match its outreach");
+  if (input.supersedesProposalId !== undefined) {
+    const superseded = await requireDocument(
+      ctx,
+      "procurementProposals",
+      input.supersedesProposalId,
+      "Proposal",
+    );
+    if (superseded.requestId !== request._id)
+      throw new Error("Superseded proposal must belong to this request");
+  }
+}
+
+async function preflightProposalReviewConfirm(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const review = await requireDocument(
+    ctx,
+    "procurementProposalReviews",
+    input.procurementProposalReviewId,
+    "Proposal review",
+  );
+  const proposal = await requireDocument(
+    ctx,
+    "procurementProposals",
+    review.proposalId,
+    "Proposal",
+  );
+  const request = await requireProcurementRequest(ctx, review.requestId);
+  if (
+    proposal.requestId !== request._id ||
+    proposal.clientOrgId !== request.clientOrgId ||
+    proposal.extractionFingerprint !== review.extractionFingerprint ||
+    (request.requirementRevision ?? 0) !== review.requirementRevision ||
+    (request.specificationRevision ?? 0) !== review.specificationRevision
+  ) {
+    throw new Error("Review is stale");
+  }
+}
+
+async function preflightProposalSelect(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const proposal = await requireDocument(
+    ctx,
+    "procurementProposals",
+    input.procurementProposalId,
+    "Proposal",
+  );
+  const request = await requireProcurementRequest(ctx, proposal.requestId);
+  if (proposal.clientOrgId !== request.clientOrgId) {
+    throw new Error("Proposal belongs to a different client");
+  }
+  if (proposal.status !== "reviewed" && proposal.status !== "selected") {
+    throw new Error("Only a reviewed proposal can be selected");
+  }
+}
+
 async function preflightProcurementFileCreate(
   ctx: MutationCtx,
   input: Record<string, unknown>,
@@ -648,11 +748,26 @@ export async function preflightOperatorToolConfirmation(
     case "update_procurement_request":
       await preflightProcurementRequestUpdate(ctx, args.input);
       return;
+    case "confirm_procurement_requirement":
+      await preflightRequirementDraftConfirm(ctx, args.input);
+      return;
     case "create_procurement_broker_outreach":
       await preflightOutreachCreate(ctx, args.input);
       return;
     case "update_procurement_broker_outreach":
       await preflightOutreachUpdate(ctx, args.input);
+      return;
+    case "create_procurement_proposal":
+      await preflightProposalCreate(ctx, args.input);
+      return;
+    case "confirm_procurement_proposal_review":
+      await preflightProposalReviewConfirm(ctx, args.input);
+      return;
+    case "select_procurement_proposal":
+      await preflightProposalSelect(ctx, args.input);
+      return;
+    case "update_broker_network_profile":
+      await requireBrokerOrganization(ctx, args.input.brokerOrgId);
       return;
     case "create_procurement_file_item":
       await preflightProcurementFileCreate(ctx, args.input);

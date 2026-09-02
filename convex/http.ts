@@ -1460,15 +1460,15 @@ function effectivePolicyDataStage(policy: Record<string, unknown>) {
   return policy.pipelineStatus === "complete" ? "final" : "placeholder";
 }
 
-function policyReadyForDelivery(policy: Record<string, unknown>) {
+function policyFileIsAvailable(policy: Record<string, unknown>) {
   return (
     policy.pipelineStatus === "complete" &&
     effectivePolicyDataStage(policy) === "final"
   );
 }
 
-function policyDeliveryBlockedMessage(policy: Record<string, unknown>) {
-  return `Policy ${String(policy.policyNumber ?? policy._id ?? "record")} must finish enrichment before policy delivery is available.`;
+function policyFileUnavailableMessage(policy: Record<string, unknown>) {
+  return `Policy ${String(policy.policyNumber ?? policy._id ?? "record")} must finish extraction before its original PDF is available.`;
 }
 
 // GET /mcp/policies/list
@@ -1548,10 +1548,10 @@ http.route({
       );
       const found = policies.find((p: any) => p._id === id);
       if (!found) return jsonResponse({ error: "Not found" }, 404);
-      if (!policyReadyForDelivery(found as Record<string, unknown>)) {
+      if (!policyFileIsAvailable(found as Record<string, unknown>)) {
         return jsonResponse(
           {
-            error: policyDeliveryBlockedMessage(
+            error: policyFileUnavailableMessage(
               found as Record<string, unknown>,
             ),
           },
@@ -2164,7 +2164,7 @@ const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
   {
     name: "ask_glass",
     description:
-      "Legacy alias for ask_spot. Ask the Spot AI assistant a question about the organization's insurance portfolio. When the selected org is a broker workspace, Spot can answer across managed client organizations with client-labeled results.",
+      "Legacy alias for ask_spot. Ask the Spot AI assistant a question about the organization's insurance portfolio.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -2185,7 +2185,7 @@ const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
   {
     name: "ask_spot",
     description:
-      "Ask the Spot AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. For client orgs, Spot answers within that org; for broker workspaces, Spot can answer across managed clients with client-labeled results. Optionally pass a threadId to continue an existing conversation.",
+      "Ask the Spot AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. Spot answers within the selected organization. Optionally pass a threadId to continue an existing conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -2419,28 +2419,6 @@ const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
     },
     effect: "write",
     destructive: true,
-  },
-  // ── Broker tools ──
-  {
-    name: "list_clients",
-    description: "List clients visible to the broker. Broker only.",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "get_client",
-    description: "Get client org info and policy count. Broker only.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        client_org_id: { type: "string", description: "Client org ID" },
-      },
-      required: ["client_org_id"],
-    },
-  },
-  {
-    name: "list_broker_activity",
-    description: "List broker portfolio activity feed.",
-    inputSchema: { type: "object" as const, properties: {} },
   },
   {
     name: "list_connected_vendors",
@@ -2964,9 +2942,9 @@ async function handleToolCall(
       );
       const found = policies.find((p: any) => p._id === args.id);
       if (!found) throw new Error("Not found");
-      if (!policyReadyForDelivery(found as Record<string, unknown>)) {
+      if (!policyFileIsAvailable(found as Record<string, unknown>)) {
         throw new Error(
-          policyDeliveryBlockedMessage(found as Record<string, unknown>),
+          policyFileUnavailableMessage(found as Record<string, unknown>),
         );
       }
       if (!found.fileId)
@@ -3381,58 +3359,6 @@ async function handleToolCall(
       );
       return {
         content: [{ type: "text", text: JSON.stringify(draft, null, 2) }],
-      };
-    }
-    // ── Broker tools ──
-    case "list_clients": {
-      const clients = await ctx.runQuery(
-        (internal as any).clients.listForBrokerInternal,
-        {
-          brokerOrgId: orgId,
-          userId,
-        },
-      );
-      return {
-        content: [{ type: "text", text: JSON.stringify(clients, null, 2) }],
-      };
-    }
-    case "get_client": {
-      const clientOrgId = args.client_org_id as Id<"organizations">;
-      const detail = await ctx.runQuery(
-        (internal as any).clients.getDetailInternal,
-        {
-          brokerOrgId: orgId,
-          clientOrgId,
-          userId,
-        },
-      );
-      if (!detail) throw new Error("Not found");
-      const policies = await ctx.runQuery(
-        internal.policies.listAllPreviewReadableInternal,
-        { orgId: clientOrgId },
-      );
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              { org: detail, policy_count: policies.length },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    }
-    case "list_broker_activity": {
-      const activity = await ctx
-        .runQuery((internal as any).brokerActivity.listPortfolio, {
-          orgId,
-          limit: 50,
-        })
-        .catch(() => []);
-      return {
-        content: [{ type: "text", text: JSON.stringify(activity, null, 2) }],
       };
     }
     case "list_connected_vendors": {
@@ -3947,82 +3873,6 @@ http.route({
   }),
 });
 
-// ── Task 16: MCP HTTP backing routes for broker + client tool calls ──
-
-// GET /mcp/broker/clients/list
-http.route({
-  path: "/mcp/broker/clients/list",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const result = await ctx.runQuery(
-        (internal as any).clients.listForBrokerInternal,
-        {
-          brokerOrgId: identity.orgId as Id<"organizations">,
-          userId: identity.userId as Id<"users">,
-        },
-      );
-      return jsonResponse(result);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// GET /mcp/broker/clients/get
-http.route({
-  path: "/mcp/broker/clients/get",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const clientOrgId = getQueryParam(request, "clientOrgId");
-      if (!clientOrgId)
-        return jsonResponse({ error: "Missing clientOrgId" }, 400);
-      const detail = await ctx.runQuery(
-        (internal as any).clients.getDetailInternal,
-        {
-          brokerOrgId: identity.orgId as Id<"organizations">,
-          clientOrgId: clientOrgId as Id<"organizations">,
-          userId: identity.userId as Id<"users">,
-        },
-      );
-      if (!detail) return jsonResponse({ error: "Not found" }, 404);
-      const policies = await ctx.runQuery(
-        internal.policies.listAllPreviewReadableInternal,
-        { orgId: clientOrgId as Id<"organizations"> },
-      );
-      return jsonResponse({ org: detail, policy_count: policies.length });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// GET /mcp/broker/activity/list
-http.route({
-  path: "/mcp/broker/activity/list",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const result = await ctx
-        .runQuery((internal as any).brokerActivity.listPortfolio, {
-          orgId: identity.orgId as Id<"organizations">,
-          limit: 50,
-        })
-        .catch(() => []);
-      return jsonResponse(result);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
 // ── REST API v1 helpers ──
 
 function extractBearerToken(request: Request): string {
@@ -4188,136 +4038,6 @@ http.route({
           404,
         );
       return jsonResponse(toOrgDto(org));
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
-// ── Task 8: GET /api/v1/clients ──
-http.route({
-  path: "/api/v1/clients",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const rows = await ctx.runQuery(
-        (internal as any).clients.listForBrokerInternal,
-        {
-          brokerOrgId: identity.orgId,
-          userId: identity.userId,
-        },
-      );
-      const data = (rows ?? []).map((row: any) =>
-        row.onboardingStatus === "invited"
-          ? {
-              invitation_id: row.invitationId,
-              name: row.name,
-              onboarding_status: "invited",
-              created_at: row.createdAt,
-            }
-          : {
-              id: row.clientOrgId,
-              name: row.name,
-              onboarding_status: row.onboardingStatus,
-              created_at: row.createdAt,
-              last_activity_at: row.lastActivityAt,
-            },
-      );
-      return jsonResponse({ data, next_cursor: null });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
-// ── GET /api/v1/clients/:id ──
-http.route({
-  path: "/api/v1/clients/:id",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const clientOrgId = new URL(request.url).pathname
-        .split("/")
-        .pop() as Id<"organizations">;
-      const detail = await ctx.runQuery(
-        (internal as any).clients.getDetailInternal,
-        {
-          brokerOrgId: identity.orgId,
-          clientOrgId,
-          userId: identity.userId,
-        },
-      );
-      if (!detail) {
-        return jsonResponse(
-          { error: { code: "not_found", message: "Client not found" } },
-          404,
-        );
-      }
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-        orgId: clientOrgId,
-      });
-      return jsonResponse({
-        id: detail.clientOrgId,
-        name: detail.name,
-        legal_name: detail.legalName ?? null,
-        website: detail.website ?? null,
-        industry: detail.industry ?? null,
-        context: detail.context ?? null,
-        policy_count: policies.length,
-      });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
-// ── POST /api/v1/clients/invitations ──
-http.route({
-  path: "/api/v1/clients/invitations",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      if (!identity.scopes.includes("write")) {
-        return jsonResponse(
-          {
-            error: {
-              code: "insufficient_scope",
-              message: "Write scope required",
-              request_id: identity.requestId,
-            },
-          },
-          403,
-        );
-      }
-      const body = await request.json();
-      if (!body.client_email)
-        return jsonResponse(
-          { error: { code: "bad_request", message: "Missing client_email" } },
-          400,
-        );
-      const result = await ctx
-        .runMutation((internal as any).clientInvitations.insertInvitation, {
-          brokerOrgId: identity.orgId,
-          email: body.client_email,
-          message: body.message,
-        })
-        .catch(() => null);
-      return jsonResponse({ ok: true, result }, 201);
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse(
@@ -4958,30 +4678,6 @@ http.route({
   }),
 });
 
-// ── GET /api/v1/activity ──
-http.route({
-  path: "/api/v1/activity",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const result = await ctx
-        .runQuery((internal as any).brokerActivity.listPortfolioInternal, {
-          orgId: identity.orgId,
-          userId: identity.userId,
-        })
-        .catch(() => []);
-      return jsonResponse({ data: Array.isArray(result) ? result : [] });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
 // ── Task 13: GET /api/v1/openapi.json ──
 http.route({
   path: "/api/v1/openapi.json",
@@ -5020,27 +4716,6 @@ http.route({
             tags: ["Org"],
             summary: "Current org detail",
             responses: { "200": { description: "Org detail" } },
-          },
-        },
-        "/api/v1/clients": {
-          get: {
-            tags: ["Clients"],
-            summary: "List broker clients",
-            responses: { "200": { description: "Paginated client list" } },
-          },
-        },
-        "/api/v1/clients/{id}": {
-          get: {
-            tags: ["Clients"],
-            summary: "Get client detail",
-            responses: { "200": { description: "Client detail" } },
-          },
-        },
-        "/api/v1/clients/invitations": {
-          post: {
-            tags: ["Clients"],
-            summary: "Create client invitation (write)",
-            responses: { "201": { description: "Invitation created" } },
           },
         },
         "/api/v1/policies": {
@@ -5145,13 +4820,6 @@ http.route({
             responses: { "200": { description: "Notifications" } },
           },
         },
-        "/api/v1/activity": {
-          get: {
-            tags: ["Activity"],
-            summary: "Activity feed",
-            responses: { "200": { description: "Activity" } },
-          },
-        },
       },
     });
   }),
@@ -5168,7 +4836,7 @@ http.route({
         spot: {
           uri: `${url.origin}/mcp`,
           instructions:
-            "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and broker-client workflows.",
+            "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and compliance workflows.",
         },
       },
     });

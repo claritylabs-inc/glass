@@ -4,6 +4,7 @@ import { internalQuery, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  assertClientOrg,
   requireCurrentOrgAccess,
   requireCurrentOrgAdminWrite,
   type CurrentOrgAccess,
@@ -45,24 +46,18 @@ function legacyRowDefaults() {
   return {
     populateHoldersFromEndorsements: true,
     renewalReissueMode: "review_queue" as const,
-    renewalReviewLeadDays: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReviewLeadDays,
+    renewalReviewLeadDays:
+      DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.renewalReviewLeadDays,
     policyChangeRequestsForHeldCertificatesEnabled: false,
     channels: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.channels,
     copyInstructions: DEFAULT_CERTIFICATE_WORKFLOW_SETTINGS.copyInstructions,
   };
 }
 
-async function getBrokerDefault(ctx: ReadCtx, brokerOrgId?: Id<"organizations"> | null) {
-  if (!brokerOrgId) return null;
-  return await ctx.db
-    .query("certificateWorkflowSettings")
-    .withIndex("broker_client", (q) =>
-      q.eq("brokerOrgId", brokerOrgId).eq("clientOrgId", undefined),
-    )
-    .first();
-}
-
-async function getClientOverride(ctx: ReadCtx, clientOrgId?: Id<"organizations"> | null) {
+async function getClientOverride(
+  ctx: ReadCtx,
+  clientOrgId?: Id<"organizations"> | null,
+) {
   if (!clientOrgId) return null;
   return await ctx.db
     .query("certificateWorkflowSettings")
@@ -70,49 +65,25 @@ async function getClientOverride(ctx: ReadCtx, clientOrgId?: Id<"organizations">
     .first();
 }
 
-async function resolveEffectiveForOrg(ctx: ReadCtx, orgId: Id<"organizations">) {
+async function resolveEffectiveForOrg(
+  ctx: ReadCtx,
+  orgId: Id<"organizations">,
+) {
   const org = await ctx.db.get(orgId);
   if (!org) throw new Error("Organization not found");
   const orgType = (org.type ?? "client") as "broker" | "client" | "partner";
   const clientOrgId = orgType === "client" ? orgId : null;
-  const brokerOrgId = orgType === "broker"
-    ? orgId
-    : orgType === "client"
-      ? (org.brokerOrgId ?? null)
-      : null;
-
-  const [brokerDefault, clientOverride] = await Promise.all([
-    getBrokerDefault(ctx, brokerOrgId),
-    getClientOverride(ctx, clientOrgId),
-  ]);
-  const row = clientOverride ?? brokerDefault ?? null;
-  const source = clientOverride
-    ? "client_override"
-    : brokerDefault
-      ? "broker_default"
-      : "platform_default";
+  const clientOverride = await getClientOverride(ctx, clientOrgId);
+  const row = clientOverride;
+  const source = clientOverride ? "client_override" : "platform_default";
   const values = valuesFromRow(row);
   return {
     ...values,
     source,
     row,
-    brokerDefault,
     clientOverride,
-    brokerOrgId,
     clientOrgId,
   };
-}
-
-function assertBrokerAdmin(access: CurrentOrgAccess) {
-  if ((access.org.type ?? "client") !== "broker") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "Switch to a broker organization to manage broker certificate settings.",
-    );
-  }
-  if (access.role !== "admin") {
-    throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
-  }
 }
 
 function assertClientAdmin(access: CurrentOrgAccess) {
@@ -131,6 +102,7 @@ export const getEffectiveForCurrentOrg = query({
   args: {},
   handler: async (ctx) => {
     const access = await requireCurrentOrgAccess(ctx);
+    assertClientOrg(access);
     return await resolveEffectiveForOrg(ctx, access.orgId);
   },
 });
@@ -142,32 +114,6 @@ export const getEffectiveInternal = internalQuery({
   },
 });
 
-export const updateBrokerDefault = mutation({
-  args: settingsArgs,
-  handler: async (ctx, args) => {
-    const access = await requireCurrentOrgAdminWrite(ctx);
-    assertBrokerAdmin(access);
-    const now = dayjs().valueOf();
-    const patch = {
-      brokerOrgId: access.orgId,
-      clientOrgId: undefined,
-      ...legacyRowDefaults(),
-      renewalReissueEnabled: args.renewalReissueEnabled,
-      updatedByUserId: access.userId,
-      updatedAt: now,
-    };
-    const existing = await getBrokerDefault(ctx, access.orgId);
-    if (existing) {
-      await ctx.db.patch(existing._id, patch);
-      return existing._id;
-    }
-    return await ctx.db.insert("certificateWorkflowSettings", {
-      ...patch,
-      createdAt: now,
-    });
-  },
-});
-
 export const updateClientOverride = mutation({
   args: settingsArgs,
   handler: async (ctx, args) => {
@@ -175,7 +121,7 @@ export const updateClientOverride = mutation({
     assertClientAdmin(access);
     const now = dayjs().valueOf();
     const patch = {
-      brokerOrgId: access.org.brokerOrgId,
+      brokerOrgId: undefined,
       clientOrgId: access.orgId,
       ...legacyRowDefaults(),
       renewalReissueEnabled: args.renewalReissueEnabled,

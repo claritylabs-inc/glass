@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation } from "convex/react";
-import { CheckCircle2, Loader2, Send } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
@@ -234,17 +234,12 @@ function displayReviewReason(question: CoverageReviewQuestion) {
 export function PolicyExtractionReview({
   policy,
   readOnly,
-  canRequestBrokerHelp,
 }: {
   policy: Record<string, unknown> & { _id: Id<"policies"> };
   readOnly: boolean;
-  canRequestBrokerHelp: boolean;
 }) {
   const questions = extractionReviewQuestions(policy);
   const answerQuestion = useMutation(api.policies.answerCoverageReviewQuestion);
-  const requestBrokerHelp = useMutation(
-    api.policies.requestCoverageReviewBrokerHelp,
-  );
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<
     Record<string, string>
@@ -274,23 +269,6 @@ export function PolicyExtractionReview({
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(error, "Could not confirm coverage"),
-      );
-    } finally {
-      setPendingId(null);
-    }
-  };
-
-  const askBroker = async (questionId: string) => {
-    setPendingId(`${questionId}:broker`);
-    try {
-      await requestBrokerHelp({
-        id: policy._id,
-        questionId,
-      });
-      toast.success("Broker help requested");
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(error, "Could not request broker help"),
       );
     } finally {
       setPendingId(null);
@@ -341,14 +319,14 @@ export function PolicyExtractionReview({
                   <p className={`text-foreground ${typeStyle("body.medium")}`}>
                     {displayReviewQuestion(question)}
                   </p>
-                  <p className={`mt-1 max-w-4xl text-muted-foreground ${typeStyle("caption.default")}`}>
+                  <p
+                    className={`mt-1 max-w-4xl text-muted-foreground ${typeStyle("caption.default")}`}
+                  >
                     {displayReviewReason(question)}
                   </p>
                 </div>
                 {brokerRequested ? (
-                  <StatusTag tone="warning">
-                    Broker requested
-                  </StatusTag>
+                  <StatusTag tone="warning">Broker requested</StatusTag>
                 ) : null}
               </div>
 
@@ -375,35 +353,49 @@ export function PolicyExtractionReview({
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className={`text-muted-foreground ${typeStyle("label.eyebrow")}`}>
+                        <p
+                          className={`text-muted-foreground ${typeStyle("label.eyebrow")}`}
+                        >
                           {heading}
                         </p>
-                        <p className={`mt-1 text-foreground ${typeStyle("body.medium")}`}>
+                        <p
+                          className={`mt-1 text-foreground ${typeStyle("body.medium")}`}
+                        >
                           {optionDisplayLabel(option)}
                         </p>
                         {details.source || details.type ? (
-                          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
+                          <p
+                            className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                          >
                             {[details.type, details.source]
                               .filter(Boolean)
                               .join(" from ")}
                           </p>
                         ) : null}
                         {key === recommendedEntry?.key ? (
-                          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
+                          <p
+                            className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                          >
                             {recommendationText(question, option)}
                           </p>
                         ) : details.name ? (
-                          <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>
+                          <p
+                            className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                          >
                             {details.name}
                           </p>
                         ) : null}
                         {details.text ? (
-                          <p className={`mt-1 line-clamp-2 text-muted-foreground ${typeStyle("caption.default")}`}>
+                          <p
+                            className={`mt-1 line-clamp-2 text-muted-foreground ${typeStyle("caption.default")}`}
+                          >
                             {details.text}
                           </p>
                         ) : null}
                       </div>
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border border-border-emphasized px-3 py-1 text-muted-foreground ${typeStyle("label.tag")}`}>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full border border-border-emphasized px-3 py-1 text-muted-foreground ${typeStyle("label.tag")}`}
+                      >
                         {selected ? (
                           <CheckCircle2 className="size-3.5" />
                         ) : null}
@@ -436,21 +428,6 @@ export function PolicyExtractionReview({
                   )}
                   Confirm Selection
                 </PillButton>
-                {canRequestBrokerHelp && !brokerRequested && (
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    disabled={readOnly || pendingId !== null}
-                    onClick={() => askBroker(questionId)}
-                  >
-                    {pendingId === `${questionId}:broker` ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Send className="size-3.5" />
-                    )}
-                    Ask Broker
-                  </PillButton>
-                )}
               </div>
             </div>
           );

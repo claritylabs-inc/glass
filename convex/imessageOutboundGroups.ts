@@ -1,19 +1,12 @@
-import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalQuery, mutation, type QueryCtx } from "./_generated/server";
+import { internalQuery, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { getOrgAccess } from "./lib/access";
 import {
   buildImessageGroupMemberTitle,
   normalizeImessageAddress,
   resolveImessageConversationScope,
   type ResolvedImessageParticipant,
 } from "./lib/imessageGroupResolution";
-import { resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
-import {
-  throwUserFacingError,
-  userFacingErrorCodes,
-} from "./lib/userFacingErrors";
 
 function looksLikePhone(value: string): boolean {
   const digits = value.replace(/\D/g, "");
@@ -28,16 +21,21 @@ function matchesPerson(user: Doc<"users"> | null, token: string): boolean {
   if (!user) return false;
   const normalized = normalizedToken(token);
   if (!normalized) return false;
-  return [user.name, user.email, user.title]
-    .some((value) => value && normalizedToken(value).includes(normalized));
+  return [user.name, user.email, user.title].some(
+    (value) => value && normalizedToken(value).includes(normalized),
+  );
 }
 
 function matchesOrg(org: Doc<"organizations"> | null, token: string): boolean {
   if (!org) return false;
   const normalized = normalizedToken(token);
   if (!normalized) return false;
-  return [org.name, org.website, org.primaryContactName, org.primaryContactEmail]
-    .some((value) => value && normalizedToken(value).includes(normalized));
+  return [
+    org.name,
+    org.website,
+    org.primaryContactName,
+    org.primaryContactEmail,
+  ].some((value) => value && normalizedToken(value).includes(normalized));
 }
 
 type ReadCtx = Pick<QueryCtx, "db">;
@@ -73,36 +71,6 @@ async function firstContactForOrg(ctx: ReadCtx, orgId: Id<"organizations">) {
   );
   const fallback = admin ?? users.find((row) => row.user.phone);
   return fallback ? { org, user: fallback.user } : null;
-}
-
-async function brokerContactForClient(
-  ctx: ReadCtx,
-  clientOrg: Doc<"organizations">,
-) {
-  if (!clientOrg.brokerOrgId) return null;
-  const brokerIdentity = await resolveBrokerIdentityForClient(ctx, clientOrg);
-  if (
-    brokerIdentity.brokerOrgId &&
-    brokerIdentity.contactUserId &&
-    brokerIdentity.contactPhone
-  ) {
-    const [brokerOrg, contactUser] = await Promise.all([
-      ctx.db.get(brokerIdentity.brokerOrgId),
-      ctx.db.get(brokerIdentity.contactUserId),
-    ]);
-    if (brokerOrg && contactUser) {
-      return {
-        org: brokerOrg,
-        user: {
-          ...contactUser,
-          name: brokerIdentity.contactName ?? contactUser.name,
-          email: brokerIdentity.contactEmail ?? contactUser.email,
-          phone: brokerIdentity.contactPhone,
-        },
-      };
-    }
-  }
-  return firstContactForOrg(ctx, clientOrg.brokerOrgId);
 }
 
 function participantFromUser(params: {
@@ -143,7 +111,8 @@ export const resolveRecipients = internalQuery({
     if (!user.phone) {
       return {
         ok: false,
-        reason: "Your profile needs a phone number before Spot can start an iMessage group.",
+        reason:
+          "Your profile needs a phone number before Spot can start an iMessage group.",
         participants: [],
         unresolved: args.recipients,
       };
@@ -152,7 +121,9 @@ export const resolveRecipients = internalQuery({
     const participants = new Map<string, ResolvedImessageParticipant>();
     const unresolved: string[] = [];
     const ambiguous: Array<{ input: string; matches: string[] }> = [];
-    const addParticipant = (participant: ResolvedImessageParticipant | null) => {
+    const addParticipant = (
+      participant: ResolvedImessageParticipant | null,
+    ) => {
       if (!participant) return;
       const address = normalizeImessageAddress(participant.address);
       participants.set(address, { ...participant, address });
@@ -169,22 +140,8 @@ export const resolveRecipients = internalQuery({
     const team = await listOrgUsers(ctx, args.orgId);
     const relatedOrgs: Array<{
       org: Doc<"organizations">;
-      kind: "broker" | "client" | "vendor";
+      kind: "client" | "vendor";
     }> = [];
-    if (org.brokerOrgId) {
-      const broker = await ctx.db.get(org.brokerOrgId);
-      if (broker) relatedOrgs.push({ org: broker, kind: "broker" });
-    }
-    const clientOrgs =
-      org.type === "broker"
-        ? await ctx.db
-            .query("organizations")
-            .withIndex("broker", (q) => q.eq("brokerOrgId", args.orgId))
-            .collect()
-        : [];
-    for (const clientOrg of clientOrgs) {
-      relatedOrgs.push({ org: clientOrg, kind: "client" });
-    }
     const vendorRelationships = await ctx.db
       .query("connectedOrgRelationships")
       .withIndex("client_status", (q) =>
@@ -208,16 +165,7 @@ export const resolveRecipients = internalQuery({
       if (normalized === "me" || normalized === "myself") continue;
 
       if (normalized === "broker" || normalized === "my broker") {
-        const contact = await brokerContactForClient(ctx, org);
-        if (contact?.user) {
-          addParticipant(participantFromUser({
-            user: contact.user,
-            orgId: contact.org._id,
-            displayName: contact.user.name ?? `${contact.org.name} broker`,
-          }));
-        } else {
-          unresolved.push(recipient);
-        }
+        unresolved.push(recipient);
         continue;
       }
 
@@ -238,10 +186,7 @@ export const resolveRecipients = internalQuery({
           normalized === related.kind ||
           normalized === `my ${related.kind}`
         ) {
-          const contact =
-            related.kind === "broker"
-              ? await brokerContactForClient(ctx, org)
-              : await firstContactForOrg(ctx, related.org._id);
+          const contact = await firstContactForOrg(ctx, related.org._id);
           if (contact?.user) {
             const participant = participantFromUser({
               user: contact.user,
@@ -302,55 +247,5 @@ export const resolveRecipients = internalQuery({
       primaryOrgId: scope.primaryOrgId ?? args.orgId,
       title,
     };
-  },
-});
-
-export const setPrimaryBrokerContactForClient = mutation({
-  args: {
-    clientOrgId: v.id("organizations"),
-    producerId: v.id("users"),
-  },
-  handler: async (ctx, args) => {
-    const clientOrg = await ctx.db.get(args.clientOrgId);
-    const brokerOrgId = clientOrg?.brokerOrgId;
-    if (!brokerOrgId) {
-      throw new Error("Client is not connected to a broker org");
-    }
-    const brokerAccess = await getOrgAccess(ctx, brokerOrgId);
-    if (brokerAccess.accessType !== "member" || brokerAccess.role !== "admin") {
-      throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
-    }
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("organization_user", (q) =>
-        q.eq("orgId", brokerOrgId).eq("userId", args.producerId),
-      )
-      .first();
-    if (!membership) throw new Error("Producer must be a broker org member");
-
-    const assignments = await ctx.db
-      .query("brokerClientAssignments")
-      .withIndex("organization_client", (q) =>
-        q.eq("orgId", brokerOrgId).eq("clientOrgId", args.clientOrgId),
-      )
-      .collect();
-    for (const assignment of assignments) {
-      await ctx.db.patch(assignment._id, {
-        role: assignment.producerId === args.producerId ? "primary" : "secondary",
-      });
-    }
-    if (
-      !assignments.some(
-        (assignment) => assignment.producerId === args.producerId,
-      )
-    ) {
-      await ctx.db.insert("brokerClientAssignments", {
-        orgId: brokerOrgId,
-        clientOrgId: args.clientOrgId,
-        producerId: args.producerId,
-        role: "primary",
-        createdAt: dayjs().valueOf(),
-      });
-    }
   },
 });

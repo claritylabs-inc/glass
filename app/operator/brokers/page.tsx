@@ -1,20 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { isValidPhoneNumber } from "react-phone-number-input";
+import { useMemo, useState, type FormEvent } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { Loader2, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
+import { TokenListField } from "@/components/broker-network/token-list-field";
+import { OperatorSidebar } from "../operator-sidebar";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { HandleAvailability } from "@/components/settings/handle-availability";
-import { StatusTag } from "@/components/ui/status-tag";
+import { Input } from "@/components/ui/input";
 import { OperationalPanel } from "@/components/ui/operational-panel";
-import { PhoneInput } from "@/components/ui/phone-input";
 import { PillButton } from "@/components/ui/pill-button";
-import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
-import { CLIENT_PORTAL_HOST, getPublicAgentDomain } from "@/lib/domains";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StatusTag } from "@/components/ui/status-tag";
 import {
   Table,
   TableBody,
@@ -23,593 +29,88 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, LogOut, Plus } from "lucide-react";
-import { OperatorSidebar } from "../operator-sidebar";
-import { toast } from "sonner";
-import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
-import {
-  useCachedOperatorBrokers,
-  useCachedOperatorCurrent,
-  useOperatorBrokerCacheActions,
-} from "@/lib/sync/operator-cached-queries";
-import { useStopOperatorImpersonation } from "@/hooks/use-stop-operator-impersonation";
-import { useStartOperatorImpersonation } from "@/hooks/use-start-operator-impersonation";
-import { AutoSaveStatus } from "@/components/ui/auto-save-status";
-import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { formatDisplayDate } from "@/lib/date-format";
-import { getOperatorBrokerHref } from "@/lib/operator-navigation";
 import { typeStyle } from "@/lib/typography";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
+type NetworkStatus = "prospect" | "active" | "inactive";
 type BrokerRow = {
-  _id: Id<"organizations">;
-  name: string;
-  slug?: string;
-  website?: string;
-  iconUrl?: string | null;
-  agentHandle?: string;
-  operatorStatus: "onboarding" | "live";
-  adminName?: string;
-  adminEmail?: string;
-  adminPhone?: string;
-  clientCount: number;
-  createdAt: number;
+  broker: {
+    _id: Id<"organizations">;
+    name: string;
+    website?: string;
+    iconUrl?: string | null;
+  };
+  profile?: {
+    networkStatus: NetworkStatus;
+    officeAddress?: {
+      street1?: string;
+      street2?: string;
+      city?: string;
+      state?: string;
+      postalCode?: string;
+      country?: string;
+    };
+    writingStates: string[];
+    lineOfBusinessCodes: string[];
+  } | null;
+  contacts: Array<{
+    userId: Id<"users">;
+    name?: string;
+    email?: string;
+    role: "admin" | "member";
+  }>;
+  lastOutreachAt?: number;
+  proposalCount: number;
 };
 
-const INPUT_CLASSES =
-  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
-const AFFIXED_INPUT_CLASSES =
-  `h-full min-w-0 flex-1 bg-transparent px-3 placeholder:text-muted-foreground/40 focus:outline-none ${typeStyle("body.default")}`;
-const AGENT_DOMAIN = getPublicAgentDomain();
-const BROKER_SIGNUP_PREFIX = `${CLIENT_PORTAL_HOST}/signup/`;
-
-function normalizeIdentifierInput(value: string) {
-  const withoutDomain = value.trim().toLowerCase().split("@")[0] ?? "";
-  return withoutDomain.replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
-}
-
-function isValidOptionalPhone(value: string) {
-  const trimmed = value.trim();
-  return !trimmed || isValidPhoneNumber(trimmed);
-}
-
-function Field({
-  label,
-  children,
-  error,
-}: {
-  label: string;
-  children: React.ReactNode;
-  error?: string | null;
-}) {
-  return (
-    <label className="block space-y-1.5">
-      <span className={`text-muted-foreground ${typeStyle("caption.medium")}`}>{label}</span>
-      {children}
-      {error ? <span className={`block text-destructive ${typeStyle("caption.default")}`}>{error}</span> : null}
-    </label>
-  );
-}
+const ALL = "all";
 
 export default function OperatorBrokersPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const requestedBrokerId = searchParams.get("broker");
-  const [selectedId, setSelectedId] = useState<string | null>(
-    requestedBrokerId,
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<NetworkStatus | typeof ALL>(ALL);
+  const [writingState, setWritingState] = useState("");
+  const [line, setLine] = useState("");
+  const [selectedId, setSelectedId] = useState<Id<"organizations"> | null>(
+    null,
   );
-  const [panelMode, setPanelMode] = useState<"create" | "details" | null>(
-    requestedBrokerId ? "details" : null,
-  );
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [website, setWebsite] = useState("");
-  const [agentHandle, setAgentHandle] = useState("");
-  const [adminEmail, setAdminEmail] = useState("");
-  const [adminName, setAdminName] = useState("");
-  const [adminPhone, setAdminPhone] = useState("");
-  const [editSlugDraft, setEditSlug] = useState<string | null>(null);
-  const [editWebsiteDraft, setEditWebsite] = useState<string | null>(null);
-  const [editAdminNameDraft, setEditAdminName] = useState<string | null>(null);
-  const [editAdminPhoneDraft, setEditAdminPhone] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [debouncedSlug, setDebouncedSlug] = useState("");
-  const [debouncedAgentHandle, setDebouncedAgentHandle] = useState("");
-  const [debouncedEditSlug, setDebouncedEditSlug] = useState("");
-
-  const current = useCachedOperatorCurrent();
-  const brokers = useCachedOperatorBrokers() as BrokerRow[] | undefined;
-  const { seedBroker, patchBrokerStatus, patchBrokerSettings } = useOperatorBrokerCacheActions();
-  const identifierCheck = useQuery(
-    api.operator.checkBrokerSetupIdentifiers,
-    slug || agentHandle
-      ? {
-          slug: debouncedSlug || undefined,
-          agentHandle: debouncedAgentHandle || undefined,
-        }
-      : "skip",
-  );
-  const createBroker = useAction(api.operator.createBroker);
-  const launchBroker = useAction(api.operator.launchBroker);
-  const setBrokerStatus = useMutation(api.operator.setBrokerStatus);
-  const updateBrokerSettings = useMutation(api.operator.updateBrokerSettings);
-  const { startImpersonation } = useStartOperatorImpersonation();
-  const stopOperatorImpersonation = useStopOperatorImpersonation(
-    current?.activeImpersonation,
-  );
-
+  const [creating, setCreating] = useState(false);
+  const rows = useQuery(api.brokerProfiles.list, {
+    search: search.trim() || undefined,
+    status: status === ALL ? undefined : status,
+    writingState: writingState.trim() || undefined,
+    lineOfBusinessCode: line.trim() || undefined,
+  }) as BrokerRow[] | undefined;
   const selected = useMemo(
-    () => brokers?.find((broker) => broker._id === selectedId) ?? null,
-    [brokers, selectedId],
-  );
-  const editSlug = editSlugDraft ?? selected?.slug ?? "";
-  const editWebsite = editWebsiteDraft ?? selected?.website ?? "";
-  const editAdminName = editAdminNameDraft ?? selected?.adminName ?? "";
-  const editAdminPhone = editAdminPhoneDraft ?? selected?.adminPhone ?? "";
-  const currentEditSlug = selected?.slug ?? "";
-  const editSlugChanged = editSlug !== currentEditSlug;
-  const editIdentifierCheck = useQuery(
-    api.operator.checkBrokerSetupIdentifiers,
-    selected && editSlugChanged && !!editSlug
-      ? {
-          slug: debouncedEditSlug || undefined,
-          ownerOrgId: selected._id,
-        }
-      : "skip",
-  );
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSlug(slug), 250);
-    return () => window.clearTimeout(timer);
-  }, [slug]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedAgentHandle(agentHandle), 250);
-    return () => window.clearTimeout(timer);
-  }, [agentHandle]);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedEditSlug(editSlug), 250);
-    return () => window.clearTimeout(timer);
-  }, [editSlug]);
-
-  const slugChecking =
-    slug.length >= 3 && (slug !== debouncedSlug || identifierCheck === undefined);
-  const handleChecking =
-    agentHandle.length >= 3 &&
-    (agentHandle !== debouncedAgentHandle || identifierCheck === undefined);
-  const slugUnavailable = !!slug && identifierCheck?.slug?.available === false;
-  const handleUnavailable = !!agentHandle && identifierCheck?.agentHandle?.available === false;
-  const editSlugChecking =
-    editSlugChanged &&
-    !!editSlug &&
-    (editSlug !== debouncedEditSlug || editIdentifierCheck === undefined);
-  function brokerSettingsError() {
-    if (!isValidOptionalPhone(editAdminPhone)) return "Enter a valid phone number";
-    if (editSlugChecking) return "Checking signup slug";
-    if (
-      editSlugChanged &&
-      editSlug &&
-      editIdentifierCheck?.slug?.available === false
-    ) {
-      return editIdentifierCheck.slug.reason ?? "Signup slug is not available";
-    }
-    return null;
-  }
-
-  const brokerSettingsValidationError = brokerSettingsError();
-
-  function primeEditState(broker: BrokerRow) {
-    setEditSlug(broker.slug ?? "");
-    setEditWebsite(broker.website ?? "");
-    setEditAdminName(broker.adminName ?? "");
-    setEditAdminPhone(broker.adminPhone ?? "");
-  }
-
-  const brokerSettingsArgs = {
-    brokerOrgId: selected?._id ?? ("" as Id<"organizations">),
-    slug: editSlug || undefined,
-    website: editWebsite || undefined,
-    adminName: editAdminName || undefined,
-    adminPhone: editAdminPhone || undefined,
-  };
-  const brokerSettingsValueKey = JSON.stringify(brokerSettingsArgs);
-  const brokerSettingsAutoSave = useLocalFirstAutoSave({
-    mutationName: "operator.updateBrokerSettings",
-    args: brokerSettingsArgs,
-    valueKey: brokerSettingsValueKey,
-    resetKey: selected?._id ?? "none",
-    enabled: panelMode === "details" && !!selected,
-    canSave: !brokerSettingsValidationError,
-    delayMs: 800,
-    flush: async (args) => {
-      await updateBrokerSettings(args);
-      const { brokerOrgId, ...patch } = args;
-      await patchBrokerSettings(brokerOrgId, patch);
-    },
-    errorMessage: (error) =>
-      getUserFacingErrorMessage(error, "Broker settings could not be saved."),
-  });
-
-  async function saveBrokerSettingsBeforeTransition() {
-    if (panelMode !== "details" || !selected) return true;
-    return brokerSettingsAutoSave.saveNow();
-  }
-
-  async function openDetails(broker: BrokerRow) {
-    if (panelMode === "details" && selectedId === broker._id) return;
-    const saved = await saveBrokerSettingsBeforeTransition();
-    if (!saved) return;
-    setSelectedId(broker._id);
-    primeEditState(broker);
-    setPanelMode("details");
-    router.push(getOperatorBrokerHref(broker._id));
-  }
-
-  async function submitBroker(event: React.FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      const result = await createBroker({
-        name,
-        slug: slug || undefined,
-        website: website || undefined,
-        agentHandle: agentHandle || undefined,
-        adminEmail,
-        adminName: adminName || undefined,
-        adminPhone: adminPhone || undefined,
-      });
-      toast.success("Broker created for setup");
-      if (result?.brokerOrgId) {
-        await seedBroker({
-          brokerOrgId: result.brokerOrgId,
-          name,
-          slug: slug || undefined,
-          website: website || undefined,
-          agentHandle: agentHandle || undefined,
-          adminEmail,
-          adminName: adminName || undefined,
-          adminPhone: adminPhone || undefined,
-        });
-        setSelectedId(result.brokerOrgId);
-      }
-      setName("");
-      setSlug("");
-      setWebsite("");
-      setAgentHandle("");
-      setAdminEmail("");
-      setAdminName("");
-      setAdminPhone("");
-      setPanelMode(null);
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Failed to create broker"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function impersonate(broker: BrokerRow) {
-    setBusy(true);
-    try {
-      const saved = await saveBrokerSettingsBeforeTransition();
-      if (!saved) return;
-      await startImpersonation({
-        targetOrgId: broker._id,
-        targetRole: "admin",
-        destination: "/clients",
-        failureMessage: "Failed to impersonate broker",
-      });
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(error, "Failed to impersonate broker"),
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function launch(broker: BrokerRow) {
-    setBusy(true);
-    try {
-      const saved = await saveBrokerSettingsBeforeTransition();
-      if (!saved) return;
-      await launchBroker({ brokerOrgId: broker._id });
-      await patchBrokerStatus(broker._id, "live");
-      toast.success("Broker launched and login email sent");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Failed to launch broker"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function moveToOnboarding(broker: BrokerRow) {
-    setBusy(true);
-    try {
-      const saved = await saveBrokerSettingsBeforeTransition();
-      if (!saved) return;
-      await setBrokerStatus({ brokerOrgId: broker._id, status: "onboarding" });
-      await patchBrokerStatus(broker._id, "onboarding");
-      toast.success("Broker account disabled");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Failed to update broker"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const actions = (
-    <>
-      {current?.activeImpersonation ? (
-        <PillButton
-          variant="secondary"
-          size="compact"
-          label="Stop impersonating"
-          expandLabel
-          onClick={async () => {
-            const saved = await saveBrokerSettingsBeforeTransition();
-            if (!saved) return;
-            await stopOperatorImpersonation();
-            toast.success("Impersonation stopped");
-          }}
-        >
-          <LogOut className="size-3.5" />
-        </PillButton>
-      ) : null}
-      <PillButton
-        size="compact"
-        onClick={async () => {
-          const saved = await saveBrokerSettingsBeforeTransition();
-          if (!saved) return;
-          router.replace("/operator/brokers");
-          setPanelMode("create");
-        }}
-      >
-        <Plus className="size-3.5" />
-        Create broker
-      </PillButton>
-    </>
-  );
-  const rightPanel = (
-    <SettingsDrawer
-      open={panelMode !== null}
-      onOpenChange={async (open) => {
-        if (open) return;
-        const saved = await saveBrokerSettingsBeforeTransition();
-        if (!saved) return;
-        router.replace("/operator/brokers");
-        setPanelMode(null);
-      }}
-      title={
-        panelMode === "create" ? (
-          "Create broker setup"
-        ) : !selected ? (
-          "Broker"
-        ) : (
-          <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
-            <span className="min-w-0 truncate">{selected.name}</span>
-            <span className="flex shrink-0 items-center gap-2">
-              <StatusTag tone={selected.operatorStatus === "live" ? "success" : "warning"}>
-                {selected.operatorStatus === "live" ? "Live" : "Onboarding"}
-              </StatusTag>
-              <AutoSaveStatus status={brokerSettingsAutoSave.status} />
-            </span>
-          </span>
-        )
-      }
-      footer={
-        panelMode === "create" ? (
-          <PillButton
-            type="submit"
-            form="operator-create-broker-form"
-            disabled={busy || !name || !adminEmail || slugUnavailable || handleUnavailable}
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Create for setup
-          </PillButton>
-        ) : selected ? (
-          <>
-            <PillButton
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => void impersonate(selected)}
-            >
-              Impersonate
-            </PillButton>
-            {selected.operatorStatus === "onboarding" ? (
-              <PillButton
-                type="button"
-                disabled={busy}
-                onClick={() => void launch(selected)}
-              >
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Send activation email
-              </PillButton>
-            ) : (
-              <PillButton
-                type="button"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => void moveToOnboarding(selected)}
-              >
-                Disable account
-              </PillButton>
-            )}
-          </>
-        ) : null
-      }
-    >
-      {panelMode === "create" ? (
-        <form id="operator-create-broker-form" onSubmit={submitBroker} className="space-y-3">
-          <Field label="Broker name">
-            <input
-              className={INPUT_CLASSES}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Broker organization"
-              required
-            />
-          </Field>
-          <Field label="Signup link">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-input bg-popover focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input">
-              <span className={`flex shrink-0 items-center border-r border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
-                {BROKER_SIGNUP_PREFIX}
-              </span>
-              <input
-                className={AFFIXED_INPUT_CLASSES}
-                value={slug}
-                onChange={(event) => setSlug(normalizeIdentifierInput(event.target.value))}
-                placeholder="broker-name"
-              />
-            </div>
-            <HandleAvailability
-              saving={busy}
-              checking={slugChecking}
-              input={slug}
-              current=""
-              currentLabel="Existing broker"
-              availability={slug === debouncedSlug ? identifierCheck?.slug : undefined}
-              renderAvailablePreview={(value) =>
-                identifierCheck?.slug?.mode === "updates_existing"
-                  ? `${BROKER_SIGNUP_PREFIX}${value} will update the existing broker`
-                  : `${BROKER_SIGNUP_PREFIX}${value} is available`
-              }
-            />
-          </Field>
-          <Field label="Website">
-            <input
-              className={INPUT_CLASSES}
-              value={website}
-              onChange={(event) => setWebsite(event.target.value)}
-              placeholder="https://example.com"
-            />
-          </Field>
-          <Field label="Agent handle">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-input bg-popover focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input">
-              <input
-                className={AFFIXED_INPUT_CLASSES}
-                value={agentHandle}
-                onChange={(event) => setAgentHandle(normalizeIdentifierInput(event.target.value))}
-                placeholder="broker"
-              />
-              <span className={`flex shrink-0 items-center border-l border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
-                @{AGENT_DOMAIN}
-              </span>
-            </div>
-            <HandleAvailability
-              saving={busy}
-              checking={handleChecking}
-              input={agentHandle}
-              current=""
-              currentLabel="Existing agent handle"
-              availability={
-                agentHandle === debouncedAgentHandle ? identifierCheck?.agentHandle : undefined
-              }
-              renderAvailablePreview={(value) =>
-                identifierCheck?.agentHandle?.mode === "updates_existing"
-                  ? `${value}@${AGENT_DOMAIN} will update the existing broker`
-                  : `${value}@${AGENT_DOMAIN} is available`
-              }
-            />
-          </Field>
-          <Field label="Broker admin email">
-            <input
-              className={INPUT_CLASSES}
-              value={adminEmail}
-              onChange={(event) => setAdminEmail(event.target.value)}
-              placeholder="admin@example.com"
-              type="email"
-              required
-            />
-          </Field>
-          <Field label="Broker admin name">
-            <input
-              className={INPUT_CLASSES}
-              value={adminName}
-              onChange={(event) => setAdminName(event.target.value)}
-              placeholder="Full name"
-            />
-          </Field>
-          <Field label="Broker admin phone">
-            <PhoneInput
-              value={adminPhone}
-              onChange={(value) => setAdminPhone(value ?? "")}
-              defaultCountry="US"
-              placeholder="(555) 123-4567"
-            />
-          </Field>
-        </form>
-      ) : selected ? (
-        <fieldset disabled={busy} className="space-y-3">
-          <Field label="Signup slug">
-            <div className="flex h-9 overflow-hidden rounded-lg border border-input bg-popover focus-within:border-border-focus focus-within:ring-1 focus-within:ring-input">
-              <span className={`flex shrink-0 items-center border-r border-input bg-muted/35 px-3 text-muted-foreground ${typeStyle("caption.default")}`}>
-                {BROKER_SIGNUP_PREFIX}
-              </span>
-              <input
-                className={AFFIXED_INPUT_CLASSES}
-                value={editSlug}
-                onChange={(event) =>
-                  setEditSlug(normalizeIdentifierInput(event.target.value))
-                }
-                placeholder="broker-name"
-              />
-            </div>
-            <HandleAvailability
-              saving={brokerSettingsAutoSave.saving}
-              checking={editSlugChecking}
-              input={editSlug}
-              current={currentEditSlug}
-              currentLabel="Current signup slug"
-              availability={
-                editSlug === debouncedEditSlug
-                  ? editIdentifierCheck?.slug
-                  : undefined
-              }
-              renderAvailablePreview={(value) =>
-                `${BROKER_SIGNUP_PREFIX}${value} is available`
-              }
-            />
-          </Field>
-          <Field label="Website">
-            <input
-              className={INPUT_CLASSES}
-              value={editWebsite}
-              onChange={(event) => setEditWebsite(event.target.value)}
-              placeholder="https://example.com"
-            />
-          </Field>
-          <Field label="Admin name">
-            <input
-              className={INPUT_CLASSES}
-              value={editAdminName}
-              onChange={(event) => setEditAdminName(event.target.value)}
-              placeholder="Broker admin"
-            />
-          </Field>
-          {selected.adminEmail ? (
-            <Field label="Admin email">
-              <input className={`${INPUT_CLASSES} text-muted-foreground`} value={selected.adminEmail} disabled />
-            </Field>
-          ) : null}
-          <Field
-            label="Admin phone"
-            error={!isValidOptionalPhone(editAdminPhone) ? "Enter a valid phone number" : null}
-          >
-            <PhoneInput
-              value={editAdminPhone}
-              onChange={(value) => setEditAdminPhone(value ?? "")}
-              defaultCountry="US"
-              placeholder="(555) 123-4567"
-            />
-          </Field>
-        </fieldset>
-      ) : null}
-    </SettingsDrawer>
+    () => rows?.find((row) => row.broker._id === selectedId) ?? null,
+    [rows, selectedId],
   );
 
   return (
     <AppShell
-      actions={actions}
+      actions={
+        <PillButton
+          size="compact"
+          onClick={() => {
+            setSelectedId(null);
+            setCreating(true);
+          }}
+        >
+          <Plus className="size-3.5" />
+          Create broker
+        </PillButton>
+      }
+      rightPanel={
+        <BrokerDrawer
+          key={selected?.broker._id ?? (creating ? "create" : "closed")}
+          open={creating || !!selected}
+          row={selected}
+          onClose={() => {
+            setCreating(false);
+            setSelectedId(null);
+          }}
+        />
+      }
       customSidebar={({ collapsed, onToggleCollapse }) => (
         <OperatorSidebar
           collapsed={collapsed}
@@ -621,78 +122,138 @@ export default function OperatorBrokersPage() {
       disablePersistentChat
       disableCommandPalette
       showBrokerShare={false}
-      rightPanel={rightPanel}
     >
-      <main className="flex w-full flex-col">
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_11rem_9rem_11rem]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search brokers"
+              aria-label="Search brokers"
+            />
+          </div>
+          <Select
+            value={status}
+            onValueChange={(value) =>
+              setStatus((value ?? ALL) as NetworkStatus | typeof ALL)
+            }
+          >
+            <SelectTrigger aria-label="Filter by network status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All statuses</SelectItem>
+              <SelectItem value="prospect">Prospect</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            value={writingState}
+            onChange={(event) =>
+              setWritingState(event.target.value.toUpperCase().slice(0, 2))
+            }
+            placeholder="State"
+            aria-label="Writing state"
+          />
+          <Input
+            value={line}
+            onChange={(event) => setLine(event.target.value.toUpperCase())}
+            placeholder="ACORD line"
+            aria-label="ACORD line"
+          />
+        </div>
         <OperationalPanel>
           <Table>
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className={`w-[25%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Broker</TableHead>
-                <TableHead className={`w-[22%] text-muted-foreground ${typeStyle("label.table")}`}>Admin</TableHead>
-                <TableHead className={`w-[14%] text-muted-foreground ${typeStyle("label.table")}`}>Slug</TableHead>
-                <TableHead className={`w-[14%] text-muted-foreground ${typeStyle("label.table")}`}>Agent handle</TableHead>
-                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>Clients</TableHead>
-                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>Status</TableHead>
-                <TableHead className={`w-[10%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>Created</TableHead>
+              <TableRow>
+                <TableHead className="px-4">Broker</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>States</TableHead>
+                <TableHead>Lines</TableHead>
+                <TableHead>Contacts</TableHead>
+                <TableHead>Last outreach</TableHead>
+                <TableHead className="px-4">Proposals</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {brokers === undefined ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
-                    <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+              {rows === undefined ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-32">
+                    <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
                   </TableCell>
                 </TableRow>
-              ) : brokers.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className={`h-32 px-4 text-muted-foreground ${typeStyle("body.default")}`}>
-                    No broker accounts found.
+              ) : rows.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className={`h-32 px-4 text-muted-foreground ${typeStyle("body.default")}`}
+                  >
+                    No brokers match these filters.
                   </TableCell>
                 </TableRow>
               ) : (
-                brokers.map((broker) => (
+                rows.map((row) => (
                   <TableRow
-                    key={broker._id}
+                    key={row.broker._id}
+                    className="cursor-pointer"
                     tabIndex={0}
-                    onClick={() => void openDetails(broker)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      void openDetails(broker);
+                    onClick={() => {
+                      setCreating(false);
+                      setSelectedId(row.broker._id);
                     }}
-                    className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                      selectedId === broker._id ? "bg-muted/50" : ""
-                    }`}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setCreating(false);
+                        setSelectedId(row.broker._id);
+                      }
+                    }}
                   >
                     <TableCell className="px-4">
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <OrgBrandIcon
-                          name={broker.name}
-                          iconUrl={broker.iconUrl}
-                          website={broker.website}
-                          size="md"
-                        />
-                        <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>{broker.name}</p>
-                      </div>
+                      <p
+                        className={`text-foreground ${typeStyle("body.medium")}`}
+                      >
+                        {row.broker.name}
+                      </p>
+                      <p
+                        className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                      >
+                        {row.broker.website ?? "No website"}
+                      </p>
                     </TableCell>
-                    <TableCell className="max-w-56 truncate text-muted-foreground">
-                      {broker.adminEmail ?? "No admin"}
-                    </TableCell>
-                    <TableCell className="max-w-40 truncate text-muted-foreground">
-                      {broker.slug ? `/${broker.slug}` : "Not set"}
-                    </TableCell>
-                    <TableCell className="max-w-40 truncate text-muted-foreground">
-                      {broker.agentHandle ?? "Not set"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{broker.clientCount}</TableCell>
                     <TableCell>
-                      <StatusTag tone={broker.operatorStatus === "live" ? "success" : "warning"}>
-                        {broker.operatorStatus === "live" ? "Live" : "Onboarding"}
+                      <StatusTag
+                        tone={
+                          row.profile?.networkStatus === "active"
+                            ? "success"
+                            : row.profile?.networkStatus === "inactive"
+                              ? "neutral"
+                              : "warning"
+                        }
+                      >
+                        {row.profile?.networkStatus ?? "Prospect"}
                       </StatusTag>
                     </TableCell>
+                    <TableCell className="max-w-48 text-muted-foreground">
+                      {row.profile?.writingStates.join(", ") || "—"}
+                    </TableCell>
+                    <TableCell className="max-w-48 text-muted-foreground">
+                      {row.profile?.lineOfBusinessCodes.join(", ") || "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.contacts.length}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.lastOutreachAt
+                        ? formatDisplayDate(row.lastOutreachAt)
+                        : "—"}
+                    </TableCell>
                     <TableCell className="px-4 text-muted-foreground">
-                      {formatDisplayDate(broker.createdAt)}
+                      {row.proposalCount}
                     </TableCell>
                   </TableRow>
                 ))
@@ -700,7 +261,293 @@ export default function OperatorBrokersPage() {
             </TableBody>
           </Table>
         </OperationalPanel>
-      </main>
+      </div>
     </AppShell>
+  );
+}
+
+function BrokerDrawer({
+  open,
+  row,
+  onClose,
+}: {
+  open: boolean;
+  row: BrokerRow | null;
+  onClose: () => void;
+}) {
+  const create = useMutation(api.brokerProfiles.createStandalone);
+  const update = useMutation(api.brokerProfiles.upsert);
+  const generateLogoUploadUrl = useMutation(
+    api.brokerProfiles.generateLogoUploadUrl,
+  );
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState(row?.broker.name ?? "");
+  const [website, setWebsite] = useState(row?.broker.website ?? "");
+  const [status, setStatus] = useState<NetworkStatus>(
+    row?.profile?.networkStatus ?? "prospect",
+  );
+  const [address, setAddress] = useState(
+    row?.profile?.officeAddress?.street1 ?? "",
+  );
+  const [city, setCity] = useState(row?.profile?.officeAddress?.city ?? "");
+  const [state, setState] = useState(row?.profile?.officeAddress?.state ?? "");
+  const [postalCode, setPostalCode] = useState(
+    row?.profile?.officeAddress?.postalCode ?? "",
+  );
+  const [states, setStates] = useState(row?.profile?.writingStates ?? []);
+  const [lines, setLines] = useState(row?.profile?.lineOfBusinessCodes ?? []);
+  const key = row?.broker._id ?? "create";
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    const common = {
+      networkStatus: status,
+      officeAddress: {
+        street1: address || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        postalCode: postalCode || undefined,
+        country: "US",
+      },
+      writingStates: states,
+      lineOfBusinessCodes: lines,
+    };
+    try {
+      if (row)
+        await update({
+          brokerOrgId: row.broker._id,
+          name: name.trim(),
+          website: website.trim() || null,
+          ...common,
+        });
+      else
+        await create({
+          name: name.trim(),
+          website: website.trim() || undefined,
+          ...common,
+        });
+      toast.success(row ? "Broker profile saved" : "Broker created");
+      onClose();
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not save the broker"),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function uploadLogo(file: File) {
+    if (!row) return;
+    setSaving(true);
+    try {
+      const uploadUrl = await generateLogoUploadUrl({
+        brokerOrgId: row.broker._id,
+      });
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!response.ok) throw new Error("Upload failed");
+      const { storageId } = (await response.json()) as {
+        storageId: Id<"_storage">;
+      };
+      await update({
+        brokerOrgId: row.broker._id,
+        iconStorageId: storageId,
+        networkStatus: status,
+        officeAddress: {
+          street1: address || undefined,
+          city: city || undefined,
+          state: state || undefined,
+          postalCode: postalCode || undefined,
+          country: "US",
+        },
+        writingStates: states,
+        lineOfBusinessCodes: lines,
+      });
+      toast.success("Broker logo saved");
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not save the broker logo"),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SettingsDrawer
+      key={key}
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      title={row?.broker.name ?? "Create broker"}
+      footer={
+        <PillButton
+          type="submit"
+          form="broker-profile-form"
+          disabled={saving || !name.trim()}
+        >
+          {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+          {row ? "Save profile" : "Create broker"}
+        </PillButton>
+      }
+    >
+      <form id="broker-profile-form" className="space-y-4" onSubmit={submit}>
+        <Field label="Broker name">
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </Field>
+        <Field label="Website">
+          <Input
+            value={website}
+            onChange={(event) => setWebsite(event.target.value)}
+          />
+        </Field>
+        {row ? (
+          <Field label="Logo">
+            <div className="flex items-center gap-3">
+              {row.broker.iconUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={row.broker.iconUrl}
+                  alt=""
+                  className="size-10 rounded-md border border-input object-contain"
+                />
+              ) : null}
+              <PillButton
+                type="button"
+                variant="secondary"
+                disabled={saving}
+                onClick={() =>
+                  document
+                    .getElementById(`operator-broker-logo-${row.broker._id}`)
+                    ?.click()
+                }
+              >
+                Upload logo
+              </PillButton>
+              <input
+                id={`operator-broker-logo-${row.broker._id}`}
+                className="hidden"
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void uploadLogo(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
+          </Field>
+        ) : null}
+        <Field label="Network status">
+          <Select
+            value={status}
+            onValueChange={(value) =>
+              setStatus((value ?? "prospect") as NetworkStatus)
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="prospect">Prospect</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Primary office">
+          <Input
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+            placeholder="Street address"
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="City">
+            <Input
+              value={city}
+              onChange={(event) => setCity(event.target.value)}
+            />
+          </Field>
+          <Field label="State">
+            <Input
+              maxLength={2}
+              value={state}
+              onChange={(event) => setState(event.target.value.toUpperCase())}
+            />
+          </Field>
+        </div>
+        <Field label="Postal code">
+          <Input
+            value={postalCode}
+            onChange={(event) => setPostalCode(event.target.value)}
+          />
+        </Field>
+        <Field label="USPS writing states" help="Press Enter or comma to add.">
+          <TokenListField
+            value={states}
+            onChange={setStates}
+            placeholder="CA, NV, OR"
+            ariaLabel="Add writing state"
+          />
+        </Field>
+        <Field
+          label="ACORD lines"
+          help="Press Enter or comma to add exact LOBCd values."
+        >
+          <TokenListField
+            value={lines}
+            onChange={setLines}
+            placeholder="CGL, PROP, UMBRC"
+            ariaLabel="Add ACORD line"
+          />
+        </Field>
+        {row ? (
+          <div
+            className={`border-t border-border pt-4 text-muted-foreground ${typeStyle("body.default")}`}
+          >
+            <p>{row.contacts.length} contacts</p>
+            <p>{row.proposalCount} proposals</p>
+          </div>
+        ) : null}
+      </form>
+    </SettingsDrawer>
+  );
+}
+
+function Field({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span
+        className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}
+      >
+        {label}
+      </span>
+      {children}
+      {help ? (
+        <span
+          className={`mt-1 block text-muted-foreground ${typeStyle("caption.default")}`}
+        >
+          {help}
+        </span>
+      ) : null}
+    </label>
   );
 }

@@ -74,7 +74,7 @@ export const upsertForMcp = internalAction({
     const user = await ctx.runQuery(internal.users.getInternal, {
       id: args.userId,
     });
-    const identity = await resolveEmailAgentIdentity(ctx, org);
+    const identity = await resolveEmailAgentIdentity(org);
     if (!identity.canSend || !identity.agentAddress || !identity.fromHeader) {
       throw new Error(identity.reason ?? "Email sending is not configured.");
     }
@@ -129,7 +129,6 @@ export const upsertForMcp = internalAction({
         channel: "mcp",
         fromHeader: identity.fromHeader,
         agentAddress: identity.agentAddress,
-        brokerBranding: identity.brokerBranding,
         senderEmail: user?.email,
         defaultBcc:
           org.bccRequesterOnAgentEmails !== false && user?.email

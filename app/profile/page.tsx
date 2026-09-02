@@ -374,7 +374,7 @@ export default function ProfilePage() {
               <p
                 className={`text-muted-foreground/50 mt-2 ${typeStyle("caption.default")}`}
               >
-                Company settings, broker info, and team management are in{" "}
+                Company settings and team management are in{" "}
                 <Link
                   href="/settings"
                   className="text-foreground/60 hover:text-foreground underline"

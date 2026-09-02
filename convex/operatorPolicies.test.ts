@@ -8,7 +8,7 @@ import schema from "./schema";
 import {
   archive,
   createOperatorUpload,
-  listForBroker,
+  listForOperator,
   restore,
   updatePolicyDetails,
 } from "./policies";
@@ -21,7 +21,7 @@ import {
 const modules = import.meta.glob("./**/*.ts");
 const archiveFn = archive as any;
 const createOperatorUploadFn = createOperatorUpload as any;
-const listForBrokerFn = listForBroker as any;
+const listForOperatorFn = listForOperator as any;
 const restoreFn = restore as any;
 const updatePolicyDetailsFn = updatePolicyDetails as any;
 const getPolicyExtractionOperationsFn = getPolicyExtractionOperations as any;
@@ -76,15 +76,15 @@ describe("operator client policy management", () => {
       subject: `${fixture.operatorUserId}|session`,
     });
 
-    const policyId = await operator.mutation(createOperatorUploadFn, {
+    const policyId = (await operator.mutation(createOperatorUploadFn, {
       clientOrgId: fixture.clientOrgId,
       fileId: fixture.fileId,
       fileName: "managed-policy.pdf",
       documentType: "policy",
-    }) as Id<"policies">;
+    })) as Id<"policies">;
 
     await expect(
-      operator.query(listForBrokerFn, {
+      operator.query(listForOperatorFn, {
         clientOrgId: fixture.clientOrgId,
         documentType: "policy",
         archived: false,
@@ -249,7 +249,10 @@ describe("operator client policy management", () => {
       await ctx.db.insert("policyExtractionRuns", {
         policyId,
         pipelineStatus: "complete",
-        pipelineCheckpoint: { phaseIndex: 4, state: { traceId: "trace-primary" } },
+        pipelineCheckpoint: {
+          phaseIndex: 4,
+          state: { traceId: "trace-primary" },
+        },
         pipelineLog: [],
         createdAt: now - 2_000,
         updatedAt: now,

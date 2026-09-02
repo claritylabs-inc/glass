@@ -138,7 +138,7 @@ function typeMap(
   return "observation";
 }
 
-function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
+function formatPolicyForTool(policy: Record<string, any>) {
   const extractionDataStage = effectivePolicyDataStage(policy);
   const provisional = extractionDataStage === "preview";
   const clientProfileFacts =
@@ -151,10 +151,7 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
   const carrierDisplay = resolvePolicyCarrierDisplay(policy);
   return {
     id: policy._id,
-    client:
-      scope.mode === "broker_portfolio"
-        ? orgLabelForScope(scope, policy.orgId)
-        : policy._scopeOrgName,
+    client: policy._scopeOrgName,
     orgId: policy.orgId,
     insured: partyContext.insuredName,
     insuredAddress: partyContext.insuredAddress,
@@ -197,7 +194,7 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
     dataStage: extractionDataStage,
     provisional,
     availabilityNote: provisional
-      ? "Extraction is complete for this policy and enrichment is still running. Summaries and broad comparisons are available, but source evidence, COIs, policy delivery, policy changes, and endorsements require enrichment to finish."
+      ? "Extraction is complete for this policy and enrichment is still running. Summaries and broad comparisons are available, but source evidence, COIs, policy changes, and endorsements require enrichment to finish."
       : undefined,
     coverages: (policy.coverages ?? []).map((coverage: any) => ({
       name: coverage.name,
@@ -595,9 +592,7 @@ export function buildAgentToolExecutors(
         }
         return matches
           .slice(0, 5)
-          .map((policy) =>
-            formatPolicyForTool(policy as Record<string, any>, options.scope),
-          );
+          .map((policy) => formatPolicyForTool(policy as Record<string, any>));
       },
     },
     ...(options.onPolicyPresented
@@ -843,8 +838,8 @@ export function buildAgentToolExecutors(
           executionOptions,
         );
         return {
-          policy1: formatPolicyForTool(first.policy as any, options.scope),
-          policy2: formatPolicyForTool(second.policy as any, options.scope),
+          policy1: formatPolicyForTool(first.policy as any),
+          policy2: formatPolicyForTool(second.policy as any),
         };
       },
     },
@@ -1019,7 +1014,7 @@ export function buildAgentToolExecutors(
           ctx,
           options,
           params.policyId,
-          "original policy delivery",
+          "original policy document access",
         );
         if (!resolved.ok) return resolved.message;
         const policy = resolved.policy;

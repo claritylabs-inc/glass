@@ -15,22 +15,13 @@ vi.mock("undici", async (importOriginal) => {
   return { ...actual, fetch: undiciFetchMock };
 });
 import schema from "./schema";
-import {
-  insertLocalFixture,
-  seed,
-} from "./seed";
-import { listForBroker as listClientsForBroker } from "./clients";
-import {
-  listForBroker as listPoliciesForBroker,
-  listForClient as listPoliciesForClient,
-} from "./policies";
+import { insertLocalFixture, seed } from "./seed";
+import { listForClient as listPoliciesForClient } from "./policies";
 import { current as currentOperator } from "./operator";
 
 const modules = import.meta.glob("./**/*.ts");
 const insertLocalFixtureFn = insertLocalFixture as any;
 const seedFn = seed as any;
-const listClientsForBrokerFn = listClientsForBroker as any;
-const listPoliciesForBrokerFn = listPoliciesForBroker as any;
 const listPoliciesForClientFn = listPoliciesForClient as any;
 const currentOperatorFn = currentOperator as any;
 
@@ -87,6 +78,7 @@ describe("local workspace seed", () => {
       memberships: await ctx.db.query("orgMemberships").collect(),
       operatorProfiles: await ctx.db.query("operatorProfiles").collect(),
       assignments: await ctx.db.query("brokerClientAssignments").collect(),
+      brokerProfiles: await ctx.db.query("brokerProfiles").collect(),
       policies: await ctx.db.query("policies").collect(),
       declarationFacts: await ctx.db.query("policyDeclarationFacts").collect(),
     }));
@@ -95,7 +87,8 @@ describe("local workspace seed", () => {
     expect(fixture.organizations).toHaveLength(2);
     expect(fixture.memberships).toHaveLength(2);
     expect(fixture.operatorProfiles).toHaveLength(1);
-    expect(fixture.assignments).toHaveLength(1);
+    expect(fixture.assignments).toHaveLength(0);
+    expect(fixture.brokerProfiles).toHaveLength(1);
     expect(fixture.policies).toHaveLength(1);
 
     expect(
@@ -127,20 +120,20 @@ describe("local workspace seed", () => {
       name: "Montgomery Risk",
       slug: "montgomery-risk",
       website: "https://montgomeryrisk.com",
-      whiteLabelingEnabled: false,
     });
-    expect(client).toMatchObject({ name: "Cove", brokerOrgId: broker?._id });
+    expect(client).toMatchObject({ name: "Cove" });
+    expect(client?.brokerOrgId).toBeUndefined();
     expect(fixture.memberships).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ orgId: broker?._id, role: "admin" }),
         expect.objectContaining({ orgId: client?._id, role: "admin" }),
       ]),
     );
-    expect(fixture.assignments[0]).toMatchObject({
-      orgId: broker?._id,
-      clientOrgId: client?._id,
-      role: "primary",
-      contactPhone: "+16472921666",
+    expect(fixture.brokerProfiles[0]).toMatchObject({
+      brokerOrgId: broker?._id,
+      networkStatus: "active",
+      writingStates: ["CA", "NY", "TX"],
+      lineOfBusinessCodes: ["CYBER", "EO", "OLIB"],
     });
     expect(fixture.policies[0]).toMatchObject({
       orgId: client?._id,
@@ -169,47 +162,32 @@ describe("local workspace seed", () => {
       namedInsured: { value: "Cove Technologies Inc." },
       mailingAddress: { value: { street1: "111 Richmond Street West" } },
       operationsDescription: {
-        value: "Technology company providing underwriting, credit, and workflow software for housing and finance professionals.",
+        value:
+          "Technology company providing underwriting, credit, and workflow software for housing and finance professionals.",
       },
     });
     expect(client?.profileFacts).not.toHaveProperty("producer");
     expect(client?.profileFacts).not.toHaveProperty("insurer");
     expect(client?.profileFacts).not.toHaveProperty("mga");
     expect(client?.profileFacts).not.toHaveProperty("insuranceParties");
-    expect(fixture.declarationFacts.some((fact) => fact.fieldGroup === "operations_description")).toBe(true);
+    expect(
+      fixture.declarationFacts.some(
+        (fact) => fact.fieldGroup === "operations_description",
+      ),
+    ).toBe(true);
 
     const operatorSession = t.withIdentity({
       subject: `${first.operatorUserId}|session`,
     });
-    const brokerSession = t.withIdentity({
-      subject: `${first.brokerUserId}|session`,
-    });
     const clientSession = t.withIdentity({
       subject: `${first.clientUserId}|session`,
     });
-    await expect(operatorSession.query(currentOperatorFn, {})).resolves.toMatchObject({
+    await expect(
+      operatorSession.query(currentOperatorFn, {}),
+    ).resolves.toMatchObject({
       user: { email: "terry@claritylabs.inc" },
       profile: { role: "operator", status: "active" },
     });
-    await expect(
-      brokerSession.query(listClientsForBrokerFn, {
-        brokerOrgId: first.brokerOrgId,
-      }),
-    ).resolves.toEqual([
-      expect.objectContaining({
-        clientOrgId: first.clientOrgId,
-        name: "Cove",
-        activePoliciesCount: 1,
-      }),
-    ]);
-    await expect(
-      brokerSession.query(listPoliciesForBrokerFn, {
-        clientOrgId: first.clientOrgId,
-        documentType: "policy",
-      }),
-    ).resolves.toEqual([
-      expect.objectContaining({ policyNumber: "NWC-TEC-3110-26-01" }),
-    ]);
     await expect(
       clientSession.query(listPoliciesForClientFn, { documentType: "policy" }),
     ).resolves.toEqual([
@@ -226,13 +204,10 @@ describe("local workspace seed", () => {
       channels: 4,
       depth: 8,
       data: new Uint8Array([
-        20, 52, 203, 255, 20, 52, 203, 255,
-        20, 52, 203, 255, 20, 52, 203, 255,
+        20, 52, 203, 255, 20, 52, 203, 255, 20, 52, 203, 255, 20, 52, 203, 255,
       ]),
     });
-    dnsLookupMock.mockResolvedValue([
-      { address: "93.184.216.34", family: 4 },
-    ]);
+    dnsLookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
     undiciFetchMock.mockImplementation(
       async (input: string | URL | Request) => {
         const url = String(input instanceof Request ? input.url : input);
@@ -261,7 +236,6 @@ describe("local workspace seed", () => {
     const broker = organizations.find((org) => org.name === "Montgomery Risk");
     const client = organizations.find((org) => org.name === "Cove");
     expect(broker).toMatchObject({
-      whiteLabelingEnabled: false,
       iconStorageId: expect.any(String),
     });
     expect(client).toMatchObject({ iconStorageId: expect.any(String) });

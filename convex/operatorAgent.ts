@@ -56,6 +56,19 @@ import {
   updateProcurementRequestByOperator,
 } from "./procurementRequests";
 import {
+  confirmProcurementProposalReviewByOperator,
+  createProcurementProposalByOperator,
+  getProcurementProposalDetails,
+  listProcurementProposals,
+  selectProcurementProposalByOperator,
+} from "./procurementProposals";
+import { confirmProcurementRequirementDraftByOperator } from "./procurementRequirements";
+import {
+  getBrokerProfileDetails,
+  listBrokerProfiles,
+  updateBrokerProfileByOperator,
+} from "./brokerProfiles";
+import {
   createCompanyMemoryByOperator,
   deleteCompanyMemoryByOperator,
   updateCompanyMemoryByOperator,
@@ -796,14 +809,51 @@ function normalizeProcurementEmailThreadId(
   return emailThreadId;
 }
 
+function normalizeProcurementRequirementDraftId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement requirement draft ID is required");
+  }
+  const id = ctx.db.normalizeId("procurementRequirementDrafts", value);
+  if (!id) throw new Error("Invalid procurement requirement draft ID");
+  return id;
+}
+
+function normalizeProcurementProposalId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement proposal ID is required");
+  }
+  const id = ctx.db.normalizeId("procurementProposals", value);
+  if (!id) throw new Error("Invalid procurement proposal ID");
+  return id;
+}
+
+function normalizeProcurementProposalReviewId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement proposal review ID is required");
+  }
+  const id = ctx.db.normalizeId("procurementProposalReviews", value);
+  if (!id) throw new Error("Invalid procurement proposal review ID");
+  return id;
+}
+
 function procurementRequestStatus(value: unknown) {
   switch (value) {
     case "draft":
+    case "submitted":
+    case "gathering_information":
     case "marketing":
-    case "quote_review":
-    case "client_decision":
-    case "accepted":
-    case "closed":
+    case "proposal_review":
+    case "binding":
+    case "completed":
     case "cancelled":
       return value;
     default:
@@ -1528,9 +1578,7 @@ async function executeToolDomain(
       outreachId: input.procurementOutreachId
         ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
         : undefined,
-      brokerOrgId: input.brokerOrgId
-        ? normalizeOrganizationId(ctx, input.brokerOrgId)
-        : undefined,
+      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
       sourceRef: normalizedOptionalText(input.sourceRef),
       confidence:
         typeof input.confidence === "number" ? input.confidence : undefined,
@@ -1555,12 +1603,9 @@ async function executeToolDomain(
           : input.procurementOutreachId
             ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
             : undefined,
-      brokerOrgId:
-        input.brokerOrgId === null
-          ? null
-          : input.brokerOrgId
-            ? normalizeOrganizationId(ctx, input.brokerOrgId)
-            : undefined,
+      brokerOrgId: input.brokerOrgId
+        ? normalizeOrganizationId(ctx, input.brokerOrgId)
+        : undefined,
       confidence:
         input.confidence === null
           ? null
@@ -1595,6 +1640,51 @@ async function executeToolDomain(
       input.procurementRequestId,
     );
     return await getProcurementRequestDetails(ctx, requestId);
+  }
+
+  if (toolName === "list_procurement_proposals") {
+    const requestId = normalizeProcurementRequestId(
+      ctx,
+      input.procurementRequestId,
+    );
+    return {
+      proposals: await listProcurementProposals(ctx, requestId),
+      private: true,
+    };
+  }
+
+  if (toolName === "get_procurement_proposal") {
+    const proposalId = normalizeProcurementProposalId(
+      ctx,
+      input.procurementProposalId,
+    );
+    const proposal = await getProcurementProposalDetails(ctx, proposalId);
+    if (!proposal) throw new Error("Procurement proposal not found");
+    return { ...proposal, private: true };
+  }
+
+  if (toolName === "get_broker_network_profile") {
+    return await getBrokerProfileDetails(
+      ctx,
+      normalizeOrganizationId(ctx, input.brokerOrgId),
+    );
+  }
+
+  if (toolName === "list_broker_network_profiles") {
+    const limit = typeof input.limit === "number" ? input.limit : 50;
+    const profiles = await listBrokerProfiles(ctx, {
+      search: normalizedOptionalText(input.query),
+      status:
+        input.status === "prospect" ||
+        input.status === "active" ||
+        input.status === "inactive"
+          ? input.status
+          : undefined,
+      writingState: normalizedOptionalText(input.writingState),
+      lineOfBusinessCode: normalizedOptionalText(input.lineOfBusinessCode),
+      limit,
+    });
+    return { profiles, bounded: profiles.length === limit };
   }
 
   if (toolName === "get_procurement_forwarding_address") {
@@ -1951,6 +2041,10 @@ async function executeToolDomain(
         typeof input.requirements === "string" ? input.requirements : "",
       targetEffectiveDate: normalizedOptionalText(input.targetEffectiveDate),
       status: procurementRequestStatus(input.status),
+      clientVisible:
+        typeof input.clientVisible === "boolean"
+          ? input.clientVisible
+          : undefined,
       replacingPolicyId: input.replacingPolicyId
         ? normalizePolicyId(ctx, input.replacingPolicyId)
         : undefined,
@@ -1977,6 +2071,10 @@ async function executeToolDomain(
           ? null
           : normalizedOptionalText(input.targetEffectiveDate),
       status: procurementRequestStatus(input.status),
+      clientVisible:
+        typeof input.clientVisible === "boolean"
+          ? input.clientVisible
+          : undefined,
       replacingPolicyId:
         input.replacingPolicyId === null
           ? null
@@ -1993,14 +2091,95 @@ async function executeToolDomain(
     });
   }
 
+  if (toolName === "confirm_procurement_requirement") {
+    return await confirmProcurementRequirementDraftByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      draftId: normalizeProcurementRequirementDraftId(
+        ctx,
+        input.procurementRequirementDraftId,
+      ),
+    });
+  }
+
+  if (toolName === "create_procurement_proposal") {
+    return await createProcurementProposalByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
+      outreachId: normalizeProcurementOutreachId(
+        ctx,
+        input.procurementOutreachId,
+      ),
+      supersedesProposalId: input.supersedesProposalId
+        ? normalizeProcurementProposalId(ctx, input.supersedesProposalId)
+        : undefined,
+    });
+  }
+
+  if (toolName === "confirm_procurement_proposal_review") {
+    const conclusion = input.conclusion;
+    if (
+      conclusion !== "meets_requirements" &&
+      conclusion !== "has_gaps" &&
+      conclusion !== "insufficient_evidence"
+    ) {
+      throw new Error("Invalid proposal review conclusion");
+    }
+    return await confirmProcurementProposalReviewByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      reviewId: normalizeProcurementProposalReviewId(
+        ctx,
+        input.procurementProposalReviewId,
+      ),
+      conclusion,
+    });
+  }
+
+  if (toolName === "select_procurement_proposal") {
+    return await selectProcurementProposalByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      proposalId: normalizeProcurementProposalId(
+        ctx,
+        input.procurementProposalId,
+      ),
+    });
+  }
+
+  if (toolName === "update_broker_network_profile") {
+    return await updateBrokerProfileByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
+      networkStatus:
+        input.networkStatus === "prospect" ||
+        input.networkStatus === "active" ||
+        input.networkStatus === "inactive"
+          ? input.networkStatus
+          : undefined,
+      officeAddress:
+        input.officeAddress && typeof input.officeAddress === "object"
+          ? input.officeAddress
+          : undefined,
+      writingStates: Array.isArray(input.writingStates)
+        ? input.writingStates.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : undefined,
+      lineOfBusinessCodes: Array.isArray(input.lineOfBusinessCodes)
+        ? input.lineOfBusinessCodes.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : undefined,
+      name: normalizedOptionalText(input.name),
+      website:
+        input.website === null ? null : normalizedOptionalText(input.website),
+    });
+  }
+
   if (toolName === "create_procurement_broker_outreach") {
     return await createProcurementOutreachByOperator(ctx, {
       operatorUserId: args.operatorUserId,
       requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
-      brokerOrgId: input.brokerOrgId
-        ? normalizeOrganizationId(ctx, input.brokerOrgId)
-        : undefined,
-      brokerName: typeof input.brokerName === "string" ? input.brokerName : "",
+      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
       contactName: normalizedOptionalText(input.contactName),
       contactEmail: normalizedOptionalText(input.contactEmail),
       contactPhone: normalizedOptionalText(input.contactPhone),
@@ -2012,11 +2191,6 @@ async function executeToolDomain(
           )
         : undefined,
       notes: normalizedOptionalText(input.notes),
-      quoteSummary: normalizedOptionalText(input.quoteSummary),
-      quoteAmount:
-        typeof input.quoteAmount === "number" ? input.quoteAmount : undefined,
-      quoteCurrency: normalizedOptionalText(input.quoteCurrency),
-      quoteUrl: normalizedOptionalText(input.quoteUrl),
       source: "agent",
     });
   }
@@ -2028,14 +2202,9 @@ async function executeToolDomain(
         ctx,
         input.procurementOutreachId,
       ),
-      brokerOrgId:
-        input.brokerOrgId === null
-          ? null
-          : input.brokerOrgId
-            ? normalizeOrganizationId(ctx, input.brokerOrgId)
-            : undefined,
-      brokerName:
-        typeof input.brokerName === "string" ? input.brokerName : undefined,
+      brokerOrgId: input.brokerOrgId
+        ? normalizeOrganizationId(ctx, input.brokerOrgId)
+        : undefined,
       contactName:
         input.contactName === null
           ? null
@@ -2059,22 +2228,6 @@ async function executeToolDomain(
           )
         : undefined,
       notes: input.notes === null ? null : normalizedOptionalText(input.notes),
-      quoteSummary:
-        input.quoteSummary === null
-          ? null
-          : normalizedOptionalText(input.quoteSummary),
-      quoteAmount:
-        input.quoteAmount === null
-          ? null
-          : typeof input.quoteAmount === "number"
-            ? input.quoteAmount
-            : undefined,
-      quoteCurrency:
-        input.quoteCurrency === null
-          ? null
-          : normalizedOptionalText(input.quoteCurrency),
-      quoteUrl:
-        input.quoteUrl === null ? null : normalizedOptionalText(input.quoteUrl),
       source: "agent",
     });
   }
@@ -3598,11 +3751,7 @@ export const getPendingConfirmationInternal = internalQuery({
 
 const channelThreadArgs = {
   operatorUserId: v.id("users"),
-  channel: v.union(
-    v.literal("slack"),
-    v.literal("imessage"),
-    v.literal("mcp"),
-  ),
+  channel: v.union(v.literal("slack"), v.literal("imessage"), v.literal("mcp")),
   conversationKey: v.string(),
   title: v.optional(v.string()),
   shared: v.optional(v.boolean()),

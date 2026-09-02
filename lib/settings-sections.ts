@@ -4,7 +4,6 @@ import {
   FlaskConical,
   Mail,
   Network,
-  Send,
   Users,
 } from "lucide-react";
 import { createElement, type ComponentType } from "react";
@@ -21,13 +20,10 @@ export type SettingsPageId =
 
 export type SettingsTabId =
   | "overview"
-  | "broker"
   | "team"
   | "behavior"
   | "channels"
   | "memory"
-  | "models"
-  | "delivery"
   | "certificates"
   | "notifications"
   | "mailboxes"
@@ -69,10 +65,7 @@ export function getSettingsNavigation({
       id: "organization",
       label: "Organization",
       icon: Building2,
-      tabs: [
-        { id: "overview", label: "Overview" },
-        ...(!isBroker ? [{ id: "broker" as const, label: "Broker" }] : []),
-      ],
+      tabs: [{ id: "overview", label: "Overview" }],
     },
     {
       id: "team",
@@ -90,15 +83,13 @@ export function getSettingsNavigation({
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),
         ...(!isBroker ? [{ id: "memory" as const, label: "Memory" }] : []),
-        ...(isBroker ? [{ id: "models" as const, label: "Models" }] : []),
       ],
     },
     {
       id: "workflows",
       label: "Workflows",
-      icon: isBroker ? Send : FileBadge2,
+      icon: FileBadge2,
       tabs: [
-        { id: "delivery", label: "Delivery" },
         { id: "certificates", label: "Certificates" },
         { id: "notifications", label: "Notifications" },
       ],
@@ -143,14 +134,14 @@ export function settingsPages(groups: SettingsNavGroup[]) {
   return groups.flatMap((group) => group.pages);
 }
 
-const LEGACY_DESTINATIONS: Record<string, { section: SettingsPageId; tab: SettingsTabId }> = {
+const LEGACY_DESTINATIONS: Record<
+  string,
+  { section: SettingsPageId; tab: SettingsTabId }
+> = {
   organization: { section: "organization", tab: "overview" },
-  broker: { section: "organization", tab: "broker" },
   team: { section: "team", tab: "team" },
   agent: { section: "agent", tab: "behavior" },
   memory: { section: "agent", tab: "memory" },
-  models: { section: "agent", tab: "models" },
-  delivery: { section: "workflows", tab: "delivery" },
   certificates: { section: "workflows", tab: "certificates" },
   notifications: { section: "workflows", tab: "notifications" },
   email: { section: "mailboxes", tab: "mailboxes" },
@@ -169,8 +160,13 @@ export function resolveSettingsDestination({
 }) {
   const pages = settingsPages(groups);
   const requestedPage = pages.find((page) => page.id === requestedSection);
-  const legacy = requestedSection ? LEGACY_DESTINATIONS[requestedSection] : undefined;
-  const page = requestedPage ?? pages.find((item) => item.id === legacy?.section) ?? pages[0];
+  const legacy = requestedSection
+    ? LEGACY_DESTINATIONS[requestedSection]
+    : undefined;
+  const page =
+    requestedPage ??
+    pages.find((item) => item.id === legacy?.section) ??
+    pages[0];
   const desiredTab = requestedPage
     ? requestedTab === "email" ||
       requestedTab === "imessage" ||

@@ -27,22 +27,13 @@ type BackfillReport = {
       after: string[];
     }>;
   };
-  deliveryRules: {
-    scannedCount: number;
-    changedCount: number;
-    samples: Array<{
-      ruleId: Id<"policyDeliveryRules">;
-      before: {
-        productLines?: string[];
-        policyTypes?: string[];
-      };
-      after: string[];
-    }>;
-  };
   continuationScheduled: boolean;
 };
 
-function mergeReports(left: BackfillReport, right: BackfillReport): BackfillReport {
+function mergeReports(
+  left: BackfillReport,
+  right: BackfillReport,
+): BackfillReport {
   const unmappedValues = { ...left.policies.unmappedValues };
   for (const [value, count] of Object.entries(right.policies.unmappedValues)) {
     unmappedValues[value] = (unmappedValues[value] ?? 0) + count;
@@ -53,14 +44,13 @@ function mergeReports(left: BackfillReport, right: BackfillReport): BackfillRepo
       scannedCount: left.policies.scannedCount + right.policies.scannedCount,
       changedCount: left.policies.changedCount + right.policies.changedCount,
       unmappedValues,
-      samples: [...left.policies.samples, ...right.policies.samples].slice(0, 25),
+      samples: [...left.policies.samples, ...right.policies.samples].slice(
+        0,
+        25,
+      ),
     },
-    deliveryRules: {
-      scannedCount: left.deliveryRules.scannedCount + right.deliveryRules.scannedCount,
-      changedCount: left.deliveryRules.changedCount + right.deliveryRules.changedCount,
-      samples: [...left.deliveryRules.samples, ...right.deliveryRules.samples].slice(0, 25),
-    },
-    continuationScheduled: left.continuationScheduled || right.continuationScheduled,
+    continuationScheduled:
+      left.continuationScheduled || right.continuationScheduled,
   };
 }
 
@@ -71,11 +61,6 @@ function emptyReport(dryRun: boolean): BackfillReport {
       scannedCount: 0,
       changedCount: 0,
       unmappedValues: {},
-      samples: [],
-    },
-    deliveryRules: {
-      scannedCount: 0,
-      changedCount: 0,
       samples: [],
     },
     continuationScheduled: false,
@@ -93,31 +78,25 @@ export const backfill = internalAction({
     const limit = Math.min(Math.max(args.limit ?? 200, 1), 200);
     let report = emptyReport(dryRun);
     let policyCursor: string | null = null;
-    let ruleCursor: string | null = null;
 
     do {
-      const batch: BackfillReport & { nextCursor?: string | null; isDone?: boolean } =
-        await ctx.runMutation((internal as any).backfillLinesOfBusinessBatches.backfillPoliciesBatchInternal, {
+      const batch: BackfillReport & {
+        nextCursor?: string | null;
+        isDone?: boolean;
+      } = await ctx.runMutation(
+        (internal as any).backfillLinesOfBusinessBatches
+          .backfillPoliciesBatchInternal,
+        {
           orgId: args.orgId,
           dryRun,
           limit,
           cursor: policyCursor,
-        });
+        },
+      );
       report = mergeReports(report, batch);
-      policyCursor = dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
+      policyCursor =
+        dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
     } while (dryRun && policyCursor);
-
-    do {
-      const batch: BackfillReport & { nextCursor?: string | null; isDone?: boolean } =
-        await ctx.runMutation((internal as any).backfillLinesOfBusinessBatches.backfillDeliveryRulesBatchInternal, {
-          orgId: args.orgId,
-          dryRun,
-          limit,
-          cursor: ruleCursor,
-        });
-      report = mergeReports(report, batch);
-      ruleCursor = dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
-    } while (dryRun && ruleCursor);
 
     return report;
   },

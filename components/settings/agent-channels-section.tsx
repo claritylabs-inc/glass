@@ -5,7 +5,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ChevronRight, Loader2, RefreshCw, Unplug } from "lucide-react";
 import { toast } from "sonner";
-import { useSyncStore } from "@claritylabs/cl-sync";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -13,7 +12,6 @@ import {
   SLACK_INSTALL_INVITE_EXPIRATION_DAYS,
 } from "@/convex/lib/slackOAuthPolicy";
 import { resolveSlackAutomaticChannel } from "@/convex/lib/slackChannelRouting";
-import { ClientEmailRoutingSection } from "@/components/settings/client-email-routing-section";
 import { HandleAvailability } from "@/components/settings/handle-availability";
 import { SlackConnectionFields } from "@/components/settings/slack-connection-fields";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
@@ -44,14 +42,9 @@ import {
 } from "@/components/ui/select";
 import { StatusTag, type StatusTagTone } from "@/components/ui/status-tag";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCurrentOrg } from "@/hooks/use-current-org";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { openOAuthTab } from "@/lib/oauth-tab";
-import {
-  patchCachedViewerOrg,
-  useCachedViewerOrg,
-} from "@/lib/sync/spot-cached-queries";
 import { useOperatorClientCacheActions } from "@/lib/sync/operator-cached-queries";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { resolveSlackRowStatus } from "@/lib/slack-setup-status";
@@ -64,7 +57,6 @@ type ChannelSettings = {
   slackEnabled: boolean;
   slackSafeAlertsEnabled: boolean;
   slackVendorAlertsEnabled: boolean;
-  slackPolicyDeliveryEnabled: boolean;
 };
 
 type ChannelDrawer = "email" | "imessage" | "slack";
@@ -73,7 +65,7 @@ type SlackSetupStep = "install" | "support" | "channels" | "automations";
 type AgentEmailAddress = {
   handle: string | null;
   configuredHandle: string | null;
-  source: "broker" | "client" | "shared";
+  source: "client" | "shared";
   ownerOrgId: Id<"organizations">;
   ownerName: string;
 };
@@ -207,15 +199,7 @@ function normalizeAgentHandleInput(value: string) {
   );
 }
 
-function agentEmailAddressDescription(
-  address: AgentEmailAddress,
-  canEdit: boolean,
-) {
-  if (address.source === "broker") {
-    return canEdit
-      ? `This broker-owned address serves every client managed by ${address.ownerName}.`
-      : `Managed by ${address.ownerName}.`;
-  }
+function agentEmailAddressDescription(address: AgentEmailAddress) {
   if (address.source === "shared") {
     return "Spot identifies this standalone client from the sender’s email address.";
   }
@@ -302,7 +286,7 @@ function AgentEmailAddressField({
   return (
     <FormSection
       title="Agent email address"
-      description={agentEmailAddressDescription(address, canEdit)}
+      description={agentEmailAddressDescription(address)}
       action={
         !canEdit ? <StatusTag tone="neutral">Read only</StatusTag> : undefined
       }
@@ -321,7 +305,7 @@ function AgentEmailAddressField({
               }
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
-              placeholder={allowSharedDefault ? "agent" : "broker-name"}
+              placeholder={allowSharedDefault ? "agent" : "team-handle"}
               maxLength={30}
               spellCheck={false}
               autoCapitalize="off"
@@ -462,18 +446,6 @@ function AutomationSettings({
           })
         }
       />
-      <ChannelCard
-        title="Policy and endorsement delivery"
-        description="Deliver client-owned documents in their Slack threads."
-        checked={settings.slackPolicyDeliveryEnabled}
-        disabled={!canEdit || busy || !settings.slackEnabled}
-        onChange={() =>
-          onSave({
-            ...settings,
-            slackPolicyDeliveryEnabled: !settings.slackPolicyDeliveryEnabled,
-          })
-        }
-      />
     </div>
   );
   return showHeader ? (
@@ -502,14 +474,12 @@ function AutomationSettings({
 
 export function AgentChannelsSection({
   clientOrgId,
-  showEmailRouting = false,
   defaultClientSlug = "",
   defaultInviteEmail = "",
   defaultInviteUserId,
   setRightPanel: setRightPanelOverride,
 }: {
   clientOrgId: Id<"organizations">;
-  showEmailRouting?: boolean;
   defaultClientSlug?: string;
   defaultInviteEmail?: string;
   defaultInviteUserId?: Id<"users">;
@@ -517,9 +487,7 @@ export function AgentChannelsSection({
 }) {
   const { setRightPanel: setSettingsRightPanel } = useSettingsActions();
   const setRightPanel = setRightPanelOverride ?? setSettingsRightPanel;
-  const store = useSyncStore();
   const { patchClientSettings } = useOperatorClientCacheActions();
-  const currentOrg = useCurrentOrg();
   const viewer = useQuery(api.users.viewer);
   const isOperator = viewer?.accountKind === "operator";
   const customerResult = useQuery(
@@ -541,7 +509,6 @@ export function AgentChannelsSection({
 
   const update = useMutation(api.agentChannels.update);
   const updateForOperator = useMutation(api.agentChannels.updateForOperator);
-  const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
   const updateStandaloneAgentEmailHandleForOperator = useMutation(
     api.agentChannels.updateStandaloneAgentEmailHandleForOperator,
   );
@@ -631,20 +598,13 @@ export function AgentChannelsSection({
   const inviteEmail = selectedInviteMember?.email ?? "";
   const canEditAgentEmailAddress = Boolean(
     agentEmailAddress &&
-    (agentEmailAddress.source === "broker"
-      ? currentOrg?.isBroker &&
-        currentOrg.role === "admin" &&
-        currentOrg.orgId === agentEmailAddress.ownerOrgId
-      : isOperator && agentEmailAddress.ownerOrgId === clientOrgId),
+    isOperator &&
+    agentEmailAddress.ownerOrgId === clientOrgId,
   );
 
   async function saveAgentEmailHandle(handle: string | undefined) {
     if (!agentEmailAddress || !canEditAgentEmailAddress) {
       throw new Error("The agent email address is read-only");
-    }
-    if (agentEmailAddress.source === "broker") {
-      if (!handle) throw new Error("Enter an agent email address");
-      return await claimAgentHandle({ handle });
     }
     return await updateStandaloneAgentEmailHandleForOperator({
       clientOrgId,
@@ -654,10 +614,6 @@ export function AgentChannelsSection({
 
   function handleAgentEmailSaved(handle: string | undefined) {
     if (!agentEmailAddress) return;
-    if (agentEmailAddress.source === "broker") {
-      patchCachedViewerOrg(store, { agentHandle: handle });
-      return;
-    }
     void patchClientSettings(clientOrgId, { agentHandle: handle });
   }
 
@@ -1189,7 +1145,7 @@ export function AgentChannelsSection({
             ) : null}
             {operatorSetup.supportInviteError ? (
               <p className={`text-destructive ${typeStyle("caption.default")}`}>
-                The client invitation needs attention:{" "}
+                The support invitation needs attention:{" "}
                 {operatorSetup.supportInviteError}
               </p>
             ) : null}
@@ -1331,8 +1287,8 @@ export function AgentChannelsSection({
               <p
                 className={`mt-3 text-muted-foreground ${typeStyle("body.default")}`}
               >
-                Spot support must rebind the primary Slack Connect channel.
-                Your existing Slack history remains available.
+                Spot support must rebind the primary Slack Connect channel. Your
+                existing Slack history remains available.
               </p>
             ) : null}
           </FormSection>
@@ -1500,13 +1456,10 @@ export function AgentChannelsSection({
           key={`${agentEmailAddress.ownerOrgId}:${agentEmailAddress.configuredHandle ?? "shared"}`}
           address={agentEmailAddress}
           canEdit={canEditAgentEmailAddress}
-          allowSharedDefault={agentEmailAddress.source !== "broker"}
+          allowSharedDefault
           onSave={canEditAgentEmailAddress ? saveAgentEmailHandle : undefined}
           onSaved={handleAgentEmailSaved}
         />
-        {showEmailRouting ? (
-          <ClientEmailRoutingSection clientOrgId={clientOrgId} />
-        ) : null}
       </div>
     ) : null;
 
@@ -1921,91 +1874,5 @@ export function AgentChannelsSection({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-export function BrokerAgentChannelsSection() {
-  const { setRightPanel } = useSettingsActions();
-  const store = useSyncStore();
-  const viewerOrg = useCachedViewerOrg();
-  const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
-  const [emailOpen, setEmailOpen] = useState(false);
-  const org = viewerOrg?.org;
-  const isBroker = org?.type === "broker";
-  const canEdit = isBroker && viewerOrg?.membership.role === "admin";
-  const address: AgentEmailAddress | null =
-    org && isBroker
-      ? {
-          handle: org.agentHandle ?? null,
-          configuredHandle: org.agentHandle ?? null,
-          source: "broker",
-          ownerOrgId: org._id,
-          ownerName: org.name,
-        }
-      : null;
-
-  async function saveAgentEmailHandle(handle: string | undefined) {
-    if (!handle) throw new Error("Enter an agent email address");
-    return await claimAgentHandle({ handle });
-  }
-
-  function handleAgentEmailSaved(handle: string | undefined) {
-    patchCachedViewerOrg(store, { agentHandle: handle });
-  }
-
-  useEffect(() => {
-    if (!address) {
-      setRightPanel(null);
-      return;
-    }
-    setRightPanel(
-      <SettingsDrawer
-        open={emailOpen}
-        onOpenChange={setEmailOpen}
-        title="Email"
-      >
-        <AgentEmailAddressField
-          key={`${address.ownerOrgId}:${address.configuredHandle ?? "unconfigured"}`}
-          address={address}
-          canEdit={canEdit}
-          allowSharedDefault={false}
-          onSave={canEdit ? saveAgentEmailHandle : undefined}
-          onSaved={handleAgentEmailSaved}
-        />
-      </SettingsDrawer>,
-    );
-    return () => setRightPanel(null);
-    // Keep the shared drawer synchronized with the broker address.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    address?.configuredHandle,
-    address?.ownerOrgId,
-    canEdit,
-    emailOpen,
-    setRightPanel,
-  ]);
-
-  if (viewerOrg === undefined) {
-    return (
-      <div className="h-24 animate-pulse rounded-lg bg-foreground/[0.03] motion-reduce:animate-none" />
-    );
-  }
-  if (!address) return null;
-
-  const agentDomain = getPublicAgentDomain();
-  return (
-    <section className="space-y-3" aria-label="Agent channels">
-      <ChannelRow
-        title="Email"
-        description={
-          address.handle
-            ? `${address.handle}@${agentDomain}`
-            : "Set the address clients and carriers use to reach Spot."
-        }
-        status={address.handle ? "Configured" : "Needs setup"}
-        statusTone={address.handle ? "success" : "warning"}
-        onClick={() => setEmailOpen(true)}
-      />
-    </section>
   );
 }

@@ -28,6 +28,18 @@ describe("broker policy detail editing", () => {
       const clientUserId = await ctx.db.insert("users", {
         email: "client@example.com",
       });
+      const operatorUserId = await ctx.db.insert("users", {
+        email: "operator@example.com",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId: operatorUserId,
+        email: "operator@example.com",
+        role: "operator",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 1,
+      });
       await ctx.db.insert("orgMemberships", {
         orgId: brokerOrgId,
         userId: brokerUserId,
@@ -70,13 +82,13 @@ describe("broker policy detail editing", () => {
           ],
         },
       });
-      return { brokerUserId, clientUserId, policyId };
+      return { brokerUserId, clientUserId, operatorUserId, policyId };
     });
 
-    const broker = t.withIdentity({
-      subject: `${ids.brokerUserId}|session`,
+    const operator = t.withIdentity({
+      subject: `${ids.operatorUserId}|session`,
     });
-    await broker.mutation(updatePolicyDetailsFn, {
+    await operator.mutation(updatePolicyDetailsFn, {
       id: ids.policyId,
       update: {
         section: "overview",
@@ -87,7 +99,7 @@ describe("broker policy detail editing", () => {
         operationsDescription: "Edited delivery operations",
       },
     });
-    await broker.mutation(updatePolicyDetailsFn, {
+    await operator.mutation(updatePolicyDetailsFn, {
       id: ids.policyId,
       update: {
         section: "insured",
@@ -102,7 +114,7 @@ describe("broker policy detail editing", () => {
         additionalNamedInsureds: ["Subsidiary One", "  Subsidiary Two  "],
       },
     });
-    await broker.mutation(updatePolicyDetailsFn, {
+    await operator.mutation(updatePolicyDetailsFn, {
       id: ids.policyId,
       update: {
         section: "producer",
@@ -114,7 +126,7 @@ describe("broker policy detail editing", () => {
         address: { street1: "200 Broker Street" },
       },
     });
-    await broker.mutation(updatePolicyDetailsFn, {
+    await operator.mutation(updatePolicyDetailsFn, {
       id: ids.policyId,
       update: {
         section: "insurer",
@@ -123,7 +135,7 @@ describe("broker policy detail editing", () => {
         address: { street1: "300 Carrier Avenue" },
       },
     });
-    await broker.mutation(updatePolicyDetailsFn, {
+    await operator.mutation(updatePolicyDetailsFn, {
       id: ids.policyId,
       update: {
         section: "generalAgent",
@@ -166,11 +178,12 @@ describe("broker policy detail editing", () => {
           licenseNumber: "21058436",
         },
       },
-      policyDetailOverridesUpdatedByUserId: ids.brokerUserId,
+      policyDetailOverridesUpdatedByUserId: ids.operatorUserId,
     });
     expect(stored.audits).toHaveLength(5);
-    expect(stored.audits.every((audit) => audit.action === "manual_policy_update"))
-      .toBe(true);
+    expect(
+      stored.audits.every((audit) => audit.action === "manual_policy_update"),
+    ).toBe(true);
 
     const context = resolvePolicyPartyContext(stored.policy ?? {});
     expect(context).toMatchObject({
@@ -185,7 +198,7 @@ describe("broker policy detail editing", () => {
     });
     expect(JSON.stringify(context.parties)).not.toContain("insured-source");
 
-    await broker.mutation(updatePolicyDetailsFn, {
+    await operator.mutation(updatePolicyDetailsFn, {
       id: ids.policyId,
       update: {
         section: "overview",
@@ -201,9 +214,9 @@ describe("broker policy detail editing", () => {
     expect(clearedPremium?.premiumAmount).toBeUndefined();
 
     await expect(
-      t.withIdentity({ subject: `${ids.clientUserId}|session` }).mutation(
-        updatePolicyDetailsFn,
-        {
+      t
+        .withIdentity({ subject: `${ids.clientUserId}|session` })
+        .mutation(updatePolicyDetailsFn, {
           id: ids.policyId,
           update: {
             section: "insured",
@@ -211,10 +224,7 @@ describe("broker policy detail editing", () => {
             address: {},
             additionalNamedInsureds: [],
           },
-        },
-      ),
-    ).rejects.toThrow(
-      "Only the managing broker can edit extracted policy fields.",
-    );
+        }),
+    ).rejects.toThrow("Policy corrections are managed by Spot staff");
   });
 });

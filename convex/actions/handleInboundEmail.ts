@@ -37,10 +37,8 @@ import {
   getAgentRecipientAddresses,
   isSpotOutboundAddress,
 } from "../lib/resend";
-import { buildSpotEmailIconHtml } from "../lib/emailTemplate";
 import {
   buildSystemPromptForContext,
-  buildBrokerPortfolioSystemPrompt,
   buildChannelInstructions,
   buildPolicyToolInstructions,
   stripMarkdown,
@@ -51,11 +49,12 @@ import {
   collectAllowedRecipients,
   enforceInputLimits,
 } from "../lib/security";
-import { isWhiteLabelingEnabled } from "../lib/branding";
 import { getClientPortalUrl } from "../lib/domains";
 import {
   buildEmailExpertTool,
   buildAgentEmailHtmlBody,
+  buildEmailSignature,
+  getEmailAgentFromName,
   toResendAttachments,
   type EmailAttachmentMeta,
   type EmailSubagentResult,
@@ -106,8 +105,6 @@ import {
   procurementInboxTokenFromAddresses,
   uniqueProcurementEmails,
 } from "../lib/procurement";
-
-const SPOT_PUBLIC_URL = getClientPortalUrl();
 
 const CONSUMER_DOMAINS = new Set([
   "gmail.com",
@@ -209,61 +206,6 @@ function findAgentHandle(
     }
   }
   return null;
-}
-
-interface BrokerBranding {
-  name?: string;
-  logoUrl?: string | null;
-  agentDisplayName?: string | null;
-}
-
-function getAgentFromName(broker?: BrokerBranding): string {
-  if (broker?.name || broker?.agentDisplayName) {
-    const base = broker.agentDisplayName || broker.name;
-    return `${base} Agent`;
-  }
-  return "Spot";
-}
-
-function buildSignature(
-  agentEmail: string,
-  broker?: BrokerBranding,
-): { text: string; html: string } {
-  const poweredByUrl = SPOT_PUBLIC_URL;
-  const hasBroker = !!(broker?.name || broker?.agentDisplayName);
-  const agentName = getAgentFromName(broker);
-
-  const text = [
-    "",
-    "—",
-    agentName,
-    agentEmail,
-    ...(hasBroker
-      ? ["", `from Tools for Enlightenment — ${poweredByUrl}`]
-      : []),
-  ].join("\n");
-
-  const logoHtml =
-    hasBroker && broker?.logoUrl
-      ? `<img src="${broker.logoUrl}" alt="" width="20" height="20" style="display:inline-block;vertical-align:middle;width:20px;height:20px;border-radius:4px;margin-right:8px;object-fit:cover;border:0;" />`
-      : buildSpotEmailIconHtml({
-          size: 20,
-          borderRadius: 4,
-          margin: "0 8px 0 0",
-        });
-
-  const html = [
-    `<br><p style="color:#999;font-size:13px;margin:0">—</p>`,
-    `<p style="font-size:13px;margin:4px 0 2px">${logoHtml}<strong>${agentName}</strong></p>`,
-    `<p style="font-size:12px;color:#999;margin:0">${agentEmail}</p>`,
-    ...(hasBroker
-      ? [
-          `<p style="font-size:12px;margin:6px 0 0"><a href="${poweredByUrl}" style="color:#A0D2FA;text-decoration:none">from Tools for Enlightenment</a></p>`,
-        ]
-      : []),
-  ].join("\n");
-
-  return { text, html };
 }
 
 interface AttachmentMeta {
@@ -782,16 +724,8 @@ export const processInbound = internalAction({
       }
       return;
     }
-    const { brokerOrg, clientOrg } = resolved;
-    // If the handle matches the broker but no client matches the sender, fall
-    // back to operating in the broker's own workspace (e.g. internal mail).
-    const org = clientOrg ?? brokerOrg;
+    const { org } = resolved;
     const orgId = org._id;
-    if (!clientOrg) {
-      console.log(
-        `No client matched for sender ${fromEmail} on handle ${handle}; operating on broker org ${brokerOrg._id}.`,
-      );
-    }
 
     const orgMembers = await ctx.runQuery(internal.orgs.getMembersInternal, {
       orgId,
@@ -857,22 +791,7 @@ export const processInbound = internalAction({
         ) ?? `${handle}+${threadSuffix}@${getAgentDomain()}`)
       : null;
 
-    // Resolve broker branding once — used for outbound from-name and signature.
-    const senderBrokerOrg = brokerOrg.type === "broker" ? brokerOrg : null;
-    const whiteLabelingEnabled = isWhiteLabelingEnabled(senderBrokerOrg);
-    const brokerLogoUrl =
-      whiteLabelingEnabled && senderBrokerOrg?.iconStorageId
-        ? await ctx.storage.getUrl(senderBrokerOrg.iconStorageId)
-        : null;
-    const brokerBranding: BrokerBranding | undefined =
-      whiteLabelingEnabled && senderBrokerOrg
-        ? {
-            name: senderBrokerOrg.name,
-            logoUrl: brokerLogoUrl,
-            agentDisplayName: senderBrokerOrg.agentDisplayName,
-          }
-        : undefined;
-    const fromHeader = `${getAgentFromName(brokerBranding)} <${agentAddress}>`;
+    const fromHeader = `${getEmailAgentFromName()} <${agentAddress}>`;
     const agentInTo = toAddresses.some(isAgentAddr);
     const agentInCc = ccAddresses.some(isAgentAddr);
     const otherToRecipients = toAddresses.filter((a) => !isAgentAddr(a));
@@ -1047,7 +966,7 @@ export const processInbound = internalAction({
           `Please reply to the original sender directly if a response is needed. The agent has not sent any reply.`,
         ].join("\n");
 
-        const signature = buildSignature(agentAddress, brokerBranding);
+        const signature = buildEmailSignature(agentAddress);
         const fullText = notificationBody + signature.text;
 
         const fullHtml = buildAgentEmailHtmlBody(notificationBody, signature);
@@ -1101,8 +1020,6 @@ export const processInbound = internalAction({
           orgId,
           userId: primaryUserId,
           surface: "email",
-          allowBrokerPortfolio:
-            org.type === "broker" && isInternal && effectiveMode === "direct",
         },
       );
 
@@ -1114,43 +1031,20 @@ export const processInbound = internalAction({
       });
       const userName = primaryUser?.name?.split(/\s+/)[0];
 
-      const brokerIdentity =
-        org.type === "client"
-          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-              clientOrgId: orgId,
-            })
-          : null;
-      const systemPrompt =
-        scope.mode === "broker_portfolio"
-          ? buildBrokerPortfolioSystemPrompt({
-              brokerName: typeof org.name === "string" ? org.name : undefined,
-              brokerContext:
-                typeof org.context === "string" ? org.context : undefined,
-              userName,
-              siteUrl,
-            })
-          : buildSystemPromptForContext({
-              org: {
-                name: org.name,
-                context: org.context,
-                broker: brokerIdentity?.brokerCompanyName
-                  ? {
-                      name: brokerIdentity.brokerCompanyName,
-                      contactName: brokerIdentity.contactName,
-                      contactEmail: brokerIdentity.contactEmail,
-                      contactPhone: brokerIdentity.contactPhone,
-                    }
-                  : undefined,
-              },
-              mode:
-                effectiveMode === "direct"
-                  ? "direct"
-                  : effectiveMode === "cc"
-                    ? "cc"
-                    : "forward",
-              userName,
-              siteUrl,
-            });
+      const systemPrompt = buildSystemPromptForContext({
+        org: {
+          name: org.name,
+          context: org.context,
+        },
+        mode:
+          effectiveMode === "direct"
+            ? "direct"
+            : effectiveMode === "cc"
+              ? "cc"
+              : "forward",
+        userName,
+        siteUrl,
+      });
       // Build messages — include thread history for context
       const messages: ModelMessage[] = [];
       let threadMessagesForGuards: Array<{
@@ -1354,18 +1248,9 @@ export const processInbound = internalAction({
                 channel: "email",
                 fromHeader,
                 agentAddress,
-                brokerBranding,
                 senderEmail: fromEmail,
                 defaultTo: fromEmail,
                 defaultRecipientName: fromName,
-                brokerRecipientEmail: brokerIdentity?.contactEmail,
-                brokerRecipientName:
-                  brokerIdentity?.contactName ??
-                  brokerIdentity?.brokerCompanyName,
-                missingRecipientMessage:
-                  "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
-                unknownRecipientMessage:
-                  "I cannot use that broker recipient because it is not the configured broker contact in Spot. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false
                     ? [fromEmail]
@@ -1392,7 +1277,6 @@ export const processInbound = internalAction({
                         memberEmails,
                       ),
                       ...memberEmails,
-                      brokerIdentity?.contactEmail,
                     ]
                       .filter(Boolean)
                       .map((email) => String(email).toLowerCase()),
@@ -1921,7 +1805,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
         .filter((part): part is string => Boolean(part))
         .join("\n\n");
       const plainTextBody = stripMarkdown(deliveryResponseBody);
-      const signature = buildSignature(agentAddress, brokerBranding);
+      const signature = buildEmailSignature(agentAddress);
       const fullReplyText = plainTextBody + signature.text;
       const fullReplyHtml = buildAgentEmailHtmlBody(
         deliveryResponseBody,
@@ -2089,7 +1973,7 @@ IMPORTANT GROUPING RULE: A real-world policy commonly arrives as multiple PDFs i
           : `Re: ${subject}`;
         const failureHtml = buildAgentEmailHtmlBody(
           FATAL_ACTION_FAILED_MESSAGE,
-          buildSignature(agentAddress, brokerBranding),
+          buildEmailSignature(agentAddress),
         );
         const failurePayload: Record<string, unknown> = {
           from: fromHeader,

@@ -3,15 +3,8 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import {
-  buildEmailPayload,
-  type EmailAttachmentMeta,
-} from "./emailDelivery";
-import {
-  buildEmailSignature,
-  getEmailAgentFromName,
-  type BrokerBranding,
-} from "./emailIdentity";
+import { buildEmailPayload, type EmailAttachmentMeta } from "./emailDelivery";
+import { buildEmailSignature, getEmailAgentFromName } from "./emailIdentity";
 
 export type EmailDraftArtifactContext = {
   orgId: Id<"organizations">;
@@ -21,7 +14,6 @@ export type EmailDraftArtifactContext = {
   fromHeader: string;
   agentAddress: string;
   replyTo?: string;
-  brokerBranding?: BrokerBranding;
   senderEmail?: string;
   defaultBcc?: string[];
   inReplyTo?: string;
@@ -51,10 +43,7 @@ export async function upsertEmailDraftArtifact(
     return undefined;
   }
 
-  const signature = buildEmailSignature(
-    context.agentAddress,
-    context.brokerBranding,
-  );
+  const signature = buildEmailSignature(context.agentAddress);
   const emailPayload = buildEmailPayload({
     fromHeader: context.fromHeader,
     to: params.to,
@@ -149,7 +138,7 @@ export async function upsertEmailDraftArtifact(
       orgId: context.orgId,
       role: "agent",
       fromEmail: context.agentAddress,
-      fromName: getEmailAgentFromName(context.brokerBranding),
+      fromName: getEmailAgentFromName(),
       content: params.body,
       toAddresses: [params.to],
       ccAddresses: params.cc.length > 0 ? params.cc : undefined,

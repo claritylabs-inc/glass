@@ -144,31 +144,10 @@ function slugFromName(name: string) {
   return normalizeSlug(name.trim().replace(/\s+/g, "-"));
 }
 
-function normalizeHandle(value: string | undefined) {
-  const raw = value?.trim().toLowerCase() ?? "";
-  const withoutDomain = raw.includes("@") ? raw.split("@")[0] : raw;
-  const normalized = withoutDomain
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/^-+|-+$/g, "");
-  return normalized || undefined;
-}
-
 function normalizeWebsiteUrl(value: string | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
-function validateAgentHandle(handle: string | undefined) {
-  if (!handle) return;
-  if (handle.length < 3 || handle.length > 30) {
-    throw new Error("Agent handle must be 3-30 characters");
-  }
-  if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(handle)) {
-    throw new Error(
-      "Agent handle must start with a letter and end with a letter or number",
-    );
-  }
 }
 
 function normalizeOptionalContactPhone(value: string | undefined) {
@@ -278,15 +257,6 @@ async function deleteRemovedProgramAdminOrgData(
     .collect();
   for (const relationship of [...clientRelationships, ...vendorRelationships]) {
     await ctx.db.delete(relationship._id);
-    deleted += 1;
-  }
-
-  const clientInvitations = await ctx.db
-    .query("clientInvitations")
-    .withIndex("broker", (q) => q.eq("brokerOrgId", orgId))
-    .collect();
-  for (const invitation of clientInvitations) {
-    await ctx.db.delete(invitation._id);
     deleted += 1;
   }
 
@@ -503,17 +473,6 @@ function roleForBootstrapEmail(email: string): "operator" | "owner" {
   return "operator";
 }
 
-async function countBrokerClients(
-  ctx: QueryCtx,
-  brokerOrgId: Id<"organizations">,
-) {
-  const clients = await ctx.db
-    .query("organizations")
-    .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
-    .take(500);
-  return clients.length;
-}
-
 async function getOrgAdmin(ctx: QueryCtx, orgId: Id<"organizations">) {
   const memberships = await ctx.db
     .query("orgMemberships")
@@ -661,53 +620,6 @@ export const clearAllAgentMemory = mutation({
   },
 });
 
-export const listBrokers = query({
-  args: { search: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    const search = args.search?.trim().toLowerCase();
-    const brokers = await ctx.db
-      .query("organizations")
-      .withIndex("type", (q) => q.eq("type", "broker"))
-      .take(200);
-    const filtered = search
-      ? brokers.filter((broker) =>
-          [broker.name, broker.slug, broker.website, broker.primaryContactEmail]
-            .filter(Boolean)
-            .some((value) => String(value).toLowerCase().includes(search)),
-        )
-      : brokers;
-    return await Promise.all(
-      filtered.map(async (broker) => {
-        const memberships = await ctx.db
-          .query("orgMemberships")
-          .withIndex("organization", (q) => q.eq("orgId", broker._id))
-          .take(20);
-        const adminMembership = memberships.find(
-          (membership) => membership.role === "admin",
-        );
-        const admin = adminMembership
-          ? await ctx.db.get(adminMembership.userId)
-          : null;
-        return {
-          _id: broker._id,
-          name: broker.name,
-          slug: broker.slug,
-          ...(await orgBrandFields(ctx, broker)),
-          agentHandle: broker.agentHandle,
-          operatorStatus: broker.operatorStatus ?? "live",
-          onboardingComplete: broker.onboardingComplete,
-          adminName: admin?.name,
-          adminEmail: admin?.email,
-          adminPhone: admin?.phone,
-          clientCount: await countBrokerClients(ctx, broker._id),
-          createdAt: broker._creationTime,
-        };
-      }),
-    );
-  },
-});
-
 async function listOperatorClientRows(ctx: QueryCtx) {
   const clients = await ctx.db
     .query("organizations")
@@ -716,9 +628,6 @@ async function listOperatorClientRows(ctx: QueryCtx) {
   return await Promise.all(
     clients.map(async (client) => {
       const admin = await getOrgAdmin(ctx, client._id);
-      const broker = client.brokerOrgId
-        ? await ctx.db.get(client.brokerOrgId)
-        : null;
       return {
         _id: client._id,
         name: client.name,
@@ -735,8 +644,6 @@ async function listOperatorClientRows(ctx: QueryCtx) {
         adminName: admin?.name,
         adminEmail: admin?.email,
         adminPhone: admin?.phone,
-        brokerOrgId: client.brokerOrgId,
-        brokerName: broker?.name,
         createdAt: client._creationTime,
       };
     }),
@@ -1406,15 +1313,11 @@ export const stopExtraction = mutation({
 export const checkBrokerSetupIdentifiers = query({
   args: {
     slug: v.optional(v.string()),
-    agentHandle: v.optional(v.string()),
     ownerOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     const slug = args.slug ? normalizeSlug(args.slug) : undefined;
-    const agentHandle = normalizeHandle(args.agentHandle);
-
-    let slugOrgId: Id<"organizations"> | undefined;
     const slugStatus = slug
       ? await (async () => {
           if (slug.length < 3 || slug.length > 40) {
@@ -1443,7 +1346,6 @@ export const checkBrokerSetupIdentifiers = query({
               normalized: slug,
               mode: "available" as const,
             };
-          slugOrgId = slugOrg._id;
           if (args.ownerOrgId) {
             return slugOrg._id === args.ownerOrgId
               ? {
@@ -1475,64 +1377,7 @@ export const checkBrokerSetupIdentifiers = query({
         })()
       : null;
 
-    const handleStatus = agentHandle
-      ? await (async () => {
-          try {
-            validateAgentHandle(agentHandle);
-          } catch (error) {
-            return {
-              available: false,
-              normalized: agentHandle,
-              reason:
-                error instanceof Error
-                  ? error.message
-                  : "Agent handle is invalid",
-              mode: "unavailable" as const,
-            };
-          }
-          const existingByHandle = await ctx.db
-            .query("organizations")
-            .withIndex("handle", (q) => q.eq("agentHandle", agentHandle))
-            .first();
-          if (!existingByHandle) {
-            return {
-              available: true,
-              normalized: agentHandle,
-              mode: "available" as const,
-            };
-          }
-          if (args.ownerOrgId) {
-            return existingByHandle._id === args.ownerOrgId
-              ? {
-                  available: true,
-                  normalized: agentHandle,
-                  mode: "available" as const,
-                }
-              : {
-                  available: false,
-                  normalized: agentHandle,
-                  reason: "Agent handle is already taken",
-                  mode: "unavailable" as const,
-                };
-          }
-          if (slugOrgId && existingByHandle._id === slugOrgId) {
-            return {
-              available: true,
-              normalized: agentHandle,
-              reason: "Existing broker will be updated",
-              mode: "updates_existing" as const,
-            };
-          }
-          return {
-            available: false,
-            normalized: agentHandle,
-            reason: "Agent handle is already taken",
-            mode: "unavailable" as const,
-          };
-        })()
-      : null;
-
-    return { slug: slugStatus, agentHandle: handleStatus };
+    return { slug: slugStatus };
   },
 });
 
@@ -1589,7 +1434,6 @@ export const createBroker = action({
     name: v.string(),
     slug: v.optional(v.string()),
     website: v.optional(v.string()),
-    agentHandle: v.optional(v.string()),
     adminEmail: v.string(),
     adminName: v.optional(v.string()),
     adminPhone: v.optional(v.string()),
@@ -1630,7 +1474,6 @@ export const createBroker = action({
         name: args.name,
         slug: args.slug,
         website: args.website,
-        agentHandle: args.agentHandle,
       },
     });
   },
@@ -1639,7 +1482,6 @@ export const createBroker = action({
 export const createSoloClient = action({
   args: {
     name: v.string(),
-    brokerOrgId: v.optional(v.id("organizations")),
     website: v.optional(v.string()),
     users: v.optional(v.array(operatorClientUserValidator)),
     // Legacy fields keep an already-open operator UI compatible during rollout.
@@ -1738,7 +1580,6 @@ export const createSoloClient = action({
         users: provisionedUsers,
         client: {
           name: args.name,
-          brokerOrgId: args.brokerOrgId,
           website,
         },
       },
@@ -1838,7 +1679,6 @@ export const updateClientSettings = mutation({
   args: {
     clientOrgId: v.id("organizations"),
     name: v.string(),
-    brokerOrgId: v.optional(v.id("organizations")),
     website: v.optional(v.string()),
     industry: v.optional(v.string()),
     industryVertical: v.optional(v.string()),
@@ -1852,14 +1692,8 @@ export const updateClientSettings = mutation({
     const name = args.name.trim();
     if (!name) throw new Error("Organization name is required");
 
-    const broker = args.brokerOrgId ? await ctx.db.get(args.brokerOrgId) : null;
-    if (args.brokerOrgId && (!broker || broker.type !== "broker")) {
-      throw new Error("Broker not found");
-    }
-
     const patch = {
       name,
-      brokerOrgId: args.brokerOrgId,
       website: args.website?.trim() || undefined,
       industry: args.industry?.trim() || undefined,
       industryVertical: args.industryVertical?.trim() || undefined,
@@ -1880,8 +1714,6 @@ export const updateClientSettings = mutation({
       metadata: {
         previousName: client.name,
         nextName: name,
-        previousBrokerOrgId: client.brokerOrgId,
-        nextBrokerOrgId: args.brokerOrgId,
         website: patch.website,
       },
     });
@@ -1971,9 +1803,7 @@ export const launchBroker = action({
     if (!launch.adminEmail) throw new Error("Broker has no admin email");
 
     const siteUrl = getAuthSiteUrl();
-    const loginUrl: string = launch.slug
-      ? `${siteUrl}/login/${launch.slug}?email=${encodeURIComponent(launch.adminEmail)}`
-      : `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
+    const loginUrl = `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
     const subject = `${launch.name} is ready on Spot`;
     const bodyHtml = `
 <tr><td style="padding:28px 40px 0 40px;">
@@ -2432,7 +2262,6 @@ export const upsertBrokerInternal = internalMutation({
       name: v.string(),
       slug: v.optional(v.string()),
       website: v.optional(v.string()),
-      agentHandle: v.optional(v.string()),
     }),
   },
   handler: async (ctx, args) => {
@@ -2454,23 +2283,11 @@ export const upsertBrokerInternal = internalMutation({
     if (existingBySlug && existingBySlug.type !== "broker") {
       throw new Error("Slug is already used by a non-broker org");
     }
-    const agentHandle = normalizeHandle(args.broker.agentHandle);
-    validateAgentHandle(agentHandle);
-    if (agentHandle) {
-      const existingByHandle = await ctx.db
-        .query("organizations")
-        .withIndex("handle", (q) => q.eq("agentHandle", agentHandle))
-        .first();
-      if (existingByHandle && existingByHandle._id !== existingBySlug?._id) {
-        throw new Error("Agent handle is already taken");
-      }
-    }
     const patch = {
       name: brokerName,
       type: "broker" as const,
       slug,
       website: args.broker.website?.trim() || undefined,
-      agentHandle,
       primaryInsuranceContactId: args.adminUserId,
       onboardingComplete: true,
       operatorStatus: "onboarding" as const,
@@ -2544,7 +2361,6 @@ export const createSoloClientInternal = internalMutation({
     ),
     client: v.object({
       name: v.string(),
-      brokerOrgId: v.optional(v.id("organizations")),
       website: v.optional(v.string()),
     }),
   },
@@ -2558,13 +2374,6 @@ export const createSoloClientInternal = internalMutation({
     }
     const clientName = args.client.name.trim();
     if (!clientName) throw new Error("Client name is required");
-    const broker = args.client.brokerOrgId
-      ? await ctx.db.get(args.client.brokerOrgId)
-      : null;
-    if (args.client.brokerOrgId && (!broker || broker.type !== "broker")) {
-      throw new Error("Broker not found");
-    }
-
     const seenUserIds = new Set<Id<"users">>();
     const seenEmails = new Set<string>();
     const seenPhones = new Set<string>();
@@ -2613,7 +2422,6 @@ export const createSoloClientInternal = internalMutation({
     const clientOrgId = await ctx.db.insert("organizations", {
       name: clientName,
       type: "client",
-      brokerOrgId: args.client.brokerOrgId,
       website: args.client.website?.trim() || undefined,
       allowedEmails: users.map((user) => user.email),
       emailVerification: "strict",
@@ -2643,14 +2451,9 @@ export const createSoloClientInternal = internalMutation({
       type: "client_created",
       targetOrgId: clientOrgId,
       targetUserId: primaryAdmin?.userId,
-      summary: broker
-        ? `Created client ${clientName} for broker ${broker.name}`
-        : `Created standalone client ${clientName}`,
+      summary: `Created client ${clientName}`,
       metadata: {
         ...(primaryAdmin ? { adminEmail: primaryAdmin.email } : {}),
-        ...(args.client.brokerOrgId
-          ? { brokerOrgId: args.client.brokerOrgId }
-          : {}),
         userCount: users.length,
         adminCount: users.filter((user) => user.role === "admin").length,
       },

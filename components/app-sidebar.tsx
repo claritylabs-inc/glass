@@ -10,7 +10,6 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { NotificationsPanel } from "@/components/notifications-panel";
-import { ClientDetailSidebarContent } from "@/components/app-sidebar/client-detail-sidebar-content";
 import { MainSidebarContent } from "@/components/app-sidebar/main-sidebar-content";
 import { SidebarTooltipProvider } from "@/components/app-sidebar/nav-item";
 import {
@@ -23,7 +22,6 @@ import {
   SHORTCUT_SEQUENCE_TIMEOUT_MS,
 } from "@/components/app-sidebar/nav-config";
 import { SettingsSidebarContent } from "@/components/app-sidebar/settings-sidebar-content";
-import type { ClientThreadItem } from "@/components/app-sidebar/types";
 import { splitThreadConversations } from "@/lib/thread-display";
 import {
   getInitials,
@@ -50,23 +48,13 @@ function sidebarHeaderBranding({
           name?: string;
           iconUrl?: string | null;
         } | null;
-        brokerOrg?: {
-          name: string;
-          iconUrl?: string | null;
-          whiteLabelingEnabled?: boolean;
-        } | null;
       }
     | null
     | undefined;
   viewerName?: string | null;
   viewerEmail?: string | null;
 }) {
-  const brokerBrandingEnabled =
-    viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false;
-  const brandedOrg =
-    brokerBrandingEnabled && viewerOrg?.brokerOrg
-      ? viewerOrg.brokerOrg
-      : viewerOrg?.org;
+  const brandedOrg = viewerOrg?.org;
 
   return {
     name: brandedOrg?.name ?? viewerName ?? viewerEmail ?? "",
@@ -78,43 +66,35 @@ export function AppSidebar({
   mobileOpen,
   onMobileClose,
   onAskSpot,
+  disablePersistentChat = false,
 }: {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
   onAskSpot?: () => void;
+  disablePersistentChat?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const isSettingsMode = pathname.startsWith("/settings");
-  const clientDetailMatch = pathname.match(/^\/clients\/([^/]+)(\/.*)?$/);
-  const isClientDetailMode = !!clientDetailMatch;
-  const clientDetailId = clientDetailMatch?.[1];
 
   const viewer = useCachedQuery("users.viewer", api.users.viewer, {});
   const viewerOrg = useCachedQuery("orgs.viewerOrg", api.orgs.viewerOrg, {});
   const unifiedThreads = useCachedQuery(
     "threads.list.active",
     api.threads.list,
-    { archived: false },
+    disablePersistentChat ? "skip" : { archived: false },
   );
   const archivedThreads = useCachedQuery(
     "threads.list.archived",
     api.threads.list,
-    { archived: true },
+    disablePersistentChat ? "skip" : { archived: true },
   );
   const setThreadDetail = useSetCachedQuery<
     NonNullable<typeof unifiedThreads>[number],
     { id: Id<"threads"> }
   >("threads.get.current");
-  const clientThreads = useCachedQuery(
-    "threads.listForClient.sidebar",
-    api.threads.listForClient,
-    clientDetailId
-      ? { clientOrgId: clientDetailId as Id<"organizations">, archived: false }
-      : "skip",
-  ) as ClientThreadItem[] | undefined;
   const createThread = useMutation(api.threads.create);
   const archiveThread = useMutation(api.threads.archive);
   const { archiveThreadLocally } = useArchivedThreadCacheActions();
@@ -122,10 +102,12 @@ export function AppSidebar({
   const { clearCache: clearOnboardingCache } = useOnboardingCache();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const showConnectFeatures = isFeatureEnabled(currentOrg?.org, "connect_features");
-  const isStandaloneClient =
-    currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
-  const canManageSettings = currentOrg?.role === "admin";
+  const showConnectFeatures = isFeatureEnabled(
+    currentOrg?.org,
+    "connect_features",
+  );
+  const isStandaloneClient = currentOrg?.orgType === "client";
+  const canManageSettings = !isBroker && currentOrg?.role === "admin";
   const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
   const connectItems =
     isBroker || !showConnectFeatures ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
@@ -179,9 +161,17 @@ export function AppSidebar({
     () => splitThreadConversations(unifiedThreads),
     [unifiedThreads],
   );
+  const visibleAgentConversations = useMemo(
+    () => (disablePersistentChat ? [] : agentConversations),
+    [agentConversations, disablePersistentChat],
+  );
+  const visiblePinnedConversations = useMemo(
+    () => (disablePersistentChat ? [] : pinnedConversations),
+    [disablePersistentChat, pinnedConversations],
+  );
   const shortcutConversations = useMemo(
-    () => [...pinnedConversations, ...agentConversations],
-    [agentConversations, pinnedConversations],
+    () => [...visiblePinnedConversations, ...visibleAgentConversations],
+    [visibleAgentConversations, visiblePinnedConversations],
   );
 
   function toggleCollapse() {
@@ -287,10 +277,7 @@ export function AppSidebar({
   const headerOrgName = headerBranding.name;
   const headerOrgIcon = headerBranding.iconUrl;
   const initials = getInitials(headerOrgName, viewer?.email);
-  const brokerContact = viewerOrg?.brokerOrg ?? null;
-  const fallbackAgentHandle = viewerOrg?.org?.agentHandle;
 
-  const clientDetailBase = clientDetailId ? `/clients/${clientDetailId}` : "";
   const activeSettingsSection = resolveSettingsDestination({
     requestedSection: searchParams.get("section"),
     requestedTab: searchParams.get("tab"),
@@ -304,9 +291,6 @@ export function AppSidebar({
         isBroker={isBroker}
         isStandaloneClient={isStandaloneClient}
         activeSettingsSection={activeSettingsSection}
-        broker={brokerContact}
-        fallbackAgentHandle={fallbackAgentHandle}
-        showBrokerContact={!isBroker && !!viewerOrg}
         onToggleCollapse={toggleCollapse}
       />
     );
@@ -325,19 +309,20 @@ export function AppSidebar({
         headerOrgName={headerOrgName}
         navItems={navItems}
         connectItems={connectItems}
+        disablePersistentChat={disablePersistentChat}
         notificationsPanelOpen={notificationsPanelOpen}
         unreadCount={unreadCount}
         isDesktop={isDesktop}
         orgId={currentOrg?.orgId}
-        agentConversations={agentConversations}
-        pinnedConversations={pinnedConversations}
-        archivedThreadCount={archivedThreads?.length ?? 0}
-        broker={brokerContact}
-        fallbackAgentHandle={fallbackAgentHandle}
+        agentConversations={visibleAgentConversations}
+        pinnedConversations={visiblePinnedConversations}
+        archivedThreadCount={
+          disablePersistentChat ? 0 : (archivedThreads?.length ?? 0)
+        }
         onToggleCollapse={toggleCollapse}
         onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
         onCloseNotifications={() => setNotificationsPanelOpen(false)}
-        onAskSpot={onAskSpot}
+        onAskSpot={disablePersistentChat ? undefined : onAskSpot}
         onArchiveThread={handleArchiveThread}
         onSignOut={() => {
           clearOnboardingCache();
@@ -347,29 +332,10 @@ export function AppSidebar({
     );
   }
 
-  function renderClientDetailSidebarContent(contentCollapsed: boolean) {
-    return (
-      <ClientDetailSidebarContent
-        collapsed={contentCollapsed}
-        clientDetailBase={clientDetailBase}
-        clientDetailId={clientDetailId}
-        pathname={pathname}
-        headerOrgIcon={headerOrgIcon}
-        viewerImage={viewer?.image}
-        initials={initials}
-        headerOrgName={headerOrgName}
-        clientThreads={clientThreads}
-        onToggleCollapse={toggleCollapse}
-      />
-    );
-  }
-
   function renderBaseActiveContent(contentCollapsed: boolean) {
     let content: React.ReactNode;
 
-    if (isClientDetailMode) {
-      content = renderClientDetailSidebarContent(contentCollapsed);
-    } else if (isSettingsMode) {
+    if (isSettingsMode) {
       content = renderSettingsSidebarContent(contentCollapsed);
     } else {
       content = renderSidebarContent(contentCollapsed);
@@ -380,11 +346,7 @@ export function AppSidebar({
 
   const activeContent = renderBaseActiveContent(collapsed);
   const mobileActiveContent = renderBaseActiveContent(false);
-  const activeMode = isClientDetailMode
-    ? "client"
-    : isSettingsMode
-      ? "settings"
-      : "main";
+  const activeMode = isSettingsMode ? "settings" : "main";
   const activeModeMovesRight = activeMode !== "main";
 
   return (

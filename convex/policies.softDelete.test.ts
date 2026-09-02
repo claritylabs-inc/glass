@@ -2,12 +2,14 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
-import { archive, listForBroker, restore } from "./policies";
+import { archive, get, getSummary, listForOperator, restore } from "./policies";
 
 const modules = import.meta.glob("./**/*.ts");
 const archiveFn = archive as any;
+const getFn = get as any;
+const getSummaryFn = getSummary as any;
 const restoreFn = restore as any;
-const listForBrokerFn = listForBroker as any;
+const listForOperatorFn = listForOperator as any;
 
 async function seedBrokerClientPolicy(options: {
   uploadedBySide: "broker" | "client";
@@ -31,6 +33,19 @@ async function seedBrokerClientPolicy(options: {
       orgId: brokerOrgId,
       userId: brokerUserId,
       role: "admin",
+    });
+    const operatorUserId = await ctx.db.insert("users", {
+      name: "Operator",
+      email: "operator@example.com",
+      accountKind: "operator",
+    });
+    await ctx.db.insert("operatorProfiles", {
+      userId: operatorUserId,
+      email: "operator@example.com",
+      role: "operator",
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
     });
     const policyId = await ctx.db.insert("policies", {
       orgId: clientOrgId,
@@ -74,21 +89,20 @@ async function seedBrokerClientPolicy(options: {
       recordHash: "policy-fact-stale",
     });
 
-    return { brokerUserId, clientOrgId, policyId };
+    return { brokerUserId, operatorUserId, clientOrgId, policyId };
   });
 
   return { t, ...ids };
 }
 
 describe("policy archive and restore", () => {
-  test("lets the uploading broker archive, list, and restore a client policy", async () => {
-    const { t, brokerUserId, clientOrgId, policyId } =
+  test("lets an operator archive, list, and restore a client policy", async () => {
+    const { t, operatorUserId, clientOrgId, policyId } =
       await seedBrokerClientPolicy({ uploadedBySide: "broker" });
 
-    await t.withIdentity({ subject: `${brokerUserId}|session` }).mutation(
-      archiveFn,
-      { id: policyId },
-    );
+    await t
+      .withIdentity({ subject: `${operatorUserId}|session` })
+      .mutation(archiveFn, { id: policyId });
 
     const { policy, audits, fact } = await t.run(async (ctx) => {
       const policy = await ctx.db.get(policyId);
@@ -105,29 +119,31 @@ describe("policy archive and restore", () => {
 
     expect(policy?.deletedAt).toEqual(expect.any(Number));
     expect(fact?.active).toBe(false);
-    expect(audits).toContainEqual(expect.objectContaining({
-      policyId,
-      userId: brokerUserId,
-      orgId: clientOrgId,
-      action: "archived",
-    }));
+    expect(audits).toContainEqual(
+      expect.objectContaining({
+        policyId,
+        userId: operatorUserId,
+        orgId: clientOrgId,
+        action: "archived",
+      }),
+    );
 
-    const broker = t.withIdentity({ subject: `${brokerUserId}|session` });
+    const operator = t.withIdentity({ subject: `${operatorUserId}|session` });
     await expect(
-      broker.query(listForBrokerFn, {
+      operator.query(listForOperatorFn, {
         clientOrgId,
         documentType: "policy",
       }),
     ).resolves.toEqual([]);
     await expect(
-      broker.query(listForBrokerFn, {
+      operator.query(listForOperatorFn, {
         clientOrgId,
         documentType: "policy",
         archived: true,
       }),
     ).resolves.toEqual([expect.objectContaining({ _id: policyId })]);
 
-    await broker.mutation(restoreFn, { id: policyId });
+    await operator.mutation(restoreFn, { id: policyId });
     const restored = await t.run(async (ctx) => ({
       policy: await ctx.db.get(policyId),
       facts: await ctx.db
@@ -142,19 +158,29 @@ describe("policy archive and restore", () => {
   });
 
   test("blocks a broker member from archiving a client-uploaded policy", async () => {
-    const { t, brokerUserId, policyId } =
-      await seedBrokerClientPolicy({ uploadedBySide: "client" });
+    const { t, brokerUserId, policyId } = await seedBrokerClientPolicy({
+      uploadedBySide: "client",
+    });
 
     await expect(
-      t.withIdentity({ subject: `${brokerUserId}|session` }).mutation(
-        archiveFn,
-        { id: policyId },
-      ),
-    ).rejects.toThrow(
-      "Brokers can archive only policies uploaded by their brokerage.",
-    );
+      t
+        .withIdentity({ subject: `${brokerUserId}|session` })
+        .mutation(archiveFn, { id: policyId }),
+    ).rejects.toThrow("You don’t have access to this organization");
 
     const policy = await t.run(async (ctx) => ctx.db.get(policyId));
     expect(policy?.deletedAt).toBeUndefined();
+  });
+
+  test("does not expose client policy details to broker members", async () => {
+    const { t, brokerUserId, policyId } = await seedBrokerClientPolicy({
+      uploadedBySide: "client",
+    });
+    const broker = t.withIdentity({ subject: `${brokerUserId}|session` });
+
+    await expect(broker.query(getFn, { id: policyId })).resolves.toBeNull();
+    await expect(
+      broker.query(getSummaryFn, { id: policyId }),
+    ).resolves.toBeNull();
   });
 });

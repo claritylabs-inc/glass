@@ -7,7 +7,10 @@ type ListResponse<T> = { data: T[]; next_cursor: string | null };
 
 export class SpotApi {
   async askSpot(message: string, threadId?: string) {
-    return this.post<{ threadId: string; response: string }>("/mcp/ask", { message, threadId });
+    return this.post<{ threadId: string; response: string }>("/mcp/ask", {
+      message,
+      threadId,
+    });
   }
 
   async createPolicyDraft(input: Record<string, unknown>) {
@@ -24,27 +27,38 @@ export class SpotApi {
     holderPhone?: string,
     holderContactName?: string,
   ) {
-    return this.post<{ data: Record<string, unknown> }>(`/api/v1/policies/${policyId}/certificates`, {
-      certificate_holder_name: holderName,
-      certificate_holder_contact_name: holderContactName,
-      certificate_holder_email: holderEmail,
-      certificate_holder_phone: holderPhone,
-      certificate_holder: [holderName, holderAddress].filter(Boolean).join("\n"),
-      explicit_reissue: explicitReissue,
-    });
+    return this.post<{ data: Record<string, unknown> }>(
+      `/api/v1/policies/${policyId}/certificates`,
+      {
+        certificate_holder_name: holderName,
+        certificate_holder_contact_name: holderContactName,
+        certificate_holder_email: holderEmail,
+        certificate_holder_phone: holderPhone,
+        certificate_holder: [holderName, holderAddress]
+          .filter(Boolean)
+          .join("\n"),
+        explicit_reissue: explicitReissue,
+      },
+    );
   }
 
   async certificateHolders(query?: string) {
     const params = query ? `?q=${encodeURIComponent(query)}` : "";
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/certificate-holders${params}`);
+    return this.request<ListResponse<Record<string, unknown>>>(
+      `/api/v1/certificate-holders${params}`,
+    );
   }
 
   async policyVersions(policyId: string) {
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/policies/${policyId}/versions`);
+    return this.request<ListResponse<Record<string, unknown>>>(
+      `/api/v1/policies/${policyId}/versions`,
+    );
   }
 
   async certificateVersions(policyId: string) {
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/policies/${policyId}/certificate-versions`);
+    return this.request<ListResponse<Record<string, unknown>>>(
+      `/api/v1/policies/${policyId}/certificate-versions`,
+    );
   }
 
   async certificateReviewJobs(policyId?: string, status?: string) {
@@ -52,7 +66,9 @@ export class SpotApi {
     if (policyId) params.set("policy_id", policyId);
     if (status) params.set("status", status);
     const query = params.toString();
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/certificate-review-jobs${query ? `?${query}` : ""}`);
+    return this.request<ListResponse<Record<string, unknown>>>(
+      `/api/v1/certificate-review-jobs${query ? `?${query}` : ""}`,
+    );
   }
 
   async runUploadPipeline(filePath: string) {
@@ -70,7 +86,9 @@ export class SpotApi {
   }
 
   async policies(limit = 25) {
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/policies?limit=${limit}`);
+    return this.request<ListResponse<Record<string, unknown>>>(
+      `/api/v1/policies?limit=${limit}`,
+    );
   }
 
   async policy(id: string) {
@@ -78,18 +96,15 @@ export class SpotApi {
   }
 
   async notifications(limit = 25) {
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/notifications?limit=${limit}`);
+    return this.request<ListResponse<Record<string, unknown>>>(
+      `/api/v1/notifications?limit=${limit}`,
+    );
   }
 
-  async activity(limit = 25) {
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/activity?limit=${limit}`);
-  }
-
-  async clients(limit = 25) {
-    return this.request<ListResponse<Record<string, unknown>>>(`/api/v1/clients?limit=${limit}`);
-  }
-
-  private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  private async post<T>(
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<T> {
     await this.ensureAccessToken();
 
     let response = await fetch(`${this.config.baseUrl}${path}`, {
@@ -116,7 +131,9 @@ export class SpotApi {
     }
 
     if (!response.ok) {
-      const err = (await response.json().catch(() => ({}))) as { error?: { code?: string; message?: string; request_id?: string } };
+      const err = (await response.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string; request_id?: string };
+      };
       throw new ApiError(response.status, err);
     }
 
@@ -125,7 +142,10 @@ export class SpotApi {
 
   private async request<T>(path: string): Promise<T> {
     await this.ensureAccessToken();
-    if (!this.config.orgId && !path.endsWith("/me")) throw new Error("No org selected. Run: spot auth:whoami --set-org <orgId>");
+    if (!this.config.orgId && !path.endsWith("/me"))
+      throw new Error(
+        "No org selected. Run: spot auth:whoami --set-org <orgId>",
+      );
 
     let response = await fetch(`${this.config.baseUrl}${path}`, {
       headers: {
@@ -145,7 +165,9 @@ export class SpotApi {
     }
 
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { error?: { code?: string; message?: string; request_id?: string } };
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: { code?: string; message?: string; request_id?: string };
+      };
       throw new ApiError(response.status, body);
     }
 
@@ -153,9 +175,11 @@ export class SpotApi {
   }
 
   private async ensureAccessToken(force = false): Promise<void> {
-    if (!this.config.accessToken) throw new Error("Not authenticated. Run: spot auth:login");
+    if (!this.config.accessToken)
+      throw new Error("Not authenticated. Run: spot auth:login");
     const expiresAt = this.config.expiresAt;
-    if (!force && (!expiresAt || expiresAt - dayjs().valueOf() > 60_000)) return;
+    if (!force && (!expiresAt || expiresAt - dayjs().valueOf() > 60_000))
+      return;
 
     const next = await refreshAccessToken(this.config);
     Object.assign(this.config, next);

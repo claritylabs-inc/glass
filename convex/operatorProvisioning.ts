@@ -6,13 +6,10 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { getAuthSiteUrl } from "./lib/domains";
-import { assertCustomerUser, isBootstrapOperatorEmail } from "./lib/operatorIdentity";
-
-const emailVerificationValidator = v.union(
-  v.literal("strict"),
-  v.literal("domain"),
-  v.literal("open"),
-);
+import {
+  assertCustomerUser,
+  isBootstrapOperatorEmail,
+} from "./lib/operatorIdentity";
 
 const operatorAuthValidator = v.object({
   tokenId: v.optional(v.string()),
@@ -40,14 +37,23 @@ async function requireOperatorAuth(
 ) {
   const expected = operatorToken();
   if (!expected) {
-    throw new Error("OPERATOR_PROVISIONING_SECRET is not configured on this Convex deployment");
+    throw new Error(
+      "OPERATOR_PROVISIONING_SECRET is not configured on this Convex deployment",
+    );
   }
-  if (auth.tokenId && process.env.OPERATOR_PROVISIONING_TOKEN_ID && auth.tokenId !== process.env.OPERATOR_PROVISIONING_TOKEN_ID) {
+  if (
+    auth.tokenId &&
+    process.env.OPERATOR_PROVISIONING_TOKEN_ID &&
+    auth.tokenId !== process.env.OPERATOR_PROVISIONING_TOKEN_ID
+  ) {
     throw new Error("Invalid operator token id");
   }
-  if (!auth.nonce || auth.nonce.length < 16) throw new Error("Invalid operator nonce");
-  if (!/^[a-f0-9]{64}$/i.test(auth.bodyHash)) throw new Error("Invalid operator body hash");
-  if (!/^[a-f0-9]{64}$/i.test(auth.signature)) throw new Error("Invalid operator signature");
+  if (!auth.nonce || auth.nonce.length < 16)
+    throw new Error("Invalid operator nonce");
+  if (!/^[a-f0-9]{64}$/i.test(auth.bodyHash))
+    throw new Error("Invalid operator body hash");
+  if (!/^[a-f0-9]{64}$/i.test(auth.signature))
+    throw new Error("Invalid operator signature");
 
   const expectedBodyHash = await sha256Hex(stableStringify(body));
   if (auth.bodyHash.toLowerCase() !== expectedBodyHash) {
@@ -62,7 +68,8 @@ async function requireOperatorAuth(
   const usedNonce = await ctx.runQuery(internal.operatorProvisioning.getNonce, {
     nonce: auth.nonce,
   });
-  if (usedNonce) throw new Error("Operator request nonce has already been used");
+  if (usedNonce)
+    throw new Error("Operator request nonce has already been used");
 
   const message = `${auth.tokenId ?? ""}.${auth.timestamp}.${auth.nonce}.${auth.bodyHash}`;
   const expectedSignature = await hmacSha256Hex(expected, message);
@@ -86,15 +93,14 @@ function normalizeEmail(email: string) {
 }
 
 function normalizeSlug(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/^-+|-+$/g, "");
 }
 
 function slugFromName(name: string) {
   return normalizeSlug(name.trim().replace(/\s+/g, "-"));
-}
-
-function normalizeHandle(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/^-+|-+$/g, "");
 }
 
 async function hmacSha256Hex(secret: string, message: string) {
@@ -127,7 +133,8 @@ async function sha256Hex(message: string) {
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  if (Array.isArray(value))
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, entry]) => entry !== undefined)
     .sort(([a], [b]) => a.localeCompare(b));
@@ -164,52 +171,38 @@ export const provisionBroker = action({
       name: v.string(),
       slug: v.optional(v.string()),
       website: v.optional(v.string()),
-      brandingColor: v.optional(v.string()),
-      whiteLabelingEnabled: v.optional(v.boolean()),
-      agentDisplayName: v.optional(v.string()),
-      agentHandle: v.optional(v.string()),
     }),
     admin: v.object({
       email: v.string(),
       name: v.optional(v.string()),
       title: v.optional(v.string()),
     }),
-    clients: v.optional(
-      v.array(
-        v.object({
-          name: v.string(),
-          primaryContactEmail: v.optional(v.string()),
-          primaryContactName: v.optional(v.string()),
-          website: v.optional(v.string()),
-          allowedEmails: v.optional(v.array(v.string())),
-          allowedDomains: v.optional(v.array(v.string())),
-          emailVerification: v.optional(emailVerificationValidator),
-        }),
-      ),
-    ),
     markOnboardingComplete: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<{
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
     brokerOrgId: Id<"organizations">;
     adminUserId: Id<"users">;
     adminMembershipId: Id<"orgMemberships">;
     createdBroker: boolean;
     createdAdminMembership: boolean;
-    clientOrgIds: Id<"organizations">[];
     signupUrl: string | null;
     loginUrl: string | null;
   }> => {
     const body = {
       admin: args.admin,
       broker: args.broker,
-      clients: args.clients ?? [],
       markOnboardingComplete: args.markOnboardingComplete ?? true,
     };
     await requireOperatorAuth(ctx, args.operatorAuth, body);
 
     const email = normalizeEmail(args.admin.email);
     if (isBootstrapOperatorEmail(email)) {
-      throw new Error("Operator emails cannot be used as broker admin accounts");
+      throw new Error(
+        "Operator emails cannot be used as broker admin accounts",
+      );
     }
     const now = dayjs().valueOf();
     const account = await createAccount(ctx, {
@@ -226,23 +219,26 @@ export const provisionBroker = action({
       shouldLinkViaEmail: true,
     });
 
-    if (!account.user) throw new Error("Could not create or resolve admin user");
+    if (!account.user)
+      throw new Error("Could not create or resolve admin user");
 
-    const result = await ctx.runMutation(internal.operatorProvisioning.upsertProvisionedBroker, {
-      broker: args.broker,
-      adminUserId: account.user._id,
-      adminEmail: email,
-      adminName: args.admin.name,
-      adminTitle: args.admin.title,
-      clients: args.clients ?? [],
-      markOnboardingComplete: args.markOnboardingComplete ?? true,
-    });
+    const result = await ctx.runMutation(
+      internal.operatorProvisioning.upsertProvisionedBroker,
+      {
+        broker: args.broker,
+        adminUserId: account.user._id,
+        adminEmail: email,
+        adminName: args.admin.name,
+        adminTitle: args.admin.title,
+        markOnboardingComplete: args.markOnboardingComplete ?? true,
+      },
+    );
 
     const siteUrl = getAuthSiteUrl();
     return {
       ...result,
-      signupUrl: result.slug ? `${siteUrl}/signup/${result.slug}?email=${encodeURIComponent(email)}` : null,
-      loginUrl: result.slug ? `${siteUrl}/login/${result.slug}?email=${encodeURIComponent(email)}` : null,
+      signupUrl: `${siteUrl}/signup?email=${encodeURIComponent(email)}`,
+      loginUrl: `${siteUrl}/login?email=${encodeURIComponent(email)}`,
     };
   },
 });
@@ -272,7 +268,8 @@ export const recordNonce = internalMutation({
       .query("operatorAuthNonces")
       .withIndex("nonce", (q) => q.eq("nonce", args.nonce))
       .first();
-    if (existing && existing.expiresAt >= now) throw new Error("Operator request nonce has already been used");
+    if (existing && existing.expiresAt >= now)
+      throw new Error("Operator request nonce has already been used");
 
     const expired = await ctx.db
       .query("operatorAuthNonces")
@@ -290,39 +287,22 @@ export const upsertProvisionedBroker = internalMutation({
       name: v.string(),
       slug: v.optional(v.string()),
       website: v.optional(v.string()),
-      brandingColor: v.optional(v.string()),
-      whiteLabelingEnabled: v.optional(v.boolean()),
-      agentDisplayName: v.optional(v.string()),
-      agentHandle: v.optional(v.string()),
     }),
     adminUserId: v.id("users"),
     adminEmail: v.string(),
     adminName: v.optional(v.string()),
     adminTitle: v.optional(v.string()),
-    clients: v.array(
-      v.object({
-        name: v.string(),
-        primaryContactEmail: v.optional(v.string()),
-        primaryContactName: v.optional(v.string()),
-        website: v.optional(v.string()),
-        allowedEmails: v.optional(v.array(v.string())),
-        allowedDomains: v.optional(v.array(v.string())),
-        emailVerification: v.optional(emailVerificationValidator),
-      }),
-    ),
     markOnboardingComplete: v.boolean(),
   },
   handler: async (ctx, args) => {
     const brokerName = args.broker.name.trim();
     if (!brokerName) throw new Error("Broker name is required");
 
-    const slug = args.broker.slug ? normalizeSlug(args.broker.slug) : slugFromName(brokerName);
-    if (slug.length < 3 || slug.length > 40) throw new Error("Slug must be 3-40 characters");
-
-    const agentHandle = args.broker.agentHandle ? normalizeHandle(args.broker.agentHandle) : undefined;
-    if (agentHandle && (agentHandle.length < 3 || agentHandle.length > 30)) {
-      throw new Error("Agent handle must be 3-30 characters");
-    }
+    const slug = args.broker.slug
+      ? normalizeSlug(args.broker.slug)
+      : slugFromName(brokerName);
+    if (slug.length < 3 || slug.length > 40)
+      throw new Error("Slug must be 3-40 characters");
 
     const existingBySlug = await ctx.db
       .query("organizations")
@@ -332,26 +312,13 @@ export const upsertProvisionedBroker = internalMutation({
       throw new Error(`Slug ${slug} is already used by a non-broker org`);
     }
 
-    if (agentHandle) {
-      const existingByHandle = await ctx.db
-        .query("organizations")
-        .withIndex("handle", (q) => q.eq("agentHandle", agentHandle))
-        .first();
-      if (existingByHandle && existingByHandle._id !== existingBySlug?._id) {
-        throw new Error(`Agent handle ${agentHandle} is already taken`);
-      }
-    }
-
     const brokerPatch = {
       name: brokerName,
       type: "broker" as const,
       slug,
       website: args.broker.website?.trim() || undefined,
-      brandingColor: args.broker.brandingColor?.trim() || undefined,
-      whiteLabelingEnabled: args.broker.whiteLabelingEnabled,
-      agentDisplayName: args.broker.agentDisplayName?.trim() || undefined,
-      agentHandle,
-      primaryInsuranceContactId: existingBySlug?.primaryInsuranceContactId ?? args.adminUserId,
+      primaryInsuranceContactId:
+        existingBySlug?.primaryInsuranceContactId ?? args.adminUserId,
       onboardingComplete: args.markOnboardingComplete,
       operatorStatus: existingBySlug?.operatorStatus ?? ("onboarding" as const),
     };
@@ -368,14 +335,18 @@ export const upsertProvisionedBroker = internalMutation({
 
     const existingMembership = await ctx.db
       .query("orgMemberships")
-      .withIndex("organization_user", (q) => q.eq("orgId", brokerOrgId).eq("userId", args.adminUserId))
+      .withIndex("organization_user", (q) =>
+        q.eq("orgId", brokerOrgId).eq("userId", args.adminUserId),
+      )
       .first();
     await assertCustomerUser(ctx, args.adminUserId);
-    const adminMembershipId = existingMembership?._id ?? await ctx.db.insert("orgMemberships", {
-      orgId: brokerOrgId,
-      userId: args.adminUserId,
-      role: "admin",
-    });
+    const adminMembershipId =
+      existingMembership?._id ??
+      (await ctx.db.insert("orgMemberships", {
+        orgId: brokerOrgId,
+        userId: args.adminUserId,
+        role: "admin",
+      }));
 
     const now = dayjs().valueOf();
     await ctx.db.patch(args.adminUserId, {
@@ -387,81 +358,13 @@ export const upsertProvisionedBroker = internalMutation({
       onboardingComplete: args.markOnboardingComplete,
     });
 
-    const clientOrgIds: Id<"organizations">[] = [];
-    for (const client of args.clients) {
-      const clientName = client.name.trim();
-      if (!clientName) continue;
-      const primaryContactEmail = client.primaryContactEmail
-        ? normalizeEmail(client.primaryContactEmail)
-        : undefined;
-      if (primaryContactEmail && isBootstrapOperatorEmail(primaryContactEmail)) {
-        throw new Error("Operator emails cannot be used as client contacts");
-      }
-
-      const brokerClients = await ctx.db
-        .query("organizations")
-        .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrgId))
-        .collect();
-      const existingClient = brokerClients.find((org) => {
-        if (org.type !== "client") return false;
-        if (primaryContactEmail && org.primaryContactEmail?.toLowerCase() === primaryContactEmail) return true;
-        return org.name.trim().toLowerCase() === clientName.toLowerCase();
-      });
-
-      const clientPatch = {
-        name: clientName,
-        type: "client" as const,
-        brokerOrgId,
-        inviteStatus: existingClient ? existingClient.inviteStatus : "draft" as const,
-        primaryContactEmail,
-        primaryContactName: client.primaryContactName?.trim() || undefined,
-        website: client.website?.trim() || undefined,
-        allowedEmails: normalizeEmailList(client.allowedEmails ?? (primaryContactEmail ? [primaryContactEmail] : [])),
-        allowedDomains: normalizeDomainList(client.allowedDomains ?? []),
-        emailVerification: client.emailVerification,
-        draftCreatedByUserId: existingClient ? existingClient.draftCreatedByUserId : args.adminUserId,
-      };
-      const clientOrgId = existingClient?._id ?? await ctx.db.insert("organizations", clientPatch);
-      if (existingClient) await ctx.db.patch(clientOrgId, clientPatch);
-
-      const assignment = await ctx.db
-        .query("brokerClientAssignments")
-        .withIndex("organization_client", (q) => q.eq("orgId", brokerOrgId).eq("clientOrgId", clientOrgId))
-        .first();
-      if (!assignment) {
-        await ctx.db.insert("brokerClientAssignments", {
-          orgId: brokerOrgId,
-          clientOrgId,
-          producerId: args.adminUserId,
-          role: "primary",
-          createdAt: now,
-        });
-      }
-      clientOrgIds.push(clientOrgId);
-    }
-
     return {
       brokerOrgId,
       adminUserId: args.adminUserId,
       adminMembershipId,
       createdBroker,
       createdAdminMembership: !existingMembership,
-      clientOrgIds,
       slug,
     };
   },
 });
-
-function normalizeEmailList(values: string[]) {
-  return [...new Set(values.map((value) => normalizeEmail(value)))];
-}
-
-function normalizeDomainList(values: string[]) {
-  return [
-    ...new Set(
-      values
-        .map((value) => value.trim().toLowerCase().replace(/^@/, ""))
-        .filter(Boolean),
-    ),
-  ];
-}

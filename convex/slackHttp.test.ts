@@ -54,7 +54,6 @@ async function seedConnection(t: ReturnType<typeof convexTest>) {
       slackEnabled: true,
       slackSafeAlertsEnabled: true,
       slackVendorAlertsEnabled: false,
-      slackPolicyDeliveryEnabled: true,
       createdAt: 1,
       updatedAt: 1,
     });

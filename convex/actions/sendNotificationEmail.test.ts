@@ -7,31 +7,24 @@ import { send } from "./sendNotificationEmail";
 
 const modules = import.meta.glob("../**/*.ts");
 
-
 const sendFn = send as any;
 
 describe("sendNotificationEmail", () => {
   test("sets emailStatus=sent on success", async () => {
     const t = convexTest(schema, modules);
 
-    // Set up broker org and client org
-    const brokerOrgId = await t.run(async (ctx) =>
-      ctx.db.insert("organizations", {
-        name: "Smith Insurance", type: "broker",
-        agentDisplayName: "Sarah Smith",
-      })
-    );
     const clientOrgId = await t.run(async (ctx) =>
-      ctx.db.insert("organizations", {
-        name: "Acme Co", type: "client",
-        brokerOrgId: brokerOrgId,
-      })
+      ctx.db.insert("organizations", { name: "Acme Co", type: "client" }),
     );
     const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", { name: "Alice", email: "alice@acme.co" })
+      ctx.db.insert("users", { name: "Alice", email: "alice@acme.co" }),
     );
     await t.run(async (ctx) =>
-      ctx.db.insert("orgMemberships", { orgId: clientOrgId, userId, role: "member" })
+      ctx.db.insert("orgMemberships", {
+        orgId: clientOrgId,
+        userId,
+        role: "member",
+      }),
     );
 
     const notifId = await t.run(async (ctx) =>
@@ -39,13 +32,12 @@ describe("sendNotificationEmail", () => {
         orgId: clientOrgId,
         type: "policy_change_completed",
         title: "Policy update completed",
-        body: "Smith Insurance completed a policy update.",
+        body: "Your policy update completed.",
         severity: "info",
         status: "unread",
         emailStatus: "scheduled",
-        relatedOrgId: brokerOrgId,
         createdAt: dayjs().valueOf(),
-      })
+      }),
     );
 
     // Mock fetch for Resend — "info" severity defaults email off, so we need a pref row
@@ -58,7 +50,7 @@ describe("sendNotificationEmail", () => {
         channel: "email",
         enabled: true,
         updatedAt: dayjs().valueOf(),
-      })
+      }),
     );
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -77,7 +69,9 @@ describe("sendNotificationEmail", () => {
     expect((notif as any)?.emailSentAt).toBeDefined();
 
     const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(callBody.from).toContain("<notifications@notifications.spot.insure>");
+    expect(callBody.from).toContain(
+      "<notifications@notifications.spot.insure>",
+    );
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -87,18 +81,23 @@ describe("sendNotificationEmail", () => {
     const t = convexTest(schema, modules);
 
     const orgId = await t.run(async (ctx) =>
-      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" })
+      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" }),
     );
     const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" })
+      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" }),
     );
     await t.run(async (ctx) =>
-      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" })
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" }),
     );
     await t.run(async (ctx) =>
       ctx.db.insert("notificationPreferences", {
-        userId, orgId, type: "__all__", channel: "email", enabled: false, updatedAt: dayjs().valueOf(),
-      })
+        userId,
+        orgId,
+        type: "__all__",
+        channel: "email",
+        enabled: false,
+        updatedAt: dayjs().valueOf(),
+      }),
     );
 
     const notifId = await t.run(async (ctx) =>
@@ -111,7 +110,7 @@ describe("sendNotificationEmail", () => {
         status: "unread",
         emailStatus: "scheduled",
         createdAt: dayjs().valueOf(),
-      })
+      }),
     );
 
     const mockFetch = vi.fn();
@@ -131,13 +130,13 @@ describe("sendNotificationEmail", () => {
     const t = convexTest(schema, modules);
 
     const orgId = await t.run(async (ctx) =>
-      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" })
+      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" }),
     );
     const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" })
+      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" }),
     );
     await t.run(async (ctx) =>
-      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" })
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" }),
     );
 
     const notifId = await t.run(async (ctx) =>
@@ -150,7 +149,7 @@ describe("sendNotificationEmail", () => {
         status: "unread",
         emailStatus: "scheduled",
         createdAt: dayjs().valueOf(),
-      })
+      }),
     );
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -174,13 +173,13 @@ describe("sendNotificationEmail", () => {
     const t = convexTest(schema, modules);
 
     const orgId = await t.run(async (ctx) =>
-      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" })
+      ctx.db.insert("organizations", { name: "Broker Co", type: "broker" }),
     );
     const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" })
+      ctx.db.insert("users", { name: "Bob", email: "bob@broker.co" }),
     );
     await t.run(async (ctx) =>
-      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" })
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "member" }),
     );
     const threadId = await t.run(async (ctx) =>
       ctx.db.insert("threads", {
@@ -190,7 +189,7 @@ describe("sendNotificationEmail", () => {
         lastMessageAt: dayjs().valueOf(),
         threadEmail: "agent+renewal@spot.insure",
         originChannel: "chat",
-      })
+      }),
     );
     const notifId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
@@ -205,7 +204,7 @@ describe("sendNotificationEmail", () => {
         actionPayload: { threadId },
         sourceRef: { threadId },
         createdAt: dayjs().valueOf(),
-      })
+      }),
     );
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -283,13 +282,13 @@ describe("sendNotificationEmail", () => {
     const t = convexTest(schema, modules);
 
     const orgId = await t.run(async (ctx) =>
-      ctx.db.insert("organizations", { name: "Acme Co", type: "client" })
+      ctx.db.insert("organizations", { name: "Acme Co", type: "client" }),
     );
     const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", { name: "Ava", email: "ava@acme.co" })
+      ctx.db.insert("users", { name: "Ava", email: "ava@acme.co" }),
     );
     await t.run(async (ctx) =>
-      ctx.db.insert("orgMemberships", { orgId, userId, role: "admin" })
+      ctx.db.insert("orgMemberships", { orgId, userId, role: "admin" }),
     );
     await t.run(async (ctx) =>
       ctx.db.insert("notificationPreferences", {
@@ -299,7 +298,7 @@ describe("sendNotificationEmail", () => {
         channel: "email",
         enabled: true,
         updatedAt: dayjs().valueOf(),
-      })
+      }),
     );
     const threadId = await t.run(async (ctx) =>
       ctx.db.insert("threads", {
@@ -308,7 +307,7 @@ describe("sendNotificationEmail", () => {
         createdBy: userId,
         lastMessageAt: dayjs().valueOf(),
         originChannel: "chat",
-      })
+      }),
     );
     const vendorNotificationId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
@@ -322,7 +321,7 @@ describe("sendNotificationEmail", () => {
         actionType: "view_vendor_compliance",
         actionPayload: { vendorOrgId: "vendor123" },
         createdAt: dayjs().valueOf(),
-      })
+      }),
     );
     const threadNotificationId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
@@ -336,7 +335,7 @@ describe("sendNotificationEmail", () => {
         actionType: "view_thread",
         actionPayload: { threadId },
         createdAt: dayjs().valueOf(),
-      })
+      }),
     );
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -353,10 +352,11 @@ describe("sendNotificationEmail", () => {
     const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
     const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
     expect(firstBody.text).toContain("https://spot.example/connect/vendors");
-    expect(secondBody.text).toContain(`https://spot.example/agent/thread/${threadId}`);
+    expect(secondBody.text).toContain(
+      `https://spot.example/agent/thread/${threadId}`,
+    );
 
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
-
 });

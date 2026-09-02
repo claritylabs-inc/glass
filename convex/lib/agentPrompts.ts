@@ -34,18 +34,12 @@ import { formatComplianceRequirementsContext } from "./complianceAgent";
 import { formatDocumentStructureForPrompt } from "./policyDocumentStructure";
 import { formatCoverageBreakdownForPrompt } from "./coverageBreakdown";
 import type { AgentScope } from "./agentScope";
-import { formatAgentScopePortfolioIndex, orgLabelForScope } from "./agentScope";
+import { orgLabelForScope } from "./agentScope";
 import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
-import {
-  normalizedSearchText,
-  uniqueSearchTerms,
-} from "./searchTokenizer";
+import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
 export { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 
 export const MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES = 120;
-export const MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS = 8;
-export const MAX_PORTFOLIO_POLICIES_PER_ORG = 32;
-export const MAX_FOCUSED_PORTFOLIO_POLICIES = 80;
 
 const DOCUMENT_CHUNK_VECTOR_LIMIT = 30;
 export const SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG = 600;
@@ -95,28 +89,35 @@ export async function buildDocumentContext(
   }
 
   // Prefer source-tree retrieval whenever the org has source nodes.
-  const [hasDocumentChunks, hasSourceChunks, hasSourceNodes] = await Promise.all([
-    ctx.runQuery(
-      internal.documentChunks.hasChunksForOrg,
-      { orgId },
-    ),
-    ctx.runQuery(
-      (internal as any).sourceSpans.hasChunksForOrg,
-      { orgId },
-    ) as Promise<boolean>,
-    ctx.runQuery(
-      (internal as any).sourceNodes.hasNodesForOrg,
-      { orgId },
-    ) as Promise<boolean>,
-  ]);
+  const [hasDocumentChunks, hasSourceChunks, hasSourceNodes] =
+    await Promise.all([
+      ctx.runQuery(internal.documentChunks.hasChunksForOrg, { orgId }),
+      ctx.runQuery((internal as any).sourceSpans.hasChunksForOrg, {
+        orgId,
+      }) as Promise<boolean>,
+      ctx.runQuery((internal as any).sourceNodes.hasNodesForOrg, {
+        orgId,
+      }) as Promise<boolean>,
+    ]);
 
   if (!hasSourceNodes && (hasSourceChunks || hasDocumentChunks)) {
     for (const policy of policies.slice(0, 6)) {
-      if (!policy.fileId || policy.sourceTreeStatus === "queued" || policy.sourceTreeStatus === "running") continue;
-      await ctx.scheduler.runAfter(0, (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree, {
-        policyId: policy._id,
-        reason: "agent_document_context",
-      }).catch(() => undefined);
+      if (
+        !policy.fileId ||
+        policy.sourceTreeStatus === "queued" ||
+        policy.sourceTreeStatus === "running"
+      )
+        continue;
+      await ctx.scheduler
+        .runAfter(
+          0,
+          (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree,
+          {
+            policyId: policy._id,
+            reason: "agent_document_context",
+          },
+        )
+        .catch(() => undefined);
     }
     const fallback = buildFallbackContext(policies, queryText);
     return {
@@ -192,17 +193,24 @@ function sourceQueryTerms(query: string): string[] {
   return uniqueSearchTerms(query, { minimumLength: 3 });
 }
 
-function scoreSourceNode(query: string, terms: string[], node: SourceNodeRecord): number {
+function scoreSourceNode(
+  query: string,
+  terms: string[],
+  node: SourceNodeRecord,
+): number {
   const text = [
     node.title,
     node.kind,
     node.path,
     node.description,
     node.textExcerpt,
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
   const normalizedText = normalizedSearchText(text);
   const normalizedQuery = normalizedSearchText(query);
-  let score = normalizedQuery && normalizedText.includes(normalizedQuery) ? 8 : 0;
+  let score =
+    normalizedQuery && normalizedText.includes(normalizedQuery) ? 8 : 0;
   for (const term of terms) {
     if (normalizedText.includes(term)) score += 1;
   }
@@ -218,10 +226,12 @@ export function rankSourceNodesForQuery(
   const terms = sourceQueryTerms(queryText);
   const seen = new Set<string>();
   return nodes
-    .map((node): SourceNodeRecord => ({
-      ...node,
-      _score: scoreSourceNode(queryText, terms, node),
-    }))
+    .map(
+      (node): SourceNodeRecord => ({
+        ...node,
+        _score: scoreSourceNode(queryText, terms, node),
+      }),
+    )
     .filter((node) => Number(node._score ?? 0) > 0)
     .filter((node) => {
       const key = `${String(node.policyId ?? "")}:${String(node.nodeId ?? node._id ?? "")}`;
@@ -234,32 +244,10 @@ export function rankSourceNodesForQuery(
       if (scoreDelta !== 0) return scoreDelta;
       return Number(left.order ?? 0) - Number(right.order ?? 0);
     })
-    .slice(0, Math.max(0, Math.min(Math.floor(limit), SOURCE_NODE_MATCH_LIMIT)));
-}
-
-export function documentContextOrgIdsForScope(
-  scope: AgentScope,
-): Id<"organizations">[] {
-  if (scope.mode !== "broker_portfolio") return scope.readOrgIds;
-  const ordered = [
-    ...(scope.focusedOrgId ? [scope.focusedOrgId] : []),
-    ...scope.readOrgIds.filter(
-      (orgId) => String(orgId) !== String(scope.focusedOrgId),
-    ),
-  ];
-  return ordered.slice(0, MAX_PORTFOLIO_DOCUMENT_CONTEXT_ORGS);
-}
-
-export function documentContextPolicyLimitForOrg(
-  scope: AgentScope,
-  orgId: Id<"organizations">,
-): number {
-  if (scope.mode !== "broker_portfolio") {
-    return MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES;
-  }
-  return scope.focusedOrgId && String(scope.focusedOrgId) === String(orgId)
-    ? MAX_FOCUSED_PORTFOLIO_POLICIES
-    : MAX_PORTFOLIO_POLICIES_PER_ORG;
+    .slice(
+      0,
+      Math.max(0, Math.min(Math.floor(limit), SOURCE_NODE_MATCH_LIMIT)),
+    );
 }
 
 /**
@@ -292,7 +280,8 @@ async function buildVectorContext(
     const doc = await ctx.runQuery(internal.documentChunks.get, {
       id: result._id,
     });
-    if (doc && isStructuredFactChunk(doc)) chunkDocs.push({ ...doc, _score: result._score });
+    if (doc && isStructuredFactChunk(doc))
+      chunkDocs.push({ ...doc, _score: result._score });
   }
 
   const chunkPolicyIds = Array.from(
@@ -304,11 +293,15 @@ async function buildVectorContext(
       limit: SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG,
     }) as Promise<SourceNodeRecord[]>,
     Promise.all(
-      chunkPolicyIds.map((policyId) =>
-        ctx.runQuery((internal as any).sourceNodes.listByPolicyCandidatesInternal, {
-          policyId: policyId as Id<"policies">,
-          limit: SOURCE_NODE_CANDIDATES_PER_CHUNK_POLICY,
-        }) as Promise<SourceNodeRecord[]>,
+      chunkPolicyIds.map(
+        (policyId) =>
+          ctx.runQuery(
+            (internal as any).sourceNodes.listByPolicyCandidatesInternal,
+            {
+              policyId: policyId as Id<"policies">,
+              limit: SOURCE_NODE_CANDIDATES_PER_CHUNK_POLICY,
+            },
+          ) as Promise<SourceNodeRecord[]>,
       ),
     ),
   ]);
@@ -330,14 +323,14 @@ async function buildVectorContext(
   }
   const sourceContextEntries = await Promise.all(
     [...sourceNodeIdsByPolicy.entries()].map(async ([policyId, nodeIds]) => {
-      const nodes = await ctx.runQuery(
+      const nodes = (await ctx.runQuery(
         (internal as any).sourceNodes.listContextByPolicyAndNodeIdsInternal,
         {
           policyId: policyId as Id<"policies">,
           nodeIds,
           maxChildrenPerNode: 8,
         },
-      ) as SourceNodeRecord[];
+      )) as SourceNodeRecord[];
       return [policyId, nodes] as const;
     }),
   );
@@ -351,9 +344,15 @@ async function buildVectorContext(
   // Build index of all policies.
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
-      const types = policyLobCodes(p).map((code) => `${code} (${lobLabel(code)})`).join(", ") || "unknown";
+      const types =
+        policyLobCodes(p)
+          .map((code) => `${code} (${lobLabel(code)})`)
+          .join(", ") || "unknown";
       const carrier = p.carrier || p.security;
-      const covSummary = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
+      const covSummary = formatCoverageBreakdownForPrompt(p, 8).replace(
+        /\n/g,
+        " | ",
+      );
       const covLine = covSummary ? ` | Coverages: ${covSummary}` : "";
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | LOB: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName}${covLine}`;
     });
@@ -421,11 +420,14 @@ async function buildVectorContext(
     const carrier = policy.carrier || policy.security;
 
     let section = `\n--- POLICY SOURCE EVIDENCE: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
-    const structure = formatDocumentStructureForPrompt(policy as Record<string, unknown>, {
-      maxNodes: 10,
-      maxChars: 3500,
-      includeSourceSpanIds: true,
-    });
+    const structure = formatDocumentStructureForPrompt(
+      policy as Record<string, unknown>,
+      {
+        maxNodes: 10,
+        maxChars: 3500,
+        includeSourceSpanIds: true,
+      },
+    );
     if (structure) section += `\n\n${structure}`;
     for (const chunk of policyChunks) {
       const truncated =
@@ -464,11 +466,14 @@ async function buildVectorContext(
 
     let section = `\n--- POLICY: ${carrier} #${policy.policyNumber} (ID:${policyId}) ---`;
     if (policy.summary) section += `\nSummary: ${policy.summary}`;
-    const structure = formatDocumentStructureForPrompt(policy as Record<string, unknown>, {
-      maxNodes: 10,
-      maxChars: 3500,
-      includeSourceSpanIds: true,
-    });
+    const structure = formatDocumentStructureForPrompt(
+      policy as Record<string, unknown>,
+      {
+        maxNodes: 10,
+        maxChars: 3500,
+        includeSourceSpanIds: true,
+      },
+    );
     if (structure) section += `\n${structure}`;
 
     for (const chunk of policyChunks) {
@@ -500,10 +505,14 @@ function expandSourceNodeContext(
 ): Array<Record<string, any>> {
   const byNodeId = new Map(allNodes.map((node) => [String(node.nodeId), node]));
   const ancestors: Array<Record<string, any>> = [];
-  let parent = target.parentNodeId ? byNodeId.get(String(target.parentNodeId)) : undefined;
+  let parent = target.parentNodeId
+    ? byNodeId.get(String(target.parentNodeId))
+    : undefined;
   while (parent) {
     ancestors.unshift(parent);
-    parent = parent.parentNodeId ? byNodeId.get(String(parent.parentNodeId)) : undefined;
+    parent = parent.parentNodeId
+      ? byNodeId.get(String(parent.parentNodeId))
+      : undefined;
   }
   const children = allNodes
     .filter((node) => node.parentNodeId === target.nodeId)
@@ -511,10 +520,16 @@ function expandSourceNodeContext(
     .slice(0, 8);
   const siblings = target.parentNodeId
     ? allNodes
-        .filter((node) => node.parentNodeId === target.parentNodeId && node.nodeId !== target.nodeId)
-        .sort((left, right) =>
-          Math.abs(Number(left.order ?? 0) - Number(target.order ?? 0))
-          - Math.abs(Number(right.order ?? 0) - Number(target.order ?? 0)))
+        .filter(
+          (node) =>
+            node.parentNodeId === target.parentNodeId &&
+            node.nodeId !== target.nodeId,
+        )
+        .sort(
+          (left, right) =>
+            Math.abs(Number(left.order ?? 0) - Number(target.order ?? 0)) -
+            Math.abs(Number(right.order ?? 0) - Number(target.order ?? 0)),
+        )
         .slice(0, 4)
     : [];
   const seen = new Set<string>();
@@ -527,11 +542,17 @@ function expandSourceNodeContext(
 }
 
 function formatSourceNodePromptLine(node: Record<string, any>): string {
-  const excerpt = String(node.textExcerpt ?? node.description ?? "").slice(0, 1600);
-  const page = node.pageStart ? ` p.${node.pageStart}${node.pageEnd && node.pageEnd !== node.pageStart ? `-${node.pageEnd}` : ""}` : "";
-  const spans = Array.isArray(node.sourceSpanIds) && node.sourceSpanIds.length
-    ? ` spans:${node.sourceSpanIds.slice(0, 8).join(",")}`
+  const excerpt = String(node.textExcerpt ?? node.description ?? "").slice(
+    0,
+    1600,
+  );
+  const page = node.pageStart
+    ? ` p.${node.pageStart}${node.pageEnd && node.pageEnd !== node.pageStart ? `-${node.pageEnd}` : ""}`
     : "";
+  const spans =
+    Array.isArray(node.sourceSpanIds) && node.sourceSpanIds.length
+      ? ` spans:${node.sourceSpanIds.slice(0, 8).join(",")}`
+      : "";
   return `${node.path ?? ""} ${node.kind ?? "node"} "${node.title ?? "Untitled"}"${page}${spans}: ${excerpt}`;
 }
 
@@ -553,11 +574,12 @@ const STRUCTURED_FACT_CHUNK_TYPES = new Set([
 ]);
 
 function isStructuredFactChunk(chunk: Doc<"documentChunks">): boolean {
-  const evidenceKind = (chunk.metadata as { evidenceKind?: string } | undefined)?.evidenceKind;
+  const evidenceKind = (chunk.metadata as { evidenceKind?: string } | undefined)
+    ?.evidenceKind;
   return (
-    STRUCTURED_FACT_CHUNK_TYPES.has(chunk.chunkType)
-    && evidenceKind !== "navigation"
-    && evidenceKind !== "generated_long_text"
+    STRUCTURED_FACT_CHUNK_TYPES.has(chunk.chunkType) &&
+    evidenceKind !== "navigation" &&
+    evidenceKind !== "generated_long_text"
   );
 }
 
@@ -616,9 +638,15 @@ function buildFallbackContext(
 
   if (policies.length > 0) {
     const indexLines = policies.map((p, i) => {
-      const types = policyLobCodes(p).map((code) => `${code} (${lobLabel(code)})`).join(", ") || "unknown";
+      const types =
+        policyLobCodes(p)
+          .map((code) => `${code} (${lobLabel(code)})`)
+          .join(", ") || "unknown";
       const carrier = p.carrier || p.security;
-      const coverages = formatCoverageBreakdownForPrompt(p, 8).replace(/\n/g, " | ");
+      const coverages = formatCoverageBreakdownForPrompt(p, 8).replace(
+        /\n/g,
+        " | ",
+      );
       return `[${i + 1}] ${carrier} | #${p.policyNumber} | LOB: ${types} | ${p.effectiveDate} to ${p.expirationDate ?? "continuous"} | Insured: ${p.insuredName} | Coverages: ${coverages}`;
     });
     parts.push(
@@ -633,11 +661,14 @@ function buildFallbackContext(
     if (p.summary) section += `\nSummary: ${p.summary}`;
     const coverageBreakdown = formatCoverageBreakdownForPrompt(p);
     if (coverageBreakdown) section += `\n${coverageBreakdown}`;
-    const structure = formatDocumentStructureForPrompt(p as Record<string, unknown>, {
-      maxNodes: 14,
-      maxChars: 4500,
-      includeSourceSpanIds: true,
-    });
+    const structure = formatDocumentStructureForPrompt(
+      p as Record<string, unknown>,
+      {
+        maxNodes: 14,
+        maxChars: 4500,
+        includeSourceSpanIds: true,
+      },
+    );
     if (structure) section += `\n${structure}`;
     return section;
   });
@@ -688,35 +719,8 @@ export async function buildScopedDocumentContext(
   context: string;
   relevantPolicyIds: Id<"policies">[];
 }> {
-  if (scope.mode !== "broker_portfolio") {
-    const policies = policiesByOrg.get(String(scope.primaryOrgId)) ?? [];
-    return buildDocumentContext(ctx, scope.primaryOrgId, policies, queryText);
-  }
-
-  const relevantPolicyIds: Id<"policies">[] = [];
-  const parts = [formatAgentScopePortfolioIndex(scope)];
-  const loadedOrgIds = new Set(policiesByOrg.keys());
-  const orderedOrgIds = documentContextOrgIdsForScope(scope).filter((orgId) =>
-    loadedOrgIds.has(String(orgId)),
-  );
-  const omittedOrgCount = Math.max(0, scope.readOrgIds.length - orderedOrgIds.length);
-  if (omittedOrgCount > 0) {
-    parts.push(
-      `\n\nDOCUMENT CONTEXT BOUNDS: Source retrieval is limited to ${orderedOrgIds.length} orgs for this portfolio query; ${omittedOrgCount} additional readable orgs remain available through follow-up focused questions or lookup tools.`,
-    );
-  }
-
-  for (const orgId of orderedOrgIds) {
-    const policies = policiesByOrg.get(String(orgId)) ?? [];
-    const result = await buildDocumentContext(ctx, orgId, policies, queryText);
-    relevantPolicyIds.push(...result.relevantPolicyIds);
-    parts.push(`\n\nCLIENT/ORG: ${orgLabelForScope(scope, orgId)} (orgId: ${orgId})\n${result.context}`);
-  }
-
-  return {
-    context: parts.join(""),
-    relevantPolicyIds,
-  };
+  const policies = policiesByOrg.get(String(scope.primaryOrgId)) ?? [];
+  return buildDocumentContext(ctx, scope.primaryOrgId, policies, queryText);
 }
 
 export async function buildScopedOrgMemoryContext(
@@ -725,41 +729,26 @@ export async function buildScopedOrgMemoryContext(
   queryText: string,
   excludePolicyIds?: string[],
 ): Promise<string> {
-  if (scope.mode !== "broker_portfolio") {
-    return buildIntelligenceContext(ctx, scope.primaryOrgId, queryText, excludePolicyIds);
-  }
-  const parts: string[] = [];
-  for (const orgId of scope.readOrgIds) {
-    const block = await buildIntelligenceContext(ctx, orgId, queryText, excludePolicyIds);
-    if (block.trim()) {
-      parts.push(`\n\nORG MEMORY — ${orgLabelForScope(scope, orgId)} (orgId: ${orgId})${block}`);
-    }
-  }
-  return parts.join("");
+  return buildIntelligenceContext(
+    ctx,
+    scope.primaryOrgId,
+    queryText,
+    excludePolicyIds,
+  );
 }
 
 export async function buildScopedRequirementsContext(
   ctx: ActionCtx,
   scope: AgentScope,
 ): Promise<string> {
-  if (scope.mode !== "broker_portfolio") {
-    return buildComplianceRequirementsContext(ctx, scope.primaryOrgId);
-  }
-  const parts: string[] = [];
-  for (const orgId of scope.readOrgIds) {
-    const block = await buildComplianceRequirementsContext(ctx, orgId);
-    if (block.trim()) {
-      parts.push(`\n\nCOMPLIANCE REQUIREMENTS — ${orgLabelForScope(scope, orgId)} (orgId: ${orgId})${block}`);
-    }
-  }
-  return parts.join("");
+  return buildComplianceRequirementsContext(ctx, scope.primaryOrgId);
 }
 
 export async function buildScopedVendorComplianceContext(
   ctx: ActionCtx,
   scope: AgentScope,
 ): Promise<string> {
-  const ids = scope.mode === "broker_portfolio" ? scope.readOrgIds : [scope.primaryOrgId];
+  const ids = [scope.primaryOrgId];
   const parts: string[] = [];
   for (const orgId of ids) {
     const complianceRows = await ctx
@@ -771,7 +760,9 @@ export async function buildScopedVendorComplianceContext(
     parts.push(
       `\n\nVENDOR COMPLIANCE SNAPSHOT — ${orgLabelForScope(scope, orgId)} (orgId: ${orgId}):\n${complianceRows
         .map((row: any) => {
-          const failed = (row.checks ?? []).filter((check: any) => check.status !== "met");
+          const failed = (row.checks ?? []).filter(
+            (check: any) => check.status !== "met",
+          );
           return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
         })
         .join("\n")}`,

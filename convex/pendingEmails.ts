@@ -5,7 +5,10 @@ import {
   internalQuery,
   internalMutation,
 } from "./_generated/server";
-import { requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
+import {
+  assertCanUseTenantAgent,
+  requireCurrentOrgAccess as requireOrgAccess,
+} from "./lib/access";
 import {
   cancelDraftOrPendingEmail,
   invalidateDraftConfirmations,
@@ -18,7 +21,9 @@ import { pendingEmailAttachmentValidator } from "./lib/threadMessageValidators";
 export const get = query({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { orgId } = access;
     const pending = await ctx.db.get(args.id);
     if (!pending || pending.orgId !== orgId) return null;
     return pending;
@@ -28,7 +33,9 @@ export const get = query({
 export const cancel = mutation({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { orgId } = access;
     const pending = await ctx.db.get(args.id);
     if (!pending || pending.orgId !== orgId) throw new Error("Not found");
     if (!(await cancelDraftOrPendingEmail(ctx, args.id))) {
@@ -40,7 +47,9 @@ export const cancel = mutation({
 export const restoreAsDraft = mutation({
   args: { id: v.id("pendingEmails") },
   handler: async (ctx, args) => {
-    const { orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { orgId } = access;
     const pending = await ctx.db.get(args.id);
     if (!pending || pending.orgId !== orgId) throw new Error("Not found");
     if (pending.status !== "cancelled") {
@@ -272,9 +281,11 @@ export const findDraftByThread = internalQuery({
       .query("pendingEmails")
       .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
-    return all
-      .filter((e) => e.status === "draft")
-      .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null;
+    return (
+      all
+        .filter((e) => e.status === "draft")
+        .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null
+    );
   },
 });
 
@@ -289,12 +300,15 @@ export const findDraftByThreadAndRecipient = internalQuery({
       .query("pendingEmails")
       .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
-    return all
-      .filter((e) =>
-        e.status === "draft" &&
-        e.recipientEmail.trim().toLowerCase() === recipientEmail
-      )
-      .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null;
+    return (
+      all
+        .filter(
+          (e) =>
+            e.status === "draft" &&
+            e.recipientEmail.trim().toLowerCase() === recipientEmail,
+        )
+        .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null
+    );
   },
 });
 
@@ -308,9 +322,11 @@ export const findLatestCancelledByThread = internalQuery({
       .query("pendingEmails")
       .withIndex("thread", (q) => q.eq("threadId", args.threadId))
       .collect();
-    return all
-      .filter((e) => e.orgId === args.orgId && e.status === "cancelled")
-      .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null;
+    return (
+      all
+        .filter((e) => e.orgId === args.orgId && e.status === "cancelled")
+        .sort((a, b) => b._creationTime - a._creationTime)[0] ?? null
+    );
   },
 });
 
@@ -358,10 +374,7 @@ export const verifyLegacyCoiAttachmentAuthorizationCleanup = internalQuery({
     const remaining = await ctx.db
       .query("pendingEmails")
       .filter((query) =>
-        query.neq(
-          query.field("allowMultipleCoiAttachments"),
-          undefined,
-        ),
+        query.neq(query.field("allowMultipleCoiAttachments"), undefined),
       )
       .first();
     return {

@@ -278,16 +278,18 @@ export const processInbound = internalAction({
       const usersByPhone = new Map(
         linkedUserRecords.flatMap((linkedUser) =>
           linkedUser.phone
-            ? [[normalizeImessageAddress(linkedUser.phone), linkedUser] as const]
+            ? [
+                [
+                  normalizeImessageAddress(linkedUser.phone),
+                  linkedUser,
+                ] as const,
+              ]
             : [],
         ),
       );
-      const memberships = await ctx.runQuery(
-        internal.orgs.getUserMemberships,
-        {
-          userIds: linkedUserRecords.map((linkedUser) => linkedUser._id),
-        },
-      );
+      const memberships = await ctx.runQuery(internal.orgs.getUserMemberships, {
+        userIds: linkedUserRecords.map((linkedUser) => linkedUser._id),
+      });
       const membershipByUserId = new Map(
         memberships
           .filter((membership) => membership !== null)
@@ -467,14 +469,9 @@ export const processInbound = internalAction({
           orgId,
           userId: user._id,
           surface: "imessage",
-          allowBrokerPortfolio:
-            org.type === "broker" && scope.kind === "single_org",
         },
       );
-      const readOrgIds =
-        agentScope.mode === "broker_portfolio"
-          ? agentScope.readOrgIds
-          : scope.orgIds;
+      const readOrgIds = agentScope.readOrgIds;
       const scopedOrgs = await Promise.all(
         readOrgIds.map((scopedOrgId) =>
           ctx.runQuery(internal.orgs.getInternal, { id: scopedOrgId }),
@@ -487,7 +484,7 @@ export const processInbound = internalAction({
       );
 
       const userName = user.name?.split(/\s+/)[0];
-      const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
+      const emailIdentity = await resolveEmailAgentIdentity(org);
 
       const attachmentRecords = await storeImessageAttachments(
         ctx,
@@ -561,9 +558,7 @@ export const processInbound = internalAction({
         buildRecentImessageTextContext(historyForContext);
 
       const inboundRating = imessageRating(inboundMessageText);
-      const ratingTarget = inboundRating
-        ? historyForContext.at(-1)
-        : undefined;
+      const ratingTarget = inboundRating ? historyForContext.at(-1) : undefined;
       if (
         inboundRating &&
         ratingTarget &&
@@ -598,7 +593,10 @@ export const processInbound = internalAction({
               { feedbackId: feedback.id, status: "submitted" },
             );
           } catch (error) {
-            console.warn("Could not submit iMessage response rating to cl-router", error);
+            console.warn(
+              "Could not submit iMessage response rating to cl-router",
+              error,
+            );
             await ctx.runMutation(
               internalApi.agentResponseFeedback.markRouterSignalInternal,
               {
@@ -675,26 +673,11 @@ export const processInbound = internalAction({
       });
       const chatTask = imessageAgentTaskForAttachments(attachmentRecords);
 
-      const brokerIdentity =
-        org.type === "client"
-          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-              clientOrgId: orgId,
-            })
-          : null;
-
       const systemPrompt =
         buildSystemPromptForContext({
           org: {
             name: org.name,
             context: org.context,
-            broker: brokerIdentity?.brokerCompanyName
-              ? {
-                  name: brokerIdentity.brokerCompanyName,
-                  contactName: brokerIdentity.contactName,
-                  contactEmail: brokerIdentity.contactEmail,
-                  contactPhone: brokerIdentity.contactPhone,
-                }
-              : undefined,
           },
           mode: "direct",
           userName,
@@ -730,7 +713,6 @@ export const processInbound = internalAction({
         ...new Set(
           [
             user.email,
-            brokerIdentity?.contactEmail,
             ...orgMembers.flatMap((member) =>
               member?.email ? [member.email] : [],
             ),
@@ -768,12 +750,7 @@ export const processInbound = internalAction({
         requirementImportResolution.authorization === "none"
           ? undefined
           : requirementImportResolution.scope;
-      const imessageWritableOrgIds =
-        agentScope.mode === "broker_portfolio"
-          ? agentScope.writableOrgIds
-          : currentParticipant?.orgId
-            ? [currentParticipant.orgId]
-            : [];
+      const imessageWritableOrgIds = agentScope.writableOrgIds;
 
       const imessageTools = {
         ...buildAgentToolExecutors(ctx, {
@@ -875,18 +852,9 @@ export const processInbound = internalAction({
                 channel: "imessage",
                 fromHeader: emailIdentity.fromHeader,
                 agentAddress: emailIdentity.agentAddress,
-                brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user.email,
                 defaultTo: user.email,
                 defaultRecipientName: user.name,
-                brokerRecipientEmail: brokerIdentity?.contactEmail,
-                brokerRecipientName:
-                  brokerIdentity?.contactName ??
-                  brokerIdentity?.brokerCompanyName,
-                missingRecipientMessage:
-                  "No broker contact email is set for this organization. Add the broker contact in Settings, or send me the broker's email address first.",
-                unknownRecipientMessage:
-                  "I cannot use that broker recipient because it is not the configured broker contact in Spot. Add the broker contact in Settings, or send me the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && user.email
                     ? [user.email]
@@ -985,8 +953,8 @@ export const processInbound = internalAction({
             const confirmation = await buildPendingEmailConfirmation(draft);
             const statusText =
               confirmation.payload.kind === "coi_batch_delivery"
-              ? `Confirm this exact COI batch for ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}. This authorizes the attachment set; use /send 1 after authorization.`
-              : `Confirm this exact draft to ${draft.recipientEmail} with subject “${draft.subject}” to send it.`;
+                ? `Confirm this exact COI batch for ${draft.recipientEmail}: ${(draft.attachments ?? []).map((attachment) => attachment.filename).join(", ")}. This authorizes the attachment set; use /send 1 after authorization.`
+                : `Confirm this exact draft to ${draft.recipientEmail} with subject “${draft.subject}” to send it.`;
             emailConfirmationPrompt = {
               content: statusText,
               dedupeKey: `imessage-email-confirmation:${String(draft._id)}:${confirmation.fingerprint}`,

@@ -54,7 +54,7 @@ The web thread can show more than plain text:
 
 For important coverage questions, open the cited source and confirm the wording.
 If a policy is still processing, wait for final enrichment before requesting a
-COI, policy delivery, endorsement, or exact source-backed confirmation.
+COI, endorsement, or exact source-backed confirmation.
 
 ## Conversation history
 

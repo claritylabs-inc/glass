@@ -1203,17 +1203,49 @@ describe("operator agent boundary", () => {
         },
       },
       {
+        toolName: "confirm_procurement_requirement",
+        input: {
+          procurementRequirementDraftId: invalidResourceReference,
+        },
+      },
+      {
         toolName: "create_procurement_broker_outreach",
         input: {
           procurementRequestId: invalidResourceReference,
-          brokerName: "Example Brokerage",
+          brokerOrgId: fixture.orgId,
         },
       },
       {
         toolName: "update_procurement_broker_outreach",
         input: {
           procurementOutreachId: invalidResourceReference,
-          brokerName: "Example Brokerage",
+          contactName: "Dana Reyes",
+        },
+      },
+      {
+        toolName: "create_procurement_proposal",
+        input: {
+          procurementRequestId: invalidResourceReference,
+          brokerOrgId: fixture.orgId,
+          procurementOutreachId: invalidResourceReference,
+        },
+      },
+      {
+        toolName: "confirm_procurement_proposal_review",
+        input: {
+          procurementProposalReviewId: invalidResourceReference,
+          conclusion: "meets_requirements",
+        },
+      },
+      {
+        toolName: "select_procurement_proposal",
+        input: { procurementProposalId: invalidResourceReference },
+      },
+      {
+        toolName: "update_broker_network_profile",
+        input: {
+          brokerOrgId: invalidOrganizationReference,
+          networkStatus: "active",
         },
       },
       {

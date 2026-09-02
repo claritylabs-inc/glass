@@ -12,11 +12,7 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
   useCachedOperatorClients,
@@ -33,12 +29,11 @@ export default function OperatorClientPoliciesPage() {
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients();
   const client = clients?.find((row) => row._id === clientOrgId) ?? null;
-  const [workspaceActions, setWorkspaceActions] =
-    useState<ReactNode>(null);
+  const [workspaceActions, setWorkspaceActions] = useState<ReactNode>(null);
   const [rightPanel, setRightPanel] = useState<ReactNode>(null);
-  const [previewPolicyId, setPreviewPolicyId] = useState<
-    Id<"policies"> | null
-  >(null);
+  const [previewPolicyId, setPreviewPolicyId] = useState<Id<"policies"> | null>(
+    null,
+  );
   const activeImpersonation = current?.activeImpersonation ?? null;
   const basePath = `/operator/clients/${clientOrgId}/policies`;
   const policyStatus =
@@ -61,14 +56,12 @@ export default function OperatorClientPoliciesPage() {
       onValueChange={(value) => {
         if (!value) return;
         setPreviewPolicyId(null);
-        router.push(value === "archived" ? `${basePath}?view=archived` : basePath);
+        router.push(
+          value === "archived" ? `${basePath}?view=archived` : basePath,
+        );
       }}
     >
-      <TabsList
-        variant="pill"
-        aria-label="Policy status"
-        className="min-w-max"
-      >
+      <TabsList variant="pill" aria-label="Policy status" className="min-w-max">
         <TabsTrigger value="active">Active</TabsTrigger>
         <TabsTrigger value="archived">Archived</TabsTrigger>
       </TabsList>
@@ -150,10 +143,7 @@ export default function OperatorClientPoliciesPage() {
           <ManagedClientPolicyWorkspace
             clientOrgId={clientOrgId}
             basePath={basePath}
-            uploadActor="operator"
             readOnly={Boolean(activeImpersonation)}
-            showAgentEmail={false}
-            showStatusNavigation={false}
             onActions={setWorkspaceActions}
             onRightPanel={setRightPanel}
             onPolicySelect={setPreviewPolicyId}
