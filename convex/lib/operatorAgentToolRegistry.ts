@@ -41,6 +41,21 @@ function defineOperatorTool<TSchema extends z.ZodType>(
   return { ...spec, execution: spec.execution ?? "mutation" };
 }
 
+// Models routinely emit `null` for a field they have no value for instead of
+// leaving the key out, and a plain `.optional()` turns that into a type error
+// the model reads as "this field is required". Both helpers accept null; they
+// differ only in what consumers do with it.
+
+/** Absent input: null and omission both mean "not provided". */
+function omittable<TSchema extends z.ZodType>(schema: TSchema) {
+  return schema.nullish();
+}
+
+/** Update input where null erases the stored value and omission leaves it. */
+function clearable<TSchema extends z.ZodType>(schema: TSchema) {
+  return schema.nullish();
+}
+
 const organizationId = z.string().min(1).describe("Exact organization ID");
 const policyId = z.string().min(1).describe("Exact policy ID");
 const clientFileId = z.string().min(1).describe("Exact client file ID");
@@ -94,12 +109,12 @@ const procurementProposalConclusion = z.enum([
 ]);
 const brokerNetworkStatus = z.enum(["prospect", "active", "inactive"]);
 const brokerOfficeAddress = z.object({
-  street1: z.string().max(300).optional(),
-  street2: z.string().max(300).optional(),
-  city: z.string().max(200).optional(),
-  state: z.string().max(100).optional(),
-  postalCode: z.string().max(40).optional(),
-  country: z.string().max(100).optional(),
+  street1: omittable(z.string().max(300)),
+  street2: omittable(z.string().max(300)),
+  city: omittable(z.string().max(200)),
+  state: omittable(z.string().max(100)),
+  postalCode: omittable(z.string().max(40)),
+  country: omittable(z.string().max(100)),
 });
 const procurementOutreachStatus = z.enum([
   "request_sent",
@@ -143,9 +158,9 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     description:
       "Search Spot customer and broker organizations. Use this to resolve an exact organization ID before any organization write.",
     inputSchema: z.object({
-      query: z.string().max(200).optional(),
-      type: z.enum(["broker", "client"]).optional(),
-      limit: z.number().int().min(1).max(25).optional(),
+      query: omittable(z.string().max(200)),
+      type: omittable(z.enum(["broker", "client"])),
+      limit: omittable(z.number().int().min(1).max(25)),
     }),
     capability: "operator.organizations.read",
     effect: "read",
@@ -185,9 +200,9 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "List or search policies for one exact organization, including extraction stage and operational status.",
     inputSchema: z.object({
       orgId: organizationId,
-      query: z.string().max(200).optional(),
-      limit: z.number().int().min(1).max(25).optional(),
-      includeArchived: z.boolean().optional(),
+      query: omittable(z.string().max(200)),
+      limit: omittable(z.number().int().min(1).max(25)),
+      includeArchived: omittable(z.boolean()),
     }),
     capability: "operator.policies.read",
     effect: "read",
@@ -202,11 +217,11 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "Look up rich, current policy summaries for one exact client organization by exact IDs, carrier, policy number, line of business, keywords, or expiration window.",
     inputSchema: z.object({
       orgId: organizationId,
-      query: z.string().max(200).optional(),
-      policyIds: z.array(policyId).max(5).optional(),
-      expiringWithinDays: z.number().int().min(1).max(365).optional(),
-      lineOfBusiness: z.string().max(200).optional(),
-      carrier: z.string().max(200).optional(),
+      query: omittable(z.string().max(200)),
+      policyIds: omittable(z.array(policyId).max(5)),
+      expiringWithinDays: omittable(z.number().int().min(1).max(365)),
+      lineOfBusiness: omittable(z.string().max(200)),
+      carrier: omittable(z.string().max(200)),
     }),
     capability: "operator.policies.read",
     effect: "read",
@@ -273,23 +288,23 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       policyId,
       fact: z.string().min(1).max(2_000),
       sourceSpanIds: z.array(z.string().min(1)).min(1).max(50),
-      fieldUpdates: z
-        .object({
-          carrier: z.string().optional(),
-          security: z.string().optional(),
-          generalAgentName: z.string().optional(),
-          broker: z.string().optional(),
-          policyNumber: z.string().optional(),
-          effectiveDate: z.string().optional(),
-          expirationDate: z.string().optional(),
-          insuredName: z.string().optional(),
-          premium: z.string().optional(),
-          totalCost: z.string().optional(),
-          minPremium: z.string().optional(),
-          depositPremium: z.string().optional(),
-          summary: z.string().optional(),
-        })
-        .optional(),
+      fieldUpdates: omittable(
+        z.object({
+          carrier: omittable(z.string()),
+          security: omittable(z.string()),
+          generalAgentName: omittable(z.string()),
+          broker: omittable(z.string()),
+          policyNumber: omittable(z.string()),
+          effectiveDate: omittable(z.string()),
+          expirationDate: omittable(z.string()),
+          insuredName: omittable(z.string()),
+          premium: omittable(z.string()),
+          totalCost: omittable(z.string()),
+          minPremium: omittable(z.string()),
+          depositPremium: omittable(z.string()),
+          summary: omittable(z.string()),
+        }),
+      ),
     }),
     capability: "operator.policies.write",
     effect: "reversible_write",
@@ -306,8 +321,8 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "Look up saved insurance coverage requirements for one exact client organization, including requirement and source IDs usable for certificate generation.",
     inputSchema: z.object({
       orgId: organizationId,
-      query: z.string().max(500).optional(),
-      scope: z.enum(["vendors", "own_org", "all"]).optional(),
+      query: omittable(z.string().max(500)),
+      scope: omittable(z.enum(["vendors", "own_org", "all"])),
     }),
     capability: "operator.compliance.read",
     effect: "read",
@@ -324,7 +339,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "Search older messages in this exact operator conversation when relevant context is outside the recent prompt window.",
     inputSchema: z.object({
       query: z.string().min(2).max(500),
-      limit: z.number().int().min(1).max(8).optional(),
+      limit: omittable(z.number().int().min(1).max(8)),
     }),
     capability: "operator.threads.read",
     effect: "read",
@@ -358,7 +373,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "List the files held for one exact client organization, including provenance, client visibility, and optional policy association.",
     inputSchema: z.object({
       orgId: organizationId,
-      limit: z.number().int().min(1).max(100).optional(),
+      limit: omittable(z.number().int().min(1).max(100)),
     }),
     capability: "operator.client_files.read",
     effect: "read",
@@ -399,8 +414,8 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "Look up durable company-profile facts for one exact client organization. Never use this for policy or workflow facts.",
     inputSchema: z.object({
       orgId: organizationId,
-      query: z.string().max(500).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
+      query: omittable(z.string().max(500)),
+      limit: omittable(z.number().int().min(1).max(100)),
     }),
     capability: "operator.memory.read",
     effect: "read",
@@ -457,10 +472,10 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "Look up durable procurement learnings for one exact client, optionally filtered by request, kind, or text.",
     inputSchema: z.object({
       orgId: organizationId,
-      procurementRequestId: procurementRequestId.optional(),
-      kind: procurementMemoryKind.optional(),
-      query: z.string().max(500).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
+      procurementRequestId: omittable(procurementRequestId),
+      kind: omittable(procurementMemoryKind),
+      query: omittable(z.string().max(500)),
+      limit: omittable(z.number().int().min(1).max(100)),
     }),
     capability: "operator.procurement.read",
     effect: "read",
@@ -478,11 +493,11 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       orgId: organizationId,
       kind: procurementMemoryKind,
       content: z.string().min(1).max(2_000),
-      procurementRequestId: procurementRequestId.optional(),
-      procurementOutreachId: procurementOutreachId.optional(),
-      brokerOrgId: organizationId.optional(),
-      sourceRef: z.string().max(500).optional(),
-      confidence: z.number().min(0).max(1).optional(),
+      procurementRequestId: omittable(procurementRequestId),
+      procurementOutreachId: omittable(procurementOutreachId),
+      brokerOrgId: omittable(organizationId),
+      sourceRef: omittable(z.string().max(500)),
+      confidence: omittable(z.number().min(0).max(1)),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
@@ -499,12 +514,12 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         procurementMemoryId,
-        kind: procurementMemoryKind.optional(),
-        content: z.string().min(1).max(2_000).optional(),
-        procurementRequestId: procurementRequestId.nullable().optional(),
-        procurementOutreachId: procurementOutreachId.nullable().optional(),
-        brokerOrgId: organizationId.nullable().optional(),
-        confidence: z.number().min(0).max(1).nullable().optional(),
+        kind: omittable(procurementMemoryKind),
+        content: omittable(z.string().min(1).max(2_000)),
+        procurementRequestId: clearable(procurementRequestId),
+        procurementOutreachId: clearable(procurementOutreachId),
+        brokerOrgId: clearable(organizationId),
+        confidence: clearable(z.number().min(0).max(1)),
       })
       .refine(
         (input) =>
@@ -543,9 +558,9 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "List new-policy procurement requests for one exact client organization, including requirements, request-specific forwarding addresses, policy links, broker progress, files, and imported-email counts.",
     inputSchema: z.object({
       orgId: organizationId,
-      query: z.string().max(200).optional(),
-      status: procurementRequestStatus.optional(),
-      limit: z.number().int().min(1).max(100).optional(),
+      query: omittable(z.string().max(200)),
+      status: omittable(procurementRequestStatus),
+      limit: omittable(z.number().int().min(1).max(100)),
     }),
     capability: "operator.procurement.read",
     effect: "read",
@@ -620,11 +635,11 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     description:
       "Search the supplier-network broker directory by neutral identity, status, USPS writing state, or exact ACORD LOBCd value.",
     inputSchema: z.object({
-      query: z.string().max(200).optional(),
-      status: brokerNetworkStatus.optional(),
-      writingState: z.string().min(2).max(2).optional(),
-      lineOfBusinessCode: z.string().min(1).max(40).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
+      query: omittable(z.string().max(200)),
+      status: omittable(brokerNetworkStatus),
+      writingState: omittable(z.string().min(2).max(2)),
+      lineOfBusinessCode: omittable(z.string().min(1).max(40)),
+      limit: omittable(z.number().int().min(1).max(100)),
     }),
     capability: "operator.organizations.read",
     effect: "read",
@@ -656,7 +671,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "List imported forwarding-email threads for one exact procurement request, including recipient-based category, original addressed request, current request, participants, and message counts.",
     inputSchema: z.object({
       procurementRequestId,
-      limit: z.number().int().min(1).max(100).optional(),
+      limit: omittable(z.number().int().min(1).max(100)),
     }),
     capability: "operator.procurement.read",
     effect: "read",
@@ -714,11 +729,11 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     description:
       "List bounded policy extraction failures, paused runs, or active queue work, optionally scoped to one exact organization.",
     inputSchema: z.object({
-      orgId: organizationId.optional(),
-      status: z
-        .enum(["error", "paused", "running", "queued", "leased"])
-        .optional(),
-      limit: z.number().int().min(1).max(25).optional(),
+      orgId: omittable(organizationId),
+      status: omittable(
+        z.enum(["error", "paused", "running", "queued", "leased"]),
+      ),
+      limit: omittable(z.number().int().min(1).max(25)),
     }),
     capability: "operator.extractions.read",
     effect: "read",
@@ -736,8 +751,8 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     description:
       "Get a bounded operational summary of recent model routing outcomes, fallbacks, errors, and configured route freshness without returning provider secrets.",
     inputSchema: z.object({
-      task: z.string().min(1).max(100).optional(),
-      limit: z.number().int().min(1).max(100).optional(),
+      task: omittable(z.string().min(1).max(100)),
+      limit: omittable(z.number().int().min(1).max(100)),
     }),
     capability: "operator.routing.read",
     effect: "read",
@@ -752,11 +767,9 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     description:
       "Get bounded Slack and connected-email configuration health without returning credentials or message contents. Omit orgId for platform-wide health, or provide one exact organization ID for a client-scoped result.",
     inputSchema: z.object({
-      orgId: organizationId
-        .optional()
-        .describe(
-          "Omit for platform-wide health; provide an exact organization ID to scope the result",
-        ),
+      orgId: omittable(organizationId).describe(
+        "Omit for platform-wide health; provide an exact organization ID to scope the result",
+      ),
     }),
     capability: "operator.channels.read",
     effect: "read",
@@ -829,7 +842,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
         .describe(
           "Concise factual document name inferred from the file contents and operator prompt",
         ),
-      policyId: policyId.nullable().optional(),
+      policyId: clearable(policyId),
     }),
     capability: "operator.client_files.write",
     effect: "reversible_write",
@@ -846,9 +859,9 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         clientFileId,
-        name: z.string().min(1).max(220).optional(),
-        clientVisible: z.boolean().optional(),
-        policyId: policyId.nullable().optional(),
+        name: omittable(z.string().min(1).max(220)),
+        clientVisible: omittable(z.boolean()),
+        policyId: clearable(policyId),
       })
       .refine(
         (input) =>
@@ -884,19 +897,15 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       title: z.string().min(1).max(200),
       requestSummary: z.string().min(1).max(20_000),
       requirements: z.string().min(1).max(20_000),
-      targetEffectiveDate: z.string().max(10).optional(),
-      status: procurementRequestStatus.optional(),
-      clientVisible: z.boolean().optional(),
-      replacingPolicyId: policyId
-        .describe(
-          "Exact existing policy ID returned by a policy read tool. Omit for a new purchase or when no policy is being replaced; never use an organization ID.",
-        )
-        .optional(),
-      resultingPolicyId: policyId
-        .describe(
-          "Exact bound policy ID returned by a policy read tool. Omit until this procurement request has produced a policy; never use an organization ID.",
-        )
-        .optional(),
+      targetEffectiveDate: omittable(z.string().max(10)),
+      status: omittable(procurementRequestStatus),
+      clientVisible: omittable(z.boolean()),
+      replacingPolicyId: omittable(policyId).describe(
+        "Exact existing policy ID returned by a policy read tool. Omit it or send null for a new purchase or when no policy is being replaced; never use an organization ID.",
+      ),
+      resultingPolicyId: omittable(policyId).describe(
+        "Exact bound policy ID returned by a policy read tool. Omit it or send null until this procurement request has produced a policy; never use an organization ID.",
+      ),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
@@ -922,14 +931,14 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         procurementRequestId,
-        title: z.string().min(1).max(200).optional(),
-        requestSummary: z.string().min(1).max(20_000).optional(),
-        requirements: z.string().min(1).max(20_000).optional(),
-        targetEffectiveDate: z.string().max(10).nullable().optional(),
-        status: procurementRequestStatus.optional(),
-        clientVisible: z.boolean().optional(),
-        replacingPolicyId: policyId.nullable().optional(),
-        resultingPolicyId: policyId.nullable().optional(),
+        title: omittable(z.string().min(1).max(200)),
+        requestSummary: omittable(z.string().min(1).max(20_000)),
+        requirements: omittable(z.string().min(1).max(20_000)),
+        targetEffectiveDate: clearable(z.string().max(10)),
+        status: omittable(procurementRequestStatus),
+        clientVisible: omittable(z.boolean()),
+        replacingPolicyId: clearable(policyId),
+        resultingPolicyId: clearable(policyId),
       })
       .refine(
         (input) =>
@@ -971,7 +980,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       procurementRequestId,
       brokerOrgId: organizationId,
       procurementOutreachId,
-      supersedesProposalId: procurementProposalId.optional(),
+      supersedesProposalId: omittable(procurementProposalId),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
@@ -1019,6 +1028,30 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) =>
       `Select procurement proposal ${input.procurementProposalId}`,
   }),
+  create_broker_network_profile: defineOperatorTool({
+    version: 1,
+    description:
+      "Register a new supplier-network broker organization and its network profile with no portal users and no invites. Search the broker network first and update the existing profile instead when the broker is already registered. Writing states use USPS abbreviations and lines use exact ACORD LOBCd values.",
+    inputSchema: z.object({
+      name: z.string().min(1).max(200),
+      website: omittable(z.string().max(2_000)),
+      networkStatus: omittable(brokerNetworkStatus).describe(
+        "Defaults to prospect for a broker that has not yet placed business",
+      ),
+      officeAddress: omittable(brokerOfficeAddress),
+      writingStates: omittable(z.array(z.string().min(2).max(2)).max(60)),
+      lineOfBusinessCodes: omittable(
+        z.array(z.string().min(1).max(40)).max(100),
+      ),
+    }),
+    capability: "operator.organizations.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: () => ({ kind: "platform", id: "broker-network" }),
+    summarize: (input) =>
+      `Create broker network profile ${JSON.stringify(input.name)} with no portal users`,
+  }),
   update_broker_network_profile: defineOperatorTool({
     version: 1,
     description:
@@ -1026,15 +1059,14 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         brokerOrgId: organizationId,
-        networkStatus: brokerNetworkStatus.optional(),
-        officeAddress: brokerOfficeAddress.optional(),
-        writingStates: z.array(z.string().min(2).max(2)).max(60).optional(),
-        lineOfBusinessCodes: z
-          .array(z.string().min(1).max(40))
-          .max(100)
-          .optional(),
-        name: z.string().min(1).max(200).optional(),
-        website: z.string().max(2_000).nullable().optional(),
+        networkStatus: omittable(brokerNetworkStatus),
+        officeAddress: omittable(brokerOfficeAddress),
+        writingStates: omittable(z.array(z.string().min(2).max(2)).max(60)),
+        lineOfBusinessCodes: omittable(
+          z.array(z.string().min(1).max(40)).max(100),
+        ),
+        name: omittable(z.string().min(1).max(200)),
+        website: clearable(z.string().max(2_000)),
       })
       .refine(
         (input) => Object.keys(input).some((key) => key !== "brokerOrgId"),
@@ -1054,13 +1086,13 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z.object({
       procurementRequestId,
       brokerOrgId: organizationId,
-      contactName: z.string().max(200).optional(),
-      contactEmail: z.string().max(320).optional(),
-      contactPhone: z.string().max(100).optional(),
-      status: procurementOutreachStatus.optional(),
-      applicationUrl: z.string().max(2_000).optional(),
-      applicationQuestions: z.array(z.string().max(1_000)).max(100).optional(),
-      notes: z.string().max(20_000).optional(),
+      contactName: omittable(z.string().max(200)),
+      contactEmail: omittable(z.string().max(320)),
+      contactPhone: omittable(z.string().max(100)),
+      status: omittable(procurementOutreachStatus),
+      applicationUrl: omittable(z.string().max(2_000)),
+      applicationQuestions: omittable(z.array(z.string().max(1_000)).max(100)),
+      notes: omittable(z.string().max(20_000)),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
@@ -1080,17 +1112,16 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         procurementOutreachId,
-        brokerOrgId: organizationId.optional(),
-        contactName: z.string().max(200).nullable().optional(),
-        contactEmail: z.string().max(320).nullable().optional(),
-        contactPhone: z.string().max(100).nullable().optional(),
-        status: procurementOutreachStatus.optional(),
-        applicationUrl: z.string().max(2_000).nullable().optional(),
-        applicationQuestions: z
-          .array(z.string().max(1_000))
-          .max(100)
-          .optional(),
-        notes: z.string().max(20_000).nullable().optional(),
+        brokerOrgId: omittable(organizationId),
+        contactName: clearable(z.string().max(200)),
+        contactEmail: clearable(z.string().max(320)),
+        contactPhone: clearable(z.string().max(100)),
+        status: omittable(procurementOutreachStatus),
+        applicationUrl: clearable(z.string().max(2_000)),
+        applicationQuestions: omittable(
+          z.array(z.string().max(1_000)).max(100),
+        ),
+        notes: clearable(z.string().max(20_000)),
       })
       .refine(
         (input) =>
@@ -1114,12 +1145,12 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       "Track an application, outstanding broker-requested document, quote, requirements file, or other procurement file. A client file ID is optional so requested documents can be tracked before they are available.",
     inputSchema: z.object({
       procurementRequestId,
-      procurementOutreachId: procurementOutreachId.optional(),
-      clientFileId: clientFileId.optional(),
+      procurementOutreachId: omittable(procurementOutreachId),
+      clientFileId: omittable(clientFileId),
       purpose: procurementFilePurpose,
       label: z.string().min(1).max(300),
-      status: procurementFileStatus.optional(),
-      notes: z.string().max(20_000).optional(),
+      status: omittable(procurementFileStatus),
+      notes: omittable(z.string().max(20_000)),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
@@ -1139,12 +1170,12 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         procurementFileItemId,
-        procurementOutreachId: procurementOutreachId.nullable().optional(),
-        clientFileId: clientFileId.nullable().optional(),
-        purpose: procurementFilePurpose.optional(),
-        label: z.string().min(1).max(300).optional(),
-        status: procurementFileStatus.optional(),
-        notes: z.string().max(20_000).nullable().optional(),
+        procurementOutreachId: clearable(procurementOutreachId),
+        clientFileId: clearable(clientFileId),
+        purpose: omittable(procurementFilePurpose),
+        label: omittable(z.string().min(1).max(300)),
+        status: omittable(procurementFileStatus),
+        notes: clearable(z.string().max(20_000)),
       })
       .refine(
         (input) =>
@@ -1169,8 +1200,8 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         procurementEmailThreadId,
-        category: procurementEmailCategory.optional(),
-        procurementRequestId: procurementRequestId.optional(),
+        category: omittable(procurementEmailCategory),
+        procurementRequestId: omittable(procurementRequestId),
       })
       .refine(
         (input) =>
@@ -1196,10 +1227,10 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         orgId: organizationId,
-        name: z.string().min(1).max(200).optional(),
-        website: z.string().max(500).nullable().optional(),
-        industry: z.string().max(200).nullable().optional(),
-        industryVertical: z.string().max(200).nullable().optional(),
+        name: omittable(z.string().min(1).max(200)),
+        website: clearable(z.string().max(500)),
+        industry: clearable(z.string().max(200)),
+        industryVertical: clearable(z.string().max(200)),
       })
       .refine(
         (input) =>
@@ -1313,14 +1344,32 @@ export function getOperatorAgentToolSpec(
   ] as unknown as ResolvedOperatorToolSpec;
 }
 
+// Nested tool objects are written straight into Convex validators that reject
+// `null`, and no nested field carries clear-on-null meaning, so drop nulls below
+// the top level. Top-level nulls survive for `clearable` fields.
+function stripNestedNulls(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripNestedNulls);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== null)
+      .map(([key, entry]) => [key, stripNestedNulls(entry)]),
+  );
+}
+
 export function parseOperatorAgentToolInput(
   name: string,
   input: unknown,
 ): Record<string, unknown> {
-  return getOperatorAgentToolSpec(name).inputSchema.parse(input) as Record<
-    string,
-    unknown
-  >;
+  const parsed = getOperatorAgentToolSpec(name).inputSchema.parse(
+    input,
+  ) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(parsed).map(([key, value]) => [
+      key,
+      stripNestedNulls(value),
+    ]),
+  );
 }
 
 export function operatorAgentToolCatalog() {

@@ -418,6 +418,51 @@ export const generateLogoUploadUrl = mutation({
   },
 });
 
+export async function createStandaloneBrokerByOperator(
+  ctx: MutationCtx,
+  args: {
+    operatorUserId: Id<"users">;
+    name: string;
+    website?: string;
+    networkStatus?: "prospect" | "active" | "inactive";
+    officeAddress?: Doc<"brokerProfiles">["officeAddress"];
+    writingStates?: string[];
+    lineOfBusinessCodes?: string[];
+    source: "operator" | "agent";
+  },
+) {
+  const operator = await requireDirectOperatorWrite(ctx, args.operatorUserId);
+  const name = args.name.trim();
+  if (!name) throw new Error("Broker name is required");
+  const now = dayjs().valueOf();
+  const brokerOrgId = await ctx.db.insert("organizations", {
+    name,
+    type: "broker",
+    website: args.website?.trim() || undefined,
+    operatorStatus: "live",
+    onboardingComplete: true,
+  });
+  const profileId = await ctx.db.insert("brokerProfiles", {
+    brokerOrgId,
+    networkStatus: args.networkStatus ?? "prospect",
+    officeAddress: args.officeAddress,
+    writingStates: normalizeStates(args.writingStates ?? []),
+    lineOfBusinessCodes: normalizeLines(args.lineOfBusinessCodes ?? []),
+    createdByUserId: operator.userId,
+    updatedByUserId: operator.userId,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await writeOperatorAudit(ctx, {
+    operatorUserId: operator.userId,
+    type: "broker_created",
+    targetOrgId: brokerOrgId,
+    summary: `Created standalone broker profile ${name}`,
+    metadata: { profileId, hasPortalUsers: false, source: args.source },
+  });
+  return { brokerOrgId, profileId };
+}
+
 export const createStandalone = mutation({
   args: {
     name: v.string(),
@@ -429,34 +474,10 @@ export const createStandalone = mutation({
   },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
-    const name = args.name.trim();
-    if (!name) throw new Error("Broker name is required");
-    const now = dayjs().valueOf();
-    const brokerOrgId = await ctx.db.insert("organizations", {
-      name,
-      type: "broker",
-      website: args.website?.trim() || undefined,
-      operatorStatus: "live",
-      onboardingComplete: true,
-    });
-    const profileId = await ctx.db.insert("brokerProfiles", {
-      brokerOrgId,
-      networkStatus: args.networkStatus,
-      officeAddress: args.officeAddress,
-      writingStates: normalizeStates(args.writingStates),
-      lineOfBusinessCodes: normalizeLines(args.lineOfBusinessCodes),
-      createdByUserId: operator.userId,
-      updatedByUserId: operator.userId,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await writeOperatorAudit(ctx, {
+    return await createStandaloneBrokerByOperator(ctx, {
       operatorUserId: operator.userId,
-      type: "broker_created",
-      targetOrgId: brokerOrgId,
-      summary: `Created standalone broker profile ${name}`,
-      metadata: { profileId, hasPortalUsers: false },
+      ...args,
+      source: "operator",
     });
-    return { brokerOrgId, profileId };
   },
 });
