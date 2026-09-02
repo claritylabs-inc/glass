@@ -34,6 +34,7 @@ const CHANNEL_NAME_TIMEOUT_MS = 3_000;
 const internalApi = internal as any;
 const OPERATOR_SLACK_PROCESSING_REACTION = "eyes";
 const OPERATOR_SLACK_COMPLETE_REACTION = "white_check_mark";
+const OPERATOR_SLACK_FAILED_REACTION = "warning";
 
 type OperatorAuthorizedEvent = {
   event: Doc<"slackInboundEvents">;
@@ -194,16 +195,20 @@ async function updateOperatorSlackActivity(
       if (!response.ok) {
         const result = (await response.json().catch(() => ({}))) as {
           error?: string;
+          providerErrorCode?: string;
         };
         throw new Error(
-          result.error ?? `Slack worker returned ${response.status}`,
+          [result.providerErrorCode, result.error].filter(Boolean).join(": ") ||
+            `Slack worker returned ${response.status}`,
         );
       }
+      return true;
     } catch (error) {
-      console.warn(
-        `[slack] Could not ${operation} operator ${name} reaction`,
+      console.error(
+        `[slack] Could not ${operation} operator ${name} reaction on ${event.channelId}/${event.messageTs}`,
         error,
       );
+      return false;
     }
   };
 
@@ -211,10 +216,13 @@ async function updateOperatorSlackActivity(
     await reaction("add", OPERATOR_SLACK_PROCESSING_REACTION);
     return;
   }
-  if (state === "complete") {
-    await reaction("add", OPERATOR_SLACK_COMPLETE_REACTION);
-  }
-  await reaction("remove", OPERATOR_SLACK_PROCESSING_REACTION);
+  const settled = await reaction(
+    "add",
+    state === "complete"
+      ? OPERATOR_SLACK_COMPLETE_REACTION
+      : OPERATOR_SLACK_FAILED_REACTION,
+  );
+  if (settled) await reaction("remove", OPERATOR_SLACK_PROCESSING_REACTION);
 }
 
 async function updateOperatorSlackConfirmation(

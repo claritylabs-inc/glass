@@ -32,6 +32,7 @@ import {
 } from "./lib/slackInteractions";
 import { getSlackMode } from "./lib/slackConfig";
 import { getOperatorSlackConfig } from "./lib/operatorSlackConfig";
+import { missingSlackHostScopes } from "./lib/slackOAuthPolicy";
 import {
   type McpPolicySummarySource,
   policyMatchesMcpFilters,
@@ -377,6 +378,9 @@ http.route({
     const slackLifecycleHealth = slackEnabled
       ? await ctx.runQuery(internalApi.slackLifecycle.getHealthSummary, {})
       : null;
+    const missingHostScopes = slackHostInstallation
+      ? missingSlackHostScopes(slackHostInstallation.grantedScopes)
+      : [];
     let operatorAgentModelConfigured = false;
     try {
       await ctx.runQuery(
@@ -427,6 +431,7 @@ http.route({
         Boolean(process.env.SLACK_TOKEN_ENCRYPTION_KEY),
       slackHostInstallationConfigured:
         !slackEnabled || slackMode === "mock" || Boolean(slackHostInstallation),
+      slackHostScopesGranted: missingHostScopes.length === 0,
       slackOAuthConfigured:
         !slackEnabled ||
         slackMode === "mock" ||
@@ -466,6 +471,7 @@ http.route({
         operatorSlack: {
           enabled: operatorSlack.enabled,
           hostTeamConfigured: Boolean(operatorSlack.hostTeamId),
+          missingHostScopes,
         },
         operatorAgent: {
           modelConfigured: operatorAgentModelConfigured,

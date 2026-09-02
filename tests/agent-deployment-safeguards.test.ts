@@ -29,6 +29,7 @@ function convexHealth(
     operatorImessageContactPhoneConfigured?: boolean;
     operatorImessageEnabled?: boolean;
     operatorSlackEnabled?: boolean;
+    operatorSlackMissingHostScopes?: string[];
     operatorAgentModelConfigured?: boolean;
   } = {},
 ) {
@@ -61,6 +62,7 @@ function convexHealth(
     operatorSlack: {
       enabled: operatorSlackEnabled,
       hostTeamConfigured: true,
+      missingHostScopes: options.operatorSlackMissingHostScopes ?? [],
     },
     operatorAgent: {
       modelConfigured: operatorAgentModelConfigured,
@@ -174,6 +176,13 @@ beforeAll(async () => {
         res,
         convexHealth(expectedClSdkSpec, { operatorSlackEnabled: false }),
       );
+    if (req.url === "/convex-operator-slack-missing-scopes")
+      return writeJson(
+        res,
+        convexHealth(expectedClSdkSpec, {
+          operatorSlackMissingHostScopes: ["reactions:write"],
+        }),
+      );
     if (req.url === "/convex-operator-imessage-disabled")
       return writeJson(
         res,
@@ -240,6 +249,11 @@ describe("agent deployment safeguards", () => {
   it.each([
     ["model route", "/convex-operator-model-missing", "operatorAgent.modelConfigured"],
     ["Slack", "/convex-operator-slack-disabled", "operatorSlack.enabled"],
+    [
+      "Slack host scopes",
+      "/convex-operator-slack-missing-scopes",
+      "missing scopes: reactions:write",
+    ],
     [
       "iMessage",
       "/convex-operator-imessage-disabled",

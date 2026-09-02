@@ -73,6 +73,15 @@ having existing installations, including the Clarity host installation,
 authorize the expanded scope before the web app can add Spot to or remove Spot
 from public channels for customers.
 
+Applying a manifest does not widen tokens that were already issued. An
+installation created before a scope was added keeps its original grant, and
+Slack rejects the affected calls with `missing_scope` until an operator
+reconnects that workspace from `/operator/channels`. Reactions are the quiet
+case: without `reactions:write` the agent still answers normally but never marks
+a message as seen, so `/agent-health` reports the gap directly through
+`checks.slackHostScopesGranted` and `operatorSlack.missingHostScopes`, and
+`npm run check:agent-health:prod` fails the release with the missing scope names.
+
 ## Request and credential boundaries
 
 Slack sends Events API requests directly to `POST /slack/events`. Convex checks
