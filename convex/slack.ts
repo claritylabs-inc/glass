@@ -17,11 +17,19 @@ import {
   isSlackOperatorClassification,
   slackActorUserId,
 } from "./lib/slackInteractions";
-import { getOperatorSlackConfig } from "./lib/operatorSlackConfig";
+import {
+  getOperatorSlackConfig,
+  operatorSlackConversationKey,
+} from "./lib/operatorSlackConfig";
 import {
   slackChannelTitlePrefix,
   slackThreadTitle,
 } from "./lib/slackThreadTitle";
+import {
+  createSlackThreadContextArtifact,
+  slackThreadContextMessageTimestamps,
+  slackThreadContextSnapshotValidator,
+} from "./lib/slackThreadContext";
 
 const internalApi = internal as any;
 const DEBOUNCE_MS = 1_500;
@@ -126,6 +134,47 @@ function eventMentionsSpot(
   event: Pick<Doc<"slackInboundEvents">, "mentionsSpot" | "mentionsGlass">,
 ): boolean {
   return event.mentionsSpot ?? event.mentionsGlass ?? false;
+}
+
+async function hasPendingSlackThreadMention(
+  ctx: MutationCtx,
+  args: {
+    connectionId?: Id<"slackWorkspaceConnections">;
+    channelId: string;
+    threadTs: string;
+  },
+) {
+  const pending = await Promise.all(
+    (["queued", "processing"] as const).map((status) =>
+      ctx.db
+        .query("slackInboundEvents")
+        .withIndex("thread_schedule", (q) =>
+          q
+            .eq("connectionId", args.connectionId)
+            .eq("channelId", args.channelId)
+            .eq("threadTs", args.threadTs)
+            .eq("status", status),
+        )
+        .order("desc")
+        .take(MAX_BATCH_SIZE),
+    ),
+  );
+  return pending.some((events) => events.some(eventMentionsSpot));
+}
+
+async function hasActiveOperatorSlackThread(
+  ctx: MutationCtx,
+  args: { teamId: string; channelId: string; threadTs: string },
+) {
+  const thread = await ctx.db
+    .query("operatorAgentThreads")
+    .withIndex("channel_conversation", (q) =>
+      q
+        .eq("channel", "slack")
+        .eq("conversationKey", operatorSlackConversationKey(args)),
+    )
+    .unique();
+  return thread?.visibility === "shared" && thread.archiveState !== "archived";
 }
 
 async function resolveSpotUserId(
@@ -321,11 +370,24 @@ async function claimOperatorInbound(
     )
     .first();
   const botUserId = hostInstallation?.botUserId ?? config.mockBotUserId;
+  if (botUserId && args.senderUserId === botUserId) {
+    return { duplicate: false, status: "ignored" as const };
+  }
   const mentionsSpot = Boolean(
     botUserId && args.content.includes(`<@${botUserId}>`),
   );
   if (!directMessage && !mentionsSpot) {
-    return { duplicate: false, status: "ignored" as const };
+    const isThreadReply = args.threadTs !== args.messageTs;
+    const canContinueThread =
+      isThreadReply &&
+      ((await hasActiveOperatorSlackThread(ctx, args)) ||
+        (await hasPendingSlackThreadMention(ctx, {
+          channelId: args.channelId,
+          threadTs: args.threadTs,
+        })));
+    if (!canContinueThread) {
+      return { duplicate: false, status: "ignored" as const };
+    }
   }
 
   const canonicalEventKey = [
@@ -578,6 +640,20 @@ export const claimInbound = internalMutation({
       }
     }
     if (!connection) return await claimOperatorInbound(ctx, args);
+    if (args.senderUserId === connection.botUserId) {
+      return { duplicate: false, status: "ignored" as const };
+    }
+    if (args.teamId !== connection.teamId) {
+      const installation = await ctx.db
+        .query("slackInstallations")
+        .withIndex("team_status", (q) =>
+          q.eq("teamId", args.teamId).eq("status", "active"),
+        )
+        .first();
+      if (installation?.botUserId === args.senderUserId) {
+        return { duplicate: false, status: "ignored" as const };
+      }
+    }
     const binding =
       inboundHostBinding ?? (await primaryBinding(ctx, connection._id));
     const identity = channelIdentity(connection, binding, args);
@@ -616,6 +692,9 @@ export const claimInbound = internalMutation({
       !identity.isPrimaryChannel &&
       !mentionsSpot
     ) {
+      if (args.threadTs === args.messageTs) {
+        return { duplicate: false, status: "ignored" as const };
+      }
       const activeThread = await ctx.db
         .query("threads")
         .withIndex("slack_thread", (q) =>
@@ -625,7 +704,12 @@ export const claimInbound = internalMutation({
             .eq("slackThreadTs", args.threadTs),
         )
         .first();
-      if (activeThread?.slackState !== "active") {
+      const pendingMention = await hasPendingSlackThreadMention(ctx, {
+        connectionId: connection._id,
+        channelId: args.channelId,
+        threadTs: args.threadTs,
+      });
+      if (activeThread?.slackState !== "active" && !pendingMention) {
         return { duplicate: false, status: "ignored" as const };
       }
     }
@@ -820,7 +904,10 @@ export const authorizeBatch = internalMutation({
 });
 
 export const prepareBatch = internalMutation({
-  args: { eventIds: v.array(v.id("slackInboundEvents")) },
+  args: {
+    eventIds: v.array(v.id("slackInboundEvents")),
+    slackThreadContext: v.optional(slackThreadContextSnapshotValidator),
+  },
   handler: async (ctx, args) => {
     const events = (
       await Promise.all(args.eventIds.map((eventId) => ctx.db.get(eventId)))
@@ -1118,6 +1205,38 @@ export const prepareBatch = internalMutation({
         };
       }
       await ctx.db.patch(event._id, { status: "completed", updatedAt: now });
+    }
+
+    if (trigger && args.slackThreadContext) {
+      const messages = await ctx.db
+        .query("threadMessages")
+        .withIndex("thread", (q) => q.eq("threadId", trigger.threadId))
+        .order("desc")
+        .take(256);
+      const knownMessageTimestamps = new Set(
+        messages.flatMap((message) => [
+          ...(message.slackMessageTs ? [message.slackMessageTs] : []),
+          ...slackThreadContextMessageTimestamps(message.toolArtifacts),
+        ]),
+      );
+      const currentMessage = messages.find(
+        (message) => message._id === trigger.userMessageId,
+      );
+      const contextArtifact = createSlackThreadContextArtifact(
+        args.slackThreadContext,
+        {
+          knownMessageTimestamps,
+          latestMessageTs: currentMessage?.slackMessageTs,
+        },
+      );
+      if (contextArtifact && currentMessage) {
+        await ctx.db.patch(currentMessage._id, {
+          toolArtifacts: [
+            ...(currentMessage.toolArtifacts ?? []),
+            contextArtifact,
+          ],
+        });
+      }
     }
 
     return trigger

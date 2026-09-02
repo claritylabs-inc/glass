@@ -12,7 +12,7 @@ describe("Slack OAuth scope policy", () => {
     expect(SLACK_CUSTOMER_SCOPES).toEqual(
       expect.arrayContaining([
         "channels:join",
-        "channels:write",
+        "channels:manage",
         "im:history",
         "reactions:write",
         "users:read",

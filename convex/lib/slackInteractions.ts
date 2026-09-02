@@ -9,6 +9,7 @@ export type SlackBlockActionPayload = {
   userId: string;
   channelId: string;
   messageTs?: string;
+  threadTs?: string;
   actionId: string;
   value: string;
   actionTs?: string;
@@ -115,6 +116,7 @@ export function parseSlackInteraction(rawBody: string): SlackInteractionPayload 
   const action = Array.isArray(payload.actions) ? record(payload.actions[0]) : null;
   const channelId = text(channel?.id);
   const messageTs = text(message?.ts);
+  const threadTs = text(message?.thread_ts);
   const actionIdValue = text(action?.action_id);
   const valueText = text(action?.value);
   if (!teamId || !actorTeamId || !userId || !channelId || !actionIdValue || !valueText) {
@@ -128,11 +130,21 @@ export function parseSlackInteraction(rawBody: string): SlackInteractionPayload 
     userId,
     channelId,
     messageTs,
+    threadTs,
     actionId,
     value: valueText,
     actionTs: text(action?.action_ts),
     triggerId: text(payload.trigger_id),
   };
+}
+
+export function operatorSlackConfirmationDecision(
+  actionId: string,
+): "approve" | "reject" | undefined {
+  const normalized = normalizeInteractionId(actionId);
+  if (normalized === "spot_operator_confirmation_approve") return "approve";
+  if (normalized === "spot_operator_confirmation_reject") return "reject";
+  return undefined;
 }
 
 export function slackActionToken(actionId: string, value: string): {

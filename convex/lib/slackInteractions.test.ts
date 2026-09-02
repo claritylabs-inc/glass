@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   isSlackOperatorClassification,
+  operatorSlackConfirmationDecision,
   parseSlackInteraction,
   slackActionToken,
 } from "./slackInteractions";
@@ -13,7 +14,7 @@ describe("Slack interactions", () => {
         team: { id: "T-CUSTOMER" },
         user: { id: "U-CUSTOMER", team_id: "T-ACTOR" },
         channel: { id: "C-PRIMARY" },
-        message: { ts: "1800.1" },
+        message: { ts: "1800.1", thread_ts: "1799.9" },
         actions: [{
           action_id: "spot_response_feedback",
           action_ts: "1800.2",
@@ -28,6 +29,7 @@ describe("Slack interactions", () => {
       userId: "U-CUSTOMER",
       channelId: "C-PRIMARY",
       messageTs: "1800.1",
+      threadTs: "1799.9",
       actionId: "spot_response_feedback",
     });
     expect(payload?.type).toBe("block_actions");
@@ -40,6 +42,18 @@ describe("Slack interactions", () => {
       "spot_response_feedback_negative",
       "negative:opaque-token",
     )).toEqual({ token: "opaque-token", value: "negative" });
+  });
+
+  test("recognizes operator confirmation controls", () => {
+    expect(
+      operatorSlackConfirmationDecision(
+        "spot_operator_confirmation_approve",
+      ),
+    ).toBe("approve");
+    expect(
+      operatorSlackConfirmationDecision("glass_operator_confirmation_reject"),
+    ).toBe("reject");
+    expect(operatorSlackConfirmationDecision("spot_request_human")).toBeUndefined();
   });
 
   test("parses optional feedback detail submissions", () => {

@@ -36,6 +36,63 @@ describe("transport renderers", () => {
     );
   });
 
+  it("converts Markdown inside list items instead of leaking the source", () => {
+    const source = [
+      "**Sigillo Supply, Inc.** is currently in **onboarding**.",
+      "",
+      "- **Industry:** Wholesale distribution",
+      "- **Website:** [sigillosupply](https://sigillosupply.test)",
+      "- nested:",
+      "  - **deep** item",
+      "",
+      "Platform status: **0 policies**.",
+    ].join("\n");
+
+    expect(renderSlackMrkdwn(source)).toBe(
+      [
+        "*Sigillo Supply, Inc.* is currently in *onboarding*.",
+        "",
+        "• *Industry:* Wholesale distribution",
+        "• *Website:* <https://sigillosupply.test|sigillosupply>",
+        "• nested:",
+        "  • *deep* item",
+        "",
+        "Platform status: *0 policies*.",
+      ].join("\n"),
+    );
+  });
+
+  it("renders headings, tables, and task lists Slack can display", () => {
+    const source = [
+      "# Renewals",
+      "",
+      "| Client | Status |",
+      "| --- | --- |",
+      "| Acme | **active** |",
+      "",
+      "- [x] Sent the quote",
+      "- [ ] Booked the **call**",
+    ].join("\n");
+
+    expect(renderSlackMrkdwn(source)).toBe(
+      [
+        "*Renewals*",
+        "",
+        "*Client* | *Status*",
+        "Acme | *active*",
+        "",
+        "• [x] Sent the quote",
+        "• [ ] Booked the *call*",
+      ].join("\n"),
+    );
+  });
+
+  it("keeps ordered lists and following prose on separate lines", () => {
+    expect(renderSlackMrkdwn("1. First **step**\n2. Second\n\nThen we file.")).toBe(
+      "1. First *step*\n2. Second\n\nThen we file.",
+    );
+  });
+
   it("strips nested confidence annotations without losing Markdown", () => {
     const source = "[[g:**Confirmed [[i:likely]] result**]]";
 

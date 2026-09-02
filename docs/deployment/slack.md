@@ -11,7 +11,8 @@ conversation, agent actions, delivery evidence, retries, and failures.
 Spot owns one native Slack app:
 
 - `slack-worker/manifests/production.json` configures production app
-  `A0BMW4TG7JB` against `merry-platypus-82`.
+  `A0BMW4TG7JB` against the Convex HTTP origin
+  `https://actions.spot.insure` (deployment `merry-platypus-82`).
 
 Do not route Slack through Photon or Spectrum. Photon remains the production
 iMessage provider only. Shared dev and local development use the signed
@@ -51,7 +52,7 @@ scopes:
 
 - `app_mentions:read`
 - `chat:write`
-- `channels:read`, `channels:join`, `channels:write`, `channels:history`
+- `channels:read`, `channels:join`, `channels:manage`, `channels:history`
 - `groups:read`, `groups:history`, `groups:write`
 - `im:history`
 - `files:read`, `files:write`
@@ -68,10 +69,19 @@ Customer OAuth requests the narrower set in
 `convex/lib/slackOAuthPolicy.ts`; the Clarity-host installation also needs
 `groups:write` and `conversations.connect:write` for private Connect channel
 creation and invitations. Enable app distribution before sending customer
-install links. Adding `channels:join` and `channels:write` requires applying the updated manifest and
+install links. Adding `channels:join` and `channels:manage` requires applying the updated manifest and
 having existing installations, including the Clarity host installation,
 authorize the expanded scope before the web app can add Spot to or remove Spot
 from public channels for customers.
+
+Applying a manifest does not widen tokens that were already issued. An
+installation created before a scope was added keeps its original grant, and
+Slack rejects the affected calls with `missing_scope` until an operator
+reconnects that workspace from `/operator/channels`. Reactions are the quiet
+case: without `reactions:write` the agent still answers normally but never marks
+a message as seen, so `/agent-health` reports the gap directly through
+`checks.slackHostScopesGranted` and `operatorSlack.missingHostScopes`, and
+`npm run check:agent-health:prod` fails the release with the missing scope names.
 
 ## Request and credential boundaries
 
@@ -198,7 +208,7 @@ Convex requires:
 | `SLACK_OAUTH_REDIRECT_URI`                | Optional callback override                                       |
 | `SLACK_CLARITY_TEAM_ID`                   | Clarity host workspace ID                                        |
 | `SLACK_WORKER_URL`, `SLACK_WORKER_SECRET` | Worker URL and shared bearer secret                              |
-| `OPERATOR_SLACK_ENABLED`                  | Enable internal operator DMs and host-channel mentions           |
+| `OPERATOR_SLACK_ENABLED`                  | Enable internal operator DMs and activated host-channel threads  |
 | `NEXT_PUBLIC_APP_URL` or `APP_URL`        | Post-OAuth settings redirect                                     |
 
 The Railway worker requires `SPOT_ENV`, `SLACK_WORKER_MODE`,
@@ -225,15 +235,18 @@ release workflow sets `OPERATOR_SLACK_ENABLED=true` on production Convex before
 running that health gate, so a release cannot promote with operator Slack
 silently disabled.
 After customer workspace and persisted Slack Connect binding resolution have
-failed, Convex may route a Clarity App Home DM or host-channel mention to the
-operator agent only when `OPERATOR_SLACK_ENABLED=true`, `users.info` resolves
-the sender to the Clarity team, and that exact Slack identity belongs to an
-active Spot operator. Convex does not query channel inventory or apply channel
-ID, type, privacy, sharing, or membership filters; Slack event delivery is the
-authority for where the installed app is present. Exact `approve` or `reject`
-replies resolve the one pending confirmation in that operator-owned
-conversation. Unknown users, bots, external workspaces, and other replies fail
-closed.
+failed, Convex may route a Clarity App Home DM, a host-channel mention, or an
+authorized reply in an active host-channel thread to the operator agent only
+when `OPERATOR_SLACK_ENABLED=true`, `users.info` resolves the sender to the
+Clarity team, and that exact Slack identity belongs to an active Spot operator.
+A mention on any reply activates its Slack thread even when the unmentioned
+root was previously ignored; later replies in that thread do not require
+another mention. Unmentioned top-level messages remain ignored. Convex does not
+query channel inventory or apply channel ID, type, privacy, sharing, or
+membership filters; Slack event delivery is the authority for where the
+installed app is present. Exact `approve` or `reject` replies resolve the one
+pending confirmation in that operator-owned conversation. Spot's own bot
+messages, unknown users, other bots, and external workspaces fail closed.
 
 For a local operator-channel fixture after the default Conductor dev run is
 ready:
@@ -311,6 +324,14 @@ Block Kit answer and adds policy cards, linked policy details, native
 certificate-file delivery, an optional human-service action in shared threads,
 and per-response feedback. Progress narration, model reasoning, and raw tool
 input or output are never projected into Slack.
+
+Internal operator Slack uses a deterministic acknowledgement lifecycle instead
+of model-selected reactions. After a host-workspace sender is authorized as an
+active operator, Spot adds `eyes` to each triggering message while the operator
+agent works. Once the response is delivered and the inbound event is completed,
+Spot adds `white_check_mark` and removes `eyes`. Failed runs remove `eyes`
+without adding a completion reaction. Reaction API failures remain advisory and
+do not block response delivery.
 
 The final renderer uses current Slack `card`, `context_actions`, and
 `feedback_buttons` primitives. If Slack rejects a newer block type for a

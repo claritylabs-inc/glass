@@ -1,10 +1,15 @@
 import { describe, expect, test } from "vitest";
 import {
   buildPrivateAgentHistoryMetadata,
+  buildTextModelHistory,
   selectBoundedAgentHistory,
   shouldStartNewImessageTask,
   stripInternalAgentActivity,
 } from "./agentMessageHistory";
+import {
+  createSlackThreadContextArtifact,
+  slackThreadContextMessageTimestamps,
+} from "./slackThreadContext";
 
 describe("buildPrivateAgentHistoryMetadata", () => {
   test("collects compact JSON-safe workflow, tool, and attachment context", () => {
@@ -145,5 +150,69 @@ describe("bounded agent conversation history", () => {
     );
     expect(shouldStartNewImessageTask(1_000, 1_000 + sevenDays)).toBe(true);
     expect(shouldStartNewImessageTask(undefined, sevenDays)).toBe(false);
+  });
+});
+
+describe("Slack source-thread history", () => {
+  test("adds only uncaptured earlier Slack messages before the current request", () => {
+    const artifact = createSlackThreadContextArtifact(
+      {
+        messages: [
+          {
+            messageTs: "1800000000.000",
+            senderUserId: "U-TERRY",
+            content: "Original building quote requirements",
+          },
+          {
+            messageTs: "1800000000.050",
+            senderUserId: "U-TERRY",
+            content: "Previously captured correction",
+          },
+          {
+            messageTs: "1800000000.100",
+            senderUserId: "U-TERRY",
+            content: "Current request",
+          },
+          {
+            messageTs: "1800000000.200",
+            senderUserId: "U-OTHER",
+            content: "Future reply",
+          },
+        ],
+        truncated: false,
+      },
+      {
+        knownMessageTimestamps: ["1800000000.050", "1800000000.100"],
+        latestMessageTs: "1800000000.100",
+      },
+    );
+    expect(artifact).toBeDefined();
+    expect(slackThreadContextMessageTimestamps([artifact])).toEqual([
+      "1800000000.000",
+    ]);
+
+    const history = buildTextModelHistory([
+      {
+        _id: "current",
+        _creationTime: 1,
+        role: "user",
+        content: "Create the procurement request.",
+        userName: "Terry",
+        toolArtifacts: [artifact],
+      },
+    ]);
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("Original building quote requirements"),
+    });
+    expect(String(history[0]?.content)).not.toContain(
+      "Previously captured correction",
+    );
+    expect(String(history[0]?.content)).not.toContain("Future reply");
+    expect(history[1]).toEqual({
+      role: "user",
+      content: "[Terry]: Create the procurement request.",
+    });
   });
 });

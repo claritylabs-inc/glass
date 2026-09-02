@@ -84,6 +84,14 @@ import {
   isCompanyContextMemory,
   rankOrgMemoryForQuery,
 } from "./lib/orgMemoryPolicy";
+import { normalizedSearchText, uniqueSearchTerms } from "./lib/searchTokenizer";
+import { preflightOperatorToolConfirmation } from "./lib/operatorAgentConfirmationPreflight";
+import {
+  createSlackThreadContextArtifact,
+  slackThreadContextMessageTimestamps,
+  slackThreadContextSnapshotValidator,
+  type SlackThreadContextSnapshot,
+} from "./lib/slackThreadContext";
 
 const operatorChannelValidator = v.union(
   v.literal("chat"),
@@ -129,6 +137,40 @@ const MAX_OPERATOR_DEDUPE_KEY_CHARS = 500;
 
 type OperatorChannel = "chat" | "slack" | "imessage" | "mcp";
 
+type OperatorConfirmationDisplayState =
+  | "pending"
+  | "approved"
+  | "cancelled"
+  | "expired"
+  | "superseded"
+  | "unavailable";
+
+function operatorConfirmationDisplayState(
+  confirmation: {
+    status: "pending" | "completed" | "stale" | "expired";
+    expiresAt: number;
+    invalidationReason?: string;
+  },
+  now: number,
+): OperatorConfirmationDisplayState {
+  if (confirmation.status === "completed") return "approved";
+  if (
+    confirmation.status === "expired" ||
+    (confirmation.status === "pending" && confirmation.expiresAt <= now)
+  ) {
+    return "expired";
+  }
+  if (confirmation.status === "pending") return "pending";
+  if (
+    confirmation.invalidationReason === "rejected_by_operator" ||
+    confirmation.invalidationReason === "cancelled_by_operator"
+  ) {
+    return "cancelled";
+  }
+  if (confirmation.invalidationReason === "superseded") return "superseded";
+  return "unavailable";
+}
+
 type OperatorAttachment = {
   fileId: Id<"_storage">;
   filename: string;
@@ -156,6 +198,7 @@ type DirectToolInvocation = {
   userMessageId: Id<"operatorAgentMessages">;
   agentMessageId: Id<"operatorAgentMessages">;
   duplicate: boolean;
+  summary: string;
 };
 
 type DirectToolOutcome =
@@ -201,6 +244,216 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object"
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function boundedDisplayText(value: string, maximum = 160) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized.length <= maximum
+    ? normalized
+    : `${normalized.slice(0, maximum - 1).trimEnd()}…`;
+}
+
+function policyDisplayName(policy: {
+  carrier?: string;
+  security?: string;
+  policyNumber?: string;
+  insuredName?: string;
+  fileName?: string;
+}) {
+  const carrier = policy.security?.trim() || policy.carrier?.trim();
+  const number = policy.policyNumber?.trim();
+  if (carrier && number) return `${carrier} policy ${number}`;
+  if (number) return `policy ${number}`;
+  return (
+    policy.insuredName?.trim() ||
+    policy.fileName?.trim() ||
+    "the selected policy"
+  );
+}
+
+const DISPLAY_REFERENCE_FALLBACKS: Record<string, string> = {
+  orgId: "the selected organization",
+  brokerOrgId: "the selected broker",
+  policyId: "the selected policy",
+  policyId1: "the first selected policy",
+  policyId2: "the second selected policy",
+  replacingPolicyId: "the policy being replaced",
+  resultingPolicyId: "the resulting policy",
+  clientFileId: "the selected client file",
+  memoryId: "the selected company fact",
+  procurementMemoryId: "the selected procurement fact",
+  procurementRequestId: "the selected procurement request",
+  procurementOutreachId: "the selected broker outreach",
+  procurementFileItemId: "the selected procurement file",
+  procurementEmailThreadId: "the selected email thread",
+  requirementId: "the selected requirement",
+  requirementSourceDocumentId: "the selected requirements source",
+};
+
+async function referenceDisplayName(
+  ctx: MutationCtx,
+  key: string,
+  value: string,
+): Promise<string | undefined> {
+  if (key === "orgId" || key === "brokerOrgId") {
+    const id = ctx.db.normalizeId("organizations", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.name?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (
+    key === "policyId" ||
+    key === "policyId1" ||
+    key === "policyId2" ||
+    key === "replacingPolicyId" ||
+    key === "resultingPolicyId"
+  ) {
+    const id = ctx.db.normalizeId("policies", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row ? policyDisplayName(row) : DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "clientFileId") {
+    const id = ctx.db.normalizeId("clientFiles", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.name?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "memoryId") {
+    const id = ctx.db.normalizeId("orgMemory", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.content
+      ? `“${boundedDisplayText(row.content, 100)}”`
+      : DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "procurementMemoryId") {
+    const id = ctx.db.normalizeId("procurementMemory", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.content
+      ? `“${boundedDisplayText(row.content, 100)}”`
+      : DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "procurementRequestId") {
+    const id = ctx.db.normalizeId("procurementRequests", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.title?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "procurementOutreachId") {
+    const id = ctx.db.normalizeId("procurementBrokerOutreaches", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.brokerName?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "procurementFileItemId") {
+    const id = ctx.db.normalizeId("procurementFileItems", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.label?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "procurementEmailThreadId") {
+    const id = ctx.db.normalizeId("procurementEmailThreads", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.subject?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "requirementId") {
+    const id = ctx.db.normalizeId("insuranceRequirements", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.title?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  if (key === "requirementSourceDocumentId") {
+    const id = ctx.db.normalizeId("requirementSourceDocuments", value);
+    const row = id ? await ctx.db.get(id) : null;
+    return row?.title?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
+  }
+  return undefined;
+}
+
+async function operatorDisplaySummary(
+  ctx: MutationCtx,
+  summary: string,
+  input: Record<string, unknown>,
+) {
+  let displaySummary = summary;
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value !== "string" || !value) continue;
+    const displayName = await referenceDisplayName(ctx, key, value);
+    if (!displayName) continue;
+    displaySummary = displaySummary.split(value).join(displayName);
+  }
+  return boundedDisplayText(displaySummary, 1_000);
+}
+
+function boundedTokenEditDistance(
+  left: string,
+  right: string,
+  maximum: number,
+) {
+  if (Math.abs(left.length - right.length) > maximum) return maximum + 1;
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    let rowMinimum = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const cost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      const distance = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + cost,
+      );
+      current.push(distance);
+      rowMinimum = Math.min(rowMinimum, distance);
+    }
+    if (rowMinimum > maximum) return maximum + 1;
+    previous = current;
+  }
+  return previous[right.length];
+}
+
+function searchTokensMatch(left: string, right: string) {
+  if (left === right || left.includes(right) || right.includes(left))
+    return true;
+  const maximum = Math.max(left.length, right.length) >= 7 ? 2 : 1;
+  if (Math.min(left.length, right.length) < 4) return false;
+  return boundedTokenEditDistance(left, right, maximum) <= maximum;
+}
+
+function organizationSearchScore(
+  organization: {
+    name: string;
+    slug?: string;
+    website?: string;
+    primaryContactEmail?: string;
+  },
+  query: string,
+) {
+  if (!query) return 1;
+  const normalizedQuery = normalizedSearchText(query);
+  const normalizedName = normalizedSearchText(organization.name);
+  const normalizedFields = [
+    organization.name,
+    organization.slug,
+    organization.website,
+    organization.primaryContactEmail,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizedSearchText);
+  if (normalizedName === normalizedQuery) return 100;
+  if (normalizedName.includes(normalizedQuery)) return 95;
+  if (normalizedFields.some((field) => field.includes(normalizedQuery)))
+    return 90;
+
+  const queryTokens = uniqueSearchTerms(query);
+  const fieldTokens = uniqueSearchTerms(normalizedFields.join(" "));
+  const nameTokens = uniqueSearchTerms(organization.name);
+  const queryMatches = queryTokens.filter((queryToken) =>
+    fieldTokens.some((fieldToken) => searchTokensMatch(queryToken, fieldToken)),
+  ).length;
+  const nameMatches = nameTokens.filter((nameToken) =>
+    queryTokens.some((queryToken) => searchTokensMatch(nameToken, queryToken)),
+  ).length;
+  if (queryMatches === 0) return 0;
+  const queryCoverage = queryMatches / Math.max(queryTokens.length, 1);
+  const nameCoverage = nameMatches / Math.max(nameTokens.length, 1);
+  if (nameCoverage === 1) return 75 + queryCoverage * 10;
+  if (queryCoverage === 1) return 55 + nameCoverage * 10;
+  return queryCoverage >= 0.5 && nameCoverage >= 0.5
+    ? 30 + queryCoverage * 10 + nameCoverage * 10
+    : 0;
 }
 
 function selectedRecordFields(
@@ -673,13 +926,35 @@ function procurementMemoryKind(value: unknown): ProcurementMemoryKind {
   }
 }
 
-function normalizeStorageId(ctx: QueryCtx | MutationCtx, value: unknown) {
-  if (typeof value !== "string") {
-    throw new Error("Attachment file ID is required");
-  }
-  const fileId = ctx.db.system.normalizeId("_storage", value);
-  if (!fileId) throw new Error("Invalid attachment file ID");
-  return fileId;
+const MAX_RESOLVABLE_THREAD_ATTACHMENTS = 50;
+
+async function resolveThreadAttachmentFileId(
+  ctx: MutationCtx,
+  threadId: Id<"operatorAgentThreads">,
+  value: unknown,
+) {
+  const reference = typeof value === "string" ? value.trim() : "";
+  const exact = reference
+    ? ctx.db.system.normalizeId("_storage", reference)
+    : null;
+  if (exact) return exact;
+  const attachments = await ctx.db
+    .query("operatorAgentAttachments")
+    .withIndex("thread_file", (index) => index.eq("threadId", threadId))
+    .take(MAX_RESOLVABLE_THREAD_ATTACHMENTS);
+  const matches = attachments.filter(
+    (attachment) =>
+      attachment.filename.trim().toLowerCase() === reference.toLowerCase(),
+  );
+  if (matches.length === 1) return matches[0]!.fileId;
+  const available = attachments
+    .map((attachment) => attachment.filename)
+    .join(", ");
+  throw new Error(
+    `Attachment file ID must be an exact storage ID or filename from this thread's attachment references${
+      available ? `. This thread holds: ${available}` : ""
+    }`,
+  );
 }
 
 async function requireOperatorThread(
@@ -822,6 +1097,7 @@ async function enqueueOperatorMessage(
       entityId?: string;
       summary?: string;
     };
+    slackThreadContext?: SlackThreadContextSnapshot;
     requireUploadIntent?: boolean;
   },
 ) {
@@ -869,6 +1145,37 @@ async function enqueueOperatorMessage(
     args.attachments,
     { requireUploadIntent: args.requireUploadIntent },
   );
+  let slackThreadContextArtifact:
+    | ReturnType<typeof createSlackThreadContextArtifact>
+    | undefined;
+  if (
+    args.channel === "slack" &&
+    args.slackThreadContext &&
+    thread.conversationKey
+  ) {
+    const contextPrefix = `operator:${thread.conversationKey}:`;
+    const existingMessages = await ctx.db
+      .query("operatorAgentMessages")
+      .withIndex("thread", (index) => index.eq("threadId", args.threadId))
+      .order("desc")
+      .take(256);
+    const knownMessageTimestamps = new Set(
+      existingMessages.flatMap((message) => [
+        ...(message.dedupeKey?.startsWith(contextPrefix)
+          ? [message.dedupeKey.slice(contextPrefix.length)]
+          : []),
+        ...slackThreadContextMessageTimestamps(message.toolArtifacts),
+      ]),
+    );
+    const latestMessageTs = args.dedupeKey?.startsWith(contextPrefix)
+      ? args.dedupeKey.slice(contextPrefix.length)
+      : undefined;
+    if (latestMessageTs) knownMessageTimestamps.add(latestMessageTs);
+    slackThreadContextArtifact = createSlackThreadContextArtifact(
+      args.slackThreadContext,
+      { knownMessageTimestamps, latestMessageTs },
+    );
+  }
 
   await cancelActiveRunsForThread(ctx, args.threadId, "superseded");
   await invalidatePendingOperatorConfirmations(
@@ -889,6 +1196,9 @@ async function enqueueOperatorMessage(
     userName: operator?.name ?? operator?.email ?? "Operator",
     content,
     attachments,
+    toolArtifacts: slackThreadContextArtifact
+      ? [slackThreadContextArtifact]
+      : undefined,
     createdAt: now,
     updatedAt: now,
   });
@@ -955,35 +1265,44 @@ async function executeToolDomain(
 ) {
   const { toolName, input } = args;
   if (toolName === "search_organizations") {
-    const queryText =
-      typeof input.query === "string" ? input.query.trim().toLowerCase() : "";
+    const queryText = typeof input.query === "string" ? input.query.trim() : "";
     const requestedType =
       input.type === "broker" || input.type === "client"
         ? input.type
         : undefined;
     const limit = typeof input.limit === "number" ? input.limit : 15;
     const organizations = requestedType
-      ? await ctx.db
-          .query("organizations")
-          .withIndex("type", (index) => index.eq("type", requestedType))
-          .take(500)
-      : await ctx.db.query("organizations").take(500);
+      ? requestedType === "client"
+        ? (
+            await Promise.all([
+              ctx.db
+                .query("organizations")
+                .withIndex("type", (index) => index.eq("type", "client"))
+                .take(500),
+              ctx.db
+                .query("organizations")
+                .withIndex("type", (index) => index.eq("type", undefined))
+                .take(500),
+            ])
+          ).flat()
+        : await ctx.db
+            .query("organizations")
+            .withIndex("type", (index) => index.eq("type", "broker"))
+            .take(500)
+      : await ctx.db.query("organizations").take(1_000);
     return organizations
-      .filter((organization) => {
-        if (!queryText) return true;
-        return [
-          organization.name,
-          organization.slug,
-          organization.website,
-          organization.primaryContactEmail,
-        ].some((value) =>
-          String(value ?? "")
-            .toLowerCase()
-            .includes(queryText),
-        );
-      })
-      .slice(0, limit)
       .map((organization) => ({
+        organization,
+        score: organizationSearchScore(organization, queryText),
+      }))
+      .filter(({ score }) => score > 0)
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          left.organization.name.localeCompare(right.organization.name),
+      )
+      .slice(0, limit)
+      .map(({ organization }) => ({
         orgId: organization._id,
         name: organization.name,
         type: organization.type ?? "client",
@@ -1978,7 +2297,11 @@ async function executeToolDomain(
 
   if (toolName === "add_client_file") {
     const orgId = normalizeOrganizationId(ctx, input.orgId);
-    const attachmentFileId = normalizeStorageId(ctx, input.attachmentFileId);
+    const attachmentFileId = await resolveThreadAttachmentFileId(
+      ctx,
+      args.threadId,
+      input.attachmentFileId,
+    );
     const name = typeof input.name === "string" ? input.name : "";
     const associatedPolicyId = input.policyId
       ? normalizePolicyId(ctx, input.policyId)
@@ -1989,7 +2312,6 @@ async function executeToolDomain(
       orgId,
       attachmentFileId,
       name,
-      clientVisible: input.clientVisible === true,
       policyId: associatedPolicyId,
     });
   }
@@ -2300,10 +2622,15 @@ async function executeOperatorTool(ctx: MutationCtx, args: ExecuteToolArgs) {
       throw new Error("Operator agent run is no longer active");
     }
     if (existing.status === "awaiting_confirmation" && !args.confirmationId) {
+      const confirmation = existing.operatorConfirmationId
+        ? await ctx.db.get(existing.operatorConfirmationId)
+        : null;
       return {
         status: "confirmation_required" as const,
         confirmationId: existing.operatorConfirmationId,
-        summary: spec.summarize(input),
+        summary:
+          confirmation?.payload.summary ??
+          "Confirm the selected operator action",
       };
     }
     if (
@@ -2482,7 +2809,7 @@ export const getThread = query({
       operator.userId,
       { allowShared: true },
     );
-    const [messages, runs, pendingConfirmation] = await Promise.all([
+    const [messages, runs, confirmations] = await Promise.all([
       ctx.db
         .query("operatorAgentMessages")
         .withIndex("thread", (index) => index.eq("threadId", args.threadId))
@@ -2498,36 +2825,42 @@ export const getThread = query({
         .take(25),
       ctx.db
         .query("operatorAgentConfirmations")
-        .withIndex("thread_status", (index) =>
-          index.eq("threadId", args.threadId).eq("status", "pending"),
-        )
+        .withIndex("thread", (index) => index.eq("threadId", args.threadId))
         .order("desc")
-        .first(),
+        .take(500)
+        .then((items) => items.reverse()),
     ]);
     const activeRun =
       runs.find((run) => ACTIVE_RUN_STATUSES.has(run.status)) ?? null;
-    const confirmationIsCurrent =
-      pendingConfirmation &&
-      pendingConfirmation.operatorUserId === operator.userId &&
-      pendingConfirmation.expiresAt > dayjs().valueOf() &&
-      activeRun?.status === "waiting_confirmation" &&
-      activeRun.checkpoint?.pendingConfirmationId === pendingConfirmation._id;
+    const now = dayjs().valueOf();
+    const visibleMessageIds = new Set(messages.map((message) => message._id));
     return {
       thread,
       messages,
       activeRun,
       recentRuns: runs,
-      pendingConfirmation: confirmationIsCurrent
-        ? {
-            _id: pendingConfirmation._id,
-            summary: pendingConfirmation.payload.summary,
-            toolName: pendingConfirmation.payload.toolName,
-            effect: pendingConfirmation.payload.effect,
-            targetKind: pendingConfirmation.payload.targetKind,
-            targetId: pendingConfirmation.payload.targetId,
-            expiresAt: pendingConfirmation.expiresAt,
-          }
-        : null,
+      confirmations: confirmations
+        .filter((confirmation) =>
+          visibleMessageIds.has(confirmation.promptMessageId),
+        )
+        .map((confirmation) => {
+          const actionable =
+            confirmation.status === "pending" &&
+            confirmation.operatorUserId === operator.userId &&
+            confirmation.expiresAt > now &&
+            activeRun?.status === "waiting_confirmation" &&
+            activeRun.checkpoint?.pendingConfirmationId === confirmation._id;
+          return {
+            _id: confirmation._id,
+            promptMessageId: confirmation.promptMessageId,
+            summary: confirmation.payload.summary,
+            toolName: confirmation.payload.toolName,
+            effect: confirmation.payload.effect,
+            state: operatorConfirmationDisplayState(confirmation, now),
+            actionable,
+            expiresAt: confirmation.expiresAt,
+          };
+        }),
     };
   },
 });
@@ -3411,8 +3744,6 @@ export const getPendingConfirmationInternal = internalQuery({
       summary: confirmation.payload.summary,
       toolName: confirmation.payload.toolName,
       effect: confirmation.payload.effect,
-      targetKind: confirmation.payload.targetKind,
-      targetId: confirmation.payload.targetId,
       expiresAt: confirmation.expiresAt,
     };
   },
@@ -3571,6 +3902,7 @@ export const enqueueMessageInternal = internalMutation({
     channel: operatorChannelValidator,
     content: v.string(),
     dedupeKey: v.string(),
+    slackThreadContext: v.optional(slackThreadContextSnapshotValidator),
     attachments: v.optional(v.array(operatorAttachmentValidator)),
   },
   handler: async (ctx, args) => {
@@ -3725,16 +4057,19 @@ export const prepareDirectToolInvocationInternal = internalMutation({
     channel: operatorChannelValidator,
     toolName: v.string(),
     summary: v.string(),
+    input: v.any(),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
     await requireOperatorForUser(ctx, args.operatorUserId);
+    const input = parseOperatorAgentToolInput(args.toolName, args.input);
+    const summary = await operatorDisplaySummary(ctx, args.summary, input);
     const idempotencyKey = args.idempotencyKey.trim();
     if (!idempotencyKey) throw new Error("Idempotency key is required");
     if (idempotencyKey.length > MAX_OPERATOR_DEDUPE_KEY_CHARS) {
       throw new Error("Idempotency key is too long");
     }
-    if (args.summary.trim().length > MAX_OPERATOR_MESSAGE_CHARS) {
+    if (summary.length > MAX_OPERATOR_MESSAGE_CHARS) {
       throw new Error("Operator tool summary is too long");
     }
     const existingLedger = await ctx.db
@@ -3754,6 +4089,7 @@ export const prepareDirectToolInvocationInternal = internalMutation({
           userMessageId: run.userMessageId,
           agentMessageId: run.agentMessageId,
           duplicate: true,
+          summary,
         };
       }
     }
@@ -3795,7 +4131,7 @@ export const prepareDirectToolInvocationInternal = internalMutation({
       role: "user",
       userId: args.operatorUserId,
       userName: "Operator API",
-      content: args.summary,
+      content: summary,
       createdAt: now,
       updatedAt: now,
     });
@@ -3817,7 +4153,7 @@ export const prepareDirectToolInvocationInternal = internalMutation({
       userMessageId,
       agentMessageId,
       executionKind: "direct_tool",
-      objective: args.summary,
+      objective: summary,
       status: "running",
       checkpoint: { iteration: 0, executionCount: 0 },
       startedAt: now,
@@ -3831,6 +4167,7 @@ export const prepareDirectToolInvocationInternal = internalMutation({
       userMessageId,
       agentMessageId,
       duplicate: false,
+      summary,
     };
   },
 });
@@ -4035,6 +4372,7 @@ export const invokeRegisteredToolInternal = internalAction({
         channel: args.channel,
         toolName: args.toolName,
         summary,
+        input,
         idempotencyKey: args.idempotencyKey,
       },
     );
@@ -4080,12 +4418,16 @@ export const invokeRegisteredToolInternal = internalAction({
               idempotencyKey: args.idempotencyKey,
               channel: args.channel,
             });
+    const displaySummary =
+      outcome.status === "confirmation_required"
+        ? outcome.summary
+        : invocation.summary;
     const content =
       outcome.status === "confirmation_required"
-        ? `Confirmation required: ${summary}.`
+        ? `Confirmation required: ${displaySummary}.`
         : outcome.status === "succeeded"
-          ? `Completed: ${summary}.`
-          : `Could not complete ${summary}: ${"error" in outcome ? outcome.error : "unknown error"}`;
+          ? `Completed: ${displaySummary}.`
+          : `Could not complete ${displaySummary}: ${"error" in outcome ? outcome.error : "unknown error"}`;
     await ctx.runMutation(internal.operatorAgent.completeRunInternal, {
       runId: invocation.runId,
       content,
@@ -4277,10 +4619,13 @@ export const requestToolConfirmationInternal = internalMutation({
         ) {
           throw new Error("Operator agent run is no longer active");
         }
+        const confirmation = await ctx.db.get(existing.operatorConfirmationId);
         return {
           status: "confirmation_required" as const,
           confirmationId: existing.operatorConfirmationId,
-          summary: spec.summarize(input),
+          summary:
+            confirmation?.payload.summary ??
+            "Confirm the selected operator action",
         };
       }
     }
@@ -4298,8 +4643,26 @@ export const requestToolConfirmationInternal = internalMutation({
         "Another operator action is already awaiting confirmation",
       );
     }
+    try {
+      await preflightOperatorToolConfirmation(ctx, {
+        operatorUserId: args.operatorUserId,
+        threadId: args.threadId,
+        toolName: args.toolName as OperatorAgentToolName,
+        input,
+      });
+    } catch (error) {
+      return {
+        status: "failed" as const,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
     const target = spec.target(input);
     const inputJson = JSON.stringify(input);
+    const summary = await operatorDisplaySummary(
+      ctx,
+      spec.summarize(input),
+      input,
+    );
     const now = dayjs().valueOf();
     const confirmationId = await ctx.db.insert("operatorAgentConfirmations", {
       threadId: args.threadId,
@@ -4318,7 +4681,7 @@ export const requestToolConfirmationInternal = internalMutation({
         requiredRole: spec.requiredRole,
         targetKind: target.kind,
         targetId: target.id,
-        summary: spec.summarize(input),
+        summary,
       },
       status: "pending",
       expiresAt: dayjs(now).add(10, "minute").valueOf(),
@@ -4343,13 +4706,15 @@ export const requestToolConfirmationInternal = internalMutation({
       targetId: target.id,
       channel: args.channel,
       input: boundedJson(input),
-      output: boundedJson({ confirmationId, summary: spec.summarize(input) }),
+      output: boundedJson({ confirmationId, summary }),
       status: "awaiting_confirmation",
       createdAt: now,
       updatedAt: now,
     });
     await ctx.db.patch(args.threadMessageId, {
-      content: `Confirmation required: ${spec.summarize(input)}. Reply approve or reject.`,
+      content: `Confirmation required: ${summary}.${
+        args.channel === "imessage" ? " Reply approve or reject." : ""
+      }`,
       status: undefined,
       usedTools: [args.toolName],
       updatedAt: now,
@@ -4368,7 +4733,7 @@ export const requestToolConfirmationInternal = internalMutation({
     return {
       status: "confirmation_required" as const,
       confirmationId,
-      summary: spec.summarize(input),
+      summary,
     };
   },
 });

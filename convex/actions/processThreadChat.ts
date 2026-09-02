@@ -87,6 +87,7 @@ import {
   SLACK_PROCESSING_REACTIONS,
   SLACK_REACTION_TOOL_NAME,
 } from "../lib/slackBlocks";
+import { slackThreadContextText } from "../lib/slackThreadContext";
 
 const RECENT_ATTACHMENT_MESSAGE_LIMIT = 6;
 
@@ -116,6 +117,10 @@ async function buildMessageHistoryWithAttachmentContext(
     if (msg.status === "processing" || msg.status === "cancelled") continue;
     const content = typeof msg.content === "string" ? msg.content : "";
     if (msg.role === "user") {
+      const slackThreadContext = slackThreadContextText(msg.toolArtifacts);
+      if (slackThreadContext) {
+        history.push({ role: "user", content: slackThreadContext });
+      }
       const text = msg.userName
         ? `[${String(msg.userName)}]: ${content}`
         : content;

@@ -2,7 +2,7 @@
   "production": {
     "branch": "main",
     "spotEnv": "production",
-    "convexAgentHealthUrl": "https://merry-platypus-82.convex.site/agent-health",
+    "convexAgentHealthUrl": "https://actions.spot.insure/agent-health",
     "clientPortalUrl": "https://app.spot.insure",
     "clRouterHealthUrlEnv": "SPOT_PRODUCTION_CL_ROUTER_HEALTH_URL",
     "extractionWorkerHealthUrl": "https://spot-extraction-worker-production.up.railway.app/health",

@@ -270,6 +270,15 @@ const checks = [
             "operatorSlack.hostTeamConfigured expected true",
           );
         }
+        const missingHostScopes = payload.operatorSlack?.missingHostScopes;
+        if (!Array.isArray(missingHostScopes)) {
+          throw new Error("operatorSlack.missingHostScopes missing");
+        }
+        if (missingHostScopes.length > 0) {
+          throw new Error(
+            `host Slack installation is missing scopes: ${missingHostScopes.join(", ")}. Reconnect the host workspace from /operator/channels to reauthorize.`,
+          );
+        }
       }
       const operatorImessageRequired = Boolean(
         urls.operatorImessageWorkerHealth,

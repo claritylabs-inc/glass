@@ -260,6 +260,7 @@ export const beginHost = action({
     const url = new URL("https://slack.com/oauth/v2/authorize");
     url.searchParams.set("client_id", requiredEnv("SLACK_CLIENT_ID"));
     url.searchParams.set("scope", SLACK_HOST_SCOPES.join(","));
+    url.searchParams.set("team", requiredEnv("SLACK_CLARITY_TEAM_ID"));
     url.searchParams.set("redirect_uri", redirectUri());
     url.searchParams.set("state", state);
     return { url: url.toString() };

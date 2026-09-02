@@ -71,6 +71,12 @@ type OpenViewRequest = {
 type AttachmentRequest = { teamId: string; fileId: string };
 type ActorRequest = { teamId: string; userId: string };
 type ChannelRequest = { teamId: string; channelId: string };
+type ThreadContextRequest = {
+  teamId: string;
+  channelId: string;
+  threadTs: string;
+  latestMessageTs: string;
+};
 type ConnectChannelRequest = {
   clientSlug: string;
   inviteEmail: string;
@@ -129,10 +135,25 @@ type SlackAuthTestResponse = SlackResponse & {
 };
 type SlackFile = {
   id?: string;
+  name?: string;
+  title?: string;
   shares?: Record<string, Record<string, Array<{ ts?: string }>>>;
+};
+type SlackThreadMessage = {
+  type?: string;
+  subtype?: string;
+  ts?: string;
+  user?: string;
+  text?: string;
+  username?: string;
+  bot_id?: string;
+  bot_profile?: { name?: string };
+  files?: SlackFile[];
 };
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const MAX_THREAD_CONTEXT_MESSAGES = 100;
+const MAX_THREAD_CONTEXT_MESSAGE_CHARS = 4_000;
 const mode = process.env.SLACK_WORKER_MODE === "mock" ? "mock" : "slack";
 const spotEnv =
   process.env.SPOT_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
@@ -788,6 +809,77 @@ async function fetchSlackAttachment(input: AttachmentRequest) {
   };
 }
 
+async function fetchSlackThreadContext(input: ThreadContextRequest) {
+  if (
+    !input.teamId?.trim() ||
+    !input.channelId?.trim() ||
+    !input.threadTs?.trim() ||
+    !input.latestMessageTs?.trim()
+  ) {
+    throw new Error(
+      "teamId, channelId, threadTs, and latestMessageTs are required",
+    );
+  }
+  if (mode === "mock") return { messages: [], truncated: false };
+
+  const installation = await slackInstallation(input.teamId);
+  const result = await slackFormApi<
+    SlackResponse & {
+      messages?: SlackThreadMessage[];
+      has_more?: boolean;
+      response_metadata?: { next_cursor?: string };
+    }
+  >("conversations.replies", installation.botToken, {
+    channel: input.channelId,
+    ts: input.threadTs,
+    latest: input.latestMessageTs,
+    inclusive: true,
+    limit: MAX_THREAD_CONTEXT_MESSAGES,
+  });
+  const messages = (result.messages ?? [])
+    .slice(0, MAX_THREAD_CONTEXT_MESSAGES)
+    .flatMap((message) => {
+      if (
+        message.type !== "message" ||
+        !message.ts ||
+        message.user === installation.botUserId
+      ) {
+        return [];
+      }
+      const filenames = (message.files ?? [])
+        .map((file) => file.name?.trim() || file.title?.trim())
+        .filter((filename): filename is string => Boolean(filename));
+      const text = message.text?.trim() ?? "";
+      const content = [
+        text,
+        filenames.length > 0 ? `[Attached ${filenames.join(", ")}]` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, MAX_THREAD_CONTEXT_MESSAGE_CHARS);
+      if (!content) return [];
+      const cachedSenderName = message.user
+        ? actorCache.get(`${input.teamId}:${message.user}`)?.actor.displayName
+        : undefined;
+      const senderName =
+        message.username || message.bot_profile?.name || cachedSenderName;
+      return [
+        {
+          messageTs: message.ts,
+          ...(message.user ? { senderUserId: message.user } : {}),
+          ...(senderName ? { senderName } : {}),
+          content,
+        },
+      ];
+    });
+  return {
+    messages,
+    truncated:
+      result.has_more === true ||
+      Boolean(result.response_metadata?.next_cursor?.trim()),
+  };
+}
+
 async function resolveSlackActor(input: ActorRequest) {
   if (!input.teamId || !input.userId) {
     throw new Error("teamId and userId are required");
@@ -1218,6 +1310,7 @@ const server = http.createServer(async (request, response) => {
       clarityTeamConfigured: mode === "mock" || Boolean(clarityTeamId),
       outboundEnabled: tokenBrokerConfigured,
       attachmentRetrievalEnabled: mode === "slack" && tokenBrokerConfigured,
+      threadContextEnabled: mode === "mock" || tokenBrokerConfigured,
       actorResolutionEnabled: mode === "mock" || tokenBrokerConfigured,
       connectProvisioningEnabled:
         mode === "mock" || Boolean(clarityTeamId && tokenBrokerConfigured),
@@ -1333,6 +1426,15 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(200, { "Content-Type": file.contentType });
       response.end(file.bytes);
       return;
+    }
+    if (request.method === "POST" && request.url === "/thread-context") {
+      return json(
+        response,
+        200,
+        await fetchSlackThreadContext(
+          await readJson<ThreadContextRequest>(request),
+        ),
+      );
     }
     if (request.method === "POST" && request.url === "/actor") {
       return json(

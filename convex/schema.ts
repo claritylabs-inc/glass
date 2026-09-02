@@ -4815,7 +4815,9 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     invalidatedAt: v.optional(v.number()),
     invalidationReason: v.optional(v.string()),
-  }).index("thread_status", ["threadId", "status"]),
+  })
+    .index("thread", ["threadId"])
+    .index("thread_status", ["threadId", "status"]),
 
   agentActionAuditEvents: defineTable({
     orgId: v.optional(v.id("organizations")),

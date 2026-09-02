@@ -150,7 +150,6 @@ export async function createClientFileFromOperatorAttachment(
     orgId: Id<"organizations">;
     attachmentFileId: Id<"_storage">;
     name: string;
-    clientVisible: boolean;
     policyId?: Id<"policies">;
   },
 ) {
@@ -197,7 +196,7 @@ export async function createClientFileFromOperatorAttachment(
     originalName,
     contentType: normalizeAgentAttachmentContentType(attachment.contentType),
     size: metadata.size,
-    clientVisible: args.clientVisible,
+    clientVisible: false,
     policyId: args.policyId,
     uploadedByUserId: args.operatorUserId,
     uploadedBySide: "operator",
@@ -217,7 +216,7 @@ export async function createClientFileFromOperatorAttachment(
       source: "operator_agent",
       clientFileId,
       policyId: args.policyId,
-      clientVisible: args.clientVisible,
+      clientVisible: false,
     },
   });
   return { clientFileId, status: "filed" as const, name };
