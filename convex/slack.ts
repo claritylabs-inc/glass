@@ -1267,69 +1267,6 @@ export const requestHandoffFromAgent = internalMutation({
   },
 });
 
-export const createDeliveryRecord = internalMutation({
-  args: {
-    orgId: v.id("organizations"),
-    connectionId: v.id("slackWorkspaceConnections"),
-    channelId: v.string(),
-    threadTs: v.string(),
-    content: v.string(),
-    attachment: v.object({
-      fileId: v.id("_storage"),
-      filename: v.string(),
-      contentType: v.string(),
-      size: v.number(),
-    }),
-    policyId: v.id("policies"),
-    idempotencyKey: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const connection = await ctx.db.get(args.connectionId);
-    if (!connection || connection.clientOrgId !== args.orgId) {
-      throw new Error("Slack connection not found");
-    }
-    const existing = await ctx.db
-      .query("threads")
-      .withIndex(
-        "slack_thread",
-        (q) =>
-          q
-            .eq("slackConnectionId", args.connectionId)
-            .eq("slackChannelId", args.channelId)
-            .eq("slackThreadTs", args.threadTs),
-      )
-      .first();
-    if (existing) return existing._id;
-    const now = dayjs().valueOf();
-    const threadId = await ctx.db.insert("threads", {
-      orgId: args.orgId,
-      title: "Slack policy delivery",
-      createdBy: connection.serviceUserId,
-      lastMessageAt: now,
-      originChannel: "slack",
-      slackConnectionId: connection._id,
-      slackChannelId: args.channelId,
-      slackThreadTs: args.threadTs,
-      slackConversationKind: "channel",
-      slackState: "active",
-    });
-    await ctx.db.insert("threadMessages", {
-      threadId,
-      orgId: args.orgId,
-      channel: "slack",
-      role: "agent",
-      content: args.content,
-      responseMessageId: `${args.idempotencyKey}:slack`,
-      slackTeamId: connection.teamId,
-      slackUserId: connection.botUserId,
-      slackMessageTs: args.threadTs,
-      attachments: [args.attachment],
-      referencedPolicyIds: [args.policyId],
-    });
-    return threadId;
-  },
-});
-
 export const markRevoked = internalMutation({
   args: { teamId: v.string() },
   handler: async (ctx, args) => {

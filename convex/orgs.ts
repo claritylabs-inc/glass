@@ -255,69 +255,7 @@ export const viewerOrg = query({
 
     const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
 
-    let brokerOrg: {
-      _id: Id<"organizations">;
-      name: string;
-      slug?: string;
-      website?: string;
-      brandingColor?: string;
-      whiteLabelingEnabled?: boolean;
-      agentHandle?: string;
-      agentDisplayName?: string;
-      iconUrl: string | null;
-      primaryContact: {
-        userId: Id<"users">;
-        name?: string;
-        email?: string;
-        phone?: string;
-        title?: string;
-      } | null;
-    } | null = null;
-    if ((org.type ?? "client") === "client" && org.brokerOrgId) {
-      const broker = await ctx.db.get(org.brokerOrgId);
-      if (broker) {
-        const whiteLabelingEnabled = isWhiteLabelingEnabled(broker);
-        const brokerIconUrl = whiteLabelingEnabled && broker.iconStorageId
-          ? await ctx.storage.getUrl(broker.iconStorageId)
-          : null;
-        let primaryContact: {
-          userId: Id<"users">;
-          name?: string;
-          email?: string;
-          phone?: string;
-          title?: string;
-        } | null = null;
-        const brokerIdentity = await resolveBrokerIdentityForClient(ctx, org);
-        const contactUserId =
-          brokerIdentity.contactUserId ?? broker.primaryInsuranceContactId;
-        if (contactUserId) {
-          const contactUser = await ctx.db.get(contactUserId);
-          if (contactUser) {
-            primaryContact = {
-              userId: contactUser._id,
-              name: brokerIdentity.contactName ?? contactUser.name,
-              email: brokerIdentity.contactEmail ?? contactUser.email,
-              phone: brokerIdentity.contactPhone ?? contactUser.phone,
-              title: contactUser.title,
-            };
-          }
-        }
-        brokerOrg = {
-          _id: broker._id,
-          name: broker.name,
-          slug: broker.slug,
-          website: broker.website,
-          whiteLabelingEnabled,
-          brandingColor: whiteLabelingEnabled ? broker.brandingColor : undefined,
-          agentHandle: broker.agentHandle,
-          agentDisplayName: whiteLabelingEnabled ? broker.agentDisplayName : undefined,
-          iconUrl: brokerIconUrl,
-          primaryContact,
-        };
-      }
-    }
-
-    return { org: { ...org, iconUrl }, membership, brokerOrg };
+    return { org: { ...org, iconUrl }, membership, brokerOrg: null };
   },
 });
 
@@ -697,73 +635,6 @@ function normalizeBrokerPhone(value: string | undefined | null) {
   }
   return parsed.number;
 }
-
-export const getBrokerIdentity = query({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccessNew(ctx, args.orgId);
-    const org = await ctx.db.get(args.orgId);
-    if (!org || (org.type ?? "client") !== "client") return null;
-
-    const identity = await resolveBrokerIdentityForClient(ctx, org);
-    const brokerMembership =
-      identity.brokerOrgId && access.accessType === "broker_of_client"
-        ? await ctx.db
-            .query("orgMemberships")
-            .withIndex("organization_user", (q) =>
-              q
-                .eq("orgId", identity.brokerOrgId!)
-                .eq("userId", access.userId),
-            )
-            .unique()
-        : null;
-    const canEdit =
-      identity.brokerOrgId
-        ? brokerMembership?.role === "admin"
-        : access.accessType === "member" && access.role === "admin";
-
-    const assignment = identity.assignmentId
-      ? await ctx.db.get(identity.assignmentId)
-      : null;
-    const brokerMembers =
-      canEdit && identity.brokerOrgId
-        ? await Promise.all(
-            (
-              await ctx.db
-                .query("orgMemberships")
-                .withIndex("organization", (q) =>
-                  q.eq("orgId", identity.brokerOrgId!),
-                )
-                .collect()
-            ).map(async (membership) => {
-              const user = await ctx.db.get(membership.userId);
-              return {
-                userId: membership.userId,
-                role: membership.role,
-                name: user?.name,
-                email: user?.email,
-                phone: user?.phone,
-              };
-            }),
-          )
-        : [];
-
-    return {
-      ...identity,
-      connected: !!identity.brokerOrgId,
-      canEdit,
-      selectedContactUserId: identity.contactUserId,
-      overrides: assignment
-        ? {
-            contactName: assignment.contactName,
-            contactEmail: assignment.contactEmail,
-            contactPhone: assignment.contactPhone,
-          }
-        : null,
-      brokerMembers,
-    };
-  },
-});
 
 export const getBrokerPageContext = query({
   args: {},
@@ -1785,9 +1656,9 @@ async function senderMatchesOrg(
 
 /**
  * Resolve which client org a sender is authorized to act on behalf of, for
- * email addressed to the given agent handle. Broker-owned handles route to a
- * matching managed client when possible; the shared default "agent" handle
- * routes standalone client orgs by sender identity.
+ * email addressed to the given agent handle. Client-owned handles route only
+ * to that client; the shared default "agent" handle resolves a client by the
+ * sender's direct authorization.
  */
 export const resolveClientBySender = internalQuery({
   args: { handle: v.string(), senderEmail: v.string() },
@@ -1800,66 +1671,20 @@ export const resolveClientBySender = internalQuery({
       .withIndex("handle", (q) => q.eq("agentHandle", args.handle))
       .first();
 
-    if (handleOwner && handleOwner.type !== "broker") {
-      if (handleOwner.brokerOrgId) return null;
+    if (handleOwner) {
+      if ((handleOwner.type ?? "client") !== "client") return null;
       const matchedBy = await senderMatchesOrg(ctx, handleOwner, email, domain);
       return matchedBy ? { brokerOrg: handleOwner, clientOrg: null, matchedBy } : null;
     }
-    if (handleOwner && (handleOwner.operatorStatus ?? "live") !== "live") {
-      return null;
+    if (args.handle !== "agent") return null;
+
+    const organizations = await ctx.db.query("organizations").collect();
+    for (const org of organizations) {
+      if ((org.type ?? "client") !== "client") continue;
+      const matchedBy = await senderMatchesOrg(ctx, org, email, domain);
+      if (matchedBy) return { brokerOrg: org, clientOrg: null, matchedBy };
     }
-
-    if (!handleOwner && args.handle !== "agent") return null;
-
-    if (!handleOwner) {
-      const standaloneOrgs = await ctx.db
-        .query("organizations")
-        .withIndex("broker", (q) => q.eq("brokerOrgId", undefined))
-        .collect();
-
-      for (const org of standaloneOrgs) {
-        if ((org.type ?? "client") !== "client") continue;
-        const matchedBy = await senderMatchesOrg(ctx, org, email, domain);
-        if (matchedBy) return { brokerOrg: org, clientOrg: null, matchedBy };
-      }
-      return null;
-    }
-
-    const brokerOrg = handleOwner;
-
-    const clientOrgs = await ctx.db
-      .query("organizations")
-      .withIndex("broker", (q) => q.eq("brokerOrgId", brokerOrg._id))
-      .collect();
-
-    // 1. Strict: explicit allowedEmails match
-    for (const client of clientOrgs) {
-      const allowed = (client.allowedEmails ?? []).map((e) => e.toLowerCase());
-      if (allowed.includes(email)) return { brokerOrg, clientOrg: client, matchedBy: "email" as const };
-    }
-    // 2. Domain: allowedDomains match only for the domain access mode.
-    for (const client of clientOrgs) {
-      if (client.emailVerification !== "domain") continue;
-      const domains = (client.allowedDomains ?? []).map((d) => d.toLowerCase());
-      if (domain && domains.includes(domain)) {
-        return { brokerOrg, clientOrg: client, matchedBy: "domain" as const };
-      }
-    }
-    // 3. Membership: sender is an admin/member of the client org
-    for (const client of clientOrgs) {
-      if (client.emailVerification === "strict") continue;
-      const memberships = await ctx.db
-        .query("orgMemberships")
-        .withIndex("organization", (q) => q.eq("orgId", client._id))
-        .collect();
-      for (const m of memberships) {
-        const u = await ctx.db.get(m.userId);
-        if (u?.email?.toLowerCase() === email) {
-          return { brokerOrg, clientOrg: client, matchedBy: "member" as const };
-        }
-      }
-    }
-    return { brokerOrg, clientOrg: null, matchedBy: null };
+    return null;
   },
 });
 

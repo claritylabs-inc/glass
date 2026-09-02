@@ -21,9 +21,7 @@ import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { ModelsSection } from "@/components/settings/models-section";
-import { PolicyDeliverySection } from "@/components/settings/policy-delivery-section";
 import { CertificateWorkflowSection } from "@/components/settings/certificate-workflow-section";
-import { BrokerIdentitySection } from "@/components/settings/broker-identity-section";
 import { BetaFeaturesSection } from "@/components/settings/beta-features-section";
 import { NotificationPreferencesSection } from "@/components/settings/notification-preferences-section";
 import {
@@ -53,6 +51,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!currentOrg) return;
+    if (isBroker) {
+      router.replace("/broker");
+      return;
+    }
     if (
       searchParams.get("section") === destination.section &&
       searchParams.get("tab") === destination.tab
@@ -63,7 +65,7 @@ export default function SettingsPage() {
     params.set("section", destination.section);
     params.set("tab", destination.tab);
     router.replace(`/settings?${params.toString()}`);
-  }, [currentOrg, destination.section, destination.tab, router, searchParams]);
+  }, [currentOrg, destination.section, destination.tab, isBroker, router, searchParams]);
 
   function navigate(section: SettingsPageId, tab: SettingsTabId) {
     const params = new URLSearchParams(searchParams.toString());
@@ -76,6 +78,8 @@ export default function SettingsPage() {
     const page = pages.find((item) => item.id === section);
     if (page) navigate(page.id, page.tabs[0].id);
   }
+
+  if (isBroker) return null;
 
   return (
     <SettingsActionsContext.Provider
@@ -145,9 +149,6 @@ function SectionContent({
   const currentOrg = useCurrentOrg();
 
   if (section === "organization") {
-    if (tab === "broker" && currentOrg?.orgId) {
-      return <BrokerIdentitySection orgId={currentOrg.orgId} />;
-    }
     return <OrganizationSection />;
   }
   if (section === "team") {
@@ -165,7 +166,6 @@ function SectionContent({
     return <BrokerAgentTab />;
   }
   if (section === "workflows") {
-    if (tab === "delivery") return <PolicyDeliverySection />;
     if (tab === "notifications" && currentOrg?.orgId) {
       return (
         <NotificationPreferencesSection

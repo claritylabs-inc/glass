@@ -13,8 +13,7 @@ repeat the background each time a conversation is preserved in Spot.
 | [iMessage](imessage.md)                                                           | Quick mobile questions, voice notes, files, and group coordination           | Message the Spot number from a phone linked to your profile                                  | Direct messages are private in Spot; group messages are shared with the group and organization |
 | [Slack](slack.md)                                                                 | Team collaboration and human support in shared channels                      | Install Spot, accept the separate support-channel invitation, or open the app's Messages tab | The Slack channel or DM audience; shared channel mirrors are visible in Spot                   |
 | [Connected mailbox](connected-mailboxes.md)                                       | Letting Spot search or monitor an existing mailbox                          | **Settings → Mailboxes**                                                                      | Live access follows the mailbox scope; imported workspace data is organization-visible          |
-| [Notifications](notifications-and-policy-delivery.md)                             | Event alerts and status changes                                              | Bell menu or **Settings → Workflows → Notifications**                                         | The notified user, plus the workspace record the alert links to                                 |
-| [Policy delivery](notifications-and-policy-delivery.md#automatic-policy-delivery) | Sending completed policy or endorsement PDFs                                 | **Settings → Workflows → Delivery**                                                           | Configured email, iMessage, and Slack recipients                                                |
+| [Notifications](notifications.md)                                                 | Event alerts and status changes                                              | Bell menu or **Settings → Workflows → Notifications**                                         | The notified user, plus the workspace record the alert links to                                 |
 
 Agent email and connected mailboxes are different:
 
@@ -32,7 +31,7 @@ copy of the latest answer. Depending on the channel, a thread may include:
 - source-backed answers and source links;
 - uploaded or generated documents;
 - certificate, policy-change, and email-draft status;
-- delivery attempts and failures; and
+- workflow outcomes and failures; and
 - a record of who requested or confirmed an action.
 
 Email, iMessage, and Slack conversations can appear in **All threads** in the
@@ -81,7 +80,6 @@ during that stage, but these operations wait for final processing:
 
 - exact source-evidence confirmation;
 - certificate generation;
-- automatic policy delivery;
 - policy changes and endorsements; and
 - other actions that depend on finalized policy facts.
 

@@ -37,7 +37,6 @@ export const DEFAULT_AGENT_CHANNEL_SETTINGS = {
   slackEnabled: false,
   slackSafeAlertsEnabled: true,
   slackVendorAlertsEnabled: false,
-  slackPolicyDeliveryEnabled: true,
 } as const;
 
 const OPERATOR_SLACK_ROSTER_LIMIT = 250;
@@ -63,7 +62,6 @@ type AgentChannelSettingsInput = {
   slackEnabled: boolean;
   slackSafeAlertsEnabled: boolean;
   slackVendorAlertsEnabled: boolean;
-  slackPolicyDeliveryEnabled: boolean;
 };
 
 function normalizeAgentHandle(value: string | undefined) {
@@ -93,7 +91,6 @@ const settingsArgs = {
   slackEnabled: v.boolean(),
   slackSafeAlertsEnabled: v.boolean(),
   slackVendorAlertsEnabled: v.boolean(),
-  slackPolicyDeliveryEnabled: v.boolean(),
 };
 
 function randomState(): string {
@@ -207,24 +204,13 @@ async function channelOverview(
   if (!client || (client.type ?? "client") !== "client") {
     throw new Error("Client organization not found");
   }
-  const broker = client.brokerOrgId
-    ? await ctx.db.get(client.brokerOrgId)
-    : null;
-  const agentEmailAddress = client.brokerOrgId
-    ? {
-        handle: broker?.agentHandle ?? null,
-        configuredHandle: broker?.agentHandle ?? null,
-        source: "broker" as const,
-        ownerOrgId: client.brokerOrgId,
-        ownerName: broker?.name ?? "Managing broker",
-      }
-    : {
-        handle: client.agentHandle ?? "agent",
-        configuredHandle: client.agentHandle ?? null,
-        source: client.agentHandle ? ("client" as const) : ("shared" as const),
-        ownerOrgId: client._id,
-        ownerName: client.name,
-      };
+  const agentEmailAddress = {
+    handle: client.agentHandle ?? "agent",
+    configuredHandle: client.agentHandle ?? null,
+    source: client.agentHandle ? ("client" as const) : ("shared" as const),
+    ownerOrgId: client._id,
+    ownerName: client.name,
+  };
   let supportChannel: Doc<"slackChannelBindings"> | null = null;
   for (const status of ["active", "unavailable", "archived"] as const) {
     supportChannel = await ctx.db
@@ -387,7 +373,6 @@ function settingsInput(
     slackEnabled: settings.slackEnabled,
     slackSafeAlertsEnabled: settings.slackSafeAlertsEnabled,
     slackVendorAlertsEnabled: settings.slackVendorAlertsEnabled,
-    slackPolicyDeliveryEnabled: settings.slackPolicyDeliveryEnabled,
   };
 }
 
@@ -560,12 +545,6 @@ export const updateStandaloneAgentEmailHandleForOperator = mutation({
     if (!client || (client.type ?? "client") !== "client") {
       throw new Error("Client organization not found");
     }
-    if (client.brokerOrgId) {
-      throw new Error(
-        "This client inherits its agent email address from its broker",
-      );
-    }
-
     const handle = normalizeAgentHandle(args.handle);
     validateAgentHandle(handle);
     if (handle) {
@@ -1524,41 +1503,12 @@ export const upsertSlackConnection = internalMutation({
         slackEnabled: true,
         slackSafeAlertsEnabled: current.slackSafeAlertsEnabled,
         slackVendorAlertsEnabled: current.slackVendorAlertsEnabled,
-        slackPolicyDeliveryEnabled: current.slackPolicyDeliveryEnabled,
       },
       {
         updatedByUserId: args.installedByUserId,
         updatedByOperatorUserId: args.installedByOperatorUserId,
       },
     );
-    const deliverySettings = await ctx.db
-      .query("policyDeliverySettings")
-      .withIndex("owner_client", (q) =>
-        q
-          .eq("deliveryOwnerOrgId", args.clientOrgId)
-          .eq("clientOrgId", args.clientOrgId),
-      )
-      .first();
-    if (!deliverySettings) {
-      if (!connectionId) throw new Error("Slack connection was not created");
-      const persistedConnection = await ctx.db.get(connectionId);
-      if (!persistedConnection)
-        throw new Error("Slack connection was not found");
-      await ctx.db.insert("policyDeliverySettings", {
-        deliveryOwnerOrgId: args.clientOrgId,
-        clientOrgId: args.clientOrgId,
-        enabled: true,
-        channels: ["slack"],
-        defaultAction: "auto_send",
-        deliverBeforeClientAcceptance: false,
-        updatedByUserId:
-          args.installedByUserId ??
-          args.installedByOperatorUserId ??
-          persistedConnection.serviceUserId,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
     const activeBinding = await ctx.db
       .query("slackChannelBindings")
       .withIndex("client_status", (q) =>

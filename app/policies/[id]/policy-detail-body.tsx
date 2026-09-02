@@ -496,8 +496,6 @@ export function PolicyDetailBody({
   const canEditExtractedFields =
     operatorMode ||
     (viewerOrg?.org as { type?: "broker" } | undefined)?.type === "broker";
-  const canRequestBrokerExtractionHelp =
-    !!viewerOrg?.brokerOrg && !readOnly && !isArchived;
   const pipelineStatus = p.pipelineStatus as PipelineStatus | undefined;
   const extractionDataStage = policyDataStage(p);
   const isPolicyFinal =
@@ -1249,7 +1247,6 @@ export function PolicyDetailBody({
               }
             }
             readOnly={readOnly || isArchived}
-            canRequestBrokerHelp={canRequestBrokerExtractionHelp}
           />
         </FadeIn>
       )}

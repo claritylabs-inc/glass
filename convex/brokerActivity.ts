@@ -36,9 +36,11 @@ export const listPortfolio = query({
     typeFilter: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    throw new Error("Broker client activity is retired; use broker network profiles");
+    /* legacy compatibility implementation retained until narrowing migration */
     const access = await getOrgAccessForQuery(ctx, args.brokerOrgId);
     if (!access) return [];
-    assertBrokerOrg(access);
+    assertBrokerOrg(access!);
 
     const limit = args.limit ?? 50;
     const events = await ctx.db
@@ -74,6 +76,8 @@ export const listPortfolioInternal = internalQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    throw new Error("Broker client activity is retired; use broker network profiles");
+    /* legacy compatibility implementation retained until narrowing migration */
     const limit = args.limit ?? 50;
     const events = await ctx.db
       .query("brokerActivity")
@@ -105,9 +109,11 @@ export const listForClient = query({
     typeFilter: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    throw new Error("Broker client activity is retired; use broker network profiles");
+    /* legacy compatibility implementation retained until narrowing migration */
     const brokerAccess = await getOrgAccessForQuery(ctx, args.brokerOrgId);
     if (!brokerAccess) return [];
-    assertBrokerOrg(brokerAccess);
+    assertBrokerOrg(brokerAccess!);
 
     const limit = args.limit ?? 50;
     const events = await ctx.db

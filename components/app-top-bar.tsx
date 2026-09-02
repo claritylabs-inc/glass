@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
-import { BrokerShareLinkButton } from "@/components/broker-share-link-button";
 import { PillButtonSizeProvider } from "@/components/ui/pill-button";
 import { typeStyle } from "@/lib/typography";
 
 const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/": { label: "Dashboard" },
   "/policies": { label: "Policies" },
+  "/requests": { label: "Requests" },
+  "/broker": { label: "Profile" },
   "/connect": { label: "Connect" },
   "/connect/clients": { label: "Clients", href: "/connect/clients" },
   "/connect/vendors": { label: "Vendors", href: "/connect/vendors" },
@@ -17,7 +18,6 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/compliance": { label: "Compliance" },
   "/clients": { label: "Clients" },
   "/certificates": { label: "Certificates" },
-  "/deliveries": { label: "Deliveries" },
   "/activity": { label: "Activity" },
   "/connections": { label: "Context" },
   "/agent": { label: "Agent Threads", href: "/policies" },
@@ -105,7 +105,6 @@ export function AppTopBar({
   breadcrumbDetail,
   onMobileMenuToggle,
   presenceUsers,
-  showBrokerShare = true,
 }: {
   actions?: React.ReactNode;
   breadcrumbDetail?: React.ReactNode;
@@ -169,7 +168,6 @@ export function AppTopBar({
               <div className="w-px h-4 bg-foreground/10" />
             </>
           )}
-          {showBrokerShare ? <BrokerShareLinkButton /> : null}
           {actions}
         </div>
       </PillButtonSizeProvider>

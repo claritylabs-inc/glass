@@ -6,7 +6,6 @@ import { effectiveExtractionDataStage } from "./backfillDeclarationFacts";
 import { recordCarrierIdentityBackfillResult } from "./carrierIdentityBackfill";
 import { replacePolicyDeclarationFacts } from "./declarationFacts";
 import { carrierIdentityBackfillSkipReason } from "./lib/carrierIdentityBackfill";
-import { resolveLegacyDeliveryOwner } from "./lib/policyDeliveryMigration";
 import { syncOrgProfileFromDeclarationFacts } from "./lib/orgProfileFacts";
 import {
   applyCarrierIdentityEnrichment,
@@ -110,45 +109,6 @@ export const rebuildCarrierIdentitiesFromStoredSources = migrations.define({
   },
 });
 
-export const backfillPolicyDeliverySettingOwners = migrations.define({
-  table: "policyDeliverySettings",
-  batchSize: 50,
-  migrateOne: async (ctx, settings) => {
-    const deliveryOwnerOrgId = resolveLegacyDeliveryOwner(settings);
-    if (!deliveryOwnerOrgId || settings.deliveryOwnerOrgId) return;
-    await ctx.db.patch(settings._id, { deliveryOwnerOrgId });
-  },
-});
-
-export const backfillPolicyDeliveryRuleOwners = migrations.define({
-  table: "policyDeliveryRules",
-  batchSize: 50,
-  migrateOne: async (ctx, rule) => {
-    const deliveryOwnerOrgId = resolveLegacyDeliveryOwner(rule);
-    if (!deliveryOwnerOrgId || rule.deliveryOwnerOrgId) return;
-    await ctx.db.patch(rule._id, { deliveryOwnerOrgId });
-  },
-});
-
-export const backfillPolicyDeliveryJobOwners = migrations.define({
-  table: "policyDeliveryJobs",
-  batchSize: 50,
-  migrateOne: async (ctx, job) => {
-    if (job.deliveryOwnerOrgId) return;
-    await ctx.db.patch(job._id, { deliveryOwnerOrgId: job.clientOrgId });
-  },
-});
-
-export const backfillPolicyDeliveryAttemptOwners = migrations.define({
-  table: "policyDeliveryAttempts",
-  batchSize: 50,
-  migrateOne: async (ctx, attempt) => {
-    if (attempt.deliveryOwnerOrgId) return;
-    await ctx.db.patch(attempt._id, {
-      deliveryOwnerOrgId: attempt.clientOrgId,
-    });
-  },
-});
 
 export const unsetLegacyCoiAttachmentAuthorization = migrations.define({
   table: "pendingEmails",
@@ -196,6 +156,71 @@ export const backfillSlackActorSpotIdentity = migrations.define({
   },
 });
 
+export const migrateProcurementRequestStatuses = migrations.define({
+  table: "procurementRequests",
+  batchSize: 50,
+  migrateOne: async (ctx, request) => {
+    const mapped = request.status === "quote_review" || request.status === "client_decision"
+      ? "proposal_review" as const
+      : request.status === "accepted"
+        ? "binding" as const
+        : request.status === "closed"
+          ? "completed" as const
+          : request.status;
+    const patch: Record<string, unknown> = {};
+    if (mapped !== request.status) patch.status = mapped;
+    if (request.requirementRevision === undefined) patch.requirementRevision = 0;
+    if (request.specificationRevision === undefined) patch.specificationRevision = 0;
+    if (request.createdBySide === undefined) patch.createdBySide = "operator";
+    if (request.clientVisible === undefined) patch.clientVisible = false;
+    if (request.originalNarrative === undefined) patch.originalNarrative = request.requestSummary;
+    if (Object.keys(patch).length) await ctx.db.patch(request._id, patch);
+  },
+});
+
+function normalizedBrokerName(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export const migrateProcurementOutreaches = migrations.define({
+  table: "procurementBrokerOutreaches",
+  batchSize: 10,
+  migrateOne: async (ctx, outreach) => {
+    let brokerOrgId = outreach.brokerOrgId;
+    if (!brokerOrgId) {
+      const brokers = await ctx.db.query("organizations").withIndex("type", (q) => q.eq("type", "broker")).collect();
+      const matches = brokers.filter((broker) => normalizedBrokerName(broker.name) === normalizedBrokerName(outreach.brokerName));
+      if (matches.length > 1) throw new Error(`Ambiguous legacy broker name: ${outreach.brokerName}`);
+      if (matches.length === 1) brokerOrgId = matches[0]._id;
+      else {
+        brokerOrgId = await ctx.db.insert("organizations", { name: outreach.brokerName, type: "broker", operatorStatus: "live", onboardingComplete: true });
+        await ctx.db.insert("brokerProfiles", { brokerOrgId, networkStatus: "prospect", writingStates: [], lineOfBusinessCodes: [], createdByUserId: outreach.createdByUserId, updatedByUserId: outreach.updatedByUserId, createdAt: outreach.createdAt, updatedAt: outreach.updatedAt });
+      }
+    }
+    const patch: Record<string, unknown> = { brokerOrgId };
+    if (!outreach.contactSnapshot) patch.contactSnapshot = { name: outreach.contactName, email: outreach.contactEmail, phone: outreach.contactPhone };
+    await ctx.db.patch(outreach._id, patch);
+    const quoteFiles = await ctx.db.query("procurementFileItems").withIndex("outreach", (q) => q.eq("outreachId", outreach._id)).collect();
+    const hasLegacyQuote = Boolean(outreach.quoteSummary || outreach.quoteAmount !== undefined || outreach.quoteUrl || quoteFiles.some((file) => file.purpose === "quote"));
+    if (!hasLegacyQuote) return;
+    const existing = await ctx.db.query("procurementProposals").withIndex("outreach", (q) => q.eq("outreachId", outreach._id)).first();
+    if (existing) return;
+    await ctx.db.insert("procurementProposals", { requestId: outreach.requestId, clientOrgId: outreach.clientOrgId, brokerOrgId, outreachId: outreach._id, status: "draft", extractedOffer: { legacyQuoteSummary: outreach.quoteSummary, premiumAmount: outreach.quoteAmount, currency: outreach.quoteCurrency, quoteUrl: outreach.quoteUrl }, createdByUserId: outreach.createdByUserId, updatedByUserId: outreach.updatedByUserId, createdAt: outreach.createdAt, updatedAt: outreach.updatedAt });
+  },
+});
+
+export const purgePolicyDeliverySettings = migrations.define({ table: "policyDeliverySettings", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
+export const purgePolicyDeliveryRules = migrations.define({ table: "policyDeliveryRules", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
+export const purgePolicyDeliveryJobs = migrations.define({ table: "policyDeliveryJobs", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
+export const purgePolicyDeliveryAttempts = migrations.define({ table: "policyDeliveryAttempts", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
+export const purgeBrokerBranding = migrations.define({
+  table: "organizations", batchSize: 50,
+  migrateOne: async (ctx, org) => {
+    if (org.type !== "broker") return;
+    await ctx.db.patch(org._id, { whiteLabelingEnabled: undefined, brandingColor: undefined, brandingMode: undefined, brandingTextOnAccent: undefined, agentDisplayName: undefined });
+  },
+});
+
 export const runDeclarationFactsBackfill = migrations.runner([
   internal.migrations.backfillDeclarationFacts,
   internal.migrations.syncDeclarationFactProfiles,
@@ -203,13 +228,6 @@ export const runDeclarationFactsBackfill = migrations.runner([
 
 export const runCarrierIdentityBackfill = migrations.runner([
   internal.migrations.rebuildCarrierIdentitiesFromStoredSources,
-]);
-
-export const runPolicyDeliveryOwnerBackfill = migrations.runner([
-  internal.migrations.backfillPolicyDeliverySettingOwners,
-  internal.migrations.backfillPolicyDeliveryRuleOwners,
-  internal.migrations.backfillPolicyDeliveryJobOwners,
-  internal.migrations.backfillPolicyDeliveryAttemptOwners,
 ]);
 
 export const runLegacyCoiAttachmentAuthorizationCleanup = migrations.runner([
@@ -222,4 +240,18 @@ export const runSlackInboundEventMentionsSpotBackfill = migrations.runner([
 
 export const runSlackActorSpotIdentityBackfill = migrations.runner([
   internal.migrations.backfillSlackActorSpotIdentity,
+]);
+
+export const runProcurementDomainBackfill = migrations.runner([
+  internal.migrations.migrateProcurementRequestStatuses,
+  internal.migrations.migrateProcurementOutreaches,
+]);
+
+// Run only after procurementMigration.auditLegacyNarrowing reports safe=true.
+export const runProcurementLegacyPurge = migrations.runner([
+  internal.migrations.purgePolicyDeliveryAttempts,
+  internal.migrations.purgePolicyDeliveryJobs,
+  internal.migrations.purgePolicyDeliveryRules,
+  internal.migrations.purgePolicyDeliverySettings,
+  internal.migrations.purgeBrokerBranding,
 ]);

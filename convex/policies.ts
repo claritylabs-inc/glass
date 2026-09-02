@@ -3,23 +3,16 @@ import { mutation, query, internalQuery, internalMutation } from "./_generated/s
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
-  requireBrokerAccessToClient,
   getCurrentOrgAccess,
-  getOrgAccessForQuery,
   getPolicyAccessForQuery,
-  requireCurrentOrgAccess,
   assertCanEditPolicyExtractedFields,
   assertCanUploadPolicy,
   assertCanArchivePolicy,
   assertCanReadPolicies,
-  assertCanReadPolicy,
   getOrgAccess,
   type OrgAccess,
 } from "./lib/access";
-import { recordBrokerActivity } from "./lib/brokerActivity";
-import { notify } from "./lib/notify";
 import {
-  assertImpersonatedBrokerTaskWrite,
   assertImpersonatedSetupWrite,
   requireOperator,
   writeOperatorAudit,
@@ -1354,6 +1347,11 @@ export const insert = mutation({
     document: v.optional(documentValidator),
   },
   handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    if (!args.orgId) throw new Error("Client organization is required");
+    const client = await ctx.db.get(args.orgId);
+    if (!client || client.type !== "client") throw new Error("Client not found");
+    await assertImpersonatedSetupWrite(ctx, args.orgId);
     const now = nowMs();
     const fileSha256 = normalizeFileSha256(args.fileSha256);
     const uploadFileSha256s = normalizeFileSha256s(
@@ -1366,6 +1364,10 @@ export const insert = mutation({
     } = args;
     const fields = {
       ...rawFields,
+      userId: operator.userId,
+      orgId: args.orgId,
+      uploadedBySide: "operator" as const,
+      uploadedByUserId: operator.userId,
       linesOfBusiness: toLobCodes(rawFields.linesOfBusiness),
     };
     return await ctx.db.insert("policies", {
@@ -1593,23 +1595,6 @@ export const updateExtraction = mutation({
     const { id, ...fields } = args;
     await ctx.db.patch(id, normalizeEditableFields(fields));
 
-    // Emit broker activity if extraction is now complete
-    if ((fields as { pipelineStatus?: string }).pipelineStatus === "complete") {
-      const policy = await ctx.db.get(id);
-      if (policy?.orgId) {
-        const org = await ctx.db.get(policy.orgId);
-        if (org && (org as { brokerOrgId?: DataModelId<"organizations"> }).brokerOrgId) {
-          await recordBrokerActivity(ctx, {
-            brokerOrgId: (org as { brokerOrgId: DataModelId<"organizations"> }).brokerOrgId,
-            clientOrgId: policy.orgId,
-            type: "policy_extraction_completed",
-            actorSide: "system",
-            summary: `Policy ${(policy as { policyNumber?: string }).policyNumber ?? id} (${(policy as { carrier?: string }).carrier ?? "unknown carrier"}) extraction completed.`,
-            payload: { policyId: id },
-          });
-        }
-      }
-    }
   },
 });
 
@@ -1988,69 +1973,6 @@ export const answerCoverageReviewQuestion = mutation({
   },
 });
 
-export const requestCoverageReviewBrokerHelp = mutation({
-  args: {
-    id: v.id("policies"),
-    questionId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const policy = await ctx.db.get(args.id);
-    if (!policy?.orgId) throw new Error("Not found");
-    const access = await getOrgAccess(ctx, policy.orgId, {
-      allowOperator: true,
-    });
-    assertCanUploadPolicy(access);
-    await assertImpersonatedSetupWrite(ctx, policy.orgId);
-    const org = await ctx.db.get(policy.orgId);
-    if (!org || org.type !== "client" || !org.brokerOrgId) {
-      throw new Error("No connected broker is available for this policy");
-    }
-
-    const review = policy.extractionReview as
-      | { questions?: Array<Record<string, unknown>> }
-      | undefined;
-    const questions = Array.isArray(review?.questions) ? review.questions : [];
-    const questionIndex = questions.findIndex((question) => question.id === args.questionId);
-    if (questionIndex < 0) throw new Error("Question not found");
-    const question = questions[questionIndex];
-    const now = nowMs();
-    const nextQuestions = [...questions];
-    nextQuestions[questionIndex] = {
-      ...question,
-      status: "broker_help_requested",
-      brokerHelpRequestedAt: now,
-      brokerHelpRequestedByUserId: access.userId,
-    };
-
-    await ctx.db.patch(args.id, {
-      extractionReview: {
-        ...(review ?? {}),
-        questions: nextQuestions,
-      },
-    });
-    await notify(ctx, {
-      orgId: org.brokerOrgId,
-      type: "broker_action",
-      title: "Coverage extraction needs review",
-      body: `${org.name ?? "A client"} requested help confirming ${String(question.coverageName ?? "a coverage")} on policy ${policy.policyNumber ?? args.id}.`,
-      severity: "warning",
-      relatedOrgId: policy.orgId,
-      actionType: "view_policy",
-      actionPayload: { policyId: args.id },
-      sourceRef: { policyId: args.id, questionId: args.questionId },
-      coalesceKeyParts: ["coverage_review_help", String(args.id), args.questionId],
-    });
-    await ctx.db.insert("policyAuditLog", {
-      policyId: args.id,
-      userId: access.userId,
-      orgId: policy.orgId,
-      action: "requested_broker_extraction_review_help",
-      detail: String(question.question ?? "Coverage review question"),
-      metadata: { questionId: args.questionId },
-    });
-  },
-});
-
 export const confirmPolicyFactFromSource = internalMutation({
   args: {
     id: v.id("policies"),
@@ -2140,7 +2062,7 @@ export const confirmPolicyFactFromSource = internalMutation({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireCurrentOrgAccess(ctx);
+    await requireOperator(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });
@@ -2214,67 +2136,6 @@ export const hasPendingExtractionInternal = internalQuery({
   },
 });
 
-// Broker uploads a policy on behalf of a client org.
-// Requires broker_of_client access to the clientOrgId.
-export const createBrokerUpload = mutation({
-  args: {
-    clientOrgId: v.id("organizations"),
-    fileId: v.id("_storage"),
-    fileName: v.optional(v.string()),
-    fileSha256: v.optional(v.string()),
-    uploadFileSha256s: v.optional(v.array(v.string())),
-    documentType: v.literal("policy"),
-    note: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const access = await requireBrokerAccessToClient(ctx, args.clientOrgId);
-    assertCanUploadPolicy(access);
-    await assertImpersonatedBrokerTaskWrite(ctx, args.clientOrgId);
-    const fileSha256 = normalizeFileSha256(args.fileSha256);
-
-    const policyId = await ctx.db.insert("policies", {
-      orgId: args.clientOrgId,
-      fileId: args.fileId,
-      fileName: args.fileName,
-      uploadFileSha256s: normalizeFileSha256s(
-        args.uploadFileSha256s ?? (fileSha256 ? [fileSha256] : undefined),
-      ),
-      documentType: args.documentType,
-      carrier: "Extracting...",
-      policyNumber: "Extracting...",
-      linesOfBusiness: ["UN"],
-      policyYear: dayjs().year(),
-      effectiveDate: "Extracting...",
-      expirationDate: "Extracting...",
-      isRenewal: false,
-      coverages: [],
-      insuredName: "Extracting...",
-      extractionDataStage: "placeholder",
-      extractionDataStageUpdatedAt: nowMs(),
-      uploadedBySide: "broker",
-      uploadedByUserId: access.userId,
-      uploadedByBrokerOrgId: access.brokerOrgId,
-    });
-
-    // Emit broker-activity event for upload
-    await recordBrokerActivity(ctx, {
-      brokerOrgId: access.brokerOrgId,
-      clientOrgId: args.clientOrgId,
-      type: "policy_uploaded",
-      actorUserId: access.userId,
-      actorSide: "broker",
-      payload: {
-        policyId,
-        documentType: args.documentType,
-        uploadedBySide: "broker",
-      },
-      summary: "Broker uploaded a policy on behalf of client",
-    });
-
-    return policyId;
-  },
-});
-
 // Operators use an explicit client target instead of impersonating a client or
 // pretending to be its broker. The resulting policy keeps operator provenance
 // and records the support write in the operator audit trail.
@@ -2335,19 +2196,16 @@ export const createOperatorUpload = mutation({
   },
 });
 
-// Broker queries all policies for a client org they manage.
-export const listForBroker = query({
+// Operators query policies for an explicit client organization. Tenant clients
+// use listForClient and receive read-only policy access.
+export const listForOperator = query({
   args: {
     clientOrgId: v.id("organizations"),
     documentType: v.optional(v.literal("policy")),
     archived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const access = await getOrgAccessForQuery(ctx, args.clientOrgId, {
-      allowOperator: true,
-    });
-    if (!access) return [];
-    assertCanReadPolicy(access);
+    await requireOperator(ctx);
     const all = await ctx.db
       .query("policies")
       .withIndex("organization", (idx) => idx.eq("orgId", args.clientOrgId))

@@ -14,7 +14,7 @@ When any source above adds, removes, renames, or materially changes a tool, upda
 
 ## Operator agent registry
 
-The operator registry currently contains 48 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
+The operator registry currently contains 57 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
 
 The internal Slack adapter exposes this registry through App Home DMs and direct mentions from any channel delivered by the installed Clarity host app. Convex applies no channel allowlist, type, privacy, sharing, or membership gate. Customer connection and Slack Connect binding resolution takes precedence, and every invocation still requires an active operator profile linked to the exact host-workspace Slack identity.
 
@@ -45,6 +45,10 @@ The internal Slack adapter exposes this registry through App Home DMs and direct
 | `delete_procurement_memory`          | Permanently delete one exact procurement learning.                                    | `operator.procurement.write`    | destructive      | operator | exact        | mutation  |
 | `list_procurement_requests`          | List new-policy procurement requests for one client.                                  | `operator.procurement.read`     | read             | operator | none         | mutation  |
 | `get_procurement_request`            | Read one procurement request and its broker, file, policy, and email state.           | `operator.procurement.read`     | read             | operator | none         | mutation  |
+| `list_procurement_proposals`         | List operator-private proposal offers for one exact request.                          | `operator.procurement.read`     | read             | operator | none         | mutation  |
+| `get_procurement_proposal`           | Read one operator-private proposal, documents, extracted offer, and reviews.          | `operator.procurement.read`     | read             | operator | none         | mutation  |
+| `list_broker_network_profiles`       | Search supplier brokers by status, writing state, or exact ACORD LOBCd.               | `operator.organizations.read`   | read             | operator | none         | mutation  |
+| `get_broker_network_profile`         | Read one broker's neutral network profile, contacts, and market history.              | `operator.organizations.read`   | read             | operator | none         | mutation  |
 | `get_procurement_forwarding_address` | Read the unique email forwarding address for one procurement request.                 | `operator.procurement.read`     | read             | operator | none         | mutation  |
 | `list_procurement_email_threads`     | List imported forwarding-email threads for a procurement request.                     | `operator.procurement.read`     | read             | operator | none         | mutation  |
 | `get_procurement_email_thread`       | Read one imported procurement email thread and bounded message content.               | `operator.procurement.read`     | read             | operator | none         | mutation  |
@@ -59,8 +63,13 @@ The internal Slack adapter exposes this registry through App Home DMs and direct
 | `update_client_file`                 | Rename a client file or change its visibility or policy association.                  | `operator.client_files.write`   | reversible write | operator | exact        | mutation  |
 | `create_procurement_request`         | Create a new-policy procurement request and forwarding address.                       | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `update_procurement_request`         | Update a procurement request's supplied fields and policy links.                      | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
-| `create_procurement_broker_outreach` | Add a contacted broker and its application or quote state.                            | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
-| `update_procurement_broker_outreach` | Update a broker outreach record, workflow status, application, or quote.              | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
+| `confirm_procurement_requirement`    | Confirm a staged draft and reuse an identical active canonical requirement.           | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
+| `create_procurement_proposal`        | Create a private proposal tied to an exact broker and matching outreach.               | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
+| `confirm_procurement_proposal_review`| Confirm or override only a current review's overall conclusion.                       | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
+| `select_procurement_proposal`        | Atomically select one proposal with a current staff-confirmed review.                  | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
+| `update_broker_network_profile`      | Update a broker's status, office, states, ACORD lines, and neutral identity.           | `operator.organizations.write`  | reversible write | operator | exact        | mutation  |
+| `create_procurement_broker_outreach` | Add a real broker-network organization and immutable contact/application context.     | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
+| `update_procurement_broker_outreach` | Update outreach workflow state or application context; quotes remain proposals.       | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `create_procurement_file_item`       | Track a procurement requirement, application, quote, or other file.                   | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `update_procurement_file_item`       | Update a procurement file item and its optional links.                                | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `update_procurement_email_thread`    | Correct an imported procurement email's category or request assignment.               | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
@@ -166,7 +175,7 @@ Email expert:
 
 ## Tenant OAuth MCP catalog
 
-The tenant MCP catalog is separate from the model-callable tools above. It currently contains 38 tools. “Write” means the catalog requires OAuth write scope; runtime organization, role, and resource authorization still apply. Access annotations and the pre-dispatch scope check are derived from the same typed catalog entry, so adding a write tool requires declaring `effect: "write"` in that entry.
+The tenant MCP catalog is separate from the model-callable tools above. It currently contains 35 tools. “Write” means the catalog requires OAuth write scope; runtime organization, role, and resource authorization still apply. Access annotations and the pre-dispatch scope check are derived from the same typed catalog entry, so adding a write tool requires declaring `effect: "write"` in that entry. Procurement proposals, broker outreach, packets, and imported request email are intentionally absent.
 
 | Tool                             | Purpose                                                                    | MCP access                                                                         |
 | -------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -198,9 +207,6 @@ The tenant MCP catalog is separate from the model-callable tools above. It curre
 | `create_company_memory`          | Create a stable company-profile fact for the token's organization.         | write; current direct organization admin only                                      |
 | `update_company_memory`          | Update one exact company-profile fact in the token's organization.         | write; current direct organization admin only                                      |
 | `delete_company_memory`          | Permanently delete one exact company-profile fact.                         | write; destructive; current direct organization admin only                         |
-| `list_clients`                   | List clients visible to a broker.                                          | read; broker only                                                                  |
-| `get_client`                     | Get client profile and policy-count data.                                  | read; broker only                                                                  |
-| `list_broker_activity`           | List broker portfolio activity.                                            | read; broker only                                                                  |
 | `list_connected_vendors`         | List connected vendors that approved insurance access.                     | read                                                                               |
 | `get_connected_vendor`           | Get one connected vendor's profile and policy count.                       | read                                                                               |
 | `list_connected_vendor_policies` | List policies for one connected vendor.                                    | read                                                                               |

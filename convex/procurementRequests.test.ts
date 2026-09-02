@@ -314,6 +314,7 @@ describe("procurement requests", () => {
     const second = await createRequest(fixture, "Assigned request");
     await operator.mutation(api.procurementRequests.createOutreach, {
       requestId: first.requestId,
+      brokerOrgId: fixture.brokerOrgId,
       brokerName: "Broker One",
       contactEmail: "broker@example.com",
     });

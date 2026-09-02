@@ -23,17 +23,6 @@ type CleanupReport = {
       removedPolicyTypes: string[];
     }>;
   };
-  deliveryRules: {
-    scannedCount: number;
-    changedCount: number;
-    samples: Array<{
-      ruleId: Id<"policyDeliveryRules">;
-      removed: {
-        productLines?: string[];
-        policyTypes?: string[];
-      };
-    }>;
-  };
   continuationScheduled: boolean;
 };
 
@@ -41,11 +30,6 @@ function emptyReport(dryRun: boolean): CleanupReport {
   return {
     dryRun,
     policies: {
-      scannedCount: 0,
-      changedCount: 0,
-      samples: [],
-    },
-    deliveryRules: {
       scannedCount: 0,
       changedCount: 0,
       samples: [],
@@ -62,11 +46,6 @@ function mergeReports(left: CleanupReport, right: CleanupReport): CleanupReport 
       changedCount: left.policies.changedCount + right.policies.changedCount,
       samples: [...left.policies.samples, ...right.policies.samples].slice(0, 25),
     },
-    deliveryRules: {
-      scannedCount: left.deliveryRules.scannedCount + right.deliveryRules.scannedCount,
-      changedCount: left.deliveryRules.changedCount + right.deliveryRules.changedCount,
-      samples: [...left.deliveryRules.samples, ...right.deliveryRules.samples].slice(0, 25),
-    },
     continuationScheduled: left.continuationScheduled || right.continuationScheduled,
   };
 }
@@ -82,7 +61,6 @@ export const cleanup = internalAction({
     const limit = Math.min(Math.max(args.limit ?? 200, 1), 200);
     let report = emptyReport(dryRun);
     let policyCursor: string | null = null;
-    let ruleCursor: string | null = null;
 
     do {
       const batch: CleanupReport & { nextCursor?: string | null; isDone?: boolean } =
@@ -95,18 +73,6 @@ export const cleanup = internalAction({
       report = mergeReports(report, batch);
       policyCursor = dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
     } while (dryRun && policyCursor);
-
-    do {
-      const batch: CleanupReport & { nextCursor?: string | null; isDone?: boolean } =
-        await ctx.runMutation((internal as any).cleanupLegacyLineOfBusinessFieldsBatches.cleanupDeliveryRulesBatchInternal, {
-          orgId: args.orgId,
-          dryRun,
-          limit,
-          cursor: ruleCursor,
-        });
-      report = mergeReports(report, batch);
-      ruleCursor = dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
-    } while (dryRun && ruleCursor);
 
     return report;
   },

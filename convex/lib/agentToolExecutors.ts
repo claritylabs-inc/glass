@@ -197,7 +197,7 @@ function formatPolicyForTool(policy: Record<string, any>, scope: AgentScope) {
     dataStage: extractionDataStage,
     provisional,
     availabilityNote: provisional
-      ? "Extraction is complete for this policy and enrichment is still running. Summaries and broad comparisons are available, but source evidence, COIs, policy delivery, policy changes, and endorsements require enrichment to finish."
+      ? "Extraction is complete for this policy and enrichment is still running. Summaries and broad comparisons are available, but source evidence, COIs, policy changes, and endorsements require enrichment to finish."
       : undefined,
     coverages: (policy.coverages ?? []).map((coverage: any) => ({
       name: coverage.name,
@@ -1019,7 +1019,7 @@ export function buildAgentToolExecutors(
           ctx,
           options,
           params.policyId,
-          "original policy delivery",
+          "original policy document access",
         );
         if (!resolved.ok) return resolved.message;
         const policy = resolved.policy;

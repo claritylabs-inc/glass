@@ -15,7 +15,6 @@ import {
   getCurrentOrgAccess as getOrgAccess,
 } from "./lib/access";
 import { agentStepsValidator } from "./lib/agentSteps";
-import { getBrokerAccessToClientForQuery } from "./lib/access";
 import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
 import {
   getActiveOperatorImpersonation,
@@ -313,94 +312,6 @@ export const messages = query({
     const { userId, orgId } = await requireOrgAccess(ctx);
     const thread = await ctx.db.get(args.threadId);
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
-      return [];
-    const messages = await ctx.db
-      .query("threadMessages")
-      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
-      .collect();
-    return messages.map(clientVisibleMessage);
-  },
-});
-
-// ── Broker-scoped read-only queries ──
-
-export const listForClient = query({
-  args: {
-    clientOrgId: v.id("organizations"),
-    archived: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
-    if (!access) return [];
-    const all = await ctx.db
-      .query("threads")
-      .withIndex("organization_activity", (q) =>
-        q.eq("orgId", args.clientOrgId),
-      )
-      .order("desc")
-      .collect();
-    const visible = all.filter((thread) =>
-      canAccessThread({
-        userId: access.userId,
-        userOrgId: access.brokerOrgId,
-        thread,
-        clientOrg: access.org,
-      }),
-    );
-    if (args.archived) {
-      return withImessageGroupDisplayTitles(
-        ctx,
-        visible.filter((t) => !!t.archivedAt),
-      );
-    }
-    return withImessageGroupDisplayTitles(
-      ctx,
-      visible.filter((t) => !t.archivedAt),
-    );
-  },
-});
-
-export const getForClient = query({
-  args: {
-    clientOrgId: v.id("organizations"),
-    id: v.id("threads"),
-  },
-  handler: async (ctx, args) => {
-    const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
-    if (!access) return null;
-    const thread = await ctx.db.get(args.id);
-    if (
-      !thread ||
-      !canAccessThread({
-        userId: access.userId,
-        userOrgId: access.brokerOrgId,
-        thread,
-        clientOrg: access.org,
-      })
-    )
-      return null;
-    return withImessageGroupDisplayTitle(ctx, thread);
-  },
-});
-
-export const messagesForClient = query({
-  args: {
-    clientOrgId: v.id("organizations"),
-    threadId: v.id("threads"),
-  },
-  handler: async (ctx, args) => {
-    const access = await getBrokerAccessToClientForQuery(ctx, args.clientOrgId);
-    if (!access) return [];
-    const thread = await ctx.db.get(args.threadId);
-    if (
-      !thread ||
-      !canAccessThread({
-        userId: access.userId,
-        userOrgId: access.brokerOrgId,
-        thread,
-        clientOrg: access.org,
-      })
-    )
       return [];
     const messages = await ctx.db
       .query("threadMessages")

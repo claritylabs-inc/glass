@@ -575,7 +575,6 @@ async function unlinkByThreadId(
   ctx: MutationCtx,
   table:
     | "connectedEmailAutomationItems"
-    | "policyDeliveryJobs"
     | "certificateWorkflowJobs",
   threadId: Id<"threads">,
 ) {
@@ -665,14 +664,6 @@ export const deleteTargetBatch = internalMutation({
             "connectedEmailAutomationItems",
             target.threadId,
           )
-        ) {
-          await scheduleDeleteTarget(ctx, target._id);
-        } else await advance("policy_delivery");
-        return;
-      }
-      if (stage === "policy_delivery") {
-        if (
-          await unlinkByThreadId(ctx, "policyDeliveryJobs", target.threadId)
         ) {
           await scheduleDeleteTarget(ctx, target._id);
         } else await advance("certificate_workflow");

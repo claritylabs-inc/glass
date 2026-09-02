@@ -104,7 +104,6 @@ describe("Slack lifecycle state machine", () => {
           slackEnabled: true,
           slackSafeAlertsEnabled: true,
           slackVendorAlertsEnabled: false,
-          slackPolicyDeliveryEnabled: true,
           createdAt: 100,
           updatedAt: 100,
         }),

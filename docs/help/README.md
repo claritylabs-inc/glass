@@ -12,7 +12,7 @@ setup steps or troubleshooting:
 - [iMessage](client-engagement/imessage.md)
 - [Slack](client-engagement/slack.md)
 - [Connected mailboxes](client-engagement/connected-mailboxes.md)
-- [Notifications and policy delivery](client-engagement/notifications-and-policy-delivery.md)
+- [Notifications](client-engagement/notifications.md)
 - [Common service requests](client-engagement/service-requests.md)
 
 The labels in these guides match the current Spot app. Some settings are

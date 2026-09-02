@@ -158,7 +158,6 @@ async function seedRepairConnection(t: ReturnType<typeof convexTest>) {
       slackEnabled: true,
       slackSafeAlertsEnabled: true,
       slackVendorAlertsEnabled: true,
-      slackPolicyDeliveryEnabled: true,
       createdAt: 1,
       updatedAt: 1,
     });
@@ -553,7 +552,6 @@ describe("Slack OAuth actions", () => {
       connection: await ctx.db.query("slackWorkspaceConnections").first(),
       installation: await ctx.db.query("slackInstallations").first(),
       channelSettings: await ctx.db.query("agentChannelSettings").first(),
-      deliverySettings: await ctx.db.query("policyDeliverySettings").first(),
     }));
     expect(records.connection).toMatchObject({
       clientOrgId,
@@ -570,12 +568,6 @@ describe("Slack OAuth actions", () => {
     expect(records.installation?.encryptedBotToken).toBeTruthy();
     expect(records.installation?.encryptedRefreshToken).toBeTruthy();
     expect(records.channelSettings?.slackEnabled).toBe(true);
-    expect(records.deliverySettings).toMatchObject({
-      deliveryOwnerOrgId: clientOrgId,
-      clientOrgId,
-      channels: ["slack"],
-      defaultAction: "auto_send",
-    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
       Authorization: expect.stringMatching(/^Basic /),
@@ -867,7 +859,6 @@ describe("Slack OAuth actions", () => {
         slackEnabled: true,
         slackSafeAlertsEnabled: true,
         slackVendorAlertsEnabled: false,
-        slackPolicyDeliveryEnabled: true,
         createdAt: 1,
         updatedAt: 1,
       });

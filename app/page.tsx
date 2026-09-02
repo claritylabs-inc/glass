@@ -10,7 +10,7 @@ export default function RootPage() {
   const targetHref = !currentOrg
     ? null
     : currentOrg.isBroker
-        ? "/clients"
+        ? "/broker"
         : "/policies";
 
   useEffect(() => {

@@ -7,7 +7,6 @@ import type { Id } from "./_generated/dataModel";
 import {
   claimBatch,
   claimInbound,
-  createDeliveryRecord,
   enrichInboundActor,
   failEvents,
   prepareBatch,
@@ -32,7 +31,6 @@ import { notifyInternal } from "./lib/notify";
 const modules = import.meta.glob("./**/*.ts");
 const claimInboundFn = claimInbound as any;
 const claimBatchFn = claimBatch as any;
-const createDeliveryRecordFn = createDeliveryRecord as any;
 const enrichInboundActorFn = enrichInboundActor as any;
 const failEventsFn = failEvents as any;
 const prepareBatchFn = prepareBatch as any;
@@ -95,7 +93,6 @@ async function seedSlack(t: ReturnType<typeof convexTest>) {
       slackEnabled: true,
       slackSafeAlertsEnabled: true,
       slackVendorAlertsEnabled: false,
-      slackPolicyDeliveryEnabled: true,
       createdAt: 1,
       updatedAt: 1,
     });
@@ -1652,60 +1649,6 @@ describe("Slack setup and outbound durability", () => {
         threadTs: "1800000000.999",
       }),
     ).rejects.toThrow("does not match the thread timestamp");
-  });
-
-  test("records a file-bearing policy delivery as one canonical Slack thread", async () => {
-    const t = convexTest(schema, modules);
-    const { clientOrgId, connectionId } = await seedSlack(t);
-    const { fileId, policyId } = await t.run(async (ctx) => ({
-      fileId: await ctx.storage.store(
-        new Blob(["policy"], { type: "application/pdf" }),
-      ),
-      policyId: await ctx.db.insert("policies", {
-        orgId: clientOrgId,
-        carrier: "Fixture Carrier",
-        policyNumber: "SLACK-1",
-        linesOfBusiness: ["CGL"],
-        documentType: "policy",
-        policyYear: 2026,
-        effectiveDate: "01/01/2026",
-        expirationDate: "01/01/2027",
-        isRenewal: false,
-        coverages: [],
-        insuredName: "Client",
-      }),
-    }));
-    const args = {
-      orgId: clientOrgId,
-      connectionId,
-      channelId: "C-PRIMARY",
-      threadTs: "1800000000.700",
-      content: "Your policy is ready.",
-      attachment: {
-        fileId,
-        filename: "policy.pdf",
-        contentType: "application/pdf",
-        size: 6,
-      },
-      policyId,
-      idempotencyKey: "policy-delivery:fixture",
-    };
-    const threadId = await t.mutation(createDeliveryRecordFn, args);
-    await expect(t.mutation(createDeliveryRecordFn, args)).resolves.toBe(
-      threadId,
-    );
-    const records = await t.run(async (ctx) => ({
-      threads: await ctx.db.query("threads").collect(),
-      messages: await ctx.db.query("threadMessages").collect(),
-    }));
-    expect(records.threads).toHaveLength(1);
-    expect(records.messages).toMatchObject([
-      {
-        channel: "slack",
-        attachments: [{ fileId, filename: "policy.pdf" }],
-        referencedPolicyIds: [policyId],
-      },
-    ]);
   });
 
   test("schedules safe alerts and keeps vendor alerts off by default", async () => {

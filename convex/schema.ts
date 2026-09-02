@@ -643,6 +643,33 @@ export default defineSchema({
     .index("organization", ["orgId"])
     .index("organization_user", ["orgId", "userId"]),
 
+  // Supply-side broker directory data. A profile may exist without portal
+  // users; portal access remains represented exclusively by orgMemberships.
+  brokerProfiles: defineTable({
+    brokerOrgId: v.id("organizations"),
+    networkStatus: v.union(
+      v.literal("prospect"),
+      v.literal("active"),
+      v.literal("inactive"),
+    ),
+    officeAddress: v.optional(v.object({
+      street1: v.optional(v.string()),
+      street2: v.optional(v.string()),
+      city: v.optional(v.string()),
+      state: v.optional(v.string()),
+      postalCode: v.optional(v.string()),
+      country: v.optional(v.string()),
+    })),
+    writingStates: v.array(v.string()),
+    lineOfBusinessCodes: v.array(v.string()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("broker", ["brokerOrgId"])
+    .index("status", ["networkStatus", "updatedAt"]),
+
   // Internal official-site lookup cache. Consumer-facing identity and
   // branding are persisted together on policies.carrierIdentity.
   carrierBrands: defineTable({
@@ -1144,7 +1171,6 @@ export default defineSchema({
     slackEnabled: v.boolean(),
     slackSafeAlertsEnabled: v.boolean(),
     slackVendorAlertsEnabled: v.boolean(),
-    slackPolicyDeliveryEnabled: v.boolean(),
     updatedByUserId: v.optional(v.id("users")),
     updatedByOperatorUserId: v.optional(v.id("users")),
     createdAt: v.number(),
@@ -2738,13 +2764,26 @@ export default defineSchema({
     targetEffectiveDate: v.optional(v.string()),
     status: v.union(
       v.literal("draft"),
+      v.literal("submitted"),
+      v.literal("gathering_information"),
       v.literal("marketing"),
+      v.literal("proposal_review"),
+      v.literal("binding"),
+      v.literal("completed"),
       v.literal("quote_review"),
       v.literal("client_decision"),
       v.literal("accepted"),
       v.literal("closed"),
       v.literal("cancelled"),
     ),
+    // Widening fields for client collaboration. Legacy rows are operator-only
+    // until explicitly shared or migrated.
+    createdBySide: v.optional(v.union(v.literal("operator"), v.literal("client"))),
+    clientVisible: v.optional(v.boolean()),
+    sharedAt: v.optional(v.number()),
+    originalNarrative: v.optional(v.string()),
+    requirementRevision: v.optional(v.number()),
+    specificationRevision: v.optional(v.number()),
     replacingPolicyId: v.optional(v.id("policies")),
     resultingPolicyId: v.optional(v.id("policies")),
     inboxToken: v.string(),
@@ -2780,6 +2819,21 @@ export default defineSchema({
     quoteAmount: v.optional(v.number()),
     quoteCurrency: v.optional(v.string()),
     quoteUrl: v.optional(v.string()),
+    contactUserId: v.optional(v.id("users")),
+    contactSnapshot: v.optional(v.object({
+      name: v.optional(v.string()),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+    })),
+    sentAt: v.optional(v.number()),
+    packetSnapshot: v.optional(v.object({
+      requirementRevision: v.number(),
+      specificationRevision: v.number(),
+      requirementIds: v.array(v.id("insuranceRequirements")),
+      specifications: v.array(v.any()),
+      fileItemIds: v.array(v.id("procurementFileItems")),
+      capturedAt: v.number(),
+    })),
     createdByUserId: v.id("users"),
     updatedByUserId: v.id("users"),
     createdAt: v.number(),
@@ -2788,6 +2842,219 @@ export default defineSchema({
     .index("request", ["requestId", "updatedAt"])
     .index("organization", ["clientOrgId", "updatedAt"])
     .index("broker", ["brokerOrgId", "updatedAt"]),
+
+  procurementRequirementDrafts: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    proposedRequirement: v.any(),
+    matchingRequirementId: v.optional(v.id("insuranceRequirements")),
+    status: v.union(v.literal("draft"), v.literal("confirmed"), v.literal("discarded")),
+    confirmedRequirementId: v.optional(v.id("insuranceRequirements")),
+    sourceExcerpt: v.optional(v.string()),
+    sourcePageStart: v.optional(v.number()),
+    sourcePageEnd: v.optional(v.number()),
+    createdByUserId: v.id("users"),
+    confirmedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "createdAt"])
+    .index("status", ["requestId", "status"]),
+
+  procurementRequestRequirements: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    requirementId: v.id("insuranceRequirements"),
+    addedByUserId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("request", ["requestId", "createdAt"])
+    .index("requirement", ["requirementId", "requestId"])
+    .index("request_requirement", ["requestId", "requirementId"]),
+
+  procurementSpecifications: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    key: v.string(),
+    label: v.string(),
+    value: v.string(),
+    sourceExcerpt: v.optional(v.string()),
+    sourcePageStart: v.optional(v.number()),
+    sourcePageEnd: v.optional(v.number()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "updatedAt"])
+    .index("request_key", ["requestId", "key"]),
+
+  procurementRequestActivities: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    authorUserId: v.id("users"),
+    authorSide: v.union(v.literal("operator"), v.literal("client")),
+    kind: v.union(v.literal("message"), v.literal("document"), v.literal("status")),
+    body: v.optional(v.string()),
+    documentId: v.optional(v.id("procurementRequestDocuments")),
+    clientVisible: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("request", ["requestId", "createdAt"])
+    .index("client_visible", ["requestId", "clientVisible", "createdAt"]),
+
+  procurementRequestDocuments: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    fileId: v.id("_storage"),
+    name: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    clientVisible: v.boolean(),
+    uploadedByUserId: v.id("users"),
+    uploadedBySide: v.union(v.literal("operator"), v.literal("client")),
+    createdAt: v.number(),
+  })
+    .index("request", ["requestId", "createdAt"])
+    .index("client_visible", ["requestId", "clientVisible", "createdAt"])
+    .index("storage", ["fileId"]),
+
+  procurementProposals: defineTable({
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    brokerOrgId: v.id("organizations"),
+    outreachId: v.id("procurementBrokerOutreaches"),
+    supersedesProposalId: v.optional(v.id("procurementProposals")),
+    status: v.union(
+      v.literal("draft"), v.literal("extracting"), v.literal("review_ready"),
+      v.literal("reviewed"), v.literal("selected"), v.literal("withdrawn"),
+      v.literal("archived"),
+    ),
+    extractionFingerprint: v.optional(v.string()),
+    extractedOffer: v.optional(v.any()),
+    selectedAt: v.optional(v.number()),
+    selectedByUserId: v.optional(v.id("users")),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("request", ["requestId", "updatedAt"])
+    .index("broker", ["brokerOrgId", "updatedAt"])
+    .index("outreach", ["outreachId", "updatedAt"])
+    .index("request_status", ["requestId", "status", "updatedAt"]),
+
+  procurementProposalDocuments: defineTable({
+    proposalId: v.id("procurementProposals"),
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    fileId: v.id("_storage"),
+    fileName: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    sha256: v.string(),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("proposal", ["proposalId", "createdAt"])
+    .index("storage", ["fileId"]),
+
+  procurementProposalReviews: defineTable({
+    proposalId: v.id("procurementProposals"),
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    extractionFingerprint: v.string(),
+    requirementRevision: v.number(),
+    specificationRevision: v.number(),
+    modelConclusion: v.union(v.literal("meets_requirements"), v.literal("has_gaps"), v.literal("insufficient_evidence")),
+    staffConclusion: v.optional(v.union(v.literal("meets_requirements"), v.literal("has_gaps"), v.literal("insufficient_evidence"))),
+    findings: v.array(v.any()),
+    confirmedByUserId: v.optional(v.id("users")),
+    confirmedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("proposal", ["proposalId", "createdAt"])
+    .index("request", ["requestId", "createdAt"]),
+
+  procurementProposalExtractionJobs: defineTable({
+    proposalId: v.id("procurementProposals"),
+    requestId: v.id("procurementRequests"),
+    clientOrgId: v.id("organizations"),
+    extractionFingerprint: v.string(),
+    requestedByUserId: v.id("users"),
+    status: v.union(v.literal("pending"), v.literal("running"), v.literal("complete"), v.literal("failed")),
+    attempts: v.number(),
+    leaseId: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    workerId: v.optional(v.string()),
+    completionPayloadStorageId: v.optional(v.id("_storage")),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("status", ["status", "updatedAt"])
+    .index("proposal", ["proposalId", "createdAt"])
+    .index("fingerprint", ["proposalId", "extractionFingerprint"]),
+
+  procurementProposalExtractionArtifacts: defineTable({
+    proposalId: v.id("procurementProposals"),
+    jobId: v.id("procurementProposalExtractionJobs"),
+    kind: v.string(),
+    value: v.any(),
+    createdAt: v.number(),
+  })
+    .index("proposal", ["proposalId", "createdAt"])
+    .index("job", ["jobId", "createdAt"]),
+
+  proposalSourceSpans: defineTable({
+    orgId: v.id("organizations"),
+    proposalId: v.id("procurementProposals"),
+    proposalDocumentId: v.id("procurementProposalDocuments"),
+    extractionFingerprint: v.string(),
+    documentId: v.string(),
+    spanId: v.string(),
+    pageStart: v.optional(v.number()),
+    pageEnd: v.optional(v.number()),
+    text: v.string(),
+    textHash: v.string(),
+    bbox: v.optional(v.any()),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index("proposal", ["proposalId", "createdAt"])
+    .index("proposal_span", ["proposalId", "spanId"])
+    .index("proposal_fingerprint", ["proposalId", "extractionFingerprint", "createdAt"])
+    .index("fingerprint_span", ["proposalId", "extractionFingerprint", "spanId"])
+    .index("document", ["proposalDocumentId", "createdAt"])
+    .index("document_span", ["proposalDocumentId", "spanId"]),
+
+  proposalSourceNodes: defineTable({
+    orgId: v.id("organizations"),
+    proposalId: v.id("procurementProposals"),
+    proposalDocumentId: v.id("procurementProposalDocuments"),
+    extractionFingerprint: v.string(),
+    documentId: v.string(),
+    nodeId: v.string(),
+    parentNodeId: v.optional(v.string()),
+    kind: v.string(),
+    title: v.string(),
+    textExcerpt: v.optional(v.string()),
+    sourceSpanIds: v.array(v.string()),
+    pageStart: v.optional(v.number()),
+    pageEnd: v.optional(v.number()),
+    order: v.number(),
+    path: v.string(),
+    metadata: v.optional(v.any()),
+    createdAt: v.number(),
+  })
+    .index("proposal", ["proposalId", "createdAt"])
+    .index("proposal_node", ["proposalId", "nodeId"])
+    .index("proposal_fingerprint", ["proposalId", "extractionFingerprint", "createdAt"])
+    .index("fingerprint_node", ["proposalId", "extractionFingerprint", "nodeId"])
+    .index("proposal_parent", ["proposalId", "parentNodeId"])
+    .index("document", ["proposalDocumentId", "createdAt"])
+    .index("document_parent", ["proposalDocumentId", "parentNodeId"]),
 
   procurementEmailThreads: defineTable({
     clientOrgId: v.id("organizations"),
@@ -4081,7 +4348,6 @@ export default defineSchema({
     stage: v.optional(
       v.union(
         v.literal("connected_email"),
-        v.literal("policy_delivery"),
         v.literal("certificate_workflow"),
         v.literal("audit"),
         v.literal("outbound"),

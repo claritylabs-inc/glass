@@ -263,11 +263,11 @@ DM route.
    persisted ID. Missing, unshared, ambiguous, or renamed channels never cause
    name-based reassociation; an operator must make an audited rebind when Slack
    cannot authoritatively update the ID.
-7. Designate the automatic alerts-and-delivery channel and confirm its health.
+7. Designate the automatic alerts channel and confirm its health.
    Spot still responds in any channel where Slack delivers the installed app's
    events; neither this selection nor the synchronized inventory limits chat.
-   The selection affects only automatic alerts and document delivery. Safe
-   customer alerts and policy delivery default on; vendor alerts default off.
+   The selection affects only supported automatic alerts. Safe customer alerts
+   default on; vendor alerts default off.
 
 Support-channel messages are canonical from connection onward. A mention starts
 or resumes AI, unmentioned customer replies continue an active thread, an
@@ -329,22 +329,14 @@ response, opens an optional detail modal after negative feedback, and routes
 human requests through the existing audited handoff mutation. URL buttons
 remain ordinary access-controlled Spot deep links.
 
-## Policy-delivery migration
+## Retired policy-delivery automation
 
-Policy delivery is client-owned. Run each owner migration as a dry run, inspect
-its counts, then run the migration runner on the approved lane:
-
-```bash
-npx convex run migrations:backfillPolicyDeliverySettingOwners '{"dryRun":true}'
-npx convex run migrations:backfillPolicyDeliveryRuleOwners '{"dryRun":true}'
-npx convex run migrations:backfillPolicyDeliveryJobOwners '{"dryRun":true}'
-npx convex run migrations:backfillPolicyDeliveryAttemptOwners '{"dryRun":true}'
-npx convex run migrations:runPolicyDeliveryOwnerBackfill
-npx convex run policyDelivery:verifyDeliveryOwnerBackfill
-```
-
-The verifier must return zero missing owners before a later narrowing release.
-`brokerOrgId` and `broker_review` remain optional legacy context.
+Automated policy delivery no longer has Slack settings, rules, queues, attempts,
+or extraction hooks. Ordinary Slack replies, notifications, certificates, file
+downloads, and proposal correspondence remain. The procurement legacy audit and
+purge are deployment-gated through `procurementMigration:auditLegacyNarrowing`
+and `migrations:runProcurementLegacyPurge`; do not restore a Slack policy-delivery
+toggle or sender while those retired tables await their narrowing release.
 
 ## Validation and rollback
 
@@ -353,7 +345,7 @@ rejection/acceptance, uninstall and reinstall, Connect actor identity, App Home
 DMs, mentions, thread replies, edits, processing-reaction cleanup, Markdown
 rendering, policy cards,
 feedback, human handoff, multiple inbound files, outbound certificate/PDF
-upload, proactive alerts, and policy delivery. The processing reaction requires
+upload and proactive alerts. The processing reaction requires
 `reactions:write`; apply the manifest and reauthorize both the Clarity host and
 existing customer installations. Until an installation is reauthorized,
 reaction failures remain advisory and completed answers still deliver.
@@ -369,7 +361,7 @@ operation; unshare and re-share or explicitly rebind; revoke the test workspace'
 authorization and confirm the revoked bot user ID matches; reinstall into the
 same workspace; then uninstall the app and reinstall again. Verify both host and
 customer channel IDs, confirm stale/duplicate events do not change the newest
-state, and confirm no reply, file, alert, handoff, or policy delivery reaches
+state, and confirm no reply, file, alert, or handoff reaches
 Slack while health is degraded. Finish by waiting for a scheduled reconciliation
 cycle and confirming both `auth.test` and channel checks return healthy.
 

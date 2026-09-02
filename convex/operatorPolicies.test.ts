@@ -8,7 +8,7 @@ import schema from "./schema";
 import {
   archive,
   createOperatorUpload,
-  listForBroker,
+  listForOperator,
   restore,
   updatePolicyDetails,
 } from "./policies";
@@ -21,7 +21,7 @@ import {
 const modules = import.meta.glob("./**/*.ts");
 const archiveFn = archive as any;
 const createOperatorUploadFn = createOperatorUpload as any;
-const listForBrokerFn = listForBroker as any;
+const listForOperatorFn = listForOperator as any;
 const restoreFn = restore as any;
 const updatePolicyDetailsFn = updatePolicyDetails as any;
 const getPolicyExtractionOperationsFn = getPolicyExtractionOperations as any;
@@ -84,7 +84,7 @@ describe("operator client policy management", () => {
     }) as Id<"policies">;
 
     await expect(
-      operator.query(listForBrokerFn, {
+      operator.query(listForOperatorFn, {
         clientOrgId: fixture.clientOrgId,
         documentType: "policy",
         archived: false,

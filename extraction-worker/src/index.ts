@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { Output, generateText as aiGenerateText, jsonSchema } from "ai";
 import type { LanguageModel } from "ai";
 import { zodSchema, type ProviderOptions } from "@ai-sdk/provider-utils";
+import { z } from "zod";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createCohere } from "@ai-sdk/cohere";
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -71,6 +72,11 @@ import { watchClientDisconnect } from "./httpRequestCancellation.js";
 import { createPdfWorkAdmission } from "./pdfWorkAdmission.js";
 import { resolveWorkerRuntimeAccess } from "./railwayRuntime.js";
 import { preparePdfSourceWithLiteParseFallback } from "./pdfSourceFallback.js";
+import {
+  aggregateProposalDocuments,
+  type ProposalClaimDocument,
+  type ProposalExtractedDocument,
+} from "./proposalExtraction.js";
 
 type WorkerState = {
   sourceKind: "upload" | "agent_email";
@@ -94,6 +100,18 @@ type ClaimedJob = {
 };
 
 type ClaimedPreviewJob = ClaimedJob;
+
+type ClaimedProposalJob = {
+  jobId: string;
+  proposalId: string;
+  leaseId: string;
+  leaseExpiresAt: number;
+  fingerprint: string;
+  orgId: string;
+  requestedByUserId: string;
+  documents: ProposalClaimDocument[];
+  modelSettings?: WorkerModelSettings;
+};
 
 type ModelProvider = DirectModelProvider;
 
@@ -166,6 +184,22 @@ type ResumableExtractionArtifact = {
   sectionId?: string;
   metadata?: unknown;
 };
+
+const proposalEvidenceItemSchema = z.object({
+  description: z.string().min(1).max(2000),
+  category: z.string().max(200).nullable(),
+  sourceNodeIds: z.array(z.string().min(1)).max(20),
+  sourceSpanIds: z.array(z.string().min(1)).max(50),
+  pageStart: z.number().int().positive().nullable(),
+  pageEnd: z.number().int().positive().nullable(),
+});
+
+const proposalQuoteSupplementSchema = z.object({
+  quoteExpirationDate: z.string().max(100).nullable(),
+  quoteExpirationEvidence: proposalEvidenceItemSchema.nullable(),
+  subjectivities: z.array(proposalEvidenceItemSchema).max(100),
+  conditions: z.array(proposalEvidenceItemSchema).max(100),
+});
 
 const require = createRequire(import.meta.url);
 const workerPackage = require("../package.json") as {
@@ -361,6 +395,63 @@ const actions = {
     },
     AckResult
   >("actions/policyExtraction.js:recordExternalTraceEvent"),
+  claimExternalProposalJob: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      workerId?: string;
+      workerVersion?: string;
+      workerProtocolVersion?: string;
+      clSdkVersion?: string;
+    },
+    ClaimedProposalJob | null
+  >("actions/proposalExtraction.js:claimExternalJob"),
+  heartbeatExternalProposalJob: makeFunctionReference<
+    "action",
+    { secret: string; jobId: string; leaseId: string },
+    AckResult
+  >("actions/proposalExtraction.js:heartbeatExternalJob"),
+  logExternalProposalJob: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      jobId: string;
+      leaseId: string;
+      message: string;
+      phase?: string;
+      level?: "info" | "warn" | "error";
+    },
+    AckResult
+  >("actions/proposalExtraction.js:logExternalJob"),
+  createExternalProposalCompletionUploadUrl: makeFunctionReference<
+    "action",
+    { secret: string },
+    { uploadUrl: string }
+  >("actions/proposalExtraction.js:createExternalCompletionUploadUrl"),
+  completeExternalProposalJob: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      jobId: string;
+      proposalId: string;
+      leaseId: string;
+      extractionFingerprint: string;
+      payloadStorageId: string;
+    },
+    AckResult
+  >("actions/proposalExtraction.js:completeExternalJob"),
+  failExternalProposalJob: makeFunctionReference<
+    "action",
+    {
+      secret: string;
+      jobId: string;
+      proposalId: string;
+      leaseId: string;
+      extractionFingerprint: string;
+      error: string;
+    },
+    AckResult
+  >("actions/proposalExtraction.js:failExternalJob"),
 };
 
 const CONVEX_URL = requiredEnv("CONVEX_URL");
@@ -433,6 +524,12 @@ const EXTRACTION_JOB_CONCURRENCY = readBoundedIntEnv(
   8,
   1,
   1000,
+);
+const PROPOSAL_EXTRACTION_CONCURRENCY = readBoundedIntEnv(
+  "PROPOSAL_EXTRACTION_CONCURRENCY",
+  2,
+  1,
+  16,
 );
 const PDF_WORK_MAX_ACTIVE = readBoundedIntEnv(
   "EXTRACTION_PDF_WORK_MAX_ACTIVE",
@@ -1733,13 +1830,16 @@ function buildWorkerExtractor(opts: {
       resolveModelForTaskKind(taskKind, opts.modelSettings).capabilities,
     ]),
   ) as Partial<Record<ModelTaskKind, ModelCapabilities>>;
-  return createExtractor({
+  return {
+    extractor: createExtractor({
+      generateObject,
+      log: opts.log,
+      onProgress: opts.log,
+      modelCapabilities: extractionRoute.capabilities,
+      modelCapabilitiesByTaskKind,
+    }),
     generateObject,
-    log: opts.log,
-    onProgress: opts.log,
-    modelCapabilities: extractionRoute.capabilities,
-    modelCapabilitiesByTaskKind,
-  });
+  };
 }
 
 async function logJob(
@@ -2744,6 +2844,7 @@ async function supplementPreparedPdfSource(
     sourceSpans: WorkerSourceSpan[];
     sourceChunks: WorkerSourceChunk[];
   },
+  sourceKind: "policy_pdf" | "attachment" = "policy_pdf",
 ): Promise<{
   sourceSpans: WorkerSourceSpan[];
   sourceChunks: WorkerSourceChunk[];
@@ -2752,7 +2853,7 @@ async function supplementPreparedPdfSource(
   const supplemental = await buildPdfTextSupplements({
     pdfBytes,
     documentId,
-    sourceKind: "policy_pdf",
+    sourceKind,
     primarySourceSpans: preparedSource.sourceSpans,
   });
   return {
@@ -2916,7 +3017,7 @@ async function processJob(
         });
       }
     }
-    const extractor = buildWorkerExtractor({
+    const { extractor } = buildWorkerExtractor({
       job,
       log: async (message) => logJob(job, message),
       modelSettings: job.modelSettings,
@@ -2991,6 +3092,287 @@ async function processJob(
   } finally {
     releasePdfWork();
     clearInterval(heartbeatTimer);
+  }
+}
+
+async function logProposalJob(
+  job: ClaimedProposalJob,
+  message: string,
+  level: "info" | "warn" | "error" = "info",
+  phase?: string,
+) {
+  try {
+    await convex.action(actions.logExternalProposalJob, {
+      secret: SECRET,
+      jobId: job.jobId,
+      leaseId: job.leaseId,
+      message,
+      level,
+      phase,
+    });
+  } catch (error) {
+    console.warn(`[proposal:${job.proposalId}] could not persist worker log:`, error);
+  }
+}
+
+async function heartbeatProposal(job: ClaimedProposalJob) {
+  return await convex.action(actions.heartbeatExternalProposalJob, {
+    secret: SECRET,
+    jobId: job.jobId,
+    leaseId: job.leaseId,
+  });
+}
+
+async function extractProposalDocument(
+  job: ClaimedProposalJob,
+  document: ProposalClaimDocument,
+): Promise<ProposalExtractedDocument> {
+  if (document.contentType && document.contentType !== "application/pdf") {
+    throw new Error(`Proposal extraction supports PDF documents; ${document.fileName} is ${document.contentType}`);
+  }
+  const pdfBytes = await fetchPdfBytes(document.fileUrl);
+  await logProposalJob(
+    job,
+    `Fetched ${document.fileName} (${pdfBytes.byteLength} bytes)`,
+    "info",
+    "parse",
+  );
+  const prepared = await preparePdfSourceWithLiteParseFallback({
+    convertWithLiteParse: () => convertPdfWithLiteParse({
+      pdfBytes,
+      documentId: document.proposalDocumentId,
+      sourceKind: "attachment",
+      maxPages: LITEPARSE_MAX_PAGES,
+      maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+      priority: "full",
+    }),
+    prepareLiteParseSource: async (converted) => supplementPreparedPdfSource(
+      pdfBytes,
+      document.proposalDocumentId,
+      {
+        sourceSpans: converted.sourceSpans,
+        sourceChunks: converted.sourceChunks,
+      },
+      "attachment",
+    ),
+    onLiteParseFailure: (error) => logProposalJob(
+      job,
+      `LiteParse unavailable for ${document.fileName}; using PDF.js (${errorMessage(error)})`,
+      "warn",
+      "parse",
+    ),
+    preparePdfJsSource: async () => {
+      const fallback = await buildPdfSourceSpans({
+        pdfBytes,
+        documentId: document.proposalDocumentId,
+        sourceKind: "attachment",
+      });
+      return await supplementPreparedPdfSource(
+        pdfBytes,
+        document.proposalDocumentId,
+        fallback,
+        "attachment",
+      );
+    },
+  });
+  const modelJob: ClaimedJob = {
+    policyId: document.proposalDocumentId,
+    leaseId: job.leaseId,
+    leaseExpiresAt: job.leaseExpiresAt,
+    state: {
+      sourceKind: "upload",
+      orgId: job.orgId,
+      userId: job.requestedByUserId,
+    },
+    fileUrl: document.fileUrl,
+    modelSettings: job.modelSettings,
+  };
+  const { extractor, generateObject } = buildWorkerExtractor({
+    job: modelJob,
+    log: (message) => logProposalJob(job, `${document.fileName}: ${message}`, "info", "extract"),
+    modelSettings: job.modelSettings,
+    pageScreenshots: prepared.parser === "liteparse"
+      ? prepared.converted.pageScreenshots
+      : undefined,
+  });
+  const result = await extractor.extract(
+    pdfBytes,
+    document.proposalDocumentId,
+    {
+      sourceSpans: prepared.prepared.sourceSpans as NonNullable<ExtractOptions["sourceSpans"]>,
+      coverageRecovery: { enabled: true },
+      protocolVersion: WORKER_PROTOCOL_VERSION,
+      extractorVersion: WORKER_CL_SDK_VERSION,
+    },
+  );
+  const validNodeIds = new Set((result.sourceTree ?? []).map((node) => node.id));
+  const validSpanIds = new Set(
+    (result.sourceSpans?.length ? result.sourceSpans : prepared.prepared.sourceSpans)
+      .map((span) => span.id),
+  );
+  const proposalEvidence = (result.sourceTree ?? []).map((node) => ({
+    sourceNodeId: node.id,
+    sourceSpanIds: node.sourceSpanIds,
+    pageStart: node.pageStart,
+    pageEnd: node.pageEnd,
+    title: node.title,
+    text: node.textExcerpt ?? node.description,
+  }));
+  const supplementalResult = await generateObject({
+    schema: proposalQuoteSupplementSchema,
+    maxTokens: 3_000,
+    system: `You extract quote-only commercial-insurance terms from source-backed proposal evidence. Copy source node and span IDs exactly. Do not infer an expiration date, subjectivity, or binding condition that is not explicit. Quote expiration means the deadline or validity date for accepting/binding the quote, not the proposed policy expiration date.`,
+    prompt: `Extract the quote validity deadline, subjectivities, and binding or underwriting conditions from this single proposal document. Use null for an absent quote expiration. Every returned item, including quoteExpirationEvidence when a date is present, must cite supplied source IDs.
+
+${JSON.stringify(proposalEvidence).slice(0, 160_000)}`,
+    trace: {
+      phase: "proposal_quote_terms",
+      label: "Extract proposal quote terms",
+      sourceBacked: true,
+    },
+  });
+  const supplementalObject = proposalQuoteSupplementSchema.parse(supplementalResult.object);
+  const normalizeEvidenceItem = (
+    item: z.infer<typeof proposalEvidenceItemSchema> | null,
+  ) => {
+    if (!item) return undefined;
+    const sourceNodeIds = item.sourceNodeIds.filter((id) => validNodeIds.has(id));
+    const sourceSpanIds = item.sourceSpanIds.filter((id) => validSpanIds.has(id));
+    if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) return undefined;
+    return {
+      description: item.description.trim(),
+      category: item.category ?? undefined,
+      sourceNodeIds,
+      sourceSpanIds,
+      pageStart: item.pageStart ?? undefined,
+      pageEnd: item.pageEnd ?? item.pageStart ?? undefined,
+    };
+  };
+  const quoteExpirationEvidence = normalizeEvidenceItem(
+    supplementalObject.quoteExpirationEvidence,
+  );
+  const supplemental = {
+    ...(supplementalObject.quoteExpirationDate && quoteExpirationEvidence
+      ? {
+          quoteExpirationDate: supplementalObject.quoteExpirationDate,
+          quoteExpirationEvidence,
+        }
+      : {}),
+    subjectivities: supplementalObject.subjectivities
+      .map(normalizeEvidenceItem)
+      .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+    conditions: supplementalObject.conditions
+      .map(normalizeEvidenceItem)
+      .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+  };
+  const sourceSpans = result.sourceSpans?.length
+    ? result.sourceSpans
+    : prepared.prepared.sourceSpans;
+  const completionDocument = sanitizeCompletionDocument(result.document);
+  if (!completionDocument || typeof completionDocument !== "object" || Array.isArray(completionDocument)) {
+    throw new Error(`Proposal extraction returned an invalid document for ${document.fileName}`);
+  }
+  return {
+    proposalDocumentId: document.proposalDocumentId,
+    fileName: document.fileName,
+    document: completionDocument as Record<string, unknown>,
+    operationalProfile: result.operationalProfile as Record<string, unknown> | undefined,
+    sourceSpans: sourceSpans as Array<Record<string, unknown>>,
+    sourceNodes: (result.sourceTree ?? []) as Array<Record<string, unknown>>,
+    warnings: result.warnings ?? [],
+    tokenUsage: result.tokenUsage,
+    supplemental,
+  };
+}
+
+async function uploadProposalCompletionPayload(
+  job: ClaimedProposalJob,
+  payload: Record<string, unknown>,
+) {
+  const json = JSON.stringify(payload);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= COMPLETION_UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const { uploadUrl } = await convex.action(
+        actions.createExternalProposalCompletionUploadUrl,
+        { secret: SECRET },
+      );
+      const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
+        spotEnv: SPOT_ENV,
+        convexUrl: CONVEX_URL,
+      }), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: json,
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to upload proposal completion payload: ${response.status} ${await response.text()}`);
+      }
+      const uploaded = await response.json() as { storageId?: string };
+      if (!uploaded.storageId) throw new Error("Proposal completion upload did not return a storageId");
+      return uploaded.storageId;
+    } catch (error) {
+      lastError = error;
+      if (attempt < COMPLETION_UPLOAD_ATTEMPTS) await sleep(attempt * 500);
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Failed to upload proposal completion payload: ${String(lastError)}`);
+}
+
+async function processProposalJob(
+  job: ClaimedProposalJob,
+  releasePdfWork: () => void,
+) {
+  console.log(`[proposal:${job.proposalId}] claimed proposal extraction job ${job.jobId}`);
+  const heartbeatTimer = setInterval(() => {
+    heartbeatProposal(job).catch((error) => {
+      console.error(`[proposal:${job.proposalId}] heartbeat failed:`, error);
+    });
+  }, HEARTBEAT_MS);
+  try {
+    const extractedDocuments: ProposalExtractedDocument[] = [];
+    for (const document of [...job.documents].sort((left, right) => left.order - right.order)) {
+      extractedDocuments.push(await extractProposalDocument(job, document));
+    }
+    const aggregate = aggregateProposalDocuments(extractedDocuments);
+    const payload = {
+      version: "proposal-extraction-v1",
+      fingerprint: job.fingerprint,
+      documents: extractedDocuments,
+      aggregate,
+    };
+    await logProposalJob(
+      job,
+      `Prepared ${extractedDocuments.length} proposal document${extractedDocuments.length === 1 ? "" : "s"}; ${aggregate.coverages.length} coverages and ${aggregate.premiums.length} premium lines`,
+      "info",
+      "complete",
+    );
+    const payloadStorageId = await uploadProposalCompletionPayload(job, payload);
+    const completed = await convex.action(actions.completeExternalProposalJob, {
+      secret: SECRET,
+      jobId: job.jobId,
+      proposalId: job.proposalId,
+      leaseId: job.leaseId,
+      extractionFingerprint: job.fingerprint,
+      payloadStorageId,
+    });
+    if (!completed.ok) throw new Error("Convex rejected stale proposal extraction completion");
+    console.log(`[proposal:${job.proposalId}] completed proposal extraction`);
+  } catch (error) {
+    console.error(`[proposal:${job.proposalId}] extraction failed:`, error);
+    await convex.action(actions.failExternalProposalJob, {
+      secret: SECRET,
+      jobId: job.jobId,
+      proposalId: job.proposalId,
+      leaseId: job.leaseId,
+      extractionFingerprint: job.fingerprint,
+      error: errorMessage(error),
+    });
+  } finally {
+    clearInterval(heartbeatTimer);
+    releasePdfWork();
   }
 }
 
@@ -3136,6 +3518,56 @@ async function claimPreviewJob(): Promise<ClaimedPreviewJob | null> {
   });
 }
 
+async function claimProposalJob(): Promise<ClaimedProposalJob | null> {
+  return await convex.action(actions.claimExternalProposalJob, {
+    secret: SECRET,
+    workerId: WORKER_ID,
+    workerVersion: WORKER_VERSION,
+    workerProtocolVersion: WORKER_PROTOCOL_VERSION,
+    clSdkVersion: WORKER_CL_SDK_VERSION,
+  });
+}
+
+async function runProposalLoop(): Promise<void> {
+  const active = new Set<Promise<void>>();
+  let lastIdleLogAt = 0;
+  while (!shuttingDown) {
+    if (active.size >= PROPOSAL_EXTRACTION_CONCURRENCY) {
+      await Promise.race(active);
+      continue;
+    }
+    let releasePdfWork: (() => void) | undefined;
+    try {
+      releasePdfWork = await pdfWorkAdmission.acquire("full", shutdownController.signal);
+      if (shuttingDown) {
+        releasePdfWork();
+        break;
+      }
+      const job = await claimProposalJob();
+      if (job) {
+        const task = processProposalJob(job, releasePdfWork).finally(() => {
+          active.delete(task);
+        });
+        active.add(task);
+        continue;
+      }
+      releasePdfWork();
+      const now = nowMs();
+      if (now - lastIdleLogAt >= IDLE_LOG_MS) {
+        console.log("No proposal extraction jobs available");
+        lastIdleLogAt = now;
+      }
+      await sleep(POLL_MS);
+    } catch (error) {
+      releasePdfWork?.();
+      if (shuttingDown && error instanceof Error && error.name === "AbortError") break;
+      console.error("Failed to claim proposal extraction job:", error);
+      await sleep(POLL_MS);
+    }
+  }
+  await Promise.allSettled(active);
+}
+
 async function runPreviewLoop(): Promise<void> {
   const active = new Set<Promise<void>>();
   let lastIdleLogAt = 0;
@@ -3192,7 +3624,7 @@ async function runPreviewLoop(): Promise<void> {
 
 async function main(): Promise<void> {
   console.log(
-    `Spot extraction worker ${WORKER_ID} env=${SPOT_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} pdfWorkMaxActive=${PDF_WORK_MAX_ACTIVE} pdfWorkMaxFullActive=${PDF_WORK_MAX_FULL_ACTIVE} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
+    `Spot extraction worker ${WORKER_ID} env=${SPOT_ENV} v${WORKER_VERSION} protocol=${WORKER_PROTOCOL_VERSION} cl-sdk=${WORKER_CL_SDK_VERSION} extractionConcurrency=${EXTRACTION_JOB_CONCURRENCY} previewConcurrency=${PREVIEW_JOB_CONCURRENCY} proposalConcurrency=${PROPOSAL_EXTRACTION_CONCURRENCY} pdfWorkMaxActive=${PDF_WORK_MAX_ACTIVE} pdfWorkMaxFullActive=${PDF_WORK_MAX_FULL_ACTIVE} liteParseNativeConcurrency=${LITEPARSE_NATIVE_CONCURRENCY} connected to ${CONVEX_URL}`,
   );
   const httpServer = startHttpServer();
   if (!RUNTIME_ACCESS.jobsEnabled) {
@@ -3211,6 +3643,9 @@ async function main(): Promise<void> {
   }
   const previewLoop = runPreviewLoop().catch((error) => {
     console.error("Preview extraction loop failed:", error);
+  });
+  const proposalLoop = runProposalLoop().catch((error) => {
+    console.error("Proposal extraction loop failed:", error);
   });
   const active = new Set<Promise<void>>();
   let lastIdleLogAt = 0;
@@ -3266,7 +3701,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     shutdownController.abort();
     await Promise.allSettled(active);
-    await previewLoop;
+    await Promise.allSettled([previewLoop, proposalLoop]);
     httpServer?.close();
   }
   console.log("Extraction worker shutting down");

@@ -176,6 +176,8 @@ async function assertBrokerMembership(ctx: QueryCtx, brokerOrgId: Id<"organizati
 export const listForBroker = query({
   args: { brokerOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
+    throw new Error("Broker client portfolio is retired; use broker network profiles");
+    /* legacy compatibility implementation retained until narrowing migration */
     const access = await getOrgAccess(ctx, args.brokerOrgId);
     assertBrokerOrg(access);
     return await listRowsForBroker(ctx, args.brokerOrgId);
@@ -185,6 +187,8 @@ export const listForBroker = query({
 export const listForBrokerInternal = internalQuery({
   args: { brokerOrgId: v.id("organizations"), userId: v.id("users") },
   handler: async (ctx, args) => {
+    throw new Error("Broker client portfolio is retired; use broker network profiles");
+    /* legacy compatibility implementation retained until narrowing migration */
     await assertBrokerMembership(ctx, args.brokerOrgId, args.userId);
     return await listRowsForBroker(ctx, args.brokerOrgId);
   },
@@ -193,6 +197,8 @@ export const listForBrokerInternal = internalQuery({
 export const getDetail = query({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
+    throw new Error("Broker client portfolio is retired; use broker network profiles");
+    /* legacy compatibility implementation retained until narrowing migration */
     let access;
     try {
       access = await getOrgAccess(ctx, args.clientOrgId);
@@ -211,9 +217,11 @@ export const getDetailInternal = internalQuery({
     userId: v.id("users"),
   },
   handler: async (ctx, args) => {
+    throw new Error("Broker client portfolio is retired; use broker network profiles");
+    /* legacy compatibility implementation retained until narrowing migration */
     await assertBrokerMembership(ctx, args.brokerOrgId, args.userId);
     const clientOrg = await ctx.db.get(args.clientOrgId);
-    if (!clientOrg || clientOrg.type !== "client" || clientOrg.brokerOrgId !== args.brokerOrgId) {
+    if (!(clientOrg as any) || (clientOrg as any).type !== "client" || (clientOrg as any).brokerOrgId !== args.brokerOrgId) {
       return null;
     }
     return await getClientDetailRecord(ctx, args.clientOrgId);

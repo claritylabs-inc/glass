@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/table";
 import { ArchiveRestore, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { useClientDetailActions } from "../layout";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
@@ -63,6 +62,9 @@ type BrokerPolicyRow = {
     | null;
   premium?: string | null;
 };
+
+const clearNode = (_node: ReactNode) => {};
+const clearText = (_value: string | null) => {};
 
 function cleanField(value?: string | null): string | undefined {
   if (!value) return undefined;
@@ -120,7 +122,6 @@ function displayUploadedBy(side?: BrokerPolicyRow["uploadedBySide"]) {
 export type ManagedClientPolicyWorkspaceProps = {
   clientOrgId?: string;
   basePath?: string;
-  uploadActor?: "broker" | "operator";
   readOnly?: boolean;
   showAgentEmail?: boolean;
   showStatusNavigation?: boolean;
@@ -134,7 +135,6 @@ export type ManagedClientPolicyWorkspaceProps = {
 export function ManagedClientPolicyWorkspace({
   clientOrgId: clientOrgIdProp,
   basePath: basePathProp,
-  uploadActor = "broker",
   readOnly = false,
   showAgentEmail = true,
   showStatusNavigation = true,
@@ -155,10 +155,9 @@ export function ManagedClientPolicyWorkspace({
   const pendingExtractionToastsRef = useRef<
     Record<string, { fileName?: string | null }>
   >({});
-  const clientDetailActions = useClientDetailActions();
-  const setActions = onActions ?? clientDetailActions.setActions;
-  const setRightPanel = onRightPanel ?? clientDetailActions.setRightPanel;
-  const setBreadcrumbExtra = onBreadcrumb ?? clientDetailActions.setBreadcrumbExtra;
+  const setActions = onActions ?? clearNode;
+  const setRightPanel = onRightPanel ?? clearNode;
+  const setBreadcrumbExtra = onBreadcrumb ?? clearText;
   const selectPolicy = useCallback(
     (policyId: Id<"policies">) => {
       if (onPolicySelect) {
@@ -201,8 +200,8 @@ export function ManagedClientPolicyWorkspace({
   }, [readOnly, setActions, showArchived]);
 
   const policies = useCachedQuery(
-    "policies.listForBroker",
-    api.policies.listForBroker,
+    "policies.listForOperator",
+    api.policies.listForOperator,
     clientOrgId
       ? {
           clientOrgId: clientOrgId as Id<"organizations">,
@@ -216,7 +215,6 @@ export function ManagedClientPolicyWorkspace({
   const checkDuplicateUploadByHash = useMutation(
     api.policies.checkDuplicateUploadByHash,
   );
-  const createBrokerUpload = useMutation(api.policies.createBrokerUpload);
   const createOperatorUpload = useMutation(api.policies.createOperatorUpload);
   const restorePolicy = useMutation(api.policies.restore);
   const [restoringId, setRestoringId] = useState<Id<"policies"> | null>(null);
@@ -311,9 +309,7 @@ export function ManagedClientPolicyWorkspace({
               uploadFileSha256s: [candidates[i].fileSha256],
               documentType: "policy" as const,
             };
-            const policyId = (await (uploadActor === "operator"
-              ? createOperatorUpload(uploadArgs)
-              : createBrokerUpload(uploadArgs))) as Id<"policies">;
+            const policyId = (await createOperatorUpload(uploadArgs)) as Id<"policies">;
             showPolicyExtractionQueuedToast({
               policyId,
               documentType: "policy",
@@ -351,9 +347,7 @@ export function ManagedClientPolicyWorkspace({
             uploadFileSha256s,
             documentType: "policy" as const,
           };
-          const policyId = (await (uploadActor === "operator"
-            ? createOperatorUpload(uploadArgs)
-            : createBrokerUpload(uploadArgs))) as Id<"policies">;
+          const policyId = (await createOperatorUpload(uploadArgs)) as Id<"policies">;
           const displayFileName =
             candidates.length > 1
               ? `${candidates[0].file.name.replace(/\.pdf$/i, "")} + ${candidates.length - 1} more.pdf`
@@ -404,12 +398,10 @@ export function ManagedClientPolicyWorkspace({
       clientOrgId,
       checkDuplicateUploadByHash,
       uploadStorage,
-      createBrokerUpload,
       createOperatorUpload,
       extractFromUpload,
       policies,
       resolvePendingExtractionToasts,
-      uploadActor,
     ],
   );
 

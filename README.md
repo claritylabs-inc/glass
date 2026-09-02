@@ -63,10 +63,11 @@ deployment and database that belong only to that worktree. Workspace setup:
    minimal shared-dev fixture: `terry@claritylabs.inc` as an operator,
    Montgomery Risk with `terry@montgomeryrisk.com` as its admin, Cove with
    `adyan@cove.dev` as its admin, unique phone identities for both customer
-   accounts, their broker/client relationship, and one final Cove policy.
-   Montgomery Risk starts with broker white-labeling explicitly disabled, and
-   setup fetches and saves the Montgomery Risk and Cove website favicons in the
-   worktree's Convex file storage. The configured
+   accounts and one final Cove policy. Cove is standalone; Montgomery Risk is a
+   supplier-network profile with seeded writing states and ACORD lines, no
+   client ownership, and no policy-upload provenance. Setup fetches and saves
+   the Montgomery Risk and Cove website favicons in the worktree's Convex file
+   storage. The configured
    `IMESSAGE_TERMINAL_FROM_PHONE` is assigned to the Montgomery Risk admin so
    Spectrum starts in an org-scoped broker context. Setup then compiles the
    workers. Local macOS setup also starts Apple `container` and builds

@@ -2135,10 +2135,6 @@ export function makePhases(convexCtx: ActionCtx): Phase<PolicyExtractionState>[]
               `Created extraction review notification for ${reviewQuestions.length} coverage ${reviewQuestions.length === 1 ? "term" : "terms"}`,
             );
           }
-          await convexCtx.runMutation(
-            (internal as any).policyDelivery.enqueueInternal,
-            { policyId, sourceKind: "policy" },
-          );
         }
       } catch { /* non-critical */ }
 

@@ -63,6 +63,7 @@ async function seedOperatorPolicyFixture() {
       coverages: [],
       insuredName: "Client",
     });
+    await ctx.db.patch(impersonationSessionId, { targetOrgId: clientOrgId });
     await ctx.db.insert("sourceSpans", {
       orgId: clientOrgId,
       policyId,

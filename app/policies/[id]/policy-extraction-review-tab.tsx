@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation } from "convex/react";
-import { CheckCircle2, Loader2, Send } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
@@ -234,17 +234,12 @@ function displayReviewReason(question: CoverageReviewQuestion) {
 export function PolicyExtractionReview({
   policy,
   readOnly,
-  canRequestBrokerHelp,
 }: {
   policy: Record<string, unknown> & { _id: Id<"policies"> };
   readOnly: boolean;
-  canRequestBrokerHelp: boolean;
 }) {
   const questions = extractionReviewQuestions(policy);
   const answerQuestion = useMutation(api.policies.answerCoverageReviewQuestion);
-  const requestBrokerHelp = useMutation(
-    api.policies.requestCoverageReviewBrokerHelp,
-  );
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<
     Record<string, string>
@@ -274,23 +269,6 @@ export function PolicyExtractionReview({
     } catch (error) {
       toast.error(
         getUserFacingErrorMessage(error, "Could not confirm coverage"),
-      );
-    } finally {
-      setPendingId(null);
-    }
-  };
-
-  const askBroker = async (questionId: string) => {
-    setPendingId(`${questionId}:broker`);
-    try {
-      await requestBrokerHelp({
-        id: policy._id,
-        questionId,
-      });
-      toast.success("Broker help requested");
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(error, "Could not request broker help"),
       );
     } finally {
       setPendingId(null);
@@ -436,21 +414,6 @@ export function PolicyExtractionReview({
                   )}
                   Confirm Selection
                 </PillButton>
-                {canRequestBrokerHelp && !brokerRequested && (
-                  <PillButton
-                    variant="secondary"
-                    size="compact"
-                    disabled={readOnly || pendingId !== null}
-                    onClick={() => askBroker(questionId)}
-                  >
-                    {pendingId === `${questionId}:broker` ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Send className="size-3.5" />
-                    )}
-                    Ask Broker
-                  </PillButton>
-                )}
               </div>
             </div>
           );

@@ -23,6 +23,7 @@ export default function PolicyDetailPage({
         onRightPanel={setRightPanel}
         afterArchiveHref="/policies?view=archived"
         afterRestoreHref="/policies"
+        readOnly
       />
     </AppShell>
   );

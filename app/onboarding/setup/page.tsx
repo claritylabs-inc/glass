@@ -7,7 +7,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { BrandWordmark, PartnerWordmark } from "@/components/auth-shell";
+import { BrandWordmark } from "@/components/auth-shell";
 import { PolicyEmptyState } from "@/components/policy-empty-state";
 import type { PolicyUploadMode } from "@/components/policy-upload-mode-toggle";
 import { PillButton } from "@/components/ui/pill-button";
@@ -115,18 +115,11 @@ function Shell({
   currentStep,
   email,
   onLogout,
-  broker,
 }: {
   children: ReactNode;
   currentStep?: Step;
   email?: string;
   onLogout?: () => Promise<void> | void;
-  broker?: {
-    name?: string | null;
-    iconUrl?: string | null;
-    website?: string | null;
-    whiteLabelingEnabled?: boolean;
-  } | null;
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -137,15 +130,7 @@ function Shell({
               <LogoIcon size={18} color="#A0D2FA" static />
             </div>
             <div className="hidden sm:block">
-              {broker?.whiteLabelingEnabled !== false && broker ? (
-                <PartnerWordmark
-                  name={broker.name}
-                  iconUrl={broker.iconUrl}
-                  website={broker.website}
-                />
-              ) : (
-                <BrandWordmark />
-              )}
+              <BrandWordmark />
             </div>
           </div>
           <div className="justify-self-center">
@@ -291,10 +276,9 @@ export default function ClientOnboardingSetupPage() {
     return () => clearTimeout(timer);
   }, [trimmedUserPhone]);
 
-  const brokerAgentHandle =
-    viewerOrg?.brokerOrg?.agentHandle ?? viewerOrg?.org?.agentHandle;
-  const brokerAgentEmail = brokerAgentHandle
-    ? `${brokerAgentHandle}@${AGENT_DOMAIN}`
+  const spotAgentHandle = viewerOrg?.org?.agentHandle;
+  const spotAgentEmail = spotAgentHandle
+    ? `${spotAgentHandle}@${AGENT_DOMAIN}`
     : `agent@${AGENT_DOMAIN}`;
 
   const handleLogout = useCallback(async () => {
@@ -532,17 +516,11 @@ export default function ClientOnboardingSetupPage() {
       currentStep={currentStep}
       email={viewer?.email}
       onLogout={handleLogout}
-      broker={viewerOrg?.brokerOrg ?? null}
     >
       <div className="w-full max-w-md space-y-8">
         <div className="space-y-3 text-left">
           <h1 className={`${typeStyle("heading.micro")}`}>
-            {currentStep === 0 &&
-            viewerOrg?.brokerOrg?.whiteLabelingEnabled !== false &&
-            viewerOrg?.brokerOrg?.name &&
-            !isVendorInvite
-              ? `Welcome to ${viewerOrg.brokerOrg.name}`
-              : stepContent[currentStep].label}
+            {stepContent[currentStep].label}
           </h1>
           {stepContent[currentStep].subtitle ? (
             <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
@@ -703,7 +681,7 @@ export default function ClientOnboardingSetupPage() {
               </OperationalPanel>
             ) : (
               <PolicyEmptyState
-                agentEmail={brokerAgentEmail}
+                agentEmail={spotAgentEmail}
                 uploading={uploading}
                 onUpload={handleFilesUpload}
                 title=""
@@ -781,13 +759,13 @@ export default function ClientOnboardingSetupPage() {
                     type="button"
                     onClick={() => {
                       void navigator.clipboard
-                        .writeText(brokerAgentEmail)
+                        .writeText(spotAgentEmail)
                         .then(() => toast.success("Copied to clipboard"))
                         .catch(() => toast.error("Couldn't copy"));
                     }}
                     className={`mx-1 inline-flex items-center gap-1 text-foreground underline decoration-foreground/20 underline-offset-4 hover:decoration-foreground/50 transition-colors ${typeStyle("control.button")}`}
                   >
-                    {brokerAgentEmail}
+                    {spotAgentEmail}
                     <Copy className="h-3.5 w-3.5" />
                   </button>{" "}
                   to get instant answers about your insurance coverage.

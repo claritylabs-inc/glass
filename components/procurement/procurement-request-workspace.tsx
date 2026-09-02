@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Copy,
   Download,
@@ -57,6 +57,7 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
+import { StatusTag } from "@/components/ui/status-tag";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
@@ -84,7 +85,6 @@ import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 const NONE = "__none__";
-const EXTERNAL_BROKER = "__external__";
 
 type PolicyOption = {
   policyId: Id<"policies">;
@@ -163,12 +163,208 @@ type RequestDetails = {
   outreaches: Outreach[];
   files: ProcurementFileItem[];
   emailThreads: EmailThread[];
+  clientActivity?: Array<{
+    _id: string;
+    kind: string;
+    body?: string;
+    authorSide?: string;
+    createdAt: number;
+  }>;
+  requestDocuments?: Array<{ _id: string; name: string; url: string | null; clientVisible: boolean; createdAt: number }>;
 };
 
 type BrokerOption = {
   _id: Id<"organizations">;
   name: string;
 };
+
+function ProposalCreateDrawer({
+  requestId,
+  outreaches,
+  onClose,
+}: {
+  requestId: Id<"procurementRequests">;
+  outreaches: Outreach[];
+  onClose: () => void;
+}) {
+  const eligible = outreaches.filter((outreach) => outreach.brokerOrgId);
+  const [outreachId, setOutreachId] = useState(eligible[0]?._id ?? "");
+  const [files, setFiles] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
+  const createProposal = useMutation(api.procurementProposals.create);
+  const generateUploadUrl = useMutation(api.procurementProposals.generateUploadUrl);
+  const addDocument = useMutation(api.procurementProposals.addDocument);
+  const queueExtraction = useMutation(api.procurementProposals.queueExtraction);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const outreach = eligible.find((item) => item._id === outreachId);
+    if (!outreach?.brokerOrgId || files.length === 0) return;
+    setSaving(true);
+    try {
+      const { proposalId } = await createProposal({
+        requestId,
+        outreachId: outreach._id,
+        brokerOrgId: outreach.brokerOrgId,
+      });
+      for (const file of files) {
+        const uploadUrl = await generateUploadUrl({ proposalId });
+        const response = await fetch(uploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": file.type || "application/pdf" },
+          body: file,
+        });
+        if (!response.ok) throw new Error("Upload failed");
+        const { storageId } = (await response.json()) as { storageId: Id<"_storage"> };
+        const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+        const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        await addDocument({
+          proposalId,
+          fileId: storageId,
+          fileName: file.name,
+          contentType: file.type || "application/pdf",
+          size: file.size,
+          sha256,
+        });
+      }
+      await queueExtraction({ proposalId });
+      toast.success("Proposal filed and queued for extraction");
+      onClose();
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, "Could not file the proposal"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <SettingsDrawer
+      open
+      onOpenChange={(open) => { if (!open) onClose(); }}
+      title="File proposal"
+      footer={<PillButton type="submit" form="proposal-create-form" disabled={saving || !outreachId || files.length === 0}>{saving ? <Loader2 className="size-4 animate-spin" /> : null}File proposal</PillButton>}
+    >
+      <form id="proposal-create-form" className="space-y-5" onSubmit={submit}>
+        <div>
+          <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>Broker outreach</label>
+          <Select value={outreachId} onValueChange={(value) => setOutreachId((value ?? "") as Id<"procurementBrokerOutreaches">)}>
+            <SelectTrigger><SelectValue placeholder="Select broker" /></SelectTrigger>
+            <SelectContent>{eligible.map((outreach) => <SelectItem key={outreach._id} value={outreach._id}>{outreach.brokerName}</SelectItem>)}</SelectContent>
+          </Select>
+          {eligible.length === 0 ? <p className={`mt-2 text-warning ${typeStyle("body.default")}`}>Add a broker organization to Market before filing a proposal.</p> : null}
+        </div>
+        <div>
+          <label className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}>Proposal documents</label>
+          <Input type="file" accept="application/pdf" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} />
+          <p className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}>All selected documents are bundled into one private proposal.</p>
+        </div>
+      </form>
+    </SettingsDrawer>
+  );
+}
+
+type ProposalView = {
+  _id: Id<"procurementProposals">;
+  brokerName?: string;
+  status: string;
+  extractedOffer?: unknown;
+  documents: Array<{ _id: Id<"procurementProposalDocuments">; fileName: string; url?: string | null }>;
+  reviews: Array<{
+    _id: Id<"procurementProposalReviews">;
+    modelConclusion: "meets_requirements" | "has_gaps" | "insufficient_evidence";
+    staffConclusion?: "meets_requirements" | "has_gaps" | "insufficient_evidence";
+    findings: unknown[];
+  }>;
+};
+
+function ProposalReviewDrawer({ proposal, onClose, onEvidence }: { proposal: ProposalView; onClose: () => void; onEvidence: (url: string, page?: number) => void }) {
+  const confirmReview = useMutation(api.procurementProposals.confirmReview);
+  const offer = (proposal.extractedOffer ?? {}) as {
+    carrier?: string; quoteNumber?: string; premium?: string; premiumAmount?: number;
+    proposedEffectiveDate?: string; proposedExpirationDate?: string; quoteExpirationDate?: string;
+    coverages?: Array<Record<string, unknown>>; subjectivities?: Array<Record<string, unknown>>; exclusions?: Array<Record<string, unknown>>;
+  };
+  const review = proposal.reviews[0];
+  const [conclusion, setConclusion] = useState(review?.staffConclusion ?? review?.modelConclusion ?? "insufficient_evidence");
+  const [saving, setSaving] = useState(false);
+  const documents = new Map(proposal.documents.map((document) => [String(document._id), document]));
+  return <SettingsDrawer open onOpenChange={(open) => { if (!open) onClose(); }} title={`${proposal.brokerName ?? "Broker"} proposal`}>
+    <div className="space-y-5">
+      <OperationalLabelValueList>
+        <OperationalLabelValueRow label="Carrier" value={offer.carrier ?? "Not extracted"} />
+        <OperationalLabelValueRow label="Quote number" value={offer.quoteNumber ?? "Not extracted"} />
+        <OperationalLabelValueRow label="Premium" value={offer.premium ?? offer.premiumAmount?.toLocaleString() ?? "Not extracted"} />
+        <OperationalLabelValueRow label="Proposed term" value={[offer.proposedEffectiveDate, offer.proposedExpirationDate].filter(Boolean).join(" – ") || "Not extracted"} />
+        <OperationalLabelValueRow label="Quote valid through" value={offer.quoteExpirationDate ?? "Not extracted"} />
+      </OperationalLabelValueList>
+      <ProposalFactList title="Coverages" rows={offer.coverages} />
+      <ProposalFactList title="Subjectivities" rows={offer.subjectivities} />
+      <ProposalFactList title="Exclusions" rows={offer.exclusions} />
+      {review ? <OperationalPanel>
+        <OperationalPanelHeader title="Requirement review" action={!review.staffConclusion ? <Select value={conclusion} onValueChange={(value) => setConclusion(value as typeof conclusion)}><SelectTrigger className="w-48"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="meets_requirements">Meets requirements</SelectItem><SelectItem value="has_gaps">Has gaps</SelectItem><SelectItem value="insufficient_evidence">Insufficient evidence</SelectItem></SelectContent></Select> : <StatusTag tone={review.staffConclusion === "meets_requirements" ? "success" : "warning"}>{review.staffConclusion.replaceAll("_", " ")}</StatusTag>} />
+        <OperationalPanelBody className="space-y-3">
+          {review.findings.map((finding, index) => {
+            const value = finding as Record<string, unknown>;
+            const evidence = (Array.isArray(value.evidence) ? value.evidence[0] : value) as Record<string, unknown>;
+            const document = documents.get(String(evidence.proposalDocumentId ?? ""));
+            return <div key={index} className="border-b border-border pb-3 last:border-0 last:pb-0">
+              <p className={typeStyle("body.medium")}>{String(value.title ?? value.requirementTitle ?? value.specificationLabel ?? `Finding ${index + 1}`)}</p>
+              <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{String(value.summary ?? value.finding ?? value.reason ?? value.conclusion ?? "Review finding")}</p>
+              {document?.url ? <PillButton className="mt-2" size="compact" variant="secondary" onClick={() => onEvidence(document.url!, typeof evidence.pageStart === "number" ? evidence.pageStart : undefined)}>Open evidence{typeof evidence.pageStart === "number" ? ` · p. ${evidence.pageStart}` : ""}</PillButton> : null}
+            </div>;
+          })}
+          {!review.staffConclusion ? <PillButton disabled={saving} onClick={async () => { setSaving(true); try { await confirmReview({ reviewId: review._id, conclusion }); toast.success("Proposal review confirmed"); } catch (error) { toast.error(getUserFacingErrorMessage(error, "Could not confirm the proposal review")); } finally { setSaving(false); } }}>{saving ? <Loader2 className="size-4 animate-spin" /> : null}Confirm conclusion</PillButton> : null}
+        </OperationalPanelBody>
+      </OperationalPanel> : null}
+    </div>
+  </SettingsDrawer>;
+}
+
+type SpecificationValue = { _id?: Id<"procurementSpecifications">; key: string; label: string; value: string };
+
+function SpecificationEditor({ requestId, specifications, onClose }: { requestId: Id<"procurementRequests">; specifications: SpecificationValue[]; onClose: () => void }) {
+  const stageDrafts = useMutation(api.procurementRequirements.stageDrafts);
+  const [rows, setRows] = useState<SpecificationValue[]>(specifications.length > 0 ? specifications : [{ key: "", label: "", value: "" }]);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const valid = rows.filter((row) => row.label.trim() && row.value.trim());
+    if (valid.length === 0) return;
+    setSaving(true);
+    try {
+      await stageDrafts({
+        requestId,
+        requirements: [],
+        specifications: valid.map((row) => ({
+          key: row.key.trim() || row.label.trim(),
+          label: row.label.trim(),
+          value: row.value.trim(),
+        })),
+      });
+      toast.success("Project specifications updated");
+      onClose();
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, "Could not update project specifications"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <SettingsDrawer open onOpenChange={(open) => { if (!open) onClose(); }} title="Edit project specifications" footer={<PillButton onClick={() => void save()} disabled={saving || !rows.some((row) => row.label.trim() && row.value.trim())}>{saving ? <Loader2 className="size-4 animate-spin" /> : null}Save specifications</PillButton>}>
+    <div className="space-y-5">
+      {rows.map((row, index) => <div key={row._id ?? index} className="space-y-3 border-b border-border pb-5 last:border-0">
+        <Input aria-label={`Specification ${index + 1} label`} value={row.label} placeholder="Label, such as Annual revenue" onChange={(event) => setRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item))} />
+        <Textarea aria-label={`Specification ${index + 1} value`} value={row.value} placeholder="Value" rows={3} onChange={(event) => setRows((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
+      </div>)}
+      <PillButton variant="secondary" onClick={() => setRows((current) => [...current, { key: "", label: "", value: "" }])}><Plus className="size-3.5" />Add specification</PillButton>
+    </div>
+  </SettingsDrawer>;
+}
+
+function ProposalFactList({ title, rows = [] }: { title: string; rows?: Array<Record<string, unknown>> }) {
+  if (rows.length === 0) return null;
+  return <OperationalPanel><OperationalPanelHeader title={title} /><OperationalPanelBody className="space-y-3">{rows.map((row, index) => <div key={index} className="border-b border-border pb-3 last:border-0 last:pb-0"><p className={typeStyle("body.medium")}>{String(row.name ?? row.description ?? row.line ?? title.slice(0, -1))}</p><p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{[row.limit, row.deductible, row.amount, row.content].filter(Boolean).map(String).join(" · ") || "Recorded in proposal"}</p></div>)}</OperationalPanelBody></OperationalPanel>;
+}
 
 function RequestEditor({
   request,
@@ -374,7 +570,7 @@ function OutreachEditor({
   const createOutreach = useMutation(api.procurementRequests.createOutreach);
   const updateOutreach = useMutation(api.procurementRequests.updateOutreach);
   const [brokerOrgId, setBrokerOrgId] = useState(
-    outreach?.brokerOrgId ?? EXTERNAL_BROKER,
+    outreach?.brokerOrgId ?? "",
   );
   const [brokerName, setBrokerName] = useState(outreach?.brokerName ?? "");
   const [contactName, setContactName] = useState(outreach?.contactName ?? "");
@@ -413,8 +609,8 @@ function OutreachEditor({
   }
 
   async function save() {
-    if (!brokerName.trim()) {
-      toast.error("Enter a broker name");
+    if (!brokerOrgId) {
+      toast.error("Select a broker organization");
       return;
     }
     const shared = {
@@ -439,10 +635,7 @@ function OutreachEditor({
       if (outreach) {
         await updateOutreach({
           outreachId: outreach._id,
-          brokerOrgId:
-            brokerOrgId === EXTERNAL_BROKER
-              ? null
-              : (brokerOrgId as Id<"organizations">),
+          brokerOrgId: brokerOrgId as Id<"organizations">,
           ...shared,
           contactName: contactName || null,
           contactEmail: contactEmail || null,
@@ -458,10 +651,7 @@ function OutreachEditor({
       } else {
         await createOutreach({
           requestId,
-          brokerOrgId:
-            brokerOrgId === EXTERNAL_BROKER
-              ? undefined
-              : (brokerOrgId as Id<"organizations">),
+          brokerOrgId: brokerOrgId as Id<"organizations">,
           ...shared,
         });
         toast.success("Broker added");
@@ -509,13 +699,10 @@ function OutreachEditor({
             <SearchableSelect
               value={brokerOrgId}
               onChange={chooseBroker}
-              options={[
-                { value: EXTERNAL_BROKER, label: "External / unlinked broker" },
-                ...brokers.map((broker) => ({
+              options={brokers.map((broker) => ({
                   value: broker._id,
                   label: broker.name,
-                })),
-              ]}
+                }))}
             />
           </label>
           <label className="block space-y-1.5">
@@ -526,7 +713,7 @@ function OutreachEditor({
             </span>
             <Input
               value={brokerName}
-              onChange={(event) => setBrokerName(event.target.value)}
+              disabled
             />
           </label>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -897,7 +1084,14 @@ export function ProcurementRequestWorkspace({
   clientOrgId: Id<"organizations">;
   requestId: Id<"procurementRequests">;
   basePath: string;
-  view: "overview" | "brokers" | "files" | "email";
+  view:
+    | "overview"
+    | "requirements"
+    | "market"
+    | "proposals"
+    | "activity"
+    | "files"
+    | "email";
   readOnly: boolean;
   onActions?: (node: ReactNode) => void;
   onRightPanel: (node: ReactNode) => void;
@@ -920,7 +1114,22 @@ export function ProcurementRequestWorkspace({
     limit: 100,
   });
   const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
+  const requirementData = useQuery(api.procurementRequirements.list, {
+    requestId,
+  });
+  const proposals = useQuery(api.procurementProposals.list, { requestId });
+  const extractRequirementDrafts = useAction(api.actions.procurementIntake.extractDrafts);
+  const generateProposalReview = useAction(api.actions.proposalReview.generateReview);
   const createFileItem = useMutation(api.procurementRequests.createFileItem);
+  const selectProposal = useMutation(api.procurementProposals.select);
+  const confirmRequirementDraft = useMutation(api.procurementRequirements.confirmDraft);
+  const postClientActivity = useMutation(api.procurementRequests.postClientActivity);
+  const generateRequestUploadUrl = useMutation(api.procurementRequests.generateRequestUploadUrl);
+  const attachRequestDocument = useMutation(api.procurementRequests.attachRequestDocument);
+  const [clientReply, setClientReply] = useState("");
+  const [sharingWithClient, setSharingWithClient] = useState(false);
+  const [extractingRequirements, setExtractingRequirements] = useState(false);
+  const [reviewingProposalId, setReviewingProposalId] = useState<Id<"procurementProposals"> | null>(null);
   const { openWithUrl, closePdf } = usePdf();
 
   const details = result as RequestDetails | null | undefined;
@@ -1018,6 +1227,29 @@ export function ProcurementRequestWorkspace({
     requestId,
   ]);
 
+  const openProposalCreate = useCallback(() => {
+    if (!details) return;
+    closePdf();
+    onRightPanel(
+      <ProposalCreateDrawer
+        requestId={requestId}
+        outreaches={details.outreaches}
+        onClose={closeRightPanel}
+      />,
+    );
+  }, [closePdf, closeRightPanel, details, onRightPanel, requestId]);
+
+  const openProposalReview = useCallback((proposal: ProposalView) => {
+    closePdf();
+    onRightPanel(<ProposalReviewDrawer proposal={proposal} onClose={closeRightPanel} onEvidence={(url, page) => { onRightPanel(null); openWithUrl(url, page); }} />);
+  }, [closePdf, closeRightPanel, onRightPanel, openWithUrl]);
+
+  const openSpecificationEditor = useCallback(() => {
+    if (!requirementData) return;
+    closePdf();
+    onRightPanel(<SpecificationEditor requestId={requestId} specifications={requirementData.specifications as SpecificationValue[]} onClose={closeRightPanel} />);
+  }, [closePdf, closeRightPanel, onRightPanel, requestId, requirementData]);
+
   const openEmail = useCallback(
     (emailThreadId: Id<"procurementEmailThreads">) => {
       closePdf();
@@ -1049,10 +1281,15 @@ export function ProcurementRequestWorkspace({
           <Pencil className="size-3.5" />
           Edit request
         </PillButton>
-      ) : view === "brokers" ? (
+      ) : view === "market" ? (
         <PillButton type="button" onClick={() => openOutreachEditor()}>
           <Plus className="size-3.5" />
           Add broker
+        </PillButton>
+      ) : view === "proposals" ? (
+        <PillButton type="button" onClick={openProposalCreate}>
+          <Plus className="size-3.5" />
+          File proposal
         </PillButton>
       ) : view === "files" ? (
         <>
@@ -1079,6 +1316,7 @@ export function ProcurementRequestWorkspace({
     openOutreachEditor,
     openRequestEditor,
     openUpload,
+    openProposalCreate,
     readOnly,
     view,
   ]);
@@ -1105,13 +1343,68 @@ export function ProcurementRequestWorkspace({
     }
   }
 
+  async function shareClientReply() {
+    if (!clientReply.trim()) return;
+    setSharingWithClient(true);
+    try {
+      await postClientActivity({ requestId, body: clientReply.trim() });
+      setClientReply("");
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, "Could not post the client update"));
+    } finally {
+      setSharingWithClient(false);
+    }
+  }
+
+  async function shareRequestDocument(file: File) {
+    setSharingWithClient(true);
+    try {
+      const uploadUrl = await generateRequestUploadUrl({ requestId });
+      const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+      if (!response.ok) throw new Error("Upload failed");
+      const { storageId } = (await response.json()) as { storageId: Id<"_storage"> };
+      await attachRequestDocument({ requestId, storageId, fileName: file.name, contentType: file.type || "application/octet-stream", size: file.size, clientVisible: true });
+      toast.success("File shared with client");
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, "Could not share the file"));
+    } finally {
+      setSharingWithClient(false);
+    }
+  }
+
+  async function extractIntake() {
+    setExtractingRequirements(true);
+    try {
+      const result = await extractRequirementDrafts({ requestId });
+      toast.success(`Extracted ${result.draftCount} requirement draft${result.draftCount === 1 ? "" : "s"} and ${result.specificationCount} specification${result.specificationCount === 1 ? "" : "s"}`);
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, "Could not extract the intake"));
+    } finally {
+      setExtractingRequirements(false);
+    }
+  }
+
+  async function reviewProposal(proposalId: Id<"procurementProposals">) {
+    setReviewingProposalId(proposalId);
+    try {
+      const result = await generateProposalReview({ proposalId });
+      toast.success(`Proposal review generated with ${result.findingCount} finding${result.findingCount === 1 ? "" : "s"}`);
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, "Could not generate the proposal review"));
+    } finally {
+      setReviewingProposalId(null);
+    }
+  }
+
   if (
     result === undefined ||
     policies === undefined ||
     policyRows === undefined ||
     clientFilesResult === undefined ||
     requestRows === undefined ||
-    brokers === undefined
+    brokers === undefined ||
+    requirementData === undefined ||
+    proposals === undefined
   ) {
     return (
       <OperationalPanel
@@ -1156,12 +1449,20 @@ export function ProcurementRequestWorkspace({
         >
           <TabsList variant="pill" aria-label="Procurement request view">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="brokers">
-              Brokers
+            <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            <TabsTrigger value="market">
+              Market
               <span className="text-muted-foreground/60">
                 {details.outreaches.length}
               </span>
             </TabsTrigger>
+            <TabsTrigger value="proposals">
+              Proposals
+              <span className="text-muted-foreground/60">
+                {proposals.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="activity">Client activity</TabsTrigger>
             <TabsTrigger value="files">
               Files
               <span className="text-muted-foreground/60">
@@ -1169,7 +1470,7 @@ export function ProcurementRequestWorkspace({
               </span>
             </TabsTrigger>
             <TabsTrigger value="email">
-              Email
+              Imported email
               <span className="text-muted-foreground/60">
                 {details.emailThreads.length}
               </span>
@@ -1228,11 +1529,113 @@ export function ProcurementRequestWorkspace({
         </div>
       ) : null}
 
-      {view === "brokers" ? (
+      {view === "requirements" ? (
+        <div className="space-y-4">
+          <OperationalPanel as="section">
+            <OperationalPanelHeader title="Confirmed insurance requirements" action={!readOnly ? <div className="flex gap-2"><PillButton size="compact" variant="secondary" onClick={openSpecificationEditor}><Pencil className="size-3.5" />Edit specifications</PillButton><PillButton size="compact" onClick={() => void extractIntake()} disabled={extractingRequirements}>{extractingRequirements ? <Loader2 className="size-3.5 animate-spin" /> : null}Extract intake</PillButton></div> : null} />
+            <OperationalPanelBody className="space-y-4">
+              {requirementData.requirements.length === 0 ? (
+                <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+                  No requirements have been confirmed.
+                </p>
+              ) : (
+                requirementData.requirements.map((requirement) => requirement ? (
+                  <div key={requirement._id} className="border-b border-border pb-4 last:border-0 last:pb-0">
+                    <p className={`text-foreground ${typeStyle("body.medium")}`}>
+                      {requirement.title}
+                    </p>
+                    <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
+                      {requirement.requirementText}
+                    </p>
+                  </div>
+                ) : null)
+              )}
+            </OperationalPanelBody>
+          </OperationalPanel>
+          <OperationalLabelValueList>
+            {requirementData.specifications.length === 0 ? (
+              <OperationalLabelValueRow label="Project specifications" value="None recorded" />
+            ) : (
+              requirementData.specifications.map((specification) => (
+                <OperationalLabelValueRow key={specification._id} label={specification.label} value={specification.value} />
+              ))
+            )}
+          </OperationalLabelValueList>
+          {requirementData.drafts.length > 0 ? (
+            <OperationalPanel>
+              <OperationalPanelHeader title="Draft requirements" />
+              <OperationalPanelBody className="space-y-3">
+                {requirementData.drafts.map((draft) => {
+                  const value = draft.proposedRequirement as { title?: string; requirementText?: string };
+                  return (
+                    <div key={draft._id} className="flex items-start justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0">
+                      <div><p className={typeStyle("body.medium")}>{value.title ?? "Requirement draft"}</p>{value.requirementText ? <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>{value.requirementText}</p> : null}</div>
+                      {!readOnly ? (
+                        <PillButton size="compact" variant="secondary" onClick={() => void confirmRequirementDraft({ draftId: draft._id })}>
+                          Confirm
+                        </PillButton>
+                      ) : <StatusTag tone="warning">Needs confirmation</StatusTag>}
+                    </div>
+                  );
+                })}
+              </OperationalPanelBody>
+            </OperationalPanel>
+          ) : null}
+        </div>
+      ) : null}
+
+      {view === "proposals" ? (
+        proposals.length === 0 ? (
+          <EmptyStateCard title="No proposals filed" description="File emailed quote documents against a broker outreach to compare them here." />
+        ) : (
+          <OperationalPanel as="section">
+            <Table>
+              <TableHeader><TableRow><TableHead>Broker</TableHead><TableHead>Status</TableHead><TableHead>Premium</TableHead><TableHead>Term</TableHead><TableHead>Review</TableHead><TableHead>Documents</TableHead><TableHead className="w-0" /></TableRow></TableHeader>
+              <TableBody>{proposals.map((proposal) => {
+                const offer = (proposal.extractedOffer ?? {}) as { premium?: string; premiumAmount?: number; proposedEffectiveDate?: string; proposedExpirationDate?: string; coverages?: Array<{ name?: string; limit?: string }> };
+                const review = proposal.reviews[0];
+                const conclusion = review?.staffConclusion ?? review?.modelConclusion;
+                return <TableRow key={proposal._id}><TableCell><button type="button" className={`text-left text-foreground underline-offset-4 hover:underline ${typeStyle("body.medium")}`} onClick={() => openProposalReview(proposal as ProposalView)}>{proposal.brokerName ?? "Broker"}</button><p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>{offer.coverages?.slice(0, 2).map((coverage) => [coverage.name, coverage.limit].filter(Boolean).join(" ")).filter(Boolean).join(" · ") || "No coverage summary"}</p></TableCell><TableCell><StatusTag tone={proposal.status === "selected" ? "success" : proposal.status === "reviewed" ? "info" : "neutral"}>{proposal.status.replaceAll("_", " ")}</StatusTag></TableCell><TableCell className="text-muted-foreground">{offer.premium ?? offer.premiumAmount ?? "—"}</TableCell><TableCell className="text-muted-foreground">{[offer.proposedEffectiveDate, offer.proposedExpirationDate].filter(Boolean).join(" – ") || "—"}</TableCell><TableCell>{conclusion ? <StatusTag tone={conclusion === "meets_requirements" ? "success" : "warning"}>{String(conclusion).replaceAll("_", " ")}</StatusTag> : <span className="text-muted-foreground">Not reviewed</span>}</TableCell><TableCell className="text-muted-foreground">{proposal.documents.length}</TableCell><TableCell>{!readOnly && !review && proposal.extractedOffer ? <PillButton size="compact" variant="secondary" disabled={reviewingProposalId === proposal._id} onClick={() => void reviewProposal(proposal._id)}>{reviewingProposalId === proposal._id ? <Loader2 className="size-3.5 animate-spin" /> : null}Generate review</PillButton> : !readOnly && review && !review.staffConclusion ? <PillButton size="compact" variant="secondary" onClick={() => openProposalReview(proposal as ProposalView)}>Review</PillButton> : !readOnly && proposal.status === "reviewed" ? <PillButton size="compact" onClick={() => void selectProposal({ proposalId: proposal._id })}>Select</PillButton> : null}</TableCell></TableRow>;
+              })}</TableBody>
+            </Table>
+          </OperationalPanel>
+        )
+      ) : null}
+
+      {view === "activity" ? (
+        <OperationalPanel>
+          {(details.clientActivity ?? []).length === 0 ? (
+            <OperationalPanelBody className={`text-muted-foreground ${typeStyle("body.default")}`}>No shared client activity yet.</OperationalPanelBody>
+          ) : (details.clientActivity ?? []).map((item) => (
+            <div key={item._id} className="border-b border-border px-4 py-3 last:border-0">
+              <p className={`whitespace-pre-wrap text-foreground ${typeStyle("body.default")}`}>{item.body ?? "Shared document"}</p>
+              <p className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}>{item.authorSide === "client" ? "Client" : "Staff"} · {formatDisplayDateTime(item.createdAt)}</p>
+            </div>
+          ))}
+          {(details.requestDocuments ?? []).filter((document) => document.clientVisible).map((document) => (
+            <div key={document._id} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0">
+              <FileText className="size-4 text-muted-foreground" />
+              {document.url ? <a href={document.url} download className={`text-foreground underline underline-offset-4 ${typeStyle("body.medium")}`}>{document.name}</a> : <span className={typeStyle("body.medium")}>{document.name}</span>}
+            </div>
+          ))}
+          {!readOnly ? (
+            <OperationalPanelBody className="space-y-3 border-t border-border">
+              <Textarea value={clientReply} onChange={(event) => setClientReply(event.target.value)} rows={4} placeholder="Post an update the client can see" />
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+                <PillButton variant="secondary" disabled={sharingWithClient} onClick={() => document.getElementById("operator-request-client-file")?.click()}><Upload className="size-3.5" />Share file</PillButton>
+                <input id="operator-request-client-file" type="file" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void shareRequestDocument(file); event.currentTarget.value = ""; }} />
+                <PillButton disabled={sharingWithClient || !clientReply.trim()} onClick={() => void shareClientReply()}>Post update</PillButton>
+              </div>
+            </OperationalPanelBody>
+          ) : null}
+        </OperationalPanel>
+      ) : null}
+
+      {view === "market" ? (
         details.outreaches.length === 0 ? (
           <EmptyStateCard
             title="No brokers contacted yet"
-            description="Add provisioned or external brokers and track each response independently."
+            description="Add a broker from the network directory and track each response independently."
           />
         ) : (
           <OperationalPanel as="section">

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import dayjs from "dayjs";
+import { invalidateProcurementReviewsForRequirement } from "./lib/procurementRequirements";
 import {
   internalMutation,
   internalQuery,
@@ -726,6 +727,7 @@ export const upsertRequirement = mutation({
         throw new Error("Requirement not found");
       }
       await ctx.db.patch(requirementId, patch);
+      await invalidateProcurementReviewsForRequirement(ctx, requirementId, access.userId, now);
     } else {
       requirementId = await ctx.db.insert("insuranceRequirements", {
         orgId: args.orgId,
@@ -830,6 +832,7 @@ export const updateRequirementSource = mutation({
       if (title !== undefined) requirementPatch.sourceDocumentName = title;
       if (args.sourceType !== undefined) requirementPatch.sourceType = args.sourceType;
       await ctx.db.patch(requirement._id, requirementPatch);
+      await invalidateProcurementReviewsForRequirement(ctx, requirement._id, access.userId, now);
     }
     await writeComplianceOperatorAudit(
       ctx,
@@ -883,6 +886,7 @@ export const archiveRequirementSources = mutation({
         updatedByUserId: access.userId,
         updatedAt: now,
       });
+      await invalidateProcurementReviewsForRequirement(ctx, requirement._id, access.userId, now);
       archivedRequirementCount += 1;
     }
     await writeComplianceOperatorAudit(
@@ -919,6 +923,7 @@ export const archiveRequirement = mutation({
       updatedByUserId: access.userId,
       updatedAt: dayjs().valueOf(),
     });
+    await invalidateProcurementReviewsForRequirement(ctx, args.requirementId, access.userId, dayjs().valueOf());
     await writeComplianceOperatorAudit(
       ctx,
       access,

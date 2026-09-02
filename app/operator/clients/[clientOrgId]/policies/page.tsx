@@ -150,7 +150,6 @@ export default function OperatorClientPoliciesPage() {
           <ManagedClientPolicyWorkspace
             clientOrgId={clientOrgId}
             basePath={basePath}
-            uploadActor="operator"
             readOnly={Boolean(activeImpersonation)}
             showAgentEmail={false}
             showStatusNavigation={false}

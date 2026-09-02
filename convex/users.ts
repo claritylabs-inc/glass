@@ -12,7 +12,6 @@ import {
 import { internal as _internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { notify } from "./lib/notify";
 import {
   EMAIL_CHANGE_PROVIDER,
   EMAIL_CHANGE_TTL_MS,
@@ -552,19 +551,6 @@ export const completeOnboarding = mutation({
     if (membership) {
       await ctx.db.patch(membership.orgId, { onboardingComplete: true });
 
-      // Notify broker if this is a client org
-      const clientOrg = await ctx.db.get(membership.orgId);
-      if (clientOrg?.type === "client" && clientOrg.brokerOrgId) {
-        await notify(ctx, {
-          orgId: clientOrg.brokerOrgId,
-          type: "client_onboarding_completed",
-          title: "Client completed onboarding",
-          body: `${clientOrg.name} finished their onboarding setup.`,
-          relatedOrgId: membership.orgId,
-          actionType: "view_client",
-          actionPayload: { clientOrgId: membership.orgId },
-        });
-      }
     }
   },
 });

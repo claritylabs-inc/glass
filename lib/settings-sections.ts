@@ -4,7 +4,6 @@ import {
   FlaskConical,
   Mail,
   Network,
-  Send,
   Users,
 } from "lucide-react";
 import { createElement, type ComponentType } from "react";
@@ -21,13 +20,11 @@ export type SettingsPageId =
 
 export type SettingsTabId =
   | "overview"
-  | "broker"
   | "team"
   | "behavior"
   | "channels"
   | "memory"
   | "models"
-  | "delivery"
   | "certificates"
   | "notifications"
   | "mailboxes"
@@ -71,7 +68,6 @@ export function getSettingsNavigation({
       icon: Building2,
       tabs: [
         { id: "overview", label: "Overview" },
-        ...(!isBroker ? [{ id: "broker" as const, label: "Broker" }] : []),
       ],
     },
     {
@@ -96,9 +92,8 @@ export function getSettingsNavigation({
     {
       id: "workflows",
       label: "Workflows",
-      icon: isBroker ? Send : FileBadge2,
+      icon: FileBadge2,
       tabs: [
-        { id: "delivery", label: "Delivery" },
         { id: "certificates", label: "Certificates" },
         { id: "notifications", label: "Notifications" },
       ],
@@ -145,12 +140,10 @@ export function settingsPages(groups: SettingsNavGroup[]) {
 
 const LEGACY_DESTINATIONS: Record<string, { section: SettingsPageId; tab: SettingsTabId }> = {
   organization: { section: "organization", tab: "overview" },
-  broker: { section: "organization", tab: "broker" },
   team: { section: "team", tab: "team" },
   agent: { section: "agent", tab: "behavior" },
   memory: { section: "agent", tab: "memory" },
   models: { section: "agent", tab: "models" },
-  delivery: { section: "workflows", tab: "delivery" },
   certificates: { section: "workflows", tab: "certificates" },
   notifications: { section: "workflows", tab: "notifications" },
   email: { section: "mailboxes", tab: "mailboxes" },

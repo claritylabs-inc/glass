@@ -44,7 +44,6 @@ import {
 } from "@/components/ui/select";
 import { StatusTag, type StatusTagTone } from "@/components/ui/status-tag";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCurrentOrg } from "@/hooks/use-current-org";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
 import { getPublicAgentDomain } from "@/lib/domains";
 import { openOAuthTab } from "@/lib/oauth-tab";
@@ -64,7 +63,6 @@ type ChannelSettings = {
   slackEnabled: boolean;
   slackSafeAlertsEnabled: boolean;
   slackVendorAlertsEnabled: boolean;
-  slackPolicyDeliveryEnabled: boolean;
 };
 
 type ChannelDrawer = "email" | "imessage" | "slack";
@@ -462,18 +460,6 @@ function AutomationSettings({
           })
         }
       />
-      <ChannelCard
-        title="Policy and endorsement delivery"
-        description="Deliver client-owned documents in their Slack threads."
-        checked={settings.slackPolicyDeliveryEnabled}
-        disabled={!canEdit || busy || !settings.slackEnabled}
-        onChange={() =>
-          onSave({
-            ...settings,
-            slackPolicyDeliveryEnabled: !settings.slackPolicyDeliveryEnabled,
-          })
-        }
-      />
     </div>
   );
   return showHeader ? (
@@ -517,9 +503,7 @@ export function AgentChannelsSection({
 }) {
   const { setRightPanel: setSettingsRightPanel } = useSettingsActions();
   const setRightPanel = setRightPanelOverride ?? setSettingsRightPanel;
-  const store = useSyncStore();
   const { patchClientSettings } = useOperatorClientCacheActions();
-  const currentOrg = useCurrentOrg();
   const viewer = useQuery(api.users.viewer);
   const isOperator = viewer?.accountKind === "operator";
   const customerResult = useQuery(
@@ -541,7 +525,6 @@ export function AgentChannelsSection({
 
   const update = useMutation(api.agentChannels.update);
   const updateForOperator = useMutation(api.agentChannels.updateForOperator);
-  const claimAgentHandle = useMutation(api.orgs.claimAgentHandle);
   const updateStandaloneAgentEmailHandleForOperator = useMutation(
     api.agentChannels.updateStandaloneAgentEmailHandleForOperator,
   );
@@ -631,20 +614,12 @@ export function AgentChannelsSection({
   const inviteEmail = selectedInviteMember?.email ?? "";
   const canEditAgentEmailAddress = Boolean(
     agentEmailAddress &&
-    (agentEmailAddress.source === "broker"
-      ? currentOrg?.isBroker &&
-        currentOrg.role === "admin" &&
-        currentOrg.orgId === agentEmailAddress.ownerOrgId
-      : isOperator && agentEmailAddress.ownerOrgId === clientOrgId),
+    isOperator && agentEmailAddress.ownerOrgId === clientOrgId,
   );
 
   async function saveAgentEmailHandle(handle: string | undefined) {
     if (!agentEmailAddress || !canEditAgentEmailAddress) {
       throw new Error("The agent email address is read-only");
-    }
-    if (agentEmailAddress.source === "broker") {
-      if (!handle) throw new Error("Enter an agent email address");
-      return await claimAgentHandle({ handle });
     }
     return await updateStandaloneAgentEmailHandleForOperator({
       clientOrgId,
@@ -654,10 +629,6 @@ export function AgentChannelsSection({
 
   function handleAgentEmailSaved(handle: string | undefined) {
     if (!agentEmailAddress) return;
-    if (agentEmailAddress.source === "broker") {
-      patchCachedViewerOrg(store, { agentHandle: handle });
-      return;
-    }
     void patchClientSettings(clientOrgId, { agentHandle: handle });
   }
 
@@ -1500,7 +1471,7 @@ export function AgentChannelsSection({
           key={`${agentEmailAddress.ownerOrgId}:${agentEmailAddress.configuredHandle ?? "shared"}`}
           address={agentEmailAddress}
           canEdit={canEditAgentEmailAddress}
-          allowSharedDefault={agentEmailAddress.source !== "broker"}
+          allowSharedDefault
           onSave={canEditAgentEmailAddress ? saveAgentEmailHandle : undefined}
           onSaved={handleAgentEmailSaved}
         />

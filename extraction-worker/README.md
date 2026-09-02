@@ -1,8 +1,10 @@
 # Spot Extraction Worker
 
-Standalone worker for long-running `cl-sdk` policy extraction jobs. Convex stays the durable job ledger; this service claims extract-phase work, sends heartbeats, saves SDK checkpoints, and returns the extracted document/chunks to Convex for embedding and post-processing.
+Standalone worker for long-running `cl-sdk` policy and private procurement-proposal extraction jobs. Convex stays the durable job ledger; this service claims extract-phase work, sends heartbeats, saves SDK checkpoints, and returns policy results for ordinary post-processing or proposal results to the operator-private proposal ledger.
 
 The worker also owns LiteParse preprocessing for `@claritylabs/cl-sdk`. It converts PDFs to parser text plus hierarchical page/row/cell source spans with bounding boxes, captures bounded page screenshots for multimodal model calls, passes the original PDF bytes and those spans into `cl-sdk`, and exposes a small authenticated HTTP endpoint for Convex actions that need synchronous parsed PDF text. Policy extraction also runs Poppler's `pdftotext` as a bounded supplement and adds only pages containing visible text that LiteParse omitted, which covers filled form overlays without replacing precise LiteParse bounding-box evidence. If LiteParse fails or times out, callers fall back to PDF.js plus the same supplemental visible-text check. A shared admission controller reserves PDF-bearing work before job claim, preview claim, or HTTP body decoding; it defaults to 12 live PDFs total and 8 full extraction PDFs, preserving capacity for preview and HTTP requests. The native parser remains serialized and its defensive wait queue is independently capped at 12 documents.
+
+Proposal jobs use a separate Convex claim/lease/completion path but reuse that same admission controller and serialized parser. Each bundled proposal PDF is extracted independently under its stable proposal-document ID so page-one evidence from different files cannot merge. Completion stores document-qualified source spans/nodes only in proposal source tables; it does not create policies, policy chunks, compliance matches, certificates, or delivery work.
 
 ## Local
 
@@ -46,7 +48,7 @@ Convex rejects stale external workers before they can claim jobs when expected-v
 
 Set `EXTRACTION_WORKER_URL` and the same `EXTRACTION_WORKER_SECRET` on Convex to let requirement imports, mailbox attachment reads, on-demand source lookup, and agent PDF attachment context call the worker's LiteParse endpoint. The endpoint accepts `{ "pdfBase64": "..." }` with `Authorization: Bearer <secret>` and returns `{ text, sourceSpans, sourceChunks, pageScreenshots, metadata }`.
 
-`EXTRACTION_JOB_CONCURRENCY` remains the outer job-loop ceiling. `EXTRACTION_PDF_WORK_MAX_ACTIVE` (default 12) bounds all live PDF-bearing full, preview, and HTTP work, while `EXTRACTION_PDF_WORK_MAX_FULL_ACTIVE` (default 8) limits full extraction inside that total so latency-sensitive work retains capacity. Admission happens before a job is claimed or an HTTP request body is decoded, so waiters retain only metadata rather than complete PDFs. `LITEPARSE_MAX_QUEUED_DOCUMENTS` (default 12) is a second defensive bound on the serialized parser queue; total PDF admission is clamped to that queue limit plus the one running native parse.
+`EXTRACTION_JOB_CONCURRENCY` remains the outer policy job-loop ceiling, and `PROPOSAL_EXTRACTION_CONCURRENCY` (default 2) bounds proposal jobs. `EXTRACTION_PDF_WORK_MAX_ACTIVE` (default 12) bounds all live PDF-bearing full, proposal, preview, and HTTP work, while `EXTRACTION_PDF_WORK_MAX_FULL_ACTIVE` (default 8) limits policy and proposal extraction inside that total so latency-sensitive work retains capacity. Admission happens before a job is claimed or an HTTP request body is decoded, so waiters retain only metadata rather than complete PDFs. `LITEPARSE_MAX_QUEUED_DOCUMENTS` (default 12) is a second defensive bound on the serialized parser queue; total PDF admission is clamped to that queue limit plus the one running native parse.
 
 ## Railway
 

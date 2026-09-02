@@ -49,7 +49,12 @@ function activeEmailThread(thread: Doc<"procurementEmailThreads">) {
 
 const requestStatusValidator = v.union(
   v.literal("draft"),
+  v.literal("submitted"),
+  v.literal("gathering_information"),
   v.literal("marketing"),
+  v.literal("proposal_review"),
+  v.literal("binding"),
+  v.literal("completed"),
   v.literal("quote_review"),
   v.literal("client_decision"),
   v.literal("accepted"),
@@ -202,13 +207,31 @@ async function requirePolicyForRequest(
   ctx: Ctx,
   policyId: Id<"policies"> | undefined,
   clientOrgId: Id<"organizations">,
+  allowArchived = false,
 ) {
   if (!policyId) return null;
   const policy = await ctx.db.get(policyId);
   if (!policy || policy.orgId !== clientOrgId) {
     throw new Error("Policy does not belong to this client");
   }
+  if (policy.deletedAt && !allowArchived) throw new Error("Resulting policy must not be archived");
   return policy;
+}
+
+async function outreachPacketSnapshot(ctx: Ctx, request: Doc<"procurementRequests">) {
+  const [requirementLinks, specifications, files] = await Promise.all([
+    ctx.db.query("procurementRequestRequirements").withIndex("request", (q) => q.eq("requestId", request._id)).collect(),
+    ctx.db.query("procurementSpecifications").withIndex("request", (q) => q.eq("requestId", request._id)).collect(),
+    ctx.db.query("procurementFileItems").withIndex("request", (q) => q.eq("requestId", request._id)).collect(),
+  ]);
+  return {
+    requirementRevision: request.requirementRevision ?? 0,
+    specificationRevision: request.specificationRevision ?? 0,
+    requirementIds: requirementLinks.map((link) => link.requirementId),
+    specifications: specifications.map(({ key, label, value, sourceExcerpt, sourcePageStart, sourcePageEnd }) => ({ key, label, value, sourceExcerpt, sourcePageStart, sourcePageEnd })),
+    fileItemIds: files.filter((file) => file.status === "available" || file.status === "sent").map((file) => file._id),
+    capturedAt: dayjs().valueOf(),
+  };
 }
 
 async function requireBrokerOrganization(
@@ -250,6 +273,7 @@ async function requestSummary(ctx: Ctx, request: Doc<"procurementRequests">) {
         ctx,
         request.replacingPolicyId,
         request.clientOrgId,
+        true,
       ),
       requirePolicyForRequest(
         ctx,
@@ -291,7 +315,7 @@ export async function getProcurementRequestDetails(
   requestId: Id<"procurementRequests">,
 ) {
   const request = await requireRequest(ctx, requestId);
-  const [summary, outreaches, fileItems, emailThreads] = await Promise.all([
+  const [summary, outreaches, fileItems, emailThreads, clientActivity, requestDocuments, requirementLinks, specifications, proposals] = await Promise.all([
     requestSummary(ctx, request),
     ctx.db
       .query("procurementBrokerOutreaches")
@@ -308,7 +332,14 @@ export async function getProcurementRequestDetails(
       .withIndex("request", (index) => index.eq("requestId", requestId))
       .order("desc")
       .take(50),
+    ctx.db.query("procurementRequestActivities").withIndex("request", (q) => q.eq("requestId", requestId)).collect(),
+    ctx.db.query("procurementRequestDocuments").withIndex("request", (q) => q.eq("requestId", requestId)).collect(),
+    ctx.db.query("procurementRequestRequirements").withIndex("request", (q) => q.eq("requestId", requestId)).collect(),
+    ctx.db.query("procurementSpecifications").withIndex("request", (q) => q.eq("requestId", requestId)).collect(),
+    ctx.db.query("procurementProposals").withIndex("request", (q) => q.eq("requestId", requestId)).collect(),
   ]);
+  const confirmedRequirements = (await Promise.all(requirementLinks.map((link) => ctx.db.get(link.requirementId)))).filter(Boolean);
+  const requestDocumentRows = await Promise.all(requestDocuments.map(async ({ fileId, ...document }) => ({ ...document, url: await ctx.storage.getUrl(fileId) })));
   const files = await Promise.all(
     fileItems.map(async (item) => {
       const file = item.clientFileId
@@ -339,6 +370,11 @@ export async function getProcurementRequestDetails(
     outreaches,
     files,
     emailThreads: emailThreads.filter(activeEmailThread),
+    clientActivity,
+    requestDocuments: requestDocumentRows,
+    confirmedRequirements,
+    specifications,
+    proposals,
   };
 }
 
@@ -446,13 +482,14 @@ export async function createProcurementRequestByOperator(
     status?: RequestStatus;
     replacingPolicyId?: Id<"policies">;
     resultingPolicyId?: Id<"policies">;
+    clientVisible?: boolean;
     source: "operator" | "agent";
   },
 ) {
   await requireDirectOperatorWrite(ctx, args.operatorUserId);
   const client = await requireClient(ctx, args.clientOrgId);
   await Promise.all([
-    requirePolicyForRequest(ctx, args.replacingPolicyId, args.clientOrgId),
+    requirePolicyForRequest(ctx, args.replacingPolicyId, args.clientOrgId, true),
     requirePolicyForRequest(ctx, args.resultingPolicyId, args.clientOrgId),
   ]);
   const now = dayjs().valueOf();
@@ -463,7 +500,13 @@ export async function createProcurementRequestByOperator(
     requestSummary: requiredText(args.requestSummary, "Client request"),
     requirements: requiredText(args.requirements, "Requirements"),
     targetEffectiveDate: optionalDate(args.targetEffectiveDate),
-    status: args.status ?? "draft",
+    status: args.resultingPolicyId ? "completed" : (args.status ?? "draft"),
+    createdBySide: "operator",
+    clientVisible: args.clientVisible ?? false,
+    sharedAt: args.clientVisible ? now : undefined,
+    originalNarrative: requiredText(args.requestSummary, "Client request"),
+    requirementRevision: 0,
+    specificationRevision: 0,
     replacingPolicyId: args.replacingPolicyId,
     resultingPolicyId: args.resultingPolicyId,
     inboxToken,
@@ -496,6 +539,7 @@ export const create = mutation({
     status: v.optional(requestStatusValidator),
     replacingPolicyId: v.optional(v.id("policies")),
     resultingPolicyId: v.optional(v.id("policies")),
+    clientVisible: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
@@ -519,6 +563,7 @@ export async function updateProcurementRequestByOperator(
     status?: RequestStatus;
     replacingPolicyId?: Id<"policies"> | null;
     resultingPolicyId?: Id<"policies"> | null;
+    clientVisible?: boolean;
     source: "operator" | "agent";
   },
 ) {
@@ -546,6 +591,7 @@ export async function updateProcurementRequestByOperator(
       ctx,
       args.replacingPolicyId ?? undefined,
       request.clientOrgId,
+      true,
     );
     patch.replacingPolicyId = args.replacingPolicyId ?? undefined;
   }
@@ -556,6 +602,11 @@ export async function updateProcurementRequestByOperator(
       request.clientOrgId,
     );
     patch.resultingPolicyId = args.resultingPolicyId ?? undefined;
+    if (args.resultingPolicyId) patch.status = "completed";
+  }
+  if (args.clientVisible !== undefined) {
+    patch.clientVisible = args.clientVisible;
+    patch.sharedAt = args.clientVisible ? dayjs().valueOf() : undefined;
   }
   const changedFields = Object.keys(patch).filter(
     (field) => !["updatedAt", "updatedByUserId"].includes(field),
@@ -587,6 +638,7 @@ export const update = mutation({
     status: v.optional(requestStatusValidator),
     replacingPolicyId: v.optional(v.union(v.id("policies"), v.null())),
     resultingPolicyId: v.optional(v.union(v.id("policies"), v.null())),
+    clientVisible: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
@@ -598,12 +650,40 @@ export const update = mutation({
   },
 });
 
+export const postClientActivity = mutation({
+  args: { requestId: v.id("procurementRequests"), body: v.string() },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx); await requireDirectOperatorWrite(ctx, operator.userId); const request = await requireRequest(ctx, args.requestId);
+    const body = requiredText(args.body, "Message"); const createdAt = dayjs().valueOf();
+    const activityId = await ctx.db.insert("procurementRequestActivities", { requestId: request._id, clientOrgId: request.clientOrgId, authorUserId: operator.userId, authorSide: "operator", kind: "message", body, clientVisible: true, createdAt });
+    return { activityId };
+  },
+});
+
+export const generateRequestUploadUrl = mutation({
+  args: { requestId: v.id("procurementRequests") },
+  handler: async (ctx, args) => { await requireOperator(ctx); await requireRequest(ctx, args.requestId); return await ctx.storage.generateUploadUrl(); },
+});
+
+export const attachRequestDocument = mutation({
+  args: { requestId: v.id("procurementRequests"), storageId: v.id("_storage"), fileName: v.string(), contentType: v.string(), size: v.number(), clientVisible: v.boolean() },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx); await requireDirectOperatorWrite(ctx, operator.userId); const request = await requireRequest(ctx, args.requestId);
+    if (!(await ctx.storage.getMetadata(args.storageId))) throw new Error("Uploaded file not found");
+    const createdAt = dayjs().valueOf();
+    const documentId = await ctx.db.insert("procurementRequestDocuments", { requestId: request._id, clientOrgId: request.clientOrgId, fileId: args.storageId, name: requiredText(args.fileName, "File name", 300), contentType: args.contentType, size: args.size, clientVisible: args.clientVisible, uploadedByUserId: operator.userId, uploadedBySide: "operator", createdAt });
+    if (args.clientVisible) await ctx.db.insert("procurementRequestActivities", { requestId: request._id, clientOrgId: request.clientOrgId, authorUserId: operator.userId, authorSide: "operator", kind: "document", documentId, clientVisible: true, createdAt });
+    return { documentId };
+  },
+});
+
 export async function createProcurementOutreachByOperator(
   ctx: MutationCtx,
   args: {
     operatorUserId: Id<"users">;
     requestId: Id<"procurementRequests">;
-    brokerOrgId?: Id<"organizations">;
+    brokerOrgId: Id<"organizations">;
+    contactUserId?: Id<"users">;
     brokerName: string;
     contactName?: string;
     contactEmail?: string;
@@ -622,15 +702,26 @@ export async function createProcurementOutreachByOperator(
   await requireDirectOperatorWrite(ctx, args.operatorUserId);
   const request = await requireRequest(ctx, args.requestId);
   const broker = await requireBrokerOrganization(ctx, args.brokerOrgId);
+  if (!broker) throw new Error("Broker organization is required");
+  if (args.contactUserId) {
+    const membership = await ctx.db.query("orgMemberships").withIndex("organization_user", (q) => q.eq("orgId", broker._id).eq("userId", args.contactUserId!)).unique();
+    if (!membership) throw new Error("Broker contact must belong to the selected broker");
+  }
   const now = dayjs().valueOf();
+  const contactSnapshot = { name: optionalText(args.contactName, 200), email: optionalEmail(args.contactEmail), phone: optionalText(args.contactPhone, 100) };
+  const sent = (args.status ?? "request_sent") === "request_sent";
   const outreachId = await ctx.db.insert("procurementBrokerOutreaches", {
     requestId: request._id,
     clientOrgId: request.clientOrgId,
-    brokerOrgId: broker?._id,
+    brokerOrgId: broker._id,
     brokerName: requiredText(args.brokerName, "Broker name", 200),
     contactName: optionalText(args.contactName, 200),
     contactEmail: optionalEmail(args.contactEmail),
     contactPhone: optionalText(args.contactPhone, 100),
+    contactUserId: args.contactUserId,
+    contactSnapshot,
+    sentAt: sent ? now : undefined,
+    packetSnapshot: sent ? await outreachPacketSnapshot(ctx, request) : undefined,
     status: args.status ?? "request_sent",
     applicationUrl: optionalUrl(args.applicationUrl),
     applicationQuestions: optionalQuestions(args.applicationQuestions),
@@ -662,7 +753,8 @@ export async function createProcurementOutreachByOperator(
 export const createOutreach = mutation({
   args: {
     requestId: v.id("procurementRequests"),
-    brokerOrgId: v.optional(v.id("organizations")),
+    brokerOrgId: v.id("organizations"),
+    contactUserId: v.optional(v.id("users")),
     brokerName: v.string(),
     contactName: v.optional(v.string()),
     contactEmail: v.optional(v.string()),
@@ -692,6 +784,7 @@ export async function updateProcurementOutreachByOperator(
     operatorUserId: Id<"users">;
     outreachId: Id<"procurementBrokerOutreaches">;
     brokerOrgId?: Id<"organizations"> | null;
+    contactUserId?: Id<"users"> | null;
     brokerName?: string;
     contactName?: string | null;
     contactEmail?: string | null;
@@ -716,9 +809,17 @@ export async function updateProcurementOutreachByOperator(
     updatedAt: dayjs().valueOf(),
   };
   if (args.brokerOrgId !== undefined) {
-    patch.brokerOrgId = (
-      await requireBrokerOrganization(ctx, args.brokerOrgId ?? undefined)
-    )?._id;
+    if (!args.brokerOrgId) throw new Error("Broker organization is required");
+    patch.brokerOrgId = (await requireBrokerOrganization(ctx, args.brokerOrgId))!._id;
+  }
+  const nextBrokerOrgId = patch.brokerOrgId ?? outreach.brokerOrgId;
+  if (args.contactUserId !== undefined) {
+    if (args.contactUserId) {
+      if (!nextBrokerOrgId) throw new Error("Select a broker before a contact");
+      const membership = await ctx.db.query("orgMemberships").withIndex("organization_user", (q) => q.eq("orgId", nextBrokerOrgId).eq("userId", args.contactUserId!)).unique();
+      if (!membership) throw new Error("Broker contact must belong to the selected broker");
+    }
+    patch.contactUserId = args.contactUserId ?? undefined;
   }
   if (args.brokerName !== undefined) {
     patch.brokerName = requiredText(args.brokerName, "Broker name", 200);
@@ -729,7 +830,16 @@ export async function updateProcurementOutreachByOperator(
     patch.contactEmail = optionalEmail(args.contactEmail);
   if (args.contactPhone !== undefined)
     patch.contactPhone = optionalText(args.contactPhone, 100);
-  if (args.status !== undefined) patch.status = args.status;
+  if (args.contactName !== undefined || args.contactEmail !== undefined || args.contactPhone !== undefined) {
+    patch.contactSnapshot = { name: patch.contactName ?? outreach.contactName, email: patch.contactEmail ?? outreach.contactEmail, phone: patch.contactPhone ?? outreach.contactPhone };
+  }
+  if (args.status !== undefined) {
+    patch.status = args.status;
+    if (args.status === "request_sent" && !outreach.sentAt) {
+      patch.sentAt = dayjs().valueOf();
+      patch.packetSnapshot = await outreachPacketSnapshot(ctx, request);
+    }
+  }
   if (args.applicationUrl !== undefined)
     patch.applicationUrl = optionalUrl(args.applicationUrl);
   if (args.applicationQuestions !== undefined) {
@@ -769,6 +879,7 @@ export const updateOutreach = mutation({
   args: {
     outreachId: v.id("procurementBrokerOutreaches"),
     brokerOrgId: v.optional(v.union(v.id("organizations"), v.null())),
+    contactUserId: v.optional(v.union(v.id("users"), v.null())),
     brokerName: v.optional(v.string()),
     contactName: v.optional(v.union(v.string(), v.null())),
     contactEmail: v.optional(v.union(v.string(), v.null())),

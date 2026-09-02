@@ -27,7 +27,6 @@ export type OrgAccess = {
   orgType: "broker" | "client" | "partner";
   accessType:
     | "member"
-    | "broker_of_client"
     | "connected_client"
     | "operator";
   role: "admin" | "member" | undefined;
@@ -65,9 +64,7 @@ export async function requireAuth(ctx: Ctx): Promise<{ userId: Id<"users"> }> {
  *
  * Resolution order:
  * 1. Direct org membership       → accessType = "member"
- * 2. Broker-of-client            → accessType = "broker_of_client"
- *    (user is a member of the broker org that manages this client org)
- * 3. Opted-in active operator    → accessType = "operator"
+ * 2. Opted-in active operator    → accessType = "operator"
  *    (explicit org-scoped support surfaces only; never current membership)
  * 4. No access                   → throws "Unauthorized"
  */
@@ -98,20 +95,7 @@ export async function getOrgAccess(
         brokerOrgId: undefined,
       };
     }
-    if (
-      targetOrgType === "broker" &&
-      orgType === "client" &&
-      org.brokerOrgId === impersonation.session.targetOrgId
-    ) {
-      return {
-        userId,
-        org,
-        orgType: "client",
-        accessType: "broker_of_client",
-        role: undefined,
-        brokerOrgId: impersonation.session.targetOrgId,
-      };
-    }
+    void targetOrgType;
   }
 
   // 1. Direct membership
@@ -131,28 +115,7 @@ export async function getOrgAccess(
     };
   }
 
-  // 2. Broker-of-client: only applicable when target org is a client with a brokerOrgId
-  if (orgType === "client" && org.brokerOrgId) {
-    const brokerMembership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("organization_user", (q) =>
-        q.eq("orgId", org.brokerOrgId!).eq("userId", userId),
-      )
-      .first();
-
-    if (brokerMembership) {
-      return {
-        userId,
-        org,
-        orgType: "client",
-        accessType: "broker_of_client",
-        role: undefined,
-        brokerOrgId: org.brokerOrgId,
-      };
-    }
-  }
-
-  // 3. Direct operator support access. Callers must explicitly opt in, and
+  // 2. Direct operator support access. Callers must explicitly opt in, and
   // active impersonation is resolved above so a live impersonation keeps its
   // existing read-only write gates. This branch is intentionally distinct from
   // membership.
@@ -170,7 +133,7 @@ export async function getOrgAccess(
     };
   }
 
-  // 4. Connected client/vendor access: org members of a client/customer org
+  // 3. Connected client/vendor access: org members of a client/customer org
   // can read an approved vendor's selected insurance data. This is intentionally
   // one-hop and read-only; vendor access does not imply access to any vendors of
   // that vendor or to its broker portal capabilities.
@@ -364,7 +327,7 @@ export function assertPartnerOrg(access: OrgAccess): void {
 }
 
 export function assertCanReadPassport(_access: OrgAccess): void {
-  // member OR broker_of_client OR connected_client
+  // Members, operators, and explicitly connected clients can read.
 }
 
 export function assertCanEditPassport(access: OrgAccess): void {
@@ -395,30 +358,27 @@ export function assertCanReadInternalThreads(access: OrgAccess): void {
 }
 
 export function assertCanReadBrokerVisibleThreads(_access: OrgAccess): void {
-  // member OR broker_of_client OR connected_client — no restriction beyond having access
+  // No restriction beyond having organization access.
 }
 
 export function assertCanReadPolicies(_access: OrgAccess): void {
-  // member OR broker_of_client OR connected_client
+  // No restriction beyond having organization access.
 }
 
 export function assertCanUploadPolicy(access: OrgAccess): void {
-  if (access.accessType === "connected_client") {
+  if (access.accessType !== "operator") {
     throwUserFacingError(
       userFacingErrorCodes.readOnlyAccess,
-      "Connected organization access is read-only. Ask the vendor to upload the policy.",
+      "Policy uploads are managed by Spot staff.",
     );
   }
-  // member OR broker_of_client
 }
 
 export function assertCanEditPolicyExtractedFields(access: OrgAccess): void {
   if (access.accessType === "operator") return;
-  if (access.accessType === "broker_of_client") return;
-  if (access.accessType === "member" && access.orgType === "broker") return;
   throwUserFacingError(
     userFacingErrorCodes.readOnlyAccess,
-    "Only the managing broker can edit extracted policy fields.",
+    "Policy corrections are managed by Spot staff.",
   );
 }
 
@@ -426,29 +386,17 @@ export function assertCanArchivePolicy(
   access: OrgAccess,
   policy: { uploadedBySide?: string; uploadedByBrokerOrgId?: Id<"organizations"> },
 ): void {
-  if (access.accessType === "connected_client") {
+  void policy;
+  if (access.accessType !== "operator") {
     throwUserFacingError(
       userFacingErrorCodes.readOnlyAccess,
-      "Connected organization access is read-only. Ask the vendor to archive this policy.",
+      "Policy archive changes are managed by Spot staff.",
     );
   }
-  if (access.accessType === "broker_of_client") {
-    // Brokers can only archive policies they uploaded.
-    if (
-      policy.uploadedBySide !== "broker" ||
-      policy.uploadedByBrokerOrgId !== access.brokerOrgId
-    ) {
-      throwUserFacingError(
-        userFacingErrorCodes.orgAccessRequired,
-        "Brokers can archive only policies uploaded by their brokerage.",
-      );
-    }
-  }
-  // Members can archive any policy in their org.
 }
 
 export function assertCanReadPolicy(_access: OrgAccess): void {
-  // member OR broker_of_client OR connected_client
+  // No restriction beyond having organization access.
 }
 
 export async function getPolicyAccessForQuery(
@@ -474,61 +422,12 @@ async function resolvePolicyAccessForQuery(
   return { policy, access };
 }
 
-/**
- * Require broker-of-client access to a specific clientOrgId.
- * Returns an OrgAccess with accessType="broker_of_client".
- */
-export async function requireBrokerAccessToClient(
-  ctx: Ctx,
-  clientOrgId: Id<"organizations">,
-): Promise<OrgAccess & { brokerOrgId: Id<"organizations"> }> {
-  const access = await getOrgAccess(ctx, clientOrgId);
-  if (
-    access.accessType !== "broker_of_client" ||
-    access.orgType !== "client" ||
-    !access.brokerOrgId
-  ) {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "You need broker access to this client to perform this action.",
-    );
-  }
-
-  return {
-    ...access,
-    brokerOrgId: access.brokerOrgId,
-  };
-}
-
-export async function getBrokerAccessToClientForQuery(
-  ctx: Ctx,
-  clientOrgId: Id<"organizations">,
-): Promise<(OrgAccess & { brokerOrgId: Id<"organizations"> }) | null> {
-  try {
-    return await requireBrokerAccessToClient(ctx, clientOrgId);
-  } catch (error) {
-    if (await shouldSuppressOperatorTeardownUnauthorized(ctx, error)) return null;
-    throw error;
-  }
-}
-
-
 export function assertCanManageBroker(access: OrgAccess): void {
   assertBrokerOrg(access);
   if (access.role !== "admin") {
     throwUserFacingError(
       userFacingErrorCodes.brokerAdminRequired,
       "Only a broker admin can manage brokerage settings.",
-    );
-  }
-}
-
-export function assertCanInviteClient(access: OrgAccess): void {
-  assertBrokerOrg(access);
-  if (access.accessType !== "member") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "You must be a member of this brokerage to invite clients.",
     );
   }
 }
@@ -544,7 +443,7 @@ export function assertCanInviteTeammate(access: OrgAccess): void {
 
 // ── Integration capability helpers ─────────────────────────────────────────
 
-/** member OR broker_of_client */
+/** Any caller with organization access. */
 export function assertCanReadIntegrationsList(_access: OrgAccess): void {
   // no restriction beyond having org access
 }
@@ -565,16 +464,6 @@ export function assertCanDisconnectIntegration(access: OrgAccess): void {
     throwUserFacingError(
       userFacingErrorCodes.readOnlyAccess,
       "Only members of this organization can disconnect integrations.",
-    );
-  }
-}
-
-/** broker_of_client only — requesting a connection from the client */
-export function assertCanRequestIntegration(access: OrgAccess): void {
-  if (access.accessType !== "broker_of_client") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "Only the client’s managing broker can request this integration.",
     );
   }
 }

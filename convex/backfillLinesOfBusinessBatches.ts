@@ -16,24 +16,7 @@ type BackfillReport = {
       after: string[];
     }>;
   };
-  deliveryRules: {
-    scannedCount: number;
-    changedCount: number;
-    samples: Array<{
-      ruleId: Id<"policyDeliveryRules">;
-      before: {
-        productLines?: string[];
-        policyTypes?: string[];
-      };
-      after: string[];
-    }>;
-  };
   continuationScheduled: boolean;
-};
-
-type LegacyPolicyDeliveryFilters = {
-  productLines?: string[];
-  policyTypes?: string[];
 };
 
 function emptyReport(dryRun: boolean): BackfillReport {
@@ -43,11 +26,6 @@ function emptyReport(dryRun: boolean): BackfillReport {
       scannedCount: 0,
       changedCount: 0,
       unmappedValues: {},
-      samples: [],
-    },
-    deliveryRules: {
-      scannedCount: 0,
-      changedCount: 0,
       samples: [],
     },
     continuationScheduled: false,
@@ -94,10 +72,6 @@ export function policyLineBackfillDecision(policy: {
   };
 }
 
-function unique(values: readonly string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
-}
-
 export const backfillPoliciesBatchInternal = internalMutation({
   args: {
     orgId: v.optional(v.id("organizations")),
@@ -141,79 +115,6 @@ export const backfillPoliciesBatchInternal = internalMutation({
 
     if (!dryRun && !page.isDone) {
       await ctx.scheduler.runAfter(0, (internal as any).backfillLinesOfBusinessBatches.backfillPoliciesBatchInternal, {
-        orgId: args.orgId,
-        dryRun,
-        limit: args.limit,
-        cursor: page.continueCursor,
-      });
-      report.continuationScheduled = true;
-    }
-
-    return {
-      ...report,
-      nextCursor: page.continueCursor,
-      isDone: page.isDone,
-    };
-  },
-});
-
-export const backfillDeliveryRulesBatchInternal = internalMutation({
-  args: {
-    orgId: v.optional(v.id("organizations")),
-    dryRun: v.boolean(),
-    limit: v.number(),
-    cursor: v.optional(v.union(v.string(), v.null())),
-  },
-  handler: async (ctx, args): Promise<BackfillReport & { nextCursor: string | null; isDone: boolean }> => {
-    const dryRun = args.dryRun;
-    const report = emptyReport(dryRun);
-    const page = await ctx.db
-      .query("policyDeliveryRules")
-      .paginate({ numItems: args.limit, cursor: args.cursor ?? null });
-
-    const brokerIdsForOrg = new Set<string>();
-    if (args.orgId) {
-      const org = await ctx.db.get(args.orgId);
-      const brokerOrgId = org && "brokerOrgId" in org ? org.brokerOrgId : undefined;
-      if (brokerOrgId) brokerIdsForOrg.add(String(brokerOrgId));
-      brokerIdsForOrg.add(String(args.orgId));
-    }
-
-    for (const rule of page.page) {
-      if (args.orgId && !brokerIdsForOrg.has(String(rule.brokerOrgId)) && String(rule.clientOrgId) !== String(args.orgId)) {
-        continue;
-      }
-      report.deliveryRules.scannedCount += 1;
-      const filters = rule.filters as typeof rule.filters & LegacyPolicyDeliveryFilters;
-      if (filters.linesOfBusiness?.length) continue;
-      const after = unique([
-        ...(filters.productLines ?? []),
-        ...(filters.policyTypes ?? []),
-      ]);
-      if (after.length === 0) continue;
-      report.deliveryRules.changedCount += 1;
-      if (report.deliveryRules.samples.length < 25) {
-        report.deliveryRules.samples.push({
-          ruleId: rule._id,
-          before: {
-            productLines: filters.productLines,
-            policyTypes: filters.policyTypes,
-          },
-          after,
-        });
-      }
-      if (!dryRun) {
-        await ctx.db.patch(rule._id, {
-          filters: {
-            ...filters,
-            linesOfBusiness: after,
-          },
-        });
-      }
-    }
-
-    if (!dryRun && !page.isDone) {
-      await ctx.scheduler.runAfter(0, (internal as any).backfillLinesOfBusinessBatches.backfillDeliveryRulesBatchInternal, {
         orgId: args.orgId,
         dryRun,
         limit: args.limit,

@@ -13,7 +13,7 @@ import type { FeatureFlagMap } from "@/convex/lib/featureFlags";
 export type ActiveOrgContext = {
   orgId: Id<"organizations">;
   orgType: "broker" | "client";
-  accessType: "member" | "broker_of_client" | "connected_client";
+  accessType: "member" | "connected_client";
   role: "admin" | "member" | undefined;
   orgName: string;
   brokerOrgId: Id<"organizations"> | undefined;
@@ -91,8 +91,7 @@ export function useActiveOrgContext(): ActiveOrgContext | null | undefined {
 
   // viewerOrg only returns an org when the viewer can access it. Cross-org
   // access type can be widened here when the server starts returning it.
-  const accessType: "member" | "broker_of_client" | "connected_client" =
-    "member";
+  const accessType: "member" | "connected_client" = "member";
   const isOperatorImpersonation =
     viewer?.accountKind === "operator" &&
     Boolean(operatorContext?.activeImpersonation);

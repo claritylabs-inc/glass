@@ -19,9 +19,6 @@ const getAttachmentUrlFn = api.threads.getAttachmentUrl as any;
 const getThreadFn = api.threads.get as any;
 const listThreadsFn = api.threads.list as any;
 const messagesFn = api.threads.messages as any;
-const listForClientFn = api.threads.listForClient as any;
-const getForClientFn = api.threads.getForClient as any;
-const messagesForClientFn = api.threads.messagesForClient as any;
 const sendMessageFn = api.threads.sendMessage as any;
 const updateTitleFn = api.threads.updateTitle as any;
 const streamContentFn = api.threads.streamContent as any;
@@ -595,30 +592,6 @@ describe("user-private thread access", () => {
         fileId: seeded.fileId,
       }),
     ).resolves.toBeNull();
-  });
-
-  test("broker-of-client readers cannot see private threads or messages", async () => {
-    const seeded = await seedPrivateThreadAccess();
-    const broker = seeded.t.withIdentity(sessionFor(seeded.brokerUserId));
-
-    const threads = await broker.query(listForClientFn, {
-      clientOrgId: seeded.clientOrgId,
-    });
-    expect(threads.map((thread: { _id: string }) => thread._id)).toEqual([
-      seeded.orgThreadId,
-    ]);
-    await expect(
-      broker.query(getForClientFn, {
-        clientOrgId: seeded.clientOrgId,
-        id: seeded.privateThreadId,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      broker.query(messagesForClientFn, {
-        clientOrgId: seeded.clientOrgId,
-        threadId: seeded.privateThreadId,
-      }),
-    ).resolves.toEqual([]);
   });
 
   test("non-owners cannot mutate a private thread or its messages", async () => {

@@ -1412,15 +1412,15 @@ function effectivePolicyDataStage(policy: Record<string, unknown>) {
   return policy.pipelineStatus === "complete" ? "final" : "placeholder";
 }
 
-function policyReadyForDelivery(policy: Record<string, unknown>) {
+function policyFileIsAvailable(policy: Record<string, unknown>) {
   return (
     policy.pipelineStatus === "complete" &&
     effectivePolicyDataStage(policy) === "final"
   );
 }
 
-function policyDeliveryBlockedMessage(policy: Record<string, unknown>) {
-  return `Policy ${String(policy.policyNumber ?? policy._id ?? "record")} must finish enrichment before policy delivery is available.`;
+function policyFileUnavailableMessage(policy: Record<string, unknown>) {
+  return `Policy ${String(policy.policyNumber ?? policy._id ?? "record")} must finish extraction before its original PDF is available.`;
 }
 
 // GET /mcp/policies/list
@@ -1500,10 +1500,10 @@ http.route({
       );
       const found = policies.find((p: any) => p._id === id);
       if (!found) return jsonResponse({ error: "Not found" }, 404);
-      if (!policyReadyForDelivery(found as Record<string, unknown>)) {
+      if (!policyFileIsAvailable(found as Record<string, unknown>)) {
         return jsonResponse(
           {
-            error: policyDeliveryBlockedMessage(
+            error: policyFileUnavailableMessage(
               found as Record<string, unknown>,
             ),
           },
@@ -2372,28 +2372,6 @@ const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
     effect: "write",
     destructive: true,
   },
-  // ── Broker tools ──
-  {
-    name: "list_clients",
-    description: "List clients visible to the broker. Broker only.",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
-  {
-    name: "get_client",
-    description: "Get client org info and policy count. Broker only.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        client_org_id: { type: "string", description: "Client org ID" },
-      },
-      required: ["client_org_id"],
-    },
-  },
-  {
-    name: "list_broker_activity",
-    description: "List broker portfolio activity feed.",
-    inputSchema: { type: "object" as const, properties: {} },
-  },
   {
     name: "list_connected_vendors",
     description:
@@ -2916,9 +2894,9 @@ async function handleToolCall(
       );
       const found = policies.find((p: any) => p._id === args.id);
       if (!found) throw new Error("Not found");
-      if (!policyReadyForDelivery(found as Record<string, unknown>)) {
+      if (!policyFileIsAvailable(found as Record<string, unknown>)) {
         throw new Error(
-          policyDeliveryBlockedMessage(found as Record<string, unknown>),
+          policyFileUnavailableMessage(found as Record<string, unknown>),
         );
       }
       if (!found.fileId)
@@ -3333,58 +3311,6 @@ async function handleToolCall(
       );
       return {
         content: [{ type: "text", text: JSON.stringify(draft, null, 2) }],
-      };
-    }
-    // ── Broker tools ──
-    case "list_clients": {
-      const clients = await ctx.runQuery(
-        (internal as any).clients.listForBrokerInternal,
-        {
-          brokerOrgId: orgId,
-          userId,
-        },
-      );
-      return {
-        content: [{ type: "text", text: JSON.stringify(clients, null, 2) }],
-      };
-    }
-    case "get_client": {
-      const clientOrgId = args.client_org_id as Id<"organizations">;
-      const detail = await ctx.runQuery(
-        (internal as any).clients.getDetailInternal,
-        {
-          brokerOrgId: orgId,
-          clientOrgId,
-          userId,
-        },
-      );
-      if (!detail) throw new Error("Not found");
-      const policies = await ctx.runQuery(
-        internal.policies.listAllPreviewReadableInternal,
-        { orgId: clientOrgId },
-      );
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              { org: detail, policy_count: policies.length },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
-    }
-    case "list_broker_activity": {
-      const activity = await ctx
-        .runQuery((internal as any).brokerActivity.listPortfolio, {
-          orgId,
-          limit: 50,
-        })
-        .catch(() => []);
-      return {
-        content: [{ type: "text", text: JSON.stringify(activity, null, 2) }],
       };
     }
     case "list_connected_vendors": {

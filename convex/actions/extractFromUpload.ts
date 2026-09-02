@@ -27,13 +27,17 @@ export const extractFromUpload = action({
         }),
       ),
     ),
-    // Broker upload path: pre-created policy row from createBrokerUpload
+    // Operator upload path: the policy row may already be registered before
+    // extraction starts.
     policyId: v.optional(v.id("policies")),
   },
   returns: v.any(),
   handler: async (ctx, args): Promise<{ error: string } | { success: true; type: string; id: string }> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as { _id: string } | null;
-    if (!viewer) return { error: "Not authenticated" };
+    const operator = await ctx.runQuery(api.operator.current, {});
+    if (operator.activeImpersonation) {
+      return { error: "Stop impersonating before managing policies" };
+    }
+    const viewer = operator.user;
 
     let orgId: Id<"organizations">;
     if (args.policyId) {
@@ -81,7 +85,7 @@ export const extractFromUpload = action({
     const pdfUrl = await ctx.storage.getUrl(primaryFileId);
     if (!pdfUrl) return { error: "File not found in storage" };
 
-    // If a pre-created policyId (from broker upload) is provided, use it;
+    // If a pre-created operator policyId is provided, use it;
     // otherwise create a new placeholder policy record.
     const policyId: Id<"policies"> = args.policyId ?? await ctx.runMutation(api.policies.insert, {
       userId,
