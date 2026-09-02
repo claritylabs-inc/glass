@@ -80,7 +80,7 @@ The internal Slack adapter exposes this registry through App Home DMs and direct
 
 ### Operator MCP projection
 
-Operator MCP exposes registered read tools to read-scoped operator tokens, registered write tools only to write-scoped tokens, and owner-only tools only to owners. It adds these lifecycle tools outside the operator-agent registry:
+Operator MCP exposes registered read tools to read-scoped operator tokens, registered write tools only to write-scoped tokens, and owner-only tools only to owners. `docs/deployment/operator-mcp.md` covers connecting Claude Code, Codex, and Conductor sessions to it. It adds these lifecycle tools outside the operator-agent registry:
 
 | Tool                      | Purpose                                                                            | Availability        |
 | ------------------------- | ---------------------------------------------------------------------------------- | ------------------- |

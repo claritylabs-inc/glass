@@ -46,6 +46,7 @@
 /docs/deployment/*
 !/docs/deployment/environments.md
 !/docs/deployment/slack.md
+!/docs/deployment/operator-mcp.md
 !/docs/testing/
 /docs/testing/*
 !/docs/testing/README.md
