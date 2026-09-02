@@ -15,7 +15,6 @@ import { requireOperator, requireOperatorForUser } from "./lib/operatorIdentity"
 import { requireDirectOperatorWrite } from "./procurementRequests";
 import {
   PACKET_SECTIONS,
-  PACKET_SECTION_MAP,
   assemblePacketMarkdown,
   defaultPacketSection,
   audienceIncludes,
