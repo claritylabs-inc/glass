@@ -38,6 +38,7 @@
     "container:run:imessage-worker": "container run --arch amd64 --rm --env-file imessage-worker/.env -e PORT=3001 -p 3001:3001 spot-imessage-worker:local",
     "container:run:slack-worker": "container run --arch amd64 --rm --env-file slack-worker/.env -e PORT=3002 -p 3002:3002 spot-slack-worker:local",
     "container:run:mailbox-scan-worker": "container run --arch amd64 --rm --env-file mailbox-scan-worker/.env spot-mailbox-scan-worker:local",
+    "operator:mcp": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/setup-operator-mcp.mjs",
     "operator:provision-broker": "npm --prefix operator-cli run build --silent && node operator-cli/dist/index.js provision-broker",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -2170,6 +2170,20 @@ export const getOperatorImessageStatus = query({
   },
 });
 
+export const getOperatorMcpStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const operator = await requireOperator(ctx);
+    const siteUrl = process.env.CONVEX_SITE_URL?.trim();
+
+    return {
+      endpoint: siteUrl ? `${new URL(siteUrl).origin}/mcp` : null,
+      environment: process.env.SPOT_ENV?.trim() || null,
+      role: operator.profile.role,
+    };
+  },
+});
+
 export const revokeByTeamId = internalMutation({
   args: { teamId: v.string() },
   handler: async (ctx, args) => {

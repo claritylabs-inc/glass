@@ -269,6 +269,7 @@ Connected vendor data is exposed in the same channels as first-party insurance d
 
 - REST API exposes client/vendor resources under `/api/v1/*`
 - MCP enables remote and local AI tool access
+- Operators connect coding agents to the internal operator MCP server with `npm run operator:mcp` or the operator portal's Channels → MCP tab; see [docs/deployment/operator-mcp.md](docs/deployment/operator-mcp.md)
 
 ## Model Routing
 

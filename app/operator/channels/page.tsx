@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
-import { Loader2, MessageCircle, Pencil } from "lucide-react";
+import { Check, Copy, Loader2, MessageCircle, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import { AppShell } from "@/components/app-shell";
@@ -13,6 +13,11 @@ import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { openOAuthTab } from "@/lib/oauth-tab";
+import {
+  OPERATOR_MCP_SERVER_NAME,
+  operatorMcpClientConfig,
+  operatorMcpClientSetups,
+} from "@/lib/operator-mcp-setup";
 import { useCachedOperatorCurrent } from "@/lib/sync/operator-cached-queries";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { cn } from "@/lib/utils";
@@ -65,8 +70,12 @@ function ChannelDetail({
 }) {
   return (
     <div className="grid gap-1 border-t border-border py-3 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
-      <dt className={`text-muted-foreground ${typeStyle("label.metadata")}`}>{label}</dt>
-      <dd className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}>
+      <dt className={`text-muted-foreground ${typeStyle("label.metadata")}`}>
+        {label}
+      </dt>
+      <dd
+        className={`min-w-0 break-words text-foreground ${typeStyle("body.default")}`}
+      >
         {children}
       </dd>
     </div>
@@ -76,27 +85,189 @@ function ChannelDetail({
 function OperatorChannelTabs({
   children,
   imessageContent,
+  mcpContent,
 }: {
   children: ReactNode;
   imessageContent?: ReactNode;
+  mcpContent?: ReactNode;
 }) {
+  const placeholder = (
+    <ChannelCard className="flex h-40 items-center justify-center text-muted-foreground">
+      <Loader2 className="size-5 animate-spin" />
+    </ChannelCard>
+  );
+
   return (
     <Tabs defaultValue="slack" className="gap-4">
       <div className="-mx-1 overflow-x-auto px-1 scrollbar-hide">
         <TabsList variant="pill" aria-label="Channel">
           <TabsTrigger value="slack">Slack</TabsTrigger>
           <TabsTrigger value="imessage">iMessage</TabsTrigger>
+          <TabsTrigger value="mcp">MCP</TabsTrigger>
         </TabsList>
       </div>
       <TabsContent value="slack">{children}</TabsContent>
       <TabsContent value="imessage">
-        {imessageContent ?? (
-          <ChannelCard className="flex h-40 items-center justify-center text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
-          </ChannelCard>
-        )}
+        {imessageContent ?? placeholder}
       </TabsContent>
+      <TabsContent value="mcp">{mcpContent ?? placeholder}</TabsContent>
     </Tabs>
+  );
+}
+
+function CopySnippetButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    void navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <PillButton
+      variant="secondary"
+      size="compact"
+      onClick={copy}
+      aria-label={label}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      {copied ? "Copied" : "Copy"}
+    </PillButton>
+  );
+}
+
+function McpSetupCard({
+  title,
+  description,
+  snippet,
+}: {
+  title: string;
+  description: string;
+  snippet: string;
+}) {
+  return (
+    <ChannelCard>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+            {title}
+          </h2>
+          <p
+            className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}
+          >
+            {description}
+          </p>
+        </div>
+        <CopySnippetButton value={snippet} label={`Copy ${title} setup`} />
+      </div>
+      <pre
+        className={`mt-3 overflow-x-auto rounded-lg border border-border bg-foreground/3 p-3 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
+      >
+        {snippet}
+      </pre>
+    </ChannelCard>
+  );
+}
+
+function OperatorMcpContent() {
+  const status = useQuery(api.agentChannels.getOperatorMcpStatus, {});
+
+  if (status === undefined) {
+    return (
+      <ChannelCard className="flex min-h-20 items-center justify-center">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      </ChannelCard>
+    );
+  }
+
+  if (!status.endpoint) {
+    return (
+      <ChannelCard>
+        <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+          Operator MCP unavailable
+        </h2>
+        <p
+          className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
+        >
+          This deployment is missing its Convex site URL, so the MCP endpoint
+          cannot be resolved.
+        </p>
+      </ChannelCard>
+    );
+  }
+
+  const endpoint = status.endpoint;
+  const setups = operatorMcpClientSetups({ endpoint });
+
+  return (
+    <section className="space-y-3" aria-label="Operator MCP">
+      <ChannelCard>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+              Operator MCP
+            </h2>
+            <p
+              className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}
+            >
+              Connect Claude Code, Codex, or any Conductor session to the
+              internal operator agent. Sign in with your operator email; every
+              protected write still pauses for your exact confirmation.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <StatusTag tone="success">Available</StatusTag>
+            <CopySnippetButton value={endpoint} label="Copy MCP endpoint" />
+          </div>
+        </div>
+
+        <dl className="mt-3 border-t border-border">
+          <ChannelDetail label="MCP endpoint">
+            <code className={typeStyle("technical.codeCompact")}>
+              {endpoint}
+            </code>
+          </ChannelDetail>
+          <ChannelDetail label="Server name">
+            <code className={typeStyle("technical.codeCompact")}>
+              {OPERATOR_MCP_SERVER_NAME}
+            </code>
+          </ChannelDetail>
+          <ChannelDetail label="Environment">
+            {status.environment ?? "Not set"}
+          </ChannelDetail>
+          <ChannelDetail label="Your operator role">
+            {status.role === "owner" ? "Owner" : "Operator"}
+          </ChannelDetail>
+        </dl>
+      </ChannelCard>
+
+      {setups.map((setup) => (
+        <McpSetupCard
+          key={setup.id}
+          title={setup.label}
+          description={setup.followUp}
+          snippet={setup.snippet}
+        />
+      ))}
+
+      <McpSetupCard
+        title="Other MCP clients"
+        description="Any client that supports remote MCP over streamable HTTP with OAuth works; it must request the read and write scopes."
+        snippet={operatorMcpClientConfig(endpoint)}
+      />
+
+      <p
+        className={`px-1 text-muted-foreground ${typeStyle("caption.default")}`}
+      >
+        Conductor has no separate MCP format: its Claude Code and Codex sessions
+        load the user-scoped configuration written above. Locally you can run{" "}
+        <code className={typeStyle("technical.codeCompact")}>
+          npm run operator:mcp
+        </code>{" "}
+        to apply the same setup from the repository.
+      </p>
+    </section>
   );
 }
 
@@ -139,7 +310,9 @@ function OperatorImessageContent() {
           </h2>
           <StatusTag tone="info">Test mode</StatusTag>
         </div>
-        <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
+        <p
+          className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}
+        >
           Start the local operator terminal with{" "}
           <code className={typeStyle("technical.codeCompact")}>
             npm run conductor:operator-spectrum
@@ -156,8 +329,11 @@ function OperatorImessageContent() {
         <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
           iMessage unavailable
         </h2>
-        <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
-          This deployment is missing its operator number or worker configuration.
+        <p
+          className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
+        >
+          This deployment is missing its operator number or worker
+          configuration.
         </p>
       </ChannelCard>
     );
@@ -174,7 +350,9 @@ function OperatorImessageContent() {
             <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
               Operator iMessage
             </h2>
-            <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
+            <p
+              className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
+            >
               Text this private line from the phone linked to your Spot account.
             </p>
           </div>
@@ -213,8 +391,11 @@ function OperatorImessageContent() {
       </ChannelCard>
 
       {senderPhone ? (
-        <p className={`px-1 text-muted-foreground ${typeStyle("caption.default")}`}>
-          Your sender number must also be registered in the Spot Operator Photon project.
+        <p
+          className={`px-1 text-muted-foreground ${typeStyle("caption.default")}`}
+        >
+          Your sender number must also be registered in the Spot Operator Photon
+          project.
         </p>
       ) : null}
     </section>
@@ -277,16 +458,24 @@ function OperatorIdentityRow({
             <StatusTag>Disabled</StatusTag>
           ) : null}
         </div>
-        <p className={`mt-0.5 truncate text-muted-foreground ${typeStyle("caption.default")}`}>
+        <p
+          className={`mt-0.5 truncate text-muted-foreground ${typeStyle("caption.default")}`}
+        >
           {accountDetail}
         </p>
       </div>
 
       <div className="min-w-0">
-        <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>Slack member ID</p>
-        <p className={`mt-0.5 truncate text-foreground ${typeStyle("body.default")}`}>
+        <p className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+          Slack member ID
+        </p>
+        <p
+          className={`mt-0.5 truncate text-foreground ${typeStyle("body.default")}`}
+        >
           {identity.slackUserId ? (
-            <code className={`${typeStyle("technical.codeCompact")}`}>{identity.slackUserId}</code>
+            <code className={`${typeStyle("technical.codeCompact")}`}>
+              {identity.slackUserId}
+            </code>
           ) : (
             "Not set"
           )}
@@ -475,7 +664,9 @@ function OperatorChannelsContent({
       >
         <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
           This changes the Slack identity for the signed-in Spot account{" "}
-          <span className={`text-foreground ${typeStyle("body.medium")}`}>{operatorEmail}</span>
+          <span className={`text-foreground ${typeStyle("body.medium")}`}>
+            {operatorEmail}
+          </span>
           {workspaceName ? (
             <>
               {" "}
@@ -506,7 +697,9 @@ function OperatorChannelsContent({
             autoComplete="off"
             autoFocus
           />
-          <p className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}>
+          <p
+            className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}
+          >
             Slack member IDs usually begin with U.
           </p>
         </div>
@@ -515,7 +708,9 @@ function OperatorChannelsContent({
           <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
             How to find your member ID
           </h3>
-          <ol className={`mt-2 list-decimal space-y-1 pl-4 text-muted-foreground ${typeStyle("caption.default")}`}>
+          <ol
+            className={`mt-2 list-decimal space-y-1 pl-4 text-muted-foreground ${typeStyle("caption.default")}`}
+          >
             <li>Open Slack and select your profile picture.</li>
             <li>Open your profile, then select More (•••).</li>
             <li>Select Copy member ID and paste it above.</li>
@@ -541,7 +736,10 @@ function OperatorChannelsContent({
       rightPanel={rightPanel}
     >
       <main className="w-full">
-        <OperatorChannelTabs imessageContent={<OperatorImessageContent />}>
+        <OperatorChannelTabs
+          imessageContent={<OperatorImessageContent />}
+          mcpContent={<OperatorMcpContent />}
+        >
           <section className="space-y-3" aria-label="Slack channels">
             {hostStatus === undefined ? (
               <ChannelCard className="flex min-h-20 items-center justify-center">
@@ -558,7 +756,9 @@ function OperatorChannelsContent({
                 <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
                   Slack unavailable
                 </h2>
-                <p className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}>
+                <p
+                  className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
+                >
                   {hostStatus.mode === "mock"
                     ? "The local Slack simulator is missing its fixture workspace. Run the Conductor workspace setup again."
                     : "This deployment is missing the credentials or callback configuration required to connect Slack."}
@@ -569,7 +769,9 @@ function OperatorChannelsContent({
                 <ChannelCard>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+                      <h2
+                        className={`text-foreground ${typeStyle("heading.micro")}`}
+                      >
                         Clarity workspace
                       </h2>
                     </div>
@@ -611,10 +813,14 @@ function OperatorChannelsContent({
                 {mockMode || hostInstallation ? (
                   <ChannelCard>
                     <div className="min-w-0">
-                      <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+                      <h2
+                        className={`text-foreground ${typeStyle("heading.micro")}`}
+                      >
                         Operator Slack identities
                       </h2>
-                      <p className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}>
+                      <p
+                        className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}
+                      >
                         Spot uses these links to recognize which operator
                         replied in Slack.
                       </p>
@@ -628,7 +834,9 @@ function OperatorChannelsContent({
                       />
 
                       {currentIdentityWorkspaceMismatch ? (
-                        <p className={`pb-3 text-destructive ${typeStyle("caption.default")}`}>
+                        <p
+                          className={`pb-3 text-destructive ${typeStyle("caption.default")}`}
+                        >
                           Your identity points to {savedIdentity.slackTeamId},
                           not the current workspace {workspaceTeamId}. Change it
                           before handling Slack messages.
@@ -636,7 +844,9 @@ function OperatorChannelsContent({
                       ) : null}
 
                       <div className="border-t border-border">
-                        <p className={`pt-3 text-muted-foreground ${typeStyle("caption.medium")}`}>
+                        <p
+                          className={`pt-3 text-muted-foreground ${typeStyle("caption.medium")}`}
+                        >
                           Other Spot operators
                         </p>
                         {otherOperators === undefined ? (
@@ -654,7 +864,9 @@ function OperatorChannelsContent({
                             ))}
                           </div>
                         ) : (
-                          <p className={`py-3 text-muted-foreground ${typeStyle("body.default")}`}>
+                          <p
+                            className={`py-3 text-muted-foreground ${typeStyle("body.default")}`}
+                          >
                             No other Spot operators.
                           </p>
                         )}
