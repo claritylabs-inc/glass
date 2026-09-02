@@ -13,7 +13,10 @@ import { pendingEmailDraftFingerprint } from "./actionConfirmationFingerprint";
 
 type PendingEmailForCommand = Pick<
   Doc<"pendingEmails">,
-  "_id" | "recipientEmail" | "subject" | "sendBlockedReason"
+  | "_id"
+  | "recipientEmail"
+  | "subject"
+  | "sendBlockedReason"
   | "ccAddresses"
   | "bccAddresses"
   | "emailBody"
@@ -66,16 +69,16 @@ function formatDrafts(
 
   const sample = options?.showAll ? drafts.slice(0, 10) : drafts.slice(0, 3);
   const lines = [
-    drafts.length === 1
-      ? "1 email draft:"
-      : `${drafts.length} email drafts:`,
+    drafts.length === 1 ? "1 email draft:" : `${drafts.length} email drafts:`,
   ];
   for (const [index, draft] of sample.entries()) {
     lines.push(
       `${index + 1}. ${draft.recipientEmail} - ${truncate(draft.subject, 64) || "(no subject)"}`,
     );
     if (draft.sendBlockedReason) {
-      lines.push(`   Needs confirmation: ${truncate(draft.sendBlockedReason, 96)}`);
+      lines.push(
+        `   Needs confirmation: ${truncate(draft.sendBlockedReason, 96)}`,
+      );
     }
   }
   if (drafts.length > sample.length) {
@@ -181,8 +184,7 @@ function latestWorkflowSummary(history: ImessageCommandHistoryMessage[]) {
           ? artifact.data.status
           : undefined;
       return (
-        headline ??
-        `${workflowKind.replace(/_/g, " ")} ${status ?? ""}`.trim()
+        headline ?? `${workflowKind.replace(/_/g, " ")} ${status ?? ""}`.trim()
       );
     }
   }
@@ -199,7 +201,9 @@ function statusText(args: {
     lines.push(`${plural(args.drafts.length, "draft")} ready.`);
   }
   if (args.pendingEmails.length > 0) {
-    lines.push(`${plural(args.pendingEmails.length, "pending email")} waiting.`);
+    lines.push(
+      `${plural(args.pendingEmails.length, "pending email")} waiting.`,
+    );
   }
   const workflow = latestWorkflowSummary(args.history);
   if (workflow) {
@@ -219,8 +223,7 @@ function whoamiText(args: {
 }) {
   const identity = args.userName || args.userEmail || "your linked Spot user";
   const chatKind = args.isGroup ? "group chat" : "direct chat";
-  const scope =
-    args.scopeMode === "broker_portfolio" ? "broker portfolio" : "single org";
+  const scope = "single org";
   return `${identity}. Org: ${args.orgName}. Chat: ${chatKind}. Scope: ${scope}.`;
 }
 
@@ -316,59 +319,57 @@ async function runKnownCommand(
               }
             : undefined,
       };
-    case "send":
-      {
-        const selected = selectedByTarget(args.draftEmails, command.target);
-        const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
-          threadId: args.threadId,
-          currentMessageId: args.currentMessageId,
-          userId: args.userId,
-          selectedIds: selected.map((draft) => draft._id),
-        });
-        if (!snapshot) {
-          return {
-            response:
-              "Use /drafts immediately before /send so Spot can verify the exact displayed draft snapshot.",
-          };
-        }
-        if (snapshot.outcome !== "completed") {
-          return {
-            response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
-          };
-        }
+    case "send": {
+      const selected = selectedByTarget(args.draftEmails, command.target);
+      const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
+        threadId: args.threadId,
+        currentMessageId: args.currentMessageId,
+        userId: args.userId,
+        selectedIds: selected.map((draft) => draft._id),
+      });
+      if (!snapshot) {
         return {
-          response: await sendDrafts(
-            ctx,
-            args.draftEmails,
-            command.target,
-            snapshot.confirmationId,
-          ),
+          response:
+            "Use /drafts immediately before /send so Spot can verify the exact displayed draft snapshot.",
         };
       }
-    case "discard":
-      {
-        const selected = selectedByTarget(args.draftEmails, command.target);
-        const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
-          threadId: args.threadId,
-          currentMessageId: args.currentMessageId,
-          userId: args.userId,
-          selectedIds: selected.map((email) => email._id),
-        });
-        if (!snapshot) {
-          return {
-            response:
-              "Use /drafts immediately before /discard so Spot can verify the exact displayed draft snapshot.",
-          };
-        }
-        if (snapshot.outcome !== "completed") {
-          return {
-            response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
-          };
-        }
+      if (snapshot.outcome !== "completed") {
         return {
-          response: await discardEmails(ctx, args.draftEmails, command.target),
+          response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
         };
       }
+      return {
+        response: await sendDrafts(
+          ctx,
+          args.draftEmails,
+          command.target,
+          snapshot.confirmationId,
+        ),
+      };
+    }
+    case "discard": {
+      const selected = selectedByTarget(args.draftEmails, command.target);
+      const snapshot = await consumeDisplayedDraftSnapshot(ctx, {
+        threadId: args.threadId,
+        currentMessageId: args.currentMessageId,
+        userId: args.userId,
+        selectedIds: selected.map((email) => email._id),
+      });
+      if (!snapshot) {
+        return {
+          response:
+            "Use /drafts immediately before /discard so Spot can verify the exact displayed draft snapshot.",
+        };
+      }
+      if (snapshot.outcome !== "completed") {
+        return {
+          response: `That draft snapshot is ${snapshot.outcome.replace("_", " ")}. Use /drafts and try again.`,
+        };
+      }
+      return {
+        response: await discardEmails(ctx, args.draftEmails, command.target),
+      };
+    }
     case "leave":
       return args.isGroup
         ? { response: "Leaving this group chat.", leaveGroup: true }

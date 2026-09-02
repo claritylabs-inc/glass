@@ -76,12 +76,12 @@ describe("operator client policy management", () => {
       subject: `${fixture.operatorUserId}|session`,
     });
 
-    const policyId = await operator.mutation(createOperatorUploadFn, {
+    const policyId = (await operator.mutation(createOperatorUploadFn, {
       clientOrgId: fixture.clientOrgId,
       fileId: fixture.fileId,
       fileName: "managed-policy.pdf",
       documentType: "policy",
-    }) as Id<"policies">;
+    })) as Id<"policies">;
 
     await expect(
       operator.query(listForOperatorFn, {
@@ -249,7 +249,10 @@ describe("operator client policy management", () => {
       await ctx.db.insert("policyExtractionRuns", {
         policyId,
         pipelineStatus: "complete",
-        pipelineCheckpoint: { phaseIndex: 4, state: { traceId: "trace-primary" } },
+        pipelineCheckpoint: {
+          phaseIndex: 4,
+          state: { traceId: "trace-primary" },
+        },
         pipelineLog: [],
         createdAt: now - 2_000,
         updatedAt: now,

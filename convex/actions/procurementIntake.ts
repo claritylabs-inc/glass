@@ -20,26 +20,34 @@ function extractionSource(input: {
   requestSummary: string;
   legacyRequirements: string;
 }) {
-  const narrative = input.originalNarrative?.trim() || input.requestSummary.trim();
+  const narrative =
+    input.originalNarrative?.trim() || input.requestSummary.trim();
   const legacy = input.legacyRequirements.trim();
   return [
     `Request title: ${input.title}`,
     `Original client narrative:\n${narrative}`,
-    legacy && legacy !== narrative ? `Existing unstructured requirements:\n${legacy}` : "",
-  ].filter(Boolean).join("\n\n");
+    legacy && legacy !== narrative
+      ? `Existing unstructured requirements:\n${legacy}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export const extractDrafts = action({
   args: { requestId: v.id("procurementRequests") },
   handler: async (ctx, args) => {
-    const operatorUserId = await getAuthUserId(ctx) as Id<"users"> | null;
+    const operatorUserId = (await getAuthUserId(ctx)) as Id<"users"> | null;
     if (!operatorUserId) throw new Error("Authentication required");
     const input = await ctx.runQuery(
       internalApi.procurementRequirements.getIntakeExtractionContextInternal,
       { requestId: args.requestId, operatorUserId },
     );
     const source = extractionSource(input);
-    if (!source.trim()) throw new Error("The procurement request has no intake narrative to extract");
+    if (!source.trim())
+      throw new Error(
+        "The procurement request has no intake narrative to extract",
+      );
 
     const abortSignal = AbortSignal.timeout(EXTRACTION_TIMEOUT_MS);
     let generated;
@@ -63,7 +71,8 @@ Use only explicit source text. Preserve exact monetary values and units. Every i
         },
       );
     } catch (error) {
-      if (abortSignal.aborted) throw new Error("Requirement extraction took too long. Try again.");
+      if (abortSignal.aborted)
+        throw new Error("Requirement extraction took too long. Try again.");
       throw error;
     }
 

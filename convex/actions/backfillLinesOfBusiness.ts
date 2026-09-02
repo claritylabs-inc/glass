@@ -30,7 +30,10 @@ type BackfillReport = {
   continuationScheduled: boolean;
 };
 
-function mergeReports(left: BackfillReport, right: BackfillReport): BackfillReport {
+function mergeReports(
+  left: BackfillReport,
+  right: BackfillReport,
+): BackfillReport {
   const unmappedValues = { ...left.policies.unmappedValues };
   for (const [value, count] of Object.entries(right.policies.unmappedValues)) {
     unmappedValues[value] = (unmappedValues[value] ?? 0) + count;
@@ -41,9 +44,13 @@ function mergeReports(left: BackfillReport, right: BackfillReport): BackfillRepo
       scannedCount: left.policies.scannedCount + right.policies.scannedCount,
       changedCount: left.policies.changedCount + right.policies.changedCount,
       unmappedValues,
-      samples: [...left.policies.samples, ...right.policies.samples].slice(0, 25),
+      samples: [...left.policies.samples, ...right.policies.samples].slice(
+        0,
+        25,
+      ),
     },
-    continuationScheduled: left.continuationScheduled || right.continuationScheduled,
+    continuationScheduled:
+      left.continuationScheduled || right.continuationScheduled,
   };
 }
 
@@ -73,15 +80,22 @@ export const backfill = internalAction({
     let policyCursor: string | null = null;
 
     do {
-      const batch: BackfillReport & { nextCursor?: string | null; isDone?: boolean } =
-        await ctx.runMutation((internal as any).backfillLinesOfBusinessBatches.backfillPoliciesBatchInternal, {
+      const batch: BackfillReport & {
+        nextCursor?: string | null;
+        isDone?: boolean;
+      } = await ctx.runMutation(
+        (internal as any).backfillLinesOfBusinessBatches
+          .backfillPoliciesBatchInternal,
+        {
           orgId: args.orgId,
           dryRun,
           limit,
           cursor: policyCursor,
-        });
+        },
+      );
       report = mergeReports(report, batch);
-      policyCursor = dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
+      policyCursor =
+        dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
     } while (dryRun && policyCursor);
 
     return report;

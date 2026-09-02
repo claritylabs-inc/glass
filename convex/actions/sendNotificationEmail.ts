@@ -4,16 +4,12 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import {
-  buildNotificationEmail,
-  type NotificationEmailBranding,
-} from "../lib/notificationEmailTemplate";
+import { buildNotificationEmail } from "../lib/notificationEmailTemplate";
 import {
   getAgentDomains,
   getNotificationFromAddress,
   sendResendEmail,
 } from "../lib/resend";
-import { isWhiteLabelingEnabled } from "../lib/branding";
 import { getPortalUrlForOrg } from "../lib/domains";
 import { resolveNotificationThreadContext } from "../lib/notificationThreadContext";
 
@@ -34,18 +30,20 @@ export const send = internalAction({
     );
     if (!recipientOrg) return;
 
-    const { thread: contextThread, privateThreadOwner, threadLabel } =
-      await resolveNotificationThreadContext(ctx, notification);
+    const {
+      thread: contextThread,
+      privateThreadOwner,
+      threadLabel,
+    } = await resolveNotificationThreadContext(ctx, notification);
 
     // Collect recipients (user-targeted or org-wide)
     const memberships = privateThreadOwner
       ? [{ userId: privateThreadOwner }]
       : notification.userId
-      ? [{ userId: notification.userId }]
-      : await ctx.runQuery(
-          internal.organizations.listMembershipsForOrg,
-          { orgId: notification.orgId },
-        );
+        ? [{ userId: notification.userId }]
+        : await ctx.runQuery(internal.organizations.listMembershipsForOrg, {
+            orgId: notification.orgId,
+          });
 
     // Preference check at send time
     const type = notification.type;
@@ -54,10 +52,9 @@ export const send = internalAction({
     const recipientsToEmail: Array<{ email: string }> = [];
 
     for (const m of memberships) {
-      const user = await ctx.runQuery(
-        internal.users.getInternal,
-        { id: m.userId },
-      );
+      const user = await ctx.runQuery(internal.users.getInternal, {
+        id: m.userId,
+      });
       if (!user?.email) continue;
 
       const shouldEmail = await ctx.runQuery(
@@ -76,43 +73,22 @@ export const send = internalAction({
     }
 
     if (recipientsToEmail.length === 0) {
-      await ctx.runMutation(
-        internal.notifications.patchEmailStatus,
-        { id: args.notificationId, emailStatus: "suppressed_by_preference" },
-      );
+      await ctx.runMutation(internal.notifications.patchEmailStatus, {
+        id: args.notificationId,
+        emailStatus: "suppressed_by_preference",
+      });
       return;
     }
 
-    // Resolve branding
-    let branding: NotificationEmailBranding;
+    // Notification emails are Spot-branded. Broker white-labeling was retired
+    // when broker organizations became supplier profiles.
     const siteUrl = getPortalUrlForOrg(recipientOrg);
-
-    if (recipientOrg.type === "client" && recipientOrg.brokerOrgId) {
-      const brokerOrg = await ctx.runQuery(
-        internal.organizations.getInternal,
-        { id: recipientOrg.brokerOrgId },
-      );
-      // Get logo URL via storage if iconStorageId is set
-      let logoUrl: string | null = null;
-      const whiteLabelingEnabled = !!brokerOrg && isWhiteLabelingEnabled(brokerOrg);
-      if (whiteLabelingEnabled && brokerOrg?.iconStorageId) {
-        logoUrl = await ctx.storage.getUrl(brokerOrg.iconStorageId);
-      }
-      branding = whiteLabelingEnabled
-        ? {
-            kind: "broker",
-            brokerName: brokerOrg?.name ?? "Your broker",
-            agentDisplayName: brokerOrg?.agentDisplayName ?? null,
-            accentColor: brokerOrg?.brandingColor ?? null,
-            logoUrl,
-          }
-        : { kind: "spot" };
-    } else {
-      branding = { kind: "spot" };
-    }
-
     // Build CTA URL from actionPayload or fallback to inbox
-    const ctaUrl = buildCtaUrl(notification.actionType, notification.actionPayload, siteUrl);
+    const ctaUrl = buildCtaUrl(
+      notification.actionType,
+      notification.actionPayload,
+      siteUrl,
+    );
     const replyThread =
       notification.actionType === "view_thread" ? contextThread : null;
     const replyTo = trustedThreadReplyAddress(replyThread?.threadEmail);
@@ -122,7 +98,6 @@ export const send = internalAction({
       body: notification.body,
       ctaUrl,
       ctaLabel: notificationCtaLabel(type),
-      branding,
       siteUrl,
       threadLabel,
     });
@@ -143,16 +118,19 @@ export const send = internalAction({
     );
 
     if (result.ok) {
-      await ctx.runMutation(
-        internal.notifications.patchEmailStatus,
-        { id: args.notificationId, emailStatus: "sent", emailSentAt: dayjs().valueOf() },
-      );
+      await ctx.runMutation(internal.notifications.patchEmailStatus, {
+        id: args.notificationId,
+        emailStatus: "sent",
+        emailSentAt: dayjs().valueOf(),
+      });
     } else {
-      await ctx.runMutation(
-        internal.notifications.patchEmailStatus,
-        { id: args.notificationId, emailStatus: "failed" },
+      await ctx.runMutation(internal.notifications.patchEmailStatus, {
+        id: args.notificationId,
+        emailStatus: "failed",
+      });
+      console.error(
+        `[sendNotificationEmail] Failed to send notification ${args.notificationId}`,
       );
-      console.error(`[sendNotificationEmail] Failed to send notification ${args.notificationId}`);
     }
   },
 });
@@ -164,7 +142,9 @@ function notificationCtaLabel(type: string): string {
   }
 }
 
-function trustedThreadReplyAddress(value: string | undefined): string | undefined {
+function trustedThreadReplyAddress(
+  value: string | undefined,
+): string | undefined {
   const address = value?.trim();
   if (!address || /[\r\n]/.test(address)) return undefined;
   const at = address.lastIndexOf("@");

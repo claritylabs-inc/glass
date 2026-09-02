@@ -106,6 +106,7 @@ function ShellContent({
   customSidebar,
   customSidebarPreferenceStorageKey,
   storageUserId,
+  disablePersistentChat = false,
   disableCommandPalette = false,
   showBrokerShare = true,
 }: {
@@ -120,6 +121,7 @@ function ShellContent({
   }) => React.ReactNode;
   customSidebarPreferenceStorageKey: string | null;
   storageUserId?: string;
+  disablePersistentChat?: boolean;
   disableCommandPalette?: boolean;
   showBrokerShare?: boolean;
 }) {
@@ -144,14 +146,12 @@ function ShellContent({
   const previewWasOpenRef = useRef(false);
   const operatorAgentPinned = Boolean(
     viewportReady &&
-      operatorAgent?.open &&
-      isExtraLarge &&
-      !constrainedPreviewOpen,
+    operatorAgent?.open &&
+    isExtraLarge &&
+    !constrainedPreviewOpen,
   );
   const operatorAgentOverlayVisible = Boolean(
-    viewportReady &&
-      operatorAgent?.open &&
-      !operatorAgentPinned,
+    viewportReady && operatorAgent?.open && !operatorAgentPinned,
   );
 
   useEffect(() => {
@@ -244,9 +244,7 @@ function ShellContent({
   ) : null;
   const effectiveRightPanel = operatorAgentPinned ? (
     <OperatorAgentPanel pagePanel={hasRightPanel ? rightPanel : undefined} />
-  ) : operatorAgentOverlayVisible ? (
-    undefined
-  ) : hasRightPanel ? (
+  ) : operatorAgentOverlayVisible ? undefined : hasRightPanel ? (
     rightPanel
   ) : undefined;
   const panelLayout = (
@@ -332,6 +330,7 @@ function ShellContent({
               <AppSidebar
                 mobileOpen={mobileOpen}
                 onMobileClose={() => setMobileOpen(false)}
+                disablePersistentChat={disablePersistentChat}
                 onAskSpot={
                   disableCommandPalette ? undefined : openCommandPalette
                 }
@@ -384,6 +383,7 @@ export function AppShell({
   rightPanel,
   customSidebar,
   customSidebarStorageKey,
+  disablePersistentChat,
   disableCommandPalette,
   showBrokerShare,
 }: {
@@ -424,6 +424,7 @@ export function AppShell({
               customSidebarPreferenceStorageKey
             }
             storageUserId={scope.userId}
+            disablePersistentChat={disablePersistentChat}
             disableCommandPalette={disableCommandPalette}
             showBrokerShare={showBrokerShare}
           >

@@ -613,8 +613,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     requiredRole: "operator",
     confirmation: "none",
     target: (input) => ({ kind: "organization", id: input.brokerOrgId }),
-    summarize: (input) =>
-      `Read broker network profile ${input.brokerOrgId}`,
+    summarize: (input) => `Read broker network profile ${input.brokerOrgId}`,
   }),
   list_broker_network_profiles: defineOperatorTool({
     version: 1,
@@ -991,7 +990,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
   select_procurement_proposal: defineOperatorTool({
     version: 1,
     description:
-      "Select one exact private proposal after revalidating its current staff-confirmed review. Any confirmed conclusion may be selected, and prior selected proposals on the request are cleared atomically.",
+      "Select one exact private proposal only after revalidating a current staff-confirmed review that meets every requirement; prior selected proposals on the request are cleared atomically.",
     inputSchema: z.object({ procurementProposalId }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
@@ -1014,7 +1013,10 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
         networkStatus: brokerNetworkStatus.optional(),
         officeAddress: brokerOfficeAddress.optional(),
         writingStates: z.array(z.string().min(2).max(2)).max(60).optional(),
-        lineOfBusinessCodes: z.array(z.string().min(1).max(40)).max(100).optional(),
+        lineOfBusinessCodes: z
+          .array(z.string().min(1).max(40))
+          .max(100)
+          .optional(),
         name: z.string().min(1).max(200).optional(),
         website: z.string().max(2_000).nullable().optional(),
       })
@@ -1027,8 +1029,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     requiredRole: "operator",
     confirmation: "exact",
     target: (input) => ({ kind: "organization", id: input.brokerOrgId }),
-    summarize: (input) =>
-      `Update broker network profile ${input.brokerOrgId}`,
+    summarize: (input) => `Update broker network profile ${input.brokerOrgId}`,
   }),
   create_procurement_broker_outreach: defineOperatorTool({
     version: 1,
@@ -1037,7 +1038,6 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z.object({
       procurementRequestId,
       brokerOrgId: organizationId,
-      brokerName: z.string().min(1).max(200),
       contactName: z.string().max(200).optional(),
       contactEmail: z.string().max(320).optional(),
       contactPhone: z.string().max(100).optional(),
@@ -1055,7 +1055,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       id: input.procurementRequestId,
     }),
     summarize: (input) =>
-      `Add broker ${JSON.stringify(input.brokerName)} to procurement request ${input.procurementRequestId}`,
+      `Add broker ${input.brokerOrgId} to procurement request ${input.procurementRequestId}`,
   }),
   update_procurement_broker_outreach: defineOperatorTool({
     version: 1,
@@ -1064,8 +1064,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     inputSchema: z
       .object({
         procurementOutreachId,
-        brokerOrgId: organizationId.nullable().optional(),
-        brokerName: z.string().min(1).max(200).optional(),
+        brokerOrgId: organizationId.optional(),
         contactName: z.string().max(200).nullable().optional(),
         contactEmail: z.string().max(320).nullable().optional(),
         contactPhone: z.string().max(100).nullable().optional(),

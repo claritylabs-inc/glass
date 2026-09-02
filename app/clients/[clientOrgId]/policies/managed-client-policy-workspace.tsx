@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/table";
 import { ArchiveRestore, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { getPublicAgentDomain } from "@/lib/domains";
 import { useCachedQuery } from "@/lib/sync/use-cached-query";
 import {
   showPolicyExtractionQueuedToast,
@@ -35,11 +34,10 @@ import {
 } from "@/components/shared/extraction-banner";
 import { preparePolicyUploadCandidates } from "@/lib/policy-upload-duplicates";
 import { normalizeExtractedDate } from "@/convex/lib/valueNormalization";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 
-type BrokerPolicyRow = {
+type ClientPolicyRow = {
   _id: Id<"policies">;
   carrier?: string | null;
   mga?: string | null;
@@ -106,11 +104,12 @@ function statusTone(
   if (display === "complete") return "success" as const;
   if (display === "error" || display === "failed") return "danger" as const;
   if (display === "paused") return "warning" as const;
-  if (display === "extracting" || display === "enriching") return "info" as const;
+  if (display === "extracting" || display === "enriching")
+    return "info" as const;
   return "neutral" as const;
 }
 
-function displayUploadedBy(side?: BrokerPolicyRow["uploadedBySide"]) {
+function displayUploadedBy(side?: ClientPolicyRow["uploadedBySide"]) {
   if (side === "broker") return "Broker";
   if (side === "client") return "Client";
   if (side === "email_scan") return "Email scan";
@@ -123,8 +122,6 @@ export type ManagedClientPolicyWorkspaceProps = {
   clientOrgId?: string;
   basePath?: string;
   readOnly?: boolean;
-  showAgentEmail?: boolean;
-  showStatusNavigation?: boolean;
   onActions?: (node: ReactNode) => void;
   onRightPanel?: (node: ReactNode) => void;
   onBreadcrumb?: (node: ReactNode) => void;
@@ -136,8 +133,6 @@ export function ManagedClientPolicyWorkspace({
   clientOrgId: clientOrgIdProp,
   basePath: basePathProp,
   readOnly = false,
-  showAgentEmail = true,
-  showStatusNavigation = true,
   onActions,
   onRightPanel,
   onBreadcrumb,
@@ -169,33 +164,25 @@ export function ManagedClientPolicyWorkspace({
     [basePath, onPolicySelect, router],
   );
 
-  // Broker's own agent email (shown in empty state for easy forwarding)
-  const viewerOrg = useCachedQuery(
-    "orgs.viewerOrg",
-    api.orgs.viewerOrg,
-    showAgentEmail ? {} : "skip",
-  );
-  const AGENT_DOMAIN = getPublicAgentDomain();
-  const agentHandle = showAgentEmail ? viewerOrg?.org?.agentHandle : undefined;
-  const agentEmail = agentHandle ? `${agentHandle}@${AGENT_DOMAIN}` : null;
-
   useEffect(() => {
     setBreadcrumbExtra("Policies");
     return () => setBreadcrumbExtra(null);
   }, [setBreadcrumbExtra]);
 
   useEffect(() => {
-    setActions(showArchived || readOnly ? null : (
-      <PillButton
-        type="button"
-        size="compact"
-        variant="primary"
-        onClick={() => setUploaderOpen(true)}
-      >
-        <Upload className="h-3.5 w-3.5" />
-        Upload policy
-      </PillButton>
-    ));
+    setActions(
+      showArchived || readOnly ? null : (
+        <PillButton
+          type="button"
+          size="compact"
+          variant="primary"
+          onClick={() => setUploaderOpen(true)}
+        >
+          <Upload className="h-3.5 w-3.5" />
+          Upload policy
+        </PillButton>
+      ),
+    );
     return () => setActions(null);
   }, [readOnly, setActions, showArchived]);
 
@@ -253,7 +240,7 @@ export function ManagedClientPolicyWorkspace({
   );
 
   const resolvePendingExtractionToasts = useCallback(
-    (rows: BrokerPolicyRow[] | undefined) => {
+    (rows: ClientPolicyRow[] | undefined) => {
       if (!rows) return;
       const pending = pendingExtractionToastsRef.current;
       if (Object.keys(pending).length === 0) return;
@@ -309,7 +296,9 @@ export function ManagedClientPolicyWorkspace({
               uploadFileSha256s: [candidates[i].fileSha256],
               documentType: "policy" as const,
             };
-            const policyId = (await createOperatorUpload(uploadArgs)) as Id<"policies">;
+            const policyId = (await createOperatorUpload(
+              uploadArgs,
+            )) as Id<"policies">;
             showPolicyExtractionQueuedToast({
               policyId,
               documentType: "policy",
@@ -319,7 +308,7 @@ export function ManagedClientPolicyWorkspace({
               fileName: candidates[i].file.name,
             };
             resolvePendingExtractionToasts(
-              policies as BrokerPolicyRow[] | undefined,
+              policies as ClientPolicyRow[] | undefined,
             );
 
             const result = await extractFromUpload({
@@ -338,7 +327,9 @@ export function ManagedClientPolicyWorkspace({
             }
           }
         } else {
-          const uploadFileSha256s = candidates.map((candidate) => candidate.fileSha256);
+          const uploadFileSha256s = candidates.map(
+            (candidate) => candidate.fileSha256,
+          );
           const uploadArgs = {
             clientOrgId: orgId,
             fileId: storageIds[0] as Id<"_storage">,
@@ -347,7 +338,9 @@ export function ManagedClientPolicyWorkspace({
             uploadFileSha256s,
             documentType: "policy" as const,
           };
-          const policyId = (await createOperatorUpload(uploadArgs)) as Id<"policies">;
+          const policyId = (await createOperatorUpload(
+            uploadArgs,
+          )) as Id<"policies">;
           const displayFileName =
             candidates.length > 1
               ? `${candidates[0].file.name.replace(/\.pdf$/i, "")} + ${candidates.length - 1} more.pdf`
@@ -361,7 +354,7 @@ export function ManagedClientPolicyWorkspace({
             fileName: displayFileName,
           };
           resolvePendingExtractionToasts(
-            policies as BrokerPolicyRow[] | undefined,
+            policies as ClientPolicyRow[] | undefined,
           );
 
           if (candidates.length > 1) {
@@ -406,15 +399,16 @@ export function ManagedClientPolicyWorkspace({
   );
 
   useEffect(() => {
-    const uploadPanel = showArchived || readOnly ? null : (
-      <PolicyUploadDrawer
-        open={uploaderOpen}
-        onClose={() => setUploaderOpen(false)}
-        onUpload={handleUpload}
-        uploading={uploading}
-      />
-    );
-    setRightPanel(uploaderOpen ? uploadPanel : policyPreview ?? uploadPanel);
+    const uploadPanel =
+      showArchived || readOnly ? null : (
+        <PolicyUploadDrawer
+          open={uploaderOpen}
+          onClose={() => setUploaderOpen(false)}
+          onUpload={handleUpload}
+          uploading={uploading}
+        />
+      );
+    setRightPanel(uploaderOpen ? uploadPanel : (policyPreview ?? uploadPanel));
     return () => setRightPanel(null);
   }, [
     handleUpload,
@@ -427,33 +421,20 @@ export function ManagedClientPolicyWorkspace({
   ]);
 
   const isLoading = policies === undefined;
-  const rows = (policies ?? []) as BrokerPolicyRow[];
+  const rows = (policies ?? []) as ClientPolicyRow[];
 
   useEffect(() => {
-    resolvePendingExtractionToasts(policies as BrokerPolicyRow[] | undefined);
+    resolvePendingExtractionToasts(policies as ClientPolicyRow[] | undefined);
   }, [policies, resolvePendingExtractionToasts]);
 
   return (
     <div className="space-y-4">
-      {showStatusNavigation ? (
-        <Tabs
-          value={showArchived ? "archived" : "active"}
-          onValueChange={(value) =>
-            router.push(
-              value === "archived" ? `${basePath}?view=archived` : basePath,
-            )
-          }
-        >
-          <TabsList variant="pill">
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="archived">Archived</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      ) : null}
       {isLoading ? (
         <div className="min-h-32" aria-hidden="true" />
       ) : rows.length === 0 && showArchived ? (
-        <div className={`py-16 text-center text-muted-foreground/50 ${typeStyle("body.default")}`}>
+        <div
+          className={`py-16 text-center text-muted-foreground/50 ${typeStyle("body.default")}`}
+        >
           No archived policies
         </div>
       ) : rows.length === 0 && readOnly ? (
@@ -461,39 +442,51 @@ export function ManagedClientPolicyWorkspace({
           <p className={typeStyle("body.default")}>No active policies</p>
         </OperationalPanel>
       ) : rows.length === 0 ? (
-        <PolicyEmptyState
-          agentEmail={agentEmail}
-          uploading={uploading}
-          onUpload={handleUpload}
-        />
+        <PolicyEmptyState uploading={uploading} onUpload={handleUpload} />
       ) : (
         <OperationalPanel>
           <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className={`w-[22%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[22%] px-4 text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Carrier
                 </TableHead>
-                <TableHead className={`w-[16%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[16%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Policy no.
                 </TableHead>
-                <TableHead className={`w-[20%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[20%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Term
                 </TableHead>
-                <TableHead className={`w-[12%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[12%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Premium
                 </TableHead>
-                <TableHead className={`w-[12%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[12%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Uploaded by
                 </TableHead>
-                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Status
                 </TableHead>
-                <TableHead className={`w-[18%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[18%] px-4 text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   File
                 </TableHead>
                 {showArchived && !readOnly ? (
-                  <TableHead className={`w-28 px-4 text-right text-muted-foreground ${typeStyle("label.table")}`}>
+                  <TableHead
+                    className={`w-28 px-4 text-right text-muted-foreground ${typeStyle("label.table")}`}
+                  >
                     Action
                   </TableHead>
                 ) : null}
@@ -517,7 +510,9 @@ export function ManagedClientPolicyWorkspace({
                     className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                   >
                     <TableCell className="px-4">
-                      <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
+                      <p
+                        className={`truncate text-foreground ${typeStyle("body.medium")}`}
+                      >
                         {carrier}
                       </p>
                     </TableCell>
@@ -569,7 +564,9 @@ export function ManagedClientPolicyWorkspace({
                           }}
                         >
                           <ArchiveRestore className="size-3.5" />
-                          {restoringId === policy._id ? "Restoring..." : "Restore"}
+                          {restoringId === policy._id
+                            ? "Restoring..."
+                            : "Restore"}
                         </PillButton>
                       </TableCell>
                     ) : null}

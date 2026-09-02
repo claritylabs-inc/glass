@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { ArrowRight, Building2 } from "lucide-react";
-import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
+import {
+  AuthCard,
+  AuthMinimalShell,
+  BrandWordmark,
+} from "@/components/auth-shell";
 import { typeStyle } from "@/lib/typography";
 
 export default function SignupPage() {
@@ -23,7 +27,9 @@ export default function SignupPage() {
               <div className={`text-foreground ${typeStyle("body.medium")}`}>
                 I&apos;m a company signing up directly
               </div>
-              <div className={`text-muted-foreground ${typeStyle("caption.default")}`}>
+              <div
+                className={`text-muted-foreground ${typeStyle("caption.default")}`}
+              >
                 Manage your own policies, get answers, and generate COIs.
               </div>
             </div>
@@ -31,7 +37,9 @@ export default function SignupPage() {
           </Link>
         </div>
 
-        <div className={`pt-5 text-muted-foreground ${typeStyle("caption.default")}`}>
+        <div
+          className={`pt-5 text-muted-foreground ${typeStyle("caption.default")}`}
+        >
           <span>Already have an account? </span>
           <Link
             href="/login"

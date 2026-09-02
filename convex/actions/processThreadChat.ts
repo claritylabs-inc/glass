@@ -26,7 +26,6 @@ import {
 } from "../lib/agentPolicyFocus";
 import {
   buildSystemPromptForContext,
-  buildBrokerPortfolioSystemPrompt,
   stripConfidenceMarkers,
   stripMarkdown,
   markdownToHtml,
@@ -295,21 +294,6 @@ export const run = internalAction({
       const userName = user?.name?.split(/\s+/)[0];
 
       const siteUrl = getPortalUrlForOrg(org);
-      const brokerIdentity =
-        org.type === "client"
-          ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-              clientOrgId: args.orgId,
-            })
-          : null;
-      const brokerContext = brokerIdentity?.brokerCompanyName
-        ? {
-            name: brokerIdentity.brokerCompanyName,
-            contactName: brokerIdentity.contactName,
-            contactEmail: brokerIdentity.contactEmail,
-            contactPhone: brokerIdentity.contactPhone,
-          }
-        : undefined;
-
       const scope = await ctx.runQuery(
         internal.lib.agentScope.resolveForAction,
         {
@@ -337,24 +321,14 @@ export const run = internalAction({
           : requesterCopyEmail
         : undefined;
 
-      const systemPrompt =
-        scope.mode === "broker_portfolio"
-          ? buildBrokerPortfolioSystemPrompt({
-              brokerName: typeof org.name === "string" ? org.name : undefined,
-              brokerContext:
-                typeof org.context === "string" ? org.context : undefined,
-              userName,
-              siteUrl,
-            })
-          : buildSystemPromptForContext({
-              org: {
-                ...org,
-                broker: brokerContext,
-              },
-              mode: "direct",
-              userName,
-              siteUrl,
-            });
+      const systemPrompt = buildSystemPromptForContext({
+        org: {
+          ...org,
+        },
+        mode: "direct",
+        userName,
+        siteUrl,
+      });
 
       const allMessages = boundedHistory.messages;
 
@@ -464,7 +438,7 @@ export const run = internalAction({
       );
       const isMixedThread =
         hasEmailMessages || thread?.originChannel === "email";
-      const emailIdentity = await resolveEmailAgentIdentity(ctx, org);
+      const emailIdentity = await resolveEmailAgentIdentity(org);
       const canSendEmail = emailIdentity.canSend;
 
       const webChatAddendum = buildChannelInstructions({
@@ -517,9 +491,7 @@ export const run = internalAction({
         allMessages,
         orgMemberEmails,
       );
-      const allowedRecipients = brokerIdentity?.contactEmail
-        ? [...new Set([...baseAllowedRecipients, brokerIdentity.contactEmail])]
-        : baseAllowedRecipients;
+      const allowedRecipients = baseAllowedRecipients;
       const availableAttachments = allMessages.flatMap((message) =>
         (message.attachments ?? []).flatMap((attachment) =>
           attachment.fileId &&
@@ -781,18 +753,9 @@ export const run = internalAction({
                 channel: surface,
                 fromHeader: emailIdentity.fromHeader,
                 agentAddress: emailIdentity.agentAddress,
-                brokerBranding: emailIdentity.brokerBranding,
                 senderEmail: user?.email,
                 defaultTo: user?.email,
                 defaultRecipientName: user?.name,
-                brokerRecipientEmail: brokerIdentity?.contactEmail,
-                brokerRecipientName:
-                  brokerIdentity?.contactName ??
-                  brokerIdentity?.brokerCompanyName,
-                missingRecipientMessage:
-                  "No broker contact email is set for this organization. Add the broker contact in Settings, or provide the broker's email address before I draft or send this.",
-                unknownRecipientMessage:
-                  "I cannot use that broker recipient because it is not the configured broker contact in Spot. Add the broker contact in Settings, or provide the correct broker email address explicitly.",
                 defaultBcc:
                   org.bccRequesterOnAgentEmails !== false && requesterCopyEmail
                     ? [requesterCopyEmail]

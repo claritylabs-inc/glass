@@ -2,27 +2,19 @@
 
 import { getSettingsNavigation } from "@/lib/settings-sections";
 import { SectionHeader, SidebarMenuItem } from "./nav-item";
-import { SidebarBrokerContact } from "./broker-contact-card";
 import { SidebarHeader } from "./sidebar-header";
-import type { BrokerContact } from "./types";
 
 export function SettingsSidebarContent({
   collapsed,
   isBroker,
   isStandaloneClient,
   activeSettingsSection,
-  broker,
-  fallbackAgentHandle,
-  showBrokerContact,
   onToggleCollapse,
 }: {
   collapsed: boolean;
   isBroker: boolean;
   isStandaloneClient: boolean;
   activeSettingsSection: string;
-  broker: BrokerContact;
-  fallbackAgentHandle?: string;
-  showBrokerContact: boolean;
   onToggleCollapse: () => void;
 }) {
   const groups = getSettingsNavigation({ isBroker, isStandaloneClient });
@@ -54,13 +46,6 @@ export function SettingsSidebarContent({
           </div>
         ))}
       </nav>
-
-      {showBrokerContact && !collapsed ? (
-        <SidebarBrokerContact
-          broker={broker}
-          fallbackAgentHandle={fallbackAgentHandle}
-        />
-      ) : null}
     </div>
   );
 }

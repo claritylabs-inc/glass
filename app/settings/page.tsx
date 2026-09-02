@@ -20,14 +20,10 @@ import { ConnectionsSection } from "@/components/settings/connections-section";
 import { MemorySection } from "@/components/settings/memory-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
-import { ModelsSection } from "@/components/settings/models-section";
 import { CertificateWorkflowSection } from "@/components/settings/certificate-workflow-section";
 import { BetaFeaturesSection } from "@/components/settings/beta-features-section";
 import { NotificationPreferencesSection } from "@/components/settings/notification-preferences-section";
-import {
-  AgentChannelsSection,
-  BrokerAgentChannelsSection,
-} from "@/components/settings/agent-channels-section";
+import { AgentChannelsSection } from "@/components/settings/agent-channels-section";
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
@@ -36,8 +32,7 @@ export default function SettingsPage() {
   const [rightPanel, setRightPanel] = useState<React.ReactNode>(null);
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const isStandaloneClient =
-    currentOrg?.orgType === "client" && !currentOrg?.brokerOrg;
+  const isStandaloneClient = currentOrg?.orgType === "client";
   const groups = useMemo(
     () => getSettingsNavigation({ isBroker, isStandaloneClient }),
     [isBroker, isStandaloneClient],
@@ -65,7 +60,14 @@ export default function SettingsPage() {
     params.set("section", destination.section);
     params.set("tab", destination.tab);
     router.replace(`/settings?${params.toString()}`);
-  }, [currentOrg, destination.section, destination.tab, isBroker, router, searchParams]);
+  }, [
+    currentOrg,
+    destination.section,
+    destination.tab,
+    isBroker,
+    router,
+    searchParams,
+  ]);
 
   function navigate(section: SettingsPageId, tab: SettingsTabId) {
     const params = new URLSearchParams(searchParams.toString());
@@ -156,13 +158,11 @@ function SectionContent({
   }
   if (section === "agent") {
     if (tab === "channels") {
-      if (isBroker) return <BrokerAgentChannelsSection />;
       if (currentOrg?.orgId) {
         return <AgentChannelsSection clientOrgId={currentOrg.orgId} />;
       }
     }
     if (tab === "memory") return <MemorySection />;
-    if (tab === "models") return <ModelsSection />;
     return <BrokerAgentTab />;
   }
   if (section === "workflows") {

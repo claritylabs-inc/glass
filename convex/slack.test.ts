@@ -270,12 +270,12 @@ describe("Slack channel state and authorization", () => {
     };
 
     expect(claim.status).toBe("queued");
-    await expect(t.run((ctx) => ctx.db.get(claim.eventId))).resolves.toMatchObject(
-      {
-        connectionId,
-        isPrimaryChannel: true,
-      },
-    );
+    await expect(
+      t.run((ctx) => ctx.db.get(claim.eventId)),
+    ).resolves.toMatchObject({
+      connectionId,
+      isPrimaryChannel: true,
+    });
   });
 
   test("keeps pre-rebrand mention events actionable during the widening release", async () => {
@@ -408,13 +408,11 @@ describe("Slack channel state and authorization", () => {
         .unique(),
       thread: await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-PRIMARY")
-              .eq("slackThreadTs", "1800000000.050"),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-PRIMARY")
+            .eq("slackThreadTs", "1800000000.050"),
         )
         .unique(),
     }));
@@ -503,13 +501,11 @@ describe("Slack channel state and authorization", () => {
     const resolvedThread = await t.run((ctx) =>
       ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-PRIMARY")
-              .eq("slackThreadTs", "1800000000.075"),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-PRIMARY")
+            .eq("slackThreadTs", "1800000000.075"),
         )
         .unique(),
     );
@@ -769,13 +765,11 @@ describe("Slack channel state and authorization", () => {
     const state = await t.run(async (ctx) => {
       const thread = await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-POLICIES")
-              .eq("slackThreadTs", threadTs),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-POLICIES")
+            .eq("slackThreadTs", threadTs),
         )
         .unique();
       return {
@@ -1236,13 +1230,11 @@ describe("Slack channel state and authorization", () => {
       handoffs: await ctx.db.query("slackHandoffs").collect(),
       thread: await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connectionId)
-              .eq("slackChannelId", "C-OTHER")
-              .eq("slackThreadTs", "1800000000.888"),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connectionId)
+            .eq("slackChannelId", "C-OTHER")
+            .eq("slackThreadTs", "1800000000.888"),
         )
         .first(),
     }));
@@ -1462,7 +1454,8 @@ describe("Slack setup and outbound durability", () => {
       await ctx.db.patch(binding._id, {
         healthStatus: "degraded",
         providerErrorCode: "invalid_arguments",
-        providerErrorSummary: "Slack could not verify the host primary channel.",
+        providerErrorSummary:
+          "Slack could not verify the host primary channel.",
       });
     });
 

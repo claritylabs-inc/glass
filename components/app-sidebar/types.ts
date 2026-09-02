@@ -25,18 +25,3 @@ export type ClientThreadItem = {
   slackConversationKind?: "channel" | "direct_message";
   visibility?: "broker_visible" | "client_internal" | "user_private";
 };
-
-export type BrokerContact = {
-  name: string;
-  iconUrl?: string | null;
-  whiteLabelingEnabled?: boolean;
-  brandingColor?: string;
-  agentHandle?: string;
-  primaryContact: {
-    userId: string;
-    name?: string;
-    email?: string;
-    phone?: string;
-    title?: string;
-  } | null;
-} | null;

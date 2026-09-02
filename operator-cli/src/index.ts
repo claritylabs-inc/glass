@@ -2,7 +2,12 @@
 import { readFile } from "node:fs/promises";
 import { Command } from "commander";
 import { OperatorClient } from "./client.js";
-import { deleteConfig, loadConfig, resolveProfile, saveConfig } from "./config.js";
+import {
+  deleteConfig,
+  loadConfig,
+  resolveProfile,
+  saveConfig,
+} from "./config.js";
 
 type GlobalOptions = {
   profile?: string;
@@ -39,7 +44,9 @@ program
   .command("auth:check")
   .description("Verify stored or environment operator credentials")
   .action(async () => {
-    const result = await new OperatorClient(await loadConfig(currentProfile())).checkAuth();
+    const result = await new OperatorClient(
+      await loadConfig(currentProfile()),
+    ).checkAuth();
     print(result, outputJson());
   });
 
@@ -54,23 +61,22 @@ program
 
 program
   .command("provision-broker")
-  .description("Create or update a broker org, admin account, and optional draft clients")
+  .description(
+    "Create or update a broker network organization and admin account",
+  )
   .option("--input <file>", "JSON payload file")
   .option("--name <name>", "broker organization name")
   .option("--slug <slug>", "broker workspace slug")
   .option("--website <url>", "broker website")
-  .option("--branding-color <hex>", "broker branding hex color")
-  .option("--white-labeling-enabled <boolean>", "true or false")
-  .option("--agent-display-name <name>", "broker agent display name")
-  .option("--agent-handle <handle>", "broker agent email handle")
   .option("--admin-email <email>", "broker admin email")
   .option("--admin-name <name>", "broker admin name")
   .option("--admin-title <title>", "broker admin title")
   .option("--mark-onboarding-complete <boolean>", "true or false", "true")
-  .option("--client <value>", "draft client as Name|email|website", collect, [])
   .action(async (options) => {
     const body = await buildProvisionPayload(options);
-    const result = await new OperatorClient(await loadConfig(currentProfile())).provisionBroker(body);
+    const result = await new OperatorClient(
+      await loadConfig(currentProfile()),
+    ).provisionBroker(body);
     print(result, outputJson());
   });
 
@@ -81,15 +87,11 @@ program.parseAsync().catch((error: unknown) => {
 });
 
 function currentProfile(): string {
-  return resolveProfile((program.opts<GlobalOptions>()).profile);
+  return resolveProfile(program.opts<GlobalOptions>().profile);
 }
 
 function outputJson(): boolean {
-  return Boolean((program.opts<GlobalOptions>()).json);
-}
-
-function collect(value: string, previous: string[]) {
-  return [...previous, value];
+  return Boolean(program.opts<GlobalOptions>().json);
 }
 
 async function buildProvisionPayload(options: Record<string, unknown>) {
@@ -105,25 +107,15 @@ async function buildProvisionPayload(options: Record<string, unknown>) {
       name,
       slug: optionalString(options.slug),
       website: optionalString(options.website),
-      brandingColor: optionalString(options.brandingColor),
-      whiteLabelingEnabled: parseOptionalBoolean(options.whiteLabelingEnabled),
-      agentDisplayName: optionalString(options.agentDisplayName),
-      agentHandle: optionalString(options.agentHandle),
     }),
     admin: compact({
       email: adminEmail,
       name: optionalString(options.adminName),
       title: optionalString(options.adminTitle),
     }),
-    clients: ((options.client as string[] | undefined) ?? []).map(parseClient),
-    markOnboardingComplete: parseOptionalBoolean(options.markOnboardingComplete) ?? true,
+    markOnboardingComplete:
+      parseOptionalBoolean(options.markOnboardingComplete) ?? true,
   };
-}
-
-function parseClient(value: string) {
-  const [name, primaryContactEmail, website] = value.split("|").map((part) => part.trim());
-  if (!name) throw new Error(`Invalid --client value "${value}". Use "Name|email|website".`);
-  return compact({ name, primaryContactEmail, website });
 }
 
 function requiredString(value: unknown, option: string) {
@@ -134,7 +126,9 @@ function requiredString(value: unknown, option: string) {
 }
 
 function optionalString(value: unknown) {
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+  return typeof value === "string" && value.trim() !== ""
+    ? value.trim()
+    : undefined;
 }
 
 function parseOptionalBoolean(value: unknown) {
@@ -146,7 +140,9 @@ function parseOptionalBoolean(value: unknown) {
 
 function compact<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== ""),
+    Object.entries(value).filter(
+      ([, entry]) => entry !== undefined && entry !== "",
+    ),
   );
 }
 

@@ -2116,7 +2116,7 @@ const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
   {
     name: "ask_glass",
     description:
-      "Legacy alias for ask_spot. Ask the Spot AI assistant a question about the organization's insurance portfolio. When the selected org is a broker workspace, Spot can answer across managed client organizations with client-labeled results.",
+      "Legacy alias for ask_spot. Ask the Spot AI assistant a question about the organization's insurance portfolio.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -2137,7 +2137,7 @@ const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
   {
     name: "ask_spot",
     description:
-      "Ask the Spot AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. For client orgs, Spot answers within that org; for broker workspaces, Spot can answer across managed clients with client-labeled results. Optionally pass a threadId to continue an existing conversation.",
+      "Ask the Spot AI assistant a question about the organization's insurance portfolio, bound policies, renewals, or coverage details. Spot answers within the selected organization. Optionally pass a threadId to continue an existing conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -3825,82 +3825,6 @@ http.route({
   }),
 });
 
-// ── Task 16: MCP HTTP backing routes for broker + client tool calls ──
-
-// GET /mcp/broker/clients/list
-http.route({
-  path: "/mcp/broker/clients/list",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const result = await ctx.runQuery(
-        (internal as any).clients.listForBrokerInternal,
-        {
-          brokerOrgId: identity.orgId as Id<"organizations">,
-          userId: identity.userId as Id<"users">,
-        },
-      );
-      return jsonResponse(result);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// GET /mcp/broker/clients/get
-http.route({
-  path: "/mcp/broker/clients/get",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const clientOrgId = getQueryParam(request, "clientOrgId");
-      if (!clientOrgId)
-        return jsonResponse({ error: "Missing clientOrgId" }, 400);
-      const detail = await ctx.runQuery(
-        (internal as any).clients.getDetailInternal,
-        {
-          brokerOrgId: identity.orgId as Id<"organizations">,
-          clientOrgId: clientOrgId as Id<"organizations">,
-          userId: identity.userId as Id<"users">,
-        },
-      );
-      if (!detail) return jsonResponse({ error: "Not found" }, 404);
-      const policies = await ctx.runQuery(
-        internal.policies.listAllPreviewReadableInternal,
-        { orgId: clientOrgId as Id<"organizations"> },
-      );
-      return jsonResponse({ org: detail, policy_count: policies.length });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
-// GET /mcp/broker/activity/list
-http.route({
-  path: "/mcp/broker/activity/list",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireMcpAuth(ctx, request);
-      const result = await ctx
-        .runQuery((internal as any).brokerActivity.listPortfolio, {
-          orgId: identity.orgId as Id<"organizations">,
-          limit: 50,
-        })
-        .catch(() => []);
-      return jsonResponse(result);
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse({ error: String(e) }, 500);
-    }
-  }),
-});
-
 // ── REST API v1 helpers ──
 
 function extractBearerToken(request: Request): string {
@@ -4066,136 +3990,6 @@ http.route({
           404,
         );
       return jsonResponse(toOrgDto(org));
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
-// ── Task 8: GET /api/v1/clients ──
-http.route({
-  path: "/api/v1/clients",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const rows = await ctx.runQuery(
-        (internal as any).clients.listForBrokerInternal,
-        {
-          brokerOrgId: identity.orgId,
-          userId: identity.userId,
-        },
-      );
-      const data = (rows ?? []).map((row: any) =>
-        row.onboardingStatus === "invited"
-          ? {
-              invitation_id: row.invitationId,
-              name: row.name,
-              onboarding_status: "invited",
-              created_at: row.createdAt,
-            }
-          : {
-              id: row.clientOrgId,
-              name: row.name,
-              onboarding_status: row.onboardingStatus,
-              created_at: row.createdAt,
-              last_activity_at: row.lastActivityAt,
-            },
-      );
-      return jsonResponse({ data, next_cursor: null });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
-// ── GET /api/v1/clients/:id ──
-http.route({
-  path: "/api/v1/clients/:id",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const clientOrgId = new URL(request.url).pathname
-        .split("/")
-        .pop() as Id<"organizations">;
-      const detail = await ctx.runQuery(
-        (internal as any).clients.getDetailInternal,
-        {
-          brokerOrgId: identity.orgId,
-          clientOrgId,
-          userId: identity.userId,
-        },
-      );
-      if (!detail) {
-        return jsonResponse(
-          { error: { code: "not_found", message: "Client not found" } },
-          404,
-        );
-      }
-      const policies = await ctx.runQuery(internal.policies.listAllInternal, {
-        orgId: clientOrgId,
-      });
-      return jsonResponse({
-        id: detail.clientOrgId,
-        name: detail.name,
-        legal_name: detail.legalName ?? null,
-        website: detail.website ?? null,
-        industry: detail.industry ?? null,
-        context: detail.context ?? null,
-        policy_count: policies.length,
-      });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
-// ── POST /api/v1/clients/invitations ──
-http.route({
-  path: "/api/v1/clients/invitations",
-  method: "POST",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      if (!identity.scopes.includes("write")) {
-        return jsonResponse(
-          {
-            error: {
-              code: "insufficient_scope",
-              message: "Write scope required",
-              request_id: identity.requestId,
-            },
-          },
-          403,
-        );
-      }
-      const body = await request.json();
-      if (!body.client_email)
-        return jsonResponse(
-          { error: { code: "bad_request", message: "Missing client_email" } },
-          400,
-        );
-      const result = await ctx
-        .runMutation((internal as any).clientInvitations.insertInvitation, {
-          brokerOrgId: identity.orgId,
-          email: body.client_email,
-          message: body.message,
-        })
-        .catch(() => null);
-      return jsonResponse({ ok: true, result }, 201);
     } catch (e) {
       if (e instanceof Response) return e;
       return jsonResponse(
@@ -4836,30 +4630,6 @@ http.route({
   }),
 });
 
-// ── GET /api/v1/activity ──
-http.route({
-  path: "/api/v1/activity",
-  method: "GET",
-  handler: httpAction(async (ctx, request) => {
-    try {
-      const identity = await requireApiAuth(ctx, request);
-      const result = await ctx
-        .runQuery((internal as any).brokerActivity.listPortfolioInternal, {
-          orgId: identity.orgId,
-          userId: identity.userId,
-        })
-        .catch(() => []);
-      return jsonResponse({ data: Array.isArray(result) ? result : [] });
-    } catch (e) {
-      if (e instanceof Response) return e;
-      return jsonResponse(
-        { error: { code: "internal_error", message: String(e) } },
-        500,
-      );
-    }
-  }),
-});
-
 // ── Task 13: GET /api/v1/openapi.json ──
 http.route({
   path: "/api/v1/openapi.json",
@@ -4898,27 +4668,6 @@ http.route({
             tags: ["Org"],
             summary: "Current org detail",
             responses: { "200": { description: "Org detail" } },
-          },
-        },
-        "/api/v1/clients": {
-          get: {
-            tags: ["Clients"],
-            summary: "List broker clients",
-            responses: { "200": { description: "Paginated client list" } },
-          },
-        },
-        "/api/v1/clients/{id}": {
-          get: {
-            tags: ["Clients"],
-            summary: "Get client detail",
-            responses: { "200": { description: "Client detail" } },
-          },
-        },
-        "/api/v1/clients/invitations": {
-          post: {
-            tags: ["Clients"],
-            summary: "Create client invitation (write)",
-            responses: { "201": { description: "Invitation created" } },
           },
         },
         "/api/v1/policies": {
@@ -5023,13 +4772,6 @@ http.route({
             responses: { "200": { description: "Notifications" } },
           },
         },
-        "/api/v1/activity": {
-          get: {
-            tags: ["Activity"],
-            summary: "Activity feed",
-            responses: { "200": { description: "Activity" } },
-          },
-        },
       },
     });
   }),
@@ -5046,7 +4788,7 @@ http.route({
         spot: {
           uri: `${url.origin}/mcp`,
           instructions:
-            "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and broker-client workflows.",
+            "Spot is an insurance intelligence platform. Use Spot tools to look up bound policies, renewals, threads, and compliance workflows.",
         },
       },
     });

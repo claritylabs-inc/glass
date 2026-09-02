@@ -1,20 +1,23 @@
 import { v } from "convex/values";
-import { query, mutation, action, internalQuery, internalMutation } from "./_generated/server";
+import {
+  query,
+  mutation,
+  action,
+  internalQuery,
+  internalMutation,
+} from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import dayjs from "dayjs";
-import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { internal as _internal } from "./_generated/api";
 import {
-  assertBrokerOrg,
   getCurrentOrgAccess as getOrgAccess,
   getOrgAccess as getOrgAccessNew,
   requireCurrentOrgAccess as requireOrgAccess,
   requireCurrentOrgAdminWrite as requireOrgAdminWrite,
 } from "./lib/access";
 import type { Id } from "./_generated/dataModel";
-import { getBrandingContext, isWhiteLabelingEnabled } from "./lib/branding";
-import { normalizeOptionalEmail, resolveBrokerIdentityForClient } from "./lib/brokerIdentity";
+import { getBrandingContext } from "./lib/branding";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthSiteUrl } from "./lib/domains";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
@@ -25,7 +28,6 @@ import {
 import { normalizeAvailableUserPhone } from "./lib/userPhone";
 import {
   assertCustomerUser,
-  assertImpersonatedSetupWrite,
   getActiveOperatorImpersonation,
   isBootstrapOperatorEmail,
   requireOperator,
@@ -58,20 +60,23 @@ async function createMemberInvitation(
     operatorClientOrgId?: Id<"organizations">;
   },
 ) {
-  const access = args.operatorClientOrgId && args.invitedByUserId
-    ? await requireOperatorClientForUser(
-        ctx,
-        args.invitedByUserId,
-        args.operatorClientOrgId,
-      )
-    : args.invitedByUserId
-      ? await requireOrgAdminForUser(ctx, args.invitedByUserId)
-      : await requireOrgAdminWrite(ctx);
+  const access =
+    args.operatorClientOrgId && args.invitedByUserId
+      ? await requireOperatorClientForUser(
+          ctx,
+          args.invitedByUserId,
+          args.operatorClientOrgId,
+        )
+      : args.invitedByUserId
+        ? await requireOrgAdminForUser(ctx, args.invitedByUserId)
+        : await requireOrgAdminWrite(ctx);
   const { userId, orgId } = access;
   const email = normalizeEmail(args.email);
   if (!email) throw new Error("Email is required");
   if (isBootstrapOperatorEmail(email)) {
-    throw new Error("Operator emails cannot be invited to customer organizations");
+    throw new Error(
+      "Operator emails cannot be invited to customer organizations",
+    );
   }
 
   const memberships = await ctx.db
@@ -155,7 +160,8 @@ async function getTeamReadOrgId(
   if (operatorClientOrgId) {
     await requireOperator(ctx);
     const client = await ctx.db.get(operatorClientOrgId);
-    if (!client || client.type !== "client") throw new Error("Client not found");
+    if (!client || client.type !== "client")
+      throw new Error("Client not found");
     return client._id;
   }
   return (await requireOrgAccess(ctx)).orgId;
@@ -168,7 +174,8 @@ async function getTeamAdminWriteAccess(
   if (operatorClientOrgId) {
     const operator = await requireOperator(ctx);
     const client = await ctx.db.get(operatorClientOrgId);
-    if (!client || client.type !== "client") throw new Error("Client not found");
+    if (!client || client.type !== "client")
+      throw new Error("Client not found");
     return {
       orgId: client._id,
       org: client,
@@ -215,11 +222,13 @@ export const viewerOrg = query({
     const impersonation = await getActiveOperatorImpersonation(ctx);
     if (impersonation) {
       if (args.orgId && args.orgId !== impersonation.session.targetOrgId) {
+        const target = await ctx.db.get(impersonation.session.targetOrgId);
         const requested = await ctx.db.get(args.orgId);
         if (
+          !target ||
+          target.type !== "client" ||
           !requested ||
-          requested.type !== "client" ||
-          requested.brokerOrgId !== impersonation.session.targetOrgId
+          requested.type !== "client"
         ) {
           return null;
         }
@@ -235,11 +244,12 @@ export const viewerOrg = query({
           role: impersonation.session.targetRole,
         };
       }
-    } else
-    if (args.orgId) {
+    } else if (args.orgId) {
       membership = await ctx.db
         .query("orgMemberships")
-        .withIndex("organization_user", (q) => q.eq("orgId", args.orgId!).eq("userId", userId))
+        .withIndex("organization_user", (q) =>
+          q.eq("orgId", args.orgId!).eq("userId", userId),
+        )
         .first();
     } else {
       membership = await ctx.db
@@ -253,7 +263,9 @@ export const viewerOrg = query({
     const org = await ctx.db.get(membership.orgId);
     if (!org) return null;
 
-    const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
+    const iconUrl = org.iconStorageId
+      ? await ctx.storage.getUrl(org.iconStorageId)
+      : null;
 
     return { org: { ...org, iconUrl }, membership, brokerOrg: null };
   },
@@ -335,66 +347,31 @@ export const checkHandleAvailability = query({
   handler: async (ctx, args) => {
     const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (normalized.length < 3 || normalized.length > 30) {
-      return { available: false, normalized, reason: "Handle must be 3-30 characters" };
+      return {
+        available: false,
+        normalized,
+        reason: "Handle must be 3-30 characters",
+      };
     }
-    if (!/^[a-z][a-z0-9-]*[a-z0-9]$/.test(normalized) && normalized.length > 1) {
-      return { available: false, normalized, reason: "Must start with a letter and end with a letter or number" };
+    if (
+      !/^[a-z][a-z0-9-]*[a-z0-9]$/.test(normalized) &&
+      normalized.length > 1
+    ) {
+      return {
+        available: false,
+        normalized,
+        reason: "Must start with a letter and end with a letter or number",
+      };
     }
     const existingOrg = await ctx.db
       .query("organizations")
       .withIndex("handle", (q) => q.eq("agentHandle", normalized))
       .first();
     const taken = !!existingOrg && existingOrg._id !== args.excludeOrgId;
-    return { available: !taken, normalized, reason: taken ? "Handle already taken" : undefined };
-  },
-});
-
-/** Public broker profile for client-facing login page. No auth required. */
-export const publicBrokerBySlug = query({
-  args: { slug: v.string() },
-  handler: async (ctx, args) => {
-    const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
-    const org = await ctx.db
-      .query("organizations")
-      .withIndex("slug", (q) => q.eq("slug", normalized))
-      .first();
-    if (!org || org.type !== "broker") return null;
-    if ((org.operatorStatus ?? "live") !== "live") return null;
-    const whiteLabelingEnabled = isWhiteLabelingEnabled(org);
-    const iconUrl = whiteLabelingEnabled && org.iconStorageId
-      ? await ctx.storage.getUrl(org.iconStorageId)
-      : null;
     return {
-      name: org.name,
-      slug: org.slug,
-      website: org.website,
-      whiteLabelingEnabled,
-      brandingColor: whiteLabelingEnabled ? org.brandingColor : undefined,
-      agentDisplayName: whiteLabelingEnabled ? org.agentDisplayName : undefined,
-      iconUrl,
-    };
-  },
-});
-
-/** Check if a broker slug is available. No auth required. */
-export const checkSlugAvailability = query({
-  args: { slug: v.string() },
-  handler: async (ctx, args) => {
-    const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
-    if (normalized.length < 3 || normalized.length > 40) {
-      return { available: false, normalized, reason: "Slug must be 3-40 characters" };
-    }
-    if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(normalized) && normalized.length > 1) {
-      return { available: false, normalized, reason: "Slug must start and end with a letter or number" };
-    }
-    const existing = await ctx.db
-      .query("organizations")
-      .withIndex("slug", (q) => q.eq("slug", normalized))
-      .first();
-    return {
-      available: !existing,
+      available: !taken,
       normalized,
-      reason: existing ? "Slug already taken" : undefined,
+      reason: taken ? "Handle already taken" : undefined,
     };
   },
 });
@@ -409,12 +386,13 @@ export const checkPendingInvitation = query({
       .query("orgInvitations")
       .withIndex("email", (q) => q.eq("email", args.email))
       .collect();
-    const byLower = args.email !== email
-      ? await ctx.db
-          .query("orgInvitations")
-          .withIndex("email", (q) => q.eq("email", email))
-          .collect()
-      : [];
+    const byLower =
+      args.email !== email
+        ? await ctx.db
+            .query("orgInvitations")
+            .withIndex("email", (q) => q.eq("email", email))
+            .collect()
+        : [];
     const all = [...byOriginal, ...byLower];
     const pending = all.find(
       (i) => i.status === "pending" && i.expiresAt > dayjs().valueOf(),
@@ -439,12 +417,13 @@ export const pendingInvitationForViewer = query({
       .withIndex("email", (q) => q.eq("email", user.email!))
       .collect();
     const lowerEmail = normalizeEmail(user.email!);
-    const byLower = user.email !== lowerEmail
-      ? await ctx.db
-          .query("orgInvitations")
-          .withIndex("email", (q) => q.eq("email", lowerEmail))
-          .collect()
-      : [];
+    const byLower =
+      user.email !== lowerEmail
+        ? await ctx.db
+            .query("orgInvitations")
+            .withIndex("email", (q) => q.eq("email", lowerEmail))
+            .collect()
+        : [];
     const all = [...byOriginal, ...byLower];
     const pending = all.find(
       (i) => i.status === "pending" && i.expiresAt > dayjs().valueOf(),
@@ -466,67 +445,6 @@ export const pendingInvitationForViewer = query({
 });
 
 // ── Mutations ──
-
-/** Create a broker org during signup. */
-export const createBrokerOrg = mutation({
-  args: {
-    name: v.string(),
-    website: v.optional(v.string()),
-    slug: v.string(),
-    brandingColor: v.optional(v.string()),
-    whiteLabelingEnabled: v.optional(v.boolean()),
-    agentDisplayName: v.optional(v.string()),
-    agentHandle: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await assertCustomerUser(ctx, userId);
-
-    // Validate slug
-    const normalized = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
-    if (normalized.length < 3 || normalized.length > 40) {
-      throw new Error("Slug must be 3-40 characters");
-    }
-    const slugTaken = await ctx.db
-      .query("organizations")
-      .withIndex("slug", (q) => q.eq("slug", normalized))
-      .first();
-    if (slugTaken) throw new Error("Slug already taken");
-
-    // Validate handle if provided
-    if (args.agentHandle) {
-      const handleNorm = args.agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "");
-      const handleTaken = await ctx.db
-        .query("organizations")
-        .withIndex("handle", (q) => q.eq("agentHandle", handleNorm))
-        .first();
-      if (handleTaken) throw new Error("Handle already taken");
-    }
-
-    const orgId = await ctx.db.insert("organizations", {
-      name: args.name,
-      type: "broker",
-      slug: normalized,
-      primaryInsuranceContactId: userId,
-      ...(args.website && { website: args.website }),
-      ...(args.whiteLabelingEnabled !== undefined && {
-        whiteLabelingEnabled: args.whiteLabelingEnabled,
-      }),
-      ...(args.brandingColor && { brandingColor: args.brandingColor }),
-      ...(args.agentDisplayName && { agentDisplayName: args.agentDisplayName }),
-      ...(args.agentHandle && { agentHandle: args.agentHandle.toLowerCase().replace(/[^a-z0-9-]/g, "") }),
-    });
-
-    await ctx.db.insert("orgMemberships", {
-      orgId,
-      userId,
-      role: "admin",
-    });
-
-    return orgId;
-  },
-});
 
 /** Create a client org during orphan client signup wizard. */
 export const createClientOrg = mutation({
@@ -565,238 +483,6 @@ export const createClientOrg = mutation({
   },
 });
 
-/**
- * Update email-verification settings on a client org (allowedEmails,
- * allowedDomains, emailVerification mode). Only the managing broker's admins
- * can call this.
- */
-export const updateClientEmailSettings = mutation({
-  args: {
-    clientOrgId: v.id("organizations"),
-    allowedEmails: v.optional(v.array(v.string())),
-    allowedDomains: v.optional(v.array(v.string())),
-    emailVerification: v.optional(
-      v.union(v.literal("strict"), v.literal("domain"), v.literal("open")),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const client = await ctx.db.get(args.clientOrgId);
-    if (!client || client.type !== "client" || !client.brokerOrgId) {
-      throw new Error("Not a managed client org");
-    }
-    const access = await getOrgAccessNew(ctx, client.brokerOrgId);
-    assertBrokerOrg(access);
-    if (access.role !== "admin") {
-      throwUserFacingError(
-        userFacingErrorCodes.brokerAdminRequired,
-        "Only a broker admin can update client email settings.",
-      );
-    }
-    await assertImpersonatedSetupWrite(ctx, client.brokerOrgId);
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const domainPattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
-    const emailCandidates = args.allowedEmails?.map((email) =>
-      email.trim().toLowerCase(),
-    );
-    if (emailCandidates?.some((email) => !emailPattern.test(email))) {
-      throw new Error("Enter valid allowed email addresses");
-    }
-    const domainCandidates = args.allowedDomains?.map((domain) =>
-      domain.trim().toLowerCase().replace(/^@/, ""),
-    );
-    if (domainCandidates?.some((domain) => !domainPattern.test(domain))) {
-      throw new Error("Enter valid allowed domains");
-    }
-    const normEmails = emailCandidates
-      ? [...new Set(emailCandidates)]
-      : undefined;
-    const normDomains = domainCandidates
-      ? [...new Set(domainCandidates)]
-      : undefined;
-    const patch: Record<string, unknown> = {};
-    if (normEmails !== undefined) patch.allowedEmails = normEmails;
-    if (normDomains !== undefined) patch.allowedDomains = normDomains;
-    if (args.emailVerification !== undefined) patch.emailVerification = args.emailVerification;
-    await ctx.db.patch(args.clientOrgId, patch);
-  },
-});
-
-function cleanOptionalString(value: string | undefined | null) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function normalizeBrokerPhone(value: string | undefined | null) {
-  const phone = cleanOptionalString(value);
-  if (!phone) return undefined;
-  const parsed = parsePhoneNumberFromString(phone, "US");
-  if (!parsed || !parsed.isValid()) {
-    throw new Error("Enter a valid broker phone number with country code");
-  }
-  return parsed.number;
-}
-
-export const getBrokerPageContext = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return { showBrokerPage: false, isVendorOnly: false };
-    const membership = await ctx.db
-      .query("orgMemberships")
-      .withIndex("user", (q) => q.eq("userId", userId))
-      .first();
-    if (!membership) return { showBrokerPage: false, isVendorOnly: false };
-    const org = await ctx.db.get(membership.orgId);
-    if (!org || (org.type ?? "client") !== "client") {
-      return { showBrokerPage: false, isVendorOnly: false };
-    }
-    const customerRelationship = await ctx.db
-      .query("connectedOrgRelationships")
-      .withIndex("client_status", (q) =>
-        q.eq("clientOrgId", org._id).eq("status", "active"),
-      )
-      .first();
-    const vendorRelationship = await ctx.db
-      .query("connectedOrgRelationships")
-      .withIndex("vendor_status", (q) =>
-        q.eq("vendorOrgId", org._id).eq("status", "active"),
-      )
-      .first();
-    const isVendorOnly = !!vendorRelationship && !customerRelationship && !org.brokerOrgId;
-    return { showBrokerPage: !isVendorOnly, isVendorOnly };
-  },
-});
-
-export const updateClientBrokerAssignment = mutation({
-  args: {
-    clientOrgId: v.id("organizations"),
-    brokerCompanyName: v.optional(v.string()),
-    producerId: v.optional(v.id("users")),
-    contactName: v.optional(v.string()),
-    contactEmail: v.optional(v.string()),
-    contactPhone: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const clientOrg = await ctx.db.get(args.clientOrgId);
-    if (!clientOrg || (clientOrg.type ?? "client") !== "client") {
-      throw new Error("Client organization required");
-    }
-    const connectedBrokerOrgId = clientOrg.brokerOrgId;
-    if (connectedBrokerOrgId) {
-      const brokerAccess = await getOrgAccessNew(ctx, connectedBrokerOrgId);
-      assertBrokerOrg(brokerAccess);
-      if (brokerAccess.role !== "admin") {
-        throwUserFacingError(userFacingErrorCodes.brokerAdminRequired);
-      }
-      await assertImpersonatedSetupWrite(ctx, connectedBrokerOrgId);
-    } else {
-      const clientAccess = await getOrgAccessNew(ctx, args.clientOrgId);
-      if (
-        clientAccess.accessType !== "member" ||
-        clientAccess.orgType !== "client" ||
-        clientAccess.role !== "admin"
-      ) {
-        throwUserFacingError(userFacingErrorCodes.clientAdminRequired);
-      }
-    }
-    if (args.producerId && connectedBrokerOrgId) {
-      const membership = await ctx.db
-        .query("orgMemberships")
-        .withIndex("organization_user", (q) =>
-          q.eq("orgId", connectedBrokerOrgId).eq("userId", args.producerId!),
-        )
-        .first();
-      if (!membership) throw new Error("Producer must be a broker org member");
-    }
-    if (args.producerId && !connectedBrokerOrgId) {
-      throw new Error("Producer selection requires a connected broker org");
-    }
-
-    const assignments = connectedBrokerOrgId
-      ? await ctx.db
-          .query("brokerClientAssignments")
-          .withIndex("organization_client", (q) =>
-            q.eq("orgId", connectedBrokerOrgId).eq("clientOrgId", args.clientOrgId),
-          )
-          .collect()
-      : (
-          await ctx.db
-            .query("brokerClientAssignments")
-            .withIndex("client", (q) => q.eq("clientOrgId", args.clientOrgId))
-            .collect()
-        ).filter((assignment) => !assignment.orgId);
-    const brokerCompanyName = connectedBrokerOrgId
-      ? undefined
-      : cleanOptionalString(args.brokerCompanyName);
-    const contactName = cleanOptionalString(args.contactName);
-    const contactEmail = normalizeOptionalEmail(args.contactEmail, { strict: true });
-    const contactPhone = normalizeBrokerPhone(args.contactPhone);
-    if (
-      !connectedBrokerOrgId &&
-      !brokerCompanyName &&
-      !contactName &&
-      !contactEmail &&
-      !contactPhone
-    ) {
-      for (const assignment of assignments) await ctx.db.delete(assignment._id);
-      return;
-    }
-    const existing = assignments.find(
-      (assignment) => assignment.producerId === args.producerId,
-    ) ?? assignments.find((assignment) => assignment.role === "primary");
-    const now = dayjs().valueOf();
-    const patch = {
-      role: "primary" as const,
-      orgId: connectedBrokerOrgId,
-      brokerCompanyName,
-      producerId: connectedBrokerOrgId ? args.producerId : undefined,
-      contactName,
-      contactEmail,
-      contactPhone,
-      updatedAt: now,
-    };
-
-    for (const assignment of assignments) {
-      if (assignment._id === existing?._id) {
-        await ctx.db.patch(assignment._id, patch);
-      } else if (assignment.role === "primary") {
-        await ctx.db.patch(assignment._id, { role: "secondary" });
-      }
-    }
-    if (!existing) {
-      await ctx.db.insert("brokerClientAssignments", {
-        clientOrgId: args.clientOrgId,
-        ...patch,
-        createdAt: now,
-      });
-    }
-  },
-});
-
-/** List all client orgs for a broker org. */
-export const listClients = query({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccessNew(ctx, args.orgId);
-    assertBrokerOrg(access);
-
-    const clients = await ctx.db
-      .query("organizations")
-      .withIndex("broker", (q) => q.eq("brokerOrgId", args.orgId))
-      .collect();
-
-    return await Promise.all(
-      clients.map(async (client) => {
-        const members = await ctx.db
-          .query("orgMemberships")
-          .withIndex("organization", (q) => q.eq("orgId", client._id))
-          .collect();
-        return { ...client, memberCount: members.length };
-      }),
-    );
-  },
-});
-
 /** Return all org memberships for the authenticated user. */
 export const listAllOrgsForViewer = query({
   args: {},
@@ -813,7 +499,9 @@ export const listAllOrgsForViewer = query({
       memberships.map(async (m) => {
         const org = await ctx.db.get(m.orgId);
         if (!org) return null;
-        const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
+        const iconUrl = org.iconStorageId
+          ? await ctx.storage.getUrl(org.iconStorageId)
+          : null;
         return { org: { ...org, iconUrl }, membership: m };
       }),
     ).then((results) => results.filter(Boolean));
@@ -854,12 +542,9 @@ export const updateOrg = mutation({
     emailSendDelay: v.optional(v.number()),
     allowedEmails: v.optional(v.array(v.string())),
     allowedDomains: v.optional(v.array(v.string())),
-    emailVerification: v.optional(v.union(v.literal("strict"), v.literal("domain"), v.literal("open"))),
-    brandingColor: v.optional(v.string()),
-    whiteLabelingEnabled: v.optional(v.boolean()),
-    brandingMode: v.optional(v.union(v.literal("light"), v.literal("dark"))),
-    brandingTextOnAccent: v.optional(v.union(v.literal("light"), v.literal("dark"), v.literal("auto"))),
-    agentDisplayName: v.optional(v.string()),
+    emailVerification: v.optional(
+      v.union(v.literal("strict"), v.literal("domain"), v.literal("open")),
+    ),
   },
   handler: async (ctx, args) => {
     const { orgId } = await requireOrgAdminWrite(ctx);
@@ -912,22 +597,22 @@ function normalizedBusinessNumber(value: string) {
   const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!compact) return "";
   if (!/^\d{9}(?:[A-Z]{2}\d{4})?$/.test(compact)) {
-    throw new Error("Business number must be 9 digits, optionally followed by a program account");
+    throw new Error(
+      "Business number must be 9 digits, optionally followed by a program account",
+    );
   }
   return compact;
 }
 
-function normalizedProfileAddress(
-  address: {
-    street1?: string;
-    street2?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-    country?: string;
-    formatted?: string;
-  },
-) {
+function normalizedProfileAddress(address: {
+  street1?: string;
+  street2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+  formatted?: string;
+}) {
   return Object.fromEntries(
     Object.entries(address)
       .map(([key, value]) => [key, normalizedProfileString(value ?? "")])
@@ -941,13 +626,12 @@ export const updateOrganizationProfile = mutation({
     profile: v.union(editableOrganizationProfileValidator, v.null()),
   },
   handler: async (ctx, args) => {
-    const access = await getTeamAdminWriteAccess(
-      ctx,
-      args.operatorClientOrgId,
-    );
+    const access = await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId);
     const { orgId, userId, org } = access;
     if ((org.type ?? "client") !== "client") {
-      throw new Error("Organization insurance profiles are available for clients only");
+      throw new Error(
+        "Organization insurance profiles are available for clients only",
+      );
     }
     if (args.profile === null) {
       await ctx.db.patch(orgId, {
@@ -960,24 +644,32 @@ export const updateOrganizationProfile = mutation({
       });
       const refreshed = await ctx.db.get(orgId);
       return refreshed
-        ? resolveEffectiveOrganizationProfile(refreshed as unknown as Record<string, unknown>)
+        ? resolveEffectiveOrganizationProfile(
+            refreshed as unknown as Record<string, unknown>,
+          )
         : null;
     }
 
     const profileInput = args.profile;
     if (
       profileInput.entityType &&
-      !IRS_ENTITY_TYPES.some((option) => option.value === profileInput.entityType)
+      !IRS_ENTITY_TYPES.some(
+        (option) => option.value === profileInput.entityType,
+      )
     ) {
       throw new Error("Select a standard IRS entity type");
     }
 
     const fein = normalizedFein(profileInput.fein);
-    const businessNumber = normalizedBusinessNumber(profileInput.businessNumber);
+    const businessNumber = normalizedBusinessNumber(
+      profileInput.businessNumber,
+    );
     const operationsDescription = profileInput.operationsDescription.trim();
     const storedProfile = {
       mailingAddress: normalizedProfileAddress(profileInput.mailingAddress),
-      ...(profileInput.entityType ? { entityType: profileInput.entityType } : {}),
+      ...(profileInput.entityType
+        ? { entityType: profileInput.entityType }
+        : {}),
       fein,
       businessNumber,
       operationsDescription,
@@ -1010,7 +702,11 @@ export const setFeatureFlag = mutation({
     const { orgId, org } = await requireOrgAdminWrite(ctx);
     assertFeatureFlagAllowedForOrg(args.flagId, org);
     await ctx.db.patch(orgId, {
-      featureFlags: setFeatureFlagPatch(org.featureFlags, args.flagId, args.enabled),
+      featureFlags: setFeatureFlagPatch(
+        org.featureFlags,
+        args.flagId,
+        args.enabled,
+      ),
     });
   },
 });
@@ -1019,7 +715,8 @@ export const claimAgentHandle = mutation({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
     const { orgId, org } = await requireOrgAdminWrite(ctx);
-    if (org.type !== "broker") throw new Error("Only broker orgs can claim an agent handle");
+    if (org.type !== "broker")
+      throw new Error("Only broker orgs can claim an agent handle");
 
     const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
     if (normalized.length < 3 || normalized.length > 30) {
@@ -1031,7 +728,8 @@ export const claimAgentHandle = mutation({
       .query("organizations")
       .withIndex("handle", (q) => q.eq("agentHandle", normalized))
       .first();
-    if (existingOrg && existingOrg._id !== orgId) throw new Error("Handle already taken");
+    if (existingOrg && existingOrg._id !== orgId)
+      throw new Error("Handle already taken");
 
     await ctx.db.patch(orgId, { agentHandle: normalized });
     return normalized;
@@ -1064,34 +762,35 @@ export const sendMemberInvitation = action({
       });
     }
 
-    const invitationResult = await ctx.runMutation(internal.orgs.createMemberInvitationInternal, {
-      ...args,
-      invitedByUserId: userId,
-    });
+    const invitationResult = await ctx.runMutation(
+      internal.orgs.createMemberInvitationInternal,
+      {
+        ...args,
+        invitedByUserId: userId,
+      },
+    );
     const invitationId = invitationResult.invitationId;
-    const context = await ctx.runQuery(internal.orgs.getMemberInvitationEmailContextInternal, {
-      invitationId,
-    });
+    const context = await ctx.runQuery(
+      internal.orgs.getMemberInvitationEmailContextInternal,
+      {
+        invitationId,
+      },
+    );
     if (!context) throw new Error("Invitation not found");
 
     const siteUrl = getAuthSiteUrl();
     const invitedEmail = context.invitation.email;
     const inviteUrl = `${siteUrl.replace(/\/$/, "")}/login?email=${encodeURIComponent(invitedEmail)}&next=${encodeURIComponent("/")}`;
     const orgName = context.org.name;
-    const inviterName = context.invitedBy.name ?? context.invitedBy.email ?? "A team member";
+    const inviterName =
+      context.invitedBy.name ?? context.invitedBy.email ?? "A team member";
     const roleLabel = context.invitation.role === "admin" ? "admin" : "member";
     const subject = `${inviterName} invited you to join ${orgName} on Spot`;
     const escapedOrgName = escapeHtml(orgName);
     const escapedInviterName = escapeHtml(inviterName);
     const escapedInviteUrl = escapeHtml(inviteUrl);
     const escapedEmail = escapeHtml(invitedEmail);
-    const branding = context.whiteLabelingEnabled
-      ? getBrandingContext({
-          agentDisplayName: context.org.agentDisplayName ?? orgName,
-          brandingColor: context.org.brandingColor,
-          logoUrl: context.org.iconUrl ?? undefined,
-        })
-      : getBrandingContext();
+    const branding = getBrandingContext();
     const bodyHtml = `
 <tr><td style="padding:28px 40px 0 40px;">
   <p class="spot-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
@@ -1110,7 +809,12 @@ export const sendMemberInvitation = action({
 <tr><td style="padding:16px 40px 32px 40px;">
   <p class="spot-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:11px;color:#9ca3af;">This invitation expires in 7 days.</p>
 </td></tr>`;
-    const html = buildEmailShell({ title: subject, bodyHtml, branding, siteUrl });
+    const html = buildEmailShell({
+      title: subject,
+      bodyHtml,
+      branding,
+      siteUrl,
+    });
     const text = `${inviterName} invited you to join ${orgName} on Spot as a ${roleLabel}.\n\nAccept invitation:\n${inviteUrl}\n\nSign in or create an account with ${invitedEmail}. This invitation expires in 7 days.`;
 
     const result = await sendResendEmail(
@@ -1126,7 +830,9 @@ export const sendMemberInvitation = action({
 
     if (!result.ok) {
       if (!invitationResult.reusedExisting) {
-        await ctx.runMutation(internal.orgs.deleteInvitationInternal, { invitationId });
+        await ctx.runMutation(internal.orgs.deleteInvitationInternal, {
+          invitationId,
+        });
       }
       throw new Error(`Failed to send invitation email: ${result.error}`);
     }
@@ -1251,16 +957,11 @@ export const getMemberInvitationEmailContextInternal = internalQuery({
     const org = await ctx.db.get(invitation.orgId);
     const invitedBy = await ctx.db.get(invitation.invitedBy);
     if (!org || !invitedBy) return null;
-    const iconUrl = org.iconStorageId ? await ctx.storage.getUrl(org.iconStorageId) : null;
     return {
       invitation,
       org: {
         name: org.name,
-        brandingColor: org.brandingColor,
-        agentDisplayName: org.agentDisplayName,
-        iconUrl,
       },
-      whiteLabelingEnabled: isWhiteLabelingEnabled(org),
       invitedBy: {
         name: invitedBy.name,
         email: invitedBy.email,
@@ -1316,7 +1017,8 @@ export const acceptInvitation = mutation({
 
     const invitation = await ctx.db.get(args.invitationId);
     if (!invitation) throw new Error("Invitation not found");
-    if (invitation.status !== "pending") throw new Error("Invitation is no longer valid");
+    if (invitation.status !== "pending")
+      throw new Error("Invitation is no longer valid");
     if (invitation.expiresAt < dayjs().valueOf()) {
       await ctx.db.patch(args.invitationId, { status: "expired" });
       throw new Error("Invitation has expired");
@@ -1331,7 +1033,9 @@ export const acceptInvitation = mutation({
     // Check not already a member
     const existing = await ctx.db
       .query("orgMemberships")
-      .withIndex("organization_user", (q) => q.eq("orgId", invitation.orgId).eq("userId", userId))
+      .withIndex("organization_user", (q) =>
+        q.eq("orgId", invitation.orgId).eq("userId", userId),
+      )
       .first();
     if (existing) {
       await ctx.db.patch(args.invitationId, { status: "accepted" });
@@ -1358,14 +1062,12 @@ export const removeMember = mutation({
     operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const access = await getTeamAdminWriteAccess(
-      ctx,
-      args.operatorClientOrgId,
-    );
+    const access = await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId);
     const { orgId, org } = access;
 
     const membership = await ctx.db.get(args.membershipId);
-    if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
+    if (!membership || membership.orgId !== orgId)
+      throw new Error("Membership not found");
 
     const memberships = await ctx.db
       .query("orgMemberships")
@@ -1410,14 +1112,12 @@ export const updateMemberRole = mutation({
     operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const access = await getTeamAdminWriteAccess(
-      ctx,
-      args.operatorClientOrgId,
-    );
+    const access = await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId);
     const { orgId } = access;
 
     const membership = await ctx.db.get(args.membershipId);
-    if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
+    if (!membership || membership.orgId !== orgId)
+      throw new Error("Membership not found");
 
     // Can't demote the last admin
     if (membership.role === "admin" && args.role === "member") {
@@ -1447,17 +1147,16 @@ export const updateMemberProfile = mutation({
     operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const access = await getTeamAdminWriteAccess(
-      ctx,
-      args.operatorClientOrgId,
-    );
+    const access = await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId);
     const { orgId } = access;
 
     const membership = await ctx.db.get(args.membershipId);
-    if (!membership || membership.orgId !== orgId) throw new Error("Membership not found");
+    if (!membership || membership.orgId !== orgId)
+      throw new Error("Membership not found");
     await assertCustomerUser(ctx, membership.userId);
 
-    const patch: { name?: string; title?: string; phone?: string | undefined } = {};
+    const patch: { name?: string; title?: string; phone?: string | undefined } =
+      {};
     if (args.name !== undefined) patch.name = args.name.trim() || undefined;
     if (args.title !== undefined) patch.title = args.title.trim() || undefined;
     if (args.phone !== undefined) {
@@ -1487,10 +1186,7 @@ export const cancelMemberEmailChange = mutation({
     operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const access = await getTeamAdminWriteAccess(
-      ctx,
-      args.operatorClientOrgId,
-    );
+    const access = await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId);
     const { orgId, userId } = access;
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.orgId !== orgId) {
@@ -1526,17 +1222,17 @@ export const setPrimaryInsuranceContact = mutation({
     operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const access = await getTeamAdminWriteAccess(
-      ctx,
-      args.operatorClientOrgId,
-    );
+    const access = await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId);
     const { orgId } = access;
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("organization_user", (q) => q.eq("orgId", orgId).eq("userId", args.userId))
+      .withIndex("organization_user", (q) =>
+        q.eq("orgId", orgId).eq("userId", args.userId),
+      )
       .first();
-    if (!membership) throw new Error("User is not a member of this organization");
+    if (!membership)
+      throw new Error("User is not a member of this organization");
 
     await ctx.db.patch(orgId, { primaryInsuranceContactId: args.userId });
     await writeTeamSupportAudit(ctx, access, {
@@ -1552,7 +1248,7 @@ export const ensurePrimaryInsuranceContact = mutation({
     const operatorAccess = args.operatorClientOrgId
       ? await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId)
       : null;
-    const { orgId } = operatorAccess ?? await requireOrgAccess(ctx);
+    const { orgId } = operatorAccess ?? (await requireOrgAccess(ctx));
     const org = await ctx.db.get(orgId);
     if (!org) throw new Error("Organization not found");
 
@@ -1592,13 +1288,11 @@ export const cancelInvitation = mutation({
     operatorClientOrgId: v.optional(v.id("organizations")),
   },
   handler: async (ctx, args) => {
-    const access = await getTeamAdminWriteAccess(
-      ctx,
-      args.operatorClientOrgId,
-    );
+    const access = await getTeamAdminWriteAccess(ctx, args.operatorClientOrgId);
     const { orgId } = access;
     const invitation = await ctx.db.get(args.invitationId);
-    if (!invitation || invitation.orgId !== orgId) throw new Error("Invitation not found");
+    if (!invitation || invitation.orgId !== orgId)
+      throw new Error("Invitation not found");
     await ctx.db.delete(args.invitationId);
     await writeTeamSupportAudit(ctx, access, {
       summary: `Cancelled the invitation for ${invitation.email}`,
@@ -1655,10 +1349,8 @@ async function senderMatchesOrg(
 }
 
 /**
- * Resolve which client org a sender is authorized to act on behalf of, for
- * email addressed to the given agent handle. Client-owned handles route only
- * to that client; the shared default "agent" handle resolves a client by the
- * sender's direct authorization.
+ * Resolve which standalone client org a sender is authorized to act on behalf
+ * of for email addressed to an agent handle.
  */
 export const resolveClientBySender = internalQuery({
   args: { handle: v.string(), senderEmail: v.string() },
@@ -1674,7 +1366,7 @@ export const resolveClientBySender = internalQuery({
     if (handleOwner) {
       if ((handleOwner.type ?? "client") !== "client") return null;
       const matchedBy = await senderMatchesOrg(ctx, handleOwner, email, domain);
-      return matchedBy ? { brokerOrg: handleOwner, clientOrg: null, matchedBy } : null;
+      return matchedBy ? { org: handleOwner, matchedBy } : null;
     }
     if (args.handle !== "agent") return null;
 
@@ -1682,7 +1374,7 @@ export const resolveClientBySender = internalQuery({
     for (const org of organizations) {
       if ((org.type ?? "client") !== "client") continue;
       const matchedBy = await senderMatchesOrg(ctx, org, email, domain);
-      if (matchedBy) return { brokerOrg: org, clientOrg: null, matchedBy };
+      if (matchedBy) return { org, matchedBy };
     }
     return null;
   },
@@ -1724,15 +1416,6 @@ export const getMembersInternal = internalQuery({
         return { ...m, user };
       }),
     );
-  },
-});
-
-export const resolveBrokerIdentityInternal = internalQuery({
-  args: { clientOrgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const clientOrg = await ctx.db.get(args.clientOrgId);
-    if (!clientOrg) return null;
-    return await resolveBrokerIdentityForClient(ctx, clientOrg);
   },
 });
 
@@ -1836,12 +1519,19 @@ export const listMembersForOrg = query({
       .query("orgMemberships")
       .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
-    return (await Promise.all(
-      memberships.map(async (m) => {
-        const user = await ctx.db.get(m.userId);
-        if (!user || user.serviceAccountKind) return null;
-        return { userId: m.userId, role: m.role, name: user?.name, email: user?.email };
-      }),
-    )).filter((member) => member !== null);
+    return (
+      await Promise.all(
+        memberships.map(async (m) => {
+          const user = await ctx.db.get(m.userId);
+          if (!user || user.serviceAccountKind) return null;
+          return {
+            userId: m.userId,
+            role: m.role,
+            name: user?.name,
+            email: user?.email,
+          };
+        }),
+      )
+    ).filter((member) => member !== null);
   },
 });

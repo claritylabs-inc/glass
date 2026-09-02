@@ -227,9 +227,7 @@ async function channelOverview(
     includeLifecycleHistory
       ? ctx.db
           .query("slackLifecycleEvents")
-          .withIndex("client_received", (q) =>
-            q.eq("clientOrgId", clientOrgId),
-          )
+          .withIndex("client_received", (q) => q.eq("clientOrgId", clientOrgId))
           .order("desc")
           .take(10)
       : [],
@@ -454,6 +452,12 @@ export const get = query({
   args: { clientOrgId: v.id("organizations") },
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.clientOrgId);
+    if (access.orgType !== "client") {
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "Agent channels are available only to client organizations.",
+      );
+    }
     const impersonation = await getActiveOperatorImpersonation(ctx);
     const { setup, ...overview } = await channelOverview(ctx, args.clientOrgId);
     return {
@@ -701,9 +705,7 @@ export const finishSlackSetup = mutation({
       !connection ||
       missingSlackCustomerScopes(connection.grantedScopes).length > 0
     ) {
-      throw new Error(
-        "Install or update Spot in Slack before finishing setup",
-      );
+      throw new Error("Install or update Spot in Slack before finishing setup");
     }
     if (
       setup.mode === "reinstall" &&
@@ -2152,14 +2154,16 @@ export const getOperatorImessageStatus = query({
     const contactPhone = getOperatorImessageContactPhone();
     const workerConfigured = Boolean(
       getOperatorImessageWorkerUrl() &&
-        process.env.OPERATOR_IMESSAGE_WORKER_SECRET?.trim(),
+      process.env.OPERATOR_IMESSAGE_WORKER_SECRET?.trim(),
     );
 
     return {
       enabled,
       mode: terminalEnabled ? ("terminal" as const) : ("imessage" as const),
       configured:
-        enabled && workerConfigured && (terminalEnabled || Boolean(contactPhone)),
+        enabled &&
+        workerConfigured &&
+        (terminalEnabled || Boolean(contactPhone)),
       contactPhone: terminalEnabled ? null : (contactPhone ?? null),
       senderPhone: operator.user.phone ?? null,
     };

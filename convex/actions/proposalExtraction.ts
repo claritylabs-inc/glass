@@ -12,7 +12,10 @@ const LEASE_MS = 5 * 60 * 1000;
 const STORAGE_BATCH_SIZE = 100;
 
 function requireWorkerSecret(secret: string) {
-  if (!process.env.EXTRACTION_WORKER_SECRET || secret !== process.env.EXTRACTION_WORKER_SECRET) {
+  if (
+    !process.env.EXTRACTION_WORKER_SECRET ||
+    secret !== process.env.EXTRACTION_WORKER_SECRET
+  ) {
     throw new Error("Unauthorized extraction worker");
   }
 }
@@ -26,14 +29,22 @@ function compatibleWorker(args: {
   workerProtocolVersion?: string;
   clSdkVersion?: string;
 }) {
-  const expectedProtocol = process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION;
-  const allowedProtocols = expectedProtocol === "source-tree-v2"
-    ? new Set(["source-tree-v2"])
-    : new Set(["source-tree-v1", "source-tree-v2"]);
-  if (expectedProtocol && (!args.workerProtocolVersion || !allowedProtocols.has(args.workerProtocolVersion))) {
+  const expectedProtocol =
+    process.env.EXTRACTION_WORKER_EXPECTED_PROTOCOL_VERSION;
+  const allowedProtocols =
+    expectedProtocol === "source-tree-v2"
+      ? new Set(["source-tree-v2"])
+      : new Set(["source-tree-v1", "source-tree-v2"]);
+  if (
+    expectedProtocol &&
+    (!args.workerProtocolVersion ||
+      !allowedProtocols.has(args.workerProtocolVersion))
+  ) {
     return false;
   }
-  const expectedSdk = normalizedVersion(process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION);
+  const expectedSdk = normalizedVersion(
+    process.env.EXTRACTION_WORKER_EXPECTED_CL_SDK_VERSION,
+  );
   return !expectedSdk || normalizedVersion(args.clSdkVersion) === expectedSdk;
 }
 
@@ -42,14 +53,20 @@ async function deleteOtherProposalSources(
   proposalId: Id<"procurementProposals">,
   keepFingerprint: string,
 ) {
-  for (const owner of [internalApi.proposalSourceSpans, internalApi.proposalSourceNodes]) {
+  for (const owner of [
+    internalApi.proposalSourceSpans,
+    internalApi.proposalSourceNodes,
+  ]) {
     let done = false;
     while (!done) {
-      const result = await ctx.runMutation(owner.deleteOtherFingerprintsBatch, {
-        proposalId,
-        keepFingerprint,
-        limit: STORAGE_BATCH_SIZE,
-      }) as { done: boolean };
+      const result = (await ctx.runMutation(
+        owner.deleteOtherFingerprintsBatch,
+        {
+          proposalId,
+          keepFingerprint,
+          limit: STORAGE_BATCH_SIZE,
+        },
+      )) as { done: boolean };
       done = result.done;
     }
   }
@@ -70,7 +87,9 @@ function stringArray(value: unknown): string[] {
 }
 
 function optionalNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function optionalString(value: unknown) {
@@ -90,24 +109,30 @@ export const claimExternalJob = action({
     if (!compatibleWorker(args)) return null;
     const leaseId = `${args.workerId ?? "worker"}:proposal:${randomUUID()}`;
     const leaseExpiresAt = dayjs().valueOf() + LEASE_MS;
-    const claimed = await ctx.runMutation(internalApi.proposalExtraction.claimExternalJobInternal, {
-      leaseId,
-      leaseExpiresAt,
-      workerId: args.workerId,
-    });
+    const claimed = await ctx.runMutation(
+      internalApi.proposalExtraction.claimExternalJobInternal,
+      {
+        leaseId,
+        leaseExpiresAt,
+        workerId: args.workerId,
+      },
+    );
     if (!claimed) return null;
 
     const documents = [];
     for (const [order, document] of claimed.documents.entries()) {
       const fileUrl = await ctx.storage.getUrl(document.fileId);
       if (!fileUrl) {
-        await ctx.runMutation(internalApi.proposalExtraction.failExternalJobInternal, {
-          jobId: claimed.job._id,
-          proposalId: claimed.job.proposalId,
-          leaseId,
-          extractionFingerprint: claimed.job.extractionFingerprint,
-          error: `Could not resolve proposal document ${document.fileName}`,
-        });
+        await ctx.runMutation(
+          internalApi.proposalExtraction.failExternalJobInternal,
+          {
+            jobId: claimed.job._id,
+            proposalId: claimed.job.proposalId,
+            leaseId,
+            extractionFingerprint: claimed.job.extractionFingerprint,
+            error: `Could not resolve proposal document ${document.fileName}`,
+          },
+        );
         return null;
       }
       documents.push({
@@ -121,9 +146,12 @@ export const claimExternalJob = action({
     }
     let modelSettings;
     try {
-      modelSettings = await ctx.runQuery(internalApi.modelSettings.resolveForOrg, {
-        orgId: claimed.job.clientOrgId,
-      });
+      modelSettings = await ctx.runQuery(
+        internalApi.modelSettings.resolveForOrg,
+        {
+          orgId: claimed.job.clientOrgId,
+        },
+      );
     } catch {
       // Static routes remain available when a settings snapshot cannot be loaded.
     }
@@ -150,11 +178,14 @@ export const heartbeatExternalJob = action({
   handler: async (ctx, args) => {
     requireWorkerSecret(args.secret);
     const leaseExpiresAt = dayjs().valueOf() + LEASE_MS;
-    const ok = await ctx.runMutation(internalApi.proposalExtraction.heartbeatExternalJobInternal, {
-      jobId: args.jobId,
-      leaseId: args.leaseId,
-      leaseExpiresAt,
-    });
+    const ok = await ctx.runMutation(
+      internalApi.proposalExtraction.heartbeatExternalJobInternal,
+      {
+        jobId: args.jobId,
+        leaseId: args.leaseId,
+        leaseExpiresAt,
+      },
+    );
     return { ok, leaseExpiresAt };
   },
 });
@@ -166,17 +197,22 @@ export const logExternalJob = action({
     leaseId: v.string(),
     message: v.string(),
     phase: v.optional(v.string()),
-    level: v.optional(v.union(v.literal("info"), v.literal("warn"), v.literal("error"))),
+    level: v.optional(
+      v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    ),
   },
   handler: async (ctx, args) => {
     requireWorkerSecret(args.secret);
-    const ok = await ctx.runMutation(internalApi.proposalExtraction.recordLogInternal, {
-      jobId: args.jobId,
-      leaseId: args.leaseId,
-      message: args.message,
-      phase: args.phase,
-      level: args.level,
-    });
+    const ok = await ctx.runMutation(
+      internalApi.proposalExtraction.recordLogInternal,
+      {
+        jobId: args.jobId,
+        leaseId: args.leaseId,
+        message: args.message,
+        phase: args.phase,
+        level: args.level,
+      },
+    );
     return { ok };
   },
 });
@@ -200,12 +236,15 @@ export const completeExternalJob = action({
   },
   handler: async (ctx, args) => {
     requireWorkerSecret(args.secret);
-    const accepted = await ctx.runQuery(internalApi.proposalExtraction.assertExternalCompletionInternal, {
-      jobId: args.jobId,
-      proposalId: args.proposalId,
-      leaseId: args.leaseId,
-      extractionFingerprint: args.extractionFingerprint,
-    });
+    const accepted = await ctx.runQuery(
+      internalApi.proposalExtraction.assertExternalCompletionInternal,
+      {
+        jobId: args.jobId,
+        proposalId: args.proposalId,
+        leaseId: args.leaseId,
+        extractionFingerprint: args.extractionFingerprint,
+      },
+    );
     if (!accepted) return { ok: false };
     const blob = await ctx.storage.get(args.payloadStorageId);
     if (!blob) throw new Error("Proposal completion payload was not found");
@@ -215,22 +254,34 @@ export const completeExternalJob = action({
       payload.fingerprint !== args.extractionFingerprint ||
       !Array.isArray(payload.documents) ||
       !payload.aggregate
-    ) throw new Error("Invalid proposal completion payload");
+    )
+      throw new Error("Invalid proposal completion payload");
 
     const knownDocuments = new Map<string, any>(
-      accepted.documents.map((document: any) => [String(document._id), document]),
+      accepted.documents.map((document: any) => [
+        String(document._id),
+        document,
+      ]),
     );
     const now = dayjs().valueOf();
     const spans: any[] = [];
     const nodes: any[] = [];
     for (const extracted of payload.documents) {
       const proposalDocumentId = optionalString(extracted.proposalDocumentId);
-      const document = proposalDocumentId ? knownDocuments.get(proposalDocumentId) : undefined;
-      if (!document) throw new Error("Completion payload references an unknown proposal document");
-      for (const span of Array.isArray(extracted.sourceSpans) ? extracted.sourceSpans : []) {
+      const document = proposalDocumentId
+        ? knownDocuments.get(proposalDocumentId)
+        : undefined;
+      if (!document)
+        throw new Error(
+          "Completion payload references an unknown proposal document",
+        );
+      for (const span of Array.isArray(extracted.sourceSpans)
+        ? extracted.sourceSpans
+        : []) {
         const spanId = optionalString(span.id) ?? optionalString(span.spanId);
         const text = optionalString(span.text);
-        const textHash = optionalString(span.textHash) ?? optionalString(span.hash);
+        const textHash =
+          optionalString(span.textHash) ?? optionalString(span.hash);
         if (!spanId || !text || !textHash) continue;
         spans.push({
           orgId: accepted.job.clientOrgId,
@@ -248,7 +299,9 @@ export const completeExternalJob = action({
           createdAt: now,
         });
       }
-      for (const node of Array.isArray(extracted.sourceNodes) ? extracted.sourceNodes : []) {
+      for (const node of Array.isArray(extracted.sourceNodes)
+        ? extracted.sourceNodes
+        : []) {
         const nodeId = optionalString(node.id) ?? optionalString(node.nodeId);
         if (!nodeId) continue;
         nodes.push({
@@ -258,7 +311,8 @@ export const completeExternalJob = action({
           extractionFingerprint: args.extractionFingerprint,
           documentId: optionalString(node.documentId) ?? proposalDocumentId,
           nodeId,
-          parentNodeId: optionalString(node.parentId) ?? optionalString(node.parentNodeId),
+          parentNodeId:
+            optionalString(node.parentId) ?? optionalString(node.parentNodeId),
           kind: optionalString(node.kind) ?? "text",
           title: optionalString(node.title) ?? "Source",
           textExcerpt: optionalString(node.textExcerpt),
@@ -268,8 +322,12 @@ export const completeExternalJob = action({
           order: optionalNumber(node.order) ?? nodes.length,
           path: optionalString(node.path) ?? String(nodes.length + 1),
           metadata: {
-            ...(node.metadata && typeof node.metadata === "object" ? node.metadata : {}),
-            ...(optionalString(node.description) ? { description: node.description } : {}),
+            ...(node.metadata && typeof node.metadata === "object"
+              ? node.metadata
+              : {}),
+            ...(optionalString(node.description)
+              ? { description: node.description }
+              : {}),
             ...(node.bbox === undefined ? {} : { bbox: node.bbox }),
           },
           createdAt: now,
@@ -278,24 +336,38 @@ export const completeExternalJob = action({
     }
 
     for (const batch of chunks(spans, STORAGE_BATCH_SIZE)) {
-      await ctx.runMutation(internalApi.proposalSourceSpans.insertBatch, { spans: batch });
+      await ctx.runMutation(internalApi.proposalSourceSpans.insertBatch, {
+        spans: batch,
+      });
     }
     for (const batch of chunks(nodes, STORAGE_BATCH_SIZE)) {
-      await ctx.runMutation(internalApi.proposalSourceNodes.insertBatch, { nodes: batch });
+      await ctx.runMutation(internalApi.proposalSourceNodes.insertBatch, {
+        nodes: batch,
+      });
     }
-    const ok = await ctx.runMutation(internalApi.proposalExtraction.completeExternalJobInternal, {
-      jobId: args.jobId,
-      proposalId: args.proposalId,
-      leaseId: args.leaseId,
-      extractionFingerprint: args.extractionFingerprint,
-      completionPayloadStorageId: args.payloadStorageId,
-      extractedOffer: payload.aggregate,
-    });
+    const ok = await ctx.runMutation(
+      internalApi.proposalExtraction.completeExternalJobInternal,
+      {
+        jobId: args.jobId,
+        proposalId: args.proposalId,
+        leaseId: args.leaseId,
+        extractionFingerprint: args.extractionFingerprint,
+        completionPayloadStorageId: args.payloadStorageId,
+        extractedOffer: payload.aggregate,
+      },
+    );
     if (ok) {
       try {
-        await deleteOtherProposalSources(ctx, args.proposalId, args.extractionFingerprint);
+        await deleteOtherProposalSources(
+          ctx,
+          args.proposalId,
+          args.extractionFingerprint,
+        );
       } catch (error) {
-        console.warn("Could not remove superseded proposal source evidence", error);
+        console.warn(
+          "Could not remove superseded proposal source evidence",
+          error,
+        );
       }
     }
     return { ok };
@@ -313,13 +385,16 @@ export const failExternalJob = action({
   },
   handler: async (ctx, args) => {
     requireWorkerSecret(args.secret);
-    const ok = await ctx.runMutation(internalApi.proposalExtraction.failExternalJobInternal, {
-      jobId: args.jobId,
-      proposalId: args.proposalId,
-      leaseId: args.leaseId,
-      extractionFingerprint: args.extractionFingerprint,
-      error: args.error,
-    });
+    const ok = await ctx.runMutation(
+      internalApi.proposalExtraction.failExternalJobInternal,
+      {
+        jobId: args.jobId,
+        proposalId: args.proposalId,
+        leaseId: args.leaseId,
+        extractionFingerprint: args.extractionFingerprint,
+        error: args.error,
+      },
+    );
     return { ok };
   },
 });

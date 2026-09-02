@@ -24,7 +24,6 @@ export type SettingsTabId =
   | "behavior"
   | "channels"
   | "memory"
-  | "models"
   | "certificates"
   | "notifications"
   | "mailboxes"
@@ -66,9 +65,7 @@ export function getSettingsNavigation({
       id: "organization",
       label: "Organization",
       icon: Building2,
-      tabs: [
-        { id: "overview", label: "Overview" },
-      ],
+      tabs: [{ id: "overview", label: "Overview" }],
     },
     {
       id: "team",
@@ -86,7 +83,6 @@ export function getSettingsNavigation({
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),
         ...(!isBroker ? [{ id: "memory" as const, label: "Memory" }] : []),
-        ...(isBroker ? [{ id: "models" as const, label: "Models" }] : []),
       ],
     },
     {
@@ -138,12 +134,14 @@ export function settingsPages(groups: SettingsNavGroup[]) {
   return groups.flatMap((group) => group.pages);
 }
 
-const LEGACY_DESTINATIONS: Record<string, { section: SettingsPageId; tab: SettingsTabId }> = {
+const LEGACY_DESTINATIONS: Record<
+  string,
+  { section: SettingsPageId; tab: SettingsTabId }
+> = {
   organization: { section: "organization", tab: "overview" },
   team: { section: "team", tab: "team" },
   agent: { section: "agent", tab: "behavior" },
   memory: { section: "agent", tab: "memory" },
-  models: { section: "agent", tab: "models" },
   certificates: { section: "workflows", tab: "certificates" },
   notifications: { section: "workflows", tab: "notifications" },
   email: { section: "mailboxes", tab: "mailboxes" },
@@ -162,8 +160,13 @@ export function resolveSettingsDestination({
 }) {
   const pages = settingsPages(groups);
   const requestedPage = pages.find((page) => page.id === requestedSection);
-  const legacy = requestedSection ? LEGACY_DESTINATIONS[requestedSection] : undefined;
-  const page = requestedPage ?? pages.find((item) => item.id === legacy?.section) ?? pages[0];
+  const legacy = requestedSection
+    ? LEGACY_DESTINATIONS[requestedSection]
+    : undefined;
+  const page =
+    requestedPage ??
+    pages.find((item) => item.id === legacy?.section) ??
+    pages[0];
   const desiredTab = requestedPage
     ? requestedTab === "email" ||
       requestedTab === "imessage" ||

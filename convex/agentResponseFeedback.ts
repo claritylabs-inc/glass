@@ -7,18 +7,18 @@ import {
   query,
   type QueryCtx,
 } from "./_generated/server";
-import { requireCurrentOrgAccess } from "./lib/access";
+import { assertCanUseTenantAgent, requireCurrentOrgAccess } from "./lib/access";
 import { canAccessThread } from "./lib/threadAccess";
 
 const ratingValidator = v.union(v.literal("positive"), v.literal("negative"));
 
-async function feedbackContext(
-  ctx: QueryCtx,
-  messageId: Id<"threadMessages">,
-) {
-  const { userId, orgId: userOrgId } = await requireCurrentOrgAccess(ctx);
+async function feedbackContext(ctx: QueryCtx, messageId: Id<"threadMessages">) {
+  const access = await requireCurrentOrgAccess(ctx);
+  assertCanUseTenantAgent(access);
+  const { userId, orgId: userOrgId } = access;
   const message = await ctx.db.get(messageId);
-  if (!message || message.role !== "agent") throw new Error("Response not found");
+  if (!message || message.role !== "agent")
+    throw new Error("Response not found");
   const thread = await ctx.db.get(message.threadId);
   if (!thread) throw new Error("Response not found");
   const clientOrg = await ctx.db.get(thread.orgId);

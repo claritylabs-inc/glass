@@ -1284,12 +1284,9 @@ async function executeToolDomain(
           : input.procurementOutreachId
             ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
             : undefined,
-      brokerOrgId:
-        input.brokerOrgId === null
-          ? null
-          : input.brokerOrgId
-            ? normalizeOrganizationId(ctx, input.brokerOrgId)
-            : undefined,
+      brokerOrgId: input.brokerOrgId
+        ? normalizeOrganizationId(ctx, input.brokerOrgId)
+        : undefined,
       confidence:
         input.confidence === null
           ? null
@@ -1788,10 +1785,7 @@ async function executeToolDomain(
   if (toolName === "create_procurement_proposal") {
     return await createProcurementProposalByOperator(ctx, {
       operatorUserId: args.operatorUserId,
-      requestId: normalizeProcurementRequestId(
-        ctx,
-        input.procurementRequestId,
-      ),
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
       brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
       outreachId: normalizeProcurementOutreachId(
         ctx,
@@ -1858,9 +1852,7 @@ async function executeToolDomain(
         : undefined,
       name: normalizedOptionalText(input.name),
       website:
-        input.website === null
-          ? null
-          : normalizedOptionalText(input.website),
+        input.website === null ? null : normalizedOptionalText(input.website),
     });
   }
 
@@ -1869,7 +1861,6 @@ async function executeToolDomain(
       operatorUserId: args.operatorUserId,
       requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
       brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
-      brokerName: typeof input.brokerName === "string" ? input.brokerName : "",
       contactName: normalizedOptionalText(input.contactName),
       contactEmail: normalizedOptionalText(input.contactEmail),
       contactPhone: normalizedOptionalText(input.contactPhone),
@@ -1892,14 +1883,9 @@ async function executeToolDomain(
         ctx,
         input.procurementOutreachId,
       ),
-      brokerOrgId:
-        input.brokerOrgId === null
-          ? null
-          : input.brokerOrgId
-            ? normalizeOrganizationId(ctx, input.brokerOrgId)
-            : undefined,
-      brokerName:
-        typeof input.brokerName === "string" ? input.brokerName : undefined,
+      brokerOrgId: input.brokerOrgId
+        ? normalizeOrganizationId(ctx, input.brokerOrgId)
+        : undefined,
       contactName:
         input.contactName === null
           ? null
@@ -3434,11 +3420,7 @@ export const getPendingConfirmationInternal = internalQuery({
 
 const channelThreadArgs = {
   operatorUserId: v.id("users"),
-  channel: v.union(
-    v.literal("slack"),
-    v.literal("imessage"),
-    v.literal("mcp"),
-  ),
+  channel: v.union(v.literal("slack"), v.literal("imessage"), v.literal("mcp")),
   conversationKey: v.string(),
   title: v.optional(v.string()),
   shared: v.optional(v.boolean()),

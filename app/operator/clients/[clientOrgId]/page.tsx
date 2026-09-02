@@ -47,14 +47,6 @@ import {
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { PillButton } from "@/components/ui/pill-button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  useCachedOperatorBrokers,
   useCachedOperatorClients,
   useCachedOperatorCurrent,
   useOperatorClientCacheActions,
@@ -73,7 +65,6 @@ import {
 import { OperatorClientSidebar } from "./operator-client-sidebar";
 import {
   operatorClientStatusLabel,
-  type OperatorBrokerRow,
   type OperatorClientRow,
 } from "../client-model";
 import { typeStyle } from "@/lib/typography";
@@ -82,8 +73,6 @@ type ClientTab = OperatorClientPageTab;
 type ClientSupportDetails = NonNullable<
   FunctionReturnType<typeof api.operator.getClientSupportDetails>
 >;
-
-const STANDALONE_VALUE = "__standalone__";
 
 function parseTab(value: string | null): ClientTab {
   return parseOperatorClientSection(value);
@@ -112,12 +101,16 @@ function Field({
 }) {
   return (
     <label className={className}>
-      <span className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}>
+      <span
+        className={`mb-1.5 block text-muted-foreground ${typeStyle("caption.medium")}`}
+      >
         {label}
       </span>
       {children}
       {error ? (
-        <span className={`mt-1.5 block text-destructive ${typeStyle("caption.default")}`}>
+        <span
+          className={`mt-1.5 block text-destructive ${typeStyle("caption.default")}`}
+        >
           {error}
         </span>
       ) : null}
@@ -128,14 +121,12 @@ function Field({
 function ClientWorkspace({
   client,
   supportDetails,
-  brokers,
   setShellActions,
   setRightPanel,
   registerBeforeImpersonationStart,
 }: {
   client: OperatorClientRow;
   supportDetails: ClientSupportDetails;
-  brokers: OperatorBrokerRow[];
   setShellActions: (actions: React.ReactNode) => void;
   setRightPanel: (panel: React.ReactNode) => void;
   registerBeforeImpersonationStart: (
@@ -149,9 +140,6 @@ function ClientWorkspace({
     useOperatorClientCacheActions();
   const activeTab = parseTab(searchParams.get("tab"));
   const [organizationName, setOrganizationName] = useState(supportDetails.name);
-  const [brokerOrgId, setBrokerOrgId] = useState(
-    supportDetails.brokerOrgId ?? STANDALONE_VALUE,
-  );
   const [website, setWebsite] = useState(supportDetails.website ?? "");
   const [industry, setIndustry] = useState(supportDetails.industry ?? "");
   const [industryVertical, setIndustryVertical] = useState(
@@ -177,21 +165,13 @@ function ClientWorkspace({
   const setClientFeatureFlag = useMutation(api.operator.setClientFeatureFlag);
   const setClientStatus = useMutation(api.operator.setSoloClientStatus);
 
-  const selectedBroker =
-    brokers.find((broker) => broker._id === brokerOrgId) ?? null;
-
   const validationError = !organizationName.trim()
     ? "Organization name is required"
     : null;
 
-  const nextBrokerOrgId =
-    brokerOrgId === STANDALONE_VALUE
-      ? undefined
-      : (brokerOrgId as Id<"organizations">);
   const clientSettingsArgs = {
     clientOrgId,
     name: organizationName.trim(),
-    brokerOrgId: nextBrokerOrgId,
     website: website.trim() || undefined,
     industry: industry || undefined,
     industryVertical: industryVertical || undefined,
@@ -214,11 +194,7 @@ function ClientWorkspace({
     flush: async (args) => {
       await updateClientSettings(args);
       const { clientOrgId: updatedClientOrgId, ...patch } = args;
-      await patchClientSettings(updatedClientOrgId, {
-        ...patch,
-        brokerName: brokers.find((broker) => broker._id === patch.brokerOrgId)
-          ?.name,
-      });
+      await patchClientSettings(updatedClientOrgId, patch);
     },
     errorMessage: (error) =>
       getUserFacingErrorMessage(error, "Client settings could not be saved."),
@@ -384,52 +360,6 @@ function ClientWorkspace({
                         placeholder="https://example.com"
                       />
                     </Field>
-                    <Field label="Broker" className="md:col-span-2">
-                      <Select
-                        value={brokerOrgId}
-                        onValueChange={(value) =>
-                          setBrokerOrgId(value ?? STANDALONE_VALUE)
-                        }
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue>
-                            {selectedBroker ? (
-                              <span className="flex min-w-0 items-center gap-2">
-                                <OrgBrandIcon
-                                  name={selectedBroker.name}
-                                  iconUrl={selectedBroker.iconUrl}
-                                  website={selectedBroker.website}
-                                  size="sm"
-                                />
-                                <span className="truncate">
-                                  {selectedBroker.name}
-                                </span>
-                              </span>
-                            ) : (
-                              "Standalone"
-                            )}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={STANDALONE_VALUE}>
-                            Standalone
-                          </SelectItem>
-                          {brokers.map((broker) => (
-                            <SelectItem key={broker._id} value={broker._id}>
-                              <span className="flex min-w-0 items-center gap-2">
-                                <OrgBrandIcon
-                                  name={broker.name}
-                                  iconUrl={broker.iconUrl}
-                                  website={broker.website}
-                                  size="sm"
-                                />
-                                <span className="truncate">{broker.name}</span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
                   </div>
                 </FormSection>
               </OperationalPanelBody>
@@ -571,7 +501,6 @@ export default function OperatorClientPage() {
   const searchParams = useSearchParams();
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients();
-  const brokers = useCachedOperatorBrokers();
   const supportDetails = useQuery(api.operator.getClientSupportDetails, {
     clientOrgId: clientOrgId as Id<"organizations">,
   });
@@ -614,7 +543,7 @@ export default function OperatorClientPage() {
             <span className="truncate">{breadcrumbSection}</span>
           </span>
         ) : (
-          client?.name ?? "Client"
+          (client?.name ?? "Client")
         )
       }
       rightPanel={rightPanel}
@@ -662,7 +591,6 @@ export default function OperatorClientPage() {
           key={client._id}
           client={client}
           supportDetails={supportDetails}
-          brokers={brokers ?? []}
           setShellActions={setWorkspaceActions}
           setRightPanel={setRightPanel}
           registerBeforeImpersonationStart={registerBeforeImpersonationStart}

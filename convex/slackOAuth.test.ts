@@ -65,10 +65,7 @@ async function seedAdmin(t: ReturnType<typeof convexTest>, name = "Client") {
   });
 }
 
-async function seedOperator(
-  t: ReturnType<typeof convexTest>,
-  name = "Client",
-) {
+async function seedOperator(t: ReturnType<typeof convexTest>, name = "Client") {
   return await t.run(async (ctx) => {
     const clientOrgId = await ctx.db.insert("organizations", {
       name,
@@ -102,7 +99,10 @@ async function startInitialSetup(
 }
 
 async function seedRepairConnection(t: ReturnType<typeof convexTest>) {
-  const { clientOrgId, operatorUserId } = await seedOperator(t, "Repair Client");
+  const { clientOrgId, operatorUserId } = await seedOperator(
+    t,
+    "Repair Client",
+  );
   const records = await t.run(async (ctx) => {
     const serviceUserId = await ctx.db.insert("users", {
       name: "Slack service",
@@ -292,13 +292,12 @@ describe("Slack OAuth actions", () => {
     });
 
     await expect(
-      t.withIdentity({ subject: `${userId}|session` }).action(
-        sendInstallInviteFn,
-        {
+      t
+        .withIdentity({ subject: `${userId}|session` })
+        .action(sendInstallInviteFn, {
           clientOrgId,
           recipientEmail: "admin@client.test",
-        },
-      ),
+        }),
     ).rejects.toThrow();
     await expect(
       t.run((ctx) => ctx.db.query("slackOAuthStates").collect()),
@@ -439,7 +438,9 @@ describe("Slack OAuth actions", () => {
     );
     expect(state).toBeTruthy();
 
-    const stored = await t.run((ctx) => ctx.db.query("slackOAuthStates").first());
+    const stored = await t.run((ctx) =>
+      ctx.db.query("slackOAuthStates").first(),
+    );
     expect(stored).toMatchObject({
       clientOrgId,
       initiatedByOperatorUserId: operatorUserId,
@@ -477,9 +478,7 @@ describe("Slack OAuth actions", () => {
       ctx.db
         .query("slackOAuthStates")
         .withIndex("client_purpose", (q) =>
-          q
-            .eq("clientOrgId", repair.clientOrgId)
-            .eq("purpose", "customer"),
+          q.eq("clientOrgId", repair.clientOrgId).eq("purpose", "customer"),
         )
         .order("desc")
         .first(),
@@ -537,13 +536,15 @@ describe("Slack OAuth actions", () => {
     const t = convexTest(schema, modules);
     const { clientOrgId, userId } = await seedAdmin(t);
     const state = await oauthState(t, clientOrgId, userId);
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "https://slack.com/api/oauth.v2.access") {
-        return jsonResponse(slackTokenResponse());
-      }
-      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
-    });
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "https://slack.com/api/oauth.v2.access") {
+          return jsonResponse(slackTokenResponse());
+        }
+        throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const redirect = await t.action(completeFn, { code: "oauth-code", state });
@@ -564,7 +565,9 @@ describe("Slack OAuth actions", () => {
       kind: "customer",
       status: "active",
     });
-    expect(JSON.stringify(records.installation)).not.toContain("xoxb-test-token");
+    expect(JSON.stringify(records.installation)).not.toContain(
+      "xoxb-test-token",
+    );
     expect(records.installation?.encryptedBotToken).toBeTruthy();
     expect(records.installation?.encryptedRefreshToken).toBeTruthy();
     expect(records.channelSettings?.slackEnabled).toBe(true);
@@ -785,16 +788,18 @@ describe("Slack OAuth actions", () => {
       });
     });
     const state = await oauthState(t, target.clientOrgId, target.userId);
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "https://slack.com/api/oauth.v2.access") {
-        return jsonResponse(slackTokenResponse());
-      }
-      if (url === "https://slack.com/api/apps.uninstall") {
-        return jsonResponse({ ok: true });
-      }
-      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
-    });
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "https://slack.com/api/oauth.v2.access") {
+          return jsonResponse(slackTokenResponse());
+        }
+        if (url === "https://slack.com/api/apps.uninstall") {
+          return jsonResponse({ ok: true });
+        }
+        throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const redirect = await t.action(completeFn, { code: "oauth-code", state });

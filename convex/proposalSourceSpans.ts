@@ -25,14 +25,22 @@ export const listByDocument = query({
     const document = await ctx.db.get(args.proposalDocumentId);
     if (!document) return [];
     const proposal = await ctx.db.get(document.proposalId);
-    if (!proposal?.extractionFingerprint || !proposal.extractedOffer || proposal.status === "extracting") return [];
-    return (await ctx.db
-      .query("proposalSourceSpans")
-      .withIndex("proposal_fingerprint", (q) =>
-        q.eq("proposalId", document.proposalId)
-          .eq("extractionFingerprint", proposal.extractionFingerprint!),
-      )
-      .collect()).filter((row) => row.proposalDocumentId === args.proposalDocumentId);
+    if (
+      !proposal?.extractionFingerprint ||
+      !proposal.extractedOffer ||
+      proposal.status === "extracting"
+    )
+      return [];
+    return (
+      await ctx.db
+        .query("proposalSourceSpans")
+        .withIndex("proposal_fingerprint", (q) =>
+          q
+            .eq("proposalId", document.proposalId)
+            .eq("extractionFingerprint", proposal.extractionFingerprint!),
+        )
+        .collect()
+    ).filter((row) => row.proposalDocumentId === args.proposalDocumentId);
   },
 });
 
@@ -44,31 +52,48 @@ export const listByProposalAndSpanIds = query({
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     const proposal = await ctx.db.get(args.proposalId);
-    if (!proposal?.extractionFingerprint || !proposal.extractedOffer || proposal.status === "extracting") return [];
+    if (
+      !proposal?.extractionFingerprint ||
+      !proposal.extractedOffer ||
+      proposal.status === "extracting"
+    )
+      return [];
     const wanted = [...new Set(args.spanIds)].slice(0, 256);
-    return (await Promise.all(wanted.map((spanId) =>
-      ctx.db
-        .query("proposalSourceSpans")
-        .withIndex("fingerprint_span", (q) =>
-          q.eq("proposalId", args.proposalId)
-            .eq("extractionFingerprint", proposal.extractionFingerprint!)
-            .eq("spanId", spanId),
-        )
-        .first()
-    ))).filter((item): item is NonNullable<typeof item> => Boolean(item));
+    return (
+      await Promise.all(
+        wanted.map((spanId) =>
+          ctx.db
+            .query("proposalSourceSpans")
+            .withIndex("fingerprint_span", (q) =>
+              q
+                .eq("proposalId", args.proposalId)
+                .eq("extractionFingerprint", proposal.extractionFingerprint!)
+                .eq("spanId", spanId),
+            )
+            .first(),
+        ),
+      )
+    ).filter((item): item is NonNullable<typeof item> => Boolean(item));
   },
 });
 
 export const listByProposalInternal = internalQuery({
   args: { proposalId: v.id("procurementProposals") },
-  handler: async (ctx, args) => ctx.db
-    .get(args.proposalId)
-    .then((proposal) => proposal?.extractionFingerprint && proposal.extractedOffer && proposal.status !== "extracting"
-      ? ctx.db.query("proposalSourceSpans").withIndex("proposal_fingerprint", (q) =>
-          q.eq("proposalId", args.proposalId)
-            .eq("extractionFingerprint", proposal.extractionFingerprint!),
-        ).collect()
-      : []),
+  handler: async (ctx, args) =>
+    ctx.db.get(args.proposalId).then((proposal) =>
+      proposal?.extractionFingerprint &&
+      proposal.extractedOffer &&
+      proposal.status !== "extracting"
+        ? ctx.db
+            .query("proposalSourceSpans")
+            .withIndex("proposal_fingerprint", (q) =>
+              q
+                .eq("proposalId", args.proposalId)
+                .eq("extractionFingerprint", proposal.extractionFingerprint!),
+            )
+            .collect()
+        : [],
+    ),
 });
 
 export const deleteOtherFingerprintsBatch = internalMutation({
@@ -83,12 +108,15 @@ export const deleteOtherFingerprintsBatch = internalMutation({
       !proposal ||
       proposal.extractionFingerprint !== args.keepFingerprint ||
       proposal.status === "extracting"
-    ) return { deleted: 0, done: true };
+    )
+      return { deleted: 0, done: true };
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 100), 200));
     const rows = await ctx.db
       .query("proposalSourceSpans")
       .withIndex("proposal", (q) => q.eq("proposalId", args.proposalId))
-      .filter((q) => q.neq(q.field("extractionFingerprint"), args.keepFingerprint))
+      .filter((q) =>
+        q.neq(q.field("extractionFingerprint"), args.keepFingerprint),
+      )
       .take(limit);
     for (const row of rows) await ctx.db.delete(row._id);
     return { deleted: rows.length, done: rows.length < limit };
@@ -99,9 +127,11 @@ export const insertBatch = internalMutation({
   args: { spans: v.array(v.object(spanFields)) },
   handler: async (ctx, args) => {
     for (const span of args.spans) {
-      const existing = await ctx.db.query("proposalSourceSpans")
+      const existing = await ctx.db
+        .query("proposalSourceSpans")
         .withIndex("fingerprint_span", (q) =>
-          q.eq("proposalId", span.proposalId)
+          q
+            .eq("proposalId", span.proposalId)
             .eq("extractionFingerprint", span.extractionFingerprint)
             .eq("spanId", span.spanId),
         )

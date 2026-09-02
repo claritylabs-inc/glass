@@ -1,9 +1,14 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { getCurrentOrgAccess } from "./lib/access";
+import { assertCanUseTenantAgent, getCurrentOrgAccess } from "./lib/access";
 import { canAccessThread } from "./lib/threadAccess";
 import {
   throwUserFacingError,
@@ -26,7 +31,8 @@ function userFacingReviewReason(reason: string) {
   const normalized = reason.trim();
   if (
     normalized === INCOMPLETE_CLASSIFICATION_REASON ||
-    normalized === "Spot could not classify this email automatically. Review its sender, date, and attachments before choosing an action."
+    normalized ===
+      "Spot could not classify this email automatically. Review its sender, date, and attachments before choosing an action."
   ) {
     return undefined;
   }
@@ -90,6 +96,7 @@ export const reviewForThread = query({
   handler: async (ctx, args) => {
     const access = await getCurrentOrgAccess(ctx);
     if (!access) return null;
+    assertCanUseTenantAgent(access);
     const thread = await ctx.db.get(args.threadId);
     if (
       !thread ||
@@ -114,15 +121,18 @@ export const reviewForThread = query({
     if (reviewItems.length === 0) return null;
 
     const accountIds = [...new Set(reviewItems.map((item) => item.accountId))];
-    const accounts = await Promise.all(accountIds.map((accountId) => ctx.db.get(accountId)));
+    const accounts = await Promise.all(
+      accountIds.map((accountId) => ctx.db.get(accountId)),
+    );
     const emailByAccountId = new Map(
       accounts.flatMap((account) =>
         account ? [[String(account._id), account.emailAddress] as const] : [],
       ),
     );
-    const title = reviewItems.length === 1
-      ? "Review email"
-      : `Review ${reviewItems.length} emails`;
+    const title =
+      reviewItems.length === 1
+        ? "Review email"
+        : `Review ${reviewItems.length} emails`;
 
     return {
       title,
@@ -161,6 +171,7 @@ export const resolveReview = mutation({
   handler: async (ctx, args) => {
     const access = await getCurrentOrgAccess(ctx);
     if (!access) throwUserFacingError(userFacingErrorCodes.authRequired);
+    assertCanUseTenantAgent(access);
     const thread = await ctx.db.get(args.threadId);
     if (
       !thread ||
@@ -187,16 +198,18 @@ export const resolveReview = mutation({
       return { resolved: false };
     }
 
-    const classification = args.resolution === "not_relevant"
-      ? "ignore" as const
-      : args.resolution === "policy_imported"
-        ? "policy_document" as const
-        : "insurance_requirements" as const;
-    const actionSummary = args.resolution === "not_relevant"
-      ? "Marked as not relevant."
-      : args.resolution === "policy_imported"
-        ? "Policy import started."
-        : "Insurance requirements imported.";
+    const classification =
+      args.resolution === "not_relevant"
+        ? ("ignore" as const)
+        : args.resolution === "policy_imported"
+          ? ("policy_document" as const)
+          : ("insurance_requirements" as const);
+    const actionSummary =
+      args.resolution === "not_relevant"
+        ? "Marked as not relevant."
+        : args.resolution === "policy_imported"
+          ? "Policy import started."
+          : "Insurance requirements imported.";
     await ctx.db.patch(item._id, {
       classification,
       needsReview: false,
@@ -362,7 +375,11 @@ export const claimItemInternal = internalMutation({
         lastError: undefined,
         updatedAt: now,
       });
-      return { claimed: true, itemId: existing._id, status: "processing" as const };
+      return {
+        claimed: true,
+        itemId: existing._id,
+        status: "processing" as const,
+      };
     }
     const itemId = await ctx.db.insert("connectedEmailAutomationItems", {
       ...args,

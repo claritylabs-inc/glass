@@ -73,7 +73,9 @@ function OnboardingLoading() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="w-full px-6 py-6 sm:px-8">
-        <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-muted-foreground ${typeStyle("body.default")}`}>
+        <div
+          className={`grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-muted-foreground ${typeStyle("body.default")}`}
+        >
           <div className="justify-self-start min-w-0">
             <div className="h-5 w-24 bg-foreground/10 rounded" />
           </div>
@@ -173,7 +175,9 @@ function PendingLiveScreen() {
           <h1 className={`text-foreground ${typeStyle("heading.micro")}`}>
             Workspace is being prepared
           </h1>
-          <p className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}>
+          <p
+            className={`mt-2 text-muted-foreground ${typeStyle("body.default")}`}
+          >
             Your Spot workspace is not live yet. You will receive an email when
             it is ready.
           </p>
@@ -198,8 +202,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const acceptInvitation = useMutation(api.orgs.acceptInvitation);
   const handledInvitationIdRef = useRef<string | null>(null);
   const [inviteAcceptError, setInviteAcceptError] = useState(false);
-  const impersonationStopReturnHref =
-    useOperatorImpersonationStopReturnHref();
+  const impersonationStopReturnHref = useOperatorImpersonationStopReturnHref();
   const initialBootState = useSyncExternalStore(
     subscribeToBootStateSnapshot,
     getBootStateSnapshot,
@@ -209,13 +212,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isAuthAgnostic = AUTH_AGNOSTIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
-  const isPublic = isAuthAgnostic || PUBLIC_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  const isPublic =
+    isAuthAgnostic ||
+    PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const isOnboarding =
     pathname === ONBOARDING_PATH || pathname.startsWith(`${ONBOARDING_PATH}/`);
+  const isBrokerPortalPath =
+    pathname === "/broker" ||
+    pathname.startsWith("/broker/team") ||
+    pathname === "/onboarding/broker";
   const isAdminPath = ADMIN_PATHS.some((p) => pathname.startsWith(p));
-  const isOperatorPath = pathname === OPERATOR_PATH || pathname.startsWith(`${OPERATOR_PATH}/`);
+  const isOperatorPath =
+    pathname === OPERATOR_PATH || pathname.startsWith(`${OPERATOR_PATH}/`);
   const isOperatorLogin = pathname === "/operator/login";
 
   // Only query viewer when authenticated
@@ -273,10 +281,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           ? String(viewerOrg.org._id)
           : undefined;
     if (accountKind !== "operator" && !viewerOrg?.org) return;
-    if (
-      scope.userId !== String(viewer._id) ||
-      scope.orgId !== orgId
-    ) {
+    if (scope.userId !== String(viewer._id) || scope.orgId !== orgId) {
       return;
     }
     const nextBootState = {
@@ -373,14 +378,28 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         router.replace("/operator");
         return;
       }
-      if (isOperatorPath && !isOperatorLogin && viewer?.accountKind !== "operator") {
+      if (
+        viewer?.accountKind !== "operator" &&
+        viewerOrg?.org?.type === "broker" &&
+        !isBrokerPortalPath &&
+        !isPublic
+      ) {
+        router.replace("/broker");
+        return;
+      }
+      if (
+        isOperatorPath &&
+        !isOperatorLogin &&
+        viewer?.accountKind !== "operator"
+      ) {
         router.replace("/");
         return;
       }
       if (
         viewer?.accountKind !== "operator" &&
         !!viewerOrg?.org &&
-        ((viewerOrg.org as { operatorStatus?: "onboarding" | "live" }).operatorStatus ?? "live") === "onboarding" &&
+        ((viewerOrg.org as { operatorStatus?: "onboarding" | "live" })
+          .operatorStatus ?? "live") === "onboarding" &&
         !isPublic
       ) {
         return;
@@ -417,6 +436,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     isAuthenticated,
     isPublic,
     isOnboarding,
+    isBrokerPortalPath,
     isAdminPath,
     isOperatorPath,
     isOperatorLogin,
@@ -455,7 +475,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (
     isLoading ||
     (isAuthenticated && viewer === undefined) ||
-    (isAuthenticated && viewer?.accountKind === "operator" && operatorContext === undefined) ||
+    (isAuthenticated &&
+      viewer?.accountKind === "operator" &&
+      operatorContext === undefined) ||
     (isAuthenticated && pendingInvitation && !inviteAcceptError)
   ) {
     if (isPublic) return null;
@@ -484,7 +506,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     isAuthenticated &&
     viewer?.accountKind !== "operator" &&
     !!viewerOrg?.org &&
-    ((viewerOrg.org as { operatorStatus?: "onboarding" | "live" }).operatorStatus ?? "live") === "onboarding" &&
+    ((viewerOrg.org as { operatorStatus?: "onboarding" | "live" })
+      .operatorStatus ?? "live") === "onboarding" &&
     !isPublic
   ) {
     return <PendingLiveScreen />;
@@ -500,7 +523,22 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (isAuthenticated && isOperatorPath && !isOperatorLogin && viewer?.accountKind !== "operator") {
+  if (
+    isAuthenticated &&
+    viewer?.accountKind !== "operator" &&
+    viewerOrg?.org?.type === "broker" &&
+    !isBrokerPortalPath &&
+    !isPublic
+  ) {
+    return null;
+  }
+
+  if (
+    isAuthenticated &&
+    isOperatorPath &&
+    !isOperatorLogin &&
+    viewer?.accountKind !== "operator"
+  ) {
     return null;
   }
 

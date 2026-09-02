@@ -38,15 +38,22 @@ function emptyReport(dryRun: boolean): CleanupReport {
   };
 }
 
-function mergeReports(left: CleanupReport, right: CleanupReport): CleanupReport {
+function mergeReports(
+  left: CleanupReport,
+  right: CleanupReport,
+): CleanupReport {
   return {
     dryRun: left.dryRun,
     policies: {
       scannedCount: left.policies.scannedCount + right.policies.scannedCount,
       changedCount: left.policies.changedCount + right.policies.changedCount,
-      samples: [...left.policies.samples, ...right.policies.samples].slice(0, 25),
+      samples: [...left.policies.samples, ...right.policies.samples].slice(
+        0,
+        25,
+      ),
     },
-    continuationScheduled: left.continuationScheduled || right.continuationScheduled,
+    continuationScheduled:
+      left.continuationScheduled || right.continuationScheduled,
   };
 }
 
@@ -63,15 +70,22 @@ export const cleanup = internalAction({
     let policyCursor: string | null = null;
 
     do {
-      const batch: CleanupReport & { nextCursor?: string | null; isDone?: boolean } =
-        await ctx.runMutation((internal as any).cleanupLegacyLineOfBusinessFieldsBatches.cleanupPoliciesBatchInternal, {
+      const batch: CleanupReport & {
+        nextCursor?: string | null;
+        isDone?: boolean;
+      } = await ctx.runMutation(
+        (internal as any).cleanupLegacyLineOfBusinessFieldsBatches
+          .cleanupPoliciesBatchInternal,
+        {
           orgId: args.orgId,
           dryRun,
           limit,
           cursor: policyCursor,
-        });
+        },
+      );
       report = mergeReports(report, batch);
-      policyCursor = dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
+      policyCursor =
+        dryRun && !batch.isDone ? (batch.nextCursor ?? null) : null;
     } while (dryRun && policyCursor);
 
     return report;

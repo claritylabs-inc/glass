@@ -267,22 +267,22 @@ Connected vendor data is exposed in the same channels as first-party insurance d
 
 ### 4) APIs
 
-- REST API exposes broker/client/vendor resources under `/api/v1/*`
+- REST API exposes client/vendor resources under `/api/v1/*`
 - MCP enables remote and local AI tool access
 
 ## Model Routing
 
 Model execution can be routed through the separate task-aware `cl-router`
-service. Spot resolves the broker/global/code settings snapshot and sends it
+service. Spot resolves the global/code settings snapshot and sends it
 with each enabled request; the router owns direct-provider selection,
 failover, cost telemetry, calibration, and autonomous policy.
 
 - `CL_ROUTER_TASKS` enables task families incrementally. Authenticated
   `query_reason` uses the router whenever its URL and inference secret are
   configured; other unlisted task families retain the direct path.
-- Broker routes and keys remain org-scoped overrides. Operator global choices
-  are explicit overrides; leaving a task on Automated routing gives the active
-  policy control. The global fallback remains a separate safety route.
+- Operator global choices are explicit overrides; leaving a task on Automated
+  routing gives the active policy control. The global fallback remains a
+  separate safety route. Broker organizations do not override model routing.
 - The internal `operator_agent` route is the exception: every environment must
   explicitly save one image-capable direct-provider model before operator
   traffic is enabled. It is never published to `cl-router` and never uses an
@@ -293,8 +293,8 @@ failover, cost telemetry, calibration, and autonomous policy.
 - Tool-bearing successes and incomplete responses feed generic quality signals
   back to the routed request so autonomous `query_reason` policies can learn
   which candidates reliably complete tool workflows.
-- Defaults remain broker-configurable in `/settings?section=models`; see
-  `AGENTS.md` and `docs/deployment/environments.md` for rollout and controls.
+- Defaults are operator-configurable in `/operator/routing`; see `AGENTS.md`
+  and `docs/deployment/environments.md` for rollout and controls.
 
 The router and retained fallback path both call providers directly. Vercel AI
 Gateway is not a fallback.

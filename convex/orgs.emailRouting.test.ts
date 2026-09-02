@@ -33,8 +33,7 @@ describe("org email routing", () => {
       senderEmail: "admin@example.com",
     });
 
-    expect(resolved?.brokerOrg._id).toBe(orgId);
-    expect(resolved?.clientOrg).toBeNull();
+    expect(resolved?.org._id).toBe(orgId);
     expect(resolved?.matchedBy).toBe("member");
     expect(userId).toBeTruthy();
   });
@@ -65,5 +64,4 @@ describe("org email routing", () => {
 
     expect(resolved).toBeNull();
   });
-
 });

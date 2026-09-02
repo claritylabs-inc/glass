@@ -48,11 +48,6 @@ function sidebarHeaderBranding({
           name?: string;
           iconUrl?: string | null;
         } | null;
-        brokerOrg?: {
-          name: string;
-          iconUrl?: string | null;
-          whiteLabelingEnabled?: boolean;
-        } | null;
       }
     | null
     | undefined;
@@ -71,10 +66,12 @@ export function AppSidebar({
   mobileOpen,
   onMobileClose,
   onAskSpot,
+  disablePersistentChat = false,
 }: {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
   onAskSpot?: () => void;
+  disablePersistentChat?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const pathname = usePathname();
@@ -87,12 +84,12 @@ export function AppSidebar({
   const unifiedThreads = useCachedQuery(
     "threads.list.active",
     api.threads.list,
-    { archived: false },
+    disablePersistentChat ? "skip" : { archived: false },
   );
   const archivedThreads = useCachedQuery(
     "threads.list.archived",
     api.threads.list,
-    { archived: true },
+    disablePersistentChat ? "skip" : { archived: true },
   );
   const setThreadDetail = useSetCachedQuery<
     NonNullable<typeof unifiedThreads>[number],
@@ -105,9 +102,11 @@ export function AppSidebar({
   const { clearCache: clearOnboardingCache } = useOnboardingCache();
   const currentOrg = useCurrentOrg();
   const isBroker = currentOrg?.isBroker ?? false;
-  const showConnectFeatures = isFeatureEnabled(currentOrg?.org, "connect_features");
-  const isStandaloneClient =
-    currentOrg?.orgType === "client" && !viewerOrg?.brokerOrg;
+  const showConnectFeatures = isFeatureEnabled(
+    currentOrg?.org,
+    "connect_features",
+  );
+  const isStandaloneClient = currentOrg?.orgType === "client";
   const canManageSettings = !isBroker && currentOrg?.role === "admin";
   const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
   const connectItems =
@@ -162,9 +161,17 @@ export function AppSidebar({
     () => splitThreadConversations(unifiedThreads),
     [unifiedThreads],
   );
+  const visibleAgentConversations = useMemo(
+    () => (disablePersistentChat ? [] : agentConversations),
+    [agentConversations, disablePersistentChat],
+  );
+  const visiblePinnedConversations = useMemo(
+    () => (disablePersistentChat ? [] : pinnedConversations),
+    [disablePersistentChat, pinnedConversations],
+  );
   const shortcutConversations = useMemo(
-    () => [...pinnedConversations, ...agentConversations],
-    [agentConversations, pinnedConversations],
+    () => [...visiblePinnedConversations, ...visibleAgentConversations],
+    [visibleAgentConversations, visiblePinnedConversations],
   );
 
   function toggleCollapse() {
@@ -270,8 +277,6 @@ export function AppSidebar({
   const headerOrgName = headerBranding.name;
   const headerOrgIcon = headerBranding.iconUrl;
   const initials = getInitials(headerOrgName, viewer?.email);
-  const brokerContact = null;
-  const fallbackAgentHandle = viewerOrg?.org?.agentHandle;
 
   const activeSettingsSection = resolveSettingsDestination({
     requestedSection: searchParams.get("section"),
@@ -286,9 +291,6 @@ export function AppSidebar({
         isBroker={isBroker}
         isStandaloneClient={isStandaloneClient}
         activeSettingsSection={activeSettingsSection}
-        broker={brokerContact}
-        fallbackAgentHandle={fallbackAgentHandle}
-        showBrokerContact={!isBroker && !!viewerOrg}
         onToggleCollapse={toggleCollapse}
       />
     );
@@ -307,19 +309,20 @@ export function AppSidebar({
         headerOrgName={headerOrgName}
         navItems={navItems}
         connectItems={connectItems}
+        disablePersistentChat={disablePersistentChat}
         notificationsPanelOpen={notificationsPanelOpen}
         unreadCount={unreadCount}
         isDesktop={isDesktop}
         orgId={currentOrg?.orgId}
-        agentConversations={agentConversations}
-        pinnedConversations={pinnedConversations}
-        archivedThreadCount={archivedThreads?.length ?? 0}
-        broker={brokerContact}
-        fallbackAgentHandle={fallbackAgentHandle}
+        agentConversations={visibleAgentConversations}
+        pinnedConversations={visiblePinnedConversations}
+        archivedThreadCount={
+          disablePersistentChat ? 0 : (archivedThreads?.length ?? 0)
+        }
         onToggleCollapse={toggleCollapse}
         onToggleNotifications={() => setNotificationsPanelOpen((v) => !v)}
         onCloseNotifications={() => setNotificationsPanelOpen(false)}
-        onAskSpot={onAskSpot}
+        onAskSpot={disablePersistentChat ? undefined : onAskSpot}
         onArchiveThread={handleArchiveThread}
         onSignOut={() => {
           clearOnboardingCache();

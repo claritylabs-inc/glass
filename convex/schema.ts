@@ -652,14 +652,16 @@ export default defineSchema({
       v.literal("active"),
       v.literal("inactive"),
     ),
-    officeAddress: v.optional(v.object({
-      street1: v.optional(v.string()),
-      street2: v.optional(v.string()),
-      city: v.optional(v.string()),
-      state: v.optional(v.string()),
-      postalCode: v.optional(v.string()),
-      country: v.optional(v.string()),
-    })),
+    officeAddress: v.optional(
+      v.object({
+        street1: v.optional(v.string()),
+        street2: v.optional(v.string()),
+        city: v.optional(v.string()),
+        state: v.optional(v.string()),
+        postalCode: v.optional(v.string()),
+        country: v.optional(v.string()),
+      }),
+    ),
     writingStates: v.array(v.string()),
     lineOfBusinessCodes: v.array(v.string()),
     createdByUserId: v.id("users"),
@@ -2778,7 +2780,9 @@ export default defineSchema({
     ),
     // Widening fields for client collaboration. Legacy rows are operator-only
     // until explicitly shared or migrated.
-    createdBySide: v.optional(v.union(v.literal("operator"), v.literal("client"))),
+    createdBySide: v.optional(
+      v.union(v.literal("operator"), v.literal("client")),
+    ),
     clientVisible: v.optional(v.boolean()),
     sharedAt: v.optional(v.number()),
     originalNarrative: v.optional(v.string()),
@@ -2820,20 +2824,24 @@ export default defineSchema({
     quoteCurrency: v.optional(v.string()),
     quoteUrl: v.optional(v.string()),
     contactUserId: v.optional(v.id("users")),
-    contactSnapshot: v.optional(v.object({
-      name: v.optional(v.string()),
-      email: v.optional(v.string()),
-      phone: v.optional(v.string()),
-    })),
+    contactSnapshot: v.optional(
+      v.object({
+        name: v.optional(v.string()),
+        email: v.optional(v.string()),
+        phone: v.optional(v.string()),
+      }),
+    ),
     sentAt: v.optional(v.number()),
-    packetSnapshot: v.optional(v.object({
-      requirementRevision: v.number(),
-      specificationRevision: v.number(),
-      requirementIds: v.array(v.id("insuranceRequirements")),
-      specifications: v.array(v.any()),
-      fileItemIds: v.array(v.id("procurementFileItems")),
-      capturedAt: v.number(),
-    })),
+    packetSnapshot: v.optional(
+      v.object({
+        requirementRevision: v.number(),
+        specificationRevision: v.number(),
+        requirementIds: v.array(v.id("insuranceRequirements")),
+        specifications: v.array(v.any()),
+        fileItemIds: v.array(v.id("procurementFileItems")),
+        capturedAt: v.number(),
+      }),
+    ),
     createdByUserId: v.id("users"),
     updatedByUserId: v.id("users"),
     createdAt: v.number(),
@@ -2848,7 +2856,11 @@ export default defineSchema({
     clientOrgId: v.id("organizations"),
     proposedRequirement: v.any(),
     matchingRequirementId: v.optional(v.id("insuranceRequirements")),
-    status: v.union(v.literal("draft"), v.literal("confirmed"), v.literal("discarded")),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("confirmed"),
+      v.literal("discarded"),
+    ),
     confirmedRequirementId: v.optional(v.id("insuranceRequirements")),
     sourceExcerpt: v.optional(v.string()),
     sourcePageStart: v.optional(v.number()),
@@ -2894,7 +2906,11 @@ export default defineSchema({
     clientOrgId: v.id("organizations"),
     authorUserId: v.id("users"),
     authorSide: v.union(v.literal("operator"), v.literal("client")),
-    kind: v.union(v.literal("message"), v.literal("document"), v.literal("status")),
+    kind: v.union(
+      v.literal("message"),
+      v.literal("document"),
+      v.literal("status"),
+    ),
     body: v.optional(v.string()),
     documentId: v.optional(v.id("procurementRequestDocuments")),
     clientVisible: v.boolean(),
@@ -2926,8 +2942,12 @@ export default defineSchema({
     outreachId: v.id("procurementBrokerOutreaches"),
     supersedesProposalId: v.optional(v.id("procurementProposals")),
     status: v.union(
-      v.literal("draft"), v.literal("extracting"), v.literal("review_ready"),
-      v.literal("reviewed"), v.literal("selected"), v.literal("withdrawn"),
+      v.literal("draft"),
+      v.literal("extracting"),
+      v.literal("review_ready"),
+      v.literal("reviewed"),
+      v.literal("selected"),
+      v.literal("withdrawn"),
       v.literal("archived"),
     ),
     extractionFingerprint: v.optional(v.string()),
@@ -2966,8 +2986,18 @@ export default defineSchema({
     extractionFingerprint: v.string(),
     requirementRevision: v.number(),
     specificationRevision: v.number(),
-    modelConclusion: v.union(v.literal("meets_requirements"), v.literal("has_gaps"), v.literal("insufficient_evidence")),
-    staffConclusion: v.optional(v.union(v.literal("meets_requirements"), v.literal("has_gaps"), v.literal("insufficient_evidence"))),
+    modelConclusion: v.union(
+      v.literal("meets_requirements"),
+      v.literal("has_gaps"),
+      v.literal("insufficient_evidence"),
+    ),
+    staffConclusion: v.optional(
+      v.union(
+        v.literal("meets_requirements"),
+        v.literal("has_gaps"),
+        v.literal("insufficient_evidence"),
+      ),
+    ),
     findings: v.array(v.any()),
     confirmedByUserId: v.optional(v.id("users")),
     confirmedAt: v.optional(v.number()),
@@ -2983,7 +3013,12 @@ export default defineSchema({
     clientOrgId: v.id("organizations"),
     extractionFingerprint: v.string(),
     requestedByUserId: v.id("users"),
-    status: v.union(v.literal("pending"), v.literal("running"), v.literal("complete"), v.literal("failed")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("complete"),
+      v.literal("failed"),
+    ),
     attempts: v.number(),
     leaseId: v.optional(v.string()),
     leaseExpiresAt: v.optional(v.number()),
@@ -3024,8 +3059,16 @@ export default defineSchema({
   })
     .index("proposal", ["proposalId", "createdAt"])
     .index("proposal_span", ["proposalId", "spanId"])
-    .index("proposal_fingerprint", ["proposalId", "extractionFingerprint", "createdAt"])
-    .index("fingerprint_span", ["proposalId", "extractionFingerprint", "spanId"])
+    .index("proposal_fingerprint", [
+      "proposalId",
+      "extractionFingerprint",
+      "createdAt",
+    ])
+    .index("fingerprint_span", [
+      "proposalId",
+      "extractionFingerprint",
+      "spanId",
+    ])
     .index("document", ["proposalDocumentId", "createdAt"])
     .index("document_span", ["proposalDocumentId", "spanId"]),
 
@@ -3050,8 +3093,16 @@ export default defineSchema({
   })
     .index("proposal", ["proposalId", "createdAt"])
     .index("proposal_node", ["proposalId", "nodeId"])
-    .index("proposal_fingerprint", ["proposalId", "extractionFingerprint", "createdAt"])
-    .index("fingerprint_node", ["proposalId", "extractionFingerprint", "nodeId"])
+    .index("proposal_fingerprint", [
+      "proposalId",
+      "extractionFingerprint",
+      "createdAt",
+    ])
+    .index("fingerprint_node", [
+      "proposalId",
+      "extractionFingerprint",
+      "nodeId",
+    ])
     .index("proposal_parent", ["proposalId", "parentNodeId"])
     .index("document", ["proposalDocumentId", "createdAt"])
     .index("document_parent", ["proposalDocumentId", "parentNodeId"]),

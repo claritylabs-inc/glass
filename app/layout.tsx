@@ -8,7 +8,6 @@ import { AutoSaveStatusProvider } from "@/components/ui/auto-save-status";
 import { AppToaster } from "@/components/ui/toaster";
 import { SmoothCornersProvider } from "@/components/ui/smooth-corners-provider";
 import { BrandThemeApplier } from "@/components/brand-theme-applier";
-import { getViewerBranding } from "@/lib/viewer-branding";
 import { getClientPortalUrl } from "@/convex/lib/domains";
 import { typeStyle } from "@/lib/typography";
 import "./globals.css";
@@ -81,27 +80,22 @@ const DEFAULT_DESCRIPTION =
   "Insurance policy intelligence from Tools for Enlightenment";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const branding = await getViewerBranding();
-  const title = branding?.name ?? DEFAULT_TITLE;
-  const icon = branding?.iconUrl ?? undefined;
-
   return {
     metadataBase: new URL(getClientPortalUrl()),
     title: {
-      default: title,
-      template: `${title} - %s`,
+      default: DEFAULT_TITLE,
+      template: `${DEFAULT_TITLE} - %s`,
     },
     description: DEFAULT_DESCRIPTION,
-    icons: icon ? { icon } : undefined,
     openGraph: {
-      title,
+      title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
-      siteName: title,
+      siteName: DEFAULT_TITLE,
       type: "website",
     },
     twitter: {
       card: "summary_large_image",
-      title,
+      title: DEFAULT_TITLE,
       description: DEFAULT_DESCRIPTION,
     },
   };

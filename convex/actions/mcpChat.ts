@@ -16,7 +16,6 @@ import {
 } from "../lib/agentPolicyFocus";
 import {
   buildSystemPromptForContext,
-  buildBrokerPortfolioSystemPrompt,
   buildPolicyToolInstructions,
 } from "../lib/aiUtils";
 import {
@@ -161,21 +160,12 @@ export const run = internalAction({
     const siteUrl = getClientPortalUrl();
 
     // Build system prompt
-    const systemPrompt =
-      scope.mode === "broker_portfolio"
-        ? buildBrokerPortfolioSystemPrompt({
-            brokerName: typeof org.name === "string" ? org.name : undefined,
-            brokerContext:
-              typeof org.context === "string" ? org.context : undefined,
-            userName,
-            siteUrl,
-          })
-        : buildSystemPromptForContext({
-            org,
-            mode: "direct",
-            userName,
-            siteUrl,
-          });
+    const systemPrompt = buildSystemPromptForContext({
+      org,
+      mode: "direct",
+      userName,
+      siteUrl,
+    });
 
     const mcpAddendum = `
 

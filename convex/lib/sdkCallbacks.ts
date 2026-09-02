@@ -42,7 +42,12 @@ import {
 } from "./modelCatalog";
 import { applyCarrierIdentityGuidance } from "./extractionPromptGuidance";
 import { structuredOutputSchemaForRoute } from "./fireworksStructuredOutput";
-import type { GenerateText, GenerateObject, EmbedText, TokenUsage } from "@claritylabs/cl-sdk";
+import type {
+  GenerateText,
+  GenerateObject,
+  EmbedText,
+  TokenUsage,
+} from "@claritylabs/cl-sdk";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -103,7 +108,9 @@ type ParamsWithOptionalTaskKind = {
 
 type GenerateObjectParams = Parameters<GenerateObject>[0];
 type SpotGenerateObject = (
-  params: Omit<GenerateObjectParams, "taskKind"> & { taskKind?: ModelCallTaskKind },
+  params: Omit<GenerateObjectParams, "taskKind"> & {
+    taskKind?: ModelCallTaskKind;
+  },
 ) => ReturnType<GenerateObject>;
 
 type ModelCallTraceDetails = {
@@ -117,12 +124,21 @@ type ModelCallTraceDetails = {
   sourceBacked?: boolean;
 };
 
-function readTaskKind(params: ParamsWithOptionalTaskKind): ModelCallTaskKind | undefined {
+function readTaskKind(
+  params: ParamsWithOptionalTaskKind,
+): ModelCallTaskKind | undefined {
   return typeof params.taskKind === "string" ? params.taskKind : undefined;
 }
 
-function readTraceDetails(params: ParamsWithOptionalTaskKind): ModelCallTraceDetails | undefined {
-  if (!params.trace || typeof params.trace !== "object" || Array.isArray(params.trace)) return undefined;
+function readTraceDetails(
+  params: ParamsWithOptionalTaskKind,
+): ModelCallTraceDetails | undefined {
+  if (
+    !params.trace ||
+    typeof params.trace !== "object" ||
+    Array.isArray(params.trace)
+  )
+    return undefined;
   return params.trace as ModelCallTraceDetails;
 }
 
@@ -173,10 +189,16 @@ function modelTraceLabel(
       .replace(/_/g, " ")
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
-  if (task === "extraction") return kind === "generateText" ? "Extract policy text" : "Extract policy structure";
+  if (task === "extraction")
+    return kind === "generateText"
+      ? "Extract policy text"
+      : "Extract policy structure";
   if (task === "classification") return "Classify document";
-  if (task === "chat") return kind === "generateText" ? "Generate answer" : "Analyze chat context";
-  return kind === "generateText" ? "Generate text" : "Generate structured output";
+  if (task === "chat")
+    return kind === "generateText" ? "Generate answer" : "Analyze chat context";
+  return kind === "generateText"
+    ? "Generate text"
+    : "Generate structured output";
 }
 
 const TRACE_TEXT_PREVIEW_LIMIT = 6000;
@@ -201,7 +223,10 @@ function traceTextPreview(value: unknown, limit = TRACE_TEXT_PREVIEW_LIMIT) {
 
 function traceJsonPreview(value: unknown) {
   try {
-    return truncateTraceText(JSON.stringify(value, null, 2), TRACE_OUTPUT_PREVIEW_LIMIT);
+    return truncateTraceText(
+      JSON.stringify(value, null, 2),
+      TRACE_OUTPUT_PREVIEW_LIMIT,
+    );
   } catch {
     return truncateTraceText(String(value), TRACE_OUTPUT_PREVIEW_LIMIT);
   }
@@ -222,22 +247,30 @@ function providerInputSummary(providerOptions: ProviderOptions | undefined) {
   if (!options) return undefined;
   return {
     hasPdfBase64: typeof options.pdfBase64 === "string",
-    pdfBase64Chars: typeof options.pdfBase64 === "string" ? options.pdfBase64.length : undefined,
-    hasPdfUrl: !!options.pdfUrl,
-    pdfUrl: typeof options.pdfUrl === "string"
-      ? options.pdfUrl
-      : options.pdfUrl instanceof URL
-        ? options.pdfUrl.toString()
+    pdfBase64Chars:
+      typeof options.pdfBase64 === "string"
+        ? options.pdfBase64.length
         : undefined,
+    hasPdfUrl: !!options.pdfUrl,
+    pdfUrl:
+      typeof options.pdfUrl === "string"
+        ? options.pdfUrl
+        : options.pdfUrl instanceof URL
+          ? options.pdfUrl.toString()
+          : undefined,
     hasPdfBytes: options.pdfBytes instanceof Uint8Array,
-    pdfBytes: options.pdfBytes instanceof Uint8Array ? options.pdfBytes.byteLength : undefined,
+    pdfBytes:
+      options.pdfBytes instanceof Uint8Array
+        ? options.pdfBytes.byteLength
+        : undefined,
     fileId: typeof options.fileId === "string" ? options.fileId : undefined,
-    mimeType: typeof options.mimeType === "string" ? options.mimeType : undefined,
+    mimeType:
+      typeof options.mimeType === "string" ? options.mimeType : undefined,
     images: Array.isArray(options.images)
       ? options.images.map((image) => ({
-        mimeType: image.mimeType,
-        base64Chars: image.imageBase64.length,
-      }))
+          mimeType: image.mimeType,
+          base64Chars: image.imageBase64.length,
+        }))
       : undefined,
   };
 }
@@ -268,9 +301,10 @@ function modelTraceDetails(params: {
     promptPreview: traceTextPreview(params.prompt),
     inputSummary: providerInputSummary(params.providerOptions),
     outputKind: params.outputKind,
-    outputPreview: params.outputKind === "object"
-      ? traceJsonPreview(params.output)
-      : traceTextPreview(params.output, TRACE_OUTPUT_PREVIEW_LIMIT),
+    outputPreview:
+      params.outputKind === "object"
+        ? traceJsonPreview(params.output)
+        : traceTextPreview(params.output, TRACE_OUTPUT_PREVIEW_LIMIT),
   }) as Record<string, unknown>;
 }
 
@@ -309,9 +343,12 @@ function getEffectiveMaxTokens(
   maxTokens: number,
   route?: ModelRoute,
 ): number {
-  const routeCapabilities = route ? modelCapabilitiesForRoute(route) : modelCapabilitiesForTask(task);
+  const routeCapabilities = route
+    ? modelCapabilitiesForRoute(route)
+    : modelCapabilitiesForTask(task);
   const routeMax = taskKind
-    ? routeCapabilities?.taskOutputTokens?.[taskKind] ?? routeCapabilities?.maxOutputTokens
+    ? (routeCapabilities?.taskOutputTokens?.[taskKind] ??
+      routeCapabilities?.maxOutputTokens)
     : routeCapabilities?.maxOutputTokens;
   return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
@@ -394,7 +431,10 @@ function coverageCleanupRouteOverride(
   trace: ModelCallTraceDetails | undefined,
   coverageCleanupRoute: ModelRoute | undefined,
 ): ModelRoute | null {
-  if (taskKind !== "extraction_coverage_cleanup" && trace?.phase !== "coverage_cleanup") {
+  if (
+    taskKind !== "extraction_coverage_cleanup" &&
+    trace?.phase !== "coverage_cleanup"
+  ) {
     return null;
   }
   return coverageCleanupRoute ?? COVERAGE_CLEANUP_MODEL;
@@ -446,9 +486,14 @@ async function resolveDirectGenerationPlan(
 ): Promise<GenerationRoutePlan & { model: LanguageModel }> {
   let plan: GenerationRoutePlan & { model: LanguageModel };
   if (routing?.ctx && routing.orgId) {
-    const resolved = settings === undefined
-      ? await getModelAndRouteForOrg(routing.ctx, routing.orgId, effectiveTask)
-      : getModelAndRouteForSettingsSnapshot(settings, effectiveTask);
+    const resolved =
+      settings === undefined
+        ? await getModelAndRouteForOrg(
+            routing.ctx,
+            routing.orgId,
+            effectiveTask,
+          )
+        : getModelAndRouteForSettingsSnapshot(settings, effectiveTask);
     plan = {
       model: resolved.model,
       primaryRoute: resolved.route,
@@ -478,7 +523,8 @@ async function resolveDirectGenerationPlan(
     );
     if (coverageOverride) {
       plan.primaryRoute = coverageOverride;
-      plan.routeSource = resolved.coverageCleanupRouteSource ?? plan.routeSource;
+      plan.routeSource =
+        resolved.coverageCleanupRouteSource ?? plan.routeSource;
       plan.routePurpose = "extraction_coverage_cleanup";
       plan.transport = undefined;
       plan.model = getModelForRoute(coverageOverride);
@@ -524,8 +570,10 @@ function resolveRouterGenerationPlan(
   trace: ModelCallTraceDetails | undefined,
   settings: ClRouterSettingsSnapshot | null,
 ): GenerationRoutePlan {
-  const primaryRoute = settings?.routes?.[effectiveTask] ?? MODEL_ROUTING[effectiveTask];
-  const qualityRoute = settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
+  const primaryRoute =
+    settings?.routes?.[effectiveTask] ?? MODEL_ROUTING[effectiveTask];
+  const qualityRoute =
+    settings?.routes?.extraction_quality ?? EXTRACTION_QUALITY_MODEL;
   const coverageCleanupRoute =
     settings?.routes?.extraction_coverage_cleanup ?? COVERAGE_CLEANUP_MODEL;
   const fallbackRoute = settings?.routes?.fallback;
@@ -545,7 +593,8 @@ function resolveRouterGenerationPlan(
   });
   if (qualityOverride) {
     plan.primaryRoute = qualityOverride;
-    plan.routeSource = settings?.routeSources?.extraction_quality ?? plan.routeSource;
+    plan.routeSource =
+      settings?.routeSources?.extraction_quality ?? plan.routeSource;
     plan.routePurpose = "extraction_quality";
   }
   const coverageOverride = coverageCleanupRouteOverride(
@@ -566,11 +615,15 @@ function clRouterDataContent(data: Uint8Array | string): string {
   return typeof data === "string" ? data : Buffer.from(data).toString("base64");
 }
 
-function knownPdfSize(providerOptions?: Record<string, unknown>): number | undefined {
+function knownPdfSize(
+  providerOptions?: Record<string, unknown>,
+): number | undefined {
   const options = providerOptions as ExtractionProviderOptions | undefined;
-  if (options?.pdfBytes instanceof Uint8Array) return options.pdfBytes.byteLength;
+  if (options?.pdfBytes instanceof Uint8Array)
+    return options.pdfBytes.byteLength;
   if (typeof options?.pdfBase64 === "string") {
-    return Buffer.from(options.pdfBase64.replace(/\s/g, ""), "base64").byteLength;
+    return Buffer.from(options.pdfBase64.replace(/\s/g, ""), "base64")
+      .byteLength;
   }
   return undefined;
 }
@@ -578,34 +631,40 @@ function knownPdfSize(providerOptions?: Record<string, unknown>): number | undef
 async function buildClRouterPromptInput(
   prompt: string,
   providerOptions?: Record<string, unknown>,
-): Promise<Pick<Parameters<typeof clRouterGenerate>[0], "messages" | "prompt">> {
+): Promise<
+  Pick<Parameters<typeof clRouterGenerate>[0], "messages" | "prompt">
+> {
   const input = buildPromptInput(prompt, providerOptions);
   if ("prompt" in input) return { prompt: input.prompt };
   const pdfSize = knownPdfSize(providerOptions);
-  const messages: ClRouterMessage[] = await Promise.all(input.messages.map(async (message) => ({
-    role: message.role,
-    content: await Promise.all(message.content.map(async (part): Promise<ClRouterMessagePart> => {
-      if (part.type === "text") return part;
-      if (part.type === "image") return part;
-      if (part.data instanceof URL) {
-        return {
-          type: "file",
-          source: await clRouterAssetReferenceFromUrl({
-            url: part.data,
+  const messages: ClRouterMessage[] = await Promise.all(
+    input.messages.map(async (message) => ({
+      role: message.role,
+      content: await Promise.all(
+        message.content.map(async (part): Promise<ClRouterMessagePart> => {
+          if (part.type === "text") return part;
+          if (part.type === "image") return part;
+          if (part.data instanceof URL) {
+            return {
+              type: "file",
+              source: await clRouterAssetReferenceFromUrl({
+                url: part.data,
+                mediaType: part.mediaType,
+                filename: part.filename,
+                sizeBytes: pdfSize,
+              }),
+            };
+          }
+          return {
+            type: "file",
+            data: clRouterDataContent(part.data),
             mediaType: part.mediaType,
             filename: part.filename,
-            sizeBytes: pdfSize,
-          }),
-        };
-      }
-      return {
-        type: "file",
-        data: clRouterDataContent(part.data),
-        mediaType: part.mediaType,
-        filename: part.filename,
-      };
+          };
+        }),
+      ),
     })),
-  })));
+  );
   return { messages };
 }
 
@@ -620,7 +679,9 @@ function clRouterTrace(
     label,
     phase: trace?.phase,
     taskKind,
-    policyId: routing?.tracePolicyId ? String(routing.tracePolicyId) : undefined,
+    policyId: routing?.tracePolicyId
+      ? String(routing.tracePolicyId)
+      : undefined,
     channel: "convex",
   }) as ClRouterTraceMetadata;
 }
@@ -648,9 +709,7 @@ function extractEmbeddedPdf(
   prompt: string,
 ): { text: string; pdfBase64: string } | null {
   // Match a long base64 PDF blob at the end of the prompt (after a newline)
-  const match = prompt.match(
-    /^([\s\S]+?\n)(JVBER[A-Za-z0-9+/=\s]{200,})$/,
-  );
+  const match = prompt.match(/^([\s\S]+?\n)(JVBER[A-Za-z0-9+/=\s]{200,})$/);
   if (!match) return null;
   const text = match[1].trim();
   const pdfBase64 = match[2].replace(/\s/g, "");
@@ -682,30 +741,33 @@ async function recordModelTrace(
 ) {
   if (!routing?.ctx || !routing.traceId) return;
   try {
-    await routing.ctx.runMutation((internal as any).extractionTraces.recordEvent, {
-      traceId: routing.traceId,
-      kind: "model_call",
-      label: event.label,
-      task: event.task,
-      taskKind: event.taskKind,
-      provider: event.route?.provider,
-      model: event.route?.model,
-      routeSource: event.routeSource,
-      transport: event.transport,
-      attempt: event.attempt ?? 1,
-      status: event.status,
-      durationMs: event.durationMs,
-      inputTokens: event.usage?.inputTokens,
-      outputTokens: event.usage?.outputTokens,
-      cachedInputTokens: event.cachedInputTokens,
-      routerRequestId: event.routerRequestId,
-      costUsd: event.costUsd,
-      costStatus: event.costStatus,
-      routingDecision: event.routingDecision,
-      routing: event.routing,
-      error: event.error,
-      details: event.details,
-    });
+    await routing.ctx.runMutation(
+      (internal as any).extractionTraces.recordEvent,
+      {
+        traceId: routing.traceId,
+        kind: "model_call",
+        label: event.label,
+        task: event.task,
+        taskKind: event.taskKind,
+        provider: event.route?.provider,
+        model: event.route?.model,
+        routeSource: event.routeSource,
+        transport: event.transport,
+        attempt: event.attempt ?? 1,
+        status: event.status,
+        durationMs: event.durationMs,
+        inputTokens: event.usage?.inputTokens,
+        outputTokens: event.usage?.outputTokens,
+        cachedInputTokens: event.cachedInputTokens,
+        routerRequestId: event.routerRequestId,
+        costUsd: event.costUsd,
+        costStatus: event.costStatus,
+        routingDecision: event.routingDecision,
+        routing: event.routing,
+        error: event.error,
+        details: event.details,
+      },
+    );
   } catch {
     // Telemetry should never fail a user-facing extraction.
   }
@@ -737,8 +799,15 @@ export function makeGenerateText(
     let routerFallback: RouterOutageFallback | undefined;
     let effectiveMaxTokens = maxTokens;
     const startedAt = nowMs();
-    const label = modelTraceLabel("generateText", taskKind, effectiveTask, trace);
-    const executeDirect = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const label = modelTraceLabel(
+      "generateText",
+      taskKind,
+      effectiveTask,
+      trace,
+    );
+    const executeDirect = async (
+      settings?: ClRouterSettingsSnapshot | null,
+    ) => {
       const plan = await resolveDirectGenerationPlan(
         effectiveTask,
         taskKind,
@@ -756,25 +825,28 @@ export function makeGenerateText(
         maxTokens,
         plan.primaryRoute,
       );
-      const result = await generateTextWithFallback({
-        model: plan.model,
-        system,
-        ...buildPromptInput(
-          prompt,
-          providerOptions as Record<string, unknown> | undefined,
-          plan.primaryRoute,
-        ),
-        maxOutputTokens: effectiveMaxTokens,
-        providerOptions: mergeProviderOptions(
-          getProviderOptionsForRoute(plan.primaryRoute),
-          providerOptions as ProviderOptions,
-        ),
-      }, {
-        task: effectiveTask,
-        taskKind,
-        primaryRoute: plan.primaryRoute,
-        fallbackRoute: plan.fallbackRoute,
-      });
+      const result = await generateTextWithFallback(
+        {
+          model: plan.model,
+          system,
+          ...buildPromptInput(
+            prompt,
+            providerOptions as Record<string, unknown> | undefined,
+            plan.primaryRoute,
+          ),
+          maxOutputTokens: effectiveMaxTokens,
+          providerOptions: mergeProviderOptions(
+            getProviderOptionsForRoute(plan.primaryRoute),
+            providerOptions as ProviderOptions,
+          ),
+        },
+        {
+          task: effectiveTask,
+          taskKind,
+          primaryRoute: plan.primaryRoute,
+          fallbackRoute: plan.fallbackRoute,
+        },
+      );
       return {
         text: result.text,
         usage: mapUsage(result.usage),
@@ -785,78 +857,88 @@ export function makeGenerateText(
     try {
       const result = shouldUseClRouterForCall(effectiveTask, taskKind)
         ? await (async () => {
-          const settings = await getRouterSettings();
-          const plan = resolveRouterGenerationPlan(
-            effectiveTask,
-            taskKind,
-            trace,
-            settings,
-          );
-          traceRoute = plan.primaryRoute;
-          routeSource = plan.routeSource;
-          routePurpose = plan.routePurpose;
-          transport = "cl-router";
-          effectiveMaxTokens = getEffectiveMaxTokens(
-            effectiveTask,
-            taskKind,
-            maxTokens,
-            plan.primaryRoute,
-          );
-          return withClRouterDirectFallback<TextGenerationResult>({
-            router: async () => {
-              const response = await clRouterGenerate({
-                task: effectiveTask,
-                taskKind,
-                orgId: routing?.orgId ? String(routing.orgId) : undefined,
-                settings,
-                system,
-                ...(await buildClRouterPromptInput(
-                  prompt,
-                  providerOptions as Record<string, unknown> | undefined,
-                )),
-                maxTokens: effectiveMaxTokens,
-                sessionKey: routing?.traceId ?? (
-                  routing?.tracePolicyId ? String(routing.tracePolicyId) : undefined
-                ),
-                routing: {
-                  ...(plan.routeSource === "global"
-                    ? { pin: plan.primaryRoute }
+            const settings = await getRouterSettings();
+            const plan = resolveRouterGenerationPlan(
+              effectiveTask,
+              taskKind,
+              trace,
+              settings,
+            );
+            traceRoute = plan.primaryRoute;
+            routeSource = plan.routeSource;
+            routePurpose = plan.routePurpose;
+            transport = "cl-router";
+            effectiveMaxTokens = getEffectiveMaxTokens(
+              effectiveTask,
+              taskKind,
+              maxTokens,
+              plan.primaryRoute,
+            );
+            return withClRouterDirectFallback<TextGenerationResult>({
+              router: async () => {
+                const response = await clRouterGenerate({
+                  task: effectiveTask,
+                  taskKind,
+                  orgId: routing?.orgId ? String(routing.orgId) : undefined,
+                  settings,
+                  system,
+                  ...(await buildClRouterPromptInput(
+                    prompt,
+                    providerOptions as Record<string, unknown> | undefined,
+                  )),
+                  maxTokens: effectiveMaxTokens,
+                  sessionKey:
+                    routing?.traceId ??
+                    (routing?.tracePolicyId
+                      ? String(routing.tracePolicyId)
+                      : undefined),
+                  routing: {
+                    ...(plan.routeSource === "global"
+                      ? { pin: plan.primaryRoute }
+                      : {}),
+                    allowFallback: true,
+                  },
+                  trace: clRouterTrace(routing, label, taskKind, trace),
+                });
+                if (typeof response.output !== "string") {
+                  throw new ClRouterRequestError(
+                    "invalid_response",
+                    "cl-router text generation returned a non-text output",
+                  );
+                }
+                traceRoute = response.model;
+                routeSource =
+                  response.routing.routeSource ?? response.routing.decision;
+                routePurpose = plan.routePurpose;
+                transport = "cl-router";
+                return {
+                  text: response.output,
+                  usage: mapClRouterUsage(response),
+                  router: response,
+                };
+              },
+              direct: () => executeDirect(settings),
+              onFallback: (error) => {
+                routerFallback = {
+                  fromTransport: "cl-router",
+                  toTransport: "direct",
+                  errorKind: error.kind,
+                  ...(error.status !== undefined
+                    ? { status: error.status }
                     : {}),
-                  allowFallback: true,
-                },
-                trace: clRouterTrace(routing, label, taskKind, trace),
-              });
-              if (typeof response.output !== "string") {
-                throw new ClRouterRequestError(
-                  "invalid_response",
-                  "cl-router text generation returned a non-text output",
+                };
+                console.warn(
+                  "cl-router unavailable; using direct cl-sdk text fallback",
+                  {
+                    task: effectiveTask,
+                    taskKind,
+                    kind: error.kind,
+                    status: error.status,
+                  },
                 );
-              }
-              traceRoute = response.model;
-              routeSource = response.routing.routeSource ?? response.routing.decision;
-              routePurpose = plan.routePurpose;
-              transport = "cl-router";
-              return {
-                text: response.output,
-                usage: mapClRouterUsage(response),
-                router: response,
-              };
-            },
-            direct: () => executeDirect(settings),
-            onFallback: (error) => {
-              routerFallback = {
-                fromTransport: "cl-router",
-                toTransport: "direct",
-                errorKind: error.kind,
-                ...(error.status !== undefined ? { status: error.status } : {}),
-              };
-              console.warn(
-                "cl-router unavailable; using direct cl-sdk text fallback",
-                { task: effectiveTask, taskKind, kind: error.kind, status: error.status },
-              );
-            },
-          });
-        })()
+              },
+            });
+          })()
         : await executeDirect();
       await recordModelTrace(routing, {
         label,
@@ -872,25 +954,28 @@ export function makeGenerateText(
         routerRequestId: result.router?.requestId,
         costUsd: result.router?.costUsd,
         costStatus: result.router?.costStatus,
-        routingDecision: result.router?.routing.decision ?? (
-          routerFallback ? "router_outage_fallback" : undefined
-        ),
+        routingDecision:
+          result.router?.routing.decision ??
+          (routerFallback ? "router_outage_fallback" : undefined),
         routing: result.router?.routing,
         status: "complete",
-        details: withRouterFallbackTraceDetails(modelTraceDetails({
-          kind: "generateText",
-          label,
-          task: effectiveTask,
-          taskKind,
-          prompt,
-          system,
-          maxOutputTokens: effectiveMaxTokens,
-          routePurpose,
-          providerOptions: providerOptions as ProviderOptions,
-          trace,
-          output: result.text,
-          outputKind: "text",
-        }), routerFallback),
+        details: withRouterFallbackTraceDetails(
+          modelTraceDetails({
+            kind: "generateText",
+            label,
+            task: effectiveTask,
+            taskKind,
+            prompt,
+            system,
+            maxOutputTokens: effectiveMaxTokens,
+            routePurpose,
+            providerOptions: providerOptions as ProviderOptions,
+            trace,
+            output: result.text,
+            outputKind: "text",
+          }),
+          routerFallback,
+        ),
       });
       return {
         text: result.text,
@@ -908,18 +993,21 @@ export function makeGenerateText(
         status: "error",
         error: error instanceof Error ? error.message : String(error),
         routingDecision: routerFallback ? "router_outage_fallback" : undefined,
-        details: withRouterFallbackTraceDetails(modelTraceDetails({
-          kind: "generateText",
-          label,
-          task: effectiveTask,
-          taskKind,
-          prompt,
-          system,
-          maxOutputTokens: effectiveMaxTokens,
-          routePurpose,
-          providerOptions: providerOptions as ProviderOptions,
-          trace,
-        }), routerFallback),
+        details: withRouterFallbackTraceDetails(
+          modelTraceDetails({
+            kind: "generateText",
+            label,
+            task: effectiveTask,
+            taskKind,
+            prompt,
+            system,
+            maxOutputTokens: effectiveMaxTokens,
+            routePurpose,
+            providerOptions: providerOptions as ProviderOptions,
+            trace,
+          }),
+          routerFallback,
+        ),
       });
       throw error;
     }
@@ -963,8 +1051,15 @@ export function makeGenerateObject(
     let routerFallback: RouterOutageFallback | undefined;
     let effectiveMaxTokens = maxTokens;
     const startedAt = nowMs();
-    const label = modelTraceLabel("generateObject", taskKind, effectiveTask, trace);
-    const executeDirect = async (settings?: ClRouterSettingsSnapshot | null) => {
+    const label = modelTraceLabel(
+      "generateObject",
+      taskKind,
+      effectiveTask,
+      trace,
+    );
+    const executeDirect = async (
+      settings?: ClRouterSettingsSnapshot | null,
+    ) => {
       const plan = await resolveDirectGenerationPlan(
         effectiveTask,
         taskKind,
@@ -982,28 +1077,31 @@ export function makeGenerateObject(
         maxTokens,
         plan.primaryRoute,
       );
-      const result = await generateStructuredWithFallback({
-        model: plan.model,
-        system,
-        ...buildPromptInput(
-          prompt,
-          providerOptions as Record<string, unknown> | undefined,
-          plan.primaryRoute,
-        ),
-        output: Output.object({
-          schema: structuredOutputSchemaForRoute(schema, plan.primaryRoute),
-        }),
-        maxOutputTokens: effectiveMaxTokens,
-        providerOptions: mergeProviderOptions(
-          getProviderOptionsForRoute(plan.primaryRoute),
-          providerOptions as ProviderOptions,
-        ),
-      }, {
-        task: effectiveTask,
-        taskKind,
-        primaryRoute: plan.primaryRoute,
-        fallbackRoute: plan.fallbackRoute,
-      });
+      const result = await generateStructuredWithFallback(
+        {
+          model: plan.model,
+          system,
+          ...buildPromptInput(
+            prompt,
+            providerOptions as Record<string, unknown> | undefined,
+            plan.primaryRoute,
+          ),
+          output: Output.object({
+            schema: structuredOutputSchemaForRoute(schema, plan.primaryRoute),
+          }),
+          maxOutputTokens: effectiveMaxTokens,
+          providerOptions: mergeProviderOptions(
+            getProviderOptionsForRoute(plan.primaryRoute),
+            providerOptions as ProviderOptions,
+          ),
+        },
+        {
+          task: effectiveTask,
+          taskKind,
+          primaryRoute: plan.primaryRoute,
+          fallbackRoute: plan.fallbackRoute,
+        },
+      );
       return {
         object: result.output!,
         usage: mapUsage(result.usage),
@@ -1014,82 +1112,92 @@ export function makeGenerateObject(
     try {
       const result = shouldUseClRouterForCall(effectiveTask, taskKind)
         ? await (async () => {
-          const settings = await getRouterSettings();
-          const plan = resolveRouterGenerationPlan(
-            effectiveTask,
-            taskKind,
-            trace,
-            settings,
-          );
-          traceRoute = plan.primaryRoute;
-          routeSource = plan.routeSource;
-          routePurpose = plan.routePurpose;
-          transport = "cl-router";
-          effectiveMaxTokens = getEffectiveMaxTokens(
-            effectiveTask,
-            taskKind,
-            maxTokens,
-            plan.primaryRoute,
-          );
-          return withClRouterDirectFallback<ObjectGenerationResult>({
-            router: async () => {
-              const response = await clRouterGenerate({
-                task: effectiveTask,
-                taskKind,
-                orgId: routing?.orgId ? String(routing.orgId) : undefined,
-                settings,
-                system,
-                ...(await buildClRouterPromptInput(
-                  prompt,
-                  providerOptions as Record<string, unknown> | undefined,
-                )),
-                schema: z.toJSONSchema(schema) as Record<string, unknown>,
-                schemaDialect: "https://json-schema.org/draft/2020-12/schema",
-                maxTokens: effectiveMaxTokens,
-                sessionKey: routing?.traceId ?? (
-                  routing?.tracePolicyId ? String(routing.tracePolicyId) : undefined
-                ),
-                routing: {
-                  ...(plan.routeSource === "global"
-                    ? { pin: plan.primaryRoute }
+            const settings = await getRouterSettings();
+            const plan = resolveRouterGenerationPlan(
+              effectiveTask,
+              taskKind,
+              trace,
+              settings,
+            );
+            traceRoute = plan.primaryRoute;
+            routeSource = plan.routeSource;
+            routePurpose = plan.routePurpose;
+            transport = "cl-router";
+            effectiveMaxTokens = getEffectiveMaxTokens(
+              effectiveTask,
+              taskKind,
+              maxTokens,
+              plan.primaryRoute,
+            );
+            return withClRouterDirectFallback<ObjectGenerationResult>({
+              router: async () => {
+                const response = await clRouterGenerate({
+                  task: effectiveTask,
+                  taskKind,
+                  orgId: routing?.orgId ? String(routing.orgId) : undefined,
+                  settings,
+                  system,
+                  ...(await buildClRouterPromptInput(
+                    prompt,
+                    providerOptions as Record<string, unknown> | undefined,
+                  )),
+                  schema: z.toJSONSchema(schema) as Record<string, unknown>,
+                  schemaDialect: "https://json-schema.org/draft/2020-12/schema",
+                  maxTokens: effectiveMaxTokens,
+                  sessionKey:
+                    routing?.traceId ??
+                    (routing?.tracePolicyId
+                      ? String(routing.tracePolicyId)
+                      : undefined),
+                  routing: {
+                    ...(plan.routeSource === "global"
+                      ? { pin: plan.primaryRoute }
+                      : {}),
+                    allowFallback: true,
+                  },
+                  trace: clRouterTrace(routing, label, taskKind, trace),
+                });
+                const parsed = schema.safeParse(response.output);
+                if (!parsed.success) {
+                  throw new ClRouterRequestError(
+                    "invalid_response",
+                    "cl-router structured generation returned invalid output",
+                    { cause: parsed.error },
+                  );
+                }
+                traceRoute = response.model;
+                routeSource =
+                  response.routing.routeSource ?? response.routing.decision;
+                routePurpose = plan.routePurpose;
+                transport = "cl-router";
+                return {
+                  object: parsed.data,
+                  usage: mapClRouterUsage(response),
+                  router: response,
+                };
+              },
+              direct: () => executeDirect(settings),
+              onFallback: (error) => {
+                routerFallback = {
+                  fromTransport: "cl-router",
+                  toTransport: "direct",
+                  errorKind: error.kind,
+                  ...(error.status !== undefined
+                    ? { status: error.status }
                     : {}),
-                  allowFallback: true,
-                },
-                trace: clRouterTrace(routing, label, taskKind, trace),
-              });
-              const parsed = schema.safeParse(response.output);
-              if (!parsed.success) {
-                throw new ClRouterRequestError(
-                  "invalid_response",
-                  "cl-router structured generation returned invalid output",
-                  { cause: parsed.error },
+                };
+                console.warn(
+                  "cl-router unavailable; using direct cl-sdk object fallback",
+                  {
+                    task: effectiveTask,
+                    taskKind,
+                    kind: error.kind,
+                    status: error.status,
+                  },
                 );
-              }
-              traceRoute = response.model;
-              routeSource = response.routing.routeSource ?? response.routing.decision;
-              routePurpose = plan.routePurpose;
-              transport = "cl-router";
-              return {
-                object: parsed.data,
-                usage: mapClRouterUsage(response),
-                router: response,
-              };
-            },
-            direct: () => executeDirect(settings),
-            onFallback: (error) => {
-              routerFallback = {
-                fromTransport: "cl-router",
-                toTransport: "direct",
-                errorKind: error.kind,
-                ...(error.status !== undefined ? { status: error.status } : {}),
-              };
-              console.warn(
-                "cl-router unavailable; using direct cl-sdk object fallback",
-                { task: effectiveTask, taskKind, kind: error.kind, status: error.status },
-              );
-            },
-          });
-        })()
+              },
+            });
+          })()
         : await executeDirect();
       await recordModelTrace(routing, {
         label,
@@ -1105,25 +1213,28 @@ export function makeGenerateObject(
         routerRequestId: result.router?.requestId,
         costUsd: result.router?.costUsd,
         costStatus: result.router?.costStatus,
-        routingDecision: result.router?.routing.decision ?? (
-          routerFallback ? "router_outage_fallback" : undefined
-        ),
+        routingDecision:
+          result.router?.routing.decision ??
+          (routerFallback ? "router_outage_fallback" : undefined),
         routing: result.router?.routing,
         status: "complete",
-        details: withRouterFallbackTraceDetails(modelTraceDetails({
-          kind: "generateObject",
-          label,
-          task: effectiveTask,
-          taskKind,
-          prompt,
-          system,
-          maxOutputTokens: effectiveMaxTokens,
-          routePurpose,
-          providerOptions: providerOptions as ProviderOptions,
-          trace,
-          output: result.object,
-          outputKind: "object",
-        }), routerFallback),
+        details: withRouterFallbackTraceDetails(
+          modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: effectiveTask,
+            taskKind,
+            prompt,
+            system,
+            maxOutputTokens: effectiveMaxTokens,
+            routePurpose,
+            providerOptions: providerOptions as ProviderOptions,
+            trace,
+            output: result.object,
+            outputKind: "object",
+          }),
+          routerFallback,
+        ),
       });
       return {
         object: result.object,
@@ -1132,7 +1243,8 @@ export function makeGenerateObject(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const isSectionsExtractor =
-        effectiveTask === "extraction" && prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
+        effectiveTask === "extraction" &&
+        prompt.includes(SECTIONS_EXTRACTOR_PROMPT_MARKER);
 
       if (isSectionsExtractor && message.includes("No output generated")) {
         await recordModelTrace(routing, {
@@ -1145,21 +1257,26 @@ export function makeGenerateObject(
           durationMs: nowMs() - startedAt,
           status: "soft_failed",
           error: message,
-          routingDecision: routerFallback ? "router_outage_fallback" : undefined,
-          details: withRouterFallbackTraceDetails(modelTraceDetails({
-            kind: "generateObject",
-            label,
-            task: effectiveTask,
-            taskKind,
-            prompt,
-            system,
-            maxOutputTokens: effectiveMaxTokens,
-            routePurpose,
-            providerOptions: providerOptions as ProviderOptions,
-            trace,
-            output: { sections: [] },
-            outputKind: "object",
-          }), routerFallback),
+          routingDecision: routerFallback
+            ? "router_outage_fallback"
+            : undefined,
+          details: withRouterFallbackTraceDetails(
+            modelTraceDetails({
+              kind: "generateObject",
+              label,
+              task: effectiveTask,
+              taskKind,
+              prompt,
+              system,
+              maxOutputTokens: effectiveMaxTokens,
+              routePurpose,
+              providerOptions: providerOptions as ProviderOptions,
+              trace,
+              output: { sections: [] },
+              outputKind: "object",
+            }),
+            routerFallback,
+          ),
         });
         return {
           object: { sections: [] } as unknown,
@@ -1178,18 +1295,21 @@ export function makeGenerateObject(
         status: "error",
         error: message,
         routingDecision: routerFallback ? "router_outage_fallback" : undefined,
-        details: withRouterFallbackTraceDetails(modelTraceDetails({
-          kind: "generateObject",
-          label,
-          task: effectiveTask,
-          taskKind,
-          prompt,
-          system,
-          maxOutputTokens: effectiveMaxTokens,
-          routePurpose,
-          providerOptions: providerOptions as ProviderOptions,
-          trace,
-        }), routerFallback),
+        details: withRouterFallbackTraceDetails(
+          modelTraceDetails({
+            kind: "generateObject",
+            label,
+            task: effectiveTask,
+            taskKind,
+            prompt,
+            system,
+            maxOutputTokens: effectiveMaxTokens,
+            routePurpose,
+            providerOptions: providerOptions as ProviderOptions,
+            trace,
+          }),
+          routerFallback,
+        ),
       });
       throw error;
     }
@@ -1224,7 +1344,10 @@ function directEmbeddingApiKey(provider: ModelProvider): string | undefined {
     case "openai":
       return clean(process.env.OPENAI_API_KEY);
     case "google":
-      return clean(process.env.GOOGLE_GENERATIVE_AI_API_KEY) ?? clean(process.env.GOOGLE_API_KEY);
+      return (
+        clean(process.env.GOOGLE_GENERATIVE_AI_API_KEY) ??
+        clean(process.env.GOOGLE_API_KEY)
+      );
     case "fireworks":
       return clean(process.env.FIREWORKS_API_KEY);
     default:
@@ -1233,19 +1356,30 @@ function directEmbeddingApiKey(provider: ModelProvider): string | undefined {
 }
 
 function isDirectEmbeddingRoute(route: ModelRoute): boolean {
-  return route.provider === "openai" ||
+  return (
+    route.provider === "openai" ||
     route.provider === "google" ||
-    route.provider === "fireworks";
+    route.provider === "fireworks"
+  );
 }
 
-function embeddingProviderModel(route: ModelRoute, apiKey?: string): EmbeddingModel {
+function embeddingProviderModel(
+  route: ModelRoute,
+  apiKey?: string,
+): EmbeddingModel {
   switch (route.provider) {
     case "openai":
-      return (apiKey ? createOpenAI({ apiKey }) : openai()).embeddingModel(route.model);
+      return (apiKey ? createOpenAI({ apiKey }) : openai()).embeddingModel(
+        route.model,
+      );
     case "google":
-      return (apiKey ? createGoogleGenerativeAI({ apiKey }) : google()).embeddingModel(route.model);
+      return (
+        apiKey ? createGoogleGenerativeAI({ apiKey }) : google()
+      ).embeddingModel(route.model);
     case "fireworks":
-      return (apiKey ? createFireworks({ apiKey }) : fireworks()).embeddingModel(route.model);
+      return (
+        apiKey ? createFireworks({ apiKey }) : fireworks()
+      ).embeddingModel(route.model);
     default:
       throw new Error(
         `Embedding route ${route.provider}/${route.model} is not supported by direct embedding providers. Configure OpenAI, Google, or Fireworks embeddings instead.`,
@@ -1253,8 +1387,13 @@ function embeddingProviderModel(route: ModelRoute, apiKey?: string): EmbeddingMo
   }
 }
 
-function embeddingProviderOptions(route: ModelRoute): ProviderOptions | undefined {
-  if (route.provider === "openai" && route.model.startsWith("text-embedding-3-")) {
+function embeddingProviderOptions(
+  route: ModelRoute,
+): ProviderOptions | undefined {
+  if (
+    route.provider === "openai" &&
+    route.model.startsWith("text-embedding-3-")
+  ) {
     return { openai: { dimensions: EMBEDDING_DIMENSIONS } };
   }
   if (route.provider === "google" && route.model === "gemini-embedding-001") {
@@ -1269,9 +1408,14 @@ function embeddingProviderOptions(route: ModelRoute): ProviderOptions | undefine
   return undefined;
 }
 
-async function resolveEmbeddingConfig(ctx?: ActionCtx, orgId?: Id<"organizations">) {
+async function resolveEmbeddingConfig(
+  ctx?: ActionCtx,
+  orgId?: Id<"organizations">,
+) {
   if (ctx && orgId) {
-    const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
+    const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, {
+      orgId,
+    });
     return resolveEmbeddingConfigForSettingsSnapshot(settings ?? null);
   }
   return resolveEmbeddingConfigForSettingsSnapshot(null);
@@ -1283,9 +1427,10 @@ function resolveEmbeddingConfigForSettingsSnapshot(
   let route: ModelRoute = MODEL_ROUTING.embeddings;
   let apiKey: string | undefined;
   const configuredRoute = settings?.routes?.embeddings;
-  const configuredApiKey = configuredRoute && settings?.routeSources?.embeddings === "broker"
-    ? settings?.providerKeys?.[configuredRoute.provider]?.trim()
-    : undefined;
+  const configuredApiKey =
+    configuredRoute && settings?.routeSources?.embeddings === "broker"
+      ? settings?.providerKeys?.[configuredRoute.provider]?.trim()
+      : undefined;
   if (
     configuredRoute &&
     isDirectEmbeddingRoute(configuredRoute) &&
@@ -1311,7 +1456,9 @@ async function resolveClRouterEmbeddingSettings(
   orgId?: Id<"organizations">,
 ): Promise<ClRouterSettingsSnapshot | null> {
   if (!ctx || !orgId) return null;
-  const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, { orgId });
+  const settings = await ctx.runQuery(internal.modelSettings.resolveForOrg, {
+    orgId,
+  });
   if (!settings) return null;
   return {
     routes: settings.routes,
@@ -1320,7 +1467,10 @@ async function resolveClRouterEmbeddingSettings(
   };
 }
 
-function warnEmbeddingRouterFallback(error: { kind: string; status?: number }): void {
+function warnEmbeddingRouterFallback(error: {
+  kind: string;
+  status?: number;
+}): void {
   console.warn("cl-router unavailable; using direct embedding fallback", {
     task: "embeddings",
     kind: error.kind,
@@ -1333,8 +1483,8 @@ export type EmbedTexts = (texts: string[]) => Promise<number[][]>;
 const MAX_CL_ROUTER_EMBEDDING_VALUES = 200_000;
 
 /**
- * Create an embedding callback. Broker overrides are resolved once per callback
- * instance, then reused across all single or batched embedding requests.
+ * Create an embedding callback. Routing is resolved once per callback instance,
+ * then reused across all single or batched embedding requests.
  */
 export function makeEmbedTexts(
   ctx?: ActionCtx,
@@ -1342,7 +1492,9 @@ export function makeEmbedTexts(
   options?: { maxParallelCalls?: number },
 ): EmbedTexts {
   let configPromise: ReturnType<typeof resolveEmbeddingConfig> | null = null;
-  let routerSettingsPromise: ReturnType<typeof resolveClRouterEmbeddingSettings> | null = null;
+  let routerSettingsPromise: ReturnType<
+    typeof resolveClRouterEmbeddingSettings
+  > | null = null;
   const getConfig = () => {
     configPromise ??= resolveEmbeddingConfig(ctx, orgId);
     return configPromise;
@@ -1355,9 +1507,10 @@ export function makeEmbedTexts(
   return async (texts: string[]) => {
     if (!texts.length) return [];
     const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
-      const { embeddingModel, providerOptions } = settings === undefined
-        ? await getConfig()
-        : resolveEmbeddingConfigForSettingsSnapshot(settings);
+      const { embeddingModel, providerOptions } =
+        settings === undefined
+          ? await getConfig()
+          : resolveEmbeddingConfigForSettingsSnapshot(settings);
       const { embeddings } = await embedMany({
         model: embeddingModel,
         values: texts,
@@ -1376,7 +1529,11 @@ export function makeEmbedTexts(
         );
         const batchCount = Math.ceil(texts.length / maxTextsPerRequest);
         const embeddings: number[][] = [];
-        for (let offset = 0; offset < texts.length; offset += maxTextsPerRequest) {
+        for (
+          let offset = 0;
+          offset < texts.length;
+          offset += maxTextsPerRequest
+        ) {
           const batchIndex = Math.floor(offset / maxTextsPerRequest) + 1;
           const response = await clRouterEmbed({
             orgId,
@@ -1400,12 +1557,16 @@ export function makeEmbedTexts(
 }
 
 /**
- * Create an EmbedText callback. Broker overrides are only used when the broker
- * has supplied a matching provider key; otherwise Spot uses its default config.
+ * Create an EmbedText callback using the resolved global/static route.
  */
-export function makeEmbedText(ctx?: ActionCtx, orgId?: Id<"organizations">): EmbedText {
+export function makeEmbedText(
+  ctx?: ActionCtx,
+  orgId?: Id<"organizations">,
+): EmbedText {
   let configPromise: ReturnType<typeof resolveEmbeddingConfig> | null = null;
-  let routerSettingsPromise: ReturnType<typeof resolveClRouterEmbeddingSettings> | null = null;
+  let routerSettingsPromise: ReturnType<
+    typeof resolveClRouterEmbeddingSettings
+  > | null = null;
   const getConfig = () => {
     configPromise ??= resolveEmbeddingConfig(ctx, orgId);
     return configPromise;
@@ -1417,9 +1578,10 @@ export function makeEmbedText(ctx?: ActionCtx, orgId?: Id<"organizations">): Emb
 
   return async (text: string) => {
     const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
-      const { embeddingModel, providerOptions } = settings === undefined
-        ? await getConfig()
-        : resolveEmbeddingConfigForSettingsSnapshot(settings);
+      const { embeddingModel, providerOptions } =
+        settings === undefined
+          ? await getConfig()
+          : resolveEmbeddingConfigForSettingsSnapshot(settings);
       const { embedding } = await embed({
         model: embeddingModel,
         providerOptions,

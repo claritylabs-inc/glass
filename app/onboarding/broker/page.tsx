@@ -5,7 +5,11 @@ import { useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
-import { AuthCard, AuthMinimalShell, BrandWordmark } from "@/components/auth-shell";
+import {
+  AuthCard,
+  AuthMinimalShell,
+  BrandWordmark,
+} from "@/components/auth-shell";
 import { PillButton } from "@/components/ui/pill-button";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
@@ -22,15 +26,38 @@ export default function BrokerOnboardingPage() {
       await completeOnboarding();
       router.replace("/broker");
     } catch (cause) {
-      setError(getUserFacingErrorMessage(cause, "Could not open the broker workspace"));
+      setError(
+        getUserFacingErrorMessage(cause, "Could not open the broker workspace"),
+      );
       setBusy(false);
     }
   }
 
-  return <AuthMinimalShell><AuthCard title="Welcome to Spot" subtitle="Review your broker profile and team after you continue." logo={<BrandWordmark />}>
-    <div className="space-y-4">
-      {error ? <p className="text-destructive">{error}</p> : null}
-      <PillButton disabled={busy} onClick={() => void continueToProfile()}>{busy ? <Loader2 className="size-4 animate-spin" /> : null}Continue to broker profile</PillButton>
-    </div>
-  </AuthCard></AuthMinimalShell>;
+  return (
+    <AuthMinimalShell>
+      <AuthCard
+        title="Welcome to Spot"
+        subtitle="Review your broker profile and team after you continue."
+        logo={<BrandWordmark />}
+      >
+        <div className="space-y-4">
+          {error ? (
+            <p className="text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <PillButton
+            type="button"
+            disabled={busy}
+            onClick={() => void continueToProfile()}
+          >
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : null}
+            Continue to broker profile
+          </PillButton>
+        </div>
+      </AuthCard>
+    </AuthMinimalShell>
+  );
 }

@@ -108,10 +108,7 @@ export function useStartAgentThread(cacheKeyPrefix: string) {
             await markOptimisticSendFailed({
               threadId,
               clientMutationId,
-              error: getUserFacingErrorMessage(
-                error,
-                "Failed to send message",
-              ),
+              error: getUserFacingErrorMessage(error, "Failed to send message"),
             });
           }
           toast.error(

@@ -1,20 +1,11 @@
 import { v } from "convex/values";
 import { internalQuery, type QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import {
-  throwUserFacingError,
-  userFacingErrorCodes,
-} from "./userFacingErrors";
+import { throwUserFacingError, userFacingErrorCodes } from "./userFacingErrors";
 import type { ActorRef } from "./actorRef";
 import { isSlackOperatorClassification } from "./slackInteractions";
 
-type AgentSurface =
-  | "web"
-  | "email"
-  | "imessage"
-  | "slack"
-  | "mcp"
-  | "cli";
+type AgentSurface = "web" | "email" | "imessage" | "slack" | "mcp" | "cli";
 
 type AgentScopeOrg = {
   orgId: Id<"organizations">;
@@ -25,7 +16,7 @@ type AgentScopeOrg = {
 };
 
 export type AgentScope = {
-  mode: "client" | "broker_portfolio";
+  mode: "client";
   surface: AgentSurface;
   primaryOrgId: Id<"organizations">;
   readOrgIds: Id<"organizations">[];
@@ -79,14 +70,15 @@ async function validateOperatorInitiatedMessage(
     return null;
   }
 
-  const [operatorUser, operatorProfile, impersonationSession] = await Promise.all([
-    ctx.db.get(args.userId),
-    ctx.db
-      .query("operatorProfiles")
-      .withIndex("user", (q) => q.eq("userId", args.userId))
-      .first(),
-    ctx.db.get(operatorInitiated.impersonationSessionId),
-  ]);
+  const [operatorUser, operatorProfile, impersonationSession] =
+    await Promise.all([
+      ctx.db.get(args.userId),
+      ctx.db
+        .query("operatorProfiles")
+        .withIndex("user", (q) => q.eq("userId", args.userId))
+        .first(),
+      ctx.db.get(operatorInitiated.impersonationSessionId),
+    ]);
 
   if (
     operatorUser?.accountKind !== "operator" ||
@@ -101,10 +93,13 @@ async function validateOperatorInitiatedMessage(
   return operatorInitiated;
 }
 
-function summarizeOrg(org: Doc<"organizations">, args: {
-  primaryOrgId: Id<"organizations">;
-  canWrite: boolean;
-}): AgentScopeOrg {
+function summarizeOrg(
+  org: Doc<"organizations">,
+  args: {
+    primaryOrgId: Id<"organizations">;
+    canWrite: boolean;
+  },
+): AgentScopeOrg {
   return {
     orgId: org._id,
     name: orgName(org),
@@ -127,7 +122,6 @@ export const resolveForAction = internalQuery({
       v.literal("cli"),
     ),
     focusedOrgId: v.optional(v.id("organizations")),
-    allowBrokerPortfolio: v.optional(v.boolean()),
     operatorInitiatedUserMessageId: v.optional(v.id("threadMessages")),
     slackActorId: v.optional(v.id("slackActors")),
   },
@@ -144,9 +138,7 @@ export const resolveForAction = internalQuery({
       const settings = actor
         ? await ctx.db
             .query("agentChannelSettings")
-            .withIndex("client", (q) =>
-              q.eq("clientOrgId", actor.clientOrgId),
-            )
+            .withIndex("client", (q) => q.eq("clientOrgId", actor.clientOrgId))
             .first()
         : null;
       if (
@@ -185,7 +177,9 @@ export const resolveForAction = internalQuery({
 
     const membership = await ctx.db
       .query("orgMemberships")
-      .withIndex("organization_user", (q) => q.eq("orgId", args.orgId).eq("userId", args.userId))
+      .withIndex("organization_user", (q) =>
+        q.eq("orgId", args.orgId).eq("userId", args.userId),
+      )
       .first();
     const operatorInitiated = membership
       ? null
@@ -201,21 +195,22 @@ export const resolveForAction = internalQuery({
     }
 
     const primaryType = (primaryOrg.type as "broker" | "client") ?? "client";
-    const allowBrokerPortfolio = args.allowBrokerPortfolio ?? true;
+    if (primaryType === "broker") {
+      throwUserFacingError(
+        userFacingErrorCodes.orgAccessRequired,
+        "Broker organizations have profile and team access only.",
+      );
+    }
 
-    if (
-      primaryType === "client" &&
-      (args.surface === "email" || args.surface === "imessage")
-    ) {
+    if (args.surface === "email" || args.surface === "imessage") {
       const settings = await ctx.db
         .query("agentChannelSettings")
-        .withIndex("client", (q) =>
-          q.eq("clientOrgId", primaryOrg._id),
-        )
+        .withIndex("client", (q) => q.eq("clientOrgId", primaryOrg._id))
         .first();
-      const enabled = args.surface === "email"
-        ? settings?.emailEnabled !== false
-        : settings?.imessageEnabled !== false;
+      const enabled =
+        args.surface === "email"
+          ? settings?.emailEnabled !== false
+          : settings?.imessageEnabled !== false;
       if (!enabled) {
         throwUserFacingError(
           userFacingErrorCodes.orgAccessRequired,
@@ -224,55 +219,20 @@ export const resolveForAction = internalQuery({
       }
     }
 
-    if (primaryType !== "broker" || !allowBrokerPortfolio) {
-      return {
-        mode: "client",
-        surface: args.surface,
-        primaryOrgId: primaryOrg._id,
-        readOrgIds: [primaryOrg._id],
-        writableOrgIds: [primaryOrg._id],
-        orgs: [
-          summarizeOrg(primaryOrg, {
-            primaryOrgId: primaryOrg._id,
-            canWrite: true,
-          }),
-        ],
-        focusedOrgId: args.focusedOrgId,
-        brokerInternal: false,
-        operatorInitiated: operatorInitiated ?? undefined,
-      };
-    }
-
-    const clients = await ctx.db
-      .query("organizations")
-      .withIndex("broker", (q) => q.eq("brokerOrgId", primaryOrg._id))
-      .collect();
-
-    let focusedOrgId = args.focusedOrgId;
-    if (focusedOrgId && focusedOrgId !== primaryOrg._id) {
-      const focused = clients.find((client) => client._id === focusedOrgId);
-      if (!focused) focusedOrgId = undefined;
-    }
-
-    const portfolioOrgs = [primaryOrg, ...clients];
-    const orgs = portfolioOrgs.map((org) =>
-      summarizeOrg(org, {
-        primaryOrgId: primaryOrg._id,
-        canWrite:
-          org._id === primaryOrg._id ||
-          org.brokerOrgId === primaryOrg._id,
-      }),
-    );
-
     return {
-      mode: "broker_portfolio",
+      mode: "client",
       surface: args.surface,
       primaryOrgId: primaryOrg._id,
-      readOrgIds: portfolioOrgs.map((org) => org._id),
-      writableOrgIds: portfolioOrgs.map((org) => org._id),
-      orgs,
-      focusedOrgId,
-      brokerInternal: true,
+      readOrgIds: [primaryOrg._id],
+      writableOrgIds: [primaryOrg._id],
+      orgs: [
+        summarizeOrg(primaryOrg, {
+          primaryOrgId: primaryOrg._id,
+          canWrite: true,
+        }),
+      ],
+      focusedOrgId: args.focusedOrgId,
+      brokerInternal: false,
       operatorInitiated: operatorInitiated ?? undefined,
     };
   },
@@ -288,19 +248,19 @@ export const validateOperatorInitiatedForAction = internalQuery({
   },
 });
 
-export function formatAgentScopePortfolioIndex(scope: AgentScope): string {
-  if (scope.mode !== "broker_portfolio") return "";
-  const lines = scope.orgs.map((org) => {
-    const focus = scope.focusedOrgId === org.orgId ? " [focused]" : "";
-    return `- ${org.name}${focus} (${org.type}, orgId: ${org.orgId})`;
-  });
-  return `\n\nBROKER PORTFOLIO INDEX:\n${lines.join("\n")}`;
+export function orgLabelForScope(
+  scope: AgentScope,
+  orgId: Id<"organizations"> | string,
+): string {
+  return (
+    scope.orgs.find((org) => String(org.orgId) === String(orgId))?.name ??
+    String(orgId)
+  );
 }
 
-export function orgLabelForScope(scope: AgentScope, orgId: Id<"organizations"> | string): string {
-  return scope.orgs.find((org) => String(org.orgId) === String(orgId))?.name ?? String(orgId);
-}
-
-export function isOrgReadableByScope(scope: AgentScope, orgId: Id<"organizations"> | string): boolean {
+export function isOrgReadableByScope(
+  scope: AgentScope,
+  orgId: Id<"organizations"> | string,
+): boolean {
   return scope.readOrgIds.some((id) => String(id) === String(orgId));
 }

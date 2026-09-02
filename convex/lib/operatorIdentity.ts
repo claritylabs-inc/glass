@@ -2,10 +2,7 @@ import dayjs from "dayjs";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import {
-  throwUserFacingError,
-  userFacingErrorCodes,
-} from "./userFacingErrors";
+import { throwUserFacingError, userFacingErrorCodes } from "./userFacingErrors";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -86,10 +83,7 @@ export async function requireOperator(ctx: Ctx) {
   return operator;
 }
 
-export async function requireOperatorForUser(
-  ctx: Ctx,
-  userId: Id<"users">,
-) {
+export async function requireOperatorForUser(ctx: Ctx, userId: Id<"users">) {
   const operator = await activeOperatorForUser(ctx, userId);
   if (!operator) throwUserFacingError(userFacingErrorCodes.operatorRequired);
   return operator;
@@ -160,48 +154,11 @@ export async function assertImpersonatedSetupWrite(
   const active = await getActiveOperatorImpersonation(ctx);
   if (!active) return null;
 
-  let setupOrg: Doc<"organizations"> | null = null;
-  if (active.targetOrg._id === orgId) {
-    setupOrg = active.targetOrg;
-  } else {
-    const org = await ctx.db.get(orgId);
-    if (org?.type === "client" && org.brokerOrgId === active.targetOrg._id) {
-      setupOrg = active.targetOrg.type === "broker" ? active.targetOrg : null;
-    }
-  }
-
-  if (!setupOrg || (setupOrg.operatorStatus ?? "live") !== "onboarding") {
+  if (
+    active.targetOrg._id !== orgId ||
+    (active.targetOrg.operatorStatus ?? "live") !== "onboarding"
+  ) {
     throwUserFacingError(userFacingErrorCodes.impersonationReadOnly);
-  }
-  return active;
-}
-
-export async function assertImpersonatedBrokerTaskWrite(
-  ctx: Ctx,
-  orgId: Id<"organizations">,
-) {
-  const active = await getActiveOperatorImpersonation(ctx);
-  if (!active) return null;
-
-  let brokerOrg: Doc<"organizations"> | null = null;
-  if (active.targetOrg._id === orgId && active.targetOrg.type === "broker") {
-    brokerOrg = active.targetOrg;
-  } else {
-    const org = await ctx.db.get(orgId);
-    if (
-      org?.type === "client" &&
-      org.brokerOrgId === active.targetOrg._id &&
-      active.targetOrg.type === "broker"
-    ) {
-      brokerOrg = active.targetOrg;
-    }
-  }
-
-  if (!brokerOrg) {
-    throwUserFacingError(
-      userFacingErrorCodes.impersonationReadOnly,
-      "This operator session can perform broker tasks only for the impersonated brokerage and its managed clients.",
-    );
   }
   return active;
 }

@@ -1,6 +1,6 @@
 // convex/lib/access.ts
 //
-// Dual-org permission layer for Spot.
+// Organization permission layer for Spot.
 // Every public Convex function that takes an orgId calls getOrgAccess()
 // then one or more assertCan* helpers before touching any data.
 
@@ -25,12 +25,8 @@ export type OrgAccess = {
   userId: Id<"users">;
   org: Doc<"organizations">;
   orgType: "broker" | "client" | "partner";
-  accessType:
-    | "member"
-    | "connected_client"
-    | "operator";
+  accessType: "member" | "connected_client" | "operator";
   role: "admin" | "member" | undefined;
-  brokerOrgId: Id<"organizations"> | undefined;
   connectedClientOrgId?: Id<"organizations">;
 };
 
@@ -38,7 +34,6 @@ export type CurrentOrgAccess = OrgAccess & {
   orgId: Id<"organizations">;
   accessType: "member";
   role: "admin" | "member";
-  brokerOrgId: undefined;
 };
 
 type PolicyWithOrg = Doc<"policies"> & { orgId: Id<"organizations"> };
@@ -66,7 +61,7 @@ export async function requireAuth(ctx: Ctx): Promise<{ userId: Id<"users"> }> {
  * 1. Direct org membership       → accessType = "member"
  * 2. Opted-in active operator    → accessType = "operator"
  *    (explicit org-scoped support surfaces only; never current membership)
- * 4. No access                   → throws "Unauthorized"
+ * 3. No access                   → throws "Unauthorized"
  */
 export async function getOrgAccess(
   ctx: Ctx,
@@ -83,8 +78,6 @@ export async function getOrgAccess(
 
   const impersonation = await getActiveOperatorImpersonation(ctx);
   if (impersonation) {
-    const targetOrgType: "broker" | "client" | "partner" =
-      (impersonation.targetOrg.type as "broker" | "client" | "partner") ?? "client";
     if (impersonation.session.targetOrgId === orgId) {
       return {
         userId,
@@ -92,16 +85,16 @@ export async function getOrgAccess(
         orgType,
         accessType: "member",
         role: impersonation.session.targetRole,
-        brokerOrgId: undefined,
       };
     }
-    void targetOrgType;
   }
 
   // 1. Direct membership
   const membership = await ctx.db
     .query("orgMemberships")
-    .withIndex("organization_user", (q) => q.eq("orgId", orgId).eq("userId", userId))
+    .withIndex("organization_user", (q) =>
+      q.eq("orgId", orgId).eq("userId", userId),
+    )
     .first();
 
   if (membership) {
@@ -111,7 +104,6 @@ export async function getOrgAccess(
       orgType,
       accessType: "member",
       role: membership.role,
-      brokerOrgId: undefined,
     };
   }
 
@@ -129,7 +121,6 @@ export async function getOrgAccess(
       orgType,
       accessType: "operator",
       role: undefined,
-      brokerOrgId: orgType === "client" ? org.brokerOrgId : undefined,
     };
   }
 
@@ -158,7 +149,6 @@ export async function getOrgAccess(
         orgType,
         accessType: "connected_client",
         role: undefined,
-        brokerOrgId: undefined,
         connectedClientOrgId: relationship.clientOrgId,
       };
     }
@@ -171,7 +161,10 @@ function errorHasMessage(error: unknown, message: string) {
   return error instanceof Error && error.message === message;
 }
 
-async function shouldSuppressOperatorTeardownUnauthorized(ctx: Ctx, error: unknown) {
+async function shouldSuppressOperatorTeardownUnauthorized(
+  ctx: Ctx,
+  error: unknown,
+) {
   if (
     !isUserFacingErrorCode(error, userFacingErrorCodes.orgAccessRequired) &&
     !errorHasMessage(error, "Unauthorized")
@@ -193,7 +186,8 @@ export async function getOrgAccessForQuery(
   try {
     return await getOrgAccess(ctx, orgId, options);
   } catch (error) {
-    if (await shouldSuppressOperatorTeardownUnauthorized(ctx, error)) return null;
+    if (await shouldSuppressOperatorTeardownUnauthorized(ctx, error))
+      return null;
     throw error;
   }
 }
@@ -210,7 +204,6 @@ function toCurrentOrgAccess(access: OrgAccess): CurrentOrgAccess {
     orgId: access.org._id,
     accessType: "member",
     role: access.role,
-    brokerOrgId: undefined,
   };
 }
 
@@ -228,7 +221,9 @@ async function resolveCurrentOrgAccess(
 ): Promise<CurrentOrgAccess | null> {
   const impersonation = await getActiveOperatorImpersonation(ctx);
   if (impersonation) {
-    return toCurrentOrgAccess(await getOrgAccess(ctx, impersonation.session.targetOrgId));
+    return toCurrentOrgAccess(
+      await getOrgAccess(ctx, impersonation.session.targetOrgId),
+    );
   }
 
   const membership = await getFirstOrgMembershipForUser(ctx, userId);
@@ -245,7 +240,10 @@ async function resolveCurrentOrgAccess(
   try {
     return toCurrentOrgAccess(await getOrgAccess(ctx, membership.orgId));
   } catch (error) {
-    if (!options.requireMembership && errorHasMessage(error, "Organization not found")) {
+    if (
+      !options.requireMembership &&
+      errorHasMessage(error, "Organization not found")
+    ) {
       return null;
     }
     throw error;
@@ -259,9 +257,13 @@ async function resolveCurrentOrgAccess(
  * take an explicit orgId. Operator impersonation is treated as current direct
  * membership in the impersonated target org.
  */
-export async function requireCurrentOrgAccess(ctx: Ctx): Promise<CurrentOrgAccess> {
+export async function requireCurrentOrgAccess(
+  ctx: Ctx,
+): Promise<CurrentOrgAccess> {
   const { userId } = await requireAuth(ctx);
-  const access = await resolveCurrentOrgAccess(ctx, userId, { requireMembership: true });
+  const access = await resolveCurrentOrgAccess(ctx, userId, {
+    requireMembership: true,
+  });
   if (!access) {
     throwUserFacingError(
       userFacingErrorCodes.orgAccessRequired,
@@ -275,13 +277,19 @@ export async function requireCurrentOrgAccess(ctx: Ctx): Promise<CurrentOrgAcces
  * Non-throwing current-org lookup for query surfaces that can render an empty
  * state while auth or operator impersonation is tearing down.
  */
-export async function getCurrentOrgAccess(ctx: Ctx): Promise<CurrentOrgAccess | null> {
+export async function getCurrentOrgAccess(
+  ctx: Ctx,
+): Promise<CurrentOrgAccess | null> {
   const userId = await getAuthUserId(ctx);
   if (!userId) return null;
-  return await resolveCurrentOrgAccess(ctx, userId, { requireMembership: false });
+  return await resolveCurrentOrgAccess(ctx, userId, {
+    requireMembership: false,
+  });
 }
 
-export async function requireCurrentOrgAdmin(ctx: Ctx): Promise<CurrentOrgAccess> {
+export async function requireCurrentOrgAdmin(
+  ctx: Ctx,
+): Promise<CurrentOrgAccess> {
   const access = await requireCurrentOrgAccess(ctx);
   if (access.role !== "admin") {
     throwUserFacingError(userFacingErrorCodes.orgAdminRequired);
@@ -298,15 +306,6 @@ export async function requireCurrentOrgAdminWrite(
 }
 
 // ── Capability helpers ──────────────────────────────────────────────────────
-
-export function assertBrokerOrg(access: OrgAccess): void {
-  if (access.orgType !== "broker") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "This action is available only in a broker organization.",
-    );
-  }
-}
 
 export function assertClientOrg(access: OrgAccess): void {
   if (access.orgType !== "client") {
@@ -357,12 +356,22 @@ export function assertCanReadInternalThreads(access: OrgAccess): void {
   }
 }
 
-export function assertCanReadBrokerVisibleThreads(_access: OrgAccess): void {
-  // No restriction beyond having organization access.
+export function assertCanUseTenantAgent(access: OrgAccess): void {
+  if (access.orgType === "broker") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Broker organizations have profile and team access only.",
+    );
+  }
 }
 
-export function assertCanReadPolicies(_access: OrgAccess): void {
-  // No restriction beyond having organization access.
+export function assertCanReadPolicies(access: OrgAccess): void {
+  if (access.accessType === "member" && access.orgType === "broker") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Broker organizations have profile and team access only.",
+    );
+  }
 }
 
 export function assertCanUploadPolicy(access: OrgAccess): void {
@@ -384,7 +393,10 @@ export function assertCanEditPolicyExtractedFields(access: OrgAccess): void {
 
 export function assertCanArchivePolicy(
   access: OrgAccess,
-  policy: { uploadedBySide?: string; uploadedByBrokerOrgId?: Id<"organizations"> },
+  policy: {
+    uploadedBySide?: string;
+    uploadedByBrokerOrgId?: Id<"organizations">;
+  },
 ): void {
   void policy;
   if (access.accessType !== "operator") {
@@ -395,8 +407,8 @@ export function assertCanArchivePolicy(
   }
 }
 
-export function assertCanReadPolicy(_access: OrgAccess): void {
-  // No restriction beyond having organization access.
+export function assertCanReadPolicy(access: OrgAccess): void {
+  assertCanReadPolicies(access);
 }
 
 export async function getPolicyAccessForQuery(
@@ -420,16 +432,6 @@ async function resolvePolicyAccessForQuery(
   });
   if (!access) return null;
   return { policy, access };
-}
-
-export function assertCanManageBroker(access: OrgAccess): void {
-  assertBrokerOrg(access);
-  if (access.role !== "admin") {
-    throwUserFacingError(
-      userFacingErrorCodes.brokerAdminRequired,
-      "Only a broker admin can manage brokerage settings.",
-    );
-  }
 }
 
 export function assertCanInviteTeammate(access: OrgAccess): void {

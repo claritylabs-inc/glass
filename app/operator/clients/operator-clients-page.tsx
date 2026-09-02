@@ -17,13 +17,6 @@ import { PillButton } from "@/components/ui/pill-button";
 import { Input } from "@/components/ui/input";
 import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -37,7 +30,6 @@ import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { OperatorSidebar } from "../operator-sidebar";
 import { getPublicAgentDomain } from "@/lib/domains";
 import {
-  useCachedOperatorBrokers,
   useCachedOperatorClients,
   useCachedOperatorCurrent,
   useOperatorClientCacheActions,
@@ -51,7 +43,6 @@ import {
 } from "./client-model";
 import { typeStyle } from "@/lib/typography";
 
-const STANDALONE_VALUE = "__standalone__";
 const AGENT_DOMAIN = getPublicAgentDomain();
 
 function Field({
@@ -78,13 +69,11 @@ export default function OperatorClientsScreen() {
   );
   const [panelMode, setPanelMode] = useState<"create" | "details" | null>(null);
   const [name, setName] = useState("");
-  const [brokerOrgId, setBrokerOrgId] = useState<string>(STANDALONE_VALUE);
   const [website, setWebsite] = useState("");
   const [busy, setBusy] = useState(false);
 
   const current = useCachedOperatorCurrent();
   const clients = useCachedOperatorClients();
-  const brokers = useCachedOperatorBrokers();
   const { seedClient } = useOperatorClientCacheActions();
   const createClient = useAction(api.operator.createSoloClient);
   const { startImpersonation } = useStartOperatorImpersonation();
@@ -95,10 +84,6 @@ export default function OperatorClientsScreen() {
   const selected = useMemo(
     () => clients?.find((client) => client._id === selectedId) ?? null,
     [clients, selectedId],
-  );
-  const selectedBroker = useMemo(
-    () => brokers?.find((broker) => broker._id === brokerOrgId) ?? null,
-    [brokerOrgId, brokers],
   );
   const channelOverview = useQuery(
     api.agentChannels.getForOperator,
@@ -113,21 +98,12 @@ export default function OperatorClientsScreen() {
     try {
       const result = await createClient({
         name,
-        brokerOrgId:
-          brokerOrgId === STANDALONE_VALUE
-            ? undefined
-            : (brokerOrgId as Id<"organizations">),
         website: website || undefined,
         users: [],
       });
       await seedClient({
         clientOrgId: result.clientOrgId,
         name,
-        brokerOrgId:
-          brokerOrgId === STANDALONE_VALUE
-            ? undefined
-            : (brokerOrgId as Id<"organizations">),
-        brokerName: selectedBroker?.name,
         website: website || undefined,
       });
       toast.success("Client created");
@@ -158,10 +134,6 @@ export default function OperatorClientsScreen() {
 
   function contactEmail(client: OperatorClientRow) {
     return client.primaryContactEmail ?? client.adminEmail;
-  }
-
-  function brokerLabel(client: OperatorClientRow) {
-    return client.brokerName ?? "Standalone";
   }
 
   function openDetails(client: OperatorClientRow) {
@@ -274,48 +246,6 @@ export default function OperatorClientsScreen() {
               required
             />
           </Field>
-          <Field label="Broker">
-            <Select
-              value={brokerOrgId}
-              onValueChange={(value) =>
-                setBrokerOrgId(value ?? STANDALONE_VALUE)
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue>
-                  {selectedBroker ? (
-                    <span className="flex min-w-0 items-center gap-2">
-                      <OrgBrandIcon
-                        name={selectedBroker.name}
-                        iconUrl={selectedBroker.iconUrl}
-                        website={selectedBroker.website}
-                        size="sm"
-                      />
-                      <span className="truncate">{selectedBroker.name}</span>
-                    </span>
-                  ) : (
-                    "Standalone"
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={STANDALONE_VALUE}>Standalone</SelectItem>
-                {(brokers ?? []).map((broker) => (
-                  <SelectItem key={broker._id} value={broker._id}>
-                    <span className="flex min-w-0 items-center gap-2">
-                      <OrgBrandIcon
-                        name={broker.name}
-                        iconUrl={broker.iconUrl}
-                        website={broker.website}
-                        size="sm"
-                      />
-                      <span className="truncate">{broker.name}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
           <Field label="Website">
             <Input
               value={website}
@@ -334,22 +264,22 @@ export default function OperatorClientsScreen() {
               size="lg"
             />
             <div className="min-w-0">
-              <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
+              <p
+                className={`truncate text-foreground ${typeStyle("body.medium")}`}
+              >
                 {selected.primaryContactName ??
                   selected.adminName ??
                   "No primary contact"}
               </p>
-              <p className={`truncate text-muted-foreground ${typeStyle("body.default")}`}>
+              <p
+                className={`truncate text-muted-foreground ${typeStyle("body.default")}`}
+              >
                 {contactEmail(selected) ?? "No contact email"}
               </p>
             </div>
           </div>
 
           <OperationalLabelValueList title="Client details">
-            <OperationalLabelValueRow
-              label="Broker"
-              value={brokerLabel(selected)}
-            />
             <OperationalLabelValueRow
               label="Website"
               value={selected.website ?? "Not set"}
@@ -428,22 +358,29 @@ export default function OperatorClientsScreen() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className={`w-[25%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[25%] px-4 text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Client
                 </TableHead>
-                <TableHead className={`w-[20%] text-muted-foreground ${typeStyle("label.table")}`}>
-                  Broker
-                </TableHead>
-                <TableHead className={`w-[22%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[22%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Admin
                 </TableHead>
-                <TableHead className={`w-[18%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[18%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Website
                 </TableHead>
-                <TableHead className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[10%] text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Status
                 </TableHead>
-                <TableHead className={`w-[8%] px-4 text-muted-foreground ${typeStyle("label.table")}`}>
+                <TableHead
+                  className={`w-[8%] px-4 text-muted-foreground ${typeStyle("label.table")}`}
+                >
                   Created
                 </TableHead>
               </TableRow>
@@ -452,7 +389,7 @@ export default function OperatorClientsScreen() {
               {clients === undefined ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell
-                    colSpan={6}
+                    colSpan={5}
                     className="h-32 text-center text-muted-foreground"
                   >
                     <Loader2 className="mx-auto h-5 w-5 animate-spin" />
@@ -461,7 +398,7 @@ export default function OperatorClientsScreen() {
               ) : clients.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell
-                    colSpan={6}
+                    colSpan={5}
                     className={`h-32 px-4 text-muted-foreground ${typeStyle("body.default")}`}
                   >
                     No client accounts found.
@@ -490,13 +427,12 @@ export default function OperatorClientsScreen() {
                           website={client.website}
                           size="md"
                         />
-                        <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
+                        <p
+                          className={`truncate text-foreground ${typeStyle("body.medium")}`}
+                        >
                           {client.name}
                         </p>
                       </div>
-                    </TableCell>
-                    <TableCell className="max-w-48 truncate text-muted-foreground">
-                      {brokerLabel(client)}
                     </TableCell>
                     <TableCell className="max-w-56 truncate text-muted-foreground">
                       {contactEmail(client) ?? "No admin"}

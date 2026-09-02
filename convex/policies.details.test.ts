@@ -181,8 +181,9 @@ describe("broker policy detail editing", () => {
       policyDetailOverridesUpdatedByUserId: ids.operatorUserId,
     });
     expect(stored.audits).toHaveLength(5);
-    expect(stored.audits.every((audit) => audit.action === "manual_policy_update"))
-      .toBe(true);
+    expect(
+      stored.audits.every((audit) => audit.action === "manual_policy_update"),
+    ).toBe(true);
 
     const context = resolvePolicyPartyContext(stored.policy ?? {});
     expect(context).toMatchObject({
@@ -213,9 +214,9 @@ describe("broker policy detail editing", () => {
     expect(clearedPremium?.premiumAmount).toBeUndefined();
 
     await expect(
-      t.withIdentity({ subject: `${ids.clientUserId}|session` }).mutation(
-        updatePolicyDetailsFn,
-        {
+      t
+        .withIdentity({ subject: `${ids.clientUserId}|session` })
+        .mutation(updatePolicyDetailsFn, {
           id: ids.policyId,
           update: {
             section: "insured",
@@ -223,8 +224,7 @@ describe("broker policy detail editing", () => {
             address: {},
             additionalNamedInsureds: [],
           },
-        },
-      ),
+        }),
     ).rejects.toThrow("Policy corrections are managed by Spot staff");
   });
 });

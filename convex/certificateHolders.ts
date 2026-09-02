@@ -1,9 +1,18 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { getOrgAccess, requireCurrentOrgAccess } from "./lib/access";
+import {
+  assertCanReadPolicies,
+  getOrgAccess,
+  requireCurrentOrgAccess,
+} from "./lib/access";
 import {
   certificateHolderDedupeKey,
   normalizeCertificateHolderAddress,
@@ -47,12 +56,15 @@ function cleanOptional(value?: string) {
   return trimmed || undefined;
 }
 
-async function findExistingHolder(ctx: ReadCtx, args: {
-  orgId: Id<"organizations">;
-  normalizedName: string;
-  normalizedEmail?: string;
-  normalizedAddressKey?: string;
-}) {
+async function findExistingHolder(
+  ctx: ReadCtx,
+  args: {
+    orgId: Id<"organizations">;
+    normalizedName: string;
+    normalizedEmail?: string;
+    normalizedAddressKey?: string;
+  },
+) {
   if (args.normalizedEmail) {
     const byEmail = await ctx.db
       .query("certificateHolders")
@@ -70,12 +82,18 @@ async function findExistingHolder(ctx: ReadCtx, args: {
     )
     .collect();
   if (args.normalizedAddressKey) {
-    return named.find((holder: Doc<"certificateHolders">) =>
-      holder.normalizedAddressKey === args.normalizedAddressKey,
-    ) ?? null;
+    return (
+      named.find(
+        (holder: Doc<"certificateHolders">) =>
+          holder.normalizedAddressKey === args.normalizedAddressKey,
+      ) ?? null
+    );
   }
-  return named.find((holder: Doc<"certificateHolders">) => !holder.normalizedAddressKey)
-    ?? (named.length === 1 ? named[0] : null);
+  return (
+    named.find(
+      (holder: Doc<"certificateHolders">) => !holder.normalizedAddressKey,
+    ) ?? (named.length === 1 ? named[0] : null)
+  );
 }
 
 export const listForOrg = query({
@@ -84,19 +102,24 @@ export const listForOrg = query({
     query: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await getOrgAccess(ctx, args.orgId);
+    const access = await getOrgAccess(ctx, args.orgId);
+    assertCanReadPolicies(access);
     const holders = await ctx.db
       .query("certificateHolders")
       .withIndex("organization", (q) => q.eq("orgId", args.orgId))
       .collect();
     const needle = normalizeCertificateHolderName(args.query ?? "");
-    if (!needle) return holders.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    if (!needle)
+      return holders.sort((a, b) => a.displayName.localeCompare(b.displayName));
     return holders
-      .filter((holder) =>
-        holder.normalizedName.includes(needle)
-        || normalizeCertificateHolderName(holder.contactName ?? "").includes(needle)
-        || holder.normalizedEmail?.includes(needle)
-        || holder.normalizedAddressKey?.includes(needle),
+      .filter(
+        (holder) =>
+          holder.normalizedName.includes(needle) ||
+          normalizeCertificateHolderName(holder.contactName ?? "").includes(
+            needle,
+          ) ||
+          holder.normalizedEmail?.includes(needle) ||
+          holder.normalizedAddressKey?.includes(needle),
       )
       .sort((a, b) => a.displayName.localeCompare(b.displayName));
   },
@@ -114,11 +137,14 @@ export const listForOrgInternal = internalQuery({
       .collect();
     const needle = normalizeCertificateHolderName(args.query ?? "");
     const filtered = needle
-      ? holders.filter((holder) =>
-          holder.normalizedName.includes(needle)
-          || normalizeCertificateHolderName(holder.contactName ?? "").includes(needle)
-          || holder.normalizedEmail?.includes(needle)
-          || holder.normalizedAddressKey?.includes(needle),
+      ? holders.filter(
+          (holder) =>
+            holder.normalizedName.includes(needle) ||
+            normalizeCertificateHolderName(holder.contactName ?? "").includes(
+              needle,
+            ) ||
+            holder.normalizedEmail?.includes(needle) ||
+            holder.normalizedAddressKey?.includes(needle),
         )
       : holders;
     return filtered.sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -137,7 +163,9 @@ export const upsertForCurrentOrg = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { orgId, userId } = await requireCurrentOrgAccess(ctx);
+    const access = await requireCurrentOrgAccess(ctx);
+    assertCanReadPolicies(access);
+    const { orgId, userId } = access;
     return await upsertCertificateHolder(ctx, {
       ...args,
       orgId,
@@ -148,29 +176,39 @@ export const upsertForCurrentOrg = mutation({
   },
 });
 
-export async function upsertCertificateHolder(ctx: MutationCtx, args: {
-  orgId: Id<"organizations">;
-  displayName: string;
-  contactName?: string;
-  email?: string;
-  phone?: string;
-  address?: {
-    line1?: string;
-    line2?: string;
-    city?: string;
-    state?: string;
-    postalCode?: string;
-    country?: string;
-    formatted?: string;
-  };
-  mapboxFeatureId?: string;
-  mapboxMetadata?: unknown;
-  source: "manual" | "extraction" | "certificate_generation" | "migration" | "api" | "mcp" | "agent";
-  sourceRef?: string;
-  notes?: string;
-  createdByUserId?: Id<"users">;
-  updatedByUserId?: Id<"users">;
-}) {
+export async function upsertCertificateHolder(
+  ctx: MutationCtx,
+  args: {
+    orgId: Id<"organizations">;
+    displayName: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
+    address?: {
+      line1?: string;
+      line2?: string;
+      city?: string;
+      state?: string;
+      postalCode?: string;
+      country?: string;
+      formatted?: string;
+    };
+    mapboxFeatureId?: string;
+    mapboxMetadata?: unknown;
+    source:
+      | "manual"
+      | "extraction"
+      | "certificate_generation"
+      | "migration"
+      | "api"
+      | "mcp"
+      | "agent";
+    sourceRef?: string;
+    notes?: string;
+    createdByUserId?: Id<"users">;
+    updatedByUserId?: Id<"users">;
+  },
+) {
   const displayName = args.displayName.trim();
   if (!displayName) throw new Error("Certificate holder name is required.");
   const normalizedName = normalizeCertificateHolderName(displayName);
@@ -206,7 +244,9 @@ export async function upsertCertificateHolder(ctx: MutationCtx, args: {
       (preserveExistingOptionalFields ? existing?.address : undefined),
     normalizedAddressKey:
       normalizedAddressKey ??
-      (preserveExistingOptionalFields ? existing?.normalizedAddressKey : undefined),
+      (preserveExistingOptionalFields
+        ? existing?.normalizedAddressKey
+        : undefined),
     mapboxFeatureId: cleanOptional(args.mapboxFeatureId),
     mapboxMetadata: args.mapboxMetadata,
     source: args.source,
@@ -274,27 +314,35 @@ export const linkPolicyInternal = internalMutation({
   },
 });
 
-async function upsertPolicyLink(ctx: MutationCtx, args: {
-  orgId: Id<"organizations">;
-  holderId: Id<"certificateHolders">;
-  policyId: Id<"policies">;
-  policyVersionId?: Id<"policyVersions">;
-  relationshipKind: "additional_insured" | "loss_payee" | "mortgagee" | "allowed_holder";
-  status?: "current" | "historical" | "review_required" | "dismissed";
-  sourceNodeIds?: string[];
-  sourceSpanIds?: string[];
-  sourceSummary?: string;
-  createdByUserId?: Id<"users">;
-  updatedByUserId?: Id<"users">;
-}) {
+async function upsertPolicyLink(
+  ctx: MutationCtx,
+  args: {
+    orgId: Id<"organizations">;
+    holderId: Id<"certificateHolders">;
+    policyId: Id<"policies">;
+    policyVersionId?: Id<"policyVersions">;
+    relationshipKind:
+      | "additional_insured"
+      | "loss_payee"
+      | "mortgagee"
+      | "allowed_holder";
+    status?: "current" | "historical" | "review_required" | "dismissed";
+    sourceNodeIds?: string[];
+    sourceSpanIds?: string[];
+    sourceSummary?: string;
+    createdByUserId?: Id<"users">;
+    updatedByUserId?: Id<"users">;
+  },
+) {
   const existing = await ctx.db
     .query("certificateHolderPolicyLinks")
     .withIndex("policy", (q) => q.eq("policyId", args.policyId))
     .collect();
-  const match = existing.find((link) =>
-    link.holderId === args.holderId
-    && link.relationshipKind === args.relationshipKind
-    && link.policyVersionId === args.policyVersionId,
+  const match = existing.find(
+    (link) =>
+      link.holderId === args.holderId &&
+      link.relationshipKind === args.relationshipKind &&
+      link.policyVersionId === args.policyVersionId,
   );
   const now = dayjs().valueOf();
   const patch = {
@@ -381,7 +429,9 @@ export const legacyDedupeKey = internalQuery({
   },
   handler: async (_ctx, args) => {
     const normalizedEmail = normalizeCertificateHolderEmail(args.email);
-    const normalizedAddressKey = normalizeCertificateHolderAddress(args.address);
+    const normalizedAddressKey = normalizeCertificateHolderAddress(
+      args.address,
+    );
     return certificateHolderDedupeKey({
       orgId: String(args.orgId),
       displayName: args.displayName,

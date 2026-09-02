@@ -95,8 +95,9 @@ async function requirementSourceHolders(
   ].filter(
     (holderId, index, values): holderId is Id<"certificateHolders"> =>
       Boolean(holderId) &&
-      values.findIndex((candidate) => String(candidate) === String(holderId)) ===
-        index,
+      values.findIndex(
+        (candidate) => String(candidate) === String(holderId),
+      ) === index,
   );
   return (
     await Promise.all(holderIds.map((holderId) => ctx.db.get(holderId)))
@@ -152,13 +153,16 @@ async function requireOrgMember(
   orgId: Id<"organizations">,
 ) {
   const access = await getOrgAccess(ctx, orgId, { allowOperator: true });
-  if (
-    access.accessType !== "member" &&
-    access.accessType !== "operator"
-  ) {
+  if (access.accessType !== "member" && access.accessType !== "operator") {
     throwUserFacingError(
       userFacingErrorCodes.readOnlyAccess,
       "Only members of this organization can manage its compliance requirements.",
+    );
+  }
+  if (access.accessType === "member" && access.orgType !== "client") {
+    throwUserFacingError(
+      userFacingErrorCodes.orgAccessRequired,
+      "Compliance workspaces are available only to client organizations.",
     );
   }
   return access;
@@ -259,7 +263,9 @@ function sanitizeRequirementArgs(args: {
 
   const lineOfBusiness = args.lineOfBusiness?.trim() || undefined;
   if (!lineOfBusiness || !isLobCode(lineOfBusiness)) {
-    throw new Error("Coverage requirements need a valid ACORD line of business");
+    throw new Error(
+      "Coverage requirements need a valid ACORD line of business",
+    );
   }
   const limits = (args.limits ?? [])
     .filter((limit) => Number.isFinite(limit.amount) && limit.amount >= 0)
@@ -283,9 +289,9 @@ function sanitizeRequirementArgs(args: {
     limits,
     maxDeductible: args.maxDeductible
       ? {
-        amount: args.maxDeductible.amount,
-        label: args.maxDeductible.label?.trim() || undefined,
-      }
+          amount: args.maxDeductible.amount,
+          label: args.maxDeductible.label?.trim() || undefined,
+        }
       : undefined,
     coverageForm: args.coverageForm,
     retroactiveDateOnOrBefore:
@@ -347,7 +353,9 @@ async function latestChecksForSubject(
 
 function resultNotes(result: ComplianceCheckResult) {
   if (result.matchedSummary) return result.matchedSummary;
-  return result.reasons.length ? formatComplianceReasons(result.reasons) : undefined;
+  return result.reasons.length
+    ? formatComplianceReasons(result.reasons)
+    : undefined;
 }
 
 async function assessForSubject(
@@ -361,7 +369,11 @@ async function assessForSubject(
     includePreviewPolicies?: boolean;
   },
 ) {
-  const checks = await latestChecksForSubject(ctx, requirement._id, subjectOrgId);
+  const checks = await latestChecksForSubject(
+    ctx,
+    requirement._id,
+    subjectOrgId,
+  );
   const result = assessRequirementCompliance(requirement, policies, {
     expectedInsuredName: subjectOrg?.name,
     expectedInsuredNames: orgLegalNames(subjectOrg),
@@ -410,10 +422,10 @@ async function listClientRequirementsForVendor(
           relationshipId: rel._id,
           clientOrg: clientOrg
             ? {
-              _id: clientOrg._id,
-              name: clientOrg.name,
-              website: clientOrg.website,
-            }
+                _id: clientOrg._id,
+                name: clientOrg.name,
+                website: clientOrg.website,
+              }
             : null,
         },
       });
@@ -464,9 +476,8 @@ async function listRequirementsVisibleToOrg(
     new Set(
       rows
         .map((requirement) => requirement.sourceDocumentId)
-        .filter(
-          (sourceId): sourceId is Id<"requirementSourceDocuments"> =>
-            Boolean(sourceId),
+        .filter((sourceId): sourceId is Id<"requirementSourceDocuments"> =>
+          Boolean(sourceId),
         ),
     ),
   );
@@ -506,7 +517,7 @@ async function listRequirementsVisibleToOrg(
   return rows.map((requirement) => ({
     ...requirement,
     requirementSource: requirement.sourceDocumentId
-      ? sourcesById.get(requirement.sourceDocumentId) ?? undefined
+      ? (sourcesById.get(requirement.sourceDocumentId) ?? undefined)
       : undefined,
   }));
 }
@@ -542,7 +553,8 @@ export const listCertificateRequirements = query({
     const requirements = await listRequirementsVisibleToOrg(ctx, args.orgId);
     return requirements.filter(
       (requirement) =>
-        requirement.scope === "own_org" || "clientRequirementSource" in requirement,
+        requirement.scope === "own_org" ||
+        "clientRequirementSource" in requirement,
     );
   },
 });
@@ -573,42 +585,65 @@ export const listCertificateRequirementSources = query({
         "Connected organization access is read-only.",
       );
     }
-    const requirements = (await listRequirementsVisibleToOrg(ctx, args.orgId)).filter(
+    const requirements = (
+      await listRequirementsVisibleToOrg(ctx, args.orgId)
+    ).filter(
       (requirement) =>
         requirement.sourceDocumentId &&
-        (requirement.scope === "own_org" || "clientRequirementSource" in requirement),
+        (requirement.scope === "own_org" ||
+          "clientRequirementSource" in requirement),
     );
-    const sourceIds = Array.from(new Set(
-      requirements.map((requirement) => requirement.sourceDocumentId!),
-    ));
-    const sources = (await Promise.all(sourceIds.map((sourceId) => ctx.db.get(sourceId))))
-      .filter((source): source is Doc<"requirementSourceDocuments"> => Boolean(source && !source.archivedAt))
+    const sourceIds = Array.from(
+      new Set(requirements.map((requirement) => requirement.sourceDocumentId!)),
+    );
+    const sources = (
+      await Promise.all(sourceIds.map((sourceId) => ctx.db.get(sourceId)))
+    )
+      .filter((source): source is Doc<"requirementSourceDocuments"> =>
+        Boolean(source && !source.archivedAt),
+      )
       .sort((left, right) => right.updatedAt - left.updatedAt);
-    return await Promise.all(sources.map(async (source) => {
-      const sourceRequirements = requirements.filter(
-        (requirement) => requirement.sourceDocumentId === source._id,
-      );
-      const connectedClientOrg = sourceRequirements.find(
-        (requirement) => "clientRequirementSource" in requirement,
-      )?.clientRequirementSource.clientOrg;
-      const storedHolders = await requirementSourceHolders(ctx, source);
-      const holders = storedHolders.length > 0
-        ? storedHolders
-        : connectedClientOrg
-          ? [{ displayName: connectedClientOrg.name }]
-          : [];
-      const holder = holders[0] ?? null;
-      if (source.orgId !== args.orgId) {
+    return await Promise.all(
+      sources.map(async (source) => {
+        const sourceRequirements = requirements.filter(
+          (requirement) => requirement.sourceDocumentId === source._id,
+        );
+        const connectedClientOrg = sourceRequirements.find(
+          (requirement) => "clientRequirementSource" in requirement,
+        )?.clientRequirementSource.clientOrg;
+        const storedHolders = await requirementSourceHolders(ctx, source);
+        const holders =
+          storedHolders.length > 0
+            ? storedHolders
+            : connectedClientOrg
+              ? [{ displayName: connectedClientOrg.name }]
+              : [];
+        const holder = holders[0] ?? null;
+        if (source.orgId !== args.orgId) {
+          return {
+            _id: source._id,
+            orgId: source.orgId,
+            sourceType: source.sourceType,
+            title: source.title,
+            dealName: source.dealName,
+            dealType: source.dealType,
+            status: source.status,
+            createdAt: source.createdAt,
+            updatedAt: source.updatedAt,
+            holder,
+            holders,
+            requirementCount: sourceRequirements.length,
+            requirements: sourceRequirements.map((requirement) => ({
+              requirementId: requirement._id,
+              title: requirement.title,
+              status: requirement.complianceCheck?.status ?? "unverified",
+              reasons: requirement.complianceCheck?.reasons ?? [],
+              summary: requirement.complianceCheck?.matchedSummary,
+            })),
+          };
+        }
         return {
-          _id: source._id,
-          orgId: source.orgId,
-          sourceType: source.sourceType,
-          title: source.title,
-          dealName: source.dealName,
-          dealType: source.dealType,
-          status: source.status,
-          createdAt: source.createdAt,
-          updatedAt: source.updatedAt,
+          ...source,
           holder,
           holders,
           requirementCount: sourceRequirements.length,
@@ -620,21 +655,8 @@ export const listCertificateRequirementSources = query({
             summary: requirement.complianceCheck?.matchedSummary,
           })),
         };
-      }
-      return {
-        ...source,
-        holder,
-        holders,
-        requirementCount: sourceRequirements.length,
-        requirements: sourceRequirements.map((requirement) => ({
-          requirementId: requirement._id,
-          title: requirement.title,
-          status: requirement.complianceCheck?.status ?? "unverified",
-          reasons: requirement.complianceCheck?.reasons ?? [],
-          summary: requirement.complianceCheck?.matchedSummary,
-        })),
-      };
-    }));
+      }),
+    );
   },
 });
 
@@ -727,7 +749,12 @@ export const upsertRequirement = mutation({
         throw new Error("Requirement not found");
       }
       await ctx.db.patch(requirementId, patch);
-      await invalidateProcurementReviewsForRequirement(ctx, requirementId, access.userId, now);
+      await invalidateProcurementReviewsForRequirement(
+        ctx,
+        requirementId,
+        access.userId,
+        now,
+      );
     } else {
       requirementId = await ctx.db.insert("insuranceRequirements", {
         orgId: args.orgId,
@@ -770,7 +797,8 @@ export const updateRequirementSource = mutation({
       throw new Error("Requirement source not found");
     }
     const title = args.title?.trim();
-    if (args.title !== undefined && !title) throw new Error("Source name is required");
+    if (args.title !== undefined && !title)
+      throw new Error("Source name is required");
     if (
       title === undefined &&
       args.sourceType === undefined &&
@@ -813,9 +841,12 @@ export const updateRequirementSource = mutation({
         ),
       ];
     }
-    if (args.dealName !== undefined) sourcePatch.dealName = cleanOptionalString(args.dealName);
-    if (args.dealType !== undefined) sourcePatch.dealType = cleanOptionalString(args.dealType);
-    if (args.internalNotes !== undefined) sourcePatch.internalNotes = cleanOptionalString(args.internalNotes);
+    if (args.dealName !== undefined)
+      sourcePatch.dealName = cleanOptionalString(args.dealName);
+    if (args.dealType !== undefined)
+      sourcePatch.dealType = cleanOptionalString(args.dealType);
+    if (args.internalNotes !== undefined)
+      sourcePatch.internalNotes = cleanOptionalString(args.internalNotes);
     await ctx.db.patch(args.sourceDocumentId, sourcePatch);
     const requirements = await ctx.db
       .query("insuranceRequirements")
@@ -830,9 +861,15 @@ export const updateRequirementSource = mutation({
         updatedAt: now,
       };
       if (title !== undefined) requirementPatch.sourceDocumentName = title;
-      if (args.sourceType !== undefined) requirementPatch.sourceType = args.sourceType;
+      if (args.sourceType !== undefined)
+        requirementPatch.sourceType = args.sourceType;
       await ctx.db.patch(requirement._id, requirementPatch);
-      await invalidateProcurementReviewsForRequirement(ctx, requirement._id, access.userId, now);
+      await invalidateProcurementReviewsForRequirement(
+        ctx,
+        requirement._id,
+        access.userId,
+        now,
+      );
     }
     await writeComplianceOperatorAudit(
       ctx,
@@ -880,13 +917,22 @@ export const archiveRequirementSources = mutation({
       .collect();
     let archivedRequirementCount = 0;
     for (const requirement of requirements) {
-      if (!requirement.sourceDocumentId || !selected.has(requirement.sourceDocumentId)) continue;
+      if (
+        !requirement.sourceDocumentId ||
+        !selected.has(requirement.sourceDocumentId)
+      )
+        continue;
       await ctx.db.patch(requirement._id, {
         status: "archived",
         updatedByUserId: access.userId,
         updatedAt: now,
       });
-      await invalidateProcurementReviewsForRequirement(ctx, requirement._id, access.userId, now);
+      await invalidateProcurementReviewsForRequirement(
+        ctx,
+        requirement._id,
+        access.userId,
+        now,
+      );
       archivedRequirementCount += 1;
     }
     await writeComplianceOperatorAudit(
@@ -923,7 +969,12 @@ export const archiveRequirement = mutation({
       updatedByUserId: access.userId,
       updatedAt: dayjs().valueOf(),
     });
-    await invalidateProcurementReviewsForRequirement(ctx, args.requirementId, access.userId, dayjs().valueOf());
+    await invalidateProcurementReviewsForRequirement(
+      ctx,
+      args.requirementId,
+      access.userId,
+      dayjs().valueOf(),
+    );
     await writeComplianceOperatorAudit(
       ctx,
       access,
@@ -989,11 +1040,11 @@ export const verifyRequirement = mutation({
       matchedSummary: "Verified manually.",
       evidence: args.evidence
         ? {
-          note: args.evidence.note?.trim() || undefined,
-          fileId: args.evidence.fileId,
-          fileName: args.evidence.fileName?.trim() || undefined,
-          validUntil: args.evidence.validUntil?.trim() || undefined,
-        }
+            note: args.evidence.note?.trim() || undefined,
+            fileId: args.evidence.fileId,
+            fileName: args.evidence.fileName?.trim() || undefined,
+            validUntil: args.evidence.validUntil?.trim() || undefined,
+          }
         : undefined,
       checkedAt: now,
       checkedBy: "user",
@@ -1032,10 +1083,17 @@ async function vendorComplianceRows(
     ).length;
     const checks = [];
     for (const requirement of requirements) {
-      const check = await assessForSubject(ctx, requirement, policies, rel.vendorOrgId, vendorOrg, {
-        relationshipId: rel._id,
-        includePreviewPolicies,
-      });
+      const check = await assessForSubject(
+        ctx,
+        requirement,
+        policies,
+        rel.vendorOrgId,
+        vendorOrg,
+        {
+          relationshipId: rel._id,
+          includePreviewPolicies,
+        },
+      );
       checks.push({
         requirement,
         ...check,
@@ -1054,10 +1112,10 @@ async function vendorComplianceRows(
       relationshipId: rel._id,
       vendorOrg: vendorOrg
         ? {
-          _id: vendorOrg._id,
-          name: vendorOrg.name,
-          website: vendorOrg.website,
-        }
+            _id: vendorOrg._id,
+            name: vendorOrg.name,
+            website: vendorOrg.website,
+          }
         : null,
       vendorOrgId: rel.vendorOrgId,
       vendorName: vendorOrg?.name ?? "Unknown vendor",
@@ -1119,23 +1177,27 @@ export const getVendorChecklist = query({
     await requireOrgMember(ctx, vendorOrgId);
     const relationships = args.clientOrgId
       ? await ctx.db
-        .query("connectedOrgRelationships")
-        .withIndex("client_vendor", (q) =>
-          q.eq("clientOrgId", args.clientOrgId!).eq("vendorOrgId", vendorOrgId),
-        )
-        .collect()
+          .query("connectedOrgRelationships")
+          .withIndex("client_vendor", (q) =>
+            q
+              .eq("clientOrgId", args.clientOrgId!)
+              .eq("vendorOrgId", vendorOrgId),
+          )
+          .collect()
       : await ctx.db
-        .query("connectedOrgRelationships")
-        .withIndex("vendor_status", (q) =>
-          q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
-        )
-        .collect();
+          .query("connectedOrgRelationships")
+          .withIndex("vendor_status", (q) =>
+            q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
+          )
+          .collect();
     const [policies, vendorOrg] = await Promise.all([
       listPoliciesForOrg(ctx, vendorOrgId),
       ctx.db.get(vendorOrgId),
     ]);
     const rows = [];
-    for (const rel of relationships.filter((relationship) => relationship.status === "active")) {
+    for (const rel of relationships.filter(
+      (relationship) => relationship.status === "active",
+    )) {
       const clientOrg = await ctx.db.get(rel.clientOrgId);
       const requirements = requirementsForVendor(
         rel,
@@ -1145,18 +1207,25 @@ export const getVendorChecklist = query({
       for (const requirement of requirements) {
         checks.push({
           requirement,
-          ...(await assessForSubject(ctx, requirement, policies, vendorOrgId, vendorOrg, {
-            relationshipId: rel._id,
-          })),
+          ...(await assessForSubject(
+            ctx,
+            requirement,
+            policies,
+            vendorOrgId,
+            vendorOrg,
+            {
+              relationshipId: rel._id,
+            },
+          )),
         });
       }
       rows.push({
         clientOrg: clientOrg
           ? {
-            _id: clientOrg._id,
-            name: clientOrg.name,
-            website: clientOrg.website,
-          }
+              _id: clientOrg._id,
+              name: clientOrg.name,
+              website: clientOrg.website,
+            }
           : null,
         checks,
       });
@@ -1167,7 +1236,8 @@ export const getVendorChecklist = query({
 
 export const listRequirementsInternal = internalQuery({
   args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => await listRequirementsVisibleToOrg(ctx, args.orgId),
+  handler: async (ctx, args) =>
+    await listRequirementsVisibleToOrg(ctx, args.orgId),
 });
 
 export const planCertificateRequirementsInternal = internalQuery({
@@ -1183,7 +1253,8 @@ export const planCertificateRequirementsInternal = internalQuery({
     ]);
     const eligible = visibleRequirements.filter(
       (requirement) =>
-        requirement.scope === "own_org" || "clientRequirementSource" in requirement,
+        requirement.scope === "own_org" ||
+        "clientRequirementSource" in requirement,
     );
     const visibleById = new Map(
       eligible.map((requirement) => [requirement._id, requirement]),
@@ -1237,7 +1308,9 @@ export const getCertificateRequirementSourcePlanInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     if (Boolean(args.sourceDocumentId) === Boolean(args.requirementId)) {
-      throw new Error("Choose either one requirement source or one requirement.");
+      throw new Error(
+        "Choose either one requirement source or one requirement.",
+      );
     }
     const [requirements, policies, org] = await Promise.all([
       listRequirementsVisibleToOrg(ctx, args.orgId),
@@ -1250,47 +1323,59 @@ export const getCertificateRequirementSourcePlanInternal = internalQuery({
     if (args.requirementId && !requestedRequirement) {
       throw new Error("Certificate requirement not found.");
     }
-    const sourceDocumentId = args.sourceDocumentId ?? requestedRequirement?.sourceDocumentId;
+    const sourceDocumentId =
+      args.sourceDocumentId ?? requestedRequirement?.sourceDocumentId;
     if (!sourceDocumentId) {
-      throw new Error("This requirement is not connected to a requirement source.");
+      throw new Error(
+        "This requirement is not connected to a requirement source.",
+      );
     }
     const sourceRequirements = requirements.filter(
       (requirement) =>
         requirement.sourceDocumentId === sourceDocumentId &&
-        (requirement.scope === "own_org" || "clientRequirementSource" in requirement),
+        (requirement.scope === "own_org" ||
+          "clientRequirementSource" in requirement),
     );
     const source = await ctx.db.get(sourceDocumentId);
     if (!source || source.archivedAt || sourceRequirements.length === 0) {
       throw new Error("Certificate requirement source not found.");
     }
-    const storedHolder = (await requirementSourceHolders(ctx, source))[0] ?? null;
+    const storedHolder =
+      (await requirementSourceHolders(ctx, source))[0] ?? null;
     const selectedForHolder = requestedRequirement ?? sourceRequirements[0];
-    const connectedClientOrg = selectedForHolder && "clientRequirementSource" in selectedForHolder
-      ? (selectedForHolder as {
-          clientRequirementSource: {
-            clientOrg: { name: string } | null;
-          };
-        }).clientRequirementSource.clientOrg
-      : null;
-    const holder = storedHolder ?? (connectedClientOrg
-      ? { displayName: connectedClientOrg.name }
-      : null);
+    const connectedClientOrg =
+      selectedForHolder && "clientRequirementSource" in selectedForHolder
+        ? (
+            selectedForHolder as {
+              clientRequirementSource: {
+                clientOrg: { name: string } | null;
+              };
+            }
+          ).clientRequirementSource.clientOrg
+        : null;
+    const holder =
+      storedHolder ??
+      (connectedClientOrg ? { displayName: connectedClientOrg.name } : null);
     if (!holder) {
       throw new Error(
         "Add certificate holder details to this requirement source before generating certificates.",
       );
     }
-    const selected = sourceRequirements.filter((requirement) =>
-      (!args.requirementId || requirement._id === args.requirementId),
+    const selected = sourceRequirements.filter(
+      (requirement) =>
+        !args.requirementId || requirement._id === args.requirementId,
     );
     if (selected.length === 0) {
-      throw new Error("This source has no active requirements for your organization.");
+      throw new Error(
+        "This source has no active requirements for your organization.",
+      );
     }
     return {
       source,
       holder,
       requirements: selected.map((requirement) => {
-        const assessment = requirement.complianceCheck ??
+        const assessment =
+          requirement.complianceCheck ??
           assessRequirementCompliance(requirement, policies, {
             expectedInsuredName: org?.name,
             expectedInsuredNames: orgLegalNames(org),
@@ -1418,16 +1503,20 @@ export const getManualComplianceReviewContextInternal = internalQuery({
     return {
       org: org
         ? {
-          _id: org._id,
-          name: org.name,
-          relatedLegalEntities: org.relatedLegalEntities ?? [],
-        }
+            _id: org._id,
+            name: org.name,
+            relatedLegalEntities: org.relatedLegalEntities ?? [],
+          }
         : null,
       requirement,
-      deterministicCheck: assessRequirementCompliance(requirement, activePolicies, {
-        expectedInsuredName: org?.name,
-        expectedInsuredNames: orgLegalNames(org),
-      }),
+      deterministicCheck: assessRequirementCompliance(
+        requirement,
+        activePolicies,
+        {
+          expectedInsuredName: org?.name,
+          expectedInsuredNames: orgLegalNames(org),
+        },
+      ),
       policies: activePolicies.map((policy) => ({
         _id: policy._id,
         carrier: policy.carrier || policy.security,
@@ -1573,10 +1662,10 @@ export const getRequirementImportContextInternal = internalQuery({
     const access = args.userId
       ? null
       : await requireOrgAdminWrite(
-        ctx,
-        args.orgId,
-        "Only an organization admin can import compliance requirements.",
-      );
+          ctx,
+          args.orgId,
+          "Only an organization admin can import compliance requirements.",
+        );
     if (args.userId) {
       await requireAdminWriteActor(
         ctx,
@@ -1679,18 +1768,18 @@ export const createRequirementSourceDocumentInternal = internalMutation({
       const holderName = holder.displayName.trim();
       if (!holderName) continue;
       const holderId = await upsertCertificateHolder(ctx, {
-          orgId: args.orgId,
-          displayName: holderName,
-          contactName: holder.contactName,
-          email: holder.email,
-          phone: holder.phone,
-          address: holder.address,
-          source: index === 0 && args.holder ? "agent" : "extraction",
-          sourceRef: args.title,
-          notes: args.internalNotes,
-          createdByUserId: args.userId,
-          updatedByUserId: args.userId,
-        });
+        orgId: args.orgId,
+        displayName: holderName,
+        contactName: holder.contactName,
+        email: holder.email,
+        phone: holder.phone,
+        address: holder.address,
+        source: index === 0 && args.holder ? "agent" : "extraction",
+        sourceRef: args.title,
+        notes: args.internalNotes,
+        createdByUserId: args.userId,
+        updatedByUserId: args.userId,
+      });
       if (
         !certificateHolderIds.some(
           (candidate) => String(candidate) === String(holderId),
@@ -1854,7 +1943,9 @@ export const getConnectedVendorContactInternal = internalQuery({
       .withIndex("organization", (q) => q.eq("orgId", args.vendorOrgId))
       .collect();
     const vendorUsers = (
-      await Promise.all(memberships.map((membership) => ctx.db.get(membership.userId)))
+      await Promise.all(
+        memberships.map((membership) => ctx.db.get(membership.userId)),
+      )
     ).filter(Boolean);
     return {
       vendorEmail:
@@ -1871,23 +1962,18 @@ const OWN_COMPLIANCE_REMINDER_MS = 7 * 24 * 60 * 60 * 1000;
 
 function isOwnComplianceIssue(status: Doc<"complianceChecks">["status"]) {
   return (
-    status === "not_met" ||
-    status === "expiring_soon" ||
-    status === "expired"
+    status === "not_met" || status === "expiring_soon" || status === "expired"
   );
 }
 
-function ownComplianceIssueLine(
-  check: {
-    requirementTitle: string;
-    status: Doc<"complianceChecks">["status"];
-    daysUntilExpiration?: number;
-    notes?: string;
-  },
-) {
+function ownComplianceIssueLine(check: {
+  requirementTitle: string;
+  status: Doc<"complianceChecks">["status"];
+  daysUntilExpiration?: number;
+  notes?: string;
+}) {
   const status =
-    check.status === "expiring_soon" &&
-    check.daysUntilExpiration !== undefined
+    check.status === "expiring_soon" && check.daysUntilExpiration !== undefined
       ? `expires in ${check.daysUntilExpiration} days`
       : check.status.replaceAll("_", " ");
   return `${check.requirementTitle}: ${status}${check.notes ? ` - ${check.notes}` : ""}`;
@@ -1935,13 +2021,11 @@ export const recordOwnComplianceRunInternal = internalMutation({
     for (const check of args.checks) {
       const latest = await ctx.db
         .query("complianceChecks")
-        .withIndex(
-          "review_history",
-          (query) =>
-            query
-              .eq("requirementId", check.requirementId)
-              .eq("subjectOrgId", args.orgId)
-              .eq("checkedBy", "system"),
+        .withIndex("review_history", (query) =>
+          query
+            .eq("requirementId", check.requirementId)
+            .eq("subjectOrgId", args.orgId)
+            .eq("checkedBy", "system"),
         )
         .order("desc")
         .first();
@@ -1967,14 +2051,16 @@ export const recordOwnComplianceRunInternal = internalMutation({
         Boolean(previous && isOwnComplianceIssue(previous.status))
       );
     });
-    const emitResolved = currentIssues.length === 0 && resolvedChecks.length > 0;
+    const emitResolved =
+      currentIssues.length === 0 && resolvedChecks.length > 0;
     const resolvedRequirementIds = new Set(
       resolvedChecks.map((check) => check.requirementId),
     );
 
     for (const check of args.checks) {
       const previous = previousByRequirement.get(check.requirementId);
-      const issueIncludedInAlert = emitGap && isOwnComplianceIssue(check.status);
+      const issueIncludedInAlert =
+        emitGap && isOwnComplianceIssue(check.status);
       const resolvedIncludedInAlert =
         emitResolved && resolvedRequirementIds.has(check.requirementId);
       if (
@@ -2006,34 +2092,42 @@ export const recordOwnComplianceRunInternal = internalMutation({
     const orgName = org?.name ?? "Your organization";
     if (emitGap) {
       const issueLines = currentIssues.map(ownComplianceIssueLine);
-      const hasExpired = currentIssues.some((check) => check.status === "expired");
+      const hasExpired = currentIssues.some(
+        (check) => check.status === "expired",
+      );
       const issueCount = currentIssues.length;
-      return [{
-        type: "own_compliance_gap",
-        title: hasExpired
-          ? "Your insurance has expired coverage"
-          : "Your insurance has compliance gaps",
-        body: `${issueCount} ${issueCount === 1 ? "requirement needs" : "requirements need"} attention for ${orgName}: ${issueLines.slice(0, 3).join("; ")}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`,
-        severity: hasExpired ? "critical" : "warning",
-        orgId: args.orgId,
-        orgName,
-        requirementIds: currentIssues.map((check) => check.requirementId),
-        issueLines,
-      }];
+      return [
+        {
+          type: "own_compliance_gap",
+          title: hasExpired
+            ? "Your insurance has expired coverage"
+            : "Your insurance has compliance gaps",
+          body: `${issueCount} ${issueCount === 1 ? "requirement needs" : "requirements need"} attention for ${orgName}: ${issueLines.slice(0, 3).join("; ")}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`,
+          severity: hasExpired ? "critical" : "warning",
+          orgId: args.orgId,
+          orgName,
+          requirementIds: currentIssues.map((check) => check.requirementId),
+          issueLines,
+        },
+      ];
     }
 
     if (emitResolved) {
-      const resolvedTitles = resolvedChecks.map((check) => check.requirementTitle);
-      return [{
-        type: "own_compliance_resolved",
-        title: "Your insurance requirements are now met",
-        body: `${orgName} now meets all ${args.checks.length} active insurance requirements in Spot.`,
-        severity: "info",
-        orgId: args.orgId,
-        orgName,
-        requirementIds: resolvedChecks.map((check) => check.requirementId),
-        issueLines: resolvedTitles,
-      }];
+      const resolvedTitles = resolvedChecks.map(
+        (check) => check.requirementTitle,
+      );
+      return [
+        {
+          type: "own_compliance_resolved",
+          title: "Your insurance requirements are now met",
+          body: `${orgName} now meets all ${args.checks.length} active insurance requirements in Spot.`,
+          severity: "info",
+          orgId: args.orgId,
+          orgName,
+          requirementIds: resolvedChecks.map((check) => check.requirementId),
+          issueLines: resolvedTitles,
+        },
+      ];
     }
 
     return [];
@@ -2209,7 +2303,9 @@ export const recordVendorComplianceRunInternal = internalMutation({
               : `${row.vendorName} is missing vendor requirements`;
       const body = `${issueCount} vendor ${noun} attention for ${row.vendorName}: ${issueLines
         .slice(0, 3)
-        .join("; ")}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`;
+        .join(
+          "; ",
+        )}${issueLines.length > 3 ? `; +${issueLines.length - 3} more` : ""}`;
       events.push({
         type,
         title,
@@ -2342,9 +2438,10 @@ export const backfillComplianceRequirementShapeInternal = internalMutation({
       scannedCount,
       changedCount,
       remainingCount:
-        rows.filter((row) =>
-          (!args.orgId || row.orgId === args.orgId) &&
-          requirementNeedsLegacyShapeBackfill(row),
+        rows.filter(
+          (row) =>
+            (!args.orgId || row.orgId === args.orgId) &&
+            requirementNeedsLegacyShapeBackfill(row),
         ).length - (dryRun ? 0 : changedCount),
       samples,
     };
@@ -2400,7 +2497,9 @@ export const wipeComplianceDataInternal = internalMutation({
       deletedRequirements += 1;
     }
     let deletedSourceDocuments = 0;
-    for (const row of await ctx.db.query("requirementSourceDocuments").collect()) {
+    for (const row of await ctx.db
+      .query("requirementSourceDocuments")
+      .collect()) {
       await ctx.db.delete(row._id);
       deletedSourceDocuments += 1;
     }

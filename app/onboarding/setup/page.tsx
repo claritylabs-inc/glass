@@ -87,11 +87,9 @@ const STEPS: ReadonlyArray<{ label: string; subtitle?: string }> = [
   { label: "You're all set", subtitle: "Here's what you can do next." },
 ] as const;
 
-const inputClass =
-  `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
+const inputClass = `h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("body.default")}`;
 
-const labelClass =
-  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
+const labelClass = `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
 function StepDots({ currentStep }: { currentStep: Step }) {
   return (
@@ -124,7 +122,9 @@ function Shell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-20 w-full bg-background px-6 py-6 sm:px-8">
-        <div className={`grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-muted-foreground ${typeStyle("body.default")}`}>
+        <div
+          className={`grid grid-cols-[1fr_auto_1fr] items-center gap-4 text-muted-foreground ${typeStyle("body.default")}`}
+        >
           <div className="justify-self-start min-w-0">
             <div className="sm:hidden">
               <LogoIcon size={18} color="#A0D2FA" static />
@@ -138,7 +138,9 @@ function Shell({
               <StepDots currentStep={currentStep} />
             ) : null}
           </div>
-          <div className={`justify-self-end text-right text-muted-foreground min-w-0 ${typeStyle("body.default")}`}>
+          <div
+            className={`justify-self-end text-right text-muted-foreground min-w-0 ${typeStyle("body.default")}`}
+          >
             {email ? (
               <div className="flex items-center gap-3">
                 <span className="hidden sm:inline">{email}</span>
@@ -177,7 +179,11 @@ export default function ClientOnboardingSetupPage() {
   const searchParams = useSearchParams();
   const { signOut } = useAuthActions();
 
-  const viewer = useCachedQuery("onboarding.setup.viewer", api.users.viewer, {});
+  const viewer = useCachedQuery(
+    "onboarding.setup.viewer",
+    api.users.viewer,
+    {},
+  );
   const viewerOrg = useCachedViewerOrg();
   const { patchViewer, patchViewerOrg } = useViewerCacheActions();
   const updateProfile = useMutation(api.users.updateProfile);
@@ -474,13 +480,7 @@ export default function ClientOnboardingSetupPage() {
       setError(getUserFacingErrorMessage(e, "Failed to finish"));
       setSubmitting(false);
     }
-  }, [
-    completeOnboarding,
-    isVendorInvite,
-    patchViewer,
-    patchViewerOrg,
-    router,
-  ]);
+  }, [completeOnboarding, isVendorInvite, patchViewer, patchViewerOrg, router]);
 
   const canContinueStep0 =
     userName.trim().length > 0 && userRole.trim().length > 0 && !phoneBlocked;
@@ -568,7 +568,9 @@ export default function ClientOnboardingSetupPage() {
                   defaultCountry="US"
                   placeholder="Enter phone number"
                 />
-                <p className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}>
+                <p
+                  className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}
+                >
                   {phoneInvalid ? (
                     <span className="text-red-500/80">
                       Enter a valid phone number with country code.
@@ -589,7 +591,11 @@ export default function ClientOnboardingSetupPage() {
             </div>
 
             {error ? (
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                {error}
+              </p>
             ) : null}
 
             <PillButton
@@ -634,7 +640,9 @@ export default function ClientOnboardingSetupPage() {
                   placeholder="https://example.com"
                   className={inputClass}
                 />
-                <p className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}>
+                <p
+                  className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}
+                >
                   We&apos;ll use this to enrich your company profile
                   automatically.
                 </p>
@@ -642,7 +650,11 @@ export default function ClientOnboardingSetupPage() {
             </div>
 
             {error ? (
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                {error}
+              </p>
             ) : null}
 
             <PillButton
@@ -668,12 +680,16 @@ export default function ClientOnboardingSetupPage() {
                   <Check className="h-4 w-4 text-muted-foreground" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className={`text-foreground ${typeStyle("body.strong")}`}>
+                  <div
+                    className={`text-foreground ${typeStyle("body.strong")}`}
+                  >
                     {policyCount === 1
                       ? "1 policy uploaded"
                       : `${policyCount} policies uploaded`}
                   </div>
-                  <div className={`text-muted-foreground mt-0.5 ${typeStyle("body.default")}`}>
+                  <div
+                    className={`text-muted-foreground mt-0.5 ${typeStyle("body.default")}`}
+                  >
                     We&apos;re extracting the details in the background — you
                     can move on.
                   </div>
@@ -696,7 +712,11 @@ export default function ClientOnboardingSetupPage() {
             )}
 
             {error ? (
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                {error}
+              </p>
             ) : null}
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between -mt-4">
@@ -729,7 +749,9 @@ export default function ClientOnboardingSetupPage() {
 
         {currentStep === 3 && (
           <div className="space-y-10">
-            <ol className={`list-none space-y-4 text-muted-foreground [&>li]:flex [&>li]:gap-4 ${typeStyle("body.default")}`}>
+            <ol
+              className={`list-none space-y-4 text-muted-foreground [&>li]:flex [&>li]:gap-4 ${typeStyle("body.default")}`}
+            >
               {(isVendorInvite
                 ? [
                     `Share policies and certificates with ${invitingClientName}.`,
@@ -743,14 +765,18 @@ export default function ClientOnboardingSetupPage() {
                   ]
               ).map((item, index) => (
                 <li key={item}>
-                  <span className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}>
+                  <span
+                    className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}
+                  >
                     {index + 1}.
                   </span>
                   <span>{item}</span>
                 </li>
               ))}
               <li>
-                <span className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}>
+                <span
+                  className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}
+                >
                   4.
                 </span>
                 <span>
@@ -773,7 +799,9 @@ export default function ClientOnboardingSetupPage() {
               </li>
               {SPOT_IMESSAGE_NUMBER ? (
                 <li>
-                  <span className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}>
+                  <span
+                    className={`shrink-0 text-foreground/30 ${typeStyle("data.numeric")}`}
+                  >
                     5.
                   </span>
                   <span>
@@ -798,7 +826,11 @@ export default function ClientOnboardingSetupPage() {
             </ol>
 
             {error ? (
-              <p className={`text-muted-foreground ${typeStyle("body.default")}`}>{error}</p>
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                {error}
+              </p>
             ) : null}
 
             <PillButton

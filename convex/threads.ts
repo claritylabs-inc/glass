@@ -13,6 +13,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   requireCurrentOrgAccess as requireOrgAccess,
   getCurrentOrgAccess as getOrgAccess,
+  assertCanUseTenantAgent,
 } from "./lib/access";
 import { agentStepsValidator } from "./lib/agentSteps";
 import { buildImessageGroupMemberTitle } from "./lib/imessageGroupResolution";
@@ -230,7 +231,9 @@ async function requireCurrentOrgThread(
   ctx: QueryCtx | MutationCtx,
   threadId: Id<"threads">,
 ) {
-  const { userId, orgId } = await requireOrgAccess(ctx);
+  const access = await requireOrgAccess(ctx);
+  assertCanUseTenantAgent(access);
+  const { userId, orgId } = access;
   const thread = await ctx.db.get(threadId);
   if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread })) {
     throw new Error("Not found");
@@ -256,6 +259,7 @@ export const list = query({
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx);
     if (!access) return [];
+    assertCanUseTenantAgent(access);
     const { userId, orgId } = access;
     const all = await ctx.db
       .query("threads")
@@ -281,7 +285,9 @@ export const list = query({
 export const get = query({
   args: { id: v.id("threads") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { userId, orgId } = access;
     const thread = await ctx.db.get(args.id);
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
       return null;
@@ -292,7 +298,9 @@ export const get = query({
 export const tryGet = query({
   args: { id: v.string() },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { userId, orgId } = access;
     try {
       const normalized = ctx.db.normalizeId("threads", args.id);
       if (!normalized) return null;
@@ -309,7 +317,9 @@ export const tryGet = query({
 export const messages = query({
   args: { threadId: v.id("threads") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { userId, orgId } = access;
     const thread = await ctx.db.get(args.threadId);
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
       return [];
@@ -335,7 +345,9 @@ export const create = mutation({
     clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { userId, orgId } = access;
     if (args.clientMutationId) {
       const existing = await ctx.db
         .query("threads")
@@ -373,7 +385,8 @@ export const create = mutation({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
     return ctx.storage.generateUploadUrl();
   },
 });
@@ -381,7 +394,9 @@ export const generateUploadUrl = mutation({
 export const getAttachmentUrl = query({
   args: { threadId: v.id("threads"), fileId: v.id("_storage") },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { userId, orgId } = access;
     const thread = await ctx.db.get(args.threadId);
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
       return null;
@@ -404,7 +419,9 @@ export const getAttachmentUrl = query({
 export const getAttachmentUrls = query({
   args: { threadId: v.id("threads"), fileIds: v.array(v.id("_storage")) },
   handler: async (ctx, args) => {
-    const { userId, orgId } = await requireOrgAccess(ctx);
+    const access = await requireOrgAccess(ctx);
+    assertCanUseTenantAgent(access);
+    const { userId, orgId } = access;
     const thread = await ctx.db.get(args.threadId);
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
       return [];
@@ -832,9 +849,7 @@ export const claimAgentResponse = internalMutation({
 
     const existing = await ctx.db
       .query("threadMessages")
-      .withIndex("reply", (q) =>
-        q.eq("replyToMessageId", args.userMessageId),
-      )
+      .withIndex("reply", (q) => q.eq("replyToMessageId", args.userMessageId))
       .first();
     if (existing) {
       if (existing.agentRunStartedAt) {
@@ -1840,9 +1855,7 @@ export const checkDuplicateEmail = internalQuery({
     if (args.resendEmailId) {
       const byResend = await ctx.db
         .query("threadMessages")
-        .withIndex("resend", (q) =>
-          q.eq("resendEmailId", args.resendEmailId),
-        )
+        .withIndex("resend", (q) => q.eq("resendEmailId", args.resendEmailId))
         .first();
       if (byResend) return true;
     }
@@ -1883,9 +1896,7 @@ export const findThreadByEmailMessageId = internalQuery({
 
       const outbound = await ctx.db
         .query("threadMessages")
-        .withIndex("response", (q) =>
-          q.eq("responseMessageId", candidate),
-        )
+        .withIndex("response", (q) => q.eq("responseMessageId", candidate))
         .first();
       if (outbound && outbound.orgId === args.orgId) {
         return ctx.db.get(outbound.threadId);
@@ -1911,9 +1922,7 @@ export const findEmailMessageByMessageId = internalQuery({
 
       const byResponseMessageId = await ctx.db
         .query("threadMessages")
-        .withIndex("response", (q) =>
-          q.eq("responseMessageId", candidate),
-        )
+        .withIndex("response", (q) => q.eq("responseMessageId", candidate))
         .first();
       if (byResponseMessageId && byResponseMessageId.orgId === args.orgId)
         return byResponseMessageId;

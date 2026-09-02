@@ -191,7 +191,6 @@ describe("procurement requests", () => {
       {
         requestId: request.requestId,
         brokerOrgId: fixture.brokerOrgId,
-        brokerName: "Broker One",
         contactEmail: "broker@example.com",
         status: "can_handle",
         applicationUrl: "https://broker.example/application",
@@ -315,7 +314,6 @@ describe("procurement requests", () => {
     await operator.mutation(api.procurementRequests.createOutreach, {
       requestId: first.requestId,
       brokerOrgId: fixture.brokerOrgId,
-      brokerName: "Broker One",
       contactEmail: "broker@example.com",
     });
 

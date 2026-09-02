@@ -25,10 +25,7 @@ import {
   toResendAttachments,
   type EmailAttachmentMeta,
 } from "./emailDelivery";
-import {
-  buildEmailSignature,
-  type BrokerBranding,
-} from "./emailIdentity";
+import { buildEmailSignature } from "./emailIdentity";
 import {
   MULTIPLE_COI_SINGLE_RECIPIENT_WARNING,
   normalizeAttachmentText,
@@ -48,7 +45,6 @@ export {
   buildEmailSignature,
   getEmailAgentFromName,
   resolveEmailAgentIdentity,
-  type BrokerBranding,
 } from "./emailIdentity";
 export {
   queueEmailDraftArtifact,
@@ -125,15 +121,16 @@ function withEmailWorkflowOutcome(
       : [],
     forbiddenQuestions: [],
     forbiddenClaims: ["email_sent_without_email_sent_side_effect"],
-    sideEffects: target && outcomeState.sideEffectKind
-      ? [
-          {
-            kind: outcomeState.sideEffectKind,
-            targetType: target.type,
-            targetId: target.id,
-          },
-        ]
-      : [],
+    sideEffects:
+      target && outcomeState.sideEffectKind
+        ? [
+            {
+              kind: outcomeState.sideEffectKind,
+              targetType: target.type,
+              targetId: target.id,
+            },
+          ]
+        : [],
     artifacts: [
       ...(result.pendingEmailId
         ? [
@@ -175,12 +172,9 @@ type EmailExpertContext = {
   fromHeader: string;
   agentAddress: string;
   replyTo?: string;
-  brokerBranding?: BrokerBranding;
   senderEmail?: string;
   defaultTo?: string;
   defaultRecipientName?: string;
-  brokerRecipientEmail?: string;
-  brokerRecipientName?: string;
   defaultCc?: string[];
   defaultBcc?: string[];
   blockedCopyEmails?: string[];
@@ -189,8 +183,6 @@ type EmailExpertContext = {
   references?: string;
   allowedRecipients?: string[];
   requireKnownRecipient?: boolean;
-  missingRecipientMessage?: string;
-  unknownRecipientMessage?: string;
   availableAttachments?: EmailAttachmentMeta[];
   referencedPolicyIds?: Id<"policies">[];
   emailSendDelay?: number;
@@ -271,17 +263,9 @@ export function buildEmailExpertTool(
       cc: z.array(z.string()).optional().describe("CC email addresses."),
       bcc: z.array(z.string()).optional().describe("BCC email addresses."),
       recipientDirection: z
-        .enum(["requester", "broker", "explicit"])
+        .enum(["requester", "explicit"])
         .optional()
-        .describe(
-          "Structured recipient direction from the current request. Use broker only for an affirmative direction to contact the configured broker.",
-        ),
-      brokerDirectionNegated: z
-        .boolean()
-        .optional()
-        .describe(
-          "True when broker wording is negated, such as 'do not send this to my broker'.",
-        ),
+        .describe("Structured recipient direction from the current request."),
       attachments: z
         .array(
           z.object({
@@ -336,8 +320,7 @@ async function runEmailSubagent(
     deliveryIntent: "draft" | "send";
     cc?: string[];
     bcc?: string[];
-    recipientDirection?: "requester" | "broker" | "explicit";
-    brokerDirectionNegated?: boolean;
+    recipientDirection?: "requester" | "explicit";
     attachments?: RequestedEmailAttachment[];
   },
 ): Promise<EmailSubagentResult> {
@@ -365,15 +348,8 @@ async function runEmailSubagent(
       : undefined;
   const explicitSendRequested = explicitSendAuthorization !== undefined;
   const preparedAttachments: EmailAttachmentMeta[] = [];
-  const brokerRequested =
-    input.recipientDirection === "broker" &&
-    input.brokerDirectionNegated !== true;
-  const directedDefaultTo = brokerRequested
-    ? context.brokerRecipientEmail
-    : context.defaultTo;
-  const directedRecipientName = brokerRequested
-    ? context.brokerRecipientName
-    : context.defaultRecipientName;
+  const directedDefaultTo = context.defaultTo;
+  const directedRecipientName = context.defaultRecipientName;
   const safeRequestedAttachments = resolveRequestedCoiAttachmentsForRecipient({
     to: input.to,
     defaultTo: directedDefaultTo,
@@ -588,7 +564,9 @@ async function runEmailSubagent(
       await attachOriginalPolicy(requested.policyId);
     } else if (
       requested.kind === "coi" &&
-      (requested.policyId || requested.requirementSourceDocumentId || requested.requirementId)
+      (requested.policyId ||
+        requested.requirementSourceDocumentId ||
+        requested.requirementId)
     ) {
       await generateCoiAttachment(
         requested.policyId,
@@ -617,17 +595,18 @@ async function runEmailSubagent(
   const policies = await ctx.runQuery(internal.policies.listAllInternal, {
     orgId: context.orgId,
   });
-  const availablePolicies = policies
-    .slice(0, 25)
-    .map((policy) => ({
-      id: policy._id,
-      insured: policy.insuredName,
-      carrier: policy.security ?? policy.carrier,
-      type: policyLobCodes(policy).filter((code) => code !== "UN").map(lobLabel).join(", "),
-      number: policy.policyNumber,
-      fileName: policy.fileName,
-      hasOriginalFile: !!policy.fileId,
-    }));
+  const availablePolicies = policies.slice(0, 25).map((policy) => ({
+    id: policy._id,
+    insured: policy.insuredName,
+    carrier: policy.security ?? policy.carrier,
+    type: policyLobCodes(policy)
+      .filter((code) => code !== "UN")
+      .map(lobLabel)
+      .join(", "),
+    number: policy.policyNumber,
+    fileName: policy.fileName,
+    hasOriginalFile: !!policy.fileId,
+  }));
 
   const allowedRecipients = (context.allowedRecipients ?? [])
     .map(normalizeEmailAddress)
@@ -700,10 +679,7 @@ async function runEmailSubagent(
       uncertainty.push(MULTIPLE_COI_SINGLE_RECIPIENT_WARNING);
     }
     if (!to) {
-      uncertainty.push(
-        context.missingRecipientMessage ??
-          "Confirm the recipient email address.",
-      );
+      uncertainty.push("Confirm the recipient email address.");
     }
     if (!subject) uncertainty.push("Confirm the subject line.");
     if (!body) uncertainty.push("Confirm the email body.");
@@ -719,12 +695,8 @@ async function runEmailSubagent(
             sourceExplicitlyNamesEmailAddress(sourceUserMessage.content, email)
           ),
       );
-    if (
-      (context.requireKnownRecipient || brokerRequested) &&
-      unknownRecipients.length > 0
-    ) {
+    if (context.requireKnownRecipient && unknownRecipients.length > 0) {
       const message =
-        context.unknownRecipientMessage ??
         "I cannot use that recipient because it is not a known contact in Spot. Add the contact in settings or provide the correct recipient explicitly.";
       finalResult = {
         status: "needs_confirmation",
@@ -739,11 +711,7 @@ async function runEmailSubagent(
       );
     }
 
-    if (
-      uncertainty.length > 0 ||
-      brokerRequested ||
-      !explicitSendAuthorization
-    ) {
+    if (uncertainty.length > 0 || !explicitSendAuthorization) {
       const status = uncertainty.length > 0 ? "needs_confirmation" : "draft";
       const sendBlockedReason =
         uncertainty.length > 0 ? uncertainty.join(" ") : undefined;
@@ -786,10 +754,7 @@ async function runEmailSubagent(
 
     if (!to) throw new Error("Recipient email is required before sending.");
     const sendTo = to;
-    const signature = buildEmailSignature(
-      context.agentAddress,
-      context.brokerBranding,
-    );
+    const signature = buildEmailSignature(context.agentAddress);
     const emailPayload = buildEmailPayload({
       fromHeader: context.fromHeader,
       to: sendTo,
@@ -870,20 +835,16 @@ async function runEmailSubagent(
       referencedPolicyIds,
     });
     if (persistedDraftId) {
-      await ctx.runAction(
-        internal.actions.sendPendingEmail.sendDraftInternal,
-        {
-          id: persistedDraftId,
-          authorization: {
-            kind: "channel_explicit_action",
-            ...explicitSendAuthorization,
-          },
+      await ctx.runAction(internal.actions.sendPendingEmail.sendDraftInternal, {
+        id: persistedDraftId,
+        authorization: {
+          kind: "channel_explicit_action",
+          ...explicitSendAuthorization,
         },
-      );
-      const sentDraft = await ctx.runQuery(
-        internal.pendingEmails.getInternal,
-        { id: persistedDraftId },
-      );
+      });
+      const sentDraft = await ctx.runQuery(internal.pendingEmails.getInternal, {
+        id: persistedDraftId,
+      });
       const sentResult: EmailSubagentResult = {
         status: "sent",
         responseBody: `Email sent to ${sendTo}${cc.length > 0 ? ` (CC: ${cc.join(", ")})` : ""}.`,
@@ -978,109 +939,88 @@ Be careful by default:
 - No personal sign-off; the platform adds the Spot signature.
 
 Call send_or_draft_email exactly once after preparing any requested attachments.`,
-    messages: [
-      {
-        role: "user",
-        content: JSON.stringify({
-          channel: context.channel,
-          request: input.request,
-          supplied: {
-            to: input.to ?? directedDefaultTo,
-            recipientName: input.recipientName,
-            defaultRecipientName: directedRecipientName,
-            subject: input.subject ?? context.subjectHint,
-            body: input.body,
-            deliveryIntent: input.deliveryIntent,
-            cc: defaultCc,
-            bcc: defaultBcc,
-            recipientDirection: input.recipientDirection,
-            brokerDirectionNegated: input.brokerDirectionNegated === true,
-            recipientGuard: context.requireKnownRecipient || brokerRequested
-              ? {
-                  requireKnownRecipient: true,
-                  missingRecipientMessage: context.missingRecipientMessage,
-                  unknownRecipientMessage: context.unknownRecipientMessage,
-                }
-              : undefined,
-          },
-          requestedAttachments: input.attachments ?? [],
-          attachmentSafetyWarning:
-            safeRequestedAttachments.requiresCoiBatchConfirmation
-              ? MULTIPLE_COI_SINGLE_RECIPIENT_WARNING
-              : undefined,
-          preparedAttachments: preparedAttachments.map((att) => ({
-            filename: att.filename,
-            contentType: att.contentType,
-            fileId: att.fileId,
-          })),
-          conversationContext: context.conversationContext,
-          availablePolicies,
-          availableUploadedAttachments: availableAttachments.map((att) => ({
-            fileId: att.fileId,
-            filename: att.filename,
-            contentType: att.contentType,
-          })),
+      messages: [
+        {
+          role: "user",
+          content: JSON.stringify({
+            channel: context.channel,
+            request: input.request,
+            supplied: {
+              to: input.to ?? directedDefaultTo,
+              recipientName: input.recipientName,
+              defaultRecipientName: directedRecipientName,
+              subject: input.subject ?? context.subjectHint,
+              body: input.body,
+              deliveryIntent: input.deliveryIntent,
+              cc: defaultCc,
+              bcc: defaultBcc,
+              recipientDirection: input.recipientDirection,
+              recipientGuard: context.requireKnownRecipient
+                ? {
+                    requireKnownRecipient: true,
+                  }
+                : undefined,
+            },
+            requestedAttachments: input.attachments ?? [],
+            attachmentSafetyWarning:
+              safeRequestedAttachments.requiresCoiBatchConfirmation
+                ? MULTIPLE_COI_SINGLE_RECIPIENT_WARNING
+                : undefined,
+            preparedAttachments: preparedAttachments.map((att) => ({
+              filename: att.filename,
+              contentType: att.contentType,
+              fileId: att.fileId,
+            })),
+            conversationContext: context.conversationContext,
+            availablePolicies,
+            availableUploadedAttachments: availableAttachments.map((att) => ({
+              fileId: att.fileId,
+              filename: att.filename,
+              contentType: att.contentType,
+            })),
+          }),
+        },
+      ],
+      tools: {
+        attach_original_policy: tool({
+          description: "Attach the original PDF file for a policy.",
+          inputSchema: z.object({
+            policyId: z.string(),
+          }),
+          execute: async ({ policyId }) => attachOriginalPolicy(policyId),
         }),
-      },
-    ],
-    tools: {
-      attach_original_policy: tool({
-        description: "Attach the original PDF file for a policy.",
-        inputSchema: z.object({
-          policyId: z.string(),
+        attach_uploaded_file: tool({
+          description:
+            "Attach a file that the user uploaded in this conversation.",
+          inputSchema: z.object({
+            fileId: z.string(),
+            filename: z.string().optional(),
+          }),
+          execute: async ({ fileId, filename }) =>
+            attachUploadedFile(fileId, filename),
         }),
-        execute: async ({ policyId }) => attachOriginalPolicy(policyId),
-      }),
-      attach_uploaded_file: tool({
-        description:
-          "Attach a file that the user uploaded in this conversation.",
-        inputSchema: z.object({
-          fileId: z.string(),
-          filename: z.string().optional(),
-        }),
-        execute: async ({ fileId, filename }) =>
-          attachUploadedFile(fileId, filename),
-      }),
-      generate_coi_attachment: tool({
-        description:
-          "Attach certificates in either policy mode or requirements-source mode. Never combine the modes.",
-        inputSchema: z.object({
-          policyId: z.string().optional(),
-          requirementSourceDocumentId: z.string().optional(),
-          requirementId: z.string().optional(),
-          certificateHolder: z.string().optional(),
-          holderContactName: z.string().optional(),
-          holderEmail: z.string().optional(),
-          holderPhone: z.string().optional(),
-          addressLine1: z.string().optional(),
-          addressLine2: z.string().optional(),
-          city: z.string().optional(),
-          state: z.string().optional(),
-          postalCode: z.string().optional(),
-          country: z.string().optional(),
-          requestText: z.string().optional(),
-          requestedEndorsements: z.array(z.string()).optional(),
-          additionalInsuredName: z.string().optional(),
-        }),
-        execute: async ({
-          policyId,
-          certificateHolder,
-          holderContactName,
-          holderEmail,
-          holderPhone,
-          addressLine1,
-          addressLine2,
-          city,
-          state,
-          postalCode,
-          country,
-          requestText,
-          requestedEndorsements,
-          additionalInsuredName,
-          requirementSourceDocumentId,
-          requirementId,
-        }) =>
-          generateCoiAttachment(
+        generate_coi_attachment: tool({
+          description:
+            "Attach certificates in either policy mode or requirements-source mode. Never combine the modes.",
+          inputSchema: z.object({
+            policyId: z.string().optional(),
+            requirementSourceDocumentId: z.string().optional(),
+            requirementId: z.string().optional(),
+            certificateHolder: z.string().optional(),
+            holderContactName: z.string().optional(),
+            holderEmail: z.string().optional(),
+            holderPhone: z.string().optional(),
+            addressLine1: z.string().optional(),
+            addressLine2: z.string().optional(),
+            city: z.string().optional(),
+            state: z.string().optional(),
+            postalCode: z.string().optional(),
+            country: z.string().optional(),
+            requestText: z.string().optional(),
+            requestedEndorsements: z.array(z.string()).optional(),
+            additionalInsuredName: z.string().optional(),
+          }),
+          execute: async ({
             policyId,
             certificateHolder,
             holderContactName,
@@ -1097,23 +1037,41 @@ Call send_or_draft_email exactly once after preparing any requested attachments.
             additionalInsuredName,
             requirementSourceDocumentId,
             requirementId,
-          ),
-      }),
-      send_or_draft_email: tool({
-        description:
-          "Finalize the email. This either sends, queues, or returns a confirmation draft based on safety and org settings.",
-        inputSchema: z.object({
-          to: z.string().optional(),
-          recipientName: z.string().optional(),
-          subject: z.string().optional(),
-          body: z.string().optional(),
-          cc: z.array(z.string()).optional(),
-          bcc: z.array(z.string()).optional(),
+          }) =>
+            generateCoiAttachment(
+              policyId,
+              certificateHolder,
+              holderContactName,
+              holderEmail,
+              holderPhone,
+              addressLine1,
+              addressLine2,
+              city,
+              state,
+              postalCode,
+              country,
+              requestText,
+              requestedEndorsements,
+              additionalInsuredName,
+              requirementSourceDocumentId,
+              requirementId,
+            ),
         }),
-        execute: sendOrDraftEmail,
-      }),
-    },
-    stopWhen: stepCountIs(8),
+        send_or_draft_email: tool({
+          description:
+            "Finalize the email. This either sends, queues, or returns a confirmation draft based on safety and org settings.",
+          inputSchema: z.object({
+            to: z.string().optional(),
+            recipientName: z.string().optional(),
+            subject: z.string().optional(),
+            body: z.string().optional(),
+            cc: z.array(z.string()).optional(),
+            bcc: z.array(z.string()).optional(),
+          }),
+          execute: sendOrDraftEmail,
+        }),
+      },
+      stopWhen: stepCountIs(8),
     },
     {
       taskKind: "email_draft_tool_loop",

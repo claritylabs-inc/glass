@@ -22,13 +22,17 @@ const reviewEvidenceSchema = z.object({
 
 export const proposalReviewSchema = z.object({
   conclusion: proposalReviewConclusionSchema,
-  findings: z.array(z.object({
-    targetKind: z.enum(["requirement", "specification"]),
-    targetId: z.string().min(1),
-    conclusion: findingConclusionSchema,
-    summary: z.string().min(1).max(1200),
-    evidence: z.array(reviewEvidenceSchema).max(20),
-  })).max(200),
+  findings: z
+    .array(
+      z.object({
+        targetKind: z.enum(["requirement", "specification"]),
+        targetId: z.string().min(1),
+        conclusion: findingConclusionSchema,
+        summary: z.string().min(1).max(1200),
+        evidence: z.array(reviewEvidenceSchema).max(20),
+      }),
+    )
+    .max(200),
 });
 
 export type ProposalReviewOutput = z.infer<typeof proposalReviewSchema>;
@@ -57,12 +61,17 @@ export function collectProposalEvidence(value: unknown): AllowedEvidence[] {
       found.push({
         proposalDocumentId: item.proposalDocumentId,
         sourceNodeIds: Array.isArray(item.sourceNodeIds)
-          ? item.sourceNodeIds.filter((id): id is string => typeof id === "string")
+          ? item.sourceNodeIds.filter(
+              (id): id is string => typeof id === "string",
+            )
           : [],
         sourceSpanIds: Array.isArray(item.sourceSpanIds)
-          ? item.sourceSpanIds.filter((id): id is string => typeof id === "string")
+          ? item.sourceSpanIds.filter(
+              (id): id is string => typeof id === "string",
+            )
           : [],
-        pageStart: typeof item.pageStart === "number" ? item.pageStart : undefined,
+        pageStart:
+          typeof item.pageStart === "number" ? item.pageStart : undefined,
         pageEnd: typeof item.pageEnd === "number" ? item.pageEnd : undefined,
       });
     }
@@ -95,31 +104,43 @@ export function normalizeProposalReview(
     specification: new Set(input.specificationIds),
   };
   const allowedEvidence = new Map(
-    collectProposalEvidence(input.extractedOffer).map((evidence) => [evidenceKey(evidence), evidence]),
+    collectProposalEvidence(input.extractedOffer).map((evidence) => [
+      evidenceKey(evidence),
+      evidence,
+    ]),
   );
   const byTarget = new Map<string, ProposalReviewOutput["findings"][number]>();
   for (const finding of output.findings) {
     if (!targetSets[finding.targetKind].has(finding.targetId)) continue;
     const evidence = finding.evidence.flatMap((candidate) => {
-      const allowed = allowedEvidence.get(evidenceKey({
-        proposalDocumentId: candidate.proposalDocumentId,
-        sourceNodeIds: candidate.sourceNodeIds,
-        sourceSpanIds: candidate.sourceSpanIds,
-        pageStart: candidate.pageStart ?? undefined,
-        pageEnd: candidate.pageEnd ?? candidate.pageStart ?? undefined,
-      }));
-      return allowed ? [{
-        proposalDocumentId: allowed.proposalDocumentId,
-        sourceNodeIds: allowed.sourceNodeIds ?? [],
-        sourceSpanIds: allowed.sourceSpanIds ?? [],
-        pageStart: allowed.pageStart ?? null,
-        pageEnd: allowed.pageEnd ?? allowed.pageStart ?? null,
-      }] : [];
+      const allowed = allowedEvidence.get(
+        evidenceKey({
+          proposalDocumentId: candidate.proposalDocumentId,
+          sourceNodeIds: candidate.sourceNodeIds,
+          sourceSpanIds: candidate.sourceSpanIds,
+          pageStart: candidate.pageStart ?? undefined,
+          pageEnd: candidate.pageEnd ?? candidate.pageStart ?? undefined,
+        }),
+      );
+      return allowed
+        ? [
+            {
+              proposalDocumentId: allowed.proposalDocumentId,
+              sourceNodeIds: allowed.sourceNodeIds ?? [],
+              sourceSpanIds: allowed.sourceSpanIds ?? [],
+              pageStart: allowed.pageStart ?? null,
+              pageEnd: allowed.pageEnd ?? allowed.pageStart ?? null,
+            },
+          ]
+        : [];
     });
-    const hasRequiredEvidence = evidence.length > 0 || finding.conclusion === "insufficient_evidence";
+    const hasRequiredEvidence =
+      evidence.length > 0 || finding.conclusion === "insufficient_evidence";
     byTarget.set(`${finding.targetKind}:${finding.targetId}`, {
       ...finding,
-      conclusion: hasRequiredEvidence ? finding.conclusion : "insufficient_evidence",
+      conclusion: hasRequiredEvidence
+        ? finding.conclusion
+        : "insufficient_evidence",
       summary: hasRequiredEvidence
         ? finding.summary.trim()
         : "The generated finding did not cite accepted proposal evidence.",
@@ -134,14 +155,17 @@ export function normalizeProposalReview(
           targetKind,
           targetId,
           conclusion: "insufficient_evidence",
-          summary: "The review did not return source-backed evidence for this item.",
+          summary:
+            "The review did not return source-backed evidence for this item.",
           evidence: [],
         });
       }
     }
   }
   const findings = [...byTarget.values()];
-  const conclusion = findings.some((finding) => finding.conclusion === "has_gap")
+  const conclusion = findings.some(
+    (finding) => finding.conclusion === "has_gap",
+  )
     ? "has_gaps"
     : findings.some((finding) => finding.conclusion === "insufficient_evidence")
       ? "insufficient_evidence"

@@ -39,7 +39,12 @@ export const cleanupPoliciesBatchInternal = internalMutation({
     limit: v.number(),
     cursor: v.optional(v.union(v.string(), v.null())),
   },
-  handler: async (ctx, args): Promise<CleanupReport & { nextCursor: string | null; isDone: boolean }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    CleanupReport & { nextCursor: string | null; isDone: boolean }
+  > => {
     const report = emptyReport(args.dryRun);
     const page = args.orgId
       ? await ctx.db
@@ -67,12 +72,17 @@ export const cleanupPoliciesBatchInternal = internalMutation({
     }
 
     if (!args.dryRun && !page.isDone) {
-      await ctx.scheduler.runAfter(0, (internal as any).cleanupLegacyLineOfBusinessFieldsBatches.cleanupPoliciesBatchInternal, {
-        orgId: args.orgId,
-        dryRun: args.dryRun,
-        limit: args.limit,
-        cursor: page.continueCursor,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        (internal as any).cleanupLegacyLineOfBusinessFieldsBatches
+          .cleanupPoliciesBatchInternal,
+        {
+          orgId: args.orgId,
+          dryRun: args.dryRun,
+          limit: args.limit,
+          cursor: page.continueCursor,
+        },
+      );
       report.continuationScheduled = true;
     }
 

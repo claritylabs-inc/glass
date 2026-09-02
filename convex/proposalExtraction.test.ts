@@ -72,18 +72,21 @@ async function fixture(fingerprint = "proposal-fingerprint") {
       updatedAt: now,
     });
     const fileId = await ctx.storage.store(new Blob(["proposal"]));
-    const proposalDocumentId = await ctx.db.insert("procurementProposalDocuments", {
-      proposalId,
-      requestId,
-      clientOrgId,
-      fileId,
-      fileName: "quote.pdf",
-      contentType: "application/pdf",
-      size: 8,
-      sha256: "document-hash",
-      createdByUserId: operatorUserId,
-      createdAt: now,
-    });
+    const proposalDocumentId = await ctx.db.insert(
+      "procurementProposalDocuments",
+      {
+        proposalId,
+        requestId,
+        clientOrgId,
+        fileId,
+        fileName: "quote.pdf",
+        contentType: "application/pdf",
+        size: 8,
+        sha256: "document-hash",
+        createdByUserId: operatorUserId,
+        createdAt: now,
+      },
+    );
     const jobId = await ctx.db.insert("procurementProposalExtractionJobs", {
       proposalId,
       requestId,
@@ -112,16 +115,20 @@ describe("proposal extraction leases", () => {
     expect(claimed?.documents.map((document: any) => document._id)).toEqual([
       seeded.proposalDocumentId,
     ]);
-    await expect(seeded.t.mutation(heartbeatFn, {
-      jobId: seeded.jobId,
-      leaseId: "wrong-lease",
-      leaseExpiresAt: dayjs().add(10, "minute").valueOf(),
-    })).resolves.toBe(false);
-    await expect(seeded.t.mutation(heartbeatFn, {
-      jobId: seeded.jobId,
-      leaseId: "lease-one",
-      leaseExpiresAt: dayjs().add(10, "minute").valueOf(),
-    })).resolves.toBe(true);
+    await expect(
+      seeded.t.mutation(heartbeatFn, {
+        jobId: seeded.jobId,
+        leaseId: "wrong-lease",
+        leaseExpiresAt: dayjs().add(10, "minute").valueOf(),
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      seeded.t.mutation(heartbeatFn, {
+        jobId: seeded.jobId,
+        leaseId: "lease-one",
+        leaseExpiresAt: dayjs().add(10, "minute").valueOf(),
+      }),
+    ).resolves.toBe(true);
   });
 
   test("rejects stale completion without changing the proposal offer", async () => {
@@ -131,20 +138,24 @@ describe("proposal extraction leases", () => {
       leaseExpiresAt: dayjs().add(5, "minute").valueOf(),
       workerId: "worker-one",
     });
-    await seeded.t.run((ctx) => ctx.db.patch(seeded.proposalId, {
-      extractionFingerprint: "new-fingerprint",
-    }));
+    await seeded.t.run((ctx) =>
+      ctx.db.patch(seeded.proposalId, {
+        extractionFingerprint: "new-fingerprint",
+      }),
+    );
     const payloadId = await seeded.t.run((ctx) =>
       ctx.storage.store(new Blob(["{}"], { type: "application/json" })),
     );
-    await expect(seeded.t.mutation(completeFn, {
-      jobId: seeded.jobId,
-      proposalId: seeded.proposalId,
-      leaseId: "lease-one",
-      extractionFingerprint: "proposal-fingerprint",
-      completionPayloadStorageId: payloadId,
-      extractedOffer: { carrier: "Wrong" },
-    })).resolves.toBe(false);
+    await expect(
+      seeded.t.mutation(completeFn, {
+        jobId: seeded.jobId,
+        proposalId: seeded.proposalId,
+        leaseId: "lease-one",
+        extractionFingerprint: "proposal-fingerprint",
+        completionPayloadStorageId: payloadId,
+        extractedOffer: { carrier: "Wrong" },
+      }),
+    ).resolves.toBe(false);
     const proposal = await seeded.t.run((ctx) => ctx.db.get(seeded.proposalId));
     expect(proposal?.extractedOffer).toBeUndefined();
     expect(proposal?.status).toBe("extracting");
@@ -157,7 +168,10 @@ describe("proposal extraction leases", () => {
         status: "review_ready",
         extractedOffer: { carrier: "Accepted" },
       });
-      for (const extractionFingerprint of ["stale-fingerprint", "accepted-fingerprint"]) {
+      for (const extractionFingerprint of [
+        "stale-fingerprint",
+        "accepted-fingerprint",
+      ]) {
         await ctx.db.insert("proposalSourceSpans", {
           orgId: (await ctx.db.get(seeded.proposalId))!.clientOrgId,
           proposalId: seeded.proposalId,
@@ -185,9 +199,17 @@ describe("proposal extraction leases", () => {
         });
       }
     });
-    const spans = await seeded.t.query(listSpansFn, { proposalId: seeded.proposalId });
-    const nodes = await seeded.t.query(listNodesFn, { proposalId: seeded.proposalId });
-    expect(spans.map((row: any) => row.extractionFingerprint)).toEqual(["accepted-fingerprint"]);
-    expect(nodes.map((row: any) => row.extractionFingerprint)).toEqual(["accepted-fingerprint"]);
+    const spans = await seeded.t.query(listSpansFn, {
+      proposalId: seeded.proposalId,
+    });
+    const nodes = await seeded.t.query(listNodesFn, {
+      proposalId: seeded.proposalId,
+    });
+    expect(spans.map((row: any) => row.extractionFingerprint)).toEqual([
+      "accepted-fingerprint",
+    ]);
+    expect(nodes.map((row: any) => row.extractionFingerprint)).toEqual([
+      "accepted-fingerprint",
+    ]);
   });
 });

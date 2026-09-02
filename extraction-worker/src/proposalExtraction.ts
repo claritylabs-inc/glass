@@ -52,24 +52,36 @@ export type ProposalAggregate = {
   quoteExpirationDate?: string;
   premium?: string;
   premiumAmount?: number;
-  premiums: Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>;
-  coverages: Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>;
-  conditions: Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>;
-  subjectivities: Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>;
-  exclusions: Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>;
+  premiums: Array<
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >;
+  coverages: Array<
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >;
+  conditions: Array<
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >;
+  subjectivities: Array<
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >;
+  exclusions: Array<
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >;
   parties: Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>;
   evidence: Record<string, ProposalEvidenceRef[]>;
 };
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : undefined;
 }
 
 function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
-    ? value.map(record).filter((item): item is Record<string, unknown> => Boolean(item))
+    ? value
+        .map(record)
+        .filter((item): item is Record<string, unknown> => Boolean(item))
     : [];
 }
 
@@ -81,12 +93,21 @@ function text(value: unknown): string | undefined {
 
 function strings(value: unknown): string[] {
   return Array.isArray(value)
-    ? [...new Set(value.filter((item): item is string => typeof item === "string" && item.length > 0))]
+    ? [
+        ...new Set(
+          value.filter(
+            (item): item is string =>
+              typeof item === "string" && item.length > 0,
+          ),
+        ),
+      ]
     : [];
 }
 
 function finiteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function itemEvidence(
@@ -99,18 +120,25 @@ function itemEvidence(
     sourceNodeIds.push(documentNodeId);
   }
   const sourceSpanIds = strings(value.sourceSpanIds);
-  const pageStart = finiteNumber(value.pageStart) ?? finiteNumber(value.pageNumber);
+  const pageStart =
+    finiteNumber(value.pageStart) ?? finiteNumber(value.pageNumber);
   const pageEnd = finiteNumber(value.pageEnd) ?? pageStart;
-  if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0 && pageStart === undefined) {
+  if (
+    sourceNodeIds.length === 0 &&
+    sourceSpanIds.length === 0 &&
+    pageStart === undefined
+  ) {
     return [];
   }
-  return [{
-    proposalDocumentId,
-    sourceNodeIds,
-    sourceSpanIds,
-    pageStart,
-    pageEnd,
-  }];
+  return [
+    {
+      proposalDocumentId,
+      sourceNodeIds,
+      sourceSpanIds,
+      pageStart,
+      pageEnd,
+    },
+  ];
 }
 
 function first<T>(values: Array<T | undefined>): T | undefined {
@@ -119,7 +147,10 @@ function first<T>(values: Array<T | undefined>): T | undefined {
 
 function keyFor(value: Record<string, unknown>, fields: string[]): string {
   return fields
-    .map((field) => text(value[field])?.toLowerCase() ?? String(value[field] ?? ""))
+    .map(
+      (field) =>
+        text(value[field])?.toLowerCase() ?? String(value[field] ?? ""),
+    )
     .join("|");
 }
 
@@ -128,7 +159,10 @@ function withEvidence(
   field: string,
   keys: string[],
 ): Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }> {
-  const byKey = new Map<string, Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>();
+  const byKey = new Map<
+    string,
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >();
   for (const extracted of documents) {
     for (const item of records(extracted.document[field])) {
       const key = keyFor(item, keys);
@@ -149,14 +183,20 @@ function supplementalItems(
   documents: ProposalExtractedDocument[],
   field: "conditions" | "subjectivities",
 ): Array<Record<string, unknown> & { evidence: ProposalEvidenceRef[] }> {
-  const byKey = new Map<string, Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>();
+  const byKey = new Map<
+    string,
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >();
   for (const extracted of documents) {
     const values = extracted.supplemental?.[field] ?? [];
     for (const item of values) {
       const description = text(item.description);
       if (!description) continue;
       const key = `${description.toLowerCase()}|${text(item.category)?.toLowerCase() ?? ""}`;
-      const evidence = itemEvidence(extracted.proposalDocumentId, item as unknown as Record<string, unknown>);
+      const evidence = itemEvidence(
+        extracted.proposalDocumentId,
+        item as unknown as Record<string, unknown>,
+      );
       const existing = byKey.get(key);
       if (existing) existing.evidence.push(...evidence);
       else byKey.set(key, { ...item, evidence });
@@ -170,9 +210,12 @@ function scalarEvidence(
   field: string,
 ): ProposalEvidenceRef[] {
   return documents.flatMap((extracted) => {
-    const declaration = records(record(extracted.document.declarations)?.fields)
-      .find((item) => item.field === field);
-    return declaration ? itemEvidence(extracted.proposalDocumentId, declaration) : [];
+    const declaration = records(
+      record(extracted.document.declarations)?.fields,
+    ).find((item) => item.field === field);
+    return declaration
+      ? itemEvidence(extracted.proposalDocumentId, declaration)
+      : [];
   });
 }
 
@@ -185,16 +228,24 @@ function partyRows(extracted: ProposalExtractedDocument) {
     parties.push({ role: "additional_named_insured", ...item });
   }
   const insurer = record(document.insurer);
-  if (insurer) parties.push({ role: "insurer", name: insurer.legalName, ...insurer });
+  if (insurer)
+    parties.push({ role: "insurer", name: insurer.legalName, ...insurer });
   const producer = record(document.producer);
-  if (producer) parties.push({ role: "producer", name: producer.agencyName, ...producer });
-  for (const field of ["additionalInsureds", "lossPayees", "mortgageHolders"] as const) {
-    const role = field === "additionalInsureds"
-      ? "additional_insured"
-      : field === "lossPayees"
-        ? "loss_payee"
-        : "mortgage_holder";
-    for (const item of records(document[field])) parties.push({ role, ...item });
+  if (producer)
+    parties.push({ role: "producer", name: producer.agencyName, ...producer });
+  for (const field of [
+    "additionalInsureds",
+    "lossPayees",
+    "mortgageHolders",
+  ] as const) {
+    const role =
+      field === "additionalInsureds"
+        ? "additional_insured"
+        : field === "lossPayees"
+          ? "loss_payee"
+          : "mortgage_holder";
+    for (const item of records(document[field]))
+      parties.push({ role, ...item });
   }
   return parties;
 }
@@ -204,8 +255,12 @@ export function aggregateProposalDocuments(
 ): ProposalAggregate {
   const quoteDocuments = documents.map((item) => item.document);
   const carrier = first(quoteDocuments.map((item) => text(item.carrier)));
-  const quoteNumber = first(quoteDocuments.map((item) => text(item.quoteNumber)));
-  const insuredName = first(quoteDocuments.map((item) => text(item.insuredName)));
+  const quoteNumber = first(
+    quoteDocuments.map((item) => text(item.quoteNumber)),
+  );
+  const insuredName = first(
+    quoteDocuments.map((item) => text(item.insuredName)),
+  );
   const proposedEffectiveDate = first(
     quoteDocuments.map((item) => text(item.proposedEffectiveDate)),
   );
@@ -217,14 +272,25 @@ export function aggregateProposalDocuments(
     ...documents.map((item) => text(item.supplemental?.quoteExpirationDate)),
   ]);
   const premium = first(quoteDocuments.map((item) => text(item.premium)));
-  const premiumAmount = first(quoteDocuments.map((item) => finiteNumber(item.premiumAmount)));
+  const premiumAmount = first(
+    quoteDocuments.map((item) => finiteNumber(item.premiumAmount)),
+  );
 
-  const documentConditions = withEvidence(documents, "conditions", ["name", "content"]);
+  const documentConditions = withEvidence(documents, "conditions", [
+    "name",
+    "content",
+  ]);
   const documentSubjectivities = [
-    ...withEvidence(documents, "enrichedSubjectivities", ["description", "category"]),
+    ...withEvidence(documents, "enrichedSubjectivities", [
+      "description",
+      "category",
+    ]),
     ...withEvidence(documents, "subjectivities", ["description", "category"]),
   ];
-  const parties = new Map<string, Record<string, unknown> & { evidence: ProposalEvidenceRef[] }>();
+  const parties = new Map<
+    string,
+    Record<string, unknown> & { evidence: ProposalEvidenceRef[] }
+  >();
   for (const extracted of documents) {
     for (const party of partyRows(extracted)) {
       const key = keyFor(party, ["role", "name"]);
@@ -245,9 +311,19 @@ export function aggregateProposalDocuments(
     premium,
     premiumAmount,
     premiums: withEvidence(documents, "premiumBreakdown", ["line", "amount"]),
-    coverages: withEvidence(documents, "coverages", ["name", "limit", "deductible"]),
-    conditions: [...documentConditions, ...supplementalItems(documents, "conditions")],
-    subjectivities: [...documentSubjectivities, ...supplementalItems(documents, "subjectivities")],
+    coverages: withEvidence(documents, "coverages", [
+      "name",
+      "limit",
+      "deductible",
+    ]),
+    conditions: [
+      ...documentConditions,
+      ...supplementalItems(documents, "conditions"),
+    ],
+    subjectivities: [
+      ...documentSubjectivities,
+      ...supplementalItems(documents, "subjectivities"),
+    ],
     exclusions: withEvidence(documents, "exclusions", ["name", "content"]),
     parties: [...parties.values()],
     evidence: {
@@ -260,9 +336,10 @@ export function aggregateProposalDocuments(
         extracted.supplemental?.quoteExpirationEvidence
           ? itemEvidence(
               extracted.proposalDocumentId,
-              extracted.supplemental.quoteExpirationEvidence as unknown as Record<string, unknown>,
+              extracted.supplemental
+                .quoteExpirationEvidence as unknown as Record<string, unknown>,
             )
-          : []
+          : [],
       ),
     },
   };

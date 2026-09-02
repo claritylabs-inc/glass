@@ -59,29 +59,31 @@ function serializeMonitorRows(rows: VendorComplianceRows) {
   return rows.flatMap((row) => {
     const vendorId = row.vendorOrg?._id;
     if (!vendorId) return [];
-    return [{
-      relationshipId: row.relationshipId,
-      vendorOrgId: vendorId,
-      vendorName: row.vendorName,
-      status: row.status,
-      requirementCount: row.requirementCount,
-      policyCount: row.policyCount,
-      notMetCount: row.notMetCount,
-      missingCount: row.missingCount,
-      expiringSoonCount: row.expiringSoonCount,
-      unverifiedCount: row.unverifiedCount,
-      checks: row.checks.map((check) => ({
-        requirementId: check.requirement._id,
-        requirementTitle: check.requirement.title,
-        status: check.status,
-        reasons: check.reasons,
-        matchedPolicyIds: check.matchedPolicyIds,
-        matchedSummary: check.matchedSummary,
-        expiresAt: check.expiresAt,
-        daysUntilExpiration: check.daysUntilExpiration,
-        notes: check.notes,
-      })),
-    }];
+    return [
+      {
+        relationshipId: row.relationshipId,
+        vendorOrgId: vendorId,
+        vendorName: row.vendorName,
+        status: row.status,
+        requirementCount: row.requirementCount,
+        policyCount: row.policyCount,
+        notMetCount: row.notMetCount,
+        missingCount: row.missingCount,
+        expiringSoonCount: row.expiringSoonCount,
+        unverifiedCount: row.unverifiedCount,
+        checks: row.checks.map((check) => ({
+          requirementId: check.requirement._id,
+          requirementTitle: check.requirement.title,
+          status: check.status,
+          reasons: check.reasons,
+          matchedPolicyIds: check.matchedPolicyIds,
+          matchedSummary: check.matchedSummary,
+          expiresAt: check.expiresAt,
+          daysUntilExpiration: check.daysUntilExpiration,
+          notes: check.notes,
+        })),
+      },
+    ];
   });
 }
 
@@ -109,7 +111,9 @@ export function buildFollowUpThreadContext(
   const issuePreview = event.issueLines.slice(0, 6).map((line) => `- ${line}`);
   const remainingCount = event.issueLines.length - issuePreview.length;
   if (remainingCount > 0) {
-    issuePreview.push(`- ${remainingCount} more ${remainingCount === 1 ? "item" : "items"} in the email below.`);
+    issuePreview.push(
+      `- ${remainingCount} more ${remainingCount === 1 ? "item" : "items"} in the email below.`,
+    );
   }
 
   const action = `Review the draft below, edit anything that should change, then send it to ${vendorEmail}. If ${event.vendorName} already sent documents, upload them or ask the vendor to reply with the policies, certificates, or endorsements that satisfy these requirements.`;
@@ -133,7 +137,9 @@ async function createFollowUpDraft(
 ) {
   const [org, members] = await Promise.all([
     ctx.runQuery(internal.orgs.getInternal, { id: event.clientOrgId }),
-    ctx.runQuery(internal.orgs.getMembersInternal, { orgId: event.clientOrgId }),
+    ctx.runQuery(internal.orgs.getMembersInternal, {
+      orgId: event.clientOrgId,
+    }),
   ]);
   if (!org) return null;
   const orgMembers = members as OrgMemberWithUser[];
@@ -142,43 +148,52 @@ async function createFollowUpDraft(
     orgMembers.find((member) => member.user);
   if (!owner?.user?._id) return null;
 
-  const identity = await resolveEmailAgentIdentity(ctx, org);
+  const identity = await resolveEmailAgentIdentity(org);
   if (!identity.canSend || !identity.agentAddress || !identity.fromHeader) {
     return null;
   }
 
   const subject = `${event.clientName} vendor insurance requirements`;
   const initialContext = buildFollowUpThreadContext(event, vendorEmail);
-  const proactiveThread = await ctx.runMutation(internal.threads.createProactiveInternal, {
-    orgId: event.clientOrgId,
-    userId: owner.user._id,
-    title: `Vendor compliance follow-up - ${event.vendorName}`,
-    content: initialContext,
-  });
+  const proactiveThread = await ctx.runMutation(
+    internal.threads.createProactiveInternal,
+    {
+      orgId: event.clientOrgId,
+      userId: owner.user._id,
+      title: `Vendor compliance follow-up - ${event.vendorName}`,
+      content: initialContext,
+    },
+  );
   const threadId = proactiveThread.threadId as Id<"threads">;
   const contextMessageId = proactiveThread.messageId as Id<"threadMessages">;
   const ownerEmail = owner.user.email;
-  const draftId = await upsertEmailDraftArtifact(ctx, {
-    orgId: event.clientOrgId,
-    threadId,
-    chatMessageId: contextMessageId,
-    channel: "mcp",
-    fromHeader: identity.fromHeader,
-    agentAddress: identity.agentAddress,
-    brokerBranding: identity.brokerBranding,
-    senderEmail: ownerEmail,
-    defaultBcc:
-      org.bccRequesterOnAgentEmails !== false && ownerEmail
-        ? [ownerEmail]
-        : undefined,
-  }, {
-    to: vendorEmail,
-    cc: [],
-    bcc: org.bccRequesterOnAgentEmails !== false && ownerEmail ? [ownerEmail] : [],
-    subject,
-    body: buildFollowUpBody(event),
-    attachments: [],
-  });
+  const draftId = await upsertEmailDraftArtifact(
+    ctx,
+    {
+      orgId: event.clientOrgId,
+      threadId,
+      chatMessageId: contextMessageId,
+      channel: "mcp",
+      fromHeader: identity.fromHeader,
+      agentAddress: identity.agentAddress,
+      senderEmail: ownerEmail,
+      defaultBcc:
+        org.bccRequesterOnAgentEmails !== false && ownerEmail
+          ? [ownerEmail]
+          : undefined,
+    },
+    {
+      to: vendorEmail,
+      cc: [],
+      bcc:
+        org.bccRequesterOnAgentEmails !== false && ownerEmail
+          ? [ownerEmail]
+          : [],
+      subject,
+      body: buildFollowUpBody(event),
+      attachments: [],
+    },
+  );
 
   if (!draftId) {
     await ctx.runMutation(internal.threads.deleteMessageInternal, {
@@ -198,10 +213,10 @@ export const run = internalAction({
   args: {},
   handler: async (ctx) => {
     const nowMs = dayjs().valueOf();
-    const clientOrgIds = await ctx.runQuery(
+    const clientOrgIds = (await ctx.runQuery(
       internal.compliance.listClientOrgIdsWithActiveVendorsInternal,
       {},
-    ) as Id<"organizations">[];
+    )) as Id<"organizations">[];
 
     let checkedVendors = 0;
     let notificationCount = 0;
@@ -216,28 +231,26 @@ export const run = internalAction({
       checkedVendors += rows.length;
       if (rows.length === 0) continue;
 
-      const events = await ctx.runMutation(
+      const events = (await ctx.runMutation(
         internal.compliance.recordVendorComplianceRunInternal,
         { clientOrgId, rows, nowMs },
-      ) as ComplianceEvent[];
+      )) as ComplianceEvent[];
 
       for (const event of events) {
-        let draft:
-          | {
-              threadId: Id<"threads">;
-              draftId: Id<"pendingEmails">;
-              status: "draft";
-            }
-          | null = null;
+        let draft: {
+          threadId: Id<"threads">;
+          draftId: Id<"pendingEmails">;
+          status: "draft";
+        } | null = null;
         if (event.type !== "vendor_compliance_met") {
-          const contact = await ctx.runQuery(
+          const contact = (await ctx.runQuery(
             internal.compliance.getConnectedVendorContactInternal,
             {
               clientOrgId: event.clientOrgId,
               vendorOrgId: event.vendorOrgId,
               relationshipId: event.relationshipId,
             },
-          ) as { vendorEmail?: string } | null;
+          )) as { vendorEmail?: string } | null;
           if (contact?.vendorEmail) {
             draft = await createFollowUpDraft(ctx, event, contact.vendorEmail);
             if (draft) {

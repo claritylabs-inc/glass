@@ -1,20 +1,13 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
-import { useQuery, useMutation, useAction } from "convex/react";
-import type { FunctionReference } from "convex/server";
+import { useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 import { Globe2, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { AccentColorPicker } from "@/components/ui/accent-color-picker";
 import { INDUSTRIES } from "@/convex/lib/industries";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
@@ -23,9 +16,6 @@ import {
   OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
-import { SettingsSwitch } from "@/components/settings/settings-switch";
-import { HandleAvailability } from "@/components/settings/handle-availability";
-import { getPublicAgentDomain } from "@/lib/domains";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import {
@@ -44,19 +34,6 @@ import {
 } from "@/components/settings/organization-insurance-profile";
 import { typeStyle } from "@/lib/typography";
 
-const WORKSPACE_DOMAIN = getPublicAgentDomain();
-
-type OrganizationsApi = {
-  organizations: {
-    updateSlug: FunctionReference<"mutation">;
-    updateBrokerBranding: FunctionReference<"mutation">;
-    updateOrgLogo: FunctionReference<"mutation">;
-    generateOrgLogoUploadUrl: FunctionReference<"mutation">;
-  };
-};
-
-const organizationsApi = api as unknown as OrganizationsApi;
-
 type OrgSettingsArgs = {
   name?: string;
   website?: string;
@@ -68,13 +45,6 @@ type OrgSettingsArgs = {
 
 type RelatedLegalEntity = {
   legalName: string;
-};
-
-type BrandingSettingsArgs = {
-  brokerOrgId: Id<"organizations">;
-  whiteLabelingEnabled: boolean;
-  brandingColor: string;
-  brandingTextOnAccent: "auto";
 };
 
 export function OrganizationSection() {
@@ -97,86 +67,24 @@ export function OrganizationSection() {
   const [settingsHydrated, setSettingsHydrated] = useState(false);
   const [profileAutoSaveStatus, setProfileAutoSaveStatus] =
     useState<AutoSaveStatusValue>("saved");
-  const [brandingAutoSaveStatus, setBrandingAutoSaveStatus] =
-    useState<AutoSaveStatusValue>("saved");
   const [profileCanReset, setProfileCanReset] = useState(false);
   const [restoringProfile, setRestoringProfile] = useState(false);
   const profileResetRef = useRef<(() => Promise<void>) | null>(null);
-  const handleProfileAutoSaveChange = useCallback((status: AutoSaveStatusValue) => {
-    setProfileAutoSaveStatus(status);
-  }, []);
-  const handleBrandingAutoSaveChange = useCallback((status: AutoSaveStatusValue) => {
-    setBrandingAutoSaveStatus(status);
-  }, []);
-  const handleProfileResetActionChange = useCallback((
-    resetToExtracted: (() => Promise<void>) | null,
-  ) => {
-    profileResetRef.current = resetToExtracted;
-    setProfileCanReset(Boolean(resetToExtracted));
-  }, []);
-  const currentOrg = useCurrentOrg();
-  const isBroker = currentOrg?.isBroker ?? false;
-  const updateSlug = useMutation(organizationsApi.organizations.updateSlug);
-  const currentSlug =
-    (currentOrg?.org as { slug?: string } | undefined)?.slug ?? "";
-  const [slug, setSlug] = useState(currentSlug);
-  const [debouncedSlug, setDebouncedSlug] = useState(currentSlug);
-  const [slugFocused, setSlugFocused] = useState(false);
-  const slugHydratedRef = useRef(false);
-
-  useEffect(() => {
-    if (!slugHydratedRef.current && currentSlug) {
-      setSlug(currentSlug);
-      setDebouncedSlug(currentSlug);
-      slugHydratedRef.current = true;
-    }
-  }, [currentSlug]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSlug(slug), 300);
-    return () => clearTimeout(t);
-  }, [slug]);
-
-  const slugCheck = useQuery(
-    api.orgs.checkSlugAvailability,
-    debouncedSlug.length >= 3 && debouncedSlug !== currentSlug
-      ? { slug: debouncedSlug }
-      : "skip",
+  const handleProfileAutoSaveChange = useCallback(
+    (status: AutoSaveStatusValue) => {
+      setProfileAutoSaveStatus(status);
+    },
+    [],
   );
-  const slugChecking =
-    isBroker &&
-    slug.length >= 3 &&
-    slug !== currentSlug &&
-    (slug !== debouncedSlug || slugCheck === undefined);
-
+  const handleProfileResetActionChange = useCallback(
+    (resetToExtracted: (() => Promise<void>) | null) => {
+      profileResetRef.current = resetToExtracted;
+      setProfileCanReset(Boolean(resetToExtracted));
+    },
+    [],
+  );
   const [extracting, setExtracting] = useState(false);
   const hydratedRef = useRef(false);
-
-  const slugAutoSave = useLocalFirstAutoSave({
-    mutationName: "settings.organization.updateSlug",
-    args: {
-      brokerOrgId: currentOrg?.orgId as Id<"organizations">,
-      slug,
-    },
-    valueKey: slug,
-    enabled: isBroker && !!currentOrg?.orgId && settingsHydrated,
-    canSave:
-      slug === currentSlug ||
-      (debouncedSlug.length >= 3 &&
-        slug === debouncedSlug &&
-        slugCheck?.available === true),
-    autoSave: !slugFocused,
-    delayMs: 0,
-    flush: (args) => updateSlug(args),
-    onFlushed: (normalized, args) => {
-      const savedSlug = normalized ?? args.slug;
-      setSlug(savedSlug);
-      setDebouncedSlug(savedSlug);
-      patchCachedViewerOrg(store, { slug: savedSlug });
-    },
-    errorMessage: (error) =>
-      getUserFacingErrorMessage(error, "The workspace link could not be saved."),
-  });
 
   const { setActions } = useSettingsActions();
 
@@ -229,9 +137,7 @@ export function OrganizationSection() {
 
   const organizationSaveStatus = combineAutoSaveStatuses(
     orgAutoSave.status,
-    slugAutoSave.status,
     profileAutoSaveStatus,
-    brandingAutoSaveStatus,
   );
 
   const handleUseExtracted = useCallback(async () => {
@@ -340,10 +246,7 @@ export function OrganizationSection() {
   }
 
   function addRelatedLegalEntity() {
-    setRelatedLegalEntities((current) => [
-      ...current,
-      { legalName: "" },
-    ]);
+    setRelatedLegalEntities((current) => [...current, { legalName: "" }]);
   }
 
   function removeRelatedLegalEntity(index: number) {
@@ -367,128 +270,103 @@ export function OrganizationSection() {
       <div>
         <>
           <OperationalPanel className="mb-4">
-            <OperationalPanelHeader title="Organization" className="px-5 py-3.5" />
+            <OperationalPanelHeader
+              title="Organization"
+              className="px-5 py-3.5"
+            />
             <OperationalPanelBody className="space-y-4 px-5 py-5">
-            <div>
-              <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
-                Organization Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => void saveOrgSettingsNow()}
-                placeholder="Organization name"
-                className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
-              />
-            </div>
-
-            {isBroker && (
               <div>
-                <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
-                  Workspace link
+                <label
+                  className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}
+                >
+                  Organization Name
                 </label>
-                <div className="flex items-stretch gap-0">
-                  <span className={`inline-flex items-center rounded-l-lg border border-r-0 border-input bg-foreground/3 px-3 text-muted-foreground select-none whitespace-nowrap ${typeStyle("body.default")}`}>
-                    {WORKSPACE_DOMAIN}/
-                  </span>
-                  <input
-                    type="text"
-                    value={slug}
-                    onChange={(e) =>
-                      setSlug(
-                        e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
-                      )
-                    }
-                    onFocus={() => setSlugFocused(true)}
-                    onBlur={() => setSlugFocused(false)}
-                    placeholder="brokerage-name"
-                    className={`h-9 flex-1 min-w-0 rounded-r-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
-                  />
-                </div>
-                <HandleAvailability
-                  saving={slugAutoSave.saving}
-                  checking={slugChecking}
-                  input={slug}
-                  current={currentSlug}
-                  availability={slug === debouncedSlug ? slugCheck : undefined}
-                  currentLabel="Current workspace link"
-                  renderAvailablePreview={(s) =>
-                    `${WORKSPACE_DOMAIN}/${s} is available`
-                  }
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onBlur={() => void saveOrgSettingsNow()}
+                  placeholder="Organization name"
+                  className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
                 />
               </div>
-            )}
 
-            <div>
-              <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
-                Website
-              </label>
-              <input
-                type="text"
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                onBlur={() => void saveOrgSettingsNow()}
-                placeholder="https://example.com"
-                className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
-              />
-            </div>
-
-            <div className="space-y-3 rounded-lg border border-border bg-popover px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <label className={`text-muted-foreground block ${typeStyle("label.field")}`}>
-                    Legal names and related entities
-                  </label>
-                </div>
-                <PillButton
-                  type="button"
-                  size="compact"
-                  variant="secondary"
-                  onClick={addRelatedLegalEntity}
+              <div>
+                <label
+                  className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add
-                </PillButton>
+                  Website
+                </label>
+                <input
+                  type="text"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  onBlur={() => void saveOrgSettingsNow()}
+                  placeholder="https://example.com"
+                  className={`h-9 w-full rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
+                />
               </div>
-              {relatedLegalEntities.length === 0 ? (
-                <p className={`text-muted-foreground/70 ${typeStyle("body.default")}`}>
-                  No related legal entities listed.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {relatedLegalEntities.map((entity, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={entity.legalName}
-                        onChange={(event) =>
-                          updateRelatedLegalEntity(index, {
-                            legalName: event.target.value,
-                          })
-                        }
-                        onBlur={() => void saveOrgSettingsNow()}
-                        placeholder="Alternate legal name, DBA, FKA, parent, subsidiary, or affiliate"
-                        className={`h-9 min-w-0 flex-1 rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeRelatedLegalEntity(index)}
-                        className="inline-flex h-9 w-10 items-center justify-center rounded-lg border border-input text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
-                        aria-label="Remove legal entity"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            {!isBroker && (
+              <div className="space-y-3 rounded-lg border border-border bg-popover px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label
+                      className={`text-muted-foreground block ${typeStyle("label.field")}`}
+                    >
+                      Legal names and related entities
+                    </label>
+                  </div>
+                  <PillButton
+                    type="button"
+                    size="compact"
+                    variant="secondary"
+                    onClick={addRelatedLegalEntity}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add
+                  </PillButton>
+                </div>
+                {relatedLegalEntities.length === 0 ? (
+                  <p
+                    className={`text-muted-foreground/70 ${typeStyle("body.default")}`}
+                  >
+                    No related legal entities listed.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {relatedLegalEntities.map((entity, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={entity.legalName}
+                          onChange={(event) =>
+                            updateRelatedLegalEntity(index, {
+                              legalName: event.target.value,
+                            })
+                          }
+                          onBlur={() => void saveOrgSettingsNow()}
+                          placeholder="Alternate legal name, DBA, FKA, parent, subsidiary, or affiliate"
+                          className={`h-9 min-w-0 flex-1 rounded-lg border border-input bg-popover px-3 placeholder:text-muted-foreground/40 focus:outline-none focus:border-border-focus focus:ring-1 focus:ring-input transition-colors ${typeStyle("control.input")}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeRelatedLegalEntity(index)}
+                          className="inline-flex h-9 w-10 items-center justify-center rounded-lg border border-input text-muted-foreground transition-colors hover:bg-foreground/4 hover:text-foreground"
+                          aria-label="Remove legal entity"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
+                  <label
+                    className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}
+                  >
                     Industry
                   </label>
                   <SearchableSelect
@@ -506,7 +384,9 @@ export function OrganizationSection() {
                   />
                 </div>
                 <div>
-                  <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
+                  <label
+                    className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}
+                  >
                     Vertical
                   </label>
                   <SearchableSelect
@@ -528,135 +408,54 @@ export function OrganizationSection() {
                   />
                 </div>
               </div>
-            )}
 
-            {!isBroker && org ? (
-              <OrganizationInsuranceProfile
-                key={String(org._id)}
-                org={org as unknown as OrganizationInsuranceProfileRecord}
-                disabled={orgData.membership.role !== "admin"}
-                onAutoSaveChange={handleProfileAutoSaveChange}
-                onResetActionChange={handleProfileResetActionChange}
-              />
-            ) : null}
-
+              {org ? (
+                <OrganizationInsuranceProfile
+                  key={String(org._id)}
+                  org={org as unknown as OrganizationInsuranceProfileRecord}
+                  disabled={orgData.membership.role !== "admin"}
+                  onAutoSaveChange={handleProfileAutoSaveChange}
+                  onResetActionChange={handleProfileResetActionChange}
+                />
+              ) : null}
             </OperationalPanelBody>
           </OperationalPanel>
 
-          <BrandingCard
-            website={website}
-            onAutoSaveChange={handleBrandingAutoSaveChange}
-          />
+          <OrganizationLogoCard website={website} />
         </>
-
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Branding card
+// Organization logo
 // ─────────────────────────────────────────────────────────────────────────────
 
-const brandingLabelClass =
-  `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
+const logoLabelClass = `text-muted-foreground block mb-1.5 ${typeStyle("caption.medium")}`;
 
-type BrandingMode = "light" | "dark";
-type TextOnAccent = "light" | "dark" | "auto";
-
-function BrandingCard({
-  website,
-  onAutoSaveChange,
-}: {
-  website: string;
-  onAutoSaveChange: (
-    status: AutoSaveStatusValue,
-    saveNow: (() => Promise<boolean>) | null,
-  ) => void;
-}) {
+function OrganizationLogoCard({ website }: { website: string }) {
   const currentOrg = useCurrentOrg();
   const store = useSyncStore();
-  const isBroker = currentOrg?.isBroker ?? false;
   const org = currentOrg?.org as
     | {
-        brandingColor?: string;
-        whiteLabelingEnabled?: boolean;
-        brandingMode?: BrandingMode;
-        brandingTextOnAccent?: TextOnAccent;
         iconStorageId?: string;
         iconUrl?: string | null;
       }
     | undefined;
   const orgId = currentOrg?.orgId as Id<"organizations"> | undefined;
 
-  const updateBranding = useMutation(
-    organizationsApi.organizations.updateBrokerBranding,
-  );
   const generateUploadUrl = useMutation(
-    organizationsApi.organizations.generateOrgLogoUploadUrl,
+    api.organizations.generateOrgLogoUploadUrl,
   );
-  const updateOrgLogo = useMutation(organizationsApi.organizations.updateOrgLogo);
+  const updateOrgLogo = useMutation(api.organizations.updateOrgLogo);
   const importOrgLogo = useAction(
     api.actions.extractCompanyInfo.importOrgLogoFromWebsite,
   );
 
-  const [brandingColor, setBrandingColor] = useState("#1E293B");
-  const [whiteLabelingEnabled, setWhiteLabelingEnabled] = useState(true);
   const [dragActive, setDragActive] = useState(false);
   const [importingLogo, setImportingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const hydratedRef = useRef(false);
-  const [brandingHydrated, setBrandingHydrated] = useState(false);
-
-  useEffect(() => {
-    if (org && !hydratedRef.current) {
-      setBrandingColor(org.brandingColor ?? "#1E293B");
-      setWhiteLabelingEnabled(org.whiteLabelingEnabled !== false);
-      hydratedRef.current = true;
-      setBrandingHydrated(true);
-    }
-  }, [org]);
-
-  const brandingArgs: BrandingSettingsArgs | null = orgId && isBroker
-    ? {
-        brokerOrgId: orgId,
-        whiteLabelingEnabled,
-        brandingColor,
-        brandingTextOnAccent: "auto",
-      }
-    : null;
-
-  const saveBranding = useCallback(
-    async (args: BrandingSettingsArgs) => {
-      await updateBranding(args);
-    },
-    [updateBranding],
-  );
-
-  const brandingAutoSave = useLocalFirstAutoSave({
-    mutationName: "settings.organization.updateBranding",
-    args: brandingArgs ?? {
-      brokerOrgId: "" as Id<"organizations">,
-      whiteLabelingEnabled,
-      brandingColor,
-      brandingTextOnAccent: "auto",
-    },
-    enabled: brandingHydrated && isBroker,
-    canSave: !!brandingArgs,
-    applyLocal: (store, args) =>
-      patchCachedViewerOrg(store, {
-        whiteLabelingEnabled: args.whiteLabelingEnabled,
-        brandingColor: args.brandingColor,
-        brandingTextOnAccent: args.brandingTextOnAccent,
-    }),
-    flush: saveBranding,
-    errorMessage: "Brand settings could not be saved.",
-  });
-
-  useEffect(() => {
-    onAutoSaveChange(brandingAutoSave.status, brandingAutoSave.saveNow);
-    return () => onAutoSaveChange("saved", null);
-  }, [brandingAutoSave.saveNow, brandingAutoSave.status, onAutoSaveChange]);
 
   async function handleLogoUpload(file: File) {
     if (!orgId) return;
@@ -704,36 +503,15 @@ function BrandingCard({
   return (
     <OperationalPanel as="div" className="mb-4">
       <OperationalPanelHeader
-        title="Brand"
+        title="Organization logo"
         className="px-5 py-3.5"
       />
       <OperationalPanelBody className="space-y-5 px-5 py-5">
-        {isBroker && (
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-popover px-4 py-3">
-            <div>
-              <p className={`text-foreground ${typeStyle("body.medium")}`}>
-                White labeling
-              </p>
-              <p className={`text-muted-foreground/60 mt-0.5 max-w-md ${typeStyle("caption.default")}`}>
-                Apply your broker logo, accent color, agent name, and branded
-                emails to client-facing surfaces.
-              </p>
-            </div>
-            <SettingsSwitch
-              checked={whiteLabelingEnabled}
-              onCheckedChange={() => setWhiteLabelingEnabled((v) => !v)}
-              label="Enable white labeling"
-              className="ml-4"
-            />
-          </div>
-        )}
-
         {/* Logo */}
-        <div className={isBroker && !whiteLabelingEnabled ? "opacity-50" : undefined}>
-          <label className={brandingLabelClass}>Logo</label>
+        <div>
+          <label className={logoLabelClass}>Logo</label>
           <button
             type="button"
-            disabled={isBroker && !whiteLabelingEnabled}
             onClick={() => fileInputRef.current?.click()}
             onDragEnter={(e) => {
               e.preventDefault();
@@ -748,9 +526,7 @@ function BrandingCard({
               if (file) handleLogoUpload(file);
             }}
             className={`flex w-full items-center gap-4 rounded-lg border border-dashed px-4 py-3 text-left transition-colors ${
-              isBroker && !whiteLabelingEnabled ? "cursor-not-allowed" : ""
-            } ${
-              dragActive && (!isBroker || whiteLabelingEnabled)
+              dragActive
                 ? "border-border-focus bg-foreground/3"
                 : "border-border-emphasized bg-popover hover:border-border-focus"
             }`}
@@ -764,7 +540,9 @@ function BrandingCard({
                   className="h-full w-full object-contain"
                 />
               ) : (
-                <span className={`text-muted-foreground/60 ${typeStyle("caption.default")}`}>
+                <span
+                  className={`text-muted-foreground/60 ${typeStyle("caption.default")}`}
+                >
                   —
                 </span>
               )}
@@ -773,7 +551,9 @@ function BrandingCard({
               <div className={`text-foreground ${typeStyle("body.medium")}`}>
                 {logoUrl ? "Replace logo" : "Upload logo"}
               </div>
-              <div className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}>
+              <div
+                className={`text-muted-foreground/70 ${typeStyle("caption.default")}`}
+              >
                 Drop an image, click to browse, or pull it from the website.
               </div>
             </div>
@@ -792,7 +572,7 @@ function BrandingCard({
             <PillButton
               variant="secondary"
               onClick={handlePullLogo}
-              disabled={importingLogo || (isBroker && !whiteLabelingEnabled)}
+              disabled={importingLogo}
             >
               {importingLogo ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -801,22 +581,6 @@ function BrandingCard({
             </PillButton>
           </div>
         </div>
-
-        {/* Accent color */}
-        {isBroker && (
-          <div
-            className={
-              !whiteLabelingEnabled ? "pointer-events-none opacity-50" : undefined
-            }
-          >
-            <label className={brandingLabelClass}>Accent color</label>
-            <AccentColorPicker
-              value={brandingColor}
-              onChange={setBrandingColor}
-              website={website}
-            />
-          </div>
-        )}
       </OperationalPanelBody>
     </OperationalPanel>
   );

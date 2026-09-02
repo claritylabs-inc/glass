@@ -15,7 +15,11 @@ export default function PolicyDetailPage({
   const [rightPanel, setRightPanel] = useState<ReactNode>(null);
 
   return (
-    <AppShell breadcrumbDetail={breadcrumb} actions={actions} rightPanel={rightPanel}>
+    <AppShell
+      breadcrumbDetail={breadcrumb}
+      actions={actions}
+      rightPanel={rightPanel}
+    >
       <PolicyDetailBody
         id={id}
         onBreadcrumb={setBreadcrumb}

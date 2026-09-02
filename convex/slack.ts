@@ -337,9 +337,7 @@ async function claimOperatorInbound(
   ].join(":");
   const mirroredDuplicate = await ctx.db
     .query("slackInboundEvents")
-    .withIndex("canonical", (q) =>
-      q.eq("canonicalEventKey", canonicalEventKey),
-    )
+    .withIndex("canonical", (q) => q.eq("canonicalEventKey", canonicalEventKey))
     .first();
   if (mirroredDuplicate) {
     return { duplicate: true, status: mirroredDuplicate.status };
@@ -593,18 +591,14 @@ export const claimInbound = internalMutation({
     });
     const mirroredDuplicate = await ctx.db
       .query("slackInboundEvents")
-      .withIndex("canonical", (q) =>
-        q.eq("canonicalEventKey", logicalEventKey),
-      )
+      .withIndex("canonical", (q) => q.eq("canonicalEventKey", logicalEventKey))
       .first();
     if (mirroredDuplicate) {
       return { duplicate: true, status: mirroredDuplicate.status };
     }
     const settings = await ctx.db
       .query("agentChannelSettings")
-      .withIndex("client", (q) =>
-        q.eq("clientOrgId", connection.clientOrgId),
-      )
+      .withIndex("client", (q) => q.eq("clientOrgId", connection.clientOrgId))
       .first();
     if (settings?.slackEnabled !== true) {
       return { duplicate: false, status: "disabled" as const };
@@ -624,13 +618,11 @@ export const claimInbound = internalMutation({
     ) {
       const activeThread = await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connection._id)
-              .eq("slackChannelId", identity.threadChannelId)
-              .eq("slackThreadTs", args.threadTs),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connection._id)
+            .eq("slackChannelId", identity.threadChannelId)
+            .eq("slackThreadTs", args.threadTs),
         )
         .first();
       if (activeThread?.slackState !== "active") {
@@ -876,13 +868,11 @@ export const prepareBatch = internalMutation({
           : event.channelId;
       const existingThread = await ctx.db
         .query("threads")
-        .withIndex(
-          "slack_thread",
-          (q) =>
-            q
-              .eq("slackConnectionId", connection._id)
-              .eq("slackChannelId", threadChannelId)
-              .eq("slackThreadTs", event.threadTs),
+        .withIndex("slack_thread", (q) =>
+          q
+            .eq("slackConnectionId", connection._id)
+            .eq("slackChannelId", threadChannelId)
+            .eq("slackThreadTs", event.threadTs),
         )
         .first();
 
@@ -1061,15 +1051,11 @@ export const prepareBatch = internalMutation({
         attachments: attachments.length ? attachments : undefined,
       });
       if (titleGeneration) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.actions.threadTitle.generate,
-          {
-            threadId: thread._id,
-            userMessageId: messageId,
-            ...titleGeneration,
-          },
-        );
+        await ctx.scheduler.runAfter(0, internal.actions.threadTitle.generate, {
+          threadId: thread._id,
+          userMessageId: messageId,
+          ...titleGeneration,
+        });
       }
       await ctx.db.patch(thread._id, {
         lastMessageAt: event.receivedAt,

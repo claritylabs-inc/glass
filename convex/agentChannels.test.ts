@@ -285,30 +285,28 @@ describe("agent channel settings", () => {
 
   test("does not inherit client channel access from a broker relationship", async () => {
     const t = convexTest(schema, modules);
-    const { brokerAdminUserId, clientOrgId } = await t.run(
-      async (ctx) => {
-        const brokerOrgId = await ctx.db.insert("organizations", {
-          name: "Managing Broker",
-          type: "broker",
-          agentHandle: "managing-broker",
-        });
-        const clientOrgId = await ctx.db.insert("organizations", {
-          name: "Managed Client",
-          type: "client",
-          brokerOrgId,
-          agentHandle: "unused-client-handle",
-        });
-        const brokerAdminUserId = await ctx.db.insert("users", {
-          email: "admin@broker.test",
-        });
-        await ctx.db.insert("orgMemberships", {
-          orgId: brokerOrgId,
-          userId: brokerAdminUserId,
-          role: "admin",
-        });
-        return { brokerAdminUserId, clientOrgId };
-      },
-    );
+    const { brokerAdminUserId, clientOrgId } = await t.run(async (ctx) => {
+      const brokerOrgId = await ctx.db.insert("organizations", {
+        name: "Managing Broker",
+        type: "broker",
+        agentHandle: "managing-broker",
+      });
+      const clientOrgId = await ctx.db.insert("organizations", {
+        name: "Managed Client",
+        type: "client",
+        brokerOrgId,
+        agentHandle: "unused-client-handle",
+      });
+      const brokerAdminUserId = await ctx.db.insert("users", {
+        email: "admin@broker.test",
+      });
+      await ctx.db.insert("orgMemberships", {
+        orgId: brokerOrgId,
+        userId: brokerAdminUserId,
+        role: "admin",
+      });
+      return { brokerAdminUserId, clientOrgId };
+    });
 
     await expect(
       t

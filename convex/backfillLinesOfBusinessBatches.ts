@@ -32,16 +32,26 @@ function emptyReport(dryRun: boolean): BackfillReport {
   };
 }
 
-function sameStringArray(left: readonly string[] | undefined, right: readonly string[]) {
-  return Boolean(left) &&
+function sameStringArray(
+  left: readonly string[] | undefined,
+  right: readonly string[],
+) {
+  return (
+    Boolean(left) &&
     left!.length === right.length &&
-    left!.every((value, index) => value === right[index]);
+    left!.every((value, index) => value === right[index])
+  );
 }
 
 function unmappedLegacyValues(values: readonly string[]) {
   return values.filter((value) => {
     const normalized = value.trim().toLowerCase();
-    if (!normalized || normalized === "other" || normalized === "unknown" || normalized === "un") {
+    if (
+      !normalized ||
+      normalized === "other" ||
+      normalized === "unknown" ||
+      normalized === "un"
+    ) {
       return false;
     }
     const codes = toLobCodes([value]);
@@ -53,8 +63,14 @@ export function policyLineBackfillDecision(policy: {
   policyTypes?: string[];
   linesOfBusiness?: string[];
 }) {
-  const existingLines = policy.linesOfBusiness?.filter((value) => typeof value === "string" && value.trim()) ?? [];
-  const before = policy.policyTypes?.filter((value) => typeof value === "string" && value.trim()) ?? [];
+  const existingLines =
+    policy.linesOfBusiness?.filter(
+      (value) => typeof value === "string" && value.trim(),
+    ) ?? [];
+  const before =
+    policy.policyTypes?.filter(
+      (value) => typeof value === "string" && value.trim(),
+    ) ?? [];
   if (existingLines.length > 0) {
     return {
       before,
@@ -79,7 +95,12 @@ export const backfillPoliciesBatchInternal = internalMutation({
     limit: v.number(),
     cursor: v.optional(v.union(v.string(), v.null())),
   },
-  handler: async (ctx, args): Promise<BackfillReport & { nextCursor: string | null; isDone: boolean }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    BackfillReport & { nextCursor: string | null; isDone: boolean }
+  > => {
     const dryRun = args.dryRun;
     const report = emptyReport(dryRun);
     const page = args.orgId
@@ -97,7 +118,8 @@ export const backfillPoliciesBatchInternal = internalMutation({
         policy as { linesOfBusiness?: string[]; policyTypes?: string[] },
       );
       for (const value of decision.unmappedValues) {
-        report.policies.unmappedValues[value] = (report.policies.unmappedValues[value] ?? 0) + 1;
+        report.policies.unmappedValues[value] =
+          (report.policies.unmappedValues[value] ?? 0) + 1;
       }
       if (!decision.changed) continue;
       report.policies.changedCount += 1;
@@ -114,12 +136,17 @@ export const backfillPoliciesBatchInternal = internalMutation({
     }
 
     if (!dryRun && !page.isDone) {
-      await ctx.scheduler.runAfter(0, (internal as any).backfillLinesOfBusinessBatches.backfillPoliciesBatchInternal, {
-        orgId: args.orgId,
-        dryRun,
-        limit: args.limit,
-        cursor: page.continueCursor,
-      });
+      await ctx.scheduler.runAfter(
+        0,
+        (internal as any).backfillLinesOfBusinessBatches
+          .backfillPoliciesBatchInternal,
+        {
+          orgId: args.orgId,
+          dryRun,
+          limit: args.limit,
+          cursor: page.continueCursor,
+        },
+      );
       report.continuationScheduled = true;
     }
 

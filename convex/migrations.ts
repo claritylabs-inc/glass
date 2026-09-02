@@ -18,10 +18,7 @@ export const backfillDeclarationFacts = migrations.define({
   table: "policies",
   batchSize: 10,
   migrateOne: async (ctx, policy) => {
-    if (
-      !policy.orgId ||
-      effectiveExtractionDataStage(policy) !== "final"
-    ) {
+    if (!policy.orgId || effectiveExtractionDataStage(policy) !== "final") {
       return;
     }
     await replacePolicyDeclarationFacts(ctx, policy._id, undefined, false);
@@ -109,7 +106,6 @@ export const rebuildCarrierIdentitiesFromStoredSources = migrations.define({
   },
 });
 
-
 export const unsetLegacyCoiAttachmentAuthorization = migrations.define({
   table: "pendingEmails",
   batchSize: 100,
@@ -160,26 +156,34 @@ export const migrateProcurementRequestStatuses = migrations.define({
   table: "procurementRequests",
   batchSize: 50,
   migrateOne: async (ctx, request) => {
-    const mapped = request.status === "quote_review" || request.status === "client_decision"
-      ? "proposal_review" as const
-      : request.status === "accepted"
-        ? "binding" as const
-        : request.status === "closed"
-          ? "completed" as const
-          : request.status;
+    const mapped =
+      request.status === "quote_review" || request.status === "client_decision"
+        ? ("proposal_review" as const)
+        : request.status === "accepted"
+          ? ("binding" as const)
+          : request.status === "closed"
+            ? ("completed" as const)
+            : request.status;
     const patch: Record<string, unknown> = {};
     if (mapped !== request.status) patch.status = mapped;
-    if (request.requirementRevision === undefined) patch.requirementRevision = 0;
-    if (request.specificationRevision === undefined) patch.specificationRevision = 0;
+    if (request.requirementRevision === undefined)
+      patch.requirementRevision = 0;
+    if (request.specificationRevision === undefined)
+      patch.specificationRevision = 0;
     if (request.createdBySide === undefined) patch.createdBySide = "operator";
     if (request.clientVisible === undefined) patch.clientVisible = false;
-    if (request.originalNarrative === undefined) patch.originalNarrative = request.requestSummary;
+    if (request.originalNarrative === undefined)
+      patch.originalNarrative = request.requestSummary;
     if (Object.keys(patch).length) await ctx.db.patch(request._id, patch);
   },
 });
 
 function normalizedBrokerName(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 export const migrateProcurementOutreaches = migrations.define({
@@ -188,36 +192,130 @@ export const migrateProcurementOutreaches = migrations.define({
   migrateOne: async (ctx, outreach) => {
     let brokerOrgId = outreach.brokerOrgId;
     if (!brokerOrgId) {
-      const brokers = await ctx.db.query("organizations").withIndex("type", (q) => q.eq("type", "broker")).collect();
-      const matches = brokers.filter((broker) => normalizedBrokerName(broker.name) === normalizedBrokerName(outreach.brokerName));
-      if (matches.length > 1) throw new Error(`Ambiguous legacy broker name: ${outreach.brokerName}`);
+      const brokers = await ctx.db
+        .query("organizations")
+        .withIndex("type", (q) => q.eq("type", "broker"))
+        .collect();
+      const matches = brokers.filter(
+        (broker) =>
+          normalizedBrokerName(broker.name) ===
+          normalizedBrokerName(outreach.brokerName),
+      );
+      if (matches.length > 1)
+        throw new Error(`Ambiguous legacy broker name: ${outreach.brokerName}`);
       if (matches.length === 1) brokerOrgId = matches[0]._id;
       else {
-        brokerOrgId = await ctx.db.insert("organizations", { name: outreach.brokerName, type: "broker", operatorStatus: "live", onboardingComplete: true });
-        await ctx.db.insert("brokerProfiles", { brokerOrgId, networkStatus: "prospect", writingStates: [], lineOfBusinessCodes: [], createdByUserId: outreach.createdByUserId, updatedByUserId: outreach.updatedByUserId, createdAt: outreach.createdAt, updatedAt: outreach.updatedAt });
+        brokerOrgId = await ctx.db.insert("organizations", {
+          name: outreach.brokerName,
+          type: "broker",
+          operatorStatus: "live",
+          onboardingComplete: true,
+        });
+        await ctx.db.insert("brokerProfiles", {
+          brokerOrgId,
+          networkStatus: "prospect",
+          writingStates: [],
+          lineOfBusinessCodes: [],
+          createdByUserId: outreach.createdByUserId,
+          updatedByUserId: outreach.updatedByUserId,
+          createdAt: outreach.createdAt,
+          updatedAt: outreach.updatedAt,
+        });
       }
     }
     const patch: Record<string, unknown> = { brokerOrgId };
-    if (!outreach.contactSnapshot) patch.contactSnapshot = { name: outreach.contactName, email: outreach.contactEmail, phone: outreach.contactPhone };
+    if (!outreach.contactSnapshot)
+      patch.contactSnapshot = {
+        name: outreach.contactName,
+        email: outreach.contactEmail,
+        phone: outreach.contactPhone,
+      };
     await ctx.db.patch(outreach._id, patch);
-    const quoteFiles = await ctx.db.query("procurementFileItems").withIndex("outreach", (q) => q.eq("outreachId", outreach._id)).collect();
-    const hasLegacyQuote = Boolean(outreach.quoteSummary || outreach.quoteAmount !== undefined || outreach.quoteUrl || quoteFiles.some((file) => file.purpose === "quote"));
+    const quoteFiles = await ctx.db
+      .query("procurementFileItems")
+      .withIndex("outreach", (q) => q.eq("outreachId", outreach._id))
+      .collect();
+    const hasLegacyQuote = Boolean(
+      outreach.quoteSummary ||
+      outreach.quoteAmount !== undefined ||
+      outreach.quoteUrl ||
+      quoteFiles.some((file) => file.purpose === "quote"),
+    );
     if (!hasLegacyQuote) return;
-    const existing = await ctx.db.query("procurementProposals").withIndex("outreach", (q) => q.eq("outreachId", outreach._id)).first();
+    const existing = await ctx.db
+      .query("procurementProposals")
+      .withIndex("outreach", (q) => q.eq("outreachId", outreach._id))
+      .first();
     if (existing) return;
-    await ctx.db.insert("procurementProposals", { requestId: outreach.requestId, clientOrgId: outreach.clientOrgId, brokerOrgId, outreachId: outreach._id, status: "draft", extractedOffer: { legacyQuoteSummary: outreach.quoteSummary, premiumAmount: outreach.quoteAmount, currency: outreach.quoteCurrency, quoteUrl: outreach.quoteUrl }, createdByUserId: outreach.createdByUserId, updatedByUserId: outreach.updatedByUserId, createdAt: outreach.createdAt, updatedAt: outreach.updatedAt });
+    await ctx.db.insert("procurementProposals", {
+      requestId: outreach.requestId,
+      clientOrgId: outreach.clientOrgId,
+      brokerOrgId,
+      outreachId: outreach._id,
+      status: "draft",
+      extractedOffer: {
+        legacyQuoteSummary: outreach.quoteSummary,
+        premiumAmount: outreach.quoteAmount,
+        currency: outreach.quoteCurrency,
+        quoteUrl: outreach.quoteUrl,
+      },
+      createdByUserId: outreach.createdByUserId,
+      updatedByUserId: outreach.updatedByUserId,
+      createdAt: outreach.createdAt,
+      updatedAt: outreach.updatedAt,
+    });
   },
 });
 
-export const purgePolicyDeliverySettings = migrations.define({ table: "policyDeliverySettings", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
-export const purgePolicyDeliveryRules = migrations.define({ table: "policyDeliveryRules", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
-export const purgePolicyDeliveryJobs = migrations.define({ table: "policyDeliveryJobs", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
-export const purgePolicyDeliveryAttempts = migrations.define({ table: "policyDeliveryAttempts", batchSize: 100, migrateOne: async (ctx, row) => { await ctx.db.delete(row._id); } });
+export const purgePolicyDeliverySettings = migrations.define({
+  table: "policyDeliverySettings",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    await ctx.db.delete(row._id);
+  },
+});
+export const purgePolicyDeliveryRules = migrations.define({
+  table: "policyDeliveryRules",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    await ctx.db.delete(row._id);
+  },
+});
+export const purgePolicyDeliveryJobs = migrations.define({
+  table: "policyDeliveryJobs",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    await ctx.db.delete(row._id);
+  },
+});
+export const purgePolicyDeliveryAttempts = migrations.define({
+  table: "policyDeliveryAttempts",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    await ctx.db.delete(row._id);
+  },
+});
+// Broker/client ownership assignments are retired. Keep the table available
+// until the narrowing release, but remove any legacy rows in the gated purge.
+export const purgeBrokerClientAssignments = migrations.define({
+  table: "brokerClientAssignments",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    await ctx.db.delete(row._id);
+  },
+});
 export const purgeBrokerBranding = migrations.define({
-  table: "organizations", batchSize: 50,
+  table: "organizations",
+  batchSize: 50,
   migrateOne: async (ctx, org) => {
     if (org.type !== "broker") return;
-    await ctx.db.patch(org._id, { whiteLabelingEnabled: undefined, brandingColor: undefined, brandingMode: undefined, brandingTextOnAccent: undefined, agentDisplayName: undefined });
+    await ctx.db.patch(org._id, {
+      whiteLabelingEnabled: undefined,
+      brandingColor: undefined,
+      brandingMode: undefined,
+      brandingTextOnAccent: undefined,
+      agentDisplayName: undefined,
+    });
   },
 });
 
@@ -249,6 +347,7 @@ export const runProcurementDomainBackfill = migrations.runner([
 
 // Run only after procurementMigration.auditLegacyNarrowing reports safe=true.
 export const runProcurementLegacyPurge = migrations.runner([
+  internal.migrations.purgeBrokerClientAssignments,
   internal.migrations.purgePolicyDeliveryAttempts,
   internal.migrations.purgePolicyDeliveryJobs,
   internal.migrations.purgePolicyDeliveryRules,

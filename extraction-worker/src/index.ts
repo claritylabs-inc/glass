@@ -126,11 +126,19 @@ type WorkerModelRoute = {
   model: string;
 };
 
-type WorkerRouteSource = "broker" | "global" | "static" | "configured" | "default" | "fallback";
+type WorkerRouteSource =
+  | "broker"
+  | "global"
+  | "static"
+  | "configured"
+  | "default"
+  | "fallback";
 
 type WorkerModelSettings = {
   routes?: Partial<Record<ModelTask | string, WorkerModelRoute>>;
-  routeSources?: Partial<Record<ModelTask | string, WorkerRouteSource | string>>;
+  routeSources?: Partial<
+    Record<ModelTask | string, WorkerRouteSource | string>
+  >;
   providerKeys?: Partial<Record<ModelProvider | string, string>>;
 };
 
@@ -206,9 +214,10 @@ const workerPackage = require("../package.json") as {
   version?: string;
   dependencies?: Record<string, string>;
 };
-const WORKER_PROTOCOL_VERSION = process.env.EXTRACTION_WORKER_PROTOCOL_VERSION === "source-tree-v2"
-  ? "source-tree-v2"
-  : "source-tree-v1";
+const WORKER_PROTOCOL_VERSION =
+  process.env.EXTRACTION_WORKER_PROTOCOL_VERSION === "source-tree-v2"
+    ? "source-tree-v2"
+    : "source-tree-v1";
 
 const actions = {
   saveExternalCompletionPayload: makeFunctionReference<
@@ -356,7 +365,13 @@ const actions = {
   >("actions/policyExtraction.js:completeExternalPreview"),
   failExternalJob: makeFunctionReference<
     "action",
-    { secret: string; policyId: string; leaseId: string; state?: WorkerState; error: string },
+    {
+      secret: string;
+      policyId: string;
+      leaseId: string;
+      state?: WorkerState;
+      error: string;
+    },
     AckResult
   >("actions/policyExtraction.js:failExternalJob"),
   failExternalPreviewJob: makeFunctionReference<
@@ -457,19 +472,34 @@ const actions = {
 const CONVEX_URL = requiredEnv("CONVEX_URL");
 const SECRET = requiredEnv("EXTRACTION_WORKER_SECRET");
 const SPOT_ENV =
-  process.env.SPOT_ENV ??
-  process.env.RAILWAY_ENVIRONMENT_NAME ??
-  "local";
-const WORKER_ID = process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${process.pid}`;
-const WORKER_VERSION = process.env.EXTRACTION_WORKER_VERSION ?? workerPackage.version ?? "unknown";
+  process.env.SPOT_ENV ?? process.env.RAILWAY_ENVIRONMENT_NAME ?? "local";
+const WORKER_ID =
+  process.env.EXTRACTION_WORKER_ID ?? `extraction-worker-${process.pid}`;
+const WORKER_VERSION =
+  process.env.EXTRACTION_WORKER_VERSION ?? workerPackage.version ?? "unknown";
 const WORKER_CL_SDK_VERSION =
-  process.env.EXTRACTION_WORKER_CL_SDK_VERSION
-  ?? workerPackage.dependencies?.["@claritylabs/cl-sdk"]
-  ?? "unknown";
+  process.env.EXTRACTION_WORKER_CL_SDK_VERSION ??
+  workerPackage.dependencies?.["@claritylabs/cl-sdk"] ??
+  "unknown";
 const RUNTIME_ACCESS = resolveWorkerRuntimeAccess(process.env);
-const POLL_MS = readBoundedIntEnv("EXTRACTION_WORKER_POLL_MS", 5000, 500, 60_000);
-const IDLE_LOG_MS = readBoundedIntEnv("EXTRACTION_WORKER_IDLE_LOG_MS", 60_000, 5_000, 10 * 60_000);
-const HEARTBEAT_MS = readBoundedIntEnv("EXTRACTION_WORKER_HEARTBEAT_MS", 30_000, 5_000, 5 * 60_000);
+const POLL_MS = readBoundedIntEnv(
+  "EXTRACTION_WORKER_POLL_MS",
+  5000,
+  500,
+  60_000,
+);
+const IDLE_LOG_MS = readBoundedIntEnv(
+  "EXTRACTION_WORKER_IDLE_LOG_MS",
+  60_000,
+  5_000,
+  10 * 60_000,
+);
+const HEARTBEAT_MS = readBoundedIntEnv(
+  "EXTRACTION_WORKER_HEARTBEAT_MS",
+  30_000,
+  5_000,
+  5 * 60_000,
+);
 const HTTP_PORT =
   readOptionalIntEnv("PORT") ?? readOptionalIntEnv("LITEPARSE_HTTP_PORT");
 const HTTP_MAX_BODY_BYTES = readBoundedIntEnv(
@@ -482,8 +512,15 @@ const LITEPARSE_MAX_PAGES = readOptionalIntEnv("LITEPARSE_MAX_PAGES");
 const LITEPARSE_MAX_FILE_SIZE = readOptionalIntEnv(
   "LITEPARSE_MAX_FILE_SIZE_BYTES",
 );
-const MODEL_CALL_TIMEOUT_MS = readBoundedIntEnv("MODEL_CALL_TIMEOUT_MS", 180_000, 30_000, 15 * 60_000);
-const CL_ROUTER_TASK_FLAGS = parseClRouterTaskFlags(process.env.CL_ROUTER_TASKS);
+const MODEL_CALL_TIMEOUT_MS = readBoundedIntEnv(
+  "MODEL_CALL_TIMEOUT_MS",
+  180_000,
+  30_000,
+  15 * 60_000,
+);
+const CL_ROUTER_TASK_FLAGS = parseClRouterTaskFlags(
+  process.env.CL_ROUTER_TASKS,
+);
 const CL_ROUTER_TIMEOUT_MS = readBoundedIntEnv(
   "CL_ROUTER_TIMEOUT_MS",
   MODEL_CALL_TIMEOUT_MS,
@@ -492,14 +529,16 @@ const CL_ROUTER_TIMEOUT_MS = readBoundedIntEnv(
 );
 // Keep the original opaque tenant key so the rebrand does not fork learned
 // routing state from existing production policy history and telemetry.
-const CL_ROUTER_TENANT_ID = cleanEnv(process.env.CL_ROUTER_TENANT_ID) ?? "glass";
-const clRouter = CL_ROUTER_TASK_FLAGS.size > 0
-  ? createClRouterClient({
-      baseUrl: requiredEnv("CL_ROUTER_URL"),
-      secret: requiredEnv("CL_ROUTER_SECRET"),
-      timeoutMs: CL_ROUTER_TIMEOUT_MS,
-    })
-  : null;
+const CL_ROUTER_TENANT_ID =
+  cleanEnv(process.env.CL_ROUTER_TENANT_ID) ?? "glass";
+const clRouter =
+  CL_ROUTER_TASK_FLAGS.size > 0
+    ? createClRouterClient({
+        baseUrl: requiredEnv("CL_ROUTER_URL"),
+        secret: requiredEnv("CL_ROUTER_SECRET"),
+        timeoutMs: CL_ROUTER_TIMEOUT_MS,
+      })
+    : null;
 const POLICY_PREVIEW_VERSION = "policy-preview-v2";
 const POLICY_PREVIEW_TEXT_LIMIT = readBoundedIntEnv(
   "EXTRACTION_PREVIEW_TEXT_LIMIT",
@@ -567,7 +606,12 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function readBoundedIntEnv(name: string, fallback: number, min: number, max: number): number {
+function readBoundedIntEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const value = Number.parseInt(raw, 10);
@@ -631,10 +675,17 @@ function selectPageImages(
   trace: ModelCallTrace | undefined,
 ): { images?: ExtractionImage[] } {
   if (!screenshots?.length) return {};
-  const startPage = typeof trace?.startPage === "number" ? trace.startPage : undefined;
-  const endPage = typeof trace?.endPage === "number" ? trace.endPage : startPage;
+  const startPage =
+    typeof trace?.startPage === "number" ? trace.startPage : undefined;
+  const endPage =
+    typeof trace?.endPage === "number" ? trace.endPage : startPage;
   if (!startPage || !endPage) return {};
-  const maxImages = readBoundedIntEnv("EXTRACTION_MULTIMODAL_MAX_IMAGES", 2, 0, 6);
+  const maxImages = readBoundedIntEnv(
+    "EXTRACTION_MULTIMODAL_MAX_IMAGES",
+    2,
+    0,
+    6,
+  );
   if (maxImages <= 0) return {};
   const images = screenshots
     .filter((shot) => shot.page >= startPage && shot.page <= endPage)
@@ -657,12 +708,14 @@ function enrichProviderOptions(
   };
 }
 
-function readSourceKind(value: unknown): "policy_pdf" | "email" | "attachment" | "manual_note" {
+function readSourceKind(
+  value: unknown,
+): "policy_pdf" | "email" | "attachment" | "manual_note" {
   if (
-    value === "policy_pdf"
-    || value === "email"
-    || value === "attachment"
-    || value === "manual_note"
+    value === "policy_pdf" ||
+    value === "email" ||
+    value === "attachment" ||
+    value === "manual_note"
   ) {
     return value;
   }
@@ -682,8 +735,7 @@ const WORKER_COVERAGE_CLEANUP_ROUTE: WorkerModelRoute =
 const WORKER_QUALITY_ROUTE: WorkerModelRoute =
   SPECIAL_MODEL_ROUTES.extraction_quality;
 
-const WORKER_FALLBACK_ROUTE: WorkerModelRoute =
-  SPECIAL_MODEL_ROUTES.fallback;
+const WORKER_FALLBACK_ROUTE: WorkerModelRoute = SPECIAL_MODEL_ROUTES.fallback;
 
 const WORKER_MODEL_PROVIDERS = new Set<ModelProvider>(DIRECT_MODEL_PROVIDERS);
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
@@ -717,14 +769,22 @@ function readRouteSource(value: unknown): WorkerRouteSource | undefined {
   return undefined;
 }
 
-function providerModel(provider: ModelProvider, model: string, apiKey?: string): LanguageModel {
+function providerModel(
+  provider: ModelProvider,
+  model: string,
+  apiKey?: string,
+): LanguageModel {
   switch (provider) {
     case "openai":
       return (apiKey ? createOpenAI({ apiKey }) : createOpenAI())(model);
     case "anthropic":
       return (apiKey ? createAnthropic({ apiKey }) : createAnthropic())(model);
     case "google":
-      return (apiKey ? createGoogleGenerativeAI({ apiKey }) : createGoogleGenerativeAI())(model);
+      return (
+        apiKey
+          ? createGoogleGenerativeAI({ apiKey })
+          : createGoogleGenerativeAI()
+      )(model);
     case "xai":
       return (apiKey ? createXai({ apiKey }) : createXai())(model);
     case "mistral":
@@ -756,8 +816,10 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
     case "anthropic":
       return cleanEnv(process.env.ANTHROPIC_API_KEY);
     case "google":
-      return cleanEnv(process.env.GOOGLE_GENERATIVE_AI_API_KEY)
-        ?? cleanEnv(process.env.GOOGLE_API_KEY);
+      return (
+        cleanEnv(process.env.GOOGLE_GENERATIVE_AI_API_KEY) ??
+        cleanEnv(process.env.GOOGLE_API_KEY)
+      );
     case "xai":
       return cleanEnv(process.env.XAI_API_KEY);
     case "mistral":
@@ -771,7 +833,9 @@ function directProviderApiKey(provider: ModelProvider): string | undefined {
   }
 }
 
-function getProviderOptionsForRoute(route: WorkerModelRoute): ProviderOptions | undefined {
+function getProviderOptionsForRoute(
+  route: WorkerModelRoute,
+): ProviderOptions | undefined {
   if (route.provider === "openai" && route.model === "gpt-5.5") {
     return { openai: { reasoningEffort: "none" } };
   }
@@ -803,15 +867,25 @@ function mergeProviderOptions(
       }
     }
   }
-  return Object.keys(merged).length > 0 ? (merged as ProviderOptions) : undefined;
+  return Object.keys(merged).length > 0
+    ? (merged as ProviderOptions)
+    : undefined;
 }
 
-function routeDirectApiKey(route: WorkerModelRoute, apiKey?: string): string | undefined {
+function routeDirectApiKey(
+  route: WorkerModelRoute,
+  apiKey?: string,
+): string | undefined {
   return cleanEnv(apiKey) ?? directProviderApiKey(route.provider);
 }
 
-function routeHasDirectAccess(route: WorkerModelRoute, apiKey?: string): boolean {
-  return !!directProviderModelForRoute(route) && !!routeDirectApiKey(route, apiKey);
+function routeHasDirectAccess(
+  route: WorkerModelRoute,
+  apiKey?: string,
+): boolean {
+  return (
+    !!directProviderModelForRoute(route) && !!routeDirectApiKey(route, apiKey)
+  );
 }
 
 function routeTransport(_route: WorkerModelRoute, _apiKey?: string): "direct" {
@@ -837,7 +911,8 @@ function routeToModel(route: WorkerModelRoute, apiKey?: string): LanguageModel {
 function modelTaskForTaskKind(taskKind?: string): ModelTask {
   if (taskKind === "extraction_preview") return "extraction_preview";
   if (taskKind === "extraction_classify") return "classification";
-  if (taskKind === "extraction_coverage_recovery") return "extraction_coverage_recovery";
+  if (taskKind === "extraction_coverage_recovery")
+    return "extraction_coverage_recovery";
   return "extraction";
 }
 
@@ -863,8 +938,12 @@ function resolveConfiguredRoute(
   apiKey?: string;
 } {
   const settingsRoute = settings?.routes?.[routeId];
-  const configuredRoute = isWorkerModelRoute(settingsRoute) ? settingsRoute : undefined;
-  const configuredRouteSource = readRouteSource(settings?.routeSources?.[routeId]);
+  const configuredRoute = isWorkerModelRoute(settingsRoute)
+    ? settingsRoute
+    : undefined;
+  const configuredRouteSource = readRouteSource(
+    settings?.routeSources?.[routeId],
+  );
   const routeSource = configuredRouteSource ?? "configured";
   const configuredApiKey = configuredRoute
     ? apiKeyForRoute(configuredRoute, routeSource, settings)
@@ -883,7 +962,12 @@ function resolveConfiguredRoute(
 }
 
 function resolveConfiguredFallbackRoute(settings?: WorkerModelSettings) {
-  return resolveConfiguredRoute("fallback", WORKER_FALLBACK_ROUTE, "fallback", settings);
+  return resolveConfiguredRoute(
+    "fallback",
+    WORKER_FALLBACK_ROUTE,
+    "fallback",
+    settings,
+  );
 }
 
 function resolveConfiguredQualityRoute(settings?: WorkerModelSettings) {
@@ -910,7 +994,9 @@ function resolveModelForTaskKind(
 ): ResolvedWorkerModelRoute {
   const task = modelTaskForTaskKind(taskKind);
   const settingsRoute = settings?.routes?.[task];
-  const configuredRoute = isWorkerModelRoute(settingsRoute) ? settingsRoute : undefined;
+  const configuredRoute = isWorkerModelRoute(settingsRoute)
+    ? settingsRoute
+    : undefined;
   const configuredRouteSource = readRouteSource(settings?.routeSources?.[task]);
   const configuredSource = configuredRouteSource ?? "configured";
   const configuredApiKey = configuredRoute
@@ -919,24 +1005,31 @@ function resolveModelForTaskKind(
   const canUseConfiguredRoute =
     !!configuredRoute &&
     routeHasDirectAccess(configuredRoute, configuredApiKey);
-  const baseRoute = canUseConfiguredRoute ? configuredRoute : WORKER_STATIC_ROUTES[task];
+  const baseRoute = canUseConfiguredRoute
+    ? configuredRoute
+    : WORKER_STATIC_ROUTES[task];
   const quality = resolveConfiguredQualityRoute(settings);
-  const useQualityPrimary = primaryRouteForCall({
-    task,
-    taskKind,
-    qualityRoute: quality.route,
-  }) !== null;
-  const coverageCleanup = taskKind === "extraction_coverage_cleanup"
-    ? resolveConfiguredCoverageCleanupRoute(settings)
-    : null;
-  const route = coverageCleanup?.route ?? (useQualityPrimary ? quality.route : baseRoute);
-  const routeSource = coverageCleanup?.routeSource ?? (useQualityPrimary
-    ? quality.routeSource
-    : canUseConfiguredRoute
-    ? configuredSource
-    : "default");
+  const useQualityPrimary =
+    primaryRouteForCall({
+      task,
+      taskKind,
+      qualityRoute: quality.route,
+    }) !== null;
+  const coverageCleanup =
+    taskKind === "extraction_coverage_cleanup"
+      ? resolveConfiguredCoverageCleanupRoute(settings)
+      : null;
+  const route =
+    coverageCleanup?.route ?? (useQualityPrimary ? quality.route : baseRoute);
+  const routeSource =
+    coverageCleanup?.routeSource ??
+    (useQualityPrimary
+      ? quality.routeSource
+      : canUseConfiguredRoute
+        ? configuredSource
+        : "default");
   const apiKey = coverageCleanup
-      ? coverageCleanup.apiKey
+    ? coverageCleanup.apiKey
     : useQualityPrimary
       ? quality.apiKey
       : canUseConfiguredRoute
@@ -960,12 +1053,14 @@ function resolveFallbackModel(
   settings?: WorkerModelSettings,
 ): ResolvedWorkerModelRoute | null {
   const fallback = resolveConfiguredFallbackRoute(settings);
-  if (!fallbackRouteForCall({
-    task,
-    taskKind,
-    primaryRoute,
-    fallbackRoute: fallback.route,
-  })) {
+  if (
+    !fallbackRouteForCall({
+      task,
+      taskKind,
+      primaryRoute,
+      fallbackRoute: fallback.route,
+    })
+  ) {
     return null;
   }
   return {
@@ -999,18 +1094,16 @@ function modelRouteTrace(route: TraceableModelRoute) {
   };
 }
 
-async function recordModelCallError(
-  opts: {
-    job: Pick<ClaimedJob, "state">;
-    route: TraceableModelRoute;
-    label: string;
-    taskKind?: string;
-    startedAt: number;
-    attempt: number;
-    error: unknown;
-    details: unknown;
-  },
-) {
+async function recordModelCallError(opts: {
+  job: Pick<ClaimedJob, "state">;
+  route: TraceableModelRoute;
+  label: string;
+  taskKind?: string;
+  startedAt: number;
+  attempt: number;
+  error: unknown;
+  details: unknown;
+}) {
   await recordTraceEvent(opts.job, {
     kind: "model_call",
     label: opts.label,
@@ -1025,18 +1118,16 @@ async function recordModelCallError(
   });
 }
 
-async function recordModelCallStart(
-  opts: {
-    job: Pick<ClaimedJob, "state">;
-    route: TraceableModelRoute;
-    label: string;
-    taskKind?: string;
-    attempt: number;
-    maxOutputTokens: number;
-    providerOptions?: ProviderOptions;
-    trace?: ModelCallTrace;
-  },
-) {
+async function recordModelCallStart(opts: {
+  job: Pick<ClaimedJob, "state">;
+  route: TraceableModelRoute;
+  label: string;
+  taskKind?: string;
+  attempt: number;
+  maxOutputTokens: number;
+  providerOptions?: ProviderOptions;
+  trace?: ModelCallTrace;
+}) {
   await recordTraceEvent(opts.job, {
     kind: "worker",
     phase: "model_call",
@@ -1054,17 +1145,15 @@ async function recordModelCallStart(
   });
 }
 
-async function recordModelCallSoftFailure(
-  opts: {
-    job: Pick<ClaimedJob, "state">;
-    route: TraceableModelRoute;
-    label: string;
-    taskKind?: string;
-    startedAt: number;
-    error?: unknown;
-    details: unknown;
-  },
-) {
+async function recordModelCallSoftFailure(opts: {
+  job: Pick<ClaimedJob, "state">;
+  route: TraceableModelRoute;
+  label: string;
+  taskKind?: string;
+  startedAt: number;
+  error?: unknown;
+  details: unknown;
+}) {
   await recordTraceEvent(opts.job, {
     kind: "model_call",
     label: opts.label,
@@ -1079,18 +1168,16 @@ async function recordModelCallSoftFailure(
   });
 }
 
-async function recordModelCallComplete(
-  opts: {
-    job: Pick<ClaimedJob, "state">;
-    route: TraceableModelRoute;
-    label: string;
-    taskKind?: string;
-    startedAt: number;
-    attempt: number;
-    usage: ReturnType<typeof mapUsage>;
-    details: unknown;
-  },
-) {
+async function recordModelCallComplete(opts: {
+  job: Pick<ClaimedJob, "state">;
+  route: TraceableModelRoute;
+  label: string;
+  taskKind?: string;
+  startedAt: number;
+  attempt: number;
+  usage: ReturnType<typeof mapUsage>;
+  details: unknown;
+}) {
   await recordTraceEvent(opts.job, {
     kind: "model_call",
     label: opts.label,
@@ -1119,7 +1206,8 @@ function maxOutputTokensForRoute(
   taskKind?: string,
 ): number {
   const routeMax = taskKind
-    ? route.capabilities.taskOutputTokens?.[taskKind as ModelTaskKind] ?? route.capabilities.maxOutputTokens
+    ? (route.capabilities.taskOutputTokens?.[taskKind as ModelTaskKind] ??
+      route.capabilities.maxOutputTokens)
     : route.capabilities.maxOutputTokens;
   return routeMax ? Math.min(maxTokens, routeMax) : maxTokens;
 }
@@ -1134,8 +1222,15 @@ function logFallback(
   );
 }
 
-function readTraceDetails(params: { trace?: unknown }): ModelCallTrace | undefined {
-  if (!params.trace || typeof params.trace !== "object" || Array.isArray(params.trace)) return undefined;
+function readTraceDetails(params: {
+  trace?: unknown;
+}): ModelCallTrace | undefined {
+  if (
+    !params.trace ||
+    typeof params.trace !== "object" ||
+    Array.isArray(params.trace)
+  )
+    return undefined;
   return params.trace as ModelCallTrace;
 }
 
@@ -1175,10 +1270,15 @@ function modelTraceLabel(
       .replace(/_/g, " ")
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
-  if (task === "extraction") return kind === "generateText" ? "Extract policy text" : "Extract policy structure";
+  if (task === "extraction")
+    return kind === "generateText"
+      ? "Extract policy text"
+      : "Extract policy structure";
   if (task === "extraction_preview") return "Extract provisional policy fields";
   if (task === "classification") return "Classify document";
-  return kind === "generateText" ? "Generate text" : "Generate structured output";
+  return kind === "generateText"
+    ? "Generate text"
+    : "Generate structured output";
 }
 
 const TRACE_TEXT_PREVIEW_LIMIT = 6000;
@@ -1203,7 +1303,10 @@ function traceTextPreview(value: unknown, limit = TRACE_TEXT_PREVIEW_LIMIT) {
 
 function traceJsonPreview(value: unknown) {
   try {
-    return truncateTraceText(JSON.stringify(value, null, 2), TRACE_OUTPUT_PREVIEW_LIMIT);
+    return truncateTraceText(
+      JSON.stringify(value, null, 2),
+      TRACE_OUTPUT_PREVIEW_LIMIT,
+    );
   } catch {
     return truncateTraceText(String(value), TRACE_OUTPUT_PREVIEW_LIMIT);
   }
@@ -1224,21 +1327,29 @@ function providerInputSummary(providerOptions: ProviderOptions | undefined) {
   if (!options) return undefined;
   return {
     hasPdfBase64: typeof options.pdfBase64 === "string",
-    pdfBase64Chars: typeof options.pdfBase64 === "string" ? options.pdfBase64.length : undefined,
-    hasPdfUrl: !!options.pdfUrl,
-    pdfUrl: typeof options.pdfUrl === "string"
-      ? options.pdfUrl
-      : options.pdfUrl instanceof URL
-        ? options.pdfUrl.toString()
+    pdfBase64Chars:
+      typeof options.pdfBase64 === "string"
+        ? options.pdfBase64.length
         : undefined,
+    hasPdfUrl: !!options.pdfUrl,
+    pdfUrl:
+      typeof options.pdfUrl === "string"
+        ? options.pdfUrl
+        : options.pdfUrl instanceof URL
+          ? options.pdfUrl.toString()
+          : undefined,
     hasPdfBytes: options.pdfBytes instanceof Uint8Array,
-    pdfBytes: options.pdfBytes instanceof Uint8Array ? options.pdfBytes.byteLength : undefined,
-    mimeType: typeof options.mimeType === "string" ? options.mimeType : undefined,
+    pdfBytes:
+      options.pdfBytes instanceof Uint8Array
+        ? options.pdfBytes.byteLength
+        : undefined,
+    mimeType:
+      typeof options.mimeType === "string" ? options.mimeType : undefined,
     images: Array.isArray(options.images)
       ? options.images.map((image) => ({
-        mimeType: image.mimeType,
-        base64Chars: image.imageBase64.length,
-      }))
+          mimeType: image.mimeType,
+          base64Chars: image.imageBase64.length,
+        }))
       : undefined,
   };
 }
@@ -1267,9 +1378,10 @@ function modelTraceDetails(params: {
     promptPreview: traceTextPreview(params.prompt),
     inputSummary: providerInputSummary(params.providerOptions),
     outputKind: params.outputKind,
-    outputPreview: params.outputKind === "object"
-      ? traceJsonPreview(params.output)
-      : traceTextPreview(params.output, TRACE_OUTPUT_PREVIEW_LIMIT),
+    outputPreview:
+      params.outputKind === "object"
+        ? traceJsonPreview(params.output)
+        : traceTextPreview(params.output, TRACE_OUTPUT_PREVIEW_LIMIT),
   });
 }
 
@@ -1310,7 +1422,9 @@ function buildPdfFilePart(opts: {
   return null;
 }
 
-function extractEmbeddedPdf(prompt: string): { text: string; pdfBase64: string } | null {
+function extractEmbeddedPdf(
+  prompt: string,
+): { text: string; pdfBase64: string } | null {
   const match = prompt.match(/^([\s\S]+?\n)(JVBER[A-Za-z0-9+/=\s]{200,})$/);
   if (!match) return null;
   return {
@@ -1392,25 +1506,27 @@ function routeSupportsImageInput(route: WorkerModelRoute): boolean {
   return modelSupportsImageInput(route);
 }
 
-
-async function recordTraceEvent(job: Pick<ClaimedJob, "state">, event: {
-  kind: "model_call" | "worker" | "phase" | "embedding_batch" | "artifact";
-  phase?: string;
-  label?: string;
-  task?: string;
-  taskKind?: string;
-  provider?: string;
-  model?: string;
-  routeSource?: string;
-  transport?: string;
-  attempt?: number;
-  status?: string;
-  durationMs?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  error?: string;
-  details?: unknown;
-}) {
+async function recordTraceEvent(
+  job: Pick<ClaimedJob, "state">,
+  event: {
+    kind: "model_call" | "worker" | "phase" | "embedding_batch" | "artifact";
+    phase?: string;
+    label?: string;
+    task?: string;
+    taskKind?: string;
+    provider?: string;
+    model?: string;
+    routeSource?: string;
+    transport?: string;
+    attempt?: number;
+    status?: string;
+    durationMs?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    error?: string;
+    details?: unknown;
+  },
+) {
   if (!job.state.traceId) return;
   try {
     await convex.action(actions.recordExternalTraceEvent, {
@@ -1430,21 +1546,28 @@ function clRouterAssets(
   const options = providerOptions as ExtractionProviderOptions;
   const images = Array.isArray(options.images)
     ? options.images.filter(
-        (image) => typeof image.imageBase64 === "string" && image.imageBase64.length > 0,
+        (image) =>
+          typeof image.imageBase64 === "string" && image.imageBase64.length > 0,
       )
     : undefined;
   if (
-    typeof options.pdfBase64 !== "string"
-    && !(options.pdfBytes instanceof Uint8Array)
-    && !images?.length
+    typeof options.pdfBase64 !== "string" &&
+    !(options.pdfBytes instanceof Uint8Array) &&
+    !images?.length
   ) {
     return undefined;
   }
   return {
     ...(pdfUrl ? { pdfUrl } : {}),
-    ...(typeof options.pdfBase64 === "string" ? { pdfBase64: options.pdfBase64 } : {}),
-    ...(options.pdfBytes instanceof Uint8Array ? { pdfBytes: options.pdfBytes } : {}),
-    ...(typeof options.mimeType === "string" ? { mimeType: options.mimeType } : {}),
+    ...(typeof options.pdfBase64 === "string"
+      ? { pdfBase64: options.pdfBase64 }
+      : {}),
+    ...(options.pdfBytes instanceof Uint8Array
+      ? { pdfBytes: options.pdfBytes }
+      : {}),
+    ...(typeof options.mimeType === "string"
+      ? { mimeType: options.mimeType }
+      : {}),
     ...(images?.length ? { images } : {}),
   };
 }
@@ -1487,8 +1610,15 @@ async function generateObjectWithClRouter<T>(opts: {
   trace?: ModelCallTrace;
   modelSettings?: WorkerModelSettings;
   validate: (output: unknown) => T;
-}): Promise<{ object: T; usage: ReturnType<typeof mapUsage>; route: TraceableModelRoute } | null> {
-  if (!clRouter || !isClRouterTaskEnabled(CL_ROUTER_TASK_FLAGS, opts.task, opts.taskKind)) {
+}): Promise<{
+  object: T;
+  usage: ReturnType<typeof mapUsage>;
+  route: TraceableModelRoute;
+} | null> {
+  if (
+    !clRouter ||
+    !isClRouterTaskEnabled(CL_ROUTER_TASK_FLAGS, opts.task, opts.taskKind)
+  ) {
     return null;
   }
   const startedAt = nowMs();
@@ -1504,7 +1634,9 @@ async function generateObjectWithClRouter<T>(opts: {
     details: stripUndefined({
       maxOutputTokens: opts.maxOutputTokens,
       trace: opts.trace,
-      inputSummary: providerInputSummary(opts.providerOptions as ProviderOptions),
+      inputSummary: providerInputSummary(
+        opts.providerOptions as ProviderOptions,
+      ),
       schemaBytes: Buffer.byteLength(JSON.stringify(opts.schema)),
     }),
   });
@@ -1560,7 +1692,9 @@ async function generateObjectWithClRouter<T>(opts: {
     });
     return { object, usage, route };
   } catch (error) {
-    const canUseDirectFallback = shouldFallBackFromClRouter(error, { SPOT_ENV });
+    const canUseDirectFallback = shouldFallBackFromClRouter(error, {
+      SPOT_ENV,
+    });
     await recordTraceEvent(opts.job, {
       kind: "model_call",
       label: opts.label,
@@ -1598,11 +1732,27 @@ function buildWorkerExtractor(opts: {
       taskKind,
       trace?.extractorName,
     );
-    const providerOptions = enrichProviderOptions(params.providerOptions, opts.pageScreenshots, trace);
+    const providerOptions = enrichProviderOptions(
+      params.providerOptions,
+      opts.pageScreenshots,
+      trace,
+    );
     const route = resolveModelForTaskKind(taskKind, opts.modelSettings);
-    const label = modelTraceLabel("generateObject", taskKind, route.task, trace);
-    const maxOutputTokens = maxOutputTokensForRoute(params.maxTokens, route, taskKind);
-    if (clRouter && isClRouterTaskEnabled(CL_ROUTER_TASK_FLAGS, route.task, taskKind)) {
+    const label = modelTraceLabel(
+      "generateObject",
+      taskKind,
+      route.task,
+      trace,
+    );
+    const maxOutputTokens = maxOutputTokensForRoute(
+      params.maxTokens,
+      route,
+      taskKind,
+    );
+    if (
+      clRouter &&
+      isClRouterTaskEnabled(CL_ROUTER_TASK_FLAGS, route.task, taskKind)
+    ) {
       const routerSchema = await zodSchema(params.schema).jsonSchema;
       const routerResult = await generateObjectWithClRouter({
         job: opts.job,
@@ -1619,7 +1769,9 @@ function buildWorkerExtractor(opts: {
         validate: (output) => {
           const parsed = params.schema.safeParse(output);
           if (!parsed.success) {
-            throw new ClRouterProtocolError("cl-router returned output that failed the extraction schema");
+            throw new ClRouterProtocolError(
+              "cl-router returned output that failed the extraction schema",
+            );
           }
           return parsed.data;
         },
@@ -1644,17 +1796,22 @@ function buildWorkerExtractor(opts: {
         providerOptions: callProviderOptions,
         trace,
       });
-      const result = await withModelCallTimeout(aiGenerateText({
-        model: route.model,
-        system: params.system,
-        ...buildPromptInput(prompt, providerOptions, route.route),
-        output: Output.object({
-          schema: structuredOutputSchemaForProvider(params.schema, route.route.provider),
+      const result = await withModelCallTimeout(
+        aiGenerateText({
+          model: route.model,
+          system: params.system,
+          ...buildPromptInput(prompt, providerOptions, route.route),
+          output: Output.object({
+            schema: structuredOutputSchemaForProvider(
+              params.schema,
+              route.route.provider,
+            ),
+          }),
+          maxOutputTokens,
+          providerOptions: callProviderOptions,
+          abortSignal: modelAbortSignal(),
         }),
-        maxOutputTokens,
-        providerOptions: callProviderOptions,
-        abortSignal: modelAbortSignal(),
-      }));
+      );
       const usage = mapUsage(result.usage);
       await recordModelCallComplete({
         job: opts.job,
@@ -1731,11 +1888,20 @@ function buildWorkerExtractor(opts: {
 
       const fallback = isMissingApiKeyError(error)
         ? null
-        : resolveFallbackModel(route.task, taskKind, route.route, opts.modelSettings);
+        : resolveFallbackModel(
+            route.task,
+            taskKind,
+            route.route,
+            opts.modelSettings,
+          );
       if (!fallback) throw error;
 
       logFallback(route, fallback, error);
-      const fallbackMaxOutputTokens = maxOutputTokensForRoute(params.maxTokens, fallback, taskKind);
+      const fallbackMaxOutputTokens = maxOutputTokensForRoute(
+        params.maxTokens,
+        fallback,
+        taskKind,
+      );
       const fallbackProviderOptions = providerOptionsForModelCall(
         fallback,
         providerOptions as ProviderOptions | undefined,
@@ -1752,17 +1918,22 @@ function buildWorkerExtractor(opts: {
           providerOptions: fallbackProviderOptions,
           trace,
         });
-        const fallbackResult = await withModelCallTimeout(aiGenerateText({
-          model: fallback.model,
-          system: params.system,
-          ...buildPromptInput(prompt, providerOptions, fallback.route),
-          output: Output.object({
-            schema: structuredOutputSchemaForProvider(params.schema, fallback.route.provider),
+        const fallbackResult = await withModelCallTimeout(
+          aiGenerateText({
+            model: fallback.model,
+            system: params.system,
+            ...buildPromptInput(prompt, providerOptions, fallback.route),
+            output: Output.object({
+              schema: structuredOutputSchemaForProvider(
+                params.schema,
+                fallback.route.provider,
+              ),
+            }),
+            maxOutputTokens: fallbackMaxOutputTokens,
+            providerOptions: fallbackProviderOptions,
+            abortSignal: modelAbortSignal(),
           }),
-          maxOutputTokens: fallbackMaxOutputTokens,
-          providerOptions: fallbackProviderOptions,
-          abortSignal: modelAbortSignal(),
-        }));
+        );
         const usage = mapUsage(fallbackResult.usage);
         await recordModelCallComplete({
           job: opts.job,
@@ -1816,16 +1987,21 @@ function buildWorkerExtractor(opts: {
     }
   };
 
-  const extractionRoute = resolveModelForTaskKind("extraction_focused", opts.modelSettings);
+  const extractionRoute = resolveModelForTaskKind(
+    "extraction_focused",
+    opts.modelSettings,
+  );
   const modelCapabilitiesByTaskKind = Object.fromEntries(
-    ([
-      "extraction_source_tree",
-      "extraction_operational_profile",
-      "extraction_coverage_recovery",
-      "extraction_coverage_cleanup",
-      "extraction_review",
-      "extraction_referential_lookup",
-    ] satisfies ModelTaskKind[]).map((taskKind) => [
+    (
+      [
+        "extraction_source_tree",
+        "extraction_operational_profile",
+        "extraction_coverage_recovery",
+        "extraction_coverage_cleanup",
+        "extraction_review",
+        "extraction_referential_lookup",
+      ] satisfies ModelTaskKind[]
+    ).map((taskKind) => [
       taskKind,
       resolveModelForTaskKind(taskKind, opts.modelSettings).capabilities,
     ]),
@@ -1857,17 +2033,23 @@ async function logJob(
       level,
     });
   } catch (error) {
-    console.warn(`[${job.policyId}] failed to append extraction log: ${errorMessage(error)}`);
+    console.warn(
+      `[${job.policyId}] failed to append extraction log: ${errorMessage(error)}`,
+    );
   }
 }
 
 async function fetchPdfBytes(fileUrl: string): Promise<Uint8Array> {
-  const response = await fetch(resolveConvexStorageUrl(fileUrl, {
-    spotEnv: SPOT_ENV,
-    convexUrl: CONVEX_URL,
-  }));
+  const response = await fetch(
+    resolveConvexStorageUrl(fileUrl, {
+      spotEnv: SPOT_ENV,
+      convexUrl: CONVEX_URL,
+    }),
+  );
   if (!response.ok) {
-    throw new Error(`Failed to fetch source PDF: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Failed to fetch source PDF: ${response.status} ${response.statusText}`,
+    );
   }
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -1885,7 +2067,9 @@ function jsonResponse(
   res.end(payload);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJsonBody(
+  req: IncomingMessage,
+): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
@@ -1897,7 +2081,10 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
     chunks.push(buffer);
   }
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
+    string,
+    unknown
+  >;
 }
 
 function isAuthorized(req: IncomingMessage): boolean {
@@ -1906,7 +2093,10 @@ function isAuthorized(req: IncomingMessage): boolean {
   return req.headers["x-extraction-worker-secret"] === SECRET;
 }
 
-async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+async function handleConvertRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   if (!RUNTIME_ACCESS.conversionsEnabled) {
     jsonResponse(res, 503, {
       error: "PDF conversion is disabled in ephemeral Railway environments",
@@ -1938,7 +2128,8 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
     const pdfBytes = Buffer.from(pdfBase64, "base64");
     const converted = await convertPdfWithLiteParse({
       pdfBytes,
-      documentId: typeof body.documentId === "string" ? body.documentId : "inline-pdf",
+      documentId:
+        typeof body.documentId === "string" ? body.documentId : "inline-pdf",
       sourceKind: readSourceKind(body.sourceKind),
       maxPages: LITEPARSE_MAX_PAGES,
       maxFileSize: LITEPARSE_MAX_FILE_SIZE,
@@ -1954,7 +2145,10 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
       metadata: converted.metadata,
     });
   } catch (error) {
-    if (signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+    if (
+      signal.aborted ||
+      (error instanceof Error && error.name === "AbortError")
+    ) {
       if (!res.headersSent && !res.destroyed && !res.writableEnded) {
         jsonResponse(res, 499, { error: "Client closed request" });
       }
@@ -1970,7 +2164,10 @@ async function handleConvertRequest(req: IncomingMessage, res: ServerResponse): 
 function startHttpServer(): { close: () => void } | null {
   if (!HTTP_PORT) return null;
   const server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const url = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`,
+    );
     if (req.method === "GET" && url.pathname === "/health") {
       jsonResponse(res, 200, {
         ok: true,
@@ -2058,21 +2255,29 @@ async function uploadCompletionPayload(
 
   for (let attempt = 1; attempt <= COMPLETION_UPLOAD_ATTEMPTS; attempt += 1) {
     try {
-      const { uploadUrl } = await convex.action(actions.createExternalCompletionUploadUrl, {
-        secret: SECRET,
-      });
-      const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
-        spotEnv: SPOT_ENV,
-        convexUrl: CONVEX_URL,
-      }), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: json,
-      });
+      const { uploadUrl } = await convex.action(
+        actions.createExternalCompletionUploadUrl,
+        {
+          secret: SECRET,
+        },
+      );
+      const response = await fetch(
+        resolveConvexStorageUrl(uploadUrl, {
+          spotEnv: SPOT_ENV,
+          convexUrl: CONVEX_URL,
+        }),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: json,
+        },
+      );
       if (!response.ok) {
-        throw new Error(`Failed to upload completion payload: ${response.status} ${await response.text()}`);
+        throw new Error(
+          `Failed to upload completion payload: ${response.status} ${await response.text()}`,
+        );
       }
-      const uploaded = await response.json() as { storageId?: string };
+      const uploaded = (await response.json()) as { storageId?: string };
       if (!uploaded.storageId) {
         throw new Error("Completion payload upload did not return a storageId");
       }
@@ -2129,31 +2334,41 @@ async function uploadExtractionArtifact(
         actions.createExternalExtractionArtifactUploadUrl,
         { secret: SECRET },
       );
-      const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
-        spotEnv: SPOT_ENV,
-        convexUrl: CONVEX_URL,
-      }), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: json,
-      });
+      const response = await fetch(
+        resolveConvexStorageUrl(uploadUrl, {
+          spotEnv: SPOT_ENV,
+          convexUrl: CONVEX_URL,
+        }),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: json,
+        },
+      );
       if (!response.ok) {
-        throw new Error(`Failed to upload ${args.kind}: ${response.status} ${await response.text()}`);
+        throw new Error(
+          `Failed to upload ${args.kind}: ${response.status} ${await response.text()}`,
+        );
       }
-      const uploaded = await response.json() as { storageId?: string };
-      if (!uploaded.storageId) throw new Error(`${args.kind} upload did not return a storageId`);
-      const finalized = await convex.action(actions.finalizeExternalExtractionArtifact, {
-        secret: SECRET,
-        policyId: job.policyId,
-        leaseId: job.leaseId,
-        kind: args.kind,
-        storageId: uploaded.storageId,
-        sourceFingerprint: args.sourceFingerprint,
-        extractorVersion: args.extractorVersion,
-        sectionId: args.sectionId,
-        metadata: args.metadata,
-      });
-      if (!finalized.ok) throw new Error(`Convex rejected ${args.kind} for ${job.policyId}`);
+      const uploaded = (await response.json()) as { storageId?: string };
+      if (!uploaded.storageId)
+        throw new Error(`${args.kind} upload did not return a storageId`);
+      const finalized = await convex.action(
+        actions.finalizeExternalExtractionArtifact,
+        {
+          secret: SECRET,
+          policyId: job.policyId,
+          leaseId: job.leaseId,
+          kind: args.kind,
+          storageId: uploaded.storageId,
+          sourceFingerprint: args.sourceFingerprint,
+          extractorVersion: args.extractorVersion,
+          sectionId: args.sectionId,
+          metadata: args.metadata,
+        },
+      );
+      if (!finalized.ok)
+        throw new Error(`Convex rejected ${args.kind} for ${job.policyId}`);
       return finalized;
     } catch (error) {
       lastError = error;
@@ -2168,23 +2383,29 @@ async function uploadExtractionArtifact(
 }
 
 async function loadExtractionArtifact(url: string): Promise<unknown> {
-  const response = await fetch(resolveConvexStorageUrl(url, {
-    spotEnv: SPOT_ENV,
-    convexUrl: CONVEX_URL,
-  }));
+  const response = await fetch(
+    resolveConvexStorageUrl(url, {
+      spotEnv: SPOT_ENV,
+      convexUrl: CONVEX_URL,
+    }),
+  );
   if (!response.ok) {
-    throw new Error(`Failed to load extraction artifact: ${response.status} ${await response.text()}`);
+    throw new Error(
+      `Failed to load extraction artifact: ${response.status} ${await response.text()}`,
+    );
   }
   return await response.json();
 }
 
 function sourceBundleFingerprint(sourceSpans: WorkerSourceSpan[]) {
-  return stableHash(sourceSpans.map((span) => ({
-    id: span.id,
-    hash: span.textHash ?? stableHash(span.text),
-    pageStart: span.pageStart,
-    pageEnd: span.pageEnd,
-  })));
+  return stableHash(
+    sourceSpans.map((span) => ({
+      id: span.id,
+      hash: span.textHash ?? stableHash(span.text),
+      pageStart: span.pageStart,
+      pageEnd: span.pageEnd,
+    })),
+  );
 }
 
 type WorkerSourceBundle = {
@@ -2208,8 +2429,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isExtractionSectionResult(value: unknown): value is ExtractionSectionResult {
-  return isRecord(value) &&
+function isExtractionSectionResult(
+  value: unknown,
+): value is ExtractionSectionResult {
+  return (
+    isRecord(value) &&
     value.version === "extraction-section-result-v1" &&
     typeof value.sectionId === "string" &&
     EXTRACTION_SECTION_IDS.has(value.sectionId) &&
@@ -2223,8 +2447,10 @@ function isExtractionSectionResult(value: unknown): value is ExtractionSectionRe
     Array.isArray(value.warnings) &&
     value.warnings.every((warning) => typeof warning === "string") &&
     (value.error === undefined || typeof value.error === "string") &&
-    (value.operationalProfile === undefined || isRecord(value.operationalProfile)) &&
-    typeof value.resultHash === "string";
+    (value.operationalProfile === undefined ||
+      isRecord(value.operationalProfile)) &&
+    typeof value.resultHash === "string"
+  );
 }
 
 async function loadResumableExtraction(job: ClaimedJob) {
@@ -2234,14 +2460,20 @@ async function loadResumableExtraction(job: ClaimedJob) {
       sectionResults: new Map<string, ExtractionSectionResult>(),
     };
   }
-  const response = await convex.action(actions.getExternalExtractionResumeArtifacts, {
-    secret: SECRET,
-    policyId: job.policyId,
-    leaseId: job.leaseId,
-  });
-  if (!response.ok) throw new Error(`Lost external extraction lease for ${job.policyId}`);
-  const matching = response.artifacts.filter((artifact) =>
-    artifact.extractorVersion === WORKER_CL_SDK_VERSION && artifact.url);
+  const response = await convex.action(
+    actions.getExternalExtractionResumeArtifacts,
+    {
+      secret: SECRET,
+      policyId: job.policyId,
+      leaseId: job.leaseId,
+    },
+  );
+  if (!response.ok)
+    throw new Error(`Lost external extraction lease for ${job.policyId}`);
+  const matching = response.artifacts.filter(
+    (artifact) =>
+      artifact.extractorVersion === WORKER_CL_SDK_VERSION && artifact.url,
+  );
   let sourceBundle: WorkerSourceBundle | undefined;
   const sectionResults = new Map<string, ExtractionSectionResult>();
   for (const artifact of matching) {
@@ -2254,7 +2486,8 @@ async function loadResumableExtraction(job: ClaimedJob) {
         candidate.extractorVersion === WORKER_CL_SDK_VERSION &&
         Array.isArray(candidate.sourceSpans) &&
         Array.isArray(candidate.sourceChunks) &&
-        candidate.sourceFingerprint === sourceBundleFingerprint(candidate.sourceSpans)
+        candidate.sourceFingerprint ===
+          sourceBundleFingerprint(candidate.sourceSpans)
       ) {
         sourceBundle = candidate as WorkerSourceBundle;
       }
@@ -2304,7 +2537,9 @@ function sanitizeCompletionDocument(value: unknown, depth = 0): unknown {
   }
 
   const output: Record<string, unknown> = {};
-  for (const [key, entryValue] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entryValue] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     if (HEAVY_PAYLOAD_KEYS.has(key)) continue;
     const sanitized = sanitizeCompletionDocument(entryValue, depth + 1);
     if (sanitized !== undefined) output[key] = sanitized;
@@ -2434,8 +2669,9 @@ const previewExtractionSchema: Parameters<typeof jsonSchema>[0] = {
   required: [...PREVIEW_TOP_LEVEL_FIELDS],
 };
 
-const previewExtractionOutputSchema =
-  jsonSchema<Record<string, unknown>>(previewExtractionSchema);
+const previewExtractionOutputSchema = jsonSchema<Record<string, unknown>>(
+  previewExtractionSchema,
+);
 
 function previewExtractionOutputSchemaForProvider(provider: string) {
   if (provider !== "fireworks") return previewExtractionOutputSchema;
@@ -2450,7 +2686,9 @@ function cleanPreviewString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.replace(/\s+/g, " ").trim();
   if (!trimmed) return undefined;
-  if (/^(unknown|not\s*(available|provided|found)|n\/a|null|none)$/i.test(trimmed)) {
+  if (
+    /^(unknown|not\s*(available|provided|found)|n\/a|null|none)$/i.test(trimmed)
+  ) {
     return undefined;
   }
   return trimmed.slice(0, 500);
@@ -2469,8 +2707,12 @@ function previewLobCodes(values: unknown): string[] {
   return source.length > 0 ? toLobCodes(source).slice(0, 12) : [];
 }
 
-function compactRecord(value: unknown, allowedKeys: readonly string[]): Record<string, string> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+function compactRecord(
+  value: unknown,
+  allowedKeys: readonly string[],
+): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   const output: Record<string, string> = {};
   for (const key of allowedKeys) {
     const cleaned = cleanPreviewString((value as Record<string, unknown>)[key]);
@@ -2480,9 +2722,10 @@ function compactRecord(value: unknown, allowedKeys: readonly string[]): Record<s
 }
 
 function normalizePreviewFields(value: unknown): Record<string, unknown> {
-  const input = value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  const input =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
   const fields: Record<string, unknown> = {};
   if (input.documentType === "policy") fields.documentType = "policy";
   for (const key of [
@@ -2513,7 +2756,12 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
   if (Array.isArray(input.coverages)) {
     const coverages = input.coverages
       .map((coverage) => {
-        if (!coverage || typeof coverage !== "object" || Array.isArray(coverage)) return null;
+        if (
+          !coverage ||
+          typeof coverage !== "object" ||
+          Array.isArray(coverage)
+        )
+          return null;
         const row = coverage as Record<string, unknown>;
         const name = cleanPreviewString(row.name);
         if (!name) return null;
@@ -2553,9 +2801,7 @@ function normalizePreviewFields(value: unknown): Record<string, unknown> {
   return fields;
 }
 
-function previewTextFromSourceSpans(
-  sourceSpans: WorkerSourceSpan[],
-): string {
+function previewTextFromSourceSpans(sourceSpans: WorkerSourceSpan[]): string {
   let output = "";
   for (const span of orderSourceSpansForPreview(sourceSpans)) {
     const text = span.text.replace(/\s+/g, " ").trim();
@@ -2563,7 +2809,10 @@ function previewTextFromSourceSpans(
     const page = span.pageStart ? `p.${span.pageStart}` : "p.unknown";
     const next = `[${page}] ${text}\n`;
     if (output.length + next.length > POLICY_PREVIEW_TEXT_LIMIT) {
-      output += next.slice(0, Math.max(0, POLICY_PREVIEW_TEXT_LIMIT - output.length));
+      output += next.slice(
+        0,
+        Math.max(0, POLICY_PREVIEW_TEXT_LIMIT - output.length),
+      );
       break;
     }
     output += next;
@@ -2571,8 +2820,14 @@ function previewTextFromSourceSpans(
   return output.trim();
 }
 
-async function extractPreviewFields(job: ClaimedPreviewJob, sourceText: string) {
-  const route = resolveModelForTaskKind("extraction_preview", job.modelSettings);
+async function extractPreviewFields(
+  job: ClaimedPreviewJob,
+  sourceText: string,
+) {
+  const route = resolveModelForTaskKind(
+    "extraction_preview",
+    job.modelSettings,
+  );
   const maxOutputTokens = Math.min(
     maxOutputTokensForRoute(4096, route, "extraction_preview"),
     8192,
@@ -2594,11 +2849,14 @@ Document text:
 ${sourceText}`,
     "extraction_preview",
   );
-  if (clRouter && isClRouterTaskEnabled(
-    CL_ROUTER_TASK_FLAGS,
-    route.task,
-    "extraction_preview",
-  )) {
+  if (
+    clRouter &&
+    isClRouterTaskEnabled(
+      CL_ROUTER_TASK_FLAGS,
+      route.task,
+      "extraction_preview",
+    )
+  ) {
     const routerResult = await generateObjectWithClRouter({
       job,
       task: route.task,
@@ -2613,7 +2871,9 @@ ${sourceText}`,
       modelSettings: job.modelSettings,
       validate: (output) => {
         if (!output || typeof output !== "object" || Array.isArray(output)) {
-          throw new ClRouterProtocolError("cl-router returned an invalid preview extraction object");
+          throw new ClRouterProtocolError(
+            "cl-router returned an invalid preview extraction object",
+          );
         }
         return output as Record<string, unknown>;
       },
@@ -2629,17 +2889,21 @@ ${sourceText}`,
   const startedAt = nowMs();
   const label = "Extract provisional policy fields";
   try {
-    const result = await withModelCallTimeout(aiGenerateText({
-      model: route.model,
-      system,
-      prompt,
-      output: Output.object({
-        schema: previewExtractionOutputSchemaForProvider(route.route.provider),
+    const result = await withModelCallTimeout(
+      aiGenerateText({
+        model: route.model,
+        system,
+        prompt,
+        output: Output.object({
+          schema: previewExtractionOutputSchemaForProvider(
+            route.route.provider,
+          ),
+        }),
+        maxOutputTokens,
+        providerOptions: callProviderOptions,
+        abortSignal: modelAbortSignal(),
       }),
-      maxOutputTokens,
-      providerOptions: callProviderOptions,
-      abortSignal: modelAbortSignal(),
-    }));
+    );
     const usage = mapUsage(result.usage);
     await recordModelCallComplete({
       job,
@@ -2691,7 +2955,12 @@ ${sourceText}`,
 
     const fallback = isMissingApiKeyError(error)
       ? null
-      : resolveFallbackModel(route.task, "extraction_preview", route.route, job.modelSettings);
+      : resolveFallbackModel(
+          route.task,
+          "extraction_preview",
+          route.route,
+          job.modelSettings,
+        );
     if (!fallback) throw error;
 
     logFallback(route, fallback, error);
@@ -2699,20 +2968,27 @@ ${sourceText}`,
       maxOutputTokensForRoute(4096, fallback, "extraction_preview"),
       8192,
     );
-    const fallbackProviderOptions = providerOptionsForModelCall(fallback, undefined);
+    const fallbackProviderOptions = providerOptionsForModelCall(
+      fallback,
+      undefined,
+    );
     const fallbackStartedAt = nowMs();
     try {
-      const result = await withModelCallTimeout(aiGenerateText({
-        model: fallback.model,
-        system,
-        prompt,
-        output: Output.object({
-          schema: previewExtractionOutputSchemaForProvider(fallback.route.provider),
+      const result = await withModelCallTimeout(
+        aiGenerateText({
+          model: fallback.model,
+          system,
+          prompt,
+          output: Output.object({
+            schema: previewExtractionOutputSchemaForProvider(
+              fallback.route.provider,
+            ),
+          }),
+          maxOutputTokens: fallbackMaxOutputTokens,
+          providerOptions: fallbackProviderOptions,
+          abortSignal: modelAbortSignal(),
         }),
-        maxOutputTokens: fallbackMaxOutputTokens,
-        providerOptions: fallbackProviderOptions,
-        abortSignal: modelAbortSignal(),
-      }));
+      );
       const usage = mapUsage(result.usage);
       await recordModelCallComplete({
         job,
@@ -2776,16 +3052,18 @@ async function completeJob(
   const resultSourceTree = result.sourceTree ?? [];
   const rawSourceSpans = fallbackSource.sourceSpans;
   const rawSourceChunks = fallbackSource.sourceChunks;
-  const sourceSpanCandidates: Array<{ id?: unknown }> = resultSourceSpans.length > 0
-    ? result.protocolVersion === "source-tree-v2"
-      ? resultSourceSpans
-      : [...resultSourceSpans, ...rawSourceSpans]
-    : rawSourceSpans;
-  const sourceChunkCandidates: Array<{ id?: unknown }> = resultSourceChunks.length > 0
-    ? result.protocolVersion === "source-tree-v2"
-      ? resultSourceChunks
-      : [...resultSourceChunks, ...rawSourceChunks]
-    : rawSourceChunks;
+  const sourceSpanCandidates: Array<{ id?: unknown }> =
+    resultSourceSpans.length > 0
+      ? result.protocolVersion === "source-tree-v2"
+        ? resultSourceSpans
+        : [...resultSourceSpans, ...rawSourceSpans]
+      : rawSourceSpans;
+  const sourceChunkCandidates: Array<{ id?: unknown }> =
+    resultSourceChunks.length > 0
+      ? result.protocolVersion === "source-tree-v2"
+        ? resultSourceChunks
+        : [...resultSourceChunks, ...rawSourceChunks]
+      : rawSourceChunks;
   const sourceSpans = dedupeById(sourceSpanCandidates);
   const sourceChunks = dedupeById(sourceChunkCandidates);
   const document = sanitizeCompletionDocument(result.document);
@@ -2806,11 +3084,15 @@ async function completeJob(
     performanceReport: result.performanceReport
       ? {
           modelCallCount: result.performanceReport.modelCalls?.length ?? 0,
-          totalModelCallDurationMs: result.performanceReport.totalModelCallDurationMs,
+          totalModelCallDurationMs:
+            result.performanceReport.totalModelCallDurationMs,
         }
       : undefined,
   };
-  await logJob(job, `External extraction payload sizes: ${payloadSizeSummary(payload)}`);
+  await logJob(
+    job,
+    `External extraction payload sizes: ${payloadSizeSummary(payload)}`,
+  );
   const savedPayload = await uploadCompletionPayload(job, payload);
 
   const completed = await convex.action(actions.completeExternalExtract, {
@@ -2892,14 +3174,20 @@ async function processJob(
   }, HEARTBEAT_MS);
 
   try {
-    const replayedCompletion = await convex.action(actions.completeExternalExtractFromStoredPayload, {
-      secret: SECRET,
-      policyId: job.policyId,
-      leaseId: job.leaseId,
-      state: job.state,
-    });
+    const replayedCompletion = await convex.action(
+      actions.completeExternalExtractFromStoredPayload,
+      {
+        secret: SECRET,
+        policyId: job.policyId,
+        leaseId: job.leaseId,
+        state: job.state,
+      },
+    );
     if (replayedCompletion.ok) {
-      await logJob(job, "Replayed stored external extraction completion payload");
+      await logJob(
+        job,
+        "Replayed stored external extraction completion payload",
+      );
       return;
     }
 
@@ -2929,16 +3217,20 @@ async function processJob(
       );
     } else {
       pdfBytes = await fetchPdfBytes(job.fileUrl);
-      await logJob(job, `External worker fetched PDF (${pdfBytes.byteLength} bytes)`);
+      await logJob(
+        job,
+        `External worker fetched PDF (${pdfBytes.byteLength} bytes)`,
+      );
       const prepared = await preparePdfSourceWithLiteParseFallback({
-        convertWithLiteParse: () => convertPdfWithLiteParse({
-          pdfBytes,
-          documentId: job.policyId,
-          sourceKind: "policy_pdf",
-          maxPages: LITEPARSE_MAX_PAGES,
-          maxFileSize: LITEPARSE_MAX_FILE_SIZE,
-          priority: "full",
-        }),
+        convertWithLiteParse: () =>
+          convertPdfWithLiteParse({
+            pdfBytes,
+            documentId: job.policyId,
+            sourceKind: "policy_pdf",
+            maxPages: LITEPARSE_MAX_PAGES,
+            maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+            priority: "full",
+          }),
         prepareLiteParseSource: async (converted) => {
           await logJob(
             job,
@@ -2960,11 +3252,12 @@ async function processJob(
           }
           return supplementedSource;
         },
-        onLiteParseFailure: (error) => logJob(
-          job,
-          `LiteParse unavailable; falling back to PDF.js source spans (${errorMessage(error)})`,
-          "warn",
-        ),
+        onLiteParseFailure: (error) =>
+          logJob(
+            job,
+            `LiteParse unavailable; falling back to PDF.js source spans (${errorMessage(error)})`,
+            "warn",
+          ),
         preparePdfJsSource: async () => {
           const pdfJsSource = await buildPdfSourceSpans({
             pdfBytes,
@@ -2989,11 +3282,14 @@ async function processJob(
         },
       });
       preparedSource = prepared.prepared;
-      pageScreenshots = prepared.parser === "liteparse"
-        ? prepared.converted.pageScreenshots
-        : undefined;
+      pageScreenshots =
+        prepared.parser === "liteparse"
+          ? prepared.converted.pageScreenshots
+          : undefined;
       if (WORKER_PROTOCOL_VERSION === "source-tree-v2") {
-        const sourceFingerprint = sourceBundleFingerprint(preparedSource.sourceSpans);
+        const sourceFingerprint = sourceBundleFingerprint(
+          preparedSource.sourceSpans,
+        );
         const sourceBundle: WorkerSourceBundle = {
           version: "worker-source-bundle-v1",
           protocolVersion: "source-tree-v2",
@@ -3025,31 +3321,38 @@ async function processJob(
     });
     const sectionStore: ExtractionSectionStore | undefined =
       WORKER_PROTOCOL_VERSION === "source-tree-v2"
-      ? {
-          load: async ({ sectionId, sourceFingerprint, extractorVersion }) => {
-            const sectionResult = resumable.sectionResults.get(sectionId);
-            return sectionResult?.sourceFingerprint === sourceFingerprint &&
-              sectionResult.extractorVersion === extractorVersion
-              ? sectionResult
-              : undefined;
-          },
-          save: async (sectionResult) => {
-            resumable.sectionResults.set(sectionResult.sectionId, sectionResult);
-            await uploadExtractionArtifact(job, {
-              kind: "section_result",
-              value: sectionResult,
-              sourceFingerprint: sectionResult.sourceFingerprint,
-              extractorVersion: sectionResult.extractorVersion,
-              sectionId: sectionResult.sectionId,
-              metadata: {
-                status: sectionResult.status,
-                resultHash: sectionResult.resultHash,
-                protocolVersion: WORKER_PROTOCOL_VERSION,
-              },
-            });
-          },
-        }
-      : undefined;
+        ? {
+            load: async ({
+              sectionId,
+              sourceFingerprint,
+              extractorVersion,
+            }) => {
+              const sectionResult = resumable.sectionResults.get(sectionId);
+              return sectionResult?.sourceFingerprint === sourceFingerprint &&
+                sectionResult.extractorVersion === extractorVersion
+                ? sectionResult
+                : undefined;
+            },
+            save: async (sectionResult) => {
+              resumable.sectionResults.set(
+                sectionResult.sectionId,
+                sectionResult,
+              );
+              await uploadExtractionArtifact(job, {
+                kind: "section_result",
+                value: sectionResult,
+                sourceFingerprint: sectionResult.sourceFingerprint,
+                extractorVersion: sectionResult.extractorVersion,
+                sectionId: sectionResult.sectionId,
+                metadata: {
+                  status: sectionResult.status,
+                  resultHash: sectionResult.resultHash,
+                  protocolVersion: WORKER_PROTOCOL_VERSION,
+                },
+              });
+            },
+          }
+        : undefined;
     const extractOptions: ExtractOptions = {
       ...(preparedSource.sourceSpans.length > 0
         ? {
@@ -3070,7 +3373,8 @@ async function processJob(
     );
     if (
       WORKER_PROTOCOL_VERSION === "source-tree-v2" &&
-      (result as ExtractionResult & { protocolVersion?: string }).protocolVersion !== "source-tree-v2"
+      (result as ExtractionResult & { protocolVersion?: string })
+        .protocolVersion !== "source-tree-v2"
     ) {
       throw new Error(
         `Configured source-tree-v2 requires a section-capable cl-sdk; ${WORKER_CL_SDK_VERSION} returned the legacy protocol`,
@@ -3111,7 +3415,10 @@ async function logProposalJob(
       phase,
     });
   } catch (error) {
-    console.warn(`[proposal:${job.proposalId}] could not persist worker log:`, error);
+    console.warn(
+      `[proposal:${job.proposalId}] could not persist worker log:`,
+      error,
+    );
   }
 }
 
@@ -3128,7 +3435,9 @@ async function extractProposalDocument(
   document: ProposalClaimDocument,
 ): Promise<ProposalExtractedDocument> {
   if (document.contentType && document.contentType !== "application/pdf") {
-    throw new Error(`Proposal extraction supports PDF documents; ${document.fileName} is ${document.contentType}`);
+    throw new Error(
+      `Proposal extraction supports PDF documents; ${document.fileName} is ${document.contentType}`,
+    );
   }
   const pdfBytes = await fetchPdfBytes(document.fileUrl);
   await logProposalJob(
@@ -3138,29 +3447,32 @@ async function extractProposalDocument(
     "parse",
   );
   const prepared = await preparePdfSourceWithLiteParseFallback({
-    convertWithLiteParse: () => convertPdfWithLiteParse({
-      pdfBytes,
-      documentId: document.proposalDocumentId,
-      sourceKind: "attachment",
-      maxPages: LITEPARSE_MAX_PAGES,
-      maxFileSize: LITEPARSE_MAX_FILE_SIZE,
-      priority: "full",
-    }),
-    prepareLiteParseSource: async (converted) => supplementPreparedPdfSource(
-      pdfBytes,
-      document.proposalDocumentId,
-      {
-        sourceSpans: converted.sourceSpans,
-        sourceChunks: converted.sourceChunks,
-      },
-      "attachment",
-    ),
-    onLiteParseFailure: (error) => logProposalJob(
-      job,
-      `LiteParse unavailable for ${document.fileName}; using PDF.js (${errorMessage(error)})`,
-      "warn",
-      "parse",
-    ),
+    convertWithLiteParse: () =>
+      convertPdfWithLiteParse({
+        pdfBytes,
+        documentId: document.proposalDocumentId,
+        sourceKind: "attachment",
+        maxPages: LITEPARSE_MAX_PAGES,
+        maxFileSize: LITEPARSE_MAX_FILE_SIZE,
+        priority: "full",
+      }),
+    prepareLiteParseSource: async (converted) =>
+      supplementPreparedPdfSource(
+        pdfBytes,
+        document.proposalDocumentId,
+        {
+          sourceSpans: converted.sourceSpans,
+          sourceChunks: converted.sourceChunks,
+        },
+        "attachment",
+      ),
+    onLiteParseFailure: (error) =>
+      logProposalJob(
+        job,
+        `LiteParse unavailable for ${document.fileName}; using PDF.js (${errorMessage(error)})`,
+        "warn",
+        "parse",
+      ),
     preparePdfJsSource: async () => {
       const fallback = await buildPdfSourceSpans({
         pdfBytes,
@@ -3189,26 +3501,39 @@ async function extractProposalDocument(
   };
   const { extractor, generateObject } = buildWorkerExtractor({
     job: modelJob,
-    log: (message) => logProposalJob(job, `${document.fileName}: ${message}`, "info", "extract"),
+    log: (message) =>
+      logProposalJob(
+        job,
+        `${document.fileName}: ${message}`,
+        "info",
+        "extract",
+      ),
     modelSettings: job.modelSettings,
-    pageScreenshots: prepared.parser === "liteparse"
-      ? prepared.converted.pageScreenshots
-      : undefined,
+    pageScreenshots:
+      prepared.parser === "liteparse"
+        ? prepared.converted.pageScreenshots
+        : undefined,
   });
   const result = await extractor.extract(
     pdfBytes,
     document.proposalDocumentId,
     {
-      sourceSpans: prepared.prepared.sourceSpans as NonNullable<ExtractOptions["sourceSpans"]>,
+      sourceSpans: prepared.prepared.sourceSpans as NonNullable<
+        ExtractOptions["sourceSpans"]
+      >,
       coverageRecovery: { enabled: true },
       protocolVersion: WORKER_PROTOCOL_VERSION,
       extractorVersion: WORKER_CL_SDK_VERSION,
     },
   );
-  const validNodeIds = new Set((result.sourceTree ?? []).map((node) => node.id));
+  const validNodeIds = new Set(
+    (result.sourceTree ?? []).map((node) => node.id),
+  );
   const validSpanIds = new Set(
-    (result.sourceSpans?.length ? result.sourceSpans : prepared.prepared.sourceSpans)
-      .map((span) => span.id),
+    (result.sourceSpans?.length
+      ? result.sourceSpans
+      : prepared.prepared.sourceSpans
+    ).map((span) => span.id),
   );
   const proposalEvidence = (result.sourceTree ?? []).map((node) => ({
     sourceNodeId: node.id,
@@ -3231,14 +3556,21 @@ ${JSON.stringify(proposalEvidence).slice(0, 160_000)}`,
       sourceBacked: true,
     },
   });
-  const supplementalObject = proposalQuoteSupplementSchema.parse(supplementalResult.object);
+  const supplementalObject = proposalQuoteSupplementSchema.parse(
+    supplementalResult.object,
+  );
   const normalizeEvidenceItem = (
     item: z.infer<typeof proposalEvidenceItemSchema> | null,
   ) => {
     if (!item) return undefined;
-    const sourceNodeIds = item.sourceNodeIds.filter((id) => validNodeIds.has(id));
-    const sourceSpanIds = item.sourceSpanIds.filter((id) => validSpanIds.has(id));
-    if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0) return undefined;
+    const sourceNodeIds = item.sourceNodeIds.filter((id) =>
+      validNodeIds.has(id),
+    );
+    const sourceSpanIds = item.sourceSpanIds.filter((id) =>
+      validSpanIds.has(id),
+    );
+    if (sourceNodeIds.length === 0 && sourceSpanIds.length === 0)
+      return undefined;
     return {
       description: item.description.trim(),
       category: item.category ?? undefined,
@@ -3269,14 +3601,22 @@ ${JSON.stringify(proposalEvidence).slice(0, 160_000)}`,
     ? result.sourceSpans
     : prepared.prepared.sourceSpans;
   const completionDocument = sanitizeCompletionDocument(result.document);
-  if (!completionDocument || typeof completionDocument !== "object" || Array.isArray(completionDocument)) {
-    throw new Error(`Proposal extraction returned an invalid document for ${document.fileName}`);
+  if (
+    !completionDocument ||
+    typeof completionDocument !== "object" ||
+    Array.isArray(completionDocument)
+  ) {
+    throw new Error(
+      `Proposal extraction returned an invalid document for ${document.fileName}`,
+    );
   }
   return {
     proposalDocumentId: document.proposalDocumentId,
     fileName: document.fileName,
     document: completionDocument as Record<string, unknown>,
-    operationalProfile: result.operationalProfile as Record<string, unknown> | undefined,
+    operationalProfile: result.operationalProfile as
+      | Record<string, unknown>
+      | undefined,
     sourceSpans: sourceSpans as Array<Record<string, unknown>>,
     sourceNodes: (result.sourceTree ?? []) as Array<Record<string, unknown>>,
     warnings: result.warnings ?? [],
@@ -3297,19 +3637,27 @@ async function uploadProposalCompletionPayload(
         actions.createExternalProposalCompletionUploadUrl,
         { secret: SECRET },
       );
-      const response = await fetch(resolveConvexStorageUrl(uploadUrl, {
-        spotEnv: SPOT_ENV,
-        convexUrl: CONVEX_URL,
-      }), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: json,
-      });
+      const response = await fetch(
+        resolveConvexStorageUrl(uploadUrl, {
+          spotEnv: SPOT_ENV,
+          convexUrl: CONVEX_URL,
+        }),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: json,
+        },
+      );
       if (!response.ok) {
-        throw new Error(`Failed to upload proposal completion payload: ${response.status} ${await response.text()}`);
+        throw new Error(
+          `Failed to upload proposal completion payload: ${response.status} ${await response.text()}`,
+        );
       }
-      const uploaded = await response.json() as { storageId?: string };
-      if (!uploaded.storageId) throw new Error("Proposal completion upload did not return a storageId");
+      const uploaded = (await response.json()) as { storageId?: string };
+      if (!uploaded.storageId)
+        throw new Error(
+          "Proposal completion upload did not return a storageId",
+        );
       return uploaded.storageId;
     } catch (error) {
       lastError = error;
@@ -3318,14 +3666,18 @@ async function uploadProposalCompletionPayload(
   }
   throw lastError instanceof Error
     ? lastError
-    : new Error(`Failed to upload proposal completion payload: ${String(lastError)}`);
+    : new Error(
+        `Failed to upload proposal completion payload: ${String(lastError)}`,
+      );
 }
 
 async function processProposalJob(
   job: ClaimedProposalJob,
   releasePdfWork: () => void,
 ) {
-  console.log(`[proposal:${job.proposalId}] claimed proposal extraction job ${job.jobId}`);
+  console.log(
+    `[proposal:${job.proposalId}] claimed proposal extraction job ${job.jobId}`,
+  );
   const heartbeatTimer = setInterval(() => {
     heartbeatProposal(job).catch((error) => {
       console.error(`[proposal:${job.proposalId}] heartbeat failed:`, error);
@@ -3333,7 +3685,9 @@ async function processProposalJob(
   }, HEARTBEAT_MS);
   try {
     const extractedDocuments: ProposalExtractedDocument[] = [];
-    for (const document of [...job.documents].sort((left, right) => left.order - right.order)) {
+    for (const document of [...job.documents].sort(
+      (left, right) => left.order - right.order,
+    )) {
       extractedDocuments.push(await extractProposalDocument(job, document));
     }
     const aggregate = aggregateProposalDocuments(extractedDocuments);
@@ -3349,7 +3703,10 @@ async function processProposalJob(
       "info",
       "complete",
     );
-    const payloadStorageId = await uploadProposalCompletionPayload(job, payload);
+    const payloadStorageId = await uploadProposalCompletionPayload(
+      job,
+      payload,
+    );
     const completed = await convex.action(actions.completeExternalProposalJob, {
       secret: SECRET,
       jobId: job.jobId,
@@ -3358,7 +3715,8 @@ async function processProposalJob(
       extractionFingerprint: job.fingerprint,
       payloadStorageId,
     });
-    if (!completed.ok) throw new Error("Convex rejected stale proposal extraction completion");
+    if (!completed.ok)
+      throw new Error("Convex rejected stale proposal extraction completion");
     console.log(`[proposal:${job.proposalId}] completed proposal extraction`);
   } catch (error) {
     console.error(`[proposal:${job.proposalId}] extraction failed:`, error);
@@ -3395,7 +3753,10 @@ async function completePreviewJob(
   }
 }
 
-async function failPreviewJob(job: ClaimedPreviewJob, error: unknown): Promise<void> {
+async function failPreviewJob(
+  job: ClaimedPreviewJob,
+  error: unknown,
+): Promise<void> {
   await convex.action(actions.failExternalPreviewJob, {
     secret: SECRET,
     policyId: job.policyId,
@@ -3419,7 +3780,11 @@ async function processPreviewJob(
   releasePdfWork: () => void,
 ): Promise<void> {
   console.log(`[${job.policyId}] claimed external preview extraction job`);
-  await logJob(job, `External worker ${WORKER_ID} started provisional extraction`, "info");
+  await logJob(
+    job,
+    `External worker ${WORKER_ID} started provisional extraction`,
+    "info",
+  );
   const heartbeatTimer = setInterval(() => {
     heartbeatPreview(job).catch((error) => {
       console.error(`[${job.policyId}] preview heartbeat failed:`, error);
@@ -3538,7 +3903,10 @@ async function runProposalLoop(): Promise<void> {
     }
     let releasePdfWork: (() => void) | undefined;
     try {
-      releasePdfWork = await pdfWorkAdmission.acquire("full", shutdownController.signal);
+      releasePdfWork = await pdfWorkAdmission.acquire(
+        "full",
+        shutdownController.signal,
+      );
       if (shuttingDown) {
         releasePdfWork();
         break;
@@ -3560,7 +3928,8 @@ async function runProposalLoop(): Promise<void> {
       await sleep(POLL_MS);
     } catch (error) {
       releasePdfWork?.();
-      if (shuttingDown && error instanceof Error && error.name === "AbortError") break;
+      if (shuttingDown && error instanceof Error && error.name === "AbortError")
+        break;
       console.error("Failed to claim proposal extraction job:", error);
       await sleep(POLL_MS);
     }

@@ -23,27 +23,55 @@ const INDUSTRY_REF = INDUSTRIES.map(
 ).join("\n");
 
 const CompanyInfoSchema = z.object({
-  companyContext: z.string().describe("2-4 sentence factual description: what the company does, industry, size if known, location, key products/services."),
-  industry: z.string().describe("Best-matching industry value from the provided list. Empty string if unclear."),
-  industryVertical: z.string().describe("Best-matching vertical value for that industry. Empty string if unclear."),
-  naicsCode: z.string().describe("NAICS code if explicitly visible. Empty string if not evident."),
-  yearsInBusiness: z.string().describe("Years in business if explicitly visible as a number. Empty string if not evident."),
-  numberOfEmployees: z.string().describe("Employee count if explicitly visible as a number. Empty string if not evident."),
-  annualRevenue: z.string().describe("Annual revenue if explicitly visible. Preserve units/currency. Empty string if not evident."),
-  atomicFacts: z.array(z.string()).describe(
-    [
-      "Atomic, durable facts about the company that are useful as long-term memory.",
-      "Each entry MUST follow these rules:",
-      "- Exactly ONE fact per entry. Never combine facts with 'and', commas, or semicolons.",
-      "- A single short declarative sentence, ideally under 15 words.",
-      "- Self-contained and unambiguous when read in isolation (use the company's name, not 'we'/'the company'/'they').",
-      "- Only include facts explicitly evident from the website content. Do not speculate, summarize broadly, or hedge ('appears to', 'likely', 'may').",
-      "- Prefer concrete, structured statements (products, services, locations, named clients/partners/investors, headcount, founding year, NAICS, revenue) over generic marketing language.",
-      "- Do NOT prefix entries with labels like 'NAICS:' or 'Clients:' — write a complete sentence instead (e.g. 'Acme's NAICS code is 541512.').",
-      "- Skip duplicates and near-duplicates. Return [] if nothing reliable is evident.",
-      "Examples: 'Acme builds AI software for commercial insurance brokers.', 'Acme is headquartered in San Francisco, California.', 'Acme employs about 25 people.', 'Acme's investors include Sequoia Capital.'",
-    ].join(" "),
-  ),
+  companyContext: z
+    .string()
+    .describe(
+      "2-4 sentence factual description: what the company does, industry, size if known, location, key products/services.",
+    ),
+  industry: z
+    .string()
+    .describe(
+      "Best-matching industry value from the provided list. Empty string if unclear.",
+    ),
+  industryVertical: z
+    .string()
+    .describe(
+      "Best-matching vertical value for that industry. Empty string if unclear.",
+    ),
+  naicsCode: z
+    .string()
+    .describe("NAICS code if explicitly visible. Empty string if not evident."),
+  yearsInBusiness: z
+    .string()
+    .describe(
+      "Years in business if explicitly visible as a number. Empty string if not evident.",
+    ),
+  numberOfEmployees: z
+    .string()
+    .describe(
+      "Employee count if explicitly visible as a number. Empty string if not evident.",
+    ),
+  annualRevenue: z
+    .string()
+    .describe(
+      "Annual revenue if explicitly visible. Preserve units/currency. Empty string if not evident.",
+    ),
+  atomicFacts: z
+    .array(z.string())
+    .describe(
+      [
+        "Atomic, durable facts about the company that are useful as long-term memory.",
+        "Each entry MUST follow these rules:",
+        "- Exactly ONE fact per entry. Never combine facts with 'and', commas, or semicolons.",
+        "- A single short declarative sentence, ideally under 15 words.",
+        "- Self-contained and unambiguous when read in isolation (use the company's name, not 'we'/'the company'/'they').",
+        "- Only include facts explicitly evident from the website content. Do not speculate, summarize broadly, or hedge ('appears to', 'likely', 'may').",
+        "- Prefer concrete, structured statements (products, services, locations, named clients/partners/investors, headcount, founding year, NAICS, revenue) over generic marketing language.",
+        "- Do NOT prefix entries with labels like 'NAICS:' or 'Clients:' — write a complete sentence instead (e.g. 'Acme's NAICS code is 541512.').",
+        "- Skip duplicates and near-duplicates. Return [] if nothing reliable is evident.",
+        "Examples: 'Acme builds AI software for commercial insurance brokers.', 'Acme is headquartered in San Francisco, California.', 'Acme employs about 25 people.', 'Acme's investors include Sequoia Capital.'",
+      ].join(" "),
+    ),
 });
 
 type CompanyInfo = z.infer<typeof CompanyInfoSchema>;
@@ -53,7 +81,9 @@ type ExtractCompanyInfoResult = {
   companyContext?: string;
   industry?: string;
   industryVertical?: string;
-} & Partial<Omit<CompanyInfo, "companyContext" | "industry" | "industryVertical">>;
+} & Partial<
+  Omit<CompanyInfo, "companyContext" | "industry" | "industryVertical">
+>;
 type OrgLogoImportResult =
   | { success: true; iconStorageId: Id<"_storage">; error?: undefined }
   | { success: false; iconStorageId?: undefined; error: string };
@@ -78,7 +108,8 @@ async function importOrgLogoForOrg(
   rawUrl: string,
 ): Promise<OrgLogoImportResult> {
   const url = normalizePublicWebsiteUrl(rawUrl);
-  if (!url) return { success: false, error: "Website URL is required" } as const;
+  if (!url)
+    return { success: false, error: "Website URL is required" } as const;
   const iconStorageId = await storeFaviconForOrg(ctx, orgId, url);
   if (!iconStorageId) {
     return {
@@ -97,7 +128,9 @@ async function extractAndApplyCompanyInfo(
   const url = normalizePublicWebsiteUrl(rawUrl);
   if (!url) return { error: "Website URL is required" };
 
-  const faviconPromise = storeFaviconForOrg(ctx, targetOrgId, url).catch(() => null);
+  const faviconPromise = storeFaviconForOrg(ctx, targetOrgId, url).catch(
+    () => null,
+  );
 
   const retrieval = await runWebRetrieval(ctx, targetOrgId, {
     url,
@@ -110,10 +143,14 @@ async function extractAndApplyCompanyInfo(
     return { error: "Could not retrieve website content" };
   }
 
-  const { output: object } = await generateObjectForOrg<CompanyInfo>(ctx, targetOrgId, "triage", {
-    schema: CompanyInfoSchema,
-    maxOutputTokens: 2048,
-    prompt: `Extract company information from the website content below.
+  const { output: object } = await generateObjectForOrg<CompanyInfo>(
+    ctx,
+    targetOrgId,
+    "triage",
+    {
+      schema: CompanyInfoSchema,
+      maxOutputTokens: 2048,
+      prompt: `Extract company information from the website content below.
 
 Valid industry values and their verticals:
 ${INDUSTRY_REF}
@@ -125,7 +162,8 @@ For atomicFacts, decompose what's on the site into the smallest possible standal
 
 Website content:
 ${content}`,
-  });
+    },
+  );
 
   const matchedIndustry = INDUSTRIES.find((i) => i.value === object.industry);
   const industry = matchedIndustry?.value;
@@ -191,21 +229,19 @@ async function resolveTargetOrgId(
 ): Promise<Id<"organizations">> {
   const viewer = await ctx.runQuery(api.users.viewer);
   if (!viewer) throwUserFacingError(userFacingErrorCodes.authRequired);
-  const viewerOrg: { org: { _id: Id<"organizations"> } } | null = await ctx.runQuery(
-    api.orgs.viewerOrg,
-    {},
-  );
+  const viewerOrg: { org: { _id: Id<"organizations"> } } | null =
+    await ctx.runQuery(api.orgs.viewerOrg, {});
   const targetOrgId = orgId ?? viewerOrg?.org?._id;
   if (!targetOrgId) throw new Error("Organization not found");
   if (orgId && orgId !== viewerOrg?.org?._id) {
-    const access = await ctx.runQuery(
-      internal.clientInvitations.resolveAccessInternal,
+    const hasMembership = await ctx.runQuery(
+      internal.orgs.hasMembershipInternal,
       {
         userId: viewer._id,
         orgId,
       },
     );
-    if (!access) {
+    if (!hasMembership) {
       throwUserFacingError(
         userFacingErrorCodes.orgAccessRequired,
         "You don’t have access to update this organization.",

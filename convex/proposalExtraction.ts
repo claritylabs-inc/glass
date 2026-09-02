@@ -12,9 +12,12 @@ function matchesActiveLease(
   },
   args: { leaseId: string; extractionFingerprint?: string },
 ) {
-  return job.status === "running" &&
+  return (
+    job.status === "running" &&
     job.leaseId === args.leaseId &&
-    (!args.extractionFingerprint || job.extractionFingerprint === args.extractionFingerprint);
+    (!args.extractionFingerprint ||
+      job.extractionFingerprint === args.extractionFingerprint)
+  );
 }
 
 export const claimExternalJobInternal = internalMutation({
@@ -34,15 +37,17 @@ export const claimExternalJobInternal = internalMutation({
         .query("procurementProposalExtractionJobs")
         .withIndex("status", (q) => q.eq("status", "running"))
         .take(50);
-      for (const exhausted of running.filter((candidate) =>
-        (candidate.leaseExpiresAt ?? Number.MAX_SAFE_INTEGER) <= now &&
-        candidate.attempts >= MAX_ATTEMPTS
+      for (const exhausted of running.filter(
+        (candidate) =>
+          (candidate.leaseExpiresAt ?? Number.MAX_SAFE_INTEGER) <= now &&
+          candidate.attempts >= MAX_ATTEMPTS,
       )) {
         await ctx.db.patch(exhausted._id, {
           status: "failed",
           leaseId: undefined,
           leaseExpiresAt: undefined,
-          lastError: "Proposal extraction lease expired after the maximum attempts",
+          lastError:
+            "Proposal extraction lease expired after the maximum attempts",
           updatedAt: now,
         });
         const proposal = await ctx.db.get(exhausted.proposalId);
@@ -53,10 +58,12 @@ export const claimExternalJobInternal = internalMutation({
           await ctx.db.patch(proposal._id, { status: "draft", updatedAt: now });
         }
       }
-      job = running.find((candidate) =>
-        (candidate.leaseExpiresAt ?? Number.MAX_SAFE_INTEGER) <= now &&
-        candidate.attempts < MAX_ATTEMPTS
-      ) ?? null;
+      job =
+        running.find(
+          (candidate) =>
+            (candidate.leaseExpiresAt ?? Number.MAX_SAFE_INTEGER) <= now &&
+            candidate.attempts < MAX_ATTEMPTS,
+        ) ?? null;
     }
     if (!job) return null;
 
@@ -151,7 +158,9 @@ export const recordLogInternal = internalMutation({
     leaseId: v.string(),
     message: v.string(),
     phase: v.optional(v.string()),
-    level: v.optional(v.union(v.literal("info"), v.literal("warn"), v.literal("error"))),
+    level: v.optional(
+      v.union(v.literal("info"), v.literal("warn"), v.literal("error")),
+    ),
   },
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
@@ -186,7 +195,8 @@ export const failExternalJobInternal = internalMutation({
       !job ||
       job.proposalId !== args.proposalId ||
       !matchesActiveLease(job, args)
-    ) return false;
+    )
+      return false;
     const now = dayjs().valueOf();
     await ctx.db.patch(job._id, {
       status: "failed",
@@ -224,7 +234,8 @@ export const completeExternalJobInternal = internalMutation({
       !matchesActiveLease(job, args) ||
       proposal?.status !== "extracting" ||
       proposal.extractionFingerprint !== args.extractionFingerprint
-    ) return false;
+    )
+      return false;
     const now = dayjs().valueOf();
     await ctx.db.patch(job._id, {
       status: "complete",

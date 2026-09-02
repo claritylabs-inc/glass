@@ -27,8 +27,7 @@ export const SHORTCUT_PREFIX_KEY = "g";
 export const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1500;
 export const SIDEBAR_TOOLTIP_DELAY_MS = 500;
 export const SIDEBAR_TOOLTIP_SIDE_OFFSET = 4;
-export const SIDEBAR_TOOLTIP_CLASS =
-  `border border-border-emphasized bg-background text-foreground data-instant:animate-none has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden ${typeStyle("caption.default")}`;
+export const SIDEBAR_TOOLTIP_CLASS = `border border-border-emphasized bg-background text-foreground data-instant:animate-none has-data-[slot=kbd]:pr-2.5 [&_[class*='size-2.5']]:hidden ${typeStyle("caption.default")}`;
 
 export function navShortcut(key: string): NavShortcut {
   return { key };

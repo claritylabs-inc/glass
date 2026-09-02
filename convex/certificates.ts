@@ -1,10 +1,20 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { getOrgAccess, getPolicyAccessForQuery } from "./lib/access";
+import {
+  assertCanReadPolicies,
+  getOrgAccess,
+  getPolicyAccessForQuery,
+} from "./lib/access";
 import { assertImpersonatedSetupWrite } from "./lib/operatorIdentity";
 import {
   certificateHolderDisplayBlock,
@@ -109,23 +119,29 @@ function formatGateMessage(args: {
 
 const certificateGateReviewSchema = z.object({
   status: z.enum(["allowed", "held"]),
-  reasonCode: z.enum([
-    "policy_change_required",
-    "missing_policy_evidence",
-    "ambiguous_policy_evidence",
-    "conflicting_policy_evidence",
-  ]).nullable(),
+  reasonCode: z
+    .enum([
+      "policy_change_required",
+      "missing_policy_evidence",
+      "ambiguous_policy_evidence",
+      "conflicting_policy_evidence",
+    ])
+    .nullable(),
   reasonMessage: z.string(),
-  requiredChanges: z.array(z.enum([
-    "additional_insured",
-    "named_insured",
-    "waiver_of_subrogation",
-    "primary_non_contributory",
-    "loss_payee",
-    "mortgagee",
-    "special_wording",
-    "policy_change",
-  ])).max(8),
+  requiredChanges: z
+    .array(
+      z.enum([
+        "additional_insured",
+        "named_insured",
+        "waiver_of_subrogation",
+        "primary_non_contributory",
+        "loss_payee",
+        "mortgagee",
+        "special_wording",
+        "policy_change",
+      ]),
+    )
+    .max(8),
   evidenceIds: z.array(z.string()).max(8),
 });
 
@@ -202,7 +218,9 @@ ${JSON.stringify(evidencePacket, null, 2).slice(0, 60000)}
 Return a gate verdict. If held, write a specific reason that explains whether the problem is missing endorsement evidence, an endorsement still needed, or ambiguity.`,
     });
     const review = result.object as z.infer<typeof certificateGateReviewSchema>;
-    const evidenceById = new Map(evidencePacket.map((item) => [item.evidenceId, item]));
+    const evidenceById = new Map(
+      evidencePacket.map((item) => [item.evidenceId, item]),
+    );
     const evidence: CertificateGateEvidence[] = review.evidenceIds
       .map((id) => evidenceById.get(id))
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
@@ -214,7 +232,7 @@ Return a gate verdict. If held, write a specific reason that explains whether th
         pageEnd: item.pageEnd,
       }));
     const reviewedChanges = review.requiredChanges.length
-      ? review.requiredChanges as CertificateEndorsementKind[]
+      ? (review.requiredChanges as CertificateEndorsementKind[])
       : requiredChanges;
     if (review.status === "allowed") {
       if (reviewedChanges.length > 0 && evidence.length === 0) {
@@ -242,7 +260,9 @@ Return a gate verdict. If held, write a specific reason that explains whether th
     return {
       status: "held",
       reasonCode: review.reasonCode ?? "ambiguous_policy_evidence",
-      reasonMessage: review.reasonMessage.trim() || "Broker review is needed before issuing this certificate.",
+      reasonMessage:
+        review.reasonMessage.trim() ||
+        "Broker review is needed before issuing this certificate.",
       requiredChanges: reviewedChanges,
       evidence,
     };
@@ -323,7 +343,8 @@ export const listByRequirementSource = query({
     requirementSourceDocumentId: v.id("requirementSourceDocuments"),
   },
   handler: async (ctx, args) => {
-    await getOrgAccess(ctx, args.orgId, { allowOperator: true });
+    const access = await getOrgAccess(ctx, args.orgId, { allowOperator: true });
+    assertCanReadPolicies(access);
     const versions = await ctx.db
       .query("certificateVersions")
       .withIndex("source", (q) =>
@@ -332,24 +353,26 @@ export const listByRequirementSource = query({
       .order("desc")
       .collect();
     const visible = versions.filter((version) => version.orgId === args.orgId);
-    return await Promise.all(visible.map(async (version) => {
-      const [policy, holder] = await Promise.all([
-        ctx.db.get(version.policyId),
-        ctx.db.get(version.holderId),
-      ]);
-      return {
-        ...version,
-        policy: policy
-          ? {
-              _id: policy._id,
-              carrier: policy.carrier,
-              policyNumber: policy.policyNumber,
-            }
-          : null,
-        holder,
-        url: version.fileId ? await ctx.storage.getUrl(version.fileId) : null,
-      };
-    }));
+    return await Promise.all(
+      visible.map(async (version) => {
+        const [policy, holder] = await Promise.all([
+          ctx.db.get(version.policyId),
+          ctx.db.get(version.holderId),
+        ]);
+        return {
+          ...version,
+          policy: policy
+            ? {
+                _id: policy._id,
+                carrier: policy.carrier,
+                policyNumber: policy.policyNumber,
+              }
+            : null,
+          holder,
+          url: version.fileId ? await ctx.storage.getUrl(version.fileId) : null,
+        };
+      }),
+    );
   },
 });
 
@@ -362,6 +385,7 @@ export const getGenerationContext = query({
     const access = await getOrgAccess(ctx, policy.orgId, {
       allowOperator: true,
     });
+    assertCanReadPolicies(access);
     await assertImpersonatedSetupWrite(ctx, policy.orgId);
     if (access.accessType === "connected_client") {
       throwUserFacingError(
@@ -397,6 +421,7 @@ export const getGenerationContextForCertificateRequest = query({
   },
   handler: async (ctx, args) => {
     const access = await getOrgAccess(ctx, args.orgId, { allowOperator: true });
+    assertCanReadPolicies(access);
     await assertImpersonatedSetupWrite(ctx, args.orgId);
     if (access.accessType === "connected_client") {
       throwUserFacingError(
@@ -448,14 +473,17 @@ export const getHolderPolicyRelationshipInternal = internalQuery({
       .query("certificateHolderPolicyLinks")
       .withIndex("holder", (q) => q.eq("holderId", args.holderId))
       .collect();
-    const current = links.find((link) =>
-      link.policyId === args.policyId && link.status === "current",
-    ) ?? links.find((link) => link.policyId === args.policyId);
+    const current =
+      links.find(
+        (link) => link.policyId === args.policyId && link.status === "current",
+      ) ?? links.find((link) => link.policyId === args.policyId);
     return current?.relationshipKind ?? null;
   },
 });
 
-function effectivePolicyDataStage(policy: Record<string, unknown> | null | undefined) {
+function effectivePolicyDataStage(
+  policy: Record<string, unknown> | null | undefined,
+) {
   const stage = policy?.extractionDataStage;
   if (stage === "placeholder" || stage === "preview" || stage === "final") {
     return stage;
@@ -463,8 +491,13 @@ function effectivePolicyDataStage(policy: Record<string, unknown> | null | undef
   return policy?.pipelineStatus === "complete" ? "final" : "placeholder";
 }
 
-function policyReadyForCertificate(policy: Record<string, unknown> | null | undefined) {
-  return policy?.pipelineStatus === "complete" && effectivePolicyDataStage(policy) === "final";
+function policyReadyForCertificate(
+  policy: Record<string, unknown> | null | undefined,
+) {
+  return (
+    policy?.pipelineStatus === "complete" &&
+    effectivePolicyDataStage(policy) === "final"
+  );
 }
 
 function normalizeSignatureText(value: string) {
@@ -496,7 +529,7 @@ function certificateRequestSignature(args: {
     : "";
   const signedName = normalizeSignatureText(
     args.requestKind === "additional_insured"
-      ? args.additionalInsuredName ?? args.holderName
+      ? (args.additionalInsuredName ?? args.holderName)
       : args.holderName,
   );
   if (args.requestKind === "additional_insured") {
@@ -527,7 +560,9 @@ export function resolveCertificateRequestMetadata(args: {
     hasEndorsementRequest &&
     requiredChanges.every((kind) => kind === "additional_insured");
   const evidenceGatedOnly = isEvidenceGatedOnly(requiredChanges);
-  const requestKind: "holder" | "additional_insured" = requiredChanges.includes("additional_insured")
+  const requestKind: "holder" | "additional_insured" = requiredChanges.includes(
+    "additional_insured",
+  )
     ? "additional_insured"
     : "holder";
   const additionalInsuredName =
@@ -554,12 +589,13 @@ export function resolveCertificateRequestMetadata(args: {
   };
 }
 
-function unsupportedEndorsementGate(requiredChanges: CertificateEndorsementKind[]): CertificateGateVerdict {
+function unsupportedEndorsementGate(
+  requiredChanges: CertificateEndorsementKind[],
+): CertificateGateVerdict {
   return {
     status: "held",
     reasonCode: "policy_change_required",
-    reasonMessage:
-      `This request asks for ${requiredChanges.map((kind) => kind.replace(/_/g, " ")).join(", ")}, which requires broker action before a certificate is issued.`,
+    reasonMessage: `This request asks for ${requiredChanges.map((kind) => kind.replace(/_/g, " ")).join(", ")}, which requires broker action before a certificate is issued.`,
     requiredChanges,
     evidence: [],
   };
@@ -573,11 +609,15 @@ function relationshipFromRequest(kinds: CertificateEndorsementKind[]) {
 }
 
 function policyEmailFields(policy: Record<string, any> | null | undefined) {
-  const profile = policy?.operationalProfile && typeof policy.operationalProfile === "object"
-    ? policy.operationalProfile as Record<string, any>
-    : undefined;
+  const profile =
+    policy?.operationalProfile && typeof policy.operationalProfile === "object"
+      ? (policy.operationalProfile as Record<string, any>)
+      : undefined;
   const sourceBacked = (value: unknown) =>
-    value && typeof value === "object" && !Array.isArray(value) && typeof (value as { value?: unknown }).value === "string"
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { value?: unknown }).value === "string"
       ? (value as { value: string }).value
       : undefined;
   return {
@@ -625,7 +665,8 @@ function holderResolutionCandidatesForResponse(
     holderAddress: candidate.identity.address,
     certificateVersionId: String(candidate.data.version._id),
     versionNumber: candidate.data.version.versionNumber,
-    issuedAt: candidate.data.version.issuedAt ?? candidate.data.version.createdAt,
+    issuedAt:
+      candidate.data.version.issuedAt ?? candidate.data.version.createdAt,
   }));
 }
 
@@ -649,7 +690,8 @@ function existingCertificateResult(args: {
     policyVersionId: String(version.policyVersionId ?? args.policyVersionId),
     versionNumber: version.versionNumber,
     requestKind: version.requestKind ?? args.requestKind,
-    additionalInsuredName: version.additionalInsuredName ?? args.additionalInsuredName,
+    additionalInsuredName:
+      version.additionalInsuredName ?? args.additionalInsuredName,
     descriptionOfOperations: version.descriptionOfOperations,
   };
 }
@@ -664,8 +706,7 @@ function ambiguousHolderResult(args: {
     holderName: args.holderName,
     reason: args.reason,
     candidates: holderResolutionCandidatesForResponse(args.candidates),
-    message:
-      `I found more than one possible existing certificate holder for ${args.holderName}. I did not issue a duplicate certificate. Reissue from the existing certificate, or provide the exact holder address.`,
+    message: `I found more than one possible existing certificate holder for ${args.holderName}. I did not issue a duplicate certificate. Reissue from the existing certificate, or provide the exact holder address.`,
   };
 }
 
@@ -696,8 +737,8 @@ Return same_holder only when the requested holder is the same legal/display hold
     });
     const review = result.object as z.infer<typeof HolderIdentityReviewSchema>;
     if (review.verdict === "same_holder") {
-      const candidate = args.candidates.find((item) =>
-        item.candidateId === review.matchedCandidateId,
+      const candidate = args.candidates.find(
+        (item) => item.candidateId === review.matchedCandidateId,
       );
       if (candidate) {
         return {
@@ -708,7 +749,8 @@ Return same_holder only when the requested holder is the same legal/display hold
       }
       return {
         verdict: "ambiguous" as const,
-        reason: "The model selected a candidate that was not in the bounded candidate set.",
+        reason:
+          "The model selected a candidate that was not in the bounded candidate set.",
         candidates: args.candidates,
       };
     }
@@ -824,7 +866,10 @@ export const generateBatchForPolicy = action({
   handler: async (ctx, args): Promise<any> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    if (Boolean(args.primaryPolicyId) === Boolean(args.requirementSourceDocumentId || args.requirementId)) {
+    if (
+      Boolean(args.primaryPolicyId) ===
+      Boolean(args.requirementSourceDocumentId || args.requirementId)
+    ) {
       throw new Error("Choose either one policy or one requirements source.");
     }
     const context = await ctx.runQuery(
@@ -858,14 +903,14 @@ export const generateBatchForOrg = internalAction({
       throw new Error("Choose either one policy or one requirements source.");
     }
     const sourcePlan = requirementsMode
-      ? await ctx.runQuery(
+      ? ((await ctx.runQuery(
           internal.compliance.getCertificateRequirementSourcePlanInternal,
           {
             orgId: args.orgId,
             sourceDocumentId: args.requirementSourceDocumentId,
             requirementId: args.requirementId,
           },
-        ) as {
+        )) as {
           source: { _id: Id<"requirementSourceDocuments"> };
           holder: {
             displayName: string;
@@ -882,27 +927,38 @@ export const generateBatchForOrg = internalAction({
             };
           };
           requirements: CertificateRequirementPlanRow[];
-        }
+        })
       : null;
-    const holderName = (sourcePlan?.holder.displayName ?? args.holderName ?? "").trim();
+    const holderName = (
+      sourcePlan?.holder.displayName ??
+      args.holderName ??
+      ""
+    ).trim();
     if (!holderName) throw new Error("Certificate holder is required.");
     await ctx.runQuery(internal.certificates.getGenerationContextForOrg, {
       orgId: args.orgId,
       policyId: args.primaryPolicyId,
     });
-    const policyRows = await ctx.runQuery(
+    const policyRows = (await ctx.runQuery(
       internal.policies.listAllPreviewReadableInternal,
       { orgId: args.orgId },
-    ) as Array<Record<string, any> & { _id: Id<"policies"> }>;
+    )) as Array<Record<string, any> & { _id: Id<"policies"> }>;
     const primaryPolicy = args.primaryPolicyId
       ? policyRows.find((policy) => policy._id === args.primaryPolicyId)
       : undefined;
-    if (args.primaryPolicyId && (!primaryPolicy || !policyReadyForCertificate(primaryPolicy))) {
-      throw new Error("The selected policy is not ready for certificate generation.");
+    if (
+      args.primaryPolicyId &&
+      (!primaryPolicy || !policyReadyForCertificate(primaryPolicy))
+    ) {
+      throw new Error(
+        "The selected policy is not ready for certificate generation.",
+      );
     }
     const requirements = sourcePlan?.requirements ?? [];
     if (requirements.length > 25) {
-      throw new Error("A requirement source can include no more than 25 active requirements.");
+      throw new Error(
+        "A requirement source can include no more than 25 active requirements.",
+      );
     }
     const plan = buildCertificateRequirementPlan({
       primaryPolicyId: args.primaryPolicyId,
@@ -921,49 +977,55 @@ export const generateBatchForOrg = internalAction({
           ...target.requestedEndorsements,
         ]),
       );
-      const generated = await ctx.runAction(internal.certificates.generateForOrg, {
-        orgId: args.orgId,
-        policyId: target.policyId,
-        holderName,
-        certificateHolder: requirementsMode ? undefined : args.certificateHolder,
-        holderContactName: sourcePlan?.holder.contactName ?? args.holderContactName,
-        holderEmail: sourcePlan?.holder.email ?? args.holderEmail,
-        holderPhone: sourcePlan?.holder.phone ?? args.holderPhone,
-        addressLine1: sourcePlan?.holder.address?.line1 ?? args.addressLine1,
-        addressLine2: sourcePlan?.holder.address?.line2 ?? args.addressLine2,
-        city: sourcePlan?.holder.address?.city ?? args.city,
-        state: sourcePlan?.holder.address?.state ?? args.state,
-        postalCode: sourcePlan?.holder.address?.postalCode ?? args.postalCode,
-        country: sourcePlan?.holder.address?.country ?? args.country,
-        additionalInsuredName: args.additionalInsuredName,
-        requestText: args.requestText,
-        descriptionOfOperations: args.descriptionOfOperations,
-        requestedEndorsements: requestedEndorsements.length
-          ? requestedEndorsements
-          : undefined,
-        forceReissue: args.forceReissue,
-        source: args.source,
-        createdByUserId: args.createdByUserId,
-        requirementIds: target.requirementIds,
-        requirementSourceDocumentId: sourcePlan?.source._id,
-        requirementSnapshots: target.requirementSnapshots,
-        includedLineOfBusinessCodes:
-          target.includedLineOfBusinessCodes.length > 0
-            ? target.includedLineOfBusinessCodes
+      const generated = await ctx.runAction(
+        internal.certificates.generateForOrg,
+        {
+          orgId: args.orgId,
+          policyId: target.policyId,
+          holderName,
+          certificateHolder: requirementsMode
+            ? undefined
+            : args.certificateHolder,
+          holderContactName:
+            sourcePlan?.holder.contactName ?? args.holderContactName,
+          holderEmail: sourcePlan?.holder.email ?? args.holderEmail,
+          holderPhone: sourcePlan?.holder.phone ?? args.holderPhone,
+          addressLine1: sourcePlan?.holder.address?.line1 ?? args.addressLine1,
+          addressLine2: sourcePlan?.holder.address?.line2 ?? args.addressLine2,
+          city: sourcePlan?.holder.address?.city ?? args.city,
+          state: sourcePlan?.holder.address?.state ?? args.state,
+          postalCode: sourcePlan?.holder.address?.postalCode ?? args.postalCode,
+          country: sourcePlan?.holder.address?.country ?? args.country,
+          additionalInsuredName: args.additionalInsuredName,
+          requestText: args.requestText,
+          descriptionOfOperations: args.descriptionOfOperations,
+          requestedEndorsements: requestedEndorsements.length
+            ? requestedEndorsements
             : undefined,
-        generationBatchId,
-      });
+          forceReissue: args.forceReissue,
+          source: args.source,
+          createdByUserId: args.createdByUserId,
+          requirementIds: target.requirementIds,
+          requirementSourceDocumentId: sourcePlan?.source._id,
+          requirementSnapshots: target.requirementSnapshots,
+          includedLineOfBusinessCodes:
+            target.includedLineOfBusinessCodes.length > 0
+              ? target.includedLineOfBusinessCodes
+              : undefined,
+          generationBatchId,
+        },
+      );
       results.push({
         policyId: target.policyId,
         requirementIds: target.requirementIds,
         ...generated,
       });
     }
-    const completed = results.filter((result) =>
-      result.status === "generated" || result.status === "existing",
+    const completed = results.filter(
+      (result) => result.status === "generated" || result.status === "existing",
     ).length;
-    const held = results.filter((result) =>
-      result.status === "held_policy_change_required",
+    const held = results.filter(
+      (result) => result.status === "held_policy_change_required",
     ).length;
     return {
       status:
@@ -1019,7 +1081,9 @@ export const generateForOrg = internalAction({
     updateHolderDetails: v.optional(v.boolean()),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
-    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    requirementSnapshots: v.optional(
+      v.array(certificateRequirementSnapshotValidator),
+    ),
     includedLineOfBusinessCodes: v.optional(v.array(v.string())),
     generationBatchId: v.optional(v.string()),
   },
@@ -1032,7 +1096,9 @@ export const generateForOrg = internalAction({
       policyId: args.policyId,
     });
     if (args.updateHolderDetails && !args.certificateId) {
-      throw new Error("A certificate is required when updating holder details.");
+      throw new Error(
+        "A certificate is required when updating holder details.",
+      );
     }
     const generationTarget = args.certificateId
       ? await ctx.runQuery(
@@ -1048,12 +1114,12 @@ export const generateForOrg = internalAction({
       args.certificateHolder,
       holderName,
     );
-    const holderContactName = args.holderContactName ?? parsedHolderBlock.contactName;
+    const holderContactName =
+      args.holderContactName ?? parsedHolderBlock.contactName;
     const holderEmail = args.holderEmail ?? parsedHolderBlock.email;
     const holderPhone = args.holderPhone ?? parsedHolderBlock.phone;
     const holderAddress =
-      structuredCertificateHolderAddress(args) ??
-      parsedHolderBlock.address;
+      structuredCertificateHolderAddress(args) ?? parsedHolderBlock.address;
     const certificateHolder = certificateHolderDisplayBlock({
       displayName: holderName,
       contactName: holderContactName,
@@ -1074,9 +1140,6 @@ export const generateForOrg = internalAction({
           "COI generation is available after Spot finishes full source-backed extraction for this policy.",
       };
     }
-    const org = await ctx.runQuery(internal.orgs.getInternal, {
-      id: args.orgId,
-    });
     const requestMetadata = resolveCertificateRequestMetadata({
       holderName,
       certificateHolder,
@@ -1085,7 +1148,9 @@ export const generateForOrg = internalAction({
       additionalInsuredName: args.additionalInsuredName,
       descriptionOfOperations: args.descriptionOfOperations,
       requirementSignature: certificateRequirementSignature(
-        args.requirementSnapshots as CertificateRequirementSnapshot[] | undefined,
+        args.requirementSnapshots as
+          | CertificateRequirementSnapshot[]
+          | undefined,
       ),
     });
     const {
@@ -1097,24 +1162,30 @@ export const generateForOrg = internalAction({
       requestSignature,
     } = requestMetadata;
     const reusableRequestSignature =
-      requestKind === "holder" && requiredChanges.length === 0 && !(args.requirementIds?.length)
+      requestKind === "holder" &&
+      requiredChanges.length === 0 &&
+      !args.requirementIds?.length
         ? undefined
         : requestSignature;
-    const policyVersionId = args.policyVersionId ?? await ctx.runMutation(
-      (internal as any).policyVersions.ensureInitialInternal,
-      {
-        policyId: args.policyId,
-        createdByUserId: args.createdByUserId,
-      },
-    ) as Id<"policyVersions">;
+    const policyVersionId =
+      args.policyVersionId ??
+      ((await ctx.runMutation(
+        (internal as any).policyVersions.ensureInitialInternal,
+        {
+          policyId: args.policyId,
+          createdByUserId: args.createdByUserId,
+        },
+      )) as Id<"policyVersions">);
     const requestedHolderIdentity = certificateHolderIdentity({
       displayName: holderName,
       address: holderAddress as CertificateHolderAddressInput | undefined,
     });
-    let matchedIssuedCandidate: CertificateHolderResolutionCandidate<IssuedCertificateCandidate> | null = null;
+    let matchedIssuedCandidate: CertificateHolderResolutionCandidate<IssuedCertificateCandidate> | null =
+      null;
     if (!generationTarget) {
-      const issuedCandidates = await ctx.runQuery(
-        (internal as any).certificateLifecycle.findIssuedCertificateHolderCandidatesInternal,
+      const issuedCandidates = (await ctx.runQuery(
+        (internal as any).certificateLifecycle
+          .findIssuedCertificateHolderCandidatesInternal,
         {
           orgId: args.orgId,
           policyId: args.policyId,
@@ -1123,22 +1194,29 @@ export const generateForOrg = internalAction({
           requestSignature: reusableRequestSignature,
           requireRequestSignature: Boolean(args.requirementIds?.length),
         },
-      ) as CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
+      )) as CertificateHolderResolutionCandidate<IssuedCertificateCandidate>[];
       const deterministicResolution = resolveDeterministicCertificateHolder(
         requestedHolderIdentity,
         issuedCandidates,
       );
-      matchedIssuedCandidate = deterministicResolution.verdict === "same_holder"
-        ? deterministicResolution.candidate
-        : null;
-      if (!matchedIssuedCandidate && deterministicResolution.verdict === "ambiguous") {
+      matchedIssuedCandidate =
+        deterministicResolution.verdict === "same_holder"
+          ? deterministicResolution.candidate
+          : null;
+      if (
+        !matchedIssuedCandidate &&
+        deterministicResolution.verdict === "ambiguous"
+      ) {
         return ambiguousHolderResult({
           holderName,
           reason: deterministicResolution.reason,
           candidates: deterministicResolution.candidates,
         });
       }
-      if (!matchedIssuedCandidate && deterministicResolution.verdict === "needs_model") {
+      if (
+        !matchedIssuedCandidate &&
+        deterministicResolution.verdict === "needs_model"
+      ) {
         const modelResolution = await reviewHolderIdentityWithModel({
           ctx,
           orgId: args.orgId,
@@ -1167,26 +1245,46 @@ export const generateForOrg = internalAction({
       });
     }
 
-    let gate: CertificateGateVerdict = { status: "allowed", requiredChanges, evidence: [] };
+    let gate: CertificateGateVerdict = {
+      status: "allowed",
+      requiredChanges,
+      evidence: [],
+    };
     if (hasEndorsementRequest && !evidenceGatedOnly) {
       gate = unsupportedEndorsementGate(requiredChanges);
     } else if (evidenceGatedOnly) {
-      const hasSourceNodes = await ctx.runQuery(
-        (internal as any).sourceNodes.hasNodesForPolicy,
-        { policyId: args.policyId },
-      ).catch(() => false);
+      const hasSourceNodes = await ctx
+        .runQuery((internal as any).sourceNodes.hasNodesForPolicy, {
+          policyId: args.policyId,
+        })
+        .catch(() => false);
       const hasReadySourceTree =
-        (policy as { sourceTreeVersion?: string; sourceTreeStatus?: string } | null)?.sourceTreeVersion === "v3" &&
-        (policy as { sourceTreeVersion?: string; sourceTreeStatus?: string } | null)?.sourceTreeStatus === "ready" &&
+        (
+          policy as {
+            sourceTreeVersion?: string;
+            sourceTreeStatus?: string;
+          } | null
+        )?.sourceTreeVersion === "v3" &&
+        (
+          policy as {
+            sourceTreeVersion?: string;
+            sourceTreeStatus?: string;
+          } | null
+        )?.sourceTreeStatus === "ready" &&
         hasSourceNodes;
       if (!hasReadySourceTree) {
-        const rebuild = await ctx.runAction((internal as any).actions.policyExtraction.ensurePolicyV3SourceTree, {
-          policyId: args.policyId,
-          reason: "certificate_generation",
-        }).catch((error) => ({
-          status: "failed",
-          error: error instanceof Error ? error.message : String(error),
-        }));
+        const rebuild = await ctx
+          .runAction(
+            (internal as any).actions.policyExtraction.ensurePolicyV3SourceTree,
+            {
+              policyId: args.policyId,
+              reason: "certificate_generation",
+            },
+          )
+          .catch((error) => ({
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+          }));
         return {
           status: "source_tree_rebuild_required",
           holderName,
@@ -1210,46 +1308,37 @@ export const generateForOrg = internalAction({
     }
 
     if (gate.status === "held") {
-      const brokerIdentity = org?.type === "client"
-        ? await ctx.runQuery(internal.orgs.resolveBrokerIdentityInternal, {
-            clientOrgId: args.orgId,
-          })
-        : null;
-      const brokerRecord = brokerIdentity as {
-        contactEmail?: string;
-        contactName?: string;
-        brokerCompanyName?: string;
-      } | null;
       const emailDraft = buildEndorsementRequestEmail({
         holderLegalName: holderName,
         additionalInsuredName,
         ...policyEmailFields(policy as Record<string, any> | null),
         requiredChanges: gate.requiredChanges,
         reasonMessage: gate.reasonMessage,
-        recipientEmail: brokerRecord?.contactEmail,
-        recipientName: brokerRecord?.contactName ?? brokerRecord?.brokerCompanyName,
       });
 
-      const holdId = await ctx.runMutation(internal.certificates.recordHoldInternal, {
-        orgId: args.orgId,
-        policyId: args.policyId,
-        holderName,
-        certificateHolder,
-        requestText: args.requestText,
-        requestedEndorsements: args.requestedEndorsements,
-        requirementIds: args.requirementIds,
-        requirementSourceDocumentId: args.requirementSourceDocumentId,
-        requirementSnapshots: args.requirementSnapshots,
-        generationBatchId: args.generationBatchId,
-        source: args.source,
-        status: "held",
-        reasonCode: gate.reasonCode,
-        reasonMessage: gate.reasonMessage,
-        requiredChanges: gate.requiredChanges,
-        evidence: gate.evidence,
-        emailDraft,
-        createdByUserId: args.createdByUserId,
-      });
+      const holdId = await ctx.runMutation(
+        internal.certificates.recordHoldInternal,
+        {
+          orgId: args.orgId,
+          policyId: args.policyId,
+          holderName,
+          certificateHolder,
+          requestText: args.requestText,
+          requestedEndorsements: args.requestedEndorsements,
+          requirementIds: args.requirementIds,
+          requirementSourceDocumentId: args.requirementSourceDocumentId,
+          requirementSnapshots: args.requirementSnapshots,
+          generationBatchId: args.generationBatchId,
+          source: args.source,
+          status: "held",
+          reasonCode: gate.reasonCode,
+          reasonMessage: gate.reasonMessage,
+          requiredChanges: gate.requiredChanges,
+          evidence: gate.evidence,
+          emailDraft,
+          createdByUserId: args.createdByUserId,
+        },
+      );
 
       return {
         status: "held_policy_change_required",
@@ -1270,23 +1359,28 @@ export const generateForOrg = internalAction({
       };
     }
 
-    let holderId = generationTarget?.holder._id ?? matchedIssuedCandidate?.data.holderId;
-    let policyCertificateId = generationTarget?.certificate._id ??
+    let holderId =
+      generationTarget?.holder._id ?? matchedIssuedCandidate?.data.holderId;
+    let policyCertificateId =
+      generationTarget?.certificate._id ??
       matchedIssuedCandidate?.data.policyCertificateId;
     if (!holderId || !policyCertificateId) {
-      holderId = await ctx.runMutation((internal as any).certificateHolders.upsertInternal, {
-        orgId: args.orgId,
-        displayName: holderName,
-        contactName: holderContactName,
-        email: holderEmail,
-        phone: holderPhone,
-        address: holderAddress,
-        source: "certificate_generation",
-        sourceRef: String(args.policyId),
-        createdByUserId: args.createdByUserId,
-        updatedByUserId: args.createdByUserId,
-      }) as Id<"certificateHolders">;
-      policyCertificateId = await ctx.runMutation(
+      holderId = (await ctx.runMutation(
+        (internal as any).certificateHolders.upsertInternal,
+        {
+          orgId: args.orgId,
+          displayName: holderName,
+          contactName: holderContactName,
+          email: holderEmail,
+          phone: holderPhone,
+          address: holderAddress,
+          source: "certificate_generation",
+          sourceRef: String(args.policyId),
+          createdByUserId: args.createdByUserId,
+          updatedByUserId: args.createdByUserId,
+        },
+      )) as Id<"certificateHolders">;
+      policyCertificateId = (await ctx.runMutation(
         (internal as any).certificateLifecycle.getOrCreateParentInternal,
         {
           orgId: args.orgId,
@@ -1296,16 +1390,20 @@ export const generateForOrg = internalAction({
           source: args.source ?? "unknown",
           createdByUserId: args.createdByUserId,
         },
-      ) as Id<"policyCertificates">;
+      )) as Id<"policyCertificates">;
     }
 
-    const holderRelationship = await ctx.runQuery(
-      internal.certificates.getHolderPolicyRelationshipInternal,
-      { holderId, policyId: args.policyId },
-    ).catch(() => null) ?? relationshipFromRequest(requiredChanges);
-    const endorsementCitations = gate.status === "allowed"
-      ? summarizeEndorsementEvidence(gate.requiredChanges, gate.evidence)
-      : [];
+    const holderRelationship =
+      (await ctx
+        .runQuery(internal.certificates.getHolderPolicyRelationshipInternal, {
+          holderId,
+          policyId: args.policyId,
+        })
+        .catch(() => null)) ?? relationshipFromRequest(requiredChanges);
+    const endorsementCitations =
+      gate.status === "allowed"
+        ? summarizeEndorsementEvidence(gate.requiredChanges, gate.evidence)
+        : [];
 
     const generated = await ctx.runAction(internal.actions.generateCoi.run, {
       policyId: args.policyId,
@@ -1375,7 +1473,9 @@ export const recordGenerated = internalMutation({
     descriptionOfOperations: v.optional(v.string()),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
-    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    requirementSnapshots: v.optional(
+      v.array(certificateRequirementSnapshotValidator),
+    ),
     generationBatchId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1417,7 +1517,9 @@ export const recordHoldInternal = internalMutation({
     requestedEndorsements: v.optional(requestedEndorsementValidator),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
     requirementSourceDocumentId: v.optional(v.id("requirementSourceDocuments")),
-    requirementSnapshots: v.optional(v.array(certificateRequirementSnapshotValidator)),
+    requirementSnapshots: v.optional(
+      v.array(certificateRequirementSnapshotValidator),
+    ),
     generationBatchId: v.optional(v.string()),
     source: v.optional(certificateSourceValidator),
     status: v.union(

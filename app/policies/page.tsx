@@ -24,7 +24,12 @@ type PolicyRow = {
   policyTermType?: string | null;
   pipelineStatus?: string;
   extractionDataStage?: string | null;
-  uploadedBySide?: "broker" | "client" | "operator" | "email_scan" | "agent_email";
+  uploadedBySide?:
+    | "broker"
+    | "client"
+    | "operator"
+    | "email_scan"
+    | "agent_email";
 };
 
 export default function PoliciesPage() {
@@ -40,7 +45,9 @@ export default function PoliciesPage() {
         <Tabs
           value={showArchived ? "archived" : "active"}
           onValueChange={(value) =>
-            router.push(value === "archived" ? "/policies?view=archived" : "/policies")
+            router.push(
+              value === "archived" ? "/policies?view=archived" : "/policies",
+            )
           }
         >
           <TabsList variant="pill">
@@ -52,7 +59,9 @@ export default function PoliciesPage() {
         {policies === undefined ? (
           <div className="min-h-32" aria-hidden="true" />
         ) : rows.length === 0 ? (
-          <div className={`py-16 text-center text-muted-foreground/50 ${typeStyle("body.default")}`}>
+          <div
+            className={`py-16 text-center text-muted-foreground/50 ${typeStyle("body.default")}`}
+          >
             No {showArchived ? "archived" : "active"} policies
           </div>
         ) : (
@@ -63,8 +72,12 @@ export default function PoliciesPage() {
                 carrier={policy.carrier ?? "Carrier not identified"}
                 carrierIdentity={policy.carrierIdentity}
                 policyDetailOverrides={policy.policyDetailOverrides}
-                generalAgent={policy.generalAgent?.agencyName ?? policy.mga ?? undefined}
-                policyNumber={policy.policyNumber ?? "Policy number unavailable"}
+                generalAgent={
+                  policy.generalAgent?.agencyName ?? policy.mga ?? undefined
+                }
+                policyNumber={
+                  policy.policyNumber ?? "Policy number unavailable"
+                }
                 productIdentity={policy.productIdentity}
                 programName={policy.programName ?? undefined}
                 linesOfBusiness={policy.linesOfBusiness}
