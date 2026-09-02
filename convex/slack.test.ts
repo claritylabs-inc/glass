@@ -202,6 +202,90 @@ async function ingest(
   return { claim: result, prepared };
 }
 
+async function seedOperatorConfirmation(
+  t: ReturnType<typeof convexTest>,
+  args: {
+    operatorUserId: Id<"users">;
+    channelId: string;
+    threadTs: string;
+  },
+) {
+  const { operatorUserId, channelId, threadTs } = args;
+  await t.run(async (ctx) => {
+    const threadId = await ctx.db.insert("operatorAgentThreads", {
+      ownerUserId: operatorUserId,
+      visibility: "shared",
+      channel: "slack",
+      conversationKey: `T-SPOT:${channelId}:${threadTs}`,
+      title: "Slack operator request",
+      lastMessageAt: BASE_TIME,
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    });
+    const userMessageId = await ctx.db.insert("operatorAgentMessages", {
+      threadId,
+      ownerUserId: operatorUserId,
+      channel: "slack",
+      role: "user",
+      content: "Update the client",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    });
+    const agentMessageId = await ctx.db.insert("operatorAgentMessages", {
+      threadId,
+      ownerUserId: operatorUserId,
+      channel: "slack",
+      role: "agent",
+      content: "Confirmation required",
+      status: "processing",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    });
+    const runId = await ctx.db.insert("operatorAgentRuns", {
+      threadId,
+      operatorUserId,
+      userMessageId,
+      agentMessageId,
+      objective: "Update the client",
+      status: "waiting_confirmation",
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    });
+    const confirmationId = await ctx.db.insert(
+      "operatorAgentConfirmations",
+      {
+        threadId,
+        operatorUserId,
+        promptMessageId: agentMessageId,
+        payload: {
+          kind: "operator_tool_action",
+          runId,
+          toolName: "update_organization",
+          toolVersion: 1,
+          input: "{}",
+          inputHash: "test-input",
+          idempotencyKey: "operator-slack-confirmation",
+          capability: "operator.organization.write",
+          effect: "reversible_write",
+          requiredRole: "operator",
+          summary: "Update the client",
+        },
+        status: "pending",
+        expiresAt: BASE_TIME + 60_000,
+        createdAt: BASE_TIME,
+        updatedAt: BASE_TIME,
+      },
+    );
+    await ctx.db.patch(runId, {
+      checkpoint: {
+        iteration: 1,
+        executionCount: 1,
+        pendingConfirmationId: confirmationId,
+      },
+    });
+  });
+}
+
 describe("Slack channel state and authorization", () => {
   test("marks operator Slack requests as active and then complete", async () => {
     vi.stubEnv("OPERATOR_SLACK_ENABLED", "true");
@@ -213,79 +297,7 @@ describe("Slack channel state and authorization", () => {
     const { operatorUserId } = await seedSlack(t);
     const channelId = "C-OPERATOR";
     const threadTs = "1800000000.001";
-    await t.run(async (ctx) => {
-      const threadId = await ctx.db.insert("operatorAgentThreads", {
-        ownerUserId: operatorUserId,
-        visibility: "shared",
-        channel: "slack",
-        conversationKey: `T-SPOT:${channelId}:${threadTs}`,
-        title: "Slack operator request",
-        lastMessageAt: BASE_TIME,
-        createdAt: BASE_TIME,
-        updatedAt: BASE_TIME,
-      });
-      const userMessageId = await ctx.db.insert("operatorAgentMessages", {
-        threadId,
-        ownerUserId: operatorUserId,
-        channel: "slack",
-        role: "user",
-        content: "Update the client",
-        createdAt: BASE_TIME,
-        updatedAt: BASE_TIME,
-      });
-      const agentMessageId = await ctx.db.insert("operatorAgentMessages", {
-        threadId,
-        ownerUserId: operatorUserId,
-        channel: "slack",
-        role: "agent",
-        content: "Confirmation required",
-        status: "processing",
-        createdAt: BASE_TIME,
-        updatedAt: BASE_TIME,
-      });
-      const runId = await ctx.db.insert("operatorAgentRuns", {
-        threadId,
-        operatorUserId,
-        userMessageId,
-        agentMessageId,
-        objective: "Update the client",
-        status: "waiting_confirmation",
-        createdAt: BASE_TIME,
-        updatedAt: BASE_TIME,
-      });
-      const confirmationId = await ctx.db.insert(
-        "operatorAgentConfirmations",
-        {
-          threadId,
-          operatorUserId,
-          promptMessageId: agentMessageId,
-          payload: {
-            kind: "operator_tool_action",
-            runId,
-            toolName: "update_organization",
-            toolVersion: 1,
-            input: "{}",
-            inputHash: "test-input",
-            idempotencyKey: "operator-slack-confirmation",
-            capability: "operator.organization.write",
-            effect: "reversible_write",
-            requiredRole: "operator",
-            summary: "Update the client",
-          },
-          status: "pending",
-          expiresAt: BASE_TIME + 60_000,
-          createdAt: BASE_TIME,
-          updatedAt: BASE_TIME,
-        },
-      );
-      await ctx.db.patch(runId, {
-        checkpoint: {
-          iteration: 1,
-          executionCount: 1,
-          pendingConfirmationId: confirmationId,
-        },
-      });
-    });
+    await seedOperatorConfirmation(t, { operatorUserId, channelId, threadTs });
     const claim = (await t.mutation(claimInboundFn, {
       eventKey: "operator-reaction-lifecycle",
       teamId: "T-SPOT",
@@ -367,6 +379,73 @@ describe("Slack channel state and authorization", () => {
     await expect(
       t.run(async (ctx) => (await ctx.db.get(claim.eventId))?.status),
     ).resolves.toBe("completed");
+  });
+
+  test("leaves a visible reaction when an operator Slack reply fails", async () => {
+    vi.stubEnv("OPERATOR_SLACK_ENABLED", "true");
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-SPOT");
+    vi.stubEnv("OPERATOR_SLACK_BOT_USER_ID", "U-SPOT");
+    vi.stubEnv("SLACK_WORKER_URL", "https://slack-worker.example");
+    vi.stubEnv("SLACK_WORKER_SECRET", "test-secret");
+    const t = convexTest(schema, modules);
+    const { operatorUserId } = await seedSlack(t);
+    const channelId = "C-OPERATOR";
+    const threadTs = "1800000000.001";
+    await seedOperatorConfirmation(t, { operatorUserId, channelId, threadTs });
+    const claim = (await t.mutation(claimInboundFn, {
+      eventKey: "operator-reaction-failure",
+      teamId: "T-SPOT",
+      channelId,
+      threadTs,
+      messageTs: "1800000000.002",
+      senderTeamId: "T-SPOT",
+      senderUserId: "U-OPERATOR",
+      content: "reject",
+      eventType: "message",
+      receivedAt: BASE_TIME,
+    })) as { eventId: Id<"slackInboundEvents"> };
+    await t.run((ctx) => ctx.db.patch(claim.eventId, { scheduledFor: 0 }));
+    const reactions: Array<{ operation: string; name: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const operation = new URL(String(input)).pathname;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (operation.startsWith("/reaction/")) {
+          reactions.push({ operation, name: body.name });
+          return Response.json({ ok: true });
+        }
+        if (operation === "/actor") {
+          return Response.json({
+            teamId: "T-SPOT",
+            userId: "U-OPERATOR",
+            displayName: "Spot Operator",
+            isBot: false,
+            botUserId: "U-SPOT",
+          });
+        }
+        if (operation === "/thread-context") {
+          return Response.json({ messages: [], truncated: false });
+        }
+        if (operation === "/channel") {
+          return Response.json({ name: "operator" });
+        }
+        if (operation === "/send") {
+          return Response.json({ error: "channel_not_found" }, { status: 409 });
+        }
+        throw new Error(`Unexpected worker path ${operation}`);
+      }),
+    );
+
+    await expect(
+      t.action(processDebouncedFn, { eventId: claim.eventId }),
+    ).rejects.toThrow("channel_not_found");
+
+    expect(reactions).toEqual([
+      { operation: "/reaction/add", name: "eyes" },
+      { operation: "/reaction/add", name: "warning" },
+      { operation: "/reaction/remove", name: "eyes" },
+    ]);
   });
 
   test("retains uncaptured source-thread messages as private model context", async () => {
