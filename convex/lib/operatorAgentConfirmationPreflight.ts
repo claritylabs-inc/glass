@@ -25,7 +25,6 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "update_client_file",
   "create_procurement_request",
   "update_procurement_request",
-  "confirm_procurement_requirement",
   "create_procurement_broker_outreach",
   "update_procurement_broker_outreach",
   "create_procurement_proposal",
@@ -391,23 +390,6 @@ async function preflightOutreachUpdate(
   validateOptionalUrl(input.quoteUrl);
 }
 
-async function preflightRequirementDraftConfirm(
-  ctx: MutationCtx,
-  input: Record<string, unknown>,
-) {
-  const draft = await requireDocument(
-    ctx,
-    "procurementRequirementDrafts",
-    input.procurementRequirementDraftId,
-    "Requirement draft",
-  );
-  if (draft.status !== "draft") throw new Error("Requirement draft not found");
-  const request = await requireProcurementRequest(ctx, draft.requestId);
-  if (request.clientOrgId !== draft.clientOrgId) {
-    throw new Error("Requirement draft belongs to a different client");
-  }
-}
-
 async function preflightProposalCreate(
   ctx: MutationCtx,
   input: Record<string, unknown>,
@@ -747,9 +729,6 @@ export async function preflightOperatorToolConfirmation(
     }
     case "update_procurement_request":
       await preflightProcurementRequestUpdate(ctx, args.input);
-      return;
-    case "confirm_procurement_requirement":
-      await preflightRequirementDraftConfirm(ctx, args.input);
       return;
     case "create_procurement_broker_outreach":
       await preflightOutreachCreate(ctx, args.input);

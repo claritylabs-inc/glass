@@ -44,6 +44,8 @@ import type * as actions_mirrorWebChatToImessage from "../actions/mirrorWebChatT
 import type * as actions_operatorAgentRichTools from "../actions/operatorAgentRichTools.js";
 import type * as actions_ownComplianceMonitor from "../actions/ownComplianceMonitor.js";
 import type * as actions_procurementIntake from "../actions/procurementIntake.js";
+import type * as actions_procurementPacketSend from "../actions/procurementPacketSend.js";
+import type * as actions_procurementPacketUpdate from "../actions/procurementPacketUpdate.js";
 import type * as actions_proposalExtraction from "../actions/proposalExtraction.js";
 import type * as actions_proposalReview from "../actions/proposalReview.js";
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
@@ -321,6 +323,7 @@ import type * as policyFiles from "../policyFiles.js";
 import type * as policyVersions from "../policyVersions.js";
 import type * as presence from "../presence.js";
 import type * as procurementMemory from "../procurementMemory.js";
+import type * as procurementPacket from "../procurementPacket.js";
 import type * as procurementMigration from "../procurementMigration.js";
 import type * as procurementProposals from "../procurementProposals.js";
 import type * as procurementRequirements from "../procurementRequirements.js";
@@ -386,6 +389,8 @@ declare const fullApi: ApiFromModules<{
   "actions/operatorAgentRichTools": typeof actions_operatorAgentRichTools;
   "actions/ownComplianceMonitor": typeof actions_ownComplianceMonitor;
   "actions/procurementIntake": typeof actions_procurementIntake;
+  "actions/procurementPacketSend": typeof actions_procurementPacketSend;
+  "actions/procurementPacketUpdate": typeof actions_procurementPacketUpdate;
   "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/proposalExtraction": typeof actions_proposalExtraction;
   "actions/proposalReview": typeof actions_proposalReview;
@@ -663,6 +668,7 @@ declare const fullApi: ApiFromModules<{
   policyVersions: typeof policyVersions;
   presence: typeof presence;
   procurementMemory: typeof procurementMemory;
+  procurementPacket: typeof procurementPacket;
   procurementMigration: typeof procurementMigration;
   procurementProposals: typeof procurementProposals;
   procurementRequirements: typeof procurementRequirements;

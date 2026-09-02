@@ -61,6 +61,32 @@ const http = httpRouter();
 const internalApi = internal as any;
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
+// Public, revocable packet-file delivery. The token is re-resolved on every
+// request so a revoked packet immediately invalidates previously copied URLs.
+http.route({
+  path: "/packet-file",
+  method: "GET",
+  handler: httpAction(async (ctx, request) => {
+    const url = new URL(request.url);
+    const token = url.searchParams.get("token") ?? "";
+    const item = url.searchParams.get("item") ?? "";
+    if (!token || !item) return new Response(null, { status: 404 });
+    const resolved = await ctx.runQuery(internalApi.procurementPacket.getFileByTokenInternal, { token, item });
+    if (!resolved) return new Response(null, { status: 404 });
+    const blob = await ctx.storage.get(resolved.fileId);
+    if (!blob) return new Response(null, { status: 404 });
+    return new Response(blob, {
+      status: 200,
+      headers: {
+        "Content-Type": resolved.contentType,
+        "Cache-Control": "private, no-store",
+        "X-Robots-Tag": "noindex",
+        "Content-Disposition": `attachment; filename="${resolved.name.replace(/[\\"\r\n]/g, "_")}"`,
+      },
+    });
+  }),
+});
+
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }

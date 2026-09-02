@@ -14,7 +14,7 @@ When any source above adds, removes, renames, or materially changes a tool, upda
 
 ## Operator agent registry
 
-The operator registry currently contains 57 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. Exact-confirmed tools run the shared reference preflight in `convex/lib/operatorAgentConfirmationPreflight.ts` before the confirmation is shown, and the write revalidates the same references at execution. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
+The operator registry currently contains 56 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. Exact-confirmed tools run the shared reference preflight in `convex/lib/operatorAgentConfirmationPreflight.ts` before the confirmation is shown, and the write revalidates the same references at execution. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
 
 The internal Slack adapter exposes this registry through App Home DMs and direct mentions from any channel delivered by the installed Clarity host app. Convex applies no channel allowlist, type, privacy, sharing, or membership gate. Customer connection and Slack Connect binding resolution takes precedence, and every invocation still requires an active operator profile linked to the exact host-workspace Slack identity.
 
@@ -63,7 +63,6 @@ The internal Slack adapter exposes this registry through App Home DMs and direct
 | `update_client_file`                  | Rename a client file or change its visibility or policy association.                  | `operator.client_files.write`   | reversible write | operator | exact        | mutation  |
 | `create_procurement_request`          | Create a new-policy procurement request and forwarding address.                       | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `update_procurement_request`          | Update a procurement request's supplied fields and policy links.                      | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
-| `confirm_procurement_requirement`     | Confirm a staged draft and reuse an identical active canonical requirement.           | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `create_procurement_proposal`         | Create a private proposal tied to an exact broker and matching outreach.              | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `confirm_procurement_proposal_review` | Confirm or override only a current review's overall conclusion.                       | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `select_procurement_proposal`         | Atomically select one proposal with a current staff-confirmed review.                 | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |

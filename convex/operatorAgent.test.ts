@@ -1203,12 +1203,6 @@ describe("operator agent boundary", () => {
         },
       },
       {
-        toolName: "confirm_procurement_requirement",
-        input: {
-          procurementRequirementDraftId: invalidResourceReference,
-        },
-      },
-      {
         toolName: "create_procurement_broker_outreach",
         input: {
           procurementRequestId: invalidResourceReference,
