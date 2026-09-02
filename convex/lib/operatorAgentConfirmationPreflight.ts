@@ -31,6 +31,7 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "create_procurement_proposal",
   "confirm_procurement_proposal_review",
   "select_procurement_proposal",
+  "create_broker_network_profile",
   "update_broker_network_profile",
   "create_procurement_file_item",
   "update_procurement_file_item",
@@ -427,7 +428,7 @@ async function preflightProposalCreate(
     throw new Error("Outreach does not belong to this request");
   if (!broker || outreach.brokerOrgId !== broker._id)
     throw new Error("Proposal broker must match its outreach");
-  if (input.supersedesProposalId !== undefined) {
+  if (input.supersedesProposalId != null) {
     const superseded = await requireDocument(
       ctx,
       "procurementProposals",
@@ -486,6 +487,30 @@ async function preflightProposalSelect(
   }
 }
 
+async function preflightBrokerProfileCreate(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const name = normalizedText(input.name);
+  if (!name) throw new Error("Broker name is required");
+  validateOptionalUrl(input.website);
+  // The agent reaches this tool from unstructured submission records, where the
+  // same broker often appears under a name it has already been registered with.
+  // Registering a duplicate splits that broker's outreach and proposal history.
+  const brokers = await ctx.db
+    .query("organizations")
+    .withIndex("type", (query) => query.eq("type", "broker"))
+    .collect();
+  const duplicate = brokers.find(
+    (broker) => broker.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (duplicate) {
+    throw new Error(
+      `Broker ${duplicate.name} is already registered as ${duplicate._id}; update that profile instead`,
+    );
+  }
+}
+
 async function preflightProcurementFileCreate(
   ctx: MutationCtx,
   input: Record<string, unknown>,
@@ -494,7 +519,7 @@ async function preflightProcurementFileCreate(
     ctx,
     input.procurementRequestId,
   );
-  if (input.procurementOutreachId !== undefined) {
+  if (input.procurementOutreachId != null) {
     const outreach = await requireDocument(
       ctx,
       "procurementBrokerOutreaches",
@@ -505,7 +530,7 @@ async function preflightProcurementFileCreate(
       throw new Error("Broker outreach does not belong to this request");
     }
   }
-  if (input.clientFileId !== undefined) {
+  if (input.clientFileId != null) {
     const file = await requireDocument(
       ctx,
       "clientFiles",
@@ -529,10 +554,7 @@ async function preflightProcurementFileUpdate(
     "Procurement file item",
   );
   const request = await requireProcurementRequest(ctx, item.requestId);
-  if (
-    input.procurementOutreachId !== undefined &&
-    input.procurementOutreachId !== null
-  ) {
+  if (input.procurementOutreachId != null) {
     const outreach = await requireDocument(
       ctx,
       "procurementBrokerOutreaches",
@@ -543,7 +565,7 @@ async function preflightProcurementFileUpdate(
       throw new Error("Broker outreach does not belong to this request");
     }
   }
-  if (input.clientFileId !== undefined && input.clientFileId !== null) {
+  if (input.clientFileId != null) {
     const file = await requireDocument(
       ctx,
       "clientFiles",
@@ -766,6 +788,9 @@ export async function preflightOperatorToolConfirmation(
     case "select_procurement_proposal":
       await preflightProposalSelect(ctx, args.input);
       return;
+    case "create_broker_network_profile":
+      await preflightBrokerProfileCreate(ctx, args.input);
+      return;
     case "update_broker_network_profile":
       await requireBrokerOrganization(ctx, args.input.brokerOrgId);
       return;
@@ -785,7 +810,7 @@ export async function preflightOperatorToolConfirmation(
       if (thread.deletedAt)
         throw new Error("Procurement email thread not found");
       await requireProcurementRequest(ctx, thread.requestId);
-      if (args.input.procurementRequestId !== undefined) {
+      if (args.input.procurementRequestId != null) {
         const request = await requireProcurementRequest(
           ctx,
           args.input.procurementRequestId,
@@ -793,10 +818,7 @@ export async function preflightOperatorToolConfirmation(
         if (request.clientOrgId !== thread.clientOrgId) {
           throw new Error("Email thread can move only within the same client");
         }
-        if (
-          request._id === thread.requestId &&
-          args.input.category === undefined
-        ) {
+        if (request._id === thread.requestId && args.input.category == null) {
           throw new Error("No email thread fields changed");
         }
       }

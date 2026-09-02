@@ -321,7 +321,7 @@ Spot supports one-way connected organization relationships for vendor/client ins
 
 ## Broker Network
 
-Broker organizations are standalone supplier profiles. The operator Brokers page tracks network status, office address, writing states, ACORD lines, contacts, outreach history, and proposal counts. A procurement outreach and each proposal reference the selected broker organization by ID; the stored broker name is only a historical display snapshot. There is no client-side broker assignment, broker branding, client invitation, portfolio access, or broker-owned policy workflow.
+Broker organizations are standalone supplier profiles. The operator Brokers page tracks network status, office address, writing states, ACORD lines, contacts, outreach history, and proposal counts. A procurement outreach and each proposal reference the selected broker organization by ID; the stored broker name is only a historical display snapshot. There is no client-side broker assignment, broker branding, client invitation, portfolio access, or broker-owned policy workflow. Operators register a broker through the Brokers page or the exact-confirmed `create_broker_network_profile` agent tool; both create the organization and its network profile with no portal users and no invites, and the agent path additionally rejects a name that is already registered.
 
 ## Team Invitations
 

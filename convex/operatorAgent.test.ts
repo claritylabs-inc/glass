@@ -715,6 +715,98 @@ describe("operator agent boundary", () => {
     });
   });
 
+  test("registers a broker network profile without portal users", async () => {
+    const fixture = await seedOperatorAgentFixture();
+    const threadId = await fixture.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        channel: "slack",
+        conversationKey: "T-CLARITY:C-BROKERS:root",
+        shared: true,
+      },
+    );
+    const input = {
+      name: "Blue Lagoon Insurance Services",
+      website: "https://bluelagoon.example",
+      writingStates: ["ca", "TX"],
+      lineOfBusinessCodes: ["CGL"],
+      officeAddress: { city: "Austin", state: "TX" },
+    };
+    const requested = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        channel: "slack",
+        toolName: "create_broker_network_profile",
+        input,
+        idempotencyKey: "create-blue-lagoon",
+      },
+    );
+    if (
+      requested.outcome.status !== "confirmation_required" ||
+      !requested.outcome.confirmationId
+    ) {
+      throw new Error("Expected exact broker confirmation");
+    }
+    await expect(
+      fixture.t.mutation(internal.operatorAgent.confirmActionInternal, {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        confirmationId: requested.outcome.confirmationId,
+        decision: "approve",
+        channel: "slack",
+      }),
+    ).resolves.toMatchObject({ status: "completed" });
+
+    const created = await fixture.t.run(async (ctx) => {
+      const broker = await ctx.db
+        .query("organizations")
+        .withIndex("type", (index) => index.eq("type", "broker"))
+        .unique();
+      if (!broker) throw new Error("Broker organization was not created");
+      return {
+        broker,
+        profile: await ctx.db
+          .query("brokerProfiles")
+          .withIndex("broker", (index) => index.eq("brokerOrgId", broker._id))
+          .unique(),
+        memberships: await ctx.db
+          .query("orgMemberships")
+          .withIndex("organization", (index) => index.eq("orgId", broker._id))
+          .collect(),
+      };
+    });
+    expect(created.broker).toMatchObject({
+      name: "Blue Lagoon Insurance Services",
+      website: "https://bluelagoon.example",
+    });
+    expect(created.profile).toMatchObject({
+      networkStatus: "prospect",
+      writingStates: ["CA", "TX"],
+      lineOfBusinessCodes: ["CGL"],
+      officeAddress: { city: "Austin", state: "TX" },
+    });
+    expect(created.memberships).toEqual([]);
+
+    const duplicate = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        channel: "slack",
+        toolName: "create_broker_network_profile",
+        input: { name: "  blue lagoon insurance services  " },
+        idempotencyKey: "create-blue-lagoon-again",
+      },
+    );
+    expect(duplicate.outcome).toMatchObject({
+      status: "failed",
+      error: `Broker Blue Lagoon Insurance Services is already registered as ${created.broker._id}; update that profile instead`,
+    });
+  });
+
   test("validates procurement policy links before requesting confirmation", async () => {
     const fixture = await seedOperatorAgentFixture();
     const threadId = await fixture.t.mutation(
@@ -726,12 +818,15 @@ describe("operator agent boundary", () => {
         shared: true,
       },
     );
+    // A model with no policy to link sends null rather than omitting the key.
     const input = {
       orgId: fixture.orgId,
       title:
         "1305 Carroll Avenue Building Purchase — Property, Liability & Earthquake",
       requestSummary: "Arrange coverage for the new building purchase.",
       requirements: "Property, liability, and earthquake coverage.",
+      replacingPolicyId: null,
+      resultingPolicyId: null,
     };
     const invalid = await fixture.t.action(
       internal.operatorAgent.invokeRegisteredToolInternal,
