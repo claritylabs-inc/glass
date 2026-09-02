@@ -51,7 +51,7 @@ scopes:
 
 - `app_mentions:read`
 - `chat:write`
-- `channels:read`, `channels:join`, `channels:write`, `channels:history`
+- `channels:read`, `channels:join`, `channels:manage`, `channels:history`
 - `groups:read`, `groups:history`, `groups:write`
 - `im:history`
 - `files:read`, `files:write`
@@ -68,7 +68,7 @@ Customer OAuth requests the narrower set in
 `convex/lib/slackOAuthPolicy.ts`; the Clarity-host installation also needs
 `groups:write` and `conversations.connect:write` for private Connect channel
 creation and invitations. Enable app distribution before sending customer
-install links. Adding `channels:join` and `channels:write` requires applying the updated manifest and
+install links. Adding `channels:join` and `channels:manage` requires applying the updated manifest and
 having existing installations, including the Clarity host installation,
 authorize the expanded scope before the web app can add Spot to or remove Spot
 from public channels for customers.

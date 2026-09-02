@@ -3,7 +3,7 @@ export const SLACK_CUSTOMER_SCOPES = [
   "chat:write",
   "channels:read",
   "channels:join",
-  "channels:write",
+  "channels:manage",
   "channels:history",
   "groups:read",
   "groups:history",

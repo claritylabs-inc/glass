@@ -386,6 +386,7 @@ describe("Slack OAuth actions", () => {
     expect(authorizeUrl.searchParams.get("scope")?.split(",")).toEqual(
       SLACK_HOST_SCOPES,
     );
+    expect(authorizeUrl.searchParams.get("team")).toBe("T-CLARITY");
     expect(state).toBeTruthy();
 
     vi.stubGlobal(
