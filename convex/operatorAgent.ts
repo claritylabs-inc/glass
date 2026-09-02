@@ -65,6 +65,7 @@ import {
 import {
   getBrokerProfileDetails,
   listBrokerProfiles,
+  createStandaloneBrokerByOperator,
   updateBrokerProfileByOperator,
 } from "./brokerProfiles";
 import {
@@ -860,6 +861,23 @@ function procurementOutreachStatus(value: unknown) {
     default:
       return undefined;
   }
+}
+
+function brokerNetworkStatus(value: unknown) {
+  switch (value) {
+    case "prospect":
+    case "active":
+    case "inactive":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
 }
 
 function procurementFilePurpose(value: unknown) {
@@ -2122,30 +2140,35 @@ async function executeToolDomain(
     });
   }
 
-  if (toolName === "update_broker_network_profile") {
-    return await updateBrokerProfileByOperator(ctx, {
+  if (toolName === "create_broker_network_profile") {
+    const name = normalizedOptionalText(input.name);
+    if (!name) throw new Error("Broker name is required");
+    return await createStandaloneBrokerByOperator(ctx, {
       operatorUserId: args.operatorUserId,
-      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
-      networkStatus:
-        input.networkStatus === "prospect" ||
-        input.networkStatus === "active" ||
-        input.networkStatus === "inactive"
-          ? input.networkStatus
-          : undefined,
+      name,
+      website: normalizedOptionalText(input.website),
+      networkStatus: brokerNetworkStatus(input.networkStatus),
       officeAddress:
         input.officeAddress && typeof input.officeAddress === "object"
           ? input.officeAddress
           : undefined,
-      writingStates: Array.isArray(input.writingStates)
-        ? input.writingStates.filter(
-            (value): value is string => typeof value === "string",
-          )
-        : undefined,
-      lineOfBusinessCodes: Array.isArray(input.lineOfBusinessCodes)
-        ? input.lineOfBusinessCodes.filter(
-            (value): value is string => typeof value === "string",
-          )
-        : undefined,
+      writingStates: stringList(input.writingStates),
+      lineOfBusinessCodes: stringList(input.lineOfBusinessCodes),
+      source: "agent",
+    });
+  }
+
+  if (toolName === "update_broker_network_profile") {
+    return await updateBrokerProfileByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
+      networkStatus: brokerNetworkStatus(input.networkStatus),
+      officeAddress:
+        input.officeAddress && typeof input.officeAddress === "object"
+          ? input.officeAddress
+          : undefined,
+      writingStates: stringList(input.writingStates),
+      lineOfBusinessCodes: stringList(input.lineOfBusinessCodes),
       name: normalizedOptionalText(input.name),
       website:
         input.website === null ? null : normalizedOptionalText(input.website),
@@ -2162,11 +2185,7 @@ async function executeToolDomain(
       contactPhone: normalizedOptionalText(input.contactPhone),
       status: procurementOutreachStatus(input.status),
       applicationUrl: normalizedOptionalText(input.applicationUrl),
-      applicationQuestions: Array.isArray(input.applicationQuestions)
-        ? input.applicationQuestions.filter(
-            (value): value is string => typeof value === "string",
-          )
-        : undefined,
+      applicationQuestions: stringList(input.applicationQuestions),
       notes: normalizedOptionalText(input.notes),
       source: "agent",
     });
@@ -2199,11 +2218,7 @@ async function executeToolDomain(
         input.applicationUrl === null
           ? null
           : normalizedOptionalText(input.applicationUrl),
-      applicationQuestions: Array.isArray(input.applicationQuestions)
-        ? input.applicationQuestions.filter(
-            (value): value is string => typeof value === "string",
-          )
-        : undefined,
+      applicationQuestions: stringList(input.applicationQuestions),
       notes: input.notes === null ? null : normalizedOptionalText(input.notes),
       source: "agent",
     });
@@ -2324,7 +2339,7 @@ async function executeToolDomain(
       industry?: string;
       industryVertical?: string;
     } = {};
-    if (input.name !== undefined) {
+    if (input.name != null) {
       const name = normalizedOptionalText(input.name);
       if (!name) throw new Error("Organization name is required");
       patch.name = name;

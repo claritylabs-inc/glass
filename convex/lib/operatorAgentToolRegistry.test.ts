@@ -156,6 +156,35 @@ describe("operator procurement tools", () => {
     });
   });
 
+  test("treats a null optional reference as an omitted one", () => {
+    const input = parseOperatorAgentToolInput("create_procurement_request", {
+      orgId: "organization-1",
+      title: "Building purchase",
+      requestSummary: "Arrange coverage for the acquisition.",
+      requirements: "Property and liability coverage.",
+      replacingPolicyId: null,
+      resultingPolicyId: null,
+    });
+
+    expect(input.replacingPolicyId).toBeNull();
+    expect(
+      getOperatorAgentToolSpec("create_procurement_request").summarize(input),
+    ).toBe(
+      'Create procurement request "Building purchase" for organization organization-1',
+    );
+  });
+
+  test("drops nulls nested inside a tool object", () => {
+    const input = parseOperatorAgentToolInput("create_broker_network_profile", {
+      name: "Blue Lagoon Insurance Services",
+      website: null,
+      officeAddress: { city: "Austin", state: "TX", street2: null },
+    });
+
+    expect(input.website).toBeNull();
+    expect(input.officeAddress).toEqual({ city: "Austin", state: "TX" });
+  });
+
   test("shows procurement policy links in the exact confirmation", () => {
     const spec = getOperatorAgentToolSpec("create_procurement_request");
     const input = parseOperatorAgentToolInput("create_procurement_request", {

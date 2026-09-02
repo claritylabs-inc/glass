@@ -22,7 +22,10 @@ import {
   buildOperatorRunCheckpointSummary,
   shouldContinueOperatorRun,
 } from "./lib/operatorAgentContinuation";
-import { OPERATOR_AGENT_TOOL_REGISTRY } from "./lib/operatorAgentToolRegistry";
+import {
+  OPERATOR_AGENT_TOOL_REGISTRY,
+  parseOperatorAgentToolInput,
+} from "./lib/operatorAgentToolRegistry";
 import {
   generateAgentTextForOperatorTask,
   generatedTextFromResult,
@@ -188,7 +191,7 @@ export const run = internalAction({
           description: spec.description,
           inputSchema: spec.inputSchema,
           execute: async (rawInput): Promise<unknown> => {
-            const input = spec.inputSchema.parse(rawInput);
+            const input = parseOperatorAgentToolInput(name, rawInput);
             const inputHash = await actionConfirmationFingerprint({
               toolName: name,
               toolVersion: spec.version,
