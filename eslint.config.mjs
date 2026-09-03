@@ -1,7 +1,12 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
-import spotPlugin from "./eslint-rules/no-untyped-typography.mjs";
+import spotTypographyPlugin from "./eslint-rules/no-untyped-typography.mjs";
+import spotSelectPlugin from "./eslint-rules/require-select-value-label.mjs";
+
+const spotPlugin = {
+  rules: { ...spotTypographyPlugin.rules, ...spotSelectPlugin.rules },
+};
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -46,6 +51,7 @@ const eslintConfig = defineConfig([
     plugins: { spot: spotPlugin },
     rules: {
       "spot/no-untyped-typography": "error",
+      "spot/require-select-value-label": "error",
     },
   },
   // Convex functions deal with dynamic data: cl-sdk discriminated unions,

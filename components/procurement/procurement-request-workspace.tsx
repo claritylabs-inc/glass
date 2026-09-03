@@ -284,6 +284,10 @@ function ProposalCreateDrawer({
           </label>
           <Select
             value={outreachId}
+            items={eligible.map((outreach) => ({
+              value: outreach._id,
+              label: outreach.brokerName,
+            }))}
             onValueChange={(value) =>
               setOutreachId((value ?? "") as Id<"procurementBrokerOutreaches">)
             }
@@ -377,6 +381,12 @@ const FINDING_LABEL = {
   insufficient_evidence: "Unverified",
 } as const;
 
+const REVIEW_CONCLUSION_LABELS = {
+  meets_requirements: "Meets requirements",
+  has_gaps: "Has gaps",
+  insufficient_evidence: "Insufficient evidence",
+} as const;
+
 function ProposalReviewDrawer({
   proposal,
   onClose,
@@ -456,6 +466,7 @@ function ProposalReviewDrawer({
                 ) : !review.staffConclusion ? (
                   <Select
                     value={conclusion}
+                    items={REVIEW_CONCLUSION_LABELS}
                     onValueChange={(value) =>
                       setConclusion(value as typeof conclusion)
                     }
@@ -464,13 +475,13 @@ function ProposalReviewDrawer({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="meets_requirements">
-                        Meets requirements
-                      </SelectItem>
-                      <SelectItem value="has_gaps">Has gaps</SelectItem>
-                      <SelectItem value="insufficient_evidence">
-                        Insufficient evidence
-                      </SelectItem>
+                      {Object.entries(REVIEW_CONCLUSION_LABELS).map(
+                        ([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ),
+                      )}
                     </SelectContent>
                   </Select>
                 ) : (
@@ -481,7 +492,7 @@ function ProposalReviewDrawer({
                         : "warning"
                     }
                   >
-                    {review.staffConclusion.replaceAll("_", " ")}
+                    {REVIEW_CONCLUSION_LABELS[review.staffConclusion]}
                   </StatusTag>
                 )
               }
@@ -1827,7 +1838,7 @@ export function ProcurementRequestWorkspace({
                                 : "warning"
                             }
                           >
-                            {String(conclusion).replaceAll("_", " ")}
+                            {REVIEW_CONCLUSION_LABELS[conclusion]}
                           </StatusTag>
                         ) : (
                           <span className="text-muted-foreground">

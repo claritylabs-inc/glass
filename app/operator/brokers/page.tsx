@@ -66,6 +66,12 @@ type BrokerRow = {
 
 const ALL = "all";
 
+const NETWORK_STATUS_LABELS: Record<NetworkStatus, string> = {
+  prospect: "Prospect",
+  active: "Active",
+  inactive: "Inactive",
+};
+
 export default function OperatorBrokersPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<NetworkStatus | typeof ALL>(ALL);
@@ -137,6 +143,7 @@ export default function OperatorBrokersPage() {
           </div>
           <Select
             value={status}
+            items={{ [ALL]: "All statuses", ...NETWORK_STATUS_LABELS }}
             onValueChange={(value) =>
               setStatus((value ?? ALL) as NetworkStatus | typeof ALL)
             }
@@ -146,9 +153,11 @@ export default function OperatorBrokersPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>All statuses</SelectItem>
-              <SelectItem value="prospect">Prospect</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
+              {Object.entries(NETWORK_STATUS_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Input
@@ -235,7 +244,9 @@ export default function OperatorBrokersPage() {
                               : "warning"
                         }
                       >
-                        {row.profile?.networkStatus ?? "Prospect"}
+                        {NETWORK_STATUS_LABELS[
+                          row.profile?.networkStatus ?? "prospect"
+                        ]}
                       </StatusTag>
                     </TableCell>
                     <TableCell className="max-w-48 text-muted-foreground">
@@ -450,6 +461,7 @@ function BrokerDrawer({
         <Field label="Network status">
           <Select
             value={status}
+            items={NETWORK_STATUS_LABELS}
             onValueChange={(value) =>
               setStatus((value ?? "prospect") as NetworkStatus)
             }
@@ -458,9 +470,11 @@ function BrokerDrawer({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="prospect">Prospect</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
+              {Object.entries(NETWORK_STATUS_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </Field>
