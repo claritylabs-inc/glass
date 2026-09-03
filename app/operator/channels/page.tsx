@@ -14,7 +14,6 @@ import { StatusTag } from "@/components/ui/status-tag";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { openOAuthTab } from "@/lib/oauth-tab";
 import {
-  OPERATOR_MCP_SERVER_NAME,
   operatorMcpClientConfig,
   operatorMcpClientSetups,
 } from "@/lib/operator-mcp-setup";
@@ -137,28 +136,13 @@ function CopySnippetButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-function McpSetupCard({
-  title,
-  description,
-  snippet,
-}: {
-  title: string;
-  description: string;
-  snippet: string;
-}) {
+function McpSetupCard({ title, snippet }: { title: string; snippet: string }) {
   return (
     <ChannelCard>
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
-            {title}
-          </h2>
-          <p
-            className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}
-          >
-            {description}
-          </p>
-        </div>
+        <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+          {title}
+        </h2>
         <CopySnippetButton value={snippet} label={`Copy ${title} setup`} />
       </div>
       <pre
@@ -198,75 +182,21 @@ function OperatorMcpContent() {
   }
 
   const endpoint = status.endpoint;
-  const setups = operatorMcpClientSetups({ endpoint });
 
   return (
     <section className="space-y-3" aria-label="Operator MCP">
-      <ChannelCard>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
-              Operator MCP
-            </h2>
-            <p
-              className={`mt-1 max-w-2xl text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              Connect Claude Code, Codex, or any Conductor session to the
-              internal operator agent. Sign in with your operator email; every
-              protected write still pauses for your exact confirmation.
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <StatusTag tone="success">Available</StatusTag>
-            <CopySnippetButton value={endpoint} label="Copy MCP endpoint" />
-          </div>
-        </div>
-
-        <dl className="mt-3 border-t border-border">
-          <ChannelDetail label="MCP endpoint">
-            <code className={typeStyle("technical.codeCompact")}>
-              {endpoint}
-            </code>
-          </ChannelDetail>
-          <ChannelDetail label="Server name">
-            <code className={typeStyle("technical.codeCompact")}>
-              {OPERATOR_MCP_SERVER_NAME}
-            </code>
-          </ChannelDetail>
-          <ChannelDetail label="Environment">
-            {status.environment ?? "Not set"}
-          </ChannelDetail>
-          <ChannelDetail label="Your operator role">
-            {status.role === "owner" ? "Owner" : "Operator"}
-          </ChannelDetail>
-        </dl>
-      </ChannelCard>
-
-      {setups.map((setup) => (
+      {operatorMcpClientSetups({ endpoint }).map((setup) => (
         <McpSetupCard
           key={setup.id}
           title={setup.label}
-          description={setup.followUp}
           snippet={setup.snippet}
         />
       ))}
 
       <McpSetupCard
         title="Other MCP clients"
-        description="Any client that supports remote MCP over streamable HTTP with OAuth works; it must request the read and write scopes."
         snippet={operatorMcpClientConfig(endpoint)}
       />
-
-      <p
-        className={`px-1 text-muted-foreground ${typeStyle("caption.default")}`}
-      >
-        Conductor has no separate MCP format: its Claude Code and Codex sessions
-        load the user-scoped configuration written above. Locally you can run{" "}
-        <code className={typeStyle("technical.codeCompact")}>
-          npm run operator:mcp
-        </code>{" "}
-        to apply the same setup from the repository.
-      </p>
     </section>
   );
 }
