@@ -170,6 +170,13 @@ export function ExtractionReviewPanel({
             Model step for routing (optional)
             <Select
               value={routerRequestId || "none"}
+              items={[
+                { value: "none", label: "No routing signal" },
+                ...modelSteps.map((step) => ({
+                  value: step.requestId,
+                  label: step.label,
+                })),
+              ]}
               onValueChange={(value) =>
                 setRouterRequestId(value === "none" ? "" : String(value))
               }
@@ -219,6 +226,7 @@ export function ExtractionReviewPanel({
               Issue
               <Select
                 value={category}
+                items={CATEGORY_LABELS}
                 onValueChange={(value) => setCategory(value as NegativeCategory)}
               >
                 <SelectTrigger className="w-full">
