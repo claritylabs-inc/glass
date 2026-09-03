@@ -101,7 +101,7 @@ describe("operator procurement tools", () => {
       "get_procurement_forwarding_address",
       "list_procurement_email_threads",
       "get_procurement_email_thread",
-      "lookup_procurement_memory",
+      "lookup_procurement_packet",
     ]) {
       expect(getOperatorAgentToolSpec(name)).toMatchObject({
         capability: "operator.procurement.read",
@@ -119,8 +119,7 @@ describe("operator procurement tools", () => {
       "create_procurement_file_item",
       "update_procurement_file_item",
       "update_procurement_email_thread",
-      "create_procurement_memory",
-      "update_procurement_memory",
+      "update_procurement_packet_section",
     ]) {
       expect(getOperatorAgentToolSpec(name)).toMatchObject({
         capability: "operator.procurement.write",
@@ -129,14 +128,6 @@ describe("operator procurement tools", () => {
         execution: "mutation",
       });
     }
-    expect(getOperatorAgentToolSpec("delete_procurement_memory")).toMatchObject(
-      {
-        capability: "operator.procurement.write",
-        effect: "destructive",
-        confirmation: "exact",
-        execution: "mutation",
-      },
-    );
   });
 
   test("supports filing a thread attachment into a procurement request", () => {
@@ -221,19 +212,15 @@ describe("operator client parity tools", () => {
         execution: "action",
       });
     }
-    expect(getOperatorAgentToolSpec("lookup_client_memory")).toMatchObject({
+    expect(getOperatorAgentToolSpec("lookup_client_wiki")).toMatchObject({
       effect: "read",
       confirmation: "none",
       execution: "mutation",
     });
-    for (const name of ["create_client_memory", "update_client_memory"]) {
-      expect(getOperatorAgentToolSpec(name), name).toMatchObject({
-        effect: "reversible_write",
-        confirmation: "exact",
-      });
-    }
-    expect(getOperatorAgentToolSpec("delete_client_memory")).toMatchObject({
-      effect: "destructive",
+    expect(
+      getOperatorAgentToolSpec("update_client_wiki_section"),
+    ).toMatchObject({
+      effect: "reversible_write",
       confirmation: "exact",
     });
     expect(getOperatorAgentToolSpec("confirm_policy_fact")).toMatchObject({

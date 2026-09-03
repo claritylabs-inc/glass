@@ -68,22 +68,13 @@ import {
   createStandaloneBrokerByOperator,
   updateBrokerProfileByOperator,
 } from "./brokerProfiles";
+import { readOrgWiki, upsertOrgWikiSectionByOperator } from "./orgWiki";
 import {
-  createCompanyMemoryByOperator,
-  deleteCompanyMemoryByOperator,
-  updateCompanyMemoryByOperator,
-} from "./orgMemory";
-import {
-  createProcurementMemoryByOperator,
-  deleteProcurementMemoryByOperator,
-  listProcurementMemory,
-  updateProcurementMemoryByOperator,
-  type ProcurementMemoryKind,
-} from "./procurementMemory";
-import {
-  isCompanyContextMemory,
-  rankOrgMemoryForQuery,
-} from "./lib/orgMemoryPolicy";
+  listPacketSections,
+  upsertPacketSectionByOperator,
+} from "./procurementPacket";
+import type { PacketAudience } from "./lib/procurementPacket";
+import { isOrgWikiSectionKey } from "./lib/orgWiki";
 import { normalizedSearchText, uniqueSearchTerms } from "./lib/searchTokenizer";
 import { preflightOperatorToolConfirmation } from "./lib/operatorAgentConfirmationPreflight";
 import {
@@ -280,8 +271,6 @@ const DISPLAY_REFERENCE_FALLBACKS: Record<string, string> = {
   replacingPolicyId: "the policy being replaced",
   resultingPolicyId: "the resulting policy",
   clientFileId: "the selected client file",
-  memoryId: "the selected company fact",
-  procurementMemoryId: "the selected procurement fact",
   procurementRequestId: "the selected procurement request",
   procurementOutreachId: "the selected broker outreach",
   procurementFileItemId: "the selected procurement file",
@@ -315,20 +304,6 @@ async function referenceDisplayName(
     const id = ctx.db.normalizeId("clientFiles", value);
     const row = id ? await ctx.db.get(id) : null;
     return row?.name?.trim() || DISPLAY_REFERENCE_FALLBACKS[key];
-  }
-  if (key === "memoryId") {
-    const id = ctx.db.normalizeId("orgMemory", value);
-    const row = id ? await ctx.db.get(id) : null;
-    return row?.content
-      ? `“${boundedDisplayText(row.content, 100)}”`
-      : DISPLAY_REFERENCE_FALLBACKS[key];
-  }
-  if (key === "procurementMemoryId") {
-    const id = ctx.db.normalizeId("procurementMemory", value);
-    const row = id ? await ctx.db.get(id) : null;
-    return row?.content
-      ? `“${boundedDisplayText(row.content, 100)}”`
-      : DISPLAY_REFERENCE_FALLBACKS[key];
   }
   if (key === "procurementRequestId") {
     const id = ctx.db.normalizeId("procurementRequests", value);
@@ -676,6 +651,12 @@ function assertOperatorRole(
   }
 }
 
+function packetSectionKey(value: unknown) {
+  const key = typeof value === "string" ? value.trim() : "";
+  if (!key) throw new Error("Packet section key is required");
+  return key;
+}
+
 function normalizedOptionalText(value: unknown) {
   if (value === null) return undefined;
   if (typeof value !== "string") return undefined;
@@ -739,26 +720,6 @@ function normalizeClientFileId(ctx: QueryCtx | MutationCtx, value: unknown) {
   const clientFileId = ctx.db.normalizeId("clientFiles", value);
   if (!clientFileId) throw new Error("Invalid client file ID");
   return clientFileId;
-}
-
-function normalizeOrgMemoryId(ctx: QueryCtx | MutationCtx, value: unknown) {
-  if (typeof value !== "string")
-    throw new Error("Company memory ID is required");
-  const memoryId = ctx.db.normalizeId("orgMemory", value);
-  if (!memoryId) throw new Error("Invalid company memory ID");
-  return memoryId;
-}
-
-function normalizeProcurementMemoryId(
-  ctx: QueryCtx | MutationCtx,
-  value: unknown,
-) {
-  if (typeof value !== "string") {
-    throw new Error("Procurement memory ID is required");
-  }
-  const memoryId = ctx.db.normalizeId("procurementMemory", value);
-  if (!memoryId) throw new Error("Invalid procurement memory ID");
-  return memoryId;
 }
 
 function normalizeProcurementRequestId(
@@ -919,15 +880,17 @@ function procurementEmailCategory(value: unknown) {
   }
 }
 
-function procurementMemoryKind(value: unknown): ProcurementMemoryKind {
+function packetAudience(value: unknown): PacketAudience | undefined {
   switch (value) {
-    case "placement_preference":
-    case "broker_appetite":
-    case "submission_requirement":
-    case "market_observation":
+    case "operator":
+    case "client":
+    case "broker":
       return value;
+    case undefined:
+    case null:
+      return undefined;
     default:
-      throw new Error("Invalid procurement memory kind");
+      throw new Error("Invalid packet audience");
   }
 }
 
@@ -1500,130 +1463,43 @@ async function executeToolDomain(
     };
   }
 
-  if (toolName === "lookup_client_memory") {
+  if (toolName === "lookup_client_wiki") {
     const orgId = normalizeOrganizationId(ctx, input.orgId);
     const organization = await ctx.db.get(orgId);
     if (!organization || organization.type !== "client") {
       throw new Error("Client organization not found");
     }
-    const rows = await ctx.db
-      .query("orgMemory")
-      .withIndex("organization", (index) => index.eq("orgId", orgId))
-      .take(500);
-    const now = dayjs().valueOf();
-    const facts = rows.filter(
-      (memory) =>
-        (!memory.expiresAt || memory.expiresAt > now) &&
-        isCompanyContextMemory({
-          type: memory.type,
-          content: memory.content,
-          orgName: organization.name,
-          policyId: memory.policyId,
-          provenance: memory.provenance,
-        }),
-    );
-    return {
-      facts: rankOrgMemoryForQuery(
-        typeof input.query === "string" ? input.query : "",
-        facts,
-        typeof input.limit === "number" ? input.limit : 50,
-      ),
-    };
+    return await readOrgWiki(ctx, orgId);
   }
 
-  if (toolName === "create_client_memory") {
-    return await createCompanyMemoryByOperator(ctx, {
+  if (toolName === "update_client_wiki_section") {
+    if (!isOrgWikiSectionKey(input.key)) {
+      throw new Error("Unknown company wiki section");
+    }
+    return await upsertOrgWikiSectionByOperator(ctx, {
       operatorUserId: args.operatorUserId,
       orgId: normalizeOrganizationId(ctx, input.orgId),
-      content: typeof input.content === "string" ? input.content : "",
+      key: input.key,
+      body: typeof input.body === "string" ? input.body : "",
       source: args.channel === "mcp" ? "mcp" : "operator",
     });
   }
 
-  if (toolName === "update_client_memory") {
-    return await updateCompanyMemoryByOperator(ctx, {
-      operatorUserId: args.operatorUserId,
-      id: normalizeOrgMemoryId(ctx, input.memoryId),
-      content: typeof input.content === "string" ? input.content : "",
-      source: args.channel === "mcp" ? "mcp" : "operator",
+  if (toolName === "lookup_procurement_packet") {
+    return await listPacketSections(ctx, {
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      audience: packetAudience(input.audience),
     });
   }
 
-  if (toolName === "delete_client_memory") {
-    return await deleteCompanyMemoryByOperator(ctx, {
+  if (toolName === "update_procurement_packet_section") {
+    return await upsertPacketSectionByOperator(ctx, {
       operatorUserId: args.operatorUserId,
-      id: normalizeOrgMemoryId(ctx, input.memoryId),
-    });
-  }
-
-  if (toolName === "lookup_procurement_memory") {
-    const clientOrgId = normalizeOrganizationId(ctx, input.orgId);
-    const rows = await listProcurementMemory(ctx, {
-      clientOrgId,
-      requestId: input.procurementRequestId
-        ? normalizeProcurementRequestId(ctx, input.procurementRequestId)
-        : undefined,
-      kind: input.kind ? procurementMemoryKind(input.kind) : undefined,
-      query: normalizedOptionalText(input.query),
-      limit: typeof input.limit === "number" ? input.limit : undefined,
-    });
-    return { memories: rows };
-  }
-
-  if (toolName === "create_procurement_memory") {
-    return await createProcurementMemoryByOperator(ctx, {
-      operatorUserId: args.operatorUserId,
-      clientOrgId: normalizeOrganizationId(ctx, input.orgId),
-      kind: procurementMemoryKind(input.kind),
-      content: typeof input.content === "string" ? input.content : "",
-      source: args.channel === "mcp" ? "mcp" : "operator_agent",
-      requestId: input.procurementRequestId
-        ? normalizeProcurementRequestId(ctx, input.procurementRequestId)
-        : undefined,
-      outreachId: input.procurementOutreachId
-        ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
-        : undefined,
-      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
-      sourceRef: normalizedOptionalText(input.sourceRef),
-      confidence:
-        typeof input.confidence === "number" ? input.confidence : undefined,
-    });
-  }
-
-  if (toolName === "update_procurement_memory") {
-    return await updateProcurementMemoryByOperator(ctx, {
-      operatorUserId: args.operatorUserId,
-      id: normalizeProcurementMemoryId(ctx, input.procurementMemoryId),
-      kind: input.kind ? procurementMemoryKind(input.kind) : undefined,
-      content: typeof input.content === "string" ? input.content : undefined,
-      requestId:
-        input.procurementRequestId === null
-          ? null
-          : input.procurementRequestId
-            ? normalizeProcurementRequestId(ctx, input.procurementRequestId)
-            : undefined,
-      outreachId:
-        input.procurementOutreachId === null
-          ? null
-          : input.procurementOutreachId
-            ? normalizeProcurementOutreachId(ctx, input.procurementOutreachId)
-            : undefined,
-      brokerOrgId: input.brokerOrgId
-        ? normalizeOrganizationId(ctx, input.brokerOrgId)
-        : undefined,
-      confidence:
-        input.confidence === null
-          ? null
-          : typeof input.confidence === "number"
-            ? input.confidence
-            : undefined,
-    });
-  }
-
-  if (toolName === "delete_procurement_memory") {
-    return await deleteProcurementMemoryByOperator(ctx, {
-      operatorUserId: args.operatorUserId,
-      id: normalizeProcurementMemoryId(ctx, input.procurementMemoryId),
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      key: packetSectionKey(input.key),
+      body: typeof input.body === "string" ? input.body : "",
+      audience: packetAudience(input.audience),
+      source: "operator_agent",
     });
   }
 
@@ -2423,7 +2299,7 @@ async function executeToolDomain(
       0,
       internal.memoryMaintenance.clearTableBatch,
       {
-        table: "orgMemory",
+        table: "orgWikiSections",
       },
     );
     await ctx.scheduler.runAfter(
@@ -2436,13 +2312,16 @@ async function executeToolDomain(
     await writeOperatorAudit(ctx, {
       operatorUserId: args.operatorUserId,
       type: "memory_cleared",
-      summary: "Scheduled org memory and raw conversation memory purge",
+      summary: "Scheduled company wiki and raw conversation memory purge",
       metadata: {
         domain: "operator_agent",
-        tables: ["orgMemory", "conversationTurns"],
+        tables: ["orgWikiSections", "conversationTurns"],
       },
     });
-    return { status: "scheduled", tables: ["orgMemory", "conversationTurns"] };
+    return {
+      status: "scheduled",
+      tables: ["orgWikiSections", "conversationTurns"],
+    };
   }
 
   throw new Error(`Unsupported operator tool: ${toolName}`);

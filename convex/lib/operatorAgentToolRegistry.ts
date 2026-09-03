@@ -1,4 +1,6 @@
 import { z } from "zod";
+
+import { ORG_WIKI_SECTION_KEYS } from "./orgWiki";
 import {
   GENERATE_COI_DESCRIPTION,
   generateCoiInputSchema,
@@ -59,11 +61,13 @@ function clearable<TSchema extends z.ZodType>(schema: TSchema) {
 const organizationId = z.string().min(1).describe("Exact organization ID");
 const policyId = z.string().min(1).describe("Exact policy ID");
 const clientFileId = z.string().min(1).describe("Exact client file ID");
-const orgMemoryId = z.string().min(1).describe("Exact company memory ID");
-const procurementMemoryId = z
+const orgWikiSectionKey = z
+  .enum(ORG_WIKI_SECTION_KEYS)
+  .describe("Company wiki section key");
+const procurementPacketSectionKey = z
   .string()
   .min(1)
-  .describe("Exact procurement memory ID");
+  .describe("Canonical packet section key");
 const procurementRequestId = z
   .string()
   .min(1)
@@ -141,12 +145,7 @@ const procurementEmailCategory = z.enum([
   "mixed",
   "other",
 ]);
-const procurementMemoryKind = z.enum([
-  "placement_preference",
-  "broker_appetite",
-  "submission_requirement",
-  "market_observation",
-]);
+const packetAudience = z.enum(["operator", "client", "broker"]);
 
 export const OPERATOR_AGENT_TOOL_REGISTRY = {
   search_organizations: defineOperatorTool({
@@ -404,149 +403,75 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     target: (input) => ({ kind: "client_file", id: input.clientFileId }),
     summarize: (input) => `Attach client file ${input.clientFileId}`,
   }),
-  lookup_client_memory: defineOperatorTool({
+  lookup_client_wiki: defineOperatorTool({
     version: 1,
     description:
-      "Look up durable company-profile facts for one exact client organization. Never use this for policy or workflow facts.",
-    inputSchema: z.object({
-      orgId: organizationId,
-      query: omittable(z.string().max(500)),
-      limit: omittable(z.number().int().min(1).max(100)),
-    }),
-    capability: "operator.memory.read",
+      "Read the whole company wiki for one exact client organization: the assembled markdown, its sections, and the sections still empty. Never use this for policy or workflow facts.",
+    inputSchema: z.object({ orgId: organizationId }),
+    capability: "operator.wiki.read",
     effect: "read",
     requiredRole: "operator",
     confirmation: "none",
     target: (input) => ({ kind: "organization", id: input.orgId }),
     summarize: (input) =>
-      `Look up company memory for organization ${input.orgId}`,
+      `Read the company wiki for organization ${input.orgId}`,
   }),
-  create_client_memory: defineOperatorTool({
+  update_client_wiki_section: defineOperatorTool({
     version: 1,
     description:
-      "Create one durable stable company-profile fact for an exact client. Policy, certificate, email, and workflow facts are rejected.",
+      "Rewrite one section of a client's company wiki. Send the whole section body as markdown; an empty body clears the section. Policy, certificate, email, and workflow facts are rejected.",
     inputSchema: z.object({
       orgId: organizationId,
-      content: z.string().min(1).max(280),
+      key: orgWikiSectionKey,
+      body: z.string().max(20_000),
     }),
-    capability: "operator.memory.write",
+    capability: "operator.wiki.write",
     effect: "reversible_write",
     requiredRole: "operator",
     confirmation: "exact",
     target: (input) => ({ kind: "organization", id: input.orgId }),
     summarize: (input) =>
-      `Create company memory for organization ${input.orgId}`,
+      `Update company wiki section ${input.key} for organization ${input.orgId}`,
   }),
-  update_client_memory: defineOperatorTool({
-    version: 1,
-    description: "Update one exact durable company-memory fact.",
-    inputSchema: z.object({
-      memoryId: orgMemoryId,
-      content: z.string().min(1).max(280),
-    }),
-    capability: "operator.memory.write",
-    effect: "reversible_write",
-    requiredRole: "operator",
-    confirmation: "exact",
-    target: (input) => ({ kind: "organization_memory", id: input.memoryId }),
-    summarize: (input) => `Update company memory ${input.memoryId}`,
-  }),
-  delete_client_memory: defineOperatorTool({
-    version: 1,
-    description: "Permanently delete one exact durable company-memory fact.",
-    inputSchema: z.object({ memoryId: orgMemoryId }),
-    capability: "operator.memory.write",
-    effect: "destructive",
-    requiredRole: "operator",
-    confirmation: "exact",
-    target: (input) => ({ kind: "organization_memory", id: input.memoryId }),
-    summarize: (input) => `Delete company memory ${input.memoryId}`,
-  }),
-  lookup_procurement_memory: defineOperatorTool({
+  lookup_procurement_packet: defineOperatorTool({
     version: 1,
     description:
-      "Look up durable procurement learnings for one exact client, optionally filtered by request, kind, or text.",
+      "Read the packet for one exact procurement request: ordered markdown sections, the sections still empty, and one assembled markdown document that opens with the client's company wiki as background before the packet itself.",
     inputSchema: z.object({
-      orgId: organizationId,
-      procurementRequestId: omittable(procurementRequestId),
-      kind: omittable(procurementMemoryKind),
-      query: omittable(z.string().max(500)),
-      limit: omittable(z.number().int().min(1).max(100)),
+      procurementRequestId,
+      audience: omittable(packetAudience),
     }),
     capability: "operator.procurement.read",
     effect: "read",
     requiredRole: "operator",
     confirmation: "none",
-    target: (input) => ({ kind: "organization", id: input.orgId }),
+    target: (input) => ({
+      kind: "procurement_request",
+      id: input.procurementRequestId,
+    }),
     summarize: (input) =>
-      `Look up procurement memory for organization ${input.orgId}`,
+      `Read the packet for procurement request ${input.procurementRequestId}`,
   }),
-  create_procurement_memory: defineOperatorTool({
+  update_procurement_packet_section: defineOperatorTool({
     version: 1,
     description:
-      "Create one durable client-scoped procurement learning with optional request, outreach, and broker provenance.",
+      "Rewrite one section of a procurement request packet. Send the whole section body as markdown; an empty body clears the section.",
     inputSchema: z.object({
-      orgId: organizationId,
-      kind: procurementMemoryKind,
-      content: z.string().min(1).max(2_000),
-      procurementRequestId: omittable(procurementRequestId),
-      procurementOutreachId: omittable(procurementOutreachId),
-      brokerOrgId: omittable(organizationId),
-      sourceRef: omittable(z.string().max(500)),
-      confidence: omittable(z.number().min(0).max(1)),
+      procurementRequestId,
+      key: procurementPacketSectionKey,
+      body: z.string().max(20_000),
+      audience: omittable(packetAudience),
     }),
     capability: "operator.procurement.write",
     effect: "reversible_write",
     requiredRole: "operator",
     confirmation: "exact",
-    target: (input) => ({ kind: "organization", id: input.orgId }),
-    summarize: (input) =>
-      `Create procurement memory for organization ${input.orgId}`,
-  }),
-  update_procurement_memory: defineOperatorTool({
-    version: 1,
-    description:
-      "Update one exact procurement learning and its optional provenance links.",
-    inputSchema: z
-      .object({
-        procurementMemoryId,
-        kind: omittable(procurementMemoryKind),
-        content: omittable(z.string().min(1).max(2_000)),
-        procurementRequestId: clearable(procurementRequestId),
-        procurementOutreachId: clearable(procurementOutreachId),
-        brokerOrgId: clearable(organizationId),
-        confidence: clearable(z.number().min(0).max(1)),
-      })
-      .refine(
-        (input) =>
-          Object.keys(input).some((key) => key !== "procurementMemoryId"),
-        "At least one procurement memory field is required",
-      ),
-    capability: "operator.procurement.write",
-    effect: "reversible_write",
-    requiredRole: "operator",
-    confirmation: "exact",
     target: (input) => ({
-      kind: "procurement_memory",
-      id: input.procurementMemoryId,
+      kind: "procurement_request",
+      id: input.procurementRequestId,
     }),
     summarize: (input) =>
-      `Update procurement memory ${input.procurementMemoryId}`,
-  }),
-  delete_procurement_memory: defineOperatorTool({
-    version: 1,
-    description: "Permanently delete one exact procurement learning.",
-    inputSchema: z.object({ procurementMemoryId }),
-    capability: "operator.procurement.write",
-    effect: "destructive",
-    requiredRole: "operator",
-    confirmation: "exact",
-    target: (input) => ({
-      kind: "procurement_memory",
-      id: input.procurementMemoryId,
-    }),
-    summarize: (input) =>
-      `Delete procurement memory ${input.procurementMemoryId}`,
+      `Update procurement packet section ${input.key} on request ${input.procurementRequestId}`,
   }),
   list_procurement_requests: defineOperatorTool({
     version: 1,

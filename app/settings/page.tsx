@@ -17,7 +17,7 @@ import { OrganizationSection } from "@/components/settings/organization-section"
 import { TeamSection } from "@/components/settings/team-section";
 import { EmailConnectionsSection } from "@/components/settings/email-connections-section";
 import { ConnectionsSection } from "@/components/settings/connections-section";
-import { MemorySection } from "@/components/settings/memory-section";
+import { CompanyWikiSection } from "@/components/settings/company-wiki-section";
 import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
 import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
 import { CertificateWorkflowSection } from "@/components/settings/certificate-workflow-section";
@@ -162,7 +162,7 @@ function SectionContent({
         return <AgentChannelsSection clientOrgId={currentOrg.orgId} />;
       }
     }
-    if (tab === "memory") return <MemorySection />;
+    if (tab === "wiki") return <CompanyWikiSection />;
     return <BrokerAgentTab />;
   }
   if (section === "workflows") {

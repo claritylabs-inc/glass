@@ -27,7 +27,7 @@ type OperatorClientNavigationSection =
   | "policies"
   | "procurement"
   | "files"
-  | "memory"
+  | "wiki"
   | "compliance"
   | "team"
   | "settings";
@@ -76,10 +76,10 @@ function activeClientSection({
     return "files";
   }
   if (
-    pathname === `${basePath}/memory` ||
-    pathname.startsWith(`${basePath}/memory/`)
+    pathname === `${basePath}/wiki` ||
+    pathname.startsWith(`${basePath}/wiki/`)
   ) {
-    return "memory";
+    return "wiki";
   }
   if (
     pathname === `${basePath}/compliance` ||
@@ -164,10 +164,10 @@ export function OperatorClientSidebar({
             collapsed={collapsed}
           />
           <SidebarMenuItem
-            href={`${basePath}/memory`}
-            label="Memory"
+            href={`${basePath}/wiki`}
+            label="Company wiki"
             icon={Brain}
-            active={active === "memory"}
+            active={active === "wiki"}
             collapsed={collapsed}
           />
           <SectionHeader label="Insurance" collapsed={collapsed} />

@@ -1,7 +1,6 @@
 import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
 
-export type OrgMemoryType = "fact" | "preference" | "risk_note" | "observation";
-export type OrgMemorySource =
+export type OrgWikiSource =
   | "extraction"
   | "analysis"
   | "chat"
@@ -12,22 +11,7 @@ export type OrgMemorySource =
   | "operator"
   | "mcp";
 
-export type OrgMemoryProvenance = {
-  kind: "organization_fact";
-  derivation:
-    | "company_profile_extraction"
-    | "conversation_extraction"
-    | "agent_tool";
-  schemaVersion: "organization-fact-v1";
-};
-
-export const COMPANY_CONTEXT_MEMORY_MAX_LENGTH = 280;
-
-type OrgMemoryContextItem = {
-  type?: string;
-  content: string;
-  updatedAt: number;
-};
+export const COMPANY_WIKI_FACT_MAX_LENGTH = 280;
 
 const ORG_SUFFIXES = new Set([
   "inc",
@@ -42,7 +26,7 @@ const ORG_SUFFIXES = new Set([
   "the",
 ]);
 
-const UNSAFE_COMPANY_MEMORY_PATTERNS = [
+const UNSAFE_COMPANY_WIKI_PATTERNS = [
   /\b(the\s+)?(agent|assistant)\b.*\b(can|cannot|can't|will|should|must|requires?|needs?|asks?|asked|responded|said|stated|indicated|sent|attached|drafts?|blocked|unable|proceed|initiated)\b/i,
   /\bspot\b.*\b(can|cannot|can't|will|should|must|requires?|needs?|asks?|asked|sent|attached|drafts?|generates?|blocked|unable)\b/i,
   /\b(the\s+)?user\b.*\b(requested|asked|wants|can proceed|provided|indicates|confirmed|approved|approval|needs?|requires?)\b/i,
@@ -73,56 +57,24 @@ export function mentionsOrganization(content: string, orgName?: string | null) {
   return tokens.every((token) => normalizedContent.includes(token));
 }
 
-export function normalizeMemoryContent(content: string) {
+export function normalizeWikiContent(content: string) {
   return content.trim().replace(/\s+/g, " ");
 }
 
-export function rankOrgMemoryForQuery<T extends OrgMemoryContextItem>(
-  queryText: string,
-  memories: T[],
-  limit: number,
-): T[] {
-  const normalizedQuery = normalizedSearchText(queryText);
-  const terms = uniqueSearchTerms(queryText, { minimumLength: 3 });
-  return memories
-    .map((memory) => {
-      const content = normalizedSearchText(memory.content);
-      const score =
-        (normalizedQuery && content.includes(normalizedQuery) ? 8 : 0) +
-        terms.reduce(
-          (total, term) => total + (content.includes(term) ? 1 : 0),
-          0,
-        );
-      return { memory, score };
-    })
-    .sort(
-      (a, b) => b.score - a.score || b.memory.updatedAt - a.memory.updatedAt,
-    )
-    .slice(0, limit)
-    .map(({ memory }) => memory);
-}
-
-export function isCompanyContextMemory(args: {
-  type: OrgMemoryType;
+/** Gate every line written into the wiki. `trusted` marks a schema-validated
+ * extraction path, which may use first-person phrasing the free-text agent
+ * tools must not. */
+export function isCompanyWikiFact(args: {
   content: string;
   orgName?: string | null;
-  policyId?: unknown;
-  provenance?: OrgMemoryProvenance;
+  trusted?: boolean;
 }) {
-  const content = normalizeMemoryContent(args.content);
-  if (args.type !== "fact") return false;
-  if (!content || content.length > COMPANY_CONTEXT_MEMORY_MAX_LENGTH)
-    return false;
-  if (args.policyId) return false;
+  const content = normalizeWikiContent(args.content);
+  if (!content || content.length > COMPANY_WIKI_FACT_MAX_LENGTH) return false;
   if (!mentionsOrganization(content, args.orgName)) return false;
-  if (
-    args.provenance?.kind === "organization_fact" &&
-    args.provenance.schemaVersion === "organization-fact-v1"
-  ) {
-    return true;
-  }
+  if (args.trusted) return true;
   if (/^(we|our|i|the user|user)\b/i.test(content)) return false;
-  return !UNSAFE_COMPANY_MEMORY_PATTERNS.some((pattern) =>
+  return !UNSAFE_COMPANY_WIKI_PATTERNS.some((pattern) =>
     pattern.test(content),
   );
 }

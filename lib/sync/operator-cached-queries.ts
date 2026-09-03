@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import dayjs from "dayjs";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
@@ -120,7 +120,10 @@ export function useCachedOperatorBrokers(search?: string) {
     api.brokerProfiles.list,
     search ? { search } : {},
   );
-  return rows?.map(({ broker }) => ({ _id: broker._id, name: broker.name }));
+  return useMemo(
+    () => rows?.map(({ broker }) => ({ _id: broker._id, name: broker.name })),
+    [rows],
+  );
 }
 
 export function useCachedOperatorClients() {

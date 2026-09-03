@@ -595,7 +595,7 @@ export const clearAllAgentMemory = mutation({
       0,
       internalApi.memoryMaintenance.clearTableBatch,
       {
-        table: "orgMemory",
+        table: "orgWikiSections",
       },
     );
     await ctx.scheduler.runAfter(
@@ -608,14 +608,14 @@ export const clearAllAgentMemory = mutation({
     await writeOperatorAudit(ctx, {
       operatorUserId: operator.userId,
       type: "memory_cleared",
-      summary: "Scheduled org memory and raw conversation memory purge",
+      summary: "Scheduled company wiki and raw conversation memory purge",
       metadata: {
-        tables: ["orgMemory", "conversationTurns"],
+        tables: ["orgWikiSections", "conversationTurns"],
       },
     });
 
     return {
-      scheduled: ["orgMemory", "conversationTurns"],
+      scheduled: ["orgWikiSections", "conversationTurns"],
     };
   },
 });

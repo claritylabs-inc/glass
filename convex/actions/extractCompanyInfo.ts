@@ -181,7 +181,7 @@ ${content}`,
   });
 
   const seen = new Set<string>();
-  const memoryItems = (object.atomicFacts ?? [])
+  const facts = (object.atomicFacts ?? [])
     .map((fact) => fact.trim())
     .filter((fact) => {
       if (!fact) return false;
@@ -190,22 +190,15 @@ ${content}`,
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    })
-    .map((content) => ({
-      orgId: targetOrgId,
-      type: "fact" as const,
-      content,
-      source: "extraction" as const,
-      provenance: {
-        kind: "organization_fact" as const,
-        derivation: "company_profile_extraction" as const,
-        schemaVersion: "organization-fact-v1" as const,
-      },
-    }));
+    });
 
-  if (memoryItems.length > 0) {
-    await ctx.runMutation(internal.orgMemory.bulkInsert, {
-      items: memoryItems,
+  if (facts.length > 0) {
+    await ctx.runMutation(internal.orgWiki.appendFacts, {
+      orgId: targetOrgId,
+      key: "profile",
+      facts,
+      source: "extraction",
+      trusted: true,
     });
   }
 

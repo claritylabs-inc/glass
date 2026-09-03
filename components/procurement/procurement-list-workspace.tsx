@@ -9,23 +9,13 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
-import {
-  Copy,
-  FileSearch,
-  Loader2,
-  Mail,
-  PanelRightOpen,
-  Plus,
-} from "lucide-react";
+import { Copy, FileSearch, Loader2, PanelRightOpen, Plus } from "lucide-react";
 import { toast } from "sonner";
 
-import { ProcurementEmailDrawer } from "@/components/procurement/procurement-shared";
-import { ProcurementMemoryWorkspace } from "@/components/procurement/procurement-memory-workspace";
 import {
   REQUEST_STATUS_OPTIONS,
   RequestStatusTag,
   procurementRequestStatusLabel,
-  EmailCategoryBadge,
   type ProcurementRequestStatus,
 } from "@/components/procurement/procurement-shared";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
@@ -53,11 +43,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
+import { formatDisplayDate } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
@@ -84,16 +73,6 @@ type ProcurementRequestRow = {
   outstandingFileCount: number;
   emailThreadCount: number;
   updatedAt: number;
-};
-
-type ProcurementEmailRow = {
-  _id: Id<"procurementEmailThreads">;
-  requestId: Id<"procurementRequests">;
-  subject: string;
-  category: "broker" | "client" | "internal" | "mixed" | "other";
-  participantEmails: string[];
-  latestMessageAt: number;
-  messageCount: number;
 };
 
 function ProcurementRequestPreview({
@@ -163,11 +142,13 @@ function ProcurementRequestPreview({
             value={request.requestSummary}
             layout="stacked"
           />
-          <OperationalLabelValueRow
-            label="Requirements"
-            value={request.requirements}
-            layout="stacked"
-          />
+          {request.requirements.trim() !== request.requestSummary.trim() ? (
+            <OperationalLabelValueRow
+              label="Requirements"
+              value={request.requirements}
+              layout="stacked"
+            />
+          ) : null}
         </OperationalLabelValueList>
 
         <OperationalLabelValueList title="Forwarding email">
@@ -377,14 +358,12 @@ function NewProcurementRequestDrawer({
 export function ProcurementListWorkspace({
   clientOrgId,
   basePath,
-  view,
   readOnly,
   onActions,
   onRightPanel,
 }: {
   clientOrgId: Id<"organizations">;
   basePath: string;
-  view: "requests" | "emails" | "memory";
   readOnly: boolean;
   onActions?: (node: ReactNode) => void;
   onRightPanel: (node: ReactNode) => void;
@@ -396,10 +375,6 @@ export function ProcurementListWorkspace({
   });
   const policyRows = useQuery(api.procurementRequests.listPolicyOptions, {
     clientOrgId,
-  });
-  const emailRows = useQuery(api.procurementRequests.listEmailThreads, {
-    clientOrgId,
-    limit: 200,
   });
   const requests = useMemo(
     () => (requestRows ?? []) as ProcurementRequestRow[],
@@ -431,21 +406,6 @@ export function ProcurementListWorkspace({
     );
   }, [basePath, clientOrgId, closeRightPanel, onRightPanel, policies, router]);
 
-  const openEmail = useCallback(
-    (emailThreadId: Id<"procurementEmailThreads">) => {
-      setSelectedRequestId(null);
-      onRightPanel(
-        <ProcurementEmailDrawer
-          emailThreadId={emailThreadId}
-          requests={requests}
-          readOnly={readOnly}
-          onClose={closeRightPanel}
-        />,
-      );
-    },
-    [closeRightPanel, onRightPanel, readOnly, requests],
-  );
-
   const openRequestPreview = useCallback(
     (request: ProcurementRequestRow) => {
       setSelectedRequestId(request._id);
@@ -461,7 +421,6 @@ export function ProcurementListWorkspace({
   );
 
   useEffect(() => {
-    if (view === "memory") return;
     onActions?.(
       readOnly ? null : (
         <PillButton type="button" onClick={openNewRequest}>
@@ -471,18 +430,9 @@ export function ProcurementListWorkspace({
       ),
     );
     return () => onActions?.(null);
-  }, [onActions, openNewRequest, readOnly, view]);
+  }, [onActions, openNewRequest, readOnly]);
 
-  const requestsById = useMemo(
-    () => new Map(requests.map((request) => [request._id, request])),
-    [requests],
-  );
-
-  if (
-    requestRows === undefined ||
-    policyRows === undefined ||
-    emailRows === undefined
-  ) {
+  if (requestRows === undefined || policyRows === undefined) {
     return (
       <OperationalPanel
         as="div"
@@ -493,158 +443,58 @@ export function ProcurementListWorkspace({
     );
   }
 
-  const emails = emailRows as ProcurementEmailRow[];
-
-  return (
-    <div className="space-y-6">
-      <div className="overflow-x-auto">
-        <Tabs
-          value={view}
-          onValueChange={(value) => {
-            closeRightPanel();
-            router.push(
-              value === "emails"
-                ? `${basePath}?view=emails`
-                : value === "memory"
-                  ? `${basePath}?view=memory`
-                  : basePath,
-            );
-          }}
-        >
-          <TabsList variant="pill" aria-label="Procurement view">
-            <TabsTrigger value="requests">Requests</TabsTrigger>
-            <TabsTrigger value="emails">Imported email</TabsTrigger>
-            <TabsTrigger value="memory">Memory</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {view === "memory" ? (
-        <ProcurementMemoryWorkspace
-          clientOrgId={clientOrgId}
-          requests={requests.map((request) => ({
-            _id: request._id,
-            title: request.title,
-          }))}
-          readOnly={readOnly}
-          onActions={onActions}
-          onRightPanel={onRightPanel}
-        />
-      ) : view === "requests" ? (
-        requests.length === 0 ? (
-          <EmptyStateCard
-            title="No procurement requests yet"
-            description="Create a request to centralize client requirements, broker outreach, documents, quotes, and forwarded email."
-            icon={<FileSearch className="size-6" />}
-            actionLabel={readOnly ? undefined : "New request"}
-            onAction={readOnly ? undefined : openNewRequest}
-          />
-        ) : (
-          <OperationalPanel as="div">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[52%]">Request</TableHead>
-                  <TableHead className="w-[18%]">Status</TableHead>
-                  <TableHead className="w-[18%]">Target date</TableHead>
-                  <TableHead className="w-[12%]">Updated</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {requests.map((request) => (
-                  <TableRow
-                    key={request._id}
-                    tabIndex={0}
-                    onClick={() => openRequestPreview(request)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      openRequestPreview(request);
-                    }}
-                    className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
-                      selectedRequestId === request._id ? "bg-muted/50" : ""
-                    }`}
-                  >
-                    <TableCell className="min-w-64 whitespace-normal">
-                      <p
-                        className={`text-foreground ${typeStyle("body.medium")}`}
-                      >
-                        {request.title}
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      <RequestStatusTag status={request.status} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDisplayDate(
-                        request.targetEffectiveDate,
-                        "Not set",
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDisplayDate(request.updatedAt, "—")}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </OperationalPanel>
-        )
-      ) : emails.length === 0 ? (
-        <EmptyStateCard
-          title="No imported email yet"
-          description="Forward a broker or client email thread to a request’s unique address. It will appear here automatically."
-          icon={<Mail className="size-6" />}
-        />
-      ) : (
-        <OperationalPanel as="div">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Subject</TableHead>
-                <TableHead>Participant</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Request</TableHead>
-                <TableHead>Last activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {emails.map((email) => (
-                <TableRow key={email._id}>
-                  <TableCell className="min-w-64 whitespace-normal">
-                    <button
-                      type="button"
-                      onClick={() => openEmail(email._id)}
-                      className={`text-left text-foreground underline-offset-4 hover:underline ${typeStyle("body.medium")}`}
-                    >
-                      {email.subject}
-                    </button>
-                    <p
-                      className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
-                    >
-                      {email.messageCount}{" "}
-                      {email.messageCount === 1 ? "message" : "messages"}
-                    </p>
-                  </TableCell>
-                  <TableCell className="max-w-64 truncate text-muted-foreground">
-                    {email.participantEmails[0] ?? "Unknown"}
-                  </TableCell>
-                  <TableCell>
-                    <EmailCategoryBadge category={email.category} />
-                  </TableCell>
-                  <TableCell className="min-w-44 text-muted-foreground">
-                    {requestsById.get(email.requestId)?.title ??
-                      "Unknown request"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDisplayDateTime(email.latestMessageAt, "—")}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </OperationalPanel>
-      )}
-    </div>
+  return requests.length === 0 ? (
+    <EmptyStateCard
+      title="No procurement requests yet"
+      description="Create a request to centralize client requirements, broker outreach, documents, quotes, and forwarded email."
+      icon={<FileSearch className="size-6" />}
+      actionLabel={readOnly ? undefined : "New request"}
+      onAction={readOnly ? undefined : openNewRequest}
+    />
+  ) : (
+    <OperationalPanel as="div">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[52%]">Request</TableHead>
+            <TableHead className="w-[18%]">Status</TableHead>
+            <TableHead className="w-[18%]">Target date</TableHead>
+            <TableHead className="w-[12%]">Updated</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {requests.map((request) => (
+            <TableRow
+              key={request._id}
+              tabIndex={0}
+              onClick={() => openRequestPreview(request)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                openRequestPreview(request);
+              }}
+              className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                selectedRequestId === request._id ? "bg-muted/50" : ""
+              }`}
+            >
+              <TableCell className="min-w-64 whitespace-normal">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
+                  {request.title}
+                </p>
+              </TableCell>
+              <TableCell>
+                <RequestStatusTag status={request.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {formatDisplayDate(request.targetEffectiveDate, "Not set")}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {formatDisplayDate(request.updatedAt, "\u2014")}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </OperationalPanel>
   );
 }

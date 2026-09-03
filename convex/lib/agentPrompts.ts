@@ -35,9 +35,7 @@ import { formatDocumentStructureForPrompt } from "./policyDocumentStructure";
 import { formatCoverageBreakdownForPrompt } from "./coverageBreakdown";
 import type { AgentScope } from "./agentScope";
 import { orgLabelForScope } from "./agentScope";
-import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
-export { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 
 export const MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES = 120;
 
@@ -132,46 +130,6 @@ export async function buildDocumentContext(
 
   // Fallback: build simple index (same as old SDK behavior)
   return buildFallbackContext(policies, queryText);
-}
-
-/**
- * Build org memory context from curated company-profile facts.
- */
-export async function buildIntelligenceContext(
-  ctx: ActionCtx,
-  orgId: Id<"organizations">,
-  queryText: string,
-  _excludePolicyIds?: string[],
-): Promise<string> {
-  try {
-    const memories = await ctx.runQuery(internal.orgMemory.listByOrg, {
-      orgId,
-      limit: 100,
-    });
-    if (!memories || memories.length === 0) return "";
-
-    const grouped: Record<string, string[]> = {};
-    for (const m of rankOrgMemoryForQuery(queryText, memories, 30)) {
-      const bucket = m.type ?? "observation";
-      if (!grouped[bucket]) grouped[bucket] = [];
-      grouped[bucket].push(`- ${m.content}`);
-    }
-
-    const labels: Record<string, string> = {
-      fact: "Facts",
-      preference: "Company Preferences",
-      risk_note: "Company Risk Notes",
-      observation: "Company Observations",
-    };
-
-    const sections: string[] = [];
-    for (const [bucket, items] of Object.entries(grouped)) {
-      sections.push(`${labels[bucket] ?? bucket}:\n${items.join("\n")}`);
-    }
-    return `\n\nCOMPANY CONTEXT MEMORY:\n${sections.join("\n\n")}`;
-  } catch {
-    return "";
-  }
 }
 
 export async function buildComplianceRequirementsContext(
@@ -721,20 +679,6 @@ export async function buildScopedDocumentContext(
 }> {
   const policies = policiesByOrg.get(String(scope.primaryOrgId)) ?? [];
   return buildDocumentContext(ctx, scope.primaryOrgId, policies, queryText);
-}
-
-export async function buildScopedOrgMemoryContext(
-  ctx: ActionCtx,
-  scope: AgentScope,
-  queryText: string,
-  excludePolicyIds?: string[],
-): Promise<string> {
-  return buildIntelligenceContext(
-    ctx,
-    scope.primaryOrgId,
-    queryText,
-    excludePolicyIds,
-  );
 }
 
 export async function buildScopedRequirementsContext(

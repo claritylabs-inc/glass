@@ -1942,15 +1942,19 @@ export function ProcurementRequestWorkspace({
                 </span>
               }
             />
-            <OperationalLabelValueRow
-              label="Procurement requirements"
-              layout="stacked"
-              value={
-                <span className="whitespace-pre-wrap">
-                  {details.request.requirements}
-                </span>
-              }
-            />
+            {details.request.requirements.trim() &&
+            details.request.requirements.trim() !==
+              details.request.requestSummary.trim() ? (
+              <OperationalLabelValueRow
+                label="Procurement requirements"
+                layout="stacked"
+                value={
+                  <span className="whitespace-pre-wrap">
+                    {details.request.requirements}
+                  </span>
+                }
+              />
+            ) : null}
           </OperationalLabelValueList>
         </div>
       ) : null}

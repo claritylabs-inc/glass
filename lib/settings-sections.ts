@@ -23,7 +23,7 @@ export type SettingsTabId =
   | "team"
   | "behavior"
   | "channels"
-  | "memory"
+  | "wiki"
   | "certificates"
   | "notifications"
   | "mailboxes"
@@ -82,7 +82,7 @@ export function getSettingsNavigation({
         ...(isBroker || isStandaloneClient
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),
-        ...(!isBroker ? [{ id: "memory" as const, label: "Memory" }] : []),
+        ...(!isBroker ? [{ id: "wiki" as const, label: "Company wiki" }] : []),
       ],
     },
     {
@@ -141,7 +141,9 @@ const LEGACY_DESTINATIONS: Record<
   organization: { section: "organization", tab: "overview" },
   team: { section: "team", tab: "team" },
   agent: { section: "agent", tab: "behavior" },
-  memory: { section: "agent", tab: "memory" },
+  wiki: { section: "agent", tab: "wiki" },
+  // Legacy deep link.
+  memory: { section: "agent", tab: "wiki" },
   certificates: { section: "workflows", tab: "certificates" },
   notifications: { section: "workflows", tab: "notifications" },
   email: { section: "mailboxes", tab: "mailboxes" },

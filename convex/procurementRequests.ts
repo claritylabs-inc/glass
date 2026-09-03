@@ -1289,18 +1289,6 @@ export async function listProcurementEmailThreads(
   return rows.filter(activeEmailThread).slice(0, limit);
 }
 
-export const listEmailThreads = query({
-  args: {
-    clientOrgId: v.id("organizations"),
-    requestId: v.optional(v.id("procurementRequests")),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    return await listProcurementEmailThreads(ctx, args);
-  },
-});
-
 export async function getProcurementEmailThreadDetails(
   ctx: Ctx,
   emailThreadId: Id<"procurementEmailThreads">,

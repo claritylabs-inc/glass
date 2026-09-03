@@ -100,13 +100,12 @@ describe("company information extraction lifecycle", () => {
         }),
         organizationFacts: [
           {
+            section: "operations",
             content: "Cove operates a commercial vehicle fleet.",
             confidence: 0.98,
           },
-        ],
-        procurementFacts: [
           {
-            kind: "placement_preference",
+            section: "preferences",
             content: "Cove prefers a $5,000 physical-damage deductible.",
             confidence: 0.95,
           },
@@ -116,8 +115,7 @@ describe("company information extraction lifecycle", () => {
 
     const populated = await fixture.t.run(async (ctx) => ({
       org: await ctx.db.get(fixture.clientOrgId),
-      memory: await ctx.db.query("orgMemory").collect(),
-      procurement: await ctx.db.query("procurementMemory").collect(),
+      memory: await ctx.db.query("orgWikiSections").collect(),
     }));
     expect(populated.org?.profileFacts).toMatchObject({
       fein: { value: "12-3456789" },
@@ -125,19 +123,21 @@ describe("company information extraction lifecycle", () => {
         value: "Commercial vehicle fleet operations",
       },
     });
-    expect(populated.memory).toEqual([
-      expect.objectContaining({
-        content: "Cove operates a commercial vehicle fleet.",
-        sourceRefs: [`client-file:${clientFileId}`],
-      }),
-    ]);
-    expect(populated.procurement).toEqual([
-      expect.objectContaining({
-        kind: "placement_preference",
-        source: "document",
-        sourceRefs: [`client-file:${clientFileId}`],
-      }),
-    ]);
+    expect(populated.memory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "operations",
+          body: "- Cove operates a commercial vehicle fleet.",
+          sourceRefs: [`client-file:${clientFileId}`],
+        }),
+        expect.objectContaining({
+          key: "preferences",
+          body: "- Cove prefers a $5,000 physical-damage deductible.",
+          sourceRefs: [`client-file:${clientFileId}`],
+        }),
+      ]),
+    );
+    expect(populated.memory).toHaveLength(2);
 
     await operator.mutation(api.clientFiles.setArchived, {
       clientFileId,
@@ -146,15 +146,13 @@ describe("company information extraction lifecycle", () => {
 
     const cleaned = await fixture.t.run(async (ctx) => ({
       org: await ctx.db.get(fixture.clientOrgId),
-      memory: await ctx.db.query("orgMemory").collect(),
-      procurement: await ctx.db.query("procurementMemory").collect(),
+      memory: await ctx.db.query("orgWikiSections").collect(),
       extractions: await ctx.db
         .query("companyInformationExtractions")
         .collect(),
     }));
     expect(cleaned.org?.profileFacts).toBeUndefined();
     expect(cleaned.memory).toEqual([]);
-    expect(cleaned.procurement).toEqual([]);
     expect(cleaned.extractions).toEqual([]);
   });
 
@@ -207,15 +205,9 @@ describe("company information extraction lifecycle", () => {
           profile: profile({ fein: "12-3456789" }),
           organizationFacts: [
             {
+              section: "operations",
               content: "Cove operates a commercial vehicle fleet.",
               confidence: 0.98,
-            },
-          ],
-          procurementFacts: [
-            {
-              kind: "placement_preference",
-              content: "Cove prefers a $5,000 physical-damage deductible.",
-              confidence: 0.95,
             },
           ],
         },
@@ -229,8 +221,7 @@ describe("company information extraction lifecycle", () => {
 
     const state = await fixture.t.run(async (ctx) => ({
       org: await ctx.db.get(fixture.clientOrgId),
-      memory: await ctx.db.query("orgMemory").unique(),
-      procurement: await ctx.db.query("procurementMemory").unique(),
+      memory: await ctx.db.query("orgWikiSections").unique(),
     }));
     expect(state.org?.profileFacts?.fein).toMatchObject({
       value: "12-3456789",
@@ -240,9 +231,6 @@ describe("company information extraction lifecycle", () => {
       },
     });
     expect(state.memory?.sourceRefs).toEqual([
-      `client-file:${clientFileIds[1]}`,
-    ]);
-    expect(state.procurement?.sourceRefs).toEqual([
       `client-file:${clientFileIds[1]}`,
     ]);
   });
@@ -311,15 +299,9 @@ describe("company information extraction lifecycle", () => {
         profile: profile(),
         organizationFacts: [
           {
+            section: "operations",
             content: "Cove owns and operates 18 commercial vehicles.",
             confidence: 0.96,
-          },
-        ],
-        procurementFacts: [
-          {
-            kind: "submission_requirement",
-            content: "The broker requires five years of loss runs for Cove's fleet submission.",
-            confidence: 0.97,
           },
         ],
       },
@@ -331,15 +313,13 @@ describe("company information extraction lifecycle", () => {
 
     const state = await fixture.t.run(async (ctx) => ({
       thread: await ctx.db.get(ids.emailThreadId),
-      memory: await ctx.db.query("orgMemory").collect(),
-      procurement: await ctx.db.query("procurementMemory").collect(),
+      memory: await ctx.db.query("orgWikiSections").collect(),
       extractions: await ctx.db
         .query("companyInformationExtractions")
         .collect(),
     }));
     expect(state.thread?.deletedAt).toEqual(expect.any(Number));
     expect(state.memory).toEqual([]);
-    expect(state.procurement).toEqual([]);
     expect(state.extractions).toEqual([]);
   });
 });

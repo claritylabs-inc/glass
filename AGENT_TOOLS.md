@@ -14,7 +14,7 @@ When any source above adds, removes, renames, or materially changes a tool, upda
 
 ## Operator agent registry
 
-The operator registry currently contains 57 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. Exact-confirmed tools run the shared reference preflight in `convex/lib/operatorAgentConfirmationPreflight.ts` before the confirmation is shown, and the write revalidates the same references at execution. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
+The operator registry currently contains 53 tools. Every non-read tool requires an exact, fingerprint-bound confirmation. Exact-confirmed tools run the shared reference preflight in `convex/lib/operatorAgentConfirmationPreflight.ts` before the confirmation is shown, and the write revalidates the same references at execution. `mutation` and `action` identify the Convex execution boundary, not whether the operation writes data.
 
 The internal Slack adapter exposes this registry through App Home DMs and direct mentions from any channel delivered by the installed Clarity host app. Convex applies no channel allowlist, type, privacy, sharing, or membership gate. Customer connection and Slack Connect binding resolution takes precedence, and every invocation still requires an active operator profile linked to the exact host-workspace Slack identity.
 
@@ -35,14 +35,10 @@ The internal Slack adapter exposes this registry through App Home DMs and direct
 | `list_client_files`                   | List a client's files, provenance, visibility, and policy links.                      | `operator.client_files.read`    | read             | operator | none         | mutation  |
 | `read_client_file`                    | Read bounded content from a client file, including private files.                     | `operator.client_files.read`    | read             | operator | none         | action    |
 | `attach_client_file`                  | Attach a client file to the operator response, including private files.               | `operator.client_files.read`    | read             | operator | none         | action    |
-| `lookup_client_memory`                | Retrieve stable company-context memory for one client.                                | `operator.memory.read`          | read             | operator | none         | mutation  |
-| `create_client_memory`                | Create a stable company-context memory fact for one client.                           | `operator.memory.write`         | reversible write | operator | exact        | mutation  |
-| `update_client_memory`                | Update one exact company-context memory fact.                                         | `operator.memory.write`         | reversible write | operator | exact        | mutation  |
-| `delete_client_memory`                | Permanently delete one exact company-context memory fact.                             | `operator.memory.write`         | destructive      | operator | exact        | mutation  |
-| `lookup_procurement_memory`           | Retrieve durable procurement learnings for one client.                                | `operator.procurement.read`     | read             | operator | none         | mutation  |
-| `create_procurement_memory`           | Create a client-scoped procurement learning with provenance.                          | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
-| `update_procurement_memory`           | Update one exact procurement learning and its provenance links.                       | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
-| `delete_procurement_memory`           | Permanently delete one exact procurement learning.                                    | `operator.procurement.write`    | destructive      | operator | exact        | mutation  |
+| `lookup_client_wiki`                  | Read one client's whole company wiki: markdown, sections, and gaps.                   | `operator.wiki.read`          | read             | operator | none         | mutation  |
+| `update_client_wiki_section`          | Rewrite one company wiki section as markdown; an empty body clears it.                 | `operator.wiki.write`         | reversible write | operator | exact        | mutation  |
+| `lookup_procurement_packet`           | Read one request's packet: sections, gaps, and the client wiki composed ahead of it.  | `operator.procurement.read`     | read             | operator | none         | mutation  |
+| `update_procurement_packet_section`   | Rewrite one request packet section as markdown; an empty body clears it.               | `operator.procurement.write`    | reversible write | operator | exact        | mutation  |
 | `list_procurement_requests`           | List new-policy procurement requests for one client.                                  | `operator.procurement.read`     | read             | operator | none         | mutation  |
 | `get_procurement_request`             | Read one procurement request and its broker, file, policy, and email state.           | `operator.procurement.read`     | read             | operator | none         | mutation  |
 | `list_procurement_proposals`          | List operator-private proposal offers for one exact request.                          | `operator.procurement.read`     | read             | operator | none         | mutation  |
@@ -76,7 +72,7 @@ The internal Slack adapter exposes this registry through App Home DMs and direct
 | `update_organization_profile`         | Update selected editable organization profile fields.                                 | `operator.organizations.write`  | reversible write | operator | exact        | mutation  |
 | `set_organization_status`             | Set an organization's internal lifecycle to onboarding or live.                       | `operator.organizations.write`  | reversible write | operator | exact        | mutation  |
 | `set_client_feature_flag`             | Enable or disable a supported client feature flag.                                    | `operator.organizations.write`  | reversible write | operator | exact        | mutation  |
-| `clear_all_agent_memory`              | Schedule a global purge of organization and raw conversation memory.                  | `operator.platform.destructive` | destructive      | owner    | exact        | mutation  |
+| `clear_all_agent_memory`              | Schedule a global purge of every company wiki and raw conversation memory.             | `operator.platform.destructive` | destructive      | owner    | exact        | mutation  |
 
 ### Operator MCP projection
 
@@ -117,7 +113,7 @@ The client Slack adapter accepts direct mentions from any connected-workspace ch
 | `lookup_vendor_policies`         | List policies for a connected vendor.                                              | All channels.                                                                   |
 | `lookup_vendor_compliance`       | Retrieve requirement-by-requirement vendor compliance.                             | All channels.                                                                   |
 | `lookup_policy_section`          | Search source-native policy hierarchy and exact PDF evidence.                      | All channels; final policies only.                                              |
-| `save_note`                      | Save an explicit stable company fact to organization memory.                       | All channels; write permission required.                                        |
+| `save_note`                      | Add an explicit stable company fact to a company wiki section.                     | All channels; write permission required.                                        |
 | `attach_policy_document`         | Attach the original full policy PDF to the response.                               | All channels; final readable policy and stored PDF required.                    |
 | `confirm_policy_fact`            | Confirm a source-backed policy fact and optionally patch allowed top-level fields. | All channels; final writable policy and exact source spans required.            |
 | `generate_coi`                   | Generate or reuse certificates from a policy or requirements source.               | All channels; write permission and final supporting policies required.          |
@@ -175,7 +171,7 @@ Email expert:
 
 ## Tenant OAuth MCP catalog
 
-The tenant MCP catalog is separate from the model-callable tools above. It currently contains 35 tools. “Write” means the catalog requires OAuth write scope; runtime organization, role, and resource authorization still apply. Access annotations and the pre-dispatch scope check are derived from the same typed catalog entry, so adding a write tool requires declaring `effect: "write"` in that entry. Procurement proposals, broker outreach, packets, and imported request email are intentionally absent.
+The tenant MCP catalog is separate from the model-callable tools above. It currently contains 33 tools. “Write” means the catalog requires OAuth write scope; runtime organization, role, and resource authorization still apply. Access annotations and the pre-dispatch scope check are derived from the same typed catalog entry, so adding a write tool requires declaring `effect: "write"` in that entry. Procurement proposals, broker outreach, packets, and imported request email are intentionally absent.
 
 | Tool                             | Purpose                                                                  | MCP access                                                                         |
 | -------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
@@ -203,10 +199,8 @@ The tenant MCP catalog is separate from the model-callable tools above. It curre
 | `cancel_email_draft`             | Cancel one durable email draft.                                          | write                                                                              |
 | `list_client_files`              | List client-visible shared files in the caller's readable client scope.  | read                                                                               |
 | `get_client_file`                | Get metadata and a temporary URL for one client-visible shared file.     | read                                                                               |
-| `list_company_memory`            | List stable company-profile facts for the token's exact organization.    | read                                                                               |
-| `create_company_memory`          | Create a stable company-profile fact for the token's organization.       | write; current direct organization admin only                                      |
-| `update_company_memory`          | Update one exact company-profile fact in the token's organization.       | write; current direct organization admin only                                      |
-| `delete_company_memory`          | Permanently delete one exact company-profile fact.                       | write; destructive; current direct organization admin only                         |
+| `read_company_wiki`              | Read the whole company wiki for the token's exact organization.          | read                                                                               |
+| `write_company_wiki_section`     | Rewrite one company wiki section as markdown; an empty body clears it.   | write; current direct organization admin only                                      |
 | `list_connected_vendors`         | List connected vendors that approved insurance access.                   | read                                                                               |
 | `get_connected_vendor`           | Get one connected vendor's profile and policy count.                     | read                                                                               |
 | `list_connected_vendor_policies` | List policies for one connected vendor.                                  | read                                                                               |
@@ -217,10 +211,11 @@ The tenant MCP catalog is separate from the model-callable tools above. It curre
 
 The `ask_spot`/`ask_glass` MCP annotation describes the outer MCP call. The MCP action also passes the caller's write-scope state into the shared client-tool executors and mailbox coordinator, which removes nested write tools from the executable map for read-only tokens.
 
-## Memory frontends and MCP boundaries
+## Company wiki frontends and MCP boundaries
 
-- Client organization memory is available in Settings → Agent → Memory. Direct organization admins can create, edit, and delete stable company facts; other direct members have a read-only view.
-- Operators can manage the same client memory from `/operator/clients/:clientOrgId/memory`. The surface and all operator mutations become read-only during client impersonation.
-- Procurement memory is a separate client-scoped store for placement preferences, broker appetite, submission requirements, and market observations. Operators manage it from the Memory tab under `/operator/clients/:clientOrgId/procurement`; request, outreach, broker, source, and confidence fields preserve provenance. It is read-only during impersonation.
-- Tenant MCP exposes exact-organization company-memory CRUD. Reads require current membership; writes revalidate a current direct admin and OAuth write scope. Tenant MCP does not expose procurement memory.
-- Operator MCP receives company-memory and procurement-memory CRUD from the operator registry. Every write uses the ordinary exact-confirmation, role, audit, and no-impersonation boundaries.
+- The company wiki is one markdown document per organization, stored as ordered sections (`convex/lib/orgWiki.ts` holds the catalog). Agents read the whole assembled document rather than retrieving ranked fragments, so there is no relevance cutoff that can drop the one line that mattered. Every line written into it, from any writer, passes the company-context gate in `convex/lib/orgWikiPolicy.ts`.
+- The wiki is available in Settings → Agent → Memory. Direct organization admins can rewrite any section; other direct members have a read-only view. Extraction rewrites machine-owned sections in place, but a manually edited section only ever receives a proposal an admin accepts or rejects.
+- Operators can manage the same wiki from `/operator/clients/:clientOrgId/memory`. The surface and all operator mutations become read-only during client impersonation.
+- The client procurement packet is durable placement knowledge for one client, held as ordered markdown sections on the same operator → client → broker ladder as the request packet: placement preferences, broker appetite, submission requirements, and market observations. Strategy sections are sensitive and can never be widened past the operator. Operators manage it from the Client packet tab under `/operator/clients/:clientOrgId/procurement`. Company-information extraction rewrites machine-owned sections in place, but a manually edited section only ever receives a proposal the operator accepts or rejects. It is read-only during impersonation.
+- Tenant MCP exposes exact-organization company-wiki read and section writes. Reads require current membership; writes revalidate a current direct admin and OAuth write scope. Tenant MCP does not expose the procurement packet.
+- Operator MCP receives company-wiki and procurement-packet reads and section writes from the operator registry. Every write uses the ordinary exact-confirmation, role, audit, and no-impersonation boundaries.
