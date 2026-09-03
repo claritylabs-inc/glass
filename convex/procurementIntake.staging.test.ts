@@ -33,8 +33,7 @@ describe("procurement intake draft staging", () => {
       const requestId = await ctx.db.insert("procurementRequests", {
         clientOrgId,
         title: "Warehouse",
-        requestSummary: "Place warehouse coverage",
-        requirements: "CGL $1m",
+        narrative: "Place warehouse coverage",
         status: "submitted",
         inboxToken: "intake-stage",
         createdByUserId: operatorUserId,

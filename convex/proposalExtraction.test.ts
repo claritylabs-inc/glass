@@ -38,8 +38,7 @@ async function fixture(fingerprint = "proposal-fingerprint") {
     const requestId = await ctx.db.insert("procurementRequests", {
       clientOrgId,
       title: "Property placement",
-      requestSummary: "Place property coverage",
-      requirements: "Building and earthquake coverage",
+      narrative: "Place property coverage",
       status: "marketing",
       inboxToken: "proposal-test",
       createdByUserId: operatorUserId,

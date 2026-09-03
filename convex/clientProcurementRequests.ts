@@ -10,7 +10,11 @@ import {
 } from "./_generated/server";
 import { getCurrentOrgAccess } from "./lib/access";
 import { createProcurementInboxToken } from "./lib/procurement";
-import { assemblePacketMarkdown, audienceIncludes } from "./lib/procurementPacket";
+import {
+  requestNarrative,
+  seedNarrativePacketSection,
+} from "./lib/procurementNarrative";
+import { assemblePacketMarkdown } from "./lib/procurementPacket";
 
 async function createUniqueInboxToken(ctx: MutationCtx) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -69,29 +73,18 @@ async function requireVisibleRequest(
 ) {
   const access = await requireClientMembership(ctx);
   const request = await ctx.db.get(requestId);
-  const packetSections = request
-    ? await ctx.db.query("procurementPacketSections").withIndex("request", (q) => q.eq("requestId", request._id)).collect()
-    : [];
   if (
     !request ||
     request.clientOrgId !== access.orgId ||
-    (!request.clientVisible && !packetSections.some((section) => audienceIncludes(section.audience, "client")))
+    !request.clientVisible
   )
     throw new Error("Request not found");
   return { access, request };
 }
 
 async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
-  const [joins, specifications, activities, documents, resultingPolicy, packetSections] =
+  const [activities, documents, resultingPolicy, packetSections] =
     await Promise.all([
-      ctx.db
-        .query("procurementRequestRequirements")
-        .withIndex("request", (q) => q.eq("requestId", request._id))
-        .collect(),
-      ctx.db
-        .query("procurementSpecifications")
-        .withIndex("request", (q) => q.eq("requestId", request._id))
-        .collect(),
       ctx.db
         .query("procurementRequestActivities")
         .withIndex("client_visible", (q) =>
@@ -105,25 +98,11 @@ async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
         )
         .collect(),
       request.resultingPolicyId ? ctx.db.get(request.resultingPolicyId) : null,
-      ctx.db.query("procurementPacketSections").withIndex("request", (q) => q.eq("requestId", request._id)).collect(),
+      ctx.db
+        .query("procurementPacketSections")
+        .withIndex("request", (q) => q.eq("requestId", request._id))
+        .collect(),
     ]);
-  const requirements = (
-    await Promise.all(joins.map((join) => ctx.db.get(join.requirementId)))
-  )
-    .filter((requirement): requirement is Doc<"insuranceRequirements"> =>
-      Boolean(requirement && requirement.status === "active"),
-    )
-    .map((requirement) => ({
-      _id: requirement._id,
-      title: requirement.title,
-      requirementText: requirement.requirementText,
-      lineOfBusiness: requirement.lineOfBusiness,
-      limits: requirement.limits,
-      maxDeductible: requirement.maxDeductible,
-      coverageForm: requirement.coverageForm,
-      provisions: requirement.provisions,
-      requiredForms: requirement.requiredForms,
-    }));
   const files = await Promise.all(
     documents.map(async (document) => ({
       _id: document._id,
@@ -139,22 +118,14 @@ async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
   return {
     _id: request._id,
     title: request.title,
-    narrative: request.originalNarrative ?? request.requestSummary,
+    narrative: requestNarrative(request),
     packet: {
       markdown: assemblePacketMarkdown(packetSections, { audience: "client" }),
-      sections: packetSections.filter((section) => audienceIncludes(section.audience, "client")).sort((a, b) => a.order - b.order),
     },
     status: clientStatus(request.status),
     createdAt: request.createdAt,
     updatedAt: request.updatedAt,
     targetEffectiveDate: request.targetEffectiveDate,
-    requirements,
-    specifications: specifications.map((item) => ({
-      _id: item._id,
-      key: item.key,
-      label: item.label,
-      value: item.value,
-    })),
     resultingPolicy:
       resultingPolicy && !resultingPolicy.deletedAt
         ? {
@@ -221,14 +192,10 @@ export const create = mutation({
     const requestId = await ctx.db.insert("procurementRequests", {
       clientOrgId: access.orgId,
       title: title.slice(0, 200),
-      requestSummary: narrative,
-      requirements: narrative,
-      originalNarrative: narrative,
+      narrative,
       targetEffectiveDate: optionalEffectiveDate(args.targetEffectiveDate),
       status: "submitted",
-      createdBySide: "client",
       clientVisible: true,
-      sharedAt: now,
       requirementRevision: 0,
       specificationRevision: 0,
       inboxToken: await createUniqueInboxToken(ctx),
@@ -236,6 +203,13 @@ export const create = mutation({
       updatedByUserId: access.userId,
       createdAt: now,
       updatedAt: now,
+    });
+    await seedNarrativePacketSection(ctx, {
+      requestId,
+      clientOrgId: access.orgId,
+      narrative,
+      userId: access.userId,
+      source: "client",
     });
     await ctx.db.insert("procurementRequestActivities", {
       requestId,

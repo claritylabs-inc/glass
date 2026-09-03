@@ -17,6 +17,7 @@ import {
   RequestStatusTag,
   procurementRequestStatusLabel,
   type ProcurementRequestStatus,
+  type StoredProcurementRequestStatus,
 } from "@/components/procurement/procurement-shared";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
@@ -61,9 +62,8 @@ type PolicyOption = {
 type ProcurementRequestRow = {
   _id: Id<"procurementRequests">;
   title: string;
-  requestSummary: string;
-  requirements: string;
-  status: ProcurementRequestStatus;
+  narrative: string;
+  status: StoredProcurementRequestStatus;
   targetEffectiveDate?: string;
   forwardingAddress: string;
   replacingPolicy: { label: string } | null;
@@ -139,16 +139,9 @@ function ProcurementRequestPreview({
         <OperationalLabelValueList title="Client brief">
           <OperationalLabelValueRow
             label="Request"
-            value={request.requestSummary}
+            value={request.narrative}
             layout="stacked"
           />
-          {request.requirements.trim() !== request.requestSummary.trim() ? (
-            <OperationalLabelValueRow
-              label="Requirements"
-              value={request.requirements}
-              layout="stacked"
-            />
-          ) : null}
         </OperationalLabelValueList>
 
         <OperationalLabelValueList title="Forwarding email">
@@ -191,16 +184,15 @@ function NewProcurementRequestDrawer({
 }) {
   const createRequest = useMutation(api.procurementRequests.create);
   const [title, setTitle] = useState("");
-  const [requestSummary, setRequestSummary] = useState("");
-  const [requirements, setRequirements] = useState("");
+  const [narrative, setNarrative] = useState("");
   const [targetEffectiveDate, setTargetEffectiveDate] = useState("");
   const [status, setStatus] = useState<ProcurementRequestStatus>("draft");
   const [replacingPolicyId, setReplacingPolicyId] = useState(NO_POLICY);
   const [saving, setSaving] = useState(false);
 
   async function create() {
-    if (!title.trim() || !requestSummary.trim() || !requirements.trim()) {
-      toast.error("Enter a title, client request, and requirements");
+    if (!title.trim() || !narrative.trim()) {
+      toast.error("Enter a title and what the client asked for");
       return;
     }
     setSaving(true);
@@ -208,8 +200,7 @@ function NewProcurementRequestDrawer({
       const result = await createRequest({
         clientOrgId,
         title,
-        requestSummary,
-        requirements,
+        narrative,
         targetEffectiveDate: targetEffectiveDate || undefined,
         status,
         replacingPolicyId:
@@ -271,25 +262,11 @@ function NewProcurementRequestDrawer({
             What the client asked for
           </span>
           <Textarea
-            value={requestSummary}
-            onChange={(event) => setRequestSummary(event.target.value)}
-            className="min-h-24"
-            maxLength={20_000}
-            placeholder="Capture the client’s goals and instructions in their own terms."
-          />
-        </label>
-        <label className="block space-y-1.5">
-          <span
-            className={`text-muted-foreground ${typeStyle("caption.default")}`}
-          >
-            Coverage and procurement requirements
-          </span>
-          <Textarea
-            value={requirements}
-            onChange={(event) => setRequirements(event.target.value)}
+            value={narrative}
+            onChange={(event) => setNarrative(event.target.value)}
             className="min-h-32"
             maxLength={20_000}
-            placeholder="Limits, locations, lines of business, timing, carrier preferences, and constraints."
+            placeholder="The client’s goals, coverage needs, timing, and constraints in their own terms. This starts the packet; refine it there."
           />
         </label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

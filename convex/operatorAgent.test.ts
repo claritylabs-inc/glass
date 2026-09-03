@@ -823,8 +823,7 @@ describe("operator agent boundary", () => {
       orgId: fixture.orgId,
       title:
         "1305 Carroll Avenue Building Purchase — Property, Liability & Earthquake",
-      requestSummary: "Arrange coverage for the new building purchase.",
-      requirements: "Property, liability, and earthquake coverage.",
+      narrative: "Arrange coverage for the new building purchase.",
       replacingPolicyId: null,
       resultingPolicyId: null,
     };
@@ -1264,8 +1263,7 @@ describe("operator agent boundary", () => {
         input: {
           orgId: fixture.orgId,
           title: "Carroll Avenue building purchase",
-          requestSummary: "Arrange insurance for the acquisition.",
-          requirements: "Property, liability, and earthquake coverage.",
+          narrative: "Arrange insurance for the acquisition.",
           replacingPolicyId: invalidResourceReference,
         },
       },
@@ -1395,8 +1393,7 @@ describe("operator agent boundary", () => {
       });
       const requestFields = {
         clientOrgId: fixture.orgId,
-        requestSummary: "Arrange coverage for the new building purchase.",
-        requirements: "Property, liability, and earthquake coverage.",
+        narrative: "Arrange coverage for the new building purchase.",
         status: "draft" as const,
         createdByUserId: fixture.firstOperatorUserId,
         updatedByUserId: fixture.firstOperatorUserId,
@@ -1586,8 +1583,7 @@ describe("operator agent boundary", () => {
         input: {
           orgId: fixture.orgId,
           title: "Carroll Avenue building purchase",
-          requestSummary: "Arrange coverage for the new building purchase.",
-          requirements: "Property, liability, and earthquake coverage.",
+          narrative: "Arrange coverage for the new building purchase.",
           targetEffectiveDate: "2026-10-01",
           replacingPolicyId: fixture.policyId,
         },

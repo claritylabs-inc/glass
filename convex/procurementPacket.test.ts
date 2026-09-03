@@ -73,8 +73,7 @@ describe("request packet composition", () => {
     const request = await f.operator.mutation(api.procurementRequests.create, {
       clientOrgId: f.clientOrgId,
       title: "Fleet renewal",
-      requestSummary: "Replace the expiring fleet program",
-      requirements: "Auto liability $1m",
+      narrative: "Replace the expiring fleet program",
     });
     await f.operator.mutation(api.orgWiki.upsertSectionForOperator, {
       orgId: f.clientOrgId,
@@ -101,6 +100,10 @@ describe("request packet composition", () => {
         "",
         "# Submission packet",
         "",
+        "## Client narrative",
+        "",
+        "Replace the expiring fleet program",
+        "",
         "## Summary",
         "",
         "Renewal of the fleet program.",
@@ -111,7 +114,10 @@ describe("request packet composition", () => {
     );
     // The wiki composes in without being copied, so it never becomes a packet
     // section and never closes a canonical gap.
-    expect(packet.sections.map((section) => section.key)).toEqual(["summary"]);
+    expect(packet.sections.map((section) => section.key)).toEqual([
+      "intake_narrative",
+      "summary",
+    ]);
     expect(packet.gaps.map((gap) => gap.key)).toContain("named_insured");
   });
 
@@ -120,8 +126,7 @@ describe("request packet composition", () => {
     const request = await f.operator.mutation(api.procurementRequests.create, {
       clientOrgId: f.clientOrgId,
       title: "Fleet renewal",
-      requestSummary: "Replace the expiring fleet program",
-      requirements: "Auto liability $1m",
+      narrative: "Replace the expiring fleet program",
     });
     await f.operator.mutation(api.orgWiki.upsertSectionForOperator, {
       orgId: f.clientOrgId,
@@ -139,15 +144,20 @@ describe("request packet composition", () => {
       body: "Approach admitted markets first.",
     });
 
+    // The intake narrative is client-visible but not broker-visible, so it
+    // reaches the client projection and stops before the broker one.
+    const expectedMarkdown = {
+      client:
+        "## Client narrative\n\nReplace the expiring fleet program\n\n## Summary\n\nRenewal of the fleet program.",
+      broker: "## Summary\n\nRenewal of the fleet program.",
+    };
     for (const audience of ["client", "broker"] as const) {
       const projection = await f.operator.query(api.procurementPacket.get, {
         requestId: request.requestId,
         audience,
       });
       expect(projection.clientWiki).toBeNull();
-      expect(projection.markdown).toBe(
-        "## Summary\n\nRenewal of the fleet program.",
-      );
+      expect(projection.markdown).toBe(expectedMarkdown[audience]);
       expect(projection.markdown).not.toContain("commercial vehicle fleet");
       expect(projection.markdown).not.toContain("admitted markets");
     }

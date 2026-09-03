@@ -151,8 +151,7 @@ describe("operator procurement tools", () => {
     const input = parseOperatorAgentToolInput("create_procurement_request", {
       orgId: "organization-1",
       title: "Building purchase",
-      requestSummary: "Arrange coverage for the acquisition.",
-      requirements: "Property and liability coverage.",
+      narrative: "Arrange coverage for the acquisition.",
       replacingPolicyId: null,
       resultingPolicyId: null,
     });
@@ -181,8 +180,7 @@ describe("operator procurement tools", () => {
     const input = parseOperatorAgentToolInput("create_procurement_request", {
       orgId: "organization-1",
       title: "Building purchase",
-      requestSummary: "Arrange coverage for the acquisition.",
-      requirements: "Property and liability coverage.",
+      narrative: "Arrange coverage for the acquisition.",
       replacingPolicyId: "policy-1",
       resultingPolicyId: "policy-2",
     });
