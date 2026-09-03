@@ -13,6 +13,8 @@ import {
   isOperatorImessageTerminalEnabled,
 } from "./lib/imessageConfig";
 import { getAuthSiteUrl, getClientPortalUrl } from "./lib/domains";
+import { spotIconResponse } from "./lib/brandIcon";
+import { negotiateMcpProtocolVersion } from "./lib/mcpProtocol";
 import { getEmailDeliveryMode } from "./lib/resend";
 import {
   MAX_AGENT_ATTACHMENT_FILES,
@@ -3513,7 +3515,9 @@ http.route({
         case "initialize": {
           const siteUrl = getClientPortalUrl();
           return jsonRpcResponse(id, {
-            protocolVersion: "2025-03-26",
+            protocolVersion: negotiateMcpProtocolVersion(
+              params?.protocolVersion,
+            ),
             capabilities: { tools: {} },
             serverInfo: {
               name: "Spot",
@@ -4815,6 +4819,22 @@ http.route({
       },
     });
   }),
+});
+
+// ── Brand icon ──
+// Served from the MCP host itself: clients that ignore `serverInfo.icons` fall
+// back to the icon at the server origin, and a Convex site answers only the
+// routes it declares.
+http.route({
+  path: "/icon.svg",
+  method: "GET",
+  handler: httpAction(async () => spotIconResponse()),
+});
+
+http.route({
+  path: "/favicon.ico",
+  method: "GET",
+  handler: httpAction(async () => spotIconResponse()),
 });
 
 export default http;

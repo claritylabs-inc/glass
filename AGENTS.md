@@ -638,6 +638,8 @@ The complete operator-agent, client-agent, subagent, operator MCP, and tenant MC
 - Remote MCP is served from Convex HTTP handlers at `/mcp`.
 - Local MCP clients use `mcp-remote` against the same `/mcp` endpoint and browser OAuth flow as remote clients.
 - MCP discovery: `GET /.well-known/mcp.json`
+- `initialize` echoes the client's protocol revision when it is one of `convex/lib/mcpProtocol.ts`'s supported revisions and otherwise answers with the newest one. Do not pin a single old revision: `serverInfo.icons` only exists from `2025-11-25`, so pinning an older one drops the Spot logo from every client's connector list.
+- Server identity carries the brand mark twice, because clients disagree on where to look: `serverInfo.icons` points at the app's `/spot-icon.svg`, and the Convex site serves the same mark at `GET /icon.svg` and `GET /favicon.ico` from `convex/lib/brandIcon.ts` for clients that fall back to the MCP host's own icon. A Convex site answers only its declared routes, so without those two there is nothing to fall back to. `app/favicon.ico` covers the same fallback for the app host; `spot.insure` is Clarity Landing's to serve.
 
 ### Catalog ownership
 
