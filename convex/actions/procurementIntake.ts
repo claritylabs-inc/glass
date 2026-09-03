@@ -14,24 +14,10 @@ import {
 const internalApi = internal as any;
 const EXTRACTION_TIMEOUT_MS = 90_000;
 
-function extractionSource(input: {
-  title: string;
-  originalNarrative?: string;
-  requestSummary: string;
-  legacyRequirements: string;
-}) {
-  const narrative =
-    input.originalNarrative?.trim() || input.requestSummary.trim();
-  const legacy = input.legacyRequirements.trim();
-  return [
-    `Request title: ${input.title}`,
-    `Original client narrative:\n${narrative}`,
-    legacy && legacy !== narrative
-      ? `Existing unstructured requirements:\n${legacy}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+function extractionSource(input: { title: string; narrative: string }) {
+  const narrative = input.narrative.trim();
+  if (!narrative) return "";
+  return `Request title: ${input.title}\n\nClient narrative:\n${narrative}`;
 }
 
 export const extractDrafts = action({

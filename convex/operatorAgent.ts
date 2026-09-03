@@ -54,6 +54,7 @@ import {
   updateProcurementFileItemByOperator,
   updateProcurementOutreachByOperator,
   updateProcurementRequestByOperator,
+  writableProcurementRequestStatus,
 } from "./procurementRequests";
 import {
   confirmProcurementProposalReviewByOperator,
@@ -794,22 +795,6 @@ function normalizeProcurementProposalReviewId(
   return id;
 }
 
-function procurementRequestStatus(value: unknown) {
-  switch (value) {
-    case "draft":
-    case "submitted":
-    case "gathering_information":
-    case "marketing":
-    case "proposal_review":
-    case "binding":
-    case "completed":
-    case "cancelled":
-      return value;
-    default:
-      return undefined;
-  }
-}
-
 function procurementOutreachStatus(value: unknown) {
   switch (value) {
     case "request_sent":
@@ -1509,7 +1494,7 @@ async function executeToolDomain(
     const requests = await listProcurementRequestSummaries(ctx, {
       clientOrgId,
       query: normalizedOptionalText(input.query),
-      status: procurementRequestStatus(input.status),
+      status: writableProcurementRequestStatus(input.status),
       limit,
     });
     return { requests, bounded: requests.length === limit };
@@ -1916,12 +1901,9 @@ async function executeToolDomain(
       operatorUserId: args.operatorUserId,
       clientOrgId: normalizeOrganizationId(ctx, input.orgId),
       title: typeof input.title === "string" ? input.title : "",
-      requestSummary:
-        typeof input.requestSummary === "string" ? input.requestSummary : "",
-      requirements:
-        typeof input.requirements === "string" ? input.requirements : "",
+      narrative: typeof input.narrative === "string" ? input.narrative : "",
       targetEffectiveDate: normalizedOptionalText(input.targetEffectiveDate),
-      status: procurementRequestStatus(input.status),
+      status: writableProcurementRequestStatus(input.status),
       clientVisible:
         typeof input.clientVisible === "boolean"
           ? input.clientVisible
@@ -1941,17 +1923,13 @@ async function executeToolDomain(
       operatorUserId: args.operatorUserId,
       requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
       title: typeof input.title === "string" ? input.title : undefined,
-      requestSummary:
-        typeof input.requestSummary === "string"
-          ? input.requestSummary
-          : undefined,
-      requirements:
-        typeof input.requirements === "string" ? input.requirements : undefined,
+      narrative:
+        typeof input.narrative === "string" ? input.narrative : undefined,
       targetEffectiveDate:
         input.targetEffectiveDate === null
           ? null
           : normalizedOptionalText(input.targetEffectiveDate),
-      status: procurementRequestStatus(input.status),
+      status: writableProcurementRequestStatus(input.status),
       clientVisible:
         typeof input.clientVisible === "boolean"
           ? input.clientVisible

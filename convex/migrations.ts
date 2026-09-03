@@ -11,6 +11,10 @@ import {
   applyCarrierIdentityEnrichment,
   readCarrierIdentity,
 } from "./lib/carrierIdentity";
+import {
+  requestNarrative,
+  seedNarrativePacketSection,
+} from "./lib/procurementNarrative";
 
 export const migrations = new Migrations<DataModel>(components.migrations);
 
@@ -170,11 +174,48 @@ export const migrateProcurementRequestStatuses = migrations.define({
       patch.requirementRevision = 0;
     if (request.specificationRevision === undefined)
       patch.specificationRevision = 0;
-    if (request.createdBySide === undefined) patch.createdBySide = "operator";
     if (request.clientVisible === undefined) patch.clientVisible = false;
-    if (request.originalNarrative === undefined)
-      patch.originalNarrative = request.requestSummary;
     if (Object.keys(patch).length) await ctx.db.patch(request._id, patch);
+  },
+});
+
+// Prefer the prior original narrative, then the request summary. The legacy
+// requirements field is a fallback because it may contain operator-authored
+// prose rather than the client's words.
+export const backfillProcurementNarrative = migrations.define({
+  table: "procurementRequests",
+  batchSize: 50,
+  migrateOne: async (ctx, request) => {
+    const patch: Record<string, unknown> = {};
+    if (request.narrative === undefined) {
+      const narrative =
+        request.originalNarrative?.trim() ||
+        request.requestSummary?.trim() ||
+        request.requirements?.trim() ||
+        request.title;
+      patch.narrative = narrative;
+    }
+    if (request.requestSummary !== undefined) patch.requestSummary = undefined;
+    if (request.requirements !== undefined) patch.requirements = undefined;
+    if (request.originalNarrative !== undefined)
+      patch.originalNarrative = undefined;
+    if (request.createdBySide !== undefined) patch.createdBySide = undefined;
+    if (request.sharedAt !== undefined) patch.sharedAt = undefined;
+    if (Object.keys(patch).length) await ctx.db.patch(request._id, patch);
+  },
+});
+
+export const seedProcurementNarrativeSections = migrations.define({
+  table: "procurementRequests",
+  batchSize: 25,
+  migrateOne: async (ctx, request) => {
+    await seedNarrativePacketSection(ctx, {
+      requestId: request._id,
+      clientOrgId: request.clientOrgId,
+      narrative: requestNarrative(request),
+      userId: request.createdByUserId,
+      source: "manual",
+    });
   },
 });
 
@@ -386,6 +427,32 @@ export const runSlackActorSpotIdentityBackfill = migrations.runner([
 export const runProcurementDomainBackfill = migrations.runner([
   internal.migrations.migrateProcurementRequestStatuses,
   internal.migrations.migrateProcurementOutreaches,
+]);
+
+// Pre-packet reviews cannot be confirmed because they scored the retired
+// requirement/specification rows.
+export const clearLegacyProposalReviews = migrations.define({
+  table: "procurementProposalReviews",
+  batchSize: 50,
+  migrateOne: async (ctx, review) => {
+    if (review.packetRevision !== undefined) return;
+    await ctx.db.delete(review._id);
+  },
+});
+
+// Run before the release that drops `requirementRevision` and
+// `specificationRevision` from procurementProposalReviews and
+// procurementRequests, and makes `packetRevision` required on reviews.
+export const runProposalReviewPacketBackfill = migrations.runner([
+  internal.migrations.clearLegacyProposalReviews,
+]);
+
+// Run before the release that drops `requestSummary`, `requirements`,
+// `originalNarrative`, `createdBySide`, and `sharedAt` from the schema and
+// makes `narrative` required.
+export const runProcurementNarrativeBackfill = migrations.runner([
+  internal.migrations.backfillProcurementNarrative,
+  internal.migrations.seedProcurementNarrativeSections,
 ]);
 
 // Run only after procurementMigration.auditLegacyNarrowing reports safe=true.

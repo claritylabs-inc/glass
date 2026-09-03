@@ -102,8 +102,7 @@ async function createRequest(
   return await operator.mutation(api.procurementRequests.create, {
     clientOrgId: fixture.clientOrgId,
     title,
-    requestSummary: `Client asked for ${title}`,
-    requirements: "Property coverage effective January 1",
+    narrative: `Client asked for ${title}`,
     replacingPolicyId: fixture.archivedPolicyId,
   });
 }
@@ -122,8 +121,7 @@ describe("procurement requests", () => {
       client.mutation(api.procurementRequests.create, {
         clientOrgId: fixture.clientOrgId,
         title: "Client write",
-        requestSummary: "Not allowed",
-        requirements: "Not allowed",
+        narrative: "Not allowed",
       }),
     ).rejects.toThrow("OPERATOR_REQUIRED");
 
@@ -136,8 +134,7 @@ describe("procurement requests", () => {
       operator.mutation(api.procurementRequests.create, {
         clientOrgId: fixture.clientOrgId,
         title: "Cross-client replacement",
-        requestSummary: "Should fail",
-        requirements: "Should fail",
+        narrative: "Should fail",
         replacingPolicyId: fixture.otherPolicyId,
       }),
     ).rejects.toThrow("Policy does not belong to this client");
@@ -174,8 +171,7 @@ describe("procurement requests", () => {
       operator.mutation(api.procurementRequests.create, {
         clientOrgId: fixture.clientOrgId,
         title: "Blocked",
-        requestSummary: "Blocked",
-        requirements: "Blocked",
+        narrative: "Blocked",
       }),
     ).rejects.toThrow("IMPERSONATION_READ_ONLY");
   });

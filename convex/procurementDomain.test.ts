@@ -97,6 +97,7 @@ describe("procurement domain boundaries", () => {
     expect(dto).not.toHaveProperty("proposals");
     expect(dto).not.toHaveProperty("outreaches");
     expect(dto).not.toHaveProperty("emailThreads");
+    expect(dto.packet).not.toHaveProperty("sections");
     await expect(
       f.client.query(api.procurementProposals.list, {
         requestId: created.requestId,
@@ -109,13 +110,29 @@ describe("procurement domain boundaries", () => {
     ).rejects.toThrow("Client membership required");
   });
 
-  test("requires proposal broker consistency and invalidates a confirmed review when a joined requirement changes", async () => {
+  test("keeps an operator-created request private until it is shared", async () => {
+    const f = await fixture();
+    const created = await f.operator.mutation(api.procurementRequests.create, {
+      clientOrgId: f.clientOrgId,
+      title: "Private placement",
+      narrative: "Prepare options before involving the client",
+    });
+
+    await expect(
+      f.client.query(api.clientProcurementRequests.get, {
+        requestId: created.requestId,
+      }),
+    ).rejects.toThrow("Request not found");
+    await expect(f.client.query(api.clientProcurementRequests.list, {})).resolves
+      .toEqual([]);
+  });
+
+  test("requires proposal broker consistency and invalidates a confirmed review when the broker-visible packet changes", async () => {
     const f = await fixture();
     const request = await f.operator.mutation(api.procurementRequests.create, {
       clientOrgId: f.clientOrgId,
       title: "Placement",
-      requestSummary: "Place coverage",
-      requirements: "GL $1m",
+      narrative: "Place coverage",
       clientVisible: true,
     });
     const outreach = await f.operator.mutation(
@@ -140,34 +157,22 @@ describe("procurement domain boundaries", () => {
         outreachId: outreach.outreachId,
       },
     );
-    const requirementId = await f.t.run(async (ctx) => {
-      const id = await ctx.db.insert("insuranceRequirements", {
-        orgId: f.clientOrgId,
-        kind: "coverage",
-        scope: "own_org",
-        title: "General liability",
-        requirementText: "Maintain GL",
-        lineOfBusiness: "CGL",
-        limits: [{ kind: "each_occurrence", amount: 1_000_000 }],
-        status: "active",
-        createdByUserId: f.operatorUserId,
-        updatedByUserId: f.operatorUserId,
-        createdAt: 1,
-        updatedAt: 1,
-      });
-      await ctx.db.insert("procurementRequestRequirements", {
-        requestId: request.requestId,
-        clientOrgId: f.clientOrgId,
-        requirementId: id,
-        addedByUserId: f.operatorUserId,
-        createdAt: 1,
-      });
+    // The broker answered this packet section, so the review binds to it.
+    await f.operator.mutation(api.procurementPacket.upsertSection, {
+      requestId: request.requestId,
+      key: "coverage_requested",
+      body: "General liability, $1m each occurrence.",
+    });
+    await f.t.run(async (ctx) => {
       await ctx.db.patch(proposal.proposalId, {
         status: "review_ready",
         extractionFingerprint: "fp-1",
         extractedOffer: { premiumAmount: 1000 },
       });
-      return id;
+    });
+    const packetRevision = await f.t.run(async (ctx) => {
+      const row = await ctx.db.get(request.requestId);
+      return row?.packetRevision ?? 0;
     });
     const review = await f.t.mutation(
       internal.procurementProposals.saveGeneratedReviewInternal,
@@ -175,8 +180,7 @@ describe("procurement domain boundaries", () => {
         operatorUserId: f.operatorUserId,
         proposalId: proposal.proposalId,
         extractionFingerprint: "fp-1",
-        requirementRevision: 0,
-        specificationRevision: 0,
+        packetRevision,
         findings: [],
         conclusion: "has_gaps",
       },
@@ -185,15 +189,11 @@ describe("procurement domain boundaries", () => {
       reviewId: review.reviewId,
       conclusion: "has_gaps",
     });
-    await f.operator.mutation(api.compliance.upsertRequirement, {
-      orgId: f.clientOrgId,
-      requirementId,
-      kind: "coverage",
-      scope: "own_org",
-      title: "General liability",
-      requirementText: "Maintain higher GL",
-      lineOfBusiness: "CGL",
-      limits: [{ kind: "each_occurrence", amount: 2_000_000 }],
+    // Editing the packet the broker was sent must invalidate the review.
+    await f.operator.mutation(api.procurementPacket.upsertSection, {
+      requestId: request.requestId,
+      key: "coverage_requested",
+      body: "General liability, $2m each occurrence.",
     });
     await expect(
       f.operator.mutation(api.procurementProposals.select, {
@@ -228,8 +228,7 @@ describe("procurement domain boundaries", () => {
     const request = await f.operator.mutation(api.procurementRequests.create, {
       clientOrgId: f.clientOrgId,
       title: "Network profile privacy",
-      requestSummary: "Place coverage",
-      requirements: "General liability",
+      narrative: "Place coverage",
     });
     const outreach = await f.operator.mutation(
       api.procurementRequests.createOutreach,

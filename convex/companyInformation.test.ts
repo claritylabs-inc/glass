@@ -244,8 +244,7 @@ describe("company information extraction lifecycle", () => {
       const requestId = await ctx.db.insert("procurementRequests", {
         clientOrgId: fixture.clientOrgId,
         title: "Fleet renewal",
-        requestSummary: "Renew the fleet program",
-        requirements: "Commercial auto coverage",
+        narrative: "Renew the fleet program",
         status: "marketing",
         inboxToken: "thread-lifecycle-token",
         createdByUserId: fixture.operatorUserId,
