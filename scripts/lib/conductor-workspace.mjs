@@ -214,6 +214,22 @@ export function canUseAnonymousConvexCloudFallback({
   return isCloud && !hasDeployKey && isMissingConvexAccessToken(output);
 }
 
+/**
+ * @param {Map<string, string>} fileEnvironment
+ * @param {Record<string, string | undefined>} [environment]
+ */
+export function resolveConductorMapboxAccessToken(
+  fileEnvironment,
+  environment = process.env,
+) {
+  return (
+    fileEnvironment.get("MAPBOX_ACCESS_TOKEN")?.trim() ||
+    fileEnvironment.get("NEXT_PUBLIC_MAPBOX_TOKEN")?.trim() ||
+    environment.MAPBOX_ACCESS_TOKEN?.trim() ||
+    environment.NEXT_PUBLIC_MAPBOX_TOKEN?.trim()
+  );
+}
+
 export function resolveConductorClRouterConfig(values, { required }) {
   const executionEntries = [
     ["CL_ROUTER_URL", values.url?.trim()],
