@@ -75,6 +75,7 @@ async function clientFileRow(ctx: QueryCtx, file: Doc<"clientFiles">) {
     uploadedBySide: file.uploadedBySide,
     nameSource: file.nameSource,
     nameStatus: file.nameStatus,
+    archivedAt: file.archivedAt,
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
     url: await ctx.storage.getUrl(file.fileId),
@@ -89,6 +90,7 @@ export const list = query({
   args: {
     clientOrgId: v.id("organizations"),
     limit: v.optional(v.number()),
+    archived: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const access = await getOrgAccessForQuery(ctx, args.clientOrgId, {
@@ -102,11 +104,17 @@ export const list = query({
       Math.min(args.limit ?? 200, MAX_CLIENT_FILES_PER_PAGE),
     );
     const canManage = access.accessType === "operator";
+    const archivedView = args.archived === true;
+    if (archivedView && !canManage) {
+      return { files: [], truncated: false, canManage };
+    }
     const rows = canManage
       ? await ctx.db
           .query("clientFiles")
-          .withIndex("organization", (index) =>
-            index.eq("orgId", args.clientOrgId),
+          .withIndex("organization_archived", (index) =>
+            archivedView
+              ? index.eq("orgId", args.clientOrgId).gt("archivedAt", 0)
+              : index.eq("orgId", args.clientOrgId).eq("archivedAt", undefined),
           )
           .order("desc")
           .take(MAX_CLIENT_FILES_PER_PAGE + 1)
@@ -117,15 +125,17 @@ export const list = query({
           )
           .order("desc")
           .take(MAX_CLIENT_FILES_PER_PAGE + 1);
-    const visibleRows = rows
-      .filter(activeClientFile)
-      .filter((file) => mayReadClientFile(access, file))
-      .slice(0, limit);
+    const readableRows = rows.filter(
+      (file) =>
+        (archivedView ? !file.deletedAt : activeClientFile(file)) &&
+        mayReadClientFile(access, file),
+    );
+    const visibleRows = readableRows.slice(0, limit);
     return {
       files: await Promise.all(
         visibleRows.map((file) => clientFileRow(ctx, file)),
       ),
-      truncated: rows.filter(activeClientFile).length > limit,
+      truncated: readableRows.length > limit,
       canManage,
     };
   },

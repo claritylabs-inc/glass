@@ -9,6 +9,8 @@ import {
 } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
+  Archive,
+  ArchiveRestore,
   Download,
   File,
   FileImage,
@@ -55,6 +57,27 @@ import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 const NO_POLICY = "__none__";
 const MAX_CLIENT_FILE_BYTES = 50 * 1024 * 1024;
 
+type ClientFilesView = "private" | "shared" | "archived";
+
+const CLIENT_FILE_EMPTY_STATES: Record<
+  ClientFilesView,
+  { title: string; description: string }
+> = {
+  private: {
+    title: "No private files",
+    description:
+      "Keep quotes, appraisals, roof reports, and other documents here for this client.",
+  },
+  shared: {
+    title: "No shared files",
+    description: "Files shared with the client will appear here.",
+  },
+  archived: {
+    title: "No archived files",
+    description: "Archived files stay here until you restore them.",
+  },
+};
+
 export type ClientFilePolicyOption = {
   _id: Id<"policies">;
   carrier?: string | null;
@@ -72,6 +95,7 @@ type ClientFileRow = {
   policyId?: Id<"policies">;
   policyLabel: string | null;
   nameStatus: "pending" | "ready" | "failed";
+  archivedAt?: number;
   createdAt: number;
   url: string | null;
 };
@@ -554,23 +578,28 @@ export function ClientFilesWorkspace({
   onActions?: (node: ReactNode) => void;
   onRightPanel: (node: ReactNode) => void;
 }) {
-  const result = useQuery(api.clientFiles.list, { clientOrgId, limit: 200 });
+  const [view, setView] = useState<ClientFilesView>("private");
+  const result = useQuery(api.clientFiles.list, {
+    clientOrgId,
+    limit: 200,
+    archived: view === "archived",
+  });
   const policyRows = useQuery(api.policies.listForOrg, {
     orgId: clientOrgId,
     documentType: "policy",
   });
   const updateClientFile = useMutation(api.clientFiles.update);
+  const setClientFileArchived = useMutation(api.clientFiles.setArchived);
   const { openWithUrl, closePdf } = usePdf();
   const [updatingId, setUpdatingId] = useState<Id<"clientFiles"> | null>(null);
-  const [visibilityView, setVisibilityView] = useState<"private" | "shared">(
-    "private",
-  );
   const policies = useMemo(
     () => (policyRows ?? []) as ClientFilePolicyOption[],
     [policyRows],
   );
   const operatorView = Boolean(result?.canManage);
   const canManage = operatorView && !readOnly;
+  const archivedView = view === "archived";
+  const canEdit = canManage && !archivedView;
 
   const closeRightPanel = useCallback(() => onRightPanel(null), [onRightPanel]);
   const openUpload = useCallback(() => {
@@ -628,6 +657,27 @@ export function ClientFilesWorkspace({
     [closePdf, closeRightPanel, onRightPanel, policies],
   );
 
+  const setArchived = useCallback(
+    async (file: ClientFileRow, archived: boolean) => {
+      setUpdatingId(file._id);
+      try {
+        await setClientFileArchived({ clientFileId: file._id, archived });
+        closeRightPanel();
+        toast.success(archived ? "File archived" : "File restored");
+      } catch (error) {
+        toast.error(
+          getUserFacingErrorMessage(
+            error,
+            archived ? "Failed to archive file" : "Failed to restore file",
+          ),
+        );
+      } finally {
+        setUpdatingId(null);
+      }
+    },
+    [closeRightPanel, setClientFileArchived],
+  );
+
   const updateField = useCallback(
     async (
       clientFileId: Id<"clientFiles">,
@@ -660,25 +710,31 @@ export function ClientFilesWorkspace({
   }
 
   const files = result.files as ClientFileRow[];
-  const visibleFiles = operatorView
-    ? files.filter((file) =>
-        visibilityView === "shared" ? file.clientVisible : !file.clientVisible,
-      )
-    : files;
+  const visibleFiles =
+    operatorView && !archivedView
+      ? files.filter((file) =>
+          view === "shared" ? file.clientVisible : !file.clientVisible,
+        )
+      : files;
   const visibilityTabs = operatorView ? (
     <div className="flex min-w-0 items-center justify-between gap-4">
       <div className="overflow-x-auto">
         <Tabs
-          value={visibilityView}
+          value={view}
           onValueChange={(value) => {
-            if (value === "private" || value === "shared") {
-              setVisibilityView(value);
+            if (
+              value === "private" ||
+              value === "shared" ||
+              value === "archived"
+            ) {
+              setView(value);
             }
           }}
         >
-          <TabsList variant="pill" aria-label="File visibility">
+          <TabsList variant="pill" aria-label="Client files view">
             <TabsTrigger value="private">Private</TabsTrigger>
             <TabsTrigger value="shared">Shared</TabsTrigger>
+            <TabsTrigger value="archived">Archived</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -692,39 +748,25 @@ export function ClientFilesWorkspace({
     </div>
   ) : null;
 
-  if (files.length === 0) {
-    return (
-      <div className="space-y-4">
-        {visibilityTabs}
-        <EmptyStateCard
-          title={operatorView ? "No client files yet" : "No shared files yet"}
-          description={
-            operatorView
-              ? "Keep quotes, appraisals, roof reports, and other documents here for this client."
-              : "Files your Spot team shares with your organization will appear here."
-          }
-          icon={<FileText className="size-6" />}
-          actionLabel={canManage ? "Upload files" : undefined}
-          onAction={canManage ? openUpload : undefined}
-        />
-      </div>
-    );
-  }
-
   if (visibleFiles.length === 0) {
+    if (!operatorView) {
+      return (
+        <EmptyStateCard
+          title="No shared files yet"
+          description="Files your Spot team shares with your organization will appear here."
+          icon={<FileText className="size-6" />}
+        />
+      );
+    }
     return (
       <div className="space-y-4">
         {visibilityTabs}
         <EmptyStateCard
-          title={`No ${visibilityView} files`}
-          description={
-            visibilityView === "private"
-              ? "Files visible only to operators will appear here."
-              : "Files shared with the client will appear here."
-          }
+          title={CLIENT_FILE_EMPTY_STATES[view].title}
+          description={CLIENT_FILE_EMPTY_STATES[view].description}
           icon={<FileText className="size-6" />}
-          actionLabel={canManage ? "Upload files" : undefined}
-          onAction={canManage ? openUpload : undefined}
+          actionLabel={canEdit ? "Upload files" : undefined}
+          onAction={canEdit ? openUpload : undefined}
         />
       </div>
     );
@@ -740,7 +782,7 @@ export function ClientFilesWorkspace({
               <TableHead>File</TableHead>
               <TableHead>Policy</TableHead>
               {operatorView ? <TableHead>Client access</TableHead> : null}
-              <TableHead>Added</TableHead>
+              <TableHead>{archivedView ? "Archived" : "Added"}</TableHead>
               <TableHead className="w-0 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -796,7 +838,7 @@ export function ClientFilesWorkspace({
                     </div>
                   </TableCell>
                   <TableCell>
-                    {canManage ? (
+                    {canEdit ? (
                       <PolicySelect
                         value={file.policyId ?? NO_POLICY}
                         policies={policies}
@@ -819,7 +861,7 @@ export function ClientFilesWorkspace({
                   {operatorView ? (
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        {canManage ? (
+                        {canEdit ? (
                           <SettingsSwitch
                             checked={file.clientVisible}
                             onCheckedChange={() =>
@@ -838,11 +880,16 @@ export function ClientFilesWorkspace({
                     </TableCell>
                   ) : null}
                   <TableCell className="text-muted-foreground">
-                    {formatDisplayDate(file.createdAt, "—")}
+                    {formatDisplayDate(
+                      archivedView
+                        ? (file.archivedAt ?? file.createdAt)
+                        : file.createdAt,
+                      "—",
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
-                      {canManage ? (
+                      {canEdit ? (
                         <PillButton
                           type="button"
                           variant="icon"
@@ -851,6 +898,22 @@ export function ClientFilesWorkspace({
                           onClick={() => edit(file)}
                         >
                           <Pencil className="size-3.5" />
+                        </PillButton>
+                      ) : null}
+                      {canManage ? (
+                        <PillButton
+                          type="button"
+                          variant="icon"
+                          iconOnly
+                          disabled={updating}
+                          label={`${archivedView ? "Restore" : "Archive"} ${file.name}`}
+                          onClick={() => void setArchived(file, !archivedView)}
+                        >
+                          {archivedView ? (
+                            <ArchiveRestore className="size-3.5" />
+                          ) : (
+                            <Archive className="size-3.5" />
+                          )}
                         </PillButton>
                       ) : null}
                       {file.url ? (

@@ -348,4 +348,130 @@ describe("client files", () => {
       (await fixture.t.run((ctx) => ctx.db.get(clientFileId)))?.policyId,
     ).toBeUndefined();
   });
+
+  test("archives and restores files without exposing them to clients", async () => {
+    const fixture = await seedClientFileFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.operatorUserId}|session`,
+    });
+    const client = fixture.t.withIdentity({
+      subject: `${fixture.clientUserId}|session`,
+    });
+    const clientFileId = await fixture.t.run(async (ctx) => {
+      const fileId = await ctx.storage.store(new Blob(["report"]));
+      return await ctx.db.insert("clientFiles", {
+        orgId: fixture.clientOrgId,
+        fileId,
+        name: "Shared appraisal.pdf",
+        originalName: "appraisal.pdf",
+        contentType: "application/pdf",
+        size: 6,
+        clientVisible: true,
+        uploadedByUserId: fixture.operatorUserId,
+        uploadedBySide: "operator",
+        nameSource: "operator",
+        nameStatus: "ready",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await expect(
+      client.mutation(api.clientFiles.setArchived, {
+        clientFileId,
+        archived: true,
+      }),
+    ).rejects.toThrow("OPERATOR_REQUIRED");
+
+    await operator.mutation(api.clientFiles.setArchived, {
+      clientFileId,
+      archived: true,
+    });
+
+    const archivedList = await operator.query(api.clientFiles.list, {
+      clientOrgId: fixture.clientOrgId,
+      archived: true,
+    });
+    expect(archivedList.files).toMatchObject([
+      { _id: clientFileId, archivedAt: expect.any(Number) },
+    ]);
+    await expect(
+      operator.query(api.clientFiles.list, {
+        clientOrgId: fixture.clientOrgId,
+      }),
+    ).resolves.toMatchObject({ files: [] });
+    await expect(
+      client.query(api.clientFiles.list, { clientOrgId: fixture.clientOrgId }),
+    ).resolves.toMatchObject({ files: [] });
+    await expect(
+      client.query(api.clientFiles.list, {
+        clientOrgId: fixture.clientOrgId,
+        archived: true,
+      }),
+    ).resolves.toMatchObject({ files: [] });
+    await expect(
+      operator.mutation(api.clientFiles.update, {
+        clientFileId,
+        name: "Renamed while archived",
+      }),
+    ).rejects.toThrow("Client file not found");
+
+    await operator.mutation(api.clientFiles.setArchived, {
+      clientFileId,
+      archived: false,
+    });
+    const restored = await operator.query(api.clientFiles.list, {
+      clientOrgId: fixture.clientOrgId,
+    });
+    expect(restored.files.map((file) => file._id)).toEqual([clientFileId]);
+    await expect(
+      operator.query(api.clientFiles.list, {
+        clientOrgId: fixture.clientOrgId,
+        archived: true,
+      }),
+    ).resolves.toMatchObject({ files: [] });
+    expect(
+      (await fixture.t.run((ctx) => ctx.db.get(clientFileId)))?.archivedAt,
+    ).toBeUndefined();
+  });
+
+  test("keeps deleted files out of the archived view", async () => {
+    const fixture = await seedClientFileFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.operatorUserId}|session`,
+    });
+    const clientFileId = await fixture.t.run(async (ctx) => {
+      const fileId = await ctx.storage.store(new Blob(["report"]));
+      return await ctx.db.insert("clientFiles", {
+        orgId: fixture.clientOrgId,
+        fileId,
+        name: "Old quote.pdf",
+        originalName: "quote.pdf",
+        contentType: "application/pdf",
+        size: 6,
+        clientVisible: false,
+        uploadedByUserId: fixture.operatorUserId,
+        uploadedBySide: "operator",
+        nameSource: "operator",
+        nameStatus: "ready",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await operator.mutation(api.clientFiles.remove, { clientFileId });
+
+    await expect(
+      operator.query(api.clientFiles.list, {
+        clientOrgId: fixture.clientOrgId,
+        archived: true,
+      }),
+    ).resolves.toMatchObject({ files: [] });
+    await expect(
+      operator.mutation(api.clientFiles.setArchived, {
+        clientFileId,
+        archived: false,
+      }),
+    ).rejects.toThrow("Client file not found");
+  });
 });

@@ -1121,7 +1121,6 @@ export default defineSchema({
     .index("organization", ["orgId", "order"])
     .index("organization_key", ["orgId", "key"]),
 
-
   // Legacy, retained only for the gated company-wiki purge migration. The
   // curated store is `orgWikiSections`; nothing reads or writes these rows.
   // Remove both tables in the schema-narrowing release after
@@ -2815,6 +2814,7 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("organization", ["orgId", "createdAt"])
+    .index("organization_archived", ["orgId", "archivedAt", "createdAt"])
     .index("visibility", ["orgId", "clientVisible", "createdAt"])
     .index("storage", ["fileId"])
     .index("policy", ["policyId", "createdAt"]),
