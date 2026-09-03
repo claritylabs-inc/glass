@@ -374,6 +374,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         viewer?.accountKind === "operator" &&
         operatorContext !== undefined &&
         !isOperatorPath &&
+        !isPublic &&
         !hasOperatorImpersonation
       ) {
         router.replace("/operator");
@@ -518,6 +519,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     isAuthenticated &&
     viewer?.accountKind === "operator" &&
     !isOperatorPath &&
+    !isPublic &&
     !operatorContext?.activeImpersonation &&
     !impersonationStopReturnHref
   ) {
