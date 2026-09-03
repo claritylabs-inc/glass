@@ -260,17 +260,6 @@ export const lookupVendorCompliance = tool({
   }),
 });
 
-export const sendEmail = tool({
-  description:
-    "Draft and send an email on behalf of the team. Respects the organization's email settings.",
-  inputSchema: z.object({
-    to: z.string().describe("Recipient email address"),
-    subject: z.string().describe("Email subject line"),
-    body: z.string().describe("Email body content (plain text)"),
-    cc: z.array(z.string()).optional().describe("CC email addresses"),
-  }),
-});
-
 export const saveNote = tool({
   description:
     "Add an explicit stable company-profile fact to the company wiki, only when the user asks Spot to remember it. Do not save policy details, endorsements, COI/certificate details, draft/email metadata, agent capabilities, tool limitations, workflow status, or one-off requests.",

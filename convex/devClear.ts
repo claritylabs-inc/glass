@@ -80,7 +80,6 @@ const TABLES: TableNames[] = [
   "oauthClients",
   "oauthAuthCodes",
   "oauthTokens",
-  "apiAuditLog",
   "rateLimitCounters",
   "presence",
 ];

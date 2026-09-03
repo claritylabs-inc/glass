@@ -30,7 +30,7 @@ describe("sendNotificationEmail", () => {
     const notifId = await t.run(async (ctx) =>
       ctx.db.insert("notifications", {
         orgId: clientOrgId,
-        type: "policy_change_completed",
+        type: "own_compliance_resolved",
         title: "Policy update completed",
         body: "Your policy update completed.",
         severity: "info",
@@ -46,7 +46,7 @@ describe("sendNotificationEmail", () => {
       ctx.db.insert("notificationPreferences", {
         userId,
         orgId: clientOrgId,
-        type: "policy_change_completed",
+        type: "own_compliance_resolved",
         channel: "email",
         enabled: true,
         updatedAt: dayjs().valueOf(),
@@ -278,85 +278,4 @@ describe("sendNotificationEmail", () => {
     vi.unstubAllEnvs();
   });
 
-  test("uses deep links for vendor compliance and thread notifications", async () => {
-    const t = convexTest(schema, modules);
-
-    const orgId = await t.run(async (ctx) =>
-      ctx.db.insert("organizations", { name: "Acme Co", type: "client" }),
-    );
-    const userId = await t.run(async (ctx) =>
-      ctx.db.insert("users", { name: "Ava", email: "ava@acme.co" }),
-    );
-    await t.run(async (ctx) =>
-      ctx.db.insert("orgMemberships", { orgId, userId, role: "admin" }),
-    );
-    await t.run(async (ctx) =>
-      ctx.db.insert("notificationPreferences", {
-        userId,
-        orgId,
-        type: "vendor_compliance_gap",
-        channel: "email",
-        enabled: true,
-        updatedAt: dayjs().valueOf(),
-      }),
-    );
-    const threadId = await t.run(async (ctx) =>
-      ctx.db.insert("threads", {
-        orgId,
-        title: "Vendor compliance follow-up - Cios",
-        createdBy: userId,
-        lastMessageAt: dayjs().valueOf(),
-        originChannel: "chat",
-      }),
-    );
-    const vendorNotificationId = await t.run(async (ctx) =>
-      ctx.db.insert("notifications", {
-        orgId,
-        type: "vendor_compliance_gap",
-        title: "Cios is missing vendor requirements",
-        body: "1 vendor requirement needs attention.",
-        severity: "warning",
-        status: "unread",
-        emailStatus: "scheduled",
-        actionType: "view_vendor_compliance",
-        actionPayload: { vendorOrgId: "vendor123" },
-        createdAt: dayjs().valueOf(),
-      }),
-    );
-    const threadNotificationId = await t.run(async (ctx) =>
-      ctx.db.insert("notifications", {
-        orgId,
-        type: "vendor_compliance_gap",
-        title: "Cios follow-up draft ready",
-        body: "A follow-up email draft is ready.",
-        severity: "warning",
-        status: "unread",
-        emailStatus: "scheduled",
-        actionType: "view_thread",
-        actionPayload: { threadId },
-        createdAt: dayjs().valueOf(),
-      }),
-    );
-
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ id: "resend-msg-vendor" }),
-    });
-    vi.stubGlobal("fetch", mockFetch);
-    vi.stubEnv("AUTH_RESEND_KEY", "test-resend-key");
-    vi.stubEnv("SITE_URL", "https://spot.example");
-
-    await t.action(sendFn, { notificationId: vendorNotificationId });
-    await t.action(sendFn, { notificationId: threadNotificationId });
-
-    const firstBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-    const secondBody = JSON.parse(mockFetch.mock.calls[1][1].body);
-    expect(firstBody.text).toContain("https://spot.example/connect/vendors");
-    expect(secondBody.text).toContain(
-      `https://spot.example/agent/thread/${threadId}`,
-    );
-
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
 });

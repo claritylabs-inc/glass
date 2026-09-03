@@ -134,20 +134,6 @@ function assertCurrentOrg(
 
 // ── Public mutations ────────────────────────────────────────────────────────
 
-export const set = mutation({
-  args: {
-    orgId: v.id("organizations"),
-    type: v.string(),
-    channel: channelValidator,
-    enabled: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAccess(ctx);
-    assertCurrentOrg(orgId, args.orgId);
-    await upsertPref(ctx, userId, args.orgId, args.type, args.channel, args.enabled);
-  },
-});
-
 export const setChannels = mutation({
   args: {
     orgId: v.id("organizations"),
@@ -303,23 +289,6 @@ export const getProactiveChannels = query({
       imessage,
       configured: Boolean(emailPreference || imessagePreference),
     };
-  },
-});
-
-// ── Internal query (used by sendNotificationEmail action) ───────────────────
-
-/** Returns resolved email preference (true/false) for a user+type, or null if no row exists. */
-export const resolveForUser = internalQuery({
-  args: {
-    userId: v.id("users"),
-    orgId: v.id("organizations"),
-    type: v.string(),
-  },
-  handler: async (ctx, args): Promise<boolean | null> => {
-    return await findChannelPreferenceOverride(ctx, {
-      ...args,
-      channel: "email",
-    });
   },
 });
 

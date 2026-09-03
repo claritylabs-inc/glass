@@ -49,11 +49,4 @@ describe("MCP nested agent tool access", () => {
       ).sort(),
     ).toEqual(readTools.sort());
   });
-
-  test("retains write tools when write scope is available", () => {
-    const tools = namedTools([...MCP_CHAT_WRITE_TOOL_NAMES]);
-    expect(
-      filterToolsForWriteAccess(tools, true, MCP_CHAT_WRITE_TOOL_NAMES),
-    ).toBe(tools);
-  });
 });

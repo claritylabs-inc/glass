@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
-import { internalQuery, mutation, query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -104,13 +104,6 @@ export const getEffectiveForCurrentOrg = query({
     const access = await requireCurrentOrgAccess(ctx);
     assertClientOrg(access);
     return await resolveEffectiveForOrg(ctx, access.orgId);
-  },
-});
-
-export const getEffectiveInternal = internalQuery({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    return await resolveEffectiveForOrg(ctx, args.orgId);
   },
 });
 

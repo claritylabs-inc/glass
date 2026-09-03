@@ -108,13 +108,6 @@ export const findOrCreateConversation = internalMutation({
   },
 });
 
-export const getConversationInternal = internalQuery({
-  args: { id: v.id("publicDemoConversations") },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
-  },
-});
-
 export const listConversationLogsInternal = internalQuery({
   args: {
     conversationId: v.id("publicDemoConversations"),

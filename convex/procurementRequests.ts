@@ -34,7 +34,6 @@ import {
   userFacingErrorCodes,
 } from "./lib/userFacingErrors";
 import {
-  removeEmailThreadCompanyInformation,
   scheduleClientFileCompanyInformation,
   scheduleEmailThreadCompanyInformation,
 } from "./companyInformation";
@@ -512,18 +511,6 @@ export const get = query({
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     return await getProcurementRequestDetails(ctx, args.requestId);
-  },
-});
-
-export const getForwardingAddress = query({
-  args: { requestId: v.id("procurementRequests") },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    const request = await requireRequest(ctx, args.requestId);
-    return {
-      requestId: request._id,
-      address: requestForwardingAddress(request),
-    };
   },
 });
 
@@ -1449,80 +1436,6 @@ async function emailThreadClientFileIds(
   return [...new Set(messages.flatMap((message) => message.clientFileIds))];
 }
 
-export const setEmailThreadArchived = mutation({
-  args: {
-    emailThreadId: v.id("procurementEmailThreads"),
-    archived: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await requireDirectOperatorWrite(ctx, operator.userId);
-    const thread = await ctx.db.get(args.emailThreadId);
-    if (!thread || thread.deletedAt) {
-      throw new Error("Procurement email thread not found");
-    }
-    const now = dayjs().valueOf();
-    await ctx.db.patch(thread._id, {
-      archivedAt: args.archived ? now : undefined,
-      archivedByUserId: args.archived ? operator.userId : undefined,
-      updatedAt: now,
-    });
-    if (args.archived) {
-      await removeEmailThreadCompanyInformation(ctx, thread._id);
-    } else {
-      await scheduleEmailThreadCompanyInformation(ctx, thread._id);
-      for (const clientFileId of await emailThreadClientFileIds(
-        ctx,
-        thread._id,
-      )) {
-        await scheduleClientFileCompanyInformation(ctx, clientFileId);
-      }
-    }
-    await writeOperatorAudit(ctx, {
-      operatorUserId: operator.userId,
-      type: "setup_write",
-      targetOrgId: thread.clientOrgId,
-      summary: `${args.archived ? "Archived" : "Restored"} procurement email thread ${thread.subject}`,
-      metadata: {
-        domain: "procurement",
-        emailThreadId: thread._id,
-        operation: args.archived ? "archive" : "restore",
-      },
-    });
-    return { emailThreadId: thread._id, archived: args.archived };
-  },
-});
-
-export const removeEmailThread = mutation({
-  args: { emailThreadId: v.id("procurementEmailThreads") },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await requireDirectOperatorWrite(ctx, operator.userId);
-    const thread = await ctx.db.get(args.emailThreadId);
-    if (!thread || thread.deletedAt) return { deleted: false as const };
-    const now = dayjs().valueOf();
-    await ctx.db.patch(thread._id, {
-      deletedAt: now,
-      deletedByUserId: operator.userId,
-      archivedAt: thread.archivedAt ?? now,
-      archivedByUserId: thread.archivedByUserId ?? operator.userId,
-      updatedAt: now,
-    });
-    await removeEmailThreadCompanyInformation(ctx, thread._id);
-    await writeOperatorAudit(ctx, {
-      operatorUserId: operator.userId,
-      type: "setup_write",
-      targetOrgId: thread.clientOrgId,
-      summary: `Deleted procurement email thread ${thread.subject}`,
-      metadata: {
-        domain: "procurement",
-        emailThreadId: thread._id,
-        operation: "delete",
-      },
-    });
-    return { deleted: true as const };
-  },
-});
 
 export const resolveInboxInternal = internalQuery({
   args: { inboxToken: v.string() },

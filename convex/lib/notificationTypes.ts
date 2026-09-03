@@ -14,8 +14,6 @@ export const ACTIVE_NOTIFICATION_TYPES = [
   "vendor_compliance_gap",
   "vendor_policy_expiring",
   "vendor_policy_expired",
-  "policy_change_needs_info",
-  "policy_change_completed",
 ] as const;
 
 // Kept out of settings and active notify contracts. The schema still accepts
@@ -70,8 +68,6 @@ export function isProactiveNotificationType(
 const SLACK_SAFE_NOTIFICATION_TYPES = new Set<NotificationType>([
   "own_compliance_gap",
   "own_compliance_resolved",
-  "policy_change_needs_info",
-  "policy_change_completed",
 ]);
 
 const SLACK_VENDOR_NOTIFICATION_TYPES = new Set<NotificationType>([
@@ -101,8 +97,6 @@ export const NOTIFICATION_SEVERITY: Record<StoredNotificationType, NotificationS
   vendor_compliance_gap: "warning",
   vendor_policy_expiring: "warning",
   vendor_policy_expired: "critical",
-  policy_change_needs_info: "warning",
-  policy_change_completed: "info",
   coverage_gap: "warning",
   renewal_reminder: "warning",
   policy_lapsed: "critical",
@@ -207,18 +201,6 @@ export const NOTIFICATION_SETTINGS_ROWS: readonly NotificationSettingsRow[] = [
   {
     type: "incomplete_extraction",
     label: "Policy extraction needs review",
-    group: "Policies",
-    audiences: ["broker", "client"],
-  },
-  {
-    type: "policy_change_needs_info",
-    label: "Policy change needs info",
-    group: "Policies",
-    audiences: ["broker", "client"],
-  },
-  {
-    type: "policy_change_completed",
-    label: "Policy change completed",
     group: "Policies",
     audiences: ["broker", "client"],
   },

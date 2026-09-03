@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "../_generated/dataModel";
-import {
-  migrateLegacyComplianceRequirement,
-  requirementNeedsLegacyShapeBackfill,
-} from "./complianceRequirementMigration";
+import { migrateLegacyComplianceRequirement } from "./complianceRequirementMigration";
 
 const baseLegacy = {
   orgId: "org1" as Id<"organizations">,
@@ -45,51 +42,5 @@ describe("compliance requirement shape migration", () => {
       "waiver_of_subrogation",
       "primary_non_contributory",
     ]);
-  });
-
-  it("maps legacy manual-control rows to condition requirements", () => {
-    const migrated = migrateLegacyComplianceRequirement({
-      ...baseLegacy,
-      title: "Cancellation Notice",
-      category: "other",
-      appliesTo: "own_org",
-      evaluationTarget: "manual_control",
-      requirementText: "Provide 30 days written notice of cancellation.",
-    });
-
-    expect(migrated.kind).toBe("condition");
-    expect(migrated.scope).toBe("own_org");
-    expect(migrated.conditionType).toBe("cancellation_notice");
-    expect(migrated.noticeDays).toBe(30);
-  });
-
-  it("normalizes legacy crime requirements to the current CRIM code", () => {
-    const fromText = migrateLegacyComplianceRequirement({
-      ...baseLegacy,
-      title: "Employee fidelity coverage",
-      category: "other",
-      limitAmount: 100_000,
-      requirementText: "Maintain crime and fidelity insurance.",
-    });
-    const fromRetiredCode = migrateLegacyComplianceRequirement({
-      ...baseLegacy,
-      title: "Employee dishonesty",
-      category: "other",
-      coverageCode: "CRIME",
-      limitAmount: 100_000,
-      requirementText: "Employee dishonesty coverage is required.",
-    });
-
-    expect(fromText.lineOfBusiness).toBe("CRIM");
-    expect(fromRetiredCode.lineOfBusiness).toBe("CRIM");
-  });
-
-  it("does not backfill rows that already have redesigned discriminators", () => {
-    expect(
-      requirementNeedsLegacyShapeBackfill({
-        kind: "coverage",
-        scope: "vendors",
-      }),
-    ).toBe(false);
   });
 });

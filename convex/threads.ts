@@ -124,11 +124,7 @@ function formatImessageThreadTitle(args: {
 }
 
 function isDirectUserImessageThread(thread: Doc<"threads">): boolean {
-  return (
-    thread.originChannel === "imessage" &&
-    !thread.imessageIsGroup &&
-    !thread.deliveryContactKey
-  );
+  return thread.originChannel === "imessage" && !thread.imessageIsGroup;
 }
 
 function findPrivateDirectUserThread(
@@ -292,25 +288,6 @@ export const get = query({
     if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
       return null;
     return withImessageGroupDisplayTitle(ctx, thread);
-  },
-});
-
-export const tryGet = query({
-  args: { id: v.string() },
-  handler: async (ctx, args) => {
-    const access = await requireOrgAccess(ctx);
-    assertCanUseTenantAgent(access);
-    const { userId, orgId } = access;
-    try {
-      const normalized = ctx.db.normalizeId("threads", args.id);
-      if (!normalized) return null;
-      const thread = await ctx.db.get(normalized);
-      if (!thread || !canCurrentOrgUserAccessThread({ userId, orgId, thread }))
-        return null;
-      return await withImessageGroupDisplayTitle(ctx, thread);
-    } catch {
-      return null;
-    }
   },
 });
 
@@ -629,62 +606,6 @@ export const updateTitle = mutation({
   },
 });
 
-// ── Public mutations for streaming API route ──
-// These are thin auth-checked wrappers around internal mutations,
-// callable via ConvexHttpClient from the Next.js streaming API route.
-
-export const insertProcessingMessage = mutation({
-  args: { threadId: v.id("threads") },
-  handler: async (ctx, args) => {
-    const { orgId } = await requireCurrentOrgThread(ctx, args.threadId);
-    return ctx.db.insert("threadMessages", {
-      threadId: args.threadId,
-      orgId,
-      channel: "chat",
-      role: "agent",
-      messageKind: "conversation",
-      content: "",
-      status: "processing",
-    });
-  },
-});
-
-export const updateAgentResponse = mutation({
-  args: {
-    messageId: v.id("threadMessages"),
-    content: v.string(),
-    referencedPolicyIds: v.optional(v.array(v.id("policies"))),
-  },
-  handler: async (ctx, args) => {
-    const { message: msg } = await requireCurrentOrgThreadMessage(
-      ctx,
-      args.messageId,
-    );
-    await ctx.db.patch(args.messageId, {
-      content: args.content,
-      status: undefined,
-      referencedPolicyIds: args.referencedPolicyIds,
-    });
-    await ctx.db.patch(msg.threadId, { lastMessageAt: dayjs().valueOf() });
-  },
-});
-
-export const streamContent = mutation({
-  args: { messageId: v.id("threadMessages"), content: v.string() },
-  handler: async (ctx, args) => {
-    await requireCurrentOrgThreadMessage(ctx, args.messageId);
-    await ctx.db.patch(args.messageId, { content: args.content });
-  },
-});
-
-export const setMessageError = mutation({
-  args: { messageId: v.id("threadMessages"), error: v.string() },
-  handler: async (ctx, args) => {
-    await requireCurrentOrgThreadMessage(ctx, args.messageId);
-    await ctx.db.patch(args.messageId, { status: "error", error: args.error });
-  },
-});
-
 export const cancelProcessing = mutation({
   args: { messageId: v.id("threadMessages") },
   handler: async (ctx, args) => {
@@ -915,7 +836,6 @@ export const updateAgentMessage = internalMutation({
       ),
     ),
     pendingEmailId: v.optional(v.id("pendingEmails")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     status: v.optional(
       v.union(
         v.literal("pending_send"),
@@ -944,7 +864,6 @@ export const updateAgentMessage = internalMutation({
       toolArtifacts: args.toolArtifacts,
       attachments: args.attachments,
       pendingEmailId: args.pendingEmailId,
-      policyChangeCaseId: args.policyChangeCaseId,
     });
   },
 });
@@ -1076,16 +995,6 @@ export const deleteMessageInternal = internalMutation({
   },
 });
 
-/** Update agent message content while still streaming (keeps status as "processing") */
-export const streamAgentMessage = internalMutation({
-  args: { id: v.id("threadMessages"), content: v.string() },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.get(args.id);
-    if (existing?.status === "cancelled") return;
-    await ctx.db.patch(args.id, { content: args.content });
-  },
-});
-
 export const streamAgentProgress = internalMutation({
   args: {
     id: v.id("threadMessages"),
@@ -1119,23 +1028,6 @@ export const streamAgentProgress = internalMutation({
     if (args.toolArtifacts !== undefined)
       patch.toolArtifacts = args.toolArtifacts;
     await ctx.db.patch(args.id, patch);
-  },
-});
-
-/** Update agent reasoning while streaming (for models that support reasoning) */
-export const streamReasoning = internalMutation({
-  args: {
-    id: v.id("threadMessages"),
-    reasoning: v.string(),
-    agentSteps: v.optional(agentStepsValidator),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.get(args.id);
-    if (existing?.status === "cancelled") return;
-    await ctx.db.patch(args.id, {
-      reasoning: args.reasoning,
-      ...(args.agentSteps !== undefined ? { agentSteps: args.agentSteps } : {}),
-    });
   },
 });
 
@@ -1359,50 +1251,6 @@ export const recordNotificationImessageInternal = internalMutation({
   },
 });
 
-export const findOrCreateForDeliveryContact = internalMutation({
-  args: {
-    orgId: v.id("organizations"),
-    userId: v.id("users"),
-    contactKey: v.string(),
-    title: v.string(),
-    email: v.optional(v.string()),
-    phone: v.optional(v.string()),
-    agentDomain: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("threads")
-      .withIndex("organization_delivery", (q) =>
-        q.eq("orgId", args.orgId).eq("deliveryContactKey", args.contactKey),
-      )
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        lastMessageAt: dayjs().valueOf(),
-        threadPhone: existing.threadPhone ?? args.phone,
-        originChannel:
-          existing.originChannel ?? (args.phone ? "imessage" : "email"),
-      });
-      return existing._id;
-    }
-
-    const domain = args.agentDomain || FALLBACK_AGENT_DOMAIN;
-    const org = await ctx.db.get(args.orgId);
-    const threadEmail = createThreadEmail(org?.agentHandle, domain);
-
-    return ctx.db.insert("threads", {
-      orgId: args.orgId,
-      title: args.title,
-      createdBy: args.userId,
-      lastMessageAt: dayjs().valueOf(),
-      threadEmail,
-      deliveryContactKey: args.contactKey,
-      threadPhone: args.phone,
-      originChannel: args.phone ? "imessage" : "email",
-    });
-  },
-});
-
 export const insertUserMessageInternal = internalMutation({
   args: {
     threadId: v.id("threads"),
@@ -1438,54 +1286,6 @@ export const findByEmail = internalQuery({
 });
 
 // ── Inbound email / iMessage routing helpers ──
-
-export const findOrCreateByPhone = internalMutation({
-  args: {
-    orgId: v.id("organizations"),
-    userId: v.id("users"),
-    fromPhone: v.string(),
-    userName: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const privacyState = await ctx.db
-      .query("imessagePrivacyStates")
-      .withIndex("user", (q) => q.eq("userId", args.userId))
-      .unique();
-    const historyGeneration = privacyState?.historyGeneration ?? 0;
-    const candidates = await ctx.db
-      .query("threads")
-      .withIndex("organization_phone", (q) =>
-        q.eq("orgId", args.orgId).eq("threadPhone", args.fromPhone),
-      )
-      .collect();
-    const currentGenerationCandidates = candidates.filter(
-      (candidate) =>
-        (candidate.imessageHistoryGeneration ?? 0) === historyGeneration,
-    );
-    const existing =
-      findPrivateDirectUserThread(currentGenerationCandidates, args.userId) ??
-      findMigratableDirectUserThread(currentGenerationCandidates, args.userId);
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        lastMessageAt: dayjs().valueOf(),
-        visibility: "user_private",
-        imessageHistoryGeneration: historyGeneration,
-      });
-      return existing._id;
-    }
-    const displayName = args.userName ?? args.fromPhone;
-    return ctx.db.insert("threads", {
-      orgId: args.orgId,
-      title: `iMessage - ${displayName}`,
-      createdBy: args.userId,
-      lastMessageAt: dayjs().valueOf(),
-      threadPhone: args.fromPhone,
-      originChannel: "imessage",
-      visibility: "user_private",
-      imessageHistoryGeneration: historyGeneration,
-    });
-  },
-});
 
 export const findOrCreateByImessageChat = internalMutation({
   args: {
@@ -1630,7 +1430,6 @@ export const insertImessageMessage = internalMutation({
     ),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     status: v.optional(v.union(v.literal("processing"), v.literal("error"))),
     error: v.optional(v.string()),
   },
@@ -1664,7 +1463,6 @@ export const insertImessageMessage = internalMutation({
       toolArtifacts: args.toolArtifacts,
       referencedPolicyIds: args.referencedPolicyIds,
       pendingEmailId: args.pendingEmailId,
-      policyChangeCaseId: args.policyChangeCaseId,
       status: args.status,
       error: args.error,
     });
@@ -1784,18 +1582,6 @@ export const recordImessageAttachmentDeliveryFailure = internalMutation({
         },
       ],
     });
-  },
-});
-
-export const getImessageHistory = internalQuery({
-  args: { threadId: v.id("threads"), limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const messages = await ctx.db
-      .query("threadMessages")
-      .withIndex("thread", (q) => q.eq("threadId", args.threadId))
-      .order("desc")
-      .take(args.limit ?? 20);
-    return messages.reverse();
   },
 });
 
@@ -2040,7 +1826,6 @@ export const insertEmailMessage = internalMutation({
     ),
     error: v.optional(v.string()),
     pendingEmailId: v.optional(v.id("pendingEmails")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   },
   handler: async (ctx, args) => {
     const existing = await findThreadMessageByDedupeKey(
@@ -2075,7 +1860,6 @@ export const insertEmailMessage = internalMutation({
       status: args.status,
       error: args.error,
       pendingEmailId: args.pendingEmailId,
-      policyChangeCaseId: args.policyChangeCaseId,
     });
 
     // Update the thread's lastMessageAt
@@ -2109,7 +1893,6 @@ export const updateEmailMessage = internalMutation({
     ),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     pendingEmailId: v.optional(v.id("pendingEmails")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     status: v.optional(
       v.union(v.literal("draft_email"), v.literal("cancelled")),
     ),

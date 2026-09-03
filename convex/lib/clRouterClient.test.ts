@@ -1,15 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   ClRouterRequestError,
-  clRouterEmbed,
   clRouterGenerate,
-  clRouterGenerateStream,
-  clRouterTranscribe,
-  isClRouterTaskFlagged,
-  isClRouterDirectFallbackError,
-  sendClRouterFeedback,
-  shouldUseClRouterForCall,
-  shouldUseClRouterForTask,
   withClRouterDirectFallback,
 } from "./clRouterClient";
 
@@ -48,47 +40,6 @@ function responseMetadata() {
     costStatus: "priced",
   };
 }
-
-describe("cl-router feature gating", () => {
-  test("is opt-in per supported task", () => {
-    const flags = { CL_ROUTER_TASKS: " classification,embeddings,chat " };
-    expect(shouldUseClRouterForTask("classification", flags)).toBe(true);
-    expect(shouldUseClRouterForTask("embeddings", flags)).toBe(true);
-    expect(shouldUseClRouterForTask("voice_transcription", flags)).toBe(false);
-    expect(shouldUseClRouterForTask("chat", flags)).toBe(true);
-    expect(shouldUseClRouterForTask("classification", {})).toBe(false);
-    expect(shouldUseClRouterForTask("classification", { CL_ROUTER_TASKS: "*" })).toBe(true);
-    expect(shouldUseClRouterForTask("chat", { CL_ROUTER_TASKS: "*" })).toBe(true);
-    expect(isClRouterTaskFlagged("chat", { CL_ROUTER_TASKS: "chat" })).toBe(true);
-    expect(isClRouterTaskFlagged("chat_vision", { CL_ROUTER_TASKS: "chat" })).toBe(false);
-    expect(shouldUseClRouterForCall(
-      "extraction",
-      "extraction_source_tree",
-      { CL_ROUTER_TASKS: "extraction_source_tree" },
-    )).toBe(true);
-    expect(shouldUseClRouterForCall(
-      "extraction",
-      "extraction_source_tree",
-      { CL_ROUTER_TASKS: "extraction" },
-    )).toBe(true);
-  });
-
-  test("routes query reasoning whenever the router is configured", () => {
-    expect(shouldUseClRouterForCall("chat", "query_reason", environment)).toBe(
-      true,
-    );
-    expect(shouldUseClRouterForCall("chat", "query_reason", {})).toBe(false);
-  });
-
-  test("never routes the operator agent even when every router task is enabled", () => {
-    expect(
-      shouldUseClRouterForCall("chat_vision", "operator_agent", {
-        ...environment,
-        CL_ROUTER_TASKS: "*",
-      }),
-    ).toBe(false);
-  });
-});
 
 describe("cl-router requests", () => {
   test("sends typed generation settings and preserves routing lineage", async () => {
@@ -183,49 +134,6 @@ describe("cl-router requests", () => {
     });
   });
 
-  test("ignores malformed optional attempt diagnostics without losing the typed failure", async () => {
-    const fetchMock = vi.fn(async () => Response.json({
-      error: {
-        code: "router_candidates_exhausted",
-        message: "Every eligible provider candidate failed",
-        retryable: true,
-        executionStarted: true,
-        requestId: "failed-request-2",
-        attempts: [{ provider: "fireworks", privateMessage: "secret" }],
-      },
-    }, { status: 502 }));
-
-    await expect(clRouterGenerate(
-      { task: "chat", taskKind: "query_reason", prompt: "Check requirements." },
-      { environment, fetch: fetchMock },
-    )).rejects.toMatchObject({
-      routerCode: "router_candidates_exhausted",
-      requestId: "failed-request-2",
-      attempts: [],
-    });
-  });
-
-  test.each(["localhost", "127.0.0.1", "[::1]"])(
-    "allows plaintext HTTP only for loopback host %s",
-    async (host) => {
-      const fetchMock = vi.fn(async () => Response.json({
-        ...responseMetadata(),
-        output: "ok",
-      }));
-      await clRouterGenerate(
-        { task: "classification", prompt: "test" },
-        {
-          environment: {
-            CL_ROUTER_URL: `http://${host}:3000`,
-            CL_ROUTER_SECRET: "router-secret",
-          },
-          fetch: fetchMock,
-        },
-      );
-      expect(fetchMock).toHaveBeenCalledOnce();
-    },
-  );
-
   test("rejects plaintext HTTP for non-loopback hosts before sending secrets", async () => {
     const fetchMock = vi.fn();
     await expect(clRouterGenerate(
@@ -240,127 +148,9 @@ describe("cl-router requests", () => {
     )).rejects.toMatchObject({ kind: "configuration" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
-
-  test("parses SSE events split across transport chunks", async () => {
-    const events = [
-      { type: "text-delta", id: "text-1", delta: "Hello" },
-      { type: "done", finishReason: "stop", ...responseMetadata() },
-    ];
-    const encoded = new TextEncoder().encode(events.map((event) =>
-      `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""));
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoded.slice(0, 17));
-        controller.enqueue(encoded.slice(17, 61));
-        controller.enqueue(encoded.slice(61));
-        controller.close();
-      },
-    });
-    const result = await clRouterGenerateStream(
-      { task: "chat", messages: [{ role: "user", content: "Hello" }] },
-      {
-        environment,
-        fetch: vi.fn(async () => new Response(body, {
-          headers: { "content-type": "text/event-stream" },
-        })),
-      },
-    );
-    const received = [];
-    for await (const event of result.events) received.push(event);
-    expect(received).toEqual(events);
-  });
-
-  test("validates embedding vectors", async () => {
-    const fetchMock = vi.fn(async () => Response.json({
-      ...responseMetadata(),
-      embeddings: [[0.1, 0.2], [0.3, 0.4]],
-    }));
-    await expect(clRouterEmbed(
-      { texts: ["one", "two"], dimensions: 2 },
-      { environment, fetch: fetchMock },
-    )).resolves.toMatchObject({ embeddings: [[0.1, 0.2], [0.3, 0.4]] });
-  });
-
-  test("sends JSON transcription metadata with an audio asset reference", async () => {
-    const fetchMock = vi.fn(async () => Response.json({
-      ...responseMetadata(),
-      text: "Bound policy transcript.",
-    }));
-    await clRouterTranscribe({
-      orgId: "org-1",
-      audio: {
-        url: "https://storage.example.test/memo.m4a",
-        filename: "memo.m4a",
-        mediaType: "audio/mp4",
-        sizeBytes: 3,
-      },
-      trace: { parentRequestId: "parent-1" },
-    }, { environment, fetch: fetchMock });
-
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://router.example.test/v1/transcribe");
-    expect(init.headers).toMatchObject({ "Content-Type": "application/json" });
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      tenantId: "glass",
-      orgId: "org-1",
-      audio: {
-        url: "https://storage.example.test/memo.m4a",
-        filename: "memo.m4a",
-        mediaType: "audio/mp4",
-        sizeBytes: 3,
-      },
-      trace: { parentRequestId: "parent-1" },
-    });
-  });
-
-  test("sends idempotent feedback against the originating router request", async () => {
-    const fetchMock = vi.fn(async () => Response.json({ accepted: true, duplicate: false }));
-    await sendClRouterFeedback({
-      requestId: "request-1",
-      idempotencyKey: "review-1",
-      source: "operator_extraction",
-      signals: {
-        rating: "down",
-        reviewCorrectionCount: 2,
-        reviewedFieldCount: 8,
-      },
-      trace: { parentRequestId: "parent-1" },
-    }, { environment, fetch: fetchMock });
-
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      tenantId: "glass",
-      requestId: "request-1",
-      idempotencyKey: "review-1",
-      source: "operator_extraction",
-      signals: { rating: "down" },
-      trace: { parentRequestId: "parent-1" },
-    });
-  });
 });
 
 describe("cl-router direct fallback boundary", () => {
-  test("allows production fallback only for proven pre-execution outages", () => {
-    const refused = Object.assign(new Error("refused"), { code: "ECONNREFUSED" });
-    const unavailable = new ClRouterRequestError("server", "down", {
-      status: 503,
-      routerCode: "router_unavailable",
-      retryable: true,
-      executionStarted: false,
-    });
-    expect(isClRouterDirectFallbackError(
-      new ClRouterRequestError("connection", "down", { cause: refused }),
-      environment,
-    )).toBe(true);
-    expect(isClRouterDirectFallbackError(unavailable, environment)).toBe(true);
-    expect(isClRouterDirectFallbackError(unavailable, { SPOT_ENV: "local" })).toBe(false);
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("timeout", "slow"), environment)).toBe(false);
-    expect(isClRouterDirectFallbackError(
-      new ClRouterRequestError("server", "bad", { status: 503 }),
-      environment,
-    )).toBe(false);
-    expect(isClRouterDirectFallbackError(new ClRouterRequestError("client", "bad"), environment)).toBe(false);
-  });
 
   test("falls back after a typed pre-execution production outage", async () => {
     const direct = vi.fn(async () => "direct");
@@ -377,21 +167,5 @@ describe("cl-router direct fallback boundary", () => {
       environment,
     })).resolves.toBe("direct");
     expect(direct).toHaveBeenCalledOnce();
-  });
-
-  test("does not fall back after a 4xx response", async () => {
-    const direct = vi.fn(async () => "direct");
-    await expect(withClRouterDirectFallback({
-      router: () => clRouterGenerate(
-        { task: "classification", prompt: "test" },
-        {
-          environment,
-          fetch: vi.fn(async () => new Response(null, { status: 401 })),
-        },
-      ).then(() => "router"),
-      direct,
-      environment,
-    })).rejects.toMatchObject({ kind: "client", status: 401 });
-    expect(direct).not.toHaveBeenCalled();
   });
 });

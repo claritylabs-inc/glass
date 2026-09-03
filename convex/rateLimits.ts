@@ -1,4 +1,4 @@
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 
 const WINDOW_MS = 60_000;
@@ -45,32 +45,5 @@ export const checkRateLimit = internalMutation({
     });
 
     return { allowed: true };
-  },
-});
-
-export const getRateLimitStatus = internalQuery({
-  args: { tokenId: v.id("oauthTokens") },
-  handler: async (ctx, { tokenId }) => {
-    const counter = await ctx.db
-      .query("rateLimitCounters")
-      .withIndex("token", (q) => q.eq("tokenId", tokenId))
-      .first();
-
-    if (!counter) {
-      return { count: 0, windowStart: Date.now(), remaining: BURST_LIMIT };
-    }
-
-    const now = Date.now();
-    const windowAge = now - counter.windowStart;
-    if (windowAge > WINDOW_MS) {
-      return { count: 0, windowStart: now, remaining: BURST_LIMIT };
-    }
-
-    return {
-      count: counter.count,
-      windowStart: counter.windowStart,
-      remaining: BURST_LIMIT - counter.count,
-      window_expires_in_ms: WINDOW_MS - windowAge,
-    };
   },
 });

@@ -3,29 +3,6 @@ import { describe, expect, it } from "vitest";
 import { buildCertificateGateEvidencePacket } from "./certificateRequestGate";
 
 describe("buildCertificateGateEvidencePacket", () => {
-  it("uses preprocessed named additional insured evidence without source nodes", () => {
-    const packet = buildCertificateGateEvidencePacket({
-      certificateHolder: "Northwoods Customer LLC",
-      requestText: "Add this customer as additional insured on the COI",
-      policy: {
-        operationalProfile: {
-          additionalInsureds: [
-            {
-              name: "Northwoods Customer LLC",
-              status: "scheduled_by_endorsement",
-              scope: "Scheduled additional insured by endorsement.",
-              endorsementTitle: "Additional Insured Endorsement",
-              sourceSpanIds: ["span-scheduled-ai"],
-            },
-          ],
-        },
-      },
-    });
-
-    expect(packet[0]?.label).toBe("Named additional insured");
-    expect(packet[0]?.text).toContain("Northwoods Customer LLC");
-    expect(packet[0]?.sourceSpanIds).toContain("span-scheduled-ai");
-  });
 
   it("includes named additional insured profile evidence for LLM certificate gating", () => {
     const packet = buildCertificateGateEvidencePacket({

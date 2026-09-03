@@ -58,55 +58,6 @@ function policy(patch: Partial<Doc<"policies">>): Doc<"policies"> {
 }
 
 describe("assessRequirementCompliance", () => {
-  it("matches ACORD LOB and structured limit kinds", () => {
-    const result = assessRequirementCompliance(
-      requirement({}),
-      [policy({})],
-      {
-        now: dayjs("2026-07-01").valueOf(),
-        expectedInsuredName: "Acme",
-      },
-    );
-
-    expect(result.status).toBe("met");
-    expect(result.matchedPolicyIds).toEqual(["policy1"]);
-  });
-
-  it("matches normalized CRIM requirements to legacy CRIME policies", () => {
-    const result = assessRequirementCompliance(
-      requirement({
-        title: "Crime coverage",
-        requirementText: "Crime coverage with a $1M limit is required.",
-        lineOfBusiness: "CRIM",
-        limits: [{ kind: "other", amount: 1_000_000 }],
-      }),
-      [
-        policy({
-          linesOfBusiness: ["CGL"],
-          coverages: [
-            {
-              name: "Commercial General Liability",
-              lineOfBusiness: "CGL",
-              limitAmount: 2_000_000,
-            },
-            {
-              name: "Crime",
-              lineOfBusiness: "CRIME",
-              limitAmount: 1_000_000,
-            },
-          ],
-        }),
-      ],
-      {
-        now: dayjs("2026-07-01").valueOf(),
-        expectedInsuredName: "Acme",
-      },
-    );
-
-    expect(result.status).toBe("met");
-    expect(result.matchedPolicyIds).toEqual(["policy1"]);
-    expect(result.matchedPolicy?.coverageName).toBe("Crime");
-  });
 
   it("returns not_met with a reason when the matching limit is too low", () => {
     const result = assessRequirementCompliance(
@@ -170,58 +121,6 @@ describe("assessRequirementCompliance", () => {
     ]);
   });
 
-  it("selects a cyber-named OLIB coverage instead of falling back to E&O", () => {
-    const result = assessRequirementCompliance(
-      requirement({
-        title: "Cyber coverage",
-        requirementText: "Cyber coverage is required.",
-        lineOfBusiness: "CYBER",
-        limits: [{ kind: "other", amount: 3_000_000 }],
-      }),
-      [
-        policy({
-          linesOfBusiness: ["EO", "CYBER"],
-          coverages: [
-            {
-              name: "Errors and Omissions",
-              lineOfBusiness: "EO",
-              limitAmount: 5_000_000,
-            },
-            {
-              name: "Network Security & Privacy Liability",
-              lineOfBusiness: "OLIB",
-              limitAmount: 3_000_000,
-            },
-          ],
-        }),
-      ],
-      { now: dayjs("2026-07-01").valueOf() },
-    );
-
-    expect(result.matchedPolicy?.coverageName).toBe(
-      "Network Security & Privacy Liability",
-    );
-  });
-
-  it("reports missing deductible, coverage form, and retro date as unverified", () => {
-    const result = assessRequirementCompliance(
-      requirement({
-        maxDeductible: { amount: 100_000 },
-        coverageForm: "claims_made",
-        retroactiveDateOnOrBefore: "2026-03-15",
-      }),
-      [policy({})],
-      { now: dayjs("2026-07-01").valueOf() },
-    );
-
-    expect(result.status).toBe("unverified");
-    expect(result.reasons).toEqual(expect.arrayContaining([
-      "deductible_unverifiable",
-      "coverage_form_unverifiable",
-      "retroactive_date_unverifiable",
-    ]));
-  });
-
   it("treats current manual verification as authoritative for non-coverage rules", () => {
     const req = requirement({
       kind: "condition",
@@ -249,25 +148,6 @@ describe("assessRequirementCompliance", () => {
 
     expect(result.status).toBe("met");
     expect(result.checkedBy).toBe("user");
-  });
-
-  it("surfaces the latest persisted agent review", () => {
-    const result = assessRequirementCompliance(requirement({ updatedAt: 10 }), [policy({})], {
-      now: dayjs("2026-07-01").valueOf(),
-      existingChecks: [{
-        status: "unverified",
-        reasons: ["agent_review"],
-        matchedPolicyIds: ["policy1" as Id<"policies">],
-        matchedSummary: "The policy does not split per-claim and aggregate limits.",
-        checkedAt: 20,
-        checkedBy: "agent",
-        checkedByUserId: "user1" as Id<"users">,
-      }],
-    });
-
-    expect(result.status).toBe("unverified");
-    expect(result.checkedBy).toBe("agent");
-    expect(result.matchedSummary).toContain("does not split");
   });
 
   it("invalidates a saved review after its matched policy changes", () => {

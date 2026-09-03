@@ -1010,41 +1010,6 @@ export const listAllPreviewReadableInternal = internalQuery({
   },
 });
 
-export const listPreviewReadableForAgentContextInternal = internalQuery({
-  args: {
-    orgId: v.id("organizations"),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 120), 160));
-    const candidates = await ctx.db
-      .query("policies")
-      .withIndex("organization", (idx) => idx.eq("orgId", args.orgId))
-      .take(limit * 3);
-    return candidates
-      .filter(isPreviewReadablePolicy)
-      .slice(0, limit)
-      .map((policy) => ({
-        ...policy,
-        extractionDataStage: effectiveExtractionDataStage(policy),
-      }));
-  },
-});
-
-// Legacy: support userId-based lookup during transition
-export const listAllInternalByUser = internalQuery({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    const all = await ctx.db
-      .query("policies")
-      .withIndex("user", (idx) =>
-        idx.eq("userId", args.userId as unknown as never),
-      )
-      .collect();
-    return all.filter(isFinalExtractedPolicy);
-  },
-});
-
 // Shared validators for coverages and document structure
 const coverageValidator = v.object({
   name: v.string(),
@@ -2471,14 +2436,6 @@ export const appendExtractionLog = internalMutation({
   },
 });
 
-export const clearExtractionLog = internalMutation({
-  args: { id: v.id("policies") },
-  handler: async (ctx, args) => {
-    await patchPolicyExtractionRun(ctx, args.id, { pipelineLog: [] });
-    await ctx.db.patch(args.id, { pipelineLog: undefined });
-  },
-});
-
 export const getInternal = internalQuery({
   args: { id: v.id("policies") },
   handler: async (ctx, args) => {
@@ -2899,16 +2856,6 @@ export const softDeleteInternal = internalMutation({
     const policy = await ctx.db.get(args.id);
     await ctx.db.patch(args.id, { deletedAt: dayjs().valueOf() });
     await deactivatePolicyDeclarationFacts(ctx, args.id, policy?.orgId);
-  },
-});
-
-export const updateAnalysis = internalMutation({
-  args: {
-    id: v.id("policies"),
-    analysis: v.any(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { analysis: args.analysis });
   },
 });
 

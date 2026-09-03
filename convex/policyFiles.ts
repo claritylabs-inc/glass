@@ -72,16 +72,6 @@ export const remove = internalMutation({
   },
 });
 
-export const reassignToPolicy = internalMutation({
-  args: {
-    id: v.id("policyFiles"),
-    newPolicyId: v.id("policies"),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, { policyId: args.newPolicyId });
-  },
-});
-
 // ── cl-pipelines contract mutations for policyFiles ────────────────────────────
 const _policyFilesPipeline = makePipelineMutations("policyFiles");
 export const pipelineGetJob = _policyFilesPipeline.getJob;

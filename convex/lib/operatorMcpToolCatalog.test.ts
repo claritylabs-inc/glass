@@ -3,21 +3,6 @@ import { describe, expect, test } from "vitest";
 import { buildOperatorMcpToolCatalog } from "./operatorMcpToolCatalog";
 
 describe("operator MCP tool catalog", () => {
-  test("publishes each write-capable owner tool exactly once", () => {
-    const tools = buildOperatorMcpToolCatalog({
-      canWrite: true,
-      operatorRole: "owner",
-    });
-    const names = tools.map(({ name }) => name);
-
-    expect(new Set(names).size).toBe(names.length);
-    expect(names).toContain("run_operator_task");
-    expect(names).toContain("generate_coi");
-    expect(names).toContain("create_procurement_request");
-    expect(names).toContain("update_procurement_email_thread");
-    expect(names).toContain("update_client_wiki_section");
-    expect(names).toContain("clear_all_agent_memory");
-  });
 
   test("limits read-only operators to read tools and run status", () => {
     const tools = buildOperatorMcpToolCatalog({

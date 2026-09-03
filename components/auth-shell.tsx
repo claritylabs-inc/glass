@@ -1,40 +1,9 @@
 import { type ReactNode } from "react";
 import { SpotWordmark } from "@/components/ui/spot-wordmark";
-import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { typeStyle } from "@/lib/typography";
 
 export function BrandWordmark() {
   return <SpotWordmark />;
-}
-
-export function PartnerWordmark({
-  name,
-  iconUrl,
-  website,
-}: {
-  name?: string | null;
-  iconUrl?: string | null;
-  website?: string | null;
-}) {
-  const normalizedName = name?.trim();
-
-  if (!normalizedName) {
-    return <SpotWordmark />;
-  }
-
-  return (
-    <div className="flex items-center gap-2.5 text-foreground">
-      <div className="h-6 w-6 overflow-hidden rounded-md">
-        <OrgBrandIcon
-          name={normalizedName}
-          iconUrl={iconUrl}
-          website={website}
-          size="sm"
-        />
-      </div>
-      <span className={`${typeStyle("body.medium")}`}>{normalizedName}</span>
-    </div>
-  );
 }
 
 export function PoweredBySpotWordmark() {

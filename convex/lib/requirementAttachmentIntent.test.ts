@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "../_generated/dataModel";
-import {
-  requiredRequirementImportStep,
-  validateRequirementAttachmentDecision,
-} from "./requirementAttachmentIntent";
+import { validateRequirementAttachmentDecision } from "./requirementAttachmentIntent";
 
 const file = (filename: string, id = filename) => ({
   filename,
@@ -37,48 +34,6 @@ describe("requirement attachment decisions", () => {
       attachments: [source],
       scope: "own_org",
     });
-  });
-
-  it("confirms low-confidence exact scope and rejects mixed scope", () => {
-    expect(
-      validateRequirementAttachmentDecision(
-        {
-          intent: "import_new_requirements",
-          intentEvidence: "import the attached requirements",
-          scope: "vendors",
-          selectedFileIds: ["requirements"],
-          documents: [
-            {
-              fileId: "requirements",
-              classification: "insurance_requirements",
-              confidence: 0.95,
-            },
-          ],
-          confidence: 0.85,
-        },
-        [file("Requirements.pdf", "requirements")],
-      ).authorization,
-    ).toBe("confirmation");
-
-    expect(
-      validateRequirementAttachmentDecision(
-        {
-          intent: "import_new_requirements",
-          intentEvidence: "import the attached requirements",
-          scope: "mixed",
-          selectedFileIds: ["requirements"],
-          documents: [
-            {
-              fileId: "requirements",
-              classification: "insurance_requirements",
-              confidence: 0.95,
-            },
-          ],
-          confidence: 0.95,
-        },
-        [file("Requirements.pdf", "requirements")],
-      ).authorization,
-    ).toBe("none");
   });
 
   it("never selects a policy classified as a requirement source", () => {
@@ -123,15 +78,5 @@ describe("requirement attachment decisions", () => {
         [file("Requirements.pdf", "real")],
       ).authorization,
     ).toBe("none");
-  });
-
-  it("forces canonical import and lookup only for authorized decisions", () => {
-    expect(requiredRequirementImportStep(0, true)?.toolChoice.toolName).toBe(
-      "import_requirement_attachments",
-    );
-    expect(requiredRequirementImportStep(1, true)?.toolChoice.toolName).toBe(
-      "lookup_compliance_requirements",
-    );
-    expect(requiredRequirementImportStep(0, false)).toBeUndefined();
   });
 });

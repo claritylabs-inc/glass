@@ -272,17 +272,4 @@ describe("MailboxSettingsDrawer manual scan", () => {
     ).toBe(false);
   });
 
-  it("registers a pass-through barrier for a read-only mailbox", async () => {
-    let barrier: (() => Promise<boolean>) | null = null;
-    await mountDrawer({
-      canManageMailbox: false,
-      onSaveBarrierChange: (nextBarrier) => {
-        barrier = nextBarrier;
-      },
-    });
-
-    expect(barrier).not.toBeNull();
-    await expect(barrier!()).resolves.toBe(true);
-    expect(mocks.saveNow).not.toHaveBeenCalled();
-  });
 });

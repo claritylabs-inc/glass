@@ -710,18 +710,6 @@ export const process = internalMutation({
   },
 });
 
-export const listRecentForClient = internalQuery({
-  args: { clientOrgId: v.id("organizations"), limit: v.number() },
-  handler: async (ctx, args) =>
-    await ctx.db
-      .query("slackLifecycleEvents")
-      .withIndex("client_received", (q) =>
-        q.eq("clientOrgId", args.clientOrgId),
-      )
-      .order("desc")
-      .take(Math.max(1, Math.min(25, Math.floor(args.limit)))),
-});
-
 export const getHealthSummary = internalQuery({
   args: {},
   handler: async (ctx) => {

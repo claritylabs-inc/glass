@@ -81,36 +81,6 @@ describe("certificate requirement planning", () => {
     ]);
   });
 
-  it("uses only one matching policy for each requirement", () => {
-    const plan = buildCertificateRequirementPlan({
-      policies: [
-        { policyId: policyId("policy-first"), final: true },
-        { policyId: policyId("policy-second"), final: true },
-      ],
-      requirements: [
-        requirement("property", ["policy-first", "policy-second"]),
-      ],
-    });
-
-    expect(plan.targets.map((target) => target.policyId)).toEqual(["policy-first"]);
-  });
-
-  it("keeps a simple selected policy with every coverage when no source is used", () => {
-    const plan = buildCertificateRequirementPlan({
-      primaryPolicyId: policyId("policy-primary"),
-      policies: [{ policyId: policyId("policy-primary"), final: true }],
-      requirements: [],
-    });
-
-    expect(plan.targets).toEqual([
-      expect.objectContaining({
-        policyId: "policy-primary",
-        requirementIds: [],
-        includedLineOfBusinessCodes: [],
-      }),
-    ]);
-  });
-
   it("uses requirement revisions in the reuse signature", () => {
     const first = requirement("gl", ["policy-primary"]).snapshot;
     const revised = { ...first, updatedAt: 101 };

@@ -161,17 +161,6 @@ export const viewer = query({
   },
 });
 
-export const checkEmail = query({
-  args: { email: v.string() },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", args.email))
-      .first();
-    return { exists: !!user };
-  },
-});
-
 export const checkEmailAvailability = query({
   args: { email: v.string() },
   handler: async (ctx, args) => {
@@ -245,37 +234,6 @@ export const checkPhoneAvailability = query({
       current: existing?._id === userId,
       normalized,
     };
-  },
-});
-
-export const seedUsers = mutation({
-  args: {
-    users: v.array(
-      v.object({
-        email: v.string(),
-        name: v.optional(v.string()),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const created: string[] = [];
-    for (const u of args.users) {
-      const existing = await ctx.db
-        .query("users")
-        .withIndex("email", (q) => q.eq("email", u.email))
-        .first();
-      if (existing) {
-        created.push(`${u.email} (already exists: ${existing._id})`);
-        continue;
-      }
-      const id = await ctx.db.insert("users", {
-        email: u.email,
-        name: u.name,
-        emailVerificationTime: Date.now(),
-      });
-      created.push(`${u.email} (${id})`);
-    }
-    return created;
   },
 });
 
@@ -581,16 +539,6 @@ export const getInternal = internalQuery({
   },
 });
 
-export const findByPhone = internalQuery({
-  args: { phone: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("phone", (q) => q.eq("phone", args.phone))
-      .first();
-  },
-});
-
 export const findManyByPhones = internalQuery({
   args: { phones: v.array(v.string()) },
   handler: async (ctx, args) => {
@@ -646,14 +594,6 @@ export const getPrimaryOrgAdminInternal = internalQuery({
     }
 
     return preferredUser;
-  },
-});
-
-export const requireCustomerUserInternal = internalQuery({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    await assertCustomerUser(ctx, args.userId);
-    return true;
   },
 });
 

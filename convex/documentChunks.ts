@@ -57,17 +57,6 @@ export const deleteOne = internalMutation({
   },
 });
 
-/** List all chunks for an org with embeddings (used by PCA projection). */
-export const listAllForOrg = internalQuery({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    return ctx.db
-      .query("documentChunks")
-      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
-      .collect();
-  },
-});
-
 /** Delete one batch of chunks for a policy. Call until it returns 0 deleted rows. */
 export const deleteByPolicy = internalMutation({
   args: { policyId: v.id("policies") },

@@ -1,6 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
-import { requireOperator } from "./lib/operatorIdentity";
+import { internalMutation, internalQuery } from "./_generated/server";
 
 const nodeFields = {
   orgId: v.id("organizations"),
@@ -21,65 +20,6 @@ const nodeFields = {
   metadata: v.optional(v.any()),
   createdAt: v.number(),
 };
-
-export const listByDocument = query({
-  args: { proposalDocumentId: v.id("procurementProposalDocuments") },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    const document = await ctx.db.get(args.proposalDocumentId);
-    if (!document) return [];
-    const proposal = await ctx.db.get(document.proposalId);
-    if (
-      !proposal?.extractionFingerprint ||
-      !proposal.extractedOffer ||
-      proposal.status === "extracting"
-    )
-      return [];
-    return (
-      await ctx.db
-        .query("proposalSourceNodes")
-        .withIndex("proposal_fingerprint", (q) =>
-          q
-            .eq("proposalId", document.proposalId)
-            .eq("extractionFingerprint", proposal.extractionFingerprint!),
-        )
-        .collect()
-    ).filter((row) => row.proposalDocumentId === args.proposalDocumentId);
-  },
-});
-
-export const listChildren = query({
-  args: {
-    proposalDocumentId: v.id("procurementProposalDocuments"),
-    parentNodeId: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    const document = await ctx.db.get(args.proposalDocumentId);
-    if (!document) return [];
-    const proposal = await ctx.db.get(document.proposalId);
-    if (
-      !proposal?.extractionFingerprint ||
-      !proposal.extractedOffer ||
-      proposal.status === "extracting"
-    )
-      return [];
-    return (
-      await ctx.db
-        .query("proposalSourceNodes")
-        .withIndex("proposal_fingerprint", (q) =>
-          q
-            .eq("proposalId", document.proposalId)
-            .eq("extractionFingerprint", proposal.extractionFingerprint!),
-        )
-        .collect()
-    ).filter(
-      (row) =>
-        row.proposalDocumentId === args.proposalDocumentId &&
-        row.parentNodeId === args.parentNodeId,
-    );
-  },
-});
 
 export const listByProposalInternal = internalQuery({
   args: { proposalId: v.id("procurementProposals") },
