@@ -14,7 +14,11 @@ import {
   type StoredImessageAttachmentRecord,
 } from "./imessageIngress";
 import { tryBuildParsedPdfText } from "./liteparsePreprocessor";
-import { transcribeAudioForOrg, transcribeAudioForPublicTask } from "./models";
+import {
+  transcribeAudioForOperatorTask,
+  transcribeAudioForOrg,
+  transcribeAudioForPublicTask,
+} from "./models";
 
 export type ImessageHistoryMessage = {
   _id: string;
@@ -41,11 +45,21 @@ type ImessageContentPart =
 const VOICE_MEMO_TRANSCRIPTION_PROMPT =
   "This voice memo is addressed to Spot, an insurance intelligence assistant. Preserve names, email addresses, policy numbers, dates, insurance terminology, and explicit user instructions verbatim.";
 
-export type ImessageVoiceMemoInput = {
+const IMESSAGE_VOICE_TRANSCRIPTION_FAILED_MESSAGE =
+  "I couldn't transcribe that voice memo. Please try sending it again or send the request as text.";
+
+export type ImessageInboundScope =
+  | { kind: "organization"; orgId: Id<"organizations"> }
+  | { kind: "operator" }
+  | { kind: "public" };
+
+export type PreparedInboundImessageTurn = {
   messageText: string;
   hasVoiceMemos: boolean;
   transcripts: Array<{ filename: string; text: string }>;
   failures: Array<{ filename: string; error: string }>;
+  nonAudioAttachments: RawImessageAttachment[];
+  failureResponse?: string;
 };
 
 function explicitImessageText(messageText: string): string {
@@ -53,26 +67,30 @@ function explicitImessageText(messageText: string): string {
   return trimmed === "(attachment)" ? "" : trimmed;
 }
 
-export async function transcribeImessageVoiceMemos(
+export async function prepareInboundImessageTurn(
   ctx: ActionCtx,
   args: {
-    orgId?: Id<"organizations">;
+    scope: ImessageInboundScope;
     messageText: string;
     attachments?: RawImessageAttachment[];
   },
-): Promise<ImessageVoiceMemoInput> {
+): Promise<PreparedInboundImessageTurn> {
   const voiceMemos = (args.attachments ?? []).filter(isImessageAudioAttachment);
+  const nonAudioAttachments = (args.attachments ?? []).filter(
+    (attachment) => !isImessageAudioAttachment(attachment),
+  );
   if (voiceMemos.length === 0) {
     return {
       messageText: args.messageText,
       hasVoiceMemos: false,
       transcripts: [],
       failures: [],
+      nonAudioAttachments,
     };
   }
 
-  const transcripts: ImessageVoiceMemoInput["transcripts"] = [];
-  const failures: ImessageVoiceMemoInput["failures"] = [];
+  const transcripts: PreparedInboundImessageTurn["transcripts"] = [];
+  const failures: PreparedInboundImessageTurn["failures"] = [];
   for (const voiceMemo of voiceMemos) {
     const filename = voiceMemo.name.trim() || "voice-memo.m4a";
     const data = Buffer.from(voiceMemo.data, "base64");
@@ -95,11 +113,15 @@ export async function transcribeImessageVoiceMemos(
         mediaType: normalizeImessageAttachmentMimeType(voiceMemo.mimeType),
         prompt: VOICE_MEMO_TRANSCRIPTION_PROMPT,
       };
-      const result = args.orgId
-        ? await transcribeAudioForOrg(ctx, args.orgId, input)
-        : await transcribeAudioForPublicTask(ctx, input);
+      const result =
+        args.scope.kind === "organization"
+          ? await transcribeAudioForOrg(ctx, args.scope.orgId, input)
+          : args.scope.kind === "operator"
+            ? await transcribeAudioForOperatorTask(ctx, input)
+            : await transcribeAudioForPublicTask(ctx, input);
       transcripts.push({ filename, text: result.text });
       console.log("[imessage] Voice memo transcribed", {
+        audience: args.scope.kind,
         filename,
         model: result.route.model,
         routeSource: result.routeSource,
@@ -127,6 +149,11 @@ export async function transcribeImessageVoiceMemos(
     hasVoiceMemos: true,
     transcripts,
     failures,
+    nonAudioAttachments,
+    failureResponse:
+      transcripts.length === 0
+        ? IMESSAGE_VOICE_TRANSCRIPTION_FAILED_MESSAGE
+        : undefined,
   };
 }
 
