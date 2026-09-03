@@ -36,6 +36,7 @@ Convex/UI contracts and the staged migration commands in this file.
 - `npm install` — install dependencies
 - `npm run dev` — start the Next.js app
 - `npm run conductor:setup` — install Node 24 and dependencies, provision/optionally import/seed a worktree-native Convex deployment, generate local auth keys, and prepare local worker env; local macOS also starts Apple `container` and builds worktree-tagged worker images
+- `npm run conductor:setup:cloud` — Conductor Cloud entry point. A cloud sandbox has no developer checkout to copy `.env.local` and `imessage-worker/.env.local` from, so this generates both from the Cloud Computer environment (`CONDUCTOR_CONVEX_SOURCE_DEPLOYMENT`, `CONDUCTOR_CONVEX_SOURCE_DEPLOY_KEY`, `NEXT_PUBLIC_MAPBOX_TOKEN`, `CONDUCTOR_IMESSAGE_TERMINAL_FROM_PHONE`) and then runs `npm run conductor:setup`. `.conductor/settings.toml` selects it automatically when `CONDUCTOR_IS_LOCAL=0`
 - `npm run conductor:archive` — clear this worktree's native local Convex database and auth state; Conductor runs it automatically when archiving the workspace
 - `npm run conductor:dev` — start the Conductor-port Next app, `convex dev`, extraction worker, mock Slack worker, and live email/OTP capture watcher as one foreground process group; local macOS uses the worker container and Conductor cloud runs the worker directly
 - `npm run conductor:spectrum` — open the optional Spectrum terminal iMessage TUI in a separate terminal after the default Dev run is up

@@ -154,6 +154,8 @@ not rewrite committed agent skills and guidance; refresh those explicitly with
 
 - `npm run build` - production build
 - `npm run conductor:setup` - prepare a fresh Conductor worktree end to end
+- `npm run conductor:setup:cloud` - Conductor Cloud entry point; generates the
+  gitignored env files a cloud sandbox cannot copy, then runs `conductor:setup`
 - `npm run conductor:dev` - start Spot, Convex, extraction, Slack, and email capture
 - `npm run conductor:spectrum` - open the optional Spectrum iMessage TUI in a separate terminal
 - `npm run conductor:emails` - show captured local email deliveries and OTPs in a dedicated terminal
