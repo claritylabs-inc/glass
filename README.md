@@ -12,7 +12,7 @@ For contributor-facing implementation detail, see [AGENTS.md](AGENTS.md).
 
 - Ingests insurance-related documents from email and uploads
 - Extracts structured bound-policy, renewal, and supporting business data
-- Builds a continuously-updated `orgMemory` layer
+- Builds a continuously-updated company wiki (`orgWikiSections`) per organization
 - Supports agent workflows for Q&A, policy-change requests, COI generation, and follow-up analysis
 - Exposes capabilities through UI, REST API (`/api/v1/*`), and OAuth-authenticated MCP (`/mcp`)
 - Lets client/customer orgs request read-only access to vendor org policies after vendor approval
@@ -244,14 +244,14 @@ Not every flow requires every variable; requirements depend on which features yo
 2. Store raw files in Convex storage.
 3. Extract structured insurance/business data via `cl-sdk`.
 4. Persist policy data and chunk + embed content for retrieval.
-5. Write key facts into `orgMemory`.
+5. Write key facts into the company wiki.
 
 ### 2) Retrieval + Agent Chat
 
 Agent responses are grounded in:
 
 - `documentChunks` (bound-policy/supporting docs)
-- `orgMemory` (organization facts)
+- `orgWikiSections` (the company wiki, read whole)
 - `conversationTurns` (cross-thread memory)
 
 ### 3) Connected vendor/client accounts

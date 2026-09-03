@@ -19,6 +19,7 @@ import {
   MAX_OPERATOR_IMESSAGE_ACTION_BASE64_CHARS,
 } from "./lib/agentAttachmentLimits";
 import { buildEmailDraftTextSummary } from "./lib/emailDraftSummary";
+import { ORG_WIKI_SECTION_KEYS, isOrgWikiSectionKey } from "./lib/orgWiki";
 import { canAccessThread } from "./lib/threadAccess";
 import {
   parseSlackEventPayload,
@@ -2394,57 +2395,28 @@ const MCP_TOOLS: TenantMcpToolCatalogEntry[] = [
     },
   },
   {
-    name: "list_company_memory",
+    name: "read_company_wiki",
     description:
-      "List durable stable company-profile facts for the OAuth token's organization.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        query: { type: "string", description: "Optional fact search" },
-        limit: { type: "number", description: "Maximum results, up to 100" },
-      },
-    },
+      "Read the company wiki for the OAuth token's organization: the whole markdown document, its sections, and the sections still empty.",
+    inputSchema: { type: "object" as const, properties: {} },
   },
   {
-    name: "create_company_memory",
+    name: "write_company_wiki_section",
     description:
-      "Create a durable stable company-profile fact for the OAuth token's organization. Requires write scope and current org admin membership.",
+      "Rewrite one section of the company wiki for the OAuth token's organization. Send the whole section body as markdown; an empty body clears the section. Requires write scope and current org admin membership.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        content: { type: "string", description: "Stable company fact" },
+        section: {
+          type: "string",
+          enum: [...ORG_WIKI_SECTION_KEYS],
+          description: "Company wiki section key",
+        },
+        body: { type: "string", description: "Whole section body as markdown" },
       },
-      required: ["content"],
+      required: ["section", "body"],
     },
     effect: "write",
-  },
-  {
-    name: "update_company_memory",
-    description:
-      "Update one durable company-profile fact in the OAuth token's organization. Requires write scope and current org admin membership.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        memory_id: { type: "string", description: "Exact company memory ID" },
-        content: { type: "string", description: "Updated stable company fact" },
-      },
-      required: ["memory_id", "content"],
-    },
-    effect: "write",
-  },
-  {
-    name: "delete_company_memory",
-    description:
-      "Permanently delete one company-memory fact from the OAuth token's organization. Requires write scope and current org admin membership.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        memory_id: { type: "string", description: "Exact company memory ID" },
-      },
-      required: ["memory_id"],
-    },
-    effect: "write",
-    destructive: true,
   },
   {
     name: "list_connected_vendors",
@@ -2880,51 +2852,27 @@ async function handleToolCall(
       if (!file) throw new Error("Client file not found");
       return mcpTextResult(file);
     }
-    case "list_company_memory": {
-      const memories = await ctx.runQuery(internal.orgMemory.listForMcp, {
+    case "read_company_wiki": {
+      const wiki = await ctx.runQuery(internal.orgWiki.getForMcp, {
         orgId,
         userId,
-        query: typeof args.query === "string" ? args.query : undefined,
-        limit: typeof args.limit === "number" ? args.limit : undefined,
       });
-      return mcpTextResult(memories);
+      return mcpTextResult(wiki);
     }
-    case "create_company_memory": {
-      if (typeof args.content !== "string") {
-        throw new Error("Missing content parameter");
+    case "write_company_wiki_section": {
+      if (typeof args.section !== "string" || typeof args.body !== "string") {
+        throw new Error("section and body are required");
       }
-      const memory = await ctx.runMutation(internal.orgMemory.createForMcp, {
+      if (!isOrgWikiSectionKey(args.section)) {
+        throw new Error("Unknown company wiki section");
+      }
+      const wiki = await ctx.runMutation(internal.orgWiki.upsertSectionForMcp, {
         orgId,
         userId,
-        content: args.content,
+        key: args.section,
+        body: args.body,
       });
-      return mcpTextResult(memory);
-    }
-    case "update_company_memory": {
-      if (
-        typeof args.memory_id !== "string" ||
-        typeof args.content !== "string"
-      ) {
-        throw new Error("memory_id and content are required");
-      }
-      const memory = await ctx.runMutation(internal.orgMemory.updateForMcp, {
-        orgId,
-        userId,
-        id: args.memory_id as Id<"orgMemory">,
-        content: args.content,
-      });
-      return mcpTextResult(memory);
-    }
-    case "delete_company_memory": {
-      if (typeof args.memory_id !== "string") {
-        throw new Error("Missing memory_id parameter");
-      }
-      const result = await ctx.runMutation(internal.orgMemory.removeForMcp, {
-        orgId,
-        userId,
-        id: args.memory_id as Id<"orgMemory">,
-      });
-      return mcpTextResult(result);
+      return mcpTextResult(wiki);
     }
     case "list_policies": {
       const policies = (await ctx.runQuery(

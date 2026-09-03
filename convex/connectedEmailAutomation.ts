@@ -464,7 +464,7 @@ export const finishItemInternal = internalMutation({
     reviewReason: v.optional(v.string()),
     policyIds: v.optional(v.array(v.id("policies"))),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
-    memoryIds: v.optional(v.array(v.id("orgMemory"))),
+    wikiSectionKeys: v.optional(v.array(v.string())),
     threadId: v.optional(v.id("threads")),
   },
   handler: async (ctx, args) => {

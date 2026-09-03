@@ -49,21 +49,12 @@ import {
 import { effectiveOrganizationProfileFacts } from "./orgProfileFacts";
 import { lookupMapboxAddress } from "./mapboxAddress";
 import { createAgentPolicyPresentationState } from "./agentPolicyPresentation";
-import { rankOrgMemoryForQuery } from "./orgMemoryPolicy";
 import type { AgentToolSurface } from "./agentMessageHistory";
 import { readStoredThreadAttachment } from "./agentThreadAttachment";
 import { readStoredAgentFile } from "./storedAgentFile";
-import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
+import { normalizedSearchText } from "./searchTokenizer";
+import { isOrgWikiSectionKey } from "./orgWiki";
 import { importRequirementSources } from "./requirementAttachmentIntent";
-
-const COMPANY_CONTEXT_QUERY_STOP_WORDS = new Set([
-  "about",
-  "company",
-  "context",
-  "does",
-  "tell",
-  "what",
-]);
 
 type ToolAttachment = {
   filename: string;
@@ -123,19 +114,11 @@ function certificateSourceForSurface(surface: AgentToolSurface) {
   return surface;
 }
 
-function orgMemorySourceForSurface(surface: AgentToolSurface) {
+function orgWikiSourceForSurface(surface: AgentToolSurface) {
   if (surface === "email" || surface === "imessage" || surface === "slack") {
     return surface;
   }
   return "chat" as const;
-}
-
-function typeMap(
-  value: string,
-): "fact" | "preference" | "risk_note" | "observation" {
-  if (value === "fact" || value === "preference" || value === "risk_note")
-    return value;
-  return "observation";
 }
 
 function formatPolicyForTool(policy: Record<string, any>) {
@@ -642,15 +625,9 @@ export function buildAgentToolExecutors(
       : {}),
     lookup_company_context: {
       ...lookupCompanyContext,
-      execute: async (params: {
-        orgId?: string;
-        query?: string;
-        limit?: number;
-      }) => {
-        const requestedLimit = params.limit ?? 10;
+      execute: async (params: { orgId?: string; query?: string }) => {
         const readableOrgIds = options.readOrgIds ?? options.scope.readOrgIds;
         let targetOrgIds = readableOrgIds;
-        let matchedOrgByName = false;
         if (params.orgId) {
           targetOrgIds = readableOrgIds.filter(
             (orgId) => String(orgId) === params.orgId,
@@ -666,59 +643,33 @@ export function buildAgentToolExecutors(
               return name.includes(query) || query.includes(name);
             })
             .map((org) => org.orgId);
-          if (nameMatches.length > 0) {
-            targetOrgIds = nameMatches;
-            matchedOrgByName = true;
-          }
+          if (nameMatches.length > 0) targetOrgIds = nameMatches;
         } else if (options.scope.focusedOrgId) {
           targetOrgIds = [options.scope.focusedOrgId];
         }
 
         const boundedOrgIds = targetOrgIds.slice(0, 25);
-        const memories = (
-          await Promise.all(
-            boundedOrgIds.map(async (orgId) => {
-              const rows = await ctx.runQuery(internal.orgMemory.listByOrg, {
-                orgId,
-                limit: 100,
-              });
-              return rows.map((memory) => ({
-                ...memory,
-                orgId,
-                orgName: orgLabelForScope(options.scope, orgId),
-              }));
-            }),
-          )
-        ).flat();
-        const queryTerms = uniqueSearchTerms(params.query ?? "", {
-          minimumLength: 3,
-        }).filter((term) => !COMPANY_CONTEXT_QUERY_STOP_WORDS.has(term));
-        const relevantMemories =
-          params.query?.trim() && targetOrgIds.length > 1 && !matchedOrgByName
-            ? memories.filter((memory) => {
-                const content = normalizedSearchText(memory.content);
-                return queryTerms.some((term) => content.includes(term));
-              })
-            : memories;
-        const facts = rankOrgMemoryForQuery(
-          params.query ?? "",
-          relevantMemories,
-          requestedLimit,
-        ).map((memory) => ({
-          orgId: memory.orgId,
-          orgName: memory.orgName,
-          type: memory.type,
-          content: memory.content,
-          updatedAt: memory.updatedAt,
-        }));
+        const wikis = await Promise.all(
+          boundedOrgIds.map(async (orgId) => {
+            const wiki = await ctx.runQuery(internal.orgWiki.getInternal, {
+              orgId,
+            });
+            return {
+              orgId,
+              orgName: orgLabelForScope(options.scope, orgId),
+              markdown: wiki.markdown,
+            };
+          }),
+        );
+        const documents = wikis.filter((wiki) => wiki.markdown);
         return {
-          facts,
+          wikis: documents,
           searchedOrganizations: boundedOrgIds.length,
           bounded: targetOrgIds.length > boundedOrgIds.length,
           note:
-            facts.length > 0
-              ? "These are durable company-profile facts only. Use policy tools for every policy fact."
-              : "No matching durable company-profile facts were found. Do not infer policy facts from memory.",
+            documents.length > 0
+              ? "This is the whole durable company wiki for each organization. Read it directly; it holds company-profile facts only. Use policy tools for every policy fact."
+              : "No company wiki has been written for these organizations. Do not infer policy facts from company context.",
         };
       },
     },
@@ -956,7 +907,7 @@ export function buildAgentToolExecutors(
       execute: async (
         params: {
           content: string;
-          type: string;
+          section: string;
           policyId?: string;
         },
         executionOptions?: ToolExecutionOptions,
@@ -984,24 +935,20 @@ export function buildAgentToolExecutors(
         if (policyId) {
           return "Not saved. Memory is limited to stable company context; policy-specific facts must come from policy lookup tools.";
         }
-        if (typeMap(params.type) !== "fact") {
-          return "Not saved. Memory is limited to stable company facts.";
+        if (!isOrgWikiSectionKey(params.section)) {
+          return "Not saved. Choose a company-wiki section that fits the fact.";
         }
-        const savedId = await ctx.runMutation(internal.orgMemory.upsert, {
+        const saved = await ctx.runMutation(internal.orgWiki.appendFacts, {
           orgId: targetOrgId,
-          type: "fact",
-          content: params.content,
-          source: orgMemorySourceForSurface(options.surface),
-          provenance: {
-            kind: "organization_fact",
-            derivation: "agent_tool",
-            schemaVersion: "organization-fact-v1",
-          },
+          key: params.section,
+          facts: [params.content],
+          source: orgWikiSourceForSurface(options.surface),
         });
-        if (!savedId) {
-          return "Not saved. Memory is limited to stable company context, not policy details, agent behavior, drafts, requests, or workflow state.";
+        if (saved.alreadyPresent) return "Already in the company wiki.";
+        if (saved.accepted === 0) {
+          return "Not saved. The company wiki is limited to stable company context, not policy details, agent behavior, drafts, requests, or workflow state.";
         }
-        return "Note saved.";
+        return "Written to the company wiki.";
       },
     },
     attach_policy_document: {
@@ -1072,7 +1019,7 @@ export function buildAgentToolExecutors(
               orgId: resolved.policy.orgId,
               userId: options.userId,
               fact: params.fact,
-              source: orgMemorySourceForSurface(options.surface),
+              source: orgWikiSourceForSurface(options.surface),
               sourceSpanIds: params.sourceSpanIds,
               fieldUpdates: params.fieldUpdates,
             },

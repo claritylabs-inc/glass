@@ -6,20 +6,15 @@ import { effectiveExtractionDataStage } from "../backfillDeclarationFacts";
 import { validateProcurementRequestCreateByOperator } from "../procurementRequests";
 import { assertFeatureFlagAllowedForOrg } from "./featureFlags";
 import { assertNoOperatorImpersonation } from "./clientFiles";
-import {
-  isCompanyContextMemory,
-  normalizeMemoryContent,
-} from "./orgMemoryPolicy";
+import { isCompanyWikiFact, normalizeWikiContent } from "./orgWikiPolicy";
+import { isOrgWikiSectionKey, wikiBulletLines } from "./orgWiki";
+import { defaultPacketSection } from "./procurementPacket";
 import type { OperatorAgentToolName } from "./operatorAgentToolRegistry";
 
 export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "confirm_policy_fact",
-  "create_client_memory",
-  "update_client_memory",
-  "delete_client_memory",
-  "create_procurement_memory",
-  "update_procurement_memory",
-  "delete_procurement_memory",
+  "update_client_wiki_section",
+  "update_procurement_packet_section",
   "retry_failed_policy_extraction",
   "generate_coi",
   "update_client_file",
@@ -183,70 +178,26 @@ function validateOptionalUrl(value: unknown) {
   }
 }
 
-async function validateCompanyMemory(
+/** Every line an operator writes into the wiki has to survive the same
+ * company-context gate the extraction writers do. */
+async function validateCompanyWikiSection(
   ctx: MutationCtx,
-  args: {
-    memory?: Doc<"orgMemory">;
-    orgId: Id<"organizations">;
-    content: unknown;
-  },
+  args: { orgId: Id<"organizations">; key: unknown; body: unknown },
 ) {
   const organization = await requireClientOrganization(ctx, args.orgId);
-  const content = normalizeMemoryContent(
-    typeof args.content === "string" ? args.content : "",
-  );
-  if (
-    !isCompanyContextMemory({
-      type: args.memory?.type ?? "fact",
-      content,
-      orgName: organization.name,
-      policyId: args.memory?.policyId,
-    })
-  ) {
-    throw new Error("Memory must be a stable company fact");
+  if (!isOrgWikiSectionKey(args.key)) {
+    throw new Error("Unknown company wiki section");
   }
-}
-
-async function procurementMemoryLinks(
-  ctx: MutationCtx,
-  args: {
-    clientOrgId: Id<"organizations">;
-    requestValue?: unknown;
-    outreachValue?: unknown;
-    brokerValue?: unknown;
-  },
-) {
-  await requireClientOrganization(ctx, args.clientOrgId);
-  const request =
-    args.requestValue === undefined || args.requestValue === null
-      ? null
-      : await requireDocument(
-          ctx,
-          "procurementRequests",
-          args.requestValue,
-          "Procurement request",
-        );
-  const outreach =
-    args.outreachValue === undefined || args.outreachValue === null
-      ? null
-      : await requireDocument(
-          ctx,
-          "procurementBrokerOutreaches",
-          args.outreachValue,
-          "Procurement outreach",
-        );
-  const broker = await requireBrokerOrganization(ctx, args.brokerValue);
-  if (request && request.clientOrgId !== args.clientOrgId) {
-    throw new Error("Procurement request does not belong to this client");
-  }
-  if (outreach && outreach.clientOrgId !== args.clientOrgId) {
-    throw new Error("Procurement outreach does not belong to this client");
-  }
-  if (request && outreach && outreach.requestId !== request._id) {
-    throw new Error("Procurement outreach does not belong to this request");
-  }
-  if (outreach?.brokerOrgId && broker && outreach.brokerOrgId !== broker._id) {
-    throw new Error("Broker does not match the linked outreach");
+  const body = typeof args.body === "string" ? args.body : "";
+  for (const line of wikiBulletLines(body)) {
+    if (
+      !isCompanyWikiFact({
+        content: normalizeWikiContent(line),
+        orgName: organization.name,
+      })
+    ) {
+      throw new Error("The company wiki holds stable company facts only");
+    }
   }
 }
 
@@ -578,46 +529,16 @@ async function preflightUpdateClientFile(
   });
 }
 
-async function preflightProcurementMemory(
-  ctx: MutationCtx,
-  input: Record<string, unknown>,
-  mode: "create" | "update" | "delete",
+/** A packet section can only be written under a canonical key, and a sensitive
+ * section can never be widened past the operator. */
+function preflightPacketSection(
+  canonical: { sensitive: boolean },
+  audience: unknown,
 ) {
-  if (mode === "create") {
-    const clientOrgId = exactId(
-      ctx,
-      "organizations",
-      input.orgId,
-      "Client organization",
-    );
-    await procurementMemoryLinks(ctx, {
-      clientOrgId,
-      requestValue: input.procurementRequestId,
-      outreachValue: input.procurementOutreachId,
-      brokerValue: input.brokerOrgId,
-    });
-    return;
+  if (audience === undefined || audience === null) return;
+  if (canonical.sensitive && audience !== "operator") {
+    throw new Error("Sensitive packet sections require operator visibility");
   }
-  const memory = await requireDocument(
-    ctx,
-    "procurementMemory",
-    input.procurementMemoryId,
-    "Procurement memory",
-  );
-  if (mode === "delete") return;
-  await procurementMemoryLinks(ctx, {
-    clientOrgId: memory.clientOrgId,
-    requestValue:
-      input.procurementRequestId === undefined
-        ? memory.requestId
-        : input.procurementRequestId,
-    outreachValue:
-      input.procurementOutreachId === undefined
-        ? memory.outreachId
-        : input.procurementOutreachId,
-    brokerValue:
-      input.brokerOrgId === undefined ? memory.brokerOrgId : input.brokerOrgId,
-  });
 }
 
 export async function preflightOperatorToolConfirmation(
@@ -640,52 +561,34 @@ export async function preflightOperatorToolConfirmation(
     case "confirm_policy_fact":
       await preflightConfirmPolicyFact(ctx, args.input);
       return;
-    case "create_client_memory": {
+    case "update_client_wiki_section": {
       const orgId = exactId(
         ctx,
         "organizations",
         args.input.orgId,
         "Client organization",
       );
-      await validateCompanyMemory(ctx, {
+      await validateCompanyWikiSection(ctx, {
         orgId,
-        content: args.input.content,
+        key: args.input.key,
+        body: args.input.body,
       });
       return;
     }
-    case "update_client_memory": {
-      const memory = await requireDocument(
+    case "update_procurement_packet_section": {
+      const request = await requireDocument(
         ctx,
-        "orgMemory",
-        args.input.memoryId,
-        "Company memory",
+        "procurementRequests",
+        args.input.procurementRequestId,
+        "Procurement request",
       );
-      await validateCompanyMemory(ctx, {
-        memory,
-        orgId: memory.orgId,
-        content: args.input.content,
-      });
+      await requireClientOrganization(ctx, request.clientOrgId);
+      preflightPacketSection(
+        defaultPacketSection(String(args.input.key)),
+        args.input.audience,
+      );
       return;
     }
-    case "delete_client_memory": {
-      const memory = await requireDocument(
-        ctx,
-        "orgMemory",
-        args.input.memoryId,
-        "Company memory",
-      );
-      await requireClientOrganization(ctx, memory.orgId);
-      return;
-    }
-    case "create_procurement_memory":
-      await preflightProcurementMemory(ctx, args.input, "create");
-      return;
-    case "update_procurement_memory":
-      await preflightProcurementMemory(ctx, args.input, "update");
-      return;
-    case "delete_procurement_memory":
-      await preflightProcurementMemory(ctx, args.input, "delete");
-      return;
     case "retry_failed_policy_extraction": {
       const policy = await requireDocument(
         ctx,

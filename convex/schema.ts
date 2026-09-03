@@ -7,9 +7,8 @@ import { agentStepsValidator } from "./lib/agentSteps";
 import { policyProductIdentityValidator } from "./lib/policyProductIdentity";
 import { certificateRequirementSnapshotValidator } from "./lib/certificateRequirementPlan";
 import {
-  companyInformationOrganizationFactValidator,
-  companyInformationProcurementFactValidator,
   companyInformationProfileValidator,
+  companyInformationStoredOrganizationFactValidator,
 } from "./lib/companyInformationExtraction";
 import {
   emailContentValidator,
@@ -1074,6 +1073,8 @@ export default defineSchema({
     reviewReason: v.optional(v.string()),
     policyIds: v.optional(v.array(v.id("policies"))),
     requirementIds: v.optional(v.array(v.id("insuranceRequirements"))),
+    wikiSectionKeys: v.optional(v.array(v.string())),
+    // Legacy; cleared by migrations:runCompanyWikiLegacyPurge.
     memoryIds: v.optional(v.array(v.id("orgMemory"))),
     threadId: v.optional(v.id("threads")),
     lastError: v.optional(v.string()),
@@ -1086,7 +1087,45 @@ export default defineSchema({
     .index("organization_updated", ["orgId", "updatedAt"])
     .index("status_updated", ["status", "updatedAt"]),
 
-  // Org memory — persistent AI knowledge (facts, preferences, risk notes, observations)
+  // The company wiki: one markdown document per organization, held as ordered
+  // sections so concurrent writers merge instead of clobbering a single blob.
+  // Agents read the assembled document whole rather than retrieving fragments.
+  orgWikiSections: defineTable({
+    orgId: v.id("organizations"),
+    key: v.string(),
+    heading: v.string(),
+    body: v.string(),
+    order: v.number(),
+    source: v.union(
+      v.literal("extraction"),
+      v.literal("analysis"),
+      v.literal("chat"),
+      v.literal("email"),
+      v.literal("imessage"),
+      v.literal("slack"),
+      v.literal("manual"),
+      v.literal("operator"),
+      v.literal("mcp"),
+    ),
+    sourceRefs: v.optional(v.array(v.string())),
+    // The bullets in `body` that the company-information reconciler owns. Every
+    // other line was contributed by a conversational or append-only writer, so
+    // reconcile rewrites only these and leaves the rest alone.
+    extractedLines: v.optional(v.array(v.string())),
+    proposedBody: v.optional(v.string()),
+    proposedRationale: v.optional(v.string()),
+    manuallyEditedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("organization", ["orgId", "order"])
+    .index("organization_key", ["orgId", "key"]),
+
+
+  // Legacy, retained only for the gated company-wiki purge migration. The
+  // curated store is `orgWikiSections`; nothing reads or writes these rows.
+  // Remove both tables in the schema-narrowing release after
+  // `migrations:runCompanyWikiLegacyPurge` reports complete.
   orgMemory: defineTable({
     orgId: v.id("organizations"),
     type: v.union(
@@ -1130,7 +1169,39 @@ export default defineSchema({
     .index("organization", ["orgId"])
     .index("organization_type", ["orgId", "type"])
     .index("organization_source", ["orgId", "sourceRef"]),
-
+  procurementMemory: defineTable({
+    clientOrgId: v.id("organizations"),
+    kind: v.union(
+      v.literal("placement_preference"),
+      v.literal("broker_appetite"),
+      v.literal("submission_requirement"),
+      v.literal("market_observation"),
+    ),
+    content: v.string(),
+    source: v.union(
+      v.literal("manual"),
+      v.literal("operator_agent"),
+      v.literal("mcp"),
+      v.literal("email"),
+      v.literal("document"),
+      v.literal("procurement_outcome"),
+    ),
+    requestId: v.optional(v.id("procurementRequests")),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
+    brokerOrgId: v.optional(v.id("organizations")),
+    sourceRef: v.optional(v.string()),
+    sourceRefs: v.optional(v.array(v.string())),
+    confidence: v.optional(v.number()),
+    observedAt: v.optional(v.number()),
+    createdByUserId: v.id("users"),
+    updatedByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("client", ["clientOrgId", "updatedAt"])
+    .index("request", ["requestId", "updatedAt"])
+    .index("broker", ["brokerOrgId", "updatedAt"])
+    .index("source", ["clientOrgId", "sourceRef"]),
   // Passport, integrations, email-inbox, and org-documents tables
   // were removed as part of the v0.2.0 scope simplification. See git history.
 
@@ -2948,11 +3019,20 @@ export default defineSchema({
     heading: v.string(),
     body: v.string(),
     order: v.number(),
-    audience: v.union(v.literal("operator"), v.literal("client"), v.literal("broker")),
-    audienceProposed: v.optional(v.union(v.literal("client"), v.literal("broker"))),
+    audience: v.union(
+      v.literal("operator"),
+      v.literal("client"),
+      v.literal("broker"),
+    ),
+    audienceProposed: v.optional(
+      v.union(v.literal("client"), v.literal("broker")),
+    ),
     source: v.union(
-      v.literal("manual"), v.literal("client"), v.literal("operator_agent"),
-      v.literal("email"), v.literal("document"),
+      v.literal("manual"),
+      v.literal("client"),
+      v.literal("operator_agent"),
+      v.literal("email"),
+      v.literal("document"),
     ),
     sourceRefs: v.optional(v.array(v.string())),
     proposedBody: v.optional(v.string()),
@@ -2999,7 +3079,12 @@ export default defineSchema({
   procurementPacketUpdateRuns: defineTable({
     requestId: v.id("procurementRequests"),
     sourceFingerprint: v.string(),
-    status: v.union(v.literal("pending"), v.literal("running"), v.literal("complete"), v.literal("failed")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("complete"),
+      v.literal("failed"),
+    ),
     leaseExpiresAt: v.optional(v.number()),
     attempts: v.number(),
     lastError: v.optional(v.string()),
@@ -3255,8 +3340,12 @@ export default defineSchema({
       v.literal("sent"),
       v.literal("received"),
     ),
-    brokerRelease: v.optional(v.union(v.literal("hidden"), v.literal("listed"), v.literal("attached"))),
-    brokerReleaseProposed: v.optional(v.union(v.literal("listed"), v.literal("attached"))),
+    brokerRelease: v.optional(
+      v.union(v.literal("hidden"), v.literal("listed"), v.literal("attached")),
+    ),
+    brokerReleaseProposed: v.optional(
+      v.union(v.literal("listed"), v.literal("attached")),
+    ),
     clientVisible: v.optional(v.boolean()),
     notes: v.optional(v.string()),
     createdByUserId: v.optional(v.id("users")),
@@ -3269,40 +3358,6 @@ export default defineSchema({
     .index("file", ["clientFileId", "updatedAt"])
     .index("email", ["sourceEmailMessageId"])
     .index("release", ["requestId", "brokerRelease", "updatedAt"]),
-
-  procurementMemory: defineTable({
-    clientOrgId: v.id("organizations"),
-    kind: v.union(
-      v.literal("placement_preference"),
-      v.literal("broker_appetite"),
-      v.literal("submission_requirement"),
-      v.literal("market_observation"),
-    ),
-    content: v.string(),
-    source: v.union(
-      v.literal("manual"),
-      v.literal("operator_agent"),
-      v.literal("mcp"),
-      v.literal("email"),
-      v.literal("document"),
-      v.literal("procurement_outcome"),
-    ),
-    requestId: v.optional(v.id("procurementRequests")),
-    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
-    brokerOrgId: v.optional(v.id("organizations")),
-    sourceRef: v.optional(v.string()),
-    sourceRefs: v.optional(v.array(v.string())),
-    confidence: v.optional(v.number()),
-    observedAt: v.optional(v.number()),
-    createdByUserId: v.id("users"),
-    updatedByUserId: v.id("users"),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("client", ["clientOrgId", "updatedAt"])
-    .index("request", ["requestId", "updatedAt"])
-    .index("broker", ["brokerOrgId", "updatedAt"])
-    .index("source", ["clientOrgId", "sourceRef"]),
 
   companyInformationExtractions: defineTable({
     orgId: v.id("organizations"),
@@ -3327,11 +3382,10 @@ export default defineSchema({
     leaseExpiresAt: v.optional(v.number()),
     profile: v.optional(companyInformationProfileValidator),
     organizationFacts: v.optional(
-      v.array(companyInformationOrganizationFactValidator),
+      v.array(companyInformationStoredOrganizationFactValidator),
     ),
-    procurementFacts: v.optional(
-      v.array(companyInformationProcurementFactValidator),
-    ),
+    // Legacy; cleared by migrations:runCompanyWikiLegacyPurge.
+    procurementFacts: v.optional(v.array(v.any())),
     observedAt: v.number(),
     lastError: v.optional(v.string()),
     createdAt: v.number(),

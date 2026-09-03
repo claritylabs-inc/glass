@@ -6,7 +6,7 @@ const BATCH_SIZE = 500;
 const internalApi = internal as any;
 
 export const memoryTableValidator = v.union(
-  v.literal("orgMemory"),
+  v.literal("orgWikiSections"),
   v.literal("conversationTurns"),
 );
 

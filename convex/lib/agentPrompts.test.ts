@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   SOURCE_NODE_MATCH_LIMIT,
-  rankOrgMemoryForQuery,
   rankSourceNodesForQuery,
 } from "./agentPrompts";
 
@@ -36,28 +35,7 @@ describe("agent prompt retrieval bounds", () => {
     });
   });
 
-  it("prefers company facts relevant to the current question before recent noise", () => {
-    const memories = [
-      {
-        content: "Acme renewed its office lease in Oakland.",
-        updatedAt: 30,
-      },
-      {
-        content: "Acme manufactures battery storage systems in Nevada.",
-        updatedAt: 10,
-      },
-      {
-        content: "Acme hired a new finance leader.",
-        updatedAt: 20,
-      },
-    ];
-
-    expect(
-      rankOrgMemoryForQuery("battery manufacturing operations", memories, 2),
-    ).toEqual([memories[1], memories[0]]);
-  });
-
-  it("retrieves accented and non-Latin policy and memory terms", () => {
+  it("retrieves accented and non-Latin policy terms", () => {
     const nodes = [
       {
         policyId: "policy-zurich",
@@ -72,14 +50,6 @@ describe("agent prompt retrieval bounds", () => {
     ];
     expect(rankSourceNodesForQuery("ZÜRICH 東京", nodes)).toMatchObject([
       { nodeId: "node-zurich" },
-    ]);
-
-    const memories = [
-      { content: "Acme operates in São Paulo.", updatedAt: 1 },
-      { content: "Acme operates in Boston.", updatedAt: 2 },
-    ];
-    expect(rankOrgMemoryForQuery("São Paulo", memories, 1)).toEqual([
-      memories[0],
     ]);
   });
 });

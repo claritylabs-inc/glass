@@ -1226,41 +1226,20 @@ describe("operator agent boundary", () => {
         },
       },
       {
-        toolName: "create_client_memory",
+        toolName: "update_client_wiki_section",
         input: {
           orgId: invalidOrganizationReference,
-          content: "The company operates from a single headquarters.",
+          key: "profile",
+          body: "- The company operates from a single headquarters.",
         },
       },
       {
-        toolName: "update_client_memory",
+        toolName: "update_procurement_packet_section",
         input: {
-          memoryId: invalidResourceReference,
-          content: "The company operates from a single headquarters.",
+          procurementRequestId: invalidResourceReference,
+          key: "summary",
+          body: "Renewal of the fleet program.",
         },
-      },
-      {
-        toolName: "delete_client_memory",
-        input: { memoryId: invalidResourceReference },
-      },
-      {
-        toolName: "create_procurement_memory",
-        input: {
-          orgId: invalidOrganizationReference,
-          kind: "placement_preference",
-          content: "The client prefers admitted markets.",
-        },
-      },
-      {
-        toolName: "update_procurement_memory",
-        input: {
-          procurementMemoryId: invalidResourceReference,
-          content: "The client prefers admitted markets.",
-        },
-      },
-      {
-        toolName: "delete_procurement_memory",
-        input: { procurementMemoryId: invalidResourceReference },
       },
       {
         toolName: "retry_failed_policy_extraction",
@@ -1414,15 +1393,6 @@ describe("operator agent boundary", () => {
         name: "Example Brokerage",
         type: "broker",
       });
-      const memoryId = await ctx.db.insert("orgMemory", {
-        orgId: fixture.orgId,
-        type: "fact",
-        content:
-          "Operator Agent Client operates from a single Portland headquarters.",
-        source: "operator",
-        createdAt: now,
-        updatedAt: now,
-      });
       const requestFields = {
         clientOrgId: fixture.orgId,
         requestSummary: "Arrange coverage for the new building purchase.",
@@ -1450,19 +1420,6 @@ describe("operator agent boundary", () => {
         brokerName: "Example Brokerage",
         status: "request_sent",
         applicationQuestions: [],
-        createdByUserId: fixture.firstOperatorUserId,
-        updatedByUserId: fixture.firstOperatorUserId,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const procurementMemoryId = await ctx.db.insert("procurementMemory", {
-        clientOrgId: fixture.orgId,
-        kind: "placement_preference",
-        content: "The client prefers admitted markets.",
-        source: "operator_agent",
-        requestId,
-        outreachId,
-        brokerOrgId,
         createdByUserId: fixture.firstOperatorUserId,
         updatedByUserId: fixture.firstOperatorUserId,
         createdAt: now,
@@ -1561,11 +1518,9 @@ describe("operator agent boundary", () => {
       });
       return {
         brokerOrgId,
-        memoryId,
         requestId,
         secondRequestId,
         outreachId,
-        procurementMemoryId,
         fileItemId,
         emailThreadId,
         clientFileId,
@@ -1585,45 +1540,20 @@ describe("operator agent boundary", () => {
         },
       },
       {
-        toolName: "create_client_memory",
+        toolName: "update_client_wiki_section",
         input: {
           orgId: fixture.orgId,
-          content:
-            "Operator Agent Client operates from a single Portland headquarters.",
+          key: "profile",
+          body: "- Operator Agent Client operates from a single Portland headquarters.",
         },
       },
       {
-        toolName: "update_client_memory",
+        toolName: "update_procurement_packet_section",
         input: {
-          memoryId: seeded.memoryId,
-          content: "Operator Agent Client operates from two Portland offices.",
-        },
-      },
-      {
-        toolName: "delete_client_memory",
-        input: { memoryId: seeded.memoryId },
-      },
-      {
-        toolName: "create_procurement_memory",
-        input: {
-          orgId: fixture.orgId,
-          kind: "placement_preference",
-          content: "The client prefers admitted markets.",
           procurementRequestId: seeded.requestId,
-          procurementOutreachId: seeded.outreachId,
-          brokerOrgId: seeded.brokerOrgId,
+          key: "summary",
+          body: "Renewal of the fleet program.",
         },
-      },
-      {
-        toolName: "update_procurement_memory",
-        input: {
-          procurementMemoryId: seeded.procurementMemoryId,
-          content: "The client prefers admitted markets with A-rated carriers.",
-        },
-      },
-      {
-        toolName: "delete_procurement_memory",
-        input: { procurementMemoryId: seeded.procurementMemoryId },
       },
       {
         toolName: "retry_failed_policy_extraction",
@@ -1760,15 +1690,16 @@ describe("operator agent boundary", () => {
     }
   });
 
-  test("replays a completed exact-confirmed action idempotently after its target is gone", async () => {
+  test("replays a completed exact-confirmed action idempotently after the written row is gone", async () => {
     const fixture = await seedOperatorAgentFixture();
     const now = dayjs().valueOf();
-    const memoryId = await fixture.t.run((ctx) =>
-      ctx.db.insert("orgMemory", {
+    await fixture.t.run((ctx) =>
+      ctx.db.insert("orgWikiSections", {
         orgId: fixture.orgId,
-        type: "fact",
-        content:
-          "Operator Agent Client operates from a single Portland headquarters.",
+        key: "profile",
+        heading: "Company profile",
+        body: "- Operator Agent Client operates from a single Portland headquarters.",
+        order: 0,
         source: "operator",
         createdAt: now,
         updatedAt: now,
@@ -1779,7 +1710,7 @@ describe("operator agent boundary", () => {
       {
         operatorUserId: fixture.firstOperatorUserId,
         channel: "mcp",
-        conversationKey: "mcp:delete-memory-replay",
+        conversationKey: "mcp:clear-wiki-replay",
       },
     );
     const invokeDelete = () =>
@@ -1787,9 +1718,9 @@ describe("operator agent boundary", () => {
         operatorUserId: fixture.firstOperatorUserId,
         threadId,
         channel: "mcp",
-        toolName: "delete_client_memory",
-        input: { memoryId },
-        idempotencyKey: "delete-company-memory-once",
+        toolName: "update_client_wiki_section",
+        input: { orgId: fixture.orgId, key: "profile", body: "" },
+        idempotencyKey: "clear-company-wiki-once",
       });
 
     const requested = await invokeDelete();
@@ -1797,7 +1728,7 @@ describe("operator agent boundary", () => {
       requested.outcome.status !== "confirmation_required" ||
       !requested.outcome.confirmationId
     ) {
-      throw new Error("Expected exact memory confirmation");
+      throw new Error("Expected exact company wiki confirmation");
     }
     await expect(
       fixture.t.mutation(internal.operatorAgent.confirmActionInternal, {
@@ -1809,7 +1740,7 @@ describe("operator agent boundary", () => {
       }),
     ).resolves.toMatchObject({ status: "completed" });
     await expect(
-      fixture.t.run((ctx) => ctx.db.get(memoryId)),
+      fixture.t.run((ctx) => ctx.db.query("orgWikiSections").unique()),
     ).resolves.toBeNull();
 
     const replay = await invokeDelete();

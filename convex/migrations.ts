@@ -319,6 +319,49 @@ export const purgeBrokerBranding = migrations.define({
   },
 });
 
+// The curated per-org store is now `orgWikiSections`. These retire the row
+// stores it replaced, plus the two legacy fields that referenced them, so the
+// narrowing release can drop the tables and fields outright.
+export const purgeOrgMemory = migrations.define({
+  table: "orgMemory",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    await ctx.db.delete(row._id);
+  },
+});
+export const purgeProcurementMemory = migrations.define({
+  table: "procurementMemory",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    await ctx.db.delete(row._id);
+  },
+});
+export const unsetConnectedEmailAutomationMemoryIds = migrations.define({
+  table: "connectedEmailAutomationItems",
+  batchSize: 100,
+  migrateOne: async (ctx, row) => {
+    if (!row.memoryIds) return;
+    await ctx.db.patch(row._id, { memoryIds: undefined });
+  },
+});
+// Procurement learnings no longer have their own store, and organization facts
+// stored before the wiki gained sections belong in the general profile section.
+export const backfillCompanyInformationFactSections = migrations.define({
+  table: "companyInformationExtractions",
+  batchSize: 50,
+  migrateOne: async (ctx, row) => {
+    const needsSections = row.organizationFacts?.some((fact) => !fact.section);
+    if (!needsSections && !row.procurementFacts) return;
+    await ctx.db.patch(row._id, {
+      organizationFacts: row.organizationFacts?.map((fact) => ({
+        ...fact,
+        section: fact.section ?? ("profile" as const),
+      })),
+      procurementFacts: undefined,
+    });
+  },
+});
+
 export const runDeclarationFactsBackfill = migrations.runner([
   internal.migrations.backfillDeclarationFacts,
   internal.migrations.syncDeclarationFactProfiles,
@@ -353,4 +396,15 @@ export const runProcurementLegacyPurge = migrations.runner([
   internal.migrations.purgePolicyDeliveryRules,
   internal.migrations.purgePolicyDeliverySettings,
   internal.migrations.purgeBrokerBranding,
+]);
+
+
+// Run before the release that drops `orgMemory`, `procurementMemory`,
+// `connectedEmailAutomationItems.memoryIds`, and
+// `companyInformationExtractions.procurementFacts` from the schema.
+export const runCompanyWikiLegacyPurge = migrations.runner([
+  internal.migrations.backfillCompanyInformationFactSections,
+  internal.migrations.unsetConnectedEmailAutomationMemoryIds,
+  internal.migrations.purgeProcurementMemory,
+  internal.migrations.purgeOrgMemory,
 ]);

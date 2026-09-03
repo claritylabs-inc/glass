@@ -23,7 +23,7 @@ import {
   type ConnectedEmailAutomation,
   type MailboxAutomationDecision,
 } from "../lib/mailboxAutomation";
-import { extractOrgMemoryFromExchange } from "../lib/orgMemoryExtraction";
+import { extractOrgWikiFromExchange } from "../lib/orgWikiExtraction";
 import {
   imapErrorMessage,
   isSpotSearchLoopAddress,
@@ -102,7 +102,7 @@ type AutomationOutcome = {
   actionSummary?: string;
   policyIds?: Id<"policies">[];
   requirementIds?: Id<"insuranceRequirements">[];
-  memoryIds?: Id<"orgMemory">[];
+  wikiSectionKeys?: string[];
   attention?: AutomationAttention;
 };
 
@@ -570,7 +570,7 @@ async function processAutomationDecision(
   const errors: string[] = [];
   const policyIds: Id<"policies">[] = [];
   const requirementIds: Id<"insuranceRequirements">[] = [];
-  const memoryIds: Id<"orgMemory">[] = [];
+  const wikiSectionKeys: string[] = [];
 
   if (canExecute && policyCandidate && automation.policyImports) {
     if (decision.policyGroups.length === 0) {
@@ -649,7 +649,7 @@ async function processAutomationDecision(
 
   if (canExecute && memoryCandidate && automation.companyMemory) {
     try {
-      const memoryResult = await extractOrgMemoryFromExchange(ctx, {
+      const wikiResult = await extractOrgWikiFromExchange(ctx, {
         orgId: account.orgId,
         source: "email",
         exchangeText: [
@@ -660,18 +660,19 @@ async function processAutomationDecision(
         ].filter((part): part is string => part !== undefined).join("\n"),
         itemLimit: 6,
         sourceRef: `connected-email:${message.messageKey}`,
-        observedAt: message.receivedAt ?? dayjs().valueOf(),
       });
-      memoryIds.push(...memoryResult.memoryIds);
-      if (memoryIds.length > 0) {
+      wikiSectionKeys.push(...wikiResult.sectionKeys);
+      if (wikiResult.acceptedCount > 0) {
         summaries.push(
-          `${memoryIds.length} durable company fact${memoryIds.length === 1 ? "" : "s"} saved.`,
+          `${wikiResult.acceptedCount} durable company fact${wikiResult.acceptedCount === 1 ? "" : "s"} written to the company wiki.`,
         );
       } else {
-        errors.push("No durable company facts met the confidence threshold.");
+        errors.push(
+          "No new durable company facts came out of this message.",
+        );
       }
     } catch (error) {
-      errors.push(`Company-memory extraction failed: ${errorMessage(error)}`);
+      errors.push(`Company wiki extraction failed: ${errorMessage(error)}`);
     }
   }
 
@@ -705,7 +706,7 @@ async function processAutomationDecision(
     policyIds: policyIds.length > 0 ? [...new Set(policyIds)] : undefined,
     requirementIds:
       requirementIds.length > 0 ? [...new Set(requirementIds)] : undefined,
-    memoryIds: memoryIds.length > 0 ? [...new Set(memoryIds)] : undefined,
+    wikiSectionKeys: wikiSectionKeys.length > 0 ? [...new Set(wikiSectionKeys)] : undefined,
     attention,
   };
 }
@@ -766,7 +767,7 @@ async function claimAndProcessMessage(
       reviewReason: outcome.attention?.reason,
       policyIds: outcome.policyIds,
       requirementIds: outcome.requirementIds,
-      memoryIds: outcome.memoryIds,
+      wikiSectionKeys: outcome.wikiSectionKeys,
     });
     return { kind: "processed", outcome };
   } catch (error) {
@@ -821,7 +822,7 @@ function hasAutomationResult(outcome: AutomationOutcome) {
   return (
     (outcome.policyIds?.length ?? 0) > 0 ||
     (outcome.requirementIds?.length ?? 0) > 0 ||
-    (outcome.memoryIds?.length ?? 0) > 0
+    (outcome.wikiSectionKeys?.length ?? 0) > 0
   );
 }
 

@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { StatusTag, type StatusTagTone } from "@/components/ui/status-tag";
+import { StatusTag } from "@/components/ui/status-tag";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { formatDisplayDateTime } from "@/lib/date-format";
@@ -30,10 +30,19 @@ import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
 export const REQUEST_STATUS_OPTIONS = [
   { value: "draft", label: "Draft", tone: "neutral" },
+  { value: "submitted", label: "Submitted", tone: "neutral" },
+  {
+    value: "gathering_information",
+    label: "Gathering information",
+    tone: "info",
+  },
   { value: "marketing", label: "Marketing", tone: "info" },
+  { value: "proposal_review", label: "Proposal review", tone: "info" },
   { value: "quote_review", label: "Quote review", tone: "info" },
   { value: "client_decision", label: "Client decision", tone: "warning" },
+  { value: "binding", label: "Binding", tone: "info" },
   { value: "accepted", label: "Accepted", tone: "success" },
+  { value: "completed", label: "Completed", tone: "success" },
   { value: "closed", label: "Closed", tone: "neutral" },
   { value: "cancelled", label: "Cancelled", tone: "danger" },
 ] as const;
@@ -102,7 +111,7 @@ export function RequestStatusTag({
 }) {
   const option = optionForValue(REQUEST_STATUS_OPTIONS, status);
   return (
-    <StatusTag tone={(option?.tone ?? "neutral") as StatusTagTone}>
+    <StatusTag tone={option?.tone ?? "neutral"}>
       {procurementRequestStatusLabel(status)}
     </StatusTag>
   );
@@ -115,7 +124,7 @@ export function OutreachStatusTag({
 }) {
   const option = optionForValue(OUTREACH_STATUS_OPTIONS, status);
   return (
-    <StatusTag tone={(option?.tone ?? "neutral") as StatusTagTone}>
+    <StatusTag tone={option?.tone ?? "neutral"}>
       {procurementOutreachStatusLabel(status)}
     </StatusTag>
   );

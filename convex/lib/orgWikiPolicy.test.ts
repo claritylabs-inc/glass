@@ -1,18 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { isCompanyContextMemory } from "./orgMemoryPolicy";
+import { isCompanyWikiFact } from "./orgWikiPolicy";
 
-describe("org memory policy", () => {
+describe("company wiki policy", () => {
   test("accepts stable company facts", () => {
     expect(
-      isCompanyContextMemory({
-        type: "fact",
+      isCompanyWikiFact({
         orgName: "Clarity Labs Inc.",
         content: "Clarity Labs is a Delaware C corporation.",
       }),
     ).toBe(true);
     expect(
-      isCompanyContextMemory({
-        type: "fact",
+      isCompanyWikiFact({
         orgName: "Clarity Labs Inc.",
         content: "Clarity Labs builds AI software for commercial insurance.",
       }),
@@ -31,8 +29,7 @@ describe("org memory policy", () => {
 
     for (const content of rejected) {
       expect(
-        isCompanyContextMemory({
-          type: "fact",
+        isCompanyWikiFact({
           orgName,
           content,
         }),
@@ -40,13 +37,17 @@ describe("org memory policy", () => {
     }
   });
 
-  test("rejects legacy non-fact memory types", () => {
+  test("lets a trusted extraction path through the free-text guards", () => {
+    const firstPerson = "We at Clarity Labs run a single Portland warehouse.";
     expect(
-      isCompanyContextMemory({
-        type: "preference",
-        orgName: "Clarity Labs Inc.",
-        content: "Clarity Labs prefers annual renewals.",
-      }),
+      isCompanyWikiFact({ orgName: "Clarity Labs Inc.", content: firstPerson }),
     ).toBe(false);
+    expect(
+      isCompanyWikiFact({
+        orgName: "Clarity Labs Inc.",
+        content: firstPerson,
+        trusted: true,
+      }),
+    ).toBe(true);
   });
 });

@@ -1,6 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
 
+import { ORG_WIKI_SECTION_KEYS } from "./orgWiki";
+
 /**
  * Tool definitions for agentic chat.
  * These schemas are shared between processThreadChat (Convex) and /api/chat (Next.js).
@@ -109,7 +111,7 @@ export const presentPolicyCard = tool({
 
 export const lookupCompanyContext = tool({
   description:
-    "Look up durable company-profile facts and preferences on demand. Use this for company operations, identity, stable preferences, or saved risk context. Never use company memory for policy terms, limits, endorsements, coverage, certificates, or other policy facts; use policy tools for those.",
+    "Read the whole company wiki for the readable organizations: durable company-profile facts and preferences as one markdown document each. Use this for company operations, identity, stable preferences, or saved risk context. Never use the company wiki for policy terms, limits, endorsements, coverage, certificates, or other policy facts; use policy tools for those.",
   inputSchema: z.object({
     orgId: z
       .string()
@@ -121,16 +123,7 @@ export const lookupCompanyContext = tool({
       .string()
       .optional()
       .describe(
-        "Company fact, preference, operation, identity, or risk topic to find.",
-      ),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .max(20)
-      .optional()
-      .describe(
-        "Maximum facts to return across readable organizations. Defaults to 10.",
+        "Company name to narrow which readable organizations are returned. The whole wiki is returned either way.",
       ),
   }),
 });
@@ -280,19 +273,17 @@ export const sendEmail = tool({
 
 export const saveNote = tool({
   description:
-    "Save an explicit stable company-profile fact for future reference only when the user asks Spot to remember it. Do not save policy details, endorsements, COI/certificate details, draft/email metadata, agent capabilities, tool limitations, workflow status, or one-off requests.",
+    "Add an explicit stable company-profile fact to the company wiki, only when the user asks Spot to remember it. Do not save policy details, endorsements, COI/certificate details, draft/email metadata, agent capabilities, tool limitations, workflow status, or one-off requests.",
   inputSchema: z.object({
-    content: z.string().describe("The observation or note to save"),
-    type: z
-      .enum(["fact", "preference", "risk_note", "observation"])
-      .describe(
-        "Type of note. Use fact; other types are rejected by memory policy.",
-      ),
+    content: z.string().describe("The company fact to write into the wiki"),
+    section: z
+      .enum(ORG_WIKI_SECTION_KEYS)
+      .describe("The company-wiki section this fact belongs in"),
     policyId: z
       .string()
       .optional()
       .describe(
-        "Deprecated. Policy-specific notes are rejected by memory policy.",
+        "Deprecated. Policy-specific notes are rejected by wiki policy.",
       ),
   }),
 });

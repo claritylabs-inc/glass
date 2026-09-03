@@ -163,11 +163,13 @@ export function ClientRequestsList() {
         <form id="client-request-form" className="space-y-5" onSubmit={submit}>
           <div>
             <label
+              htmlFor="client-request-title"
               className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}
             >
               Request name
             </label>
             <Input
+              id="client-request-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="Property and liability coverage"
@@ -175,11 +177,13 @@ export function ClientRequestsList() {
           </div>
           <div>
             <label
+              htmlFor="client-request-narrative"
               className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}
             >
               What do you need?
             </label>
             <Textarea
+              id="client-request-narrative"
               value={narrative}
               onChange={(event) => setNarrative(event.target.value)}
               rows={8}
@@ -188,11 +192,13 @@ export function ClientRequestsList() {
           </div>
           <div>
             <label
+              htmlFor="client-request-effective-date"
               className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}
             >
               Target effective date
             </label>
             <Input
+              id="client-request-effective-date"
               type="date"
               value={targetEffectiveDate}
               onChange={(event) => setTargetEffectiveDate(event.target.value)}

@@ -407,7 +407,7 @@ export default function OAuthAuthorizePage() {
                       <span className="text-foreground/30 mt-0.5">
                         &#x2022;
                       </span>
-                      Read and update org memory
+                      Read and update the company wiki
                     </li>
                   </>
                 )}
