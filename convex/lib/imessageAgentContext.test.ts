@@ -1,13 +1,18 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
 
-const { transcribeAudioForOrgMock, transcribeAudioForPublicTaskMock } =
-  vi.hoisted(() => ({
+const {
+  transcribeAudioForOperatorTaskMock,
+  transcribeAudioForOrgMock,
+  transcribeAudioForPublicTaskMock,
+} = vi.hoisted(() => ({
+    transcribeAudioForOperatorTaskMock: vi.fn(),
     transcribeAudioForOrgMock: vi.fn(),
     transcribeAudioForPublicTaskMock: vi.fn(),
   }));
 
 vi.mock("./models", () => ({
+  transcribeAudioForOperatorTask: transcribeAudioForOperatorTaskMock,
   transcribeAudioForOrg: transcribeAudioForOrgMock,
   transcribeAudioForPublicTask: transcribeAudioForPublicTaskMock,
 }));
@@ -16,10 +21,14 @@ import {
   buildImessageModelMessages,
   buildRecentImessageTextContext,
   imessageAgentTaskForAttachments,
-  transcribeImessageVoiceMemos,
+  prepareInboundImessageTurn,
 } from "./imessageAgentContext";
 
 describe("iMessage agent context helpers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   test("routes image attachments through the vision-capable chat task", () => {
     expect(
       imessageAgentTaskForAttachments([
@@ -51,8 +60,11 @@ describe("iMessage agent context helpers", () => {
       transport: "direct",
     });
 
-    const input = await transcribeImessageVoiceMemos({} as never, {
-      orgId: "org-1" as Id<"organizations">,
+    const input = await prepareInboundImessageTurn({} as never, {
+      scope: {
+        kind: "organization",
+        orgId: "org-1" as Id<"organizations">,
+      },
       messageText: "(attachment)",
       attachments: [
         {
@@ -74,6 +86,7 @@ describe("iMessage agent context helpers", () => {
         },
       ],
       failures: [],
+      nonAudioAttachments: [],
     });
     expect(transcribeAudioForOrgMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -84,6 +97,84 @@ describe("iMessage agent context helpers", () => {
       }),
     );
     expect(transcribeAudioForPublicTaskMock).not.toHaveBeenCalled();
+  });
+
+  test("prepares operator voice notes through the shared inbound handler", async () => {
+    transcribeAudioForOperatorTaskMock.mockResolvedValueOnce({
+      text: "Record that we provided the requested information.",
+      route: { provider: "openai", model: "gpt-4o-transcribe" },
+      routeSource: "global",
+      transport: "direct",
+    });
+    const document = {
+      name: "follow-up.pdf",
+      mimeType: "application/pdf",
+      data: Buffer.from("pdf").toString("base64"),
+    };
+
+    const input = await prepareInboundImessageTurn({} as never, {
+      scope: { kind: "operator" },
+      messageText: "(attachment)",
+      attachments: [
+        {
+          name: "voice-memo.m4a",
+          mimeType: "audio/mp4",
+          data: Buffer.from("audio").toString("base64"),
+        },
+        document,
+      ],
+    });
+
+    expect(input).toMatchObject({
+      hasVoiceMemos: true,
+      messageText:
+        "[Voice memo transcript: voice-memo.m4a]\nRecord that we provided the requested information.",
+      transcripts: [
+        {
+          filename: "voice-memo.m4a",
+          text: "Record that we provided the requested information.",
+        },
+      ],
+      failures: [],
+      nonAudioAttachments: [document],
+    });
+    expect(transcribeAudioForOperatorTaskMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        filename: "voice-memo.m4a",
+        mediaType: "audio/mp4",
+      }),
+    );
+    expect(transcribeAudioForOrgMock).not.toHaveBeenCalled();
+    expect(transcribeAudioForPublicTaskMock).not.toHaveBeenCalled();
+  });
+
+  test("returns one channel-neutral response when operator transcription fails", async () => {
+    transcribeAudioForOperatorTaskMock.mockRejectedValueOnce(
+      new Error("transcription unavailable"),
+    );
+
+    const input = await prepareInboundImessageTurn({} as never, {
+      scope: { kind: "operator" },
+      messageText: "(attachment)",
+      attachments: [
+        {
+          name: "voice-memo.m4a",
+          mimeType: "audio/mp4",
+          data: Buffer.from("audio").toString("base64"),
+        },
+      ],
+    });
+
+    expect(input).toMatchObject({
+      hasVoiceMemos: true,
+      transcripts: [],
+      failures: [
+        { filename: "voice-memo.m4a", error: "transcription unavailable" },
+      ],
+      failureResponse:
+        "I couldn't transcribe that voice memo. Please try sending it again or send the request as text.",
+    });
   });
 
   test("builds recent text context without status cue messages", () => {
