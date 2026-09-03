@@ -28,6 +28,7 @@ import {
   isMissingConvexAccessToken,
   repoRoot,
   resolveConductorClRouterConfig,
+  resolveConductorMapboxAccessToken,
   workspaceSlug,
   withoutCloudConvexSelection,
 } from "../scripts/lib/conductor-workspace.mjs";
@@ -367,6 +368,14 @@ describe("Conductor Convex bootstrap", () => {
         output: "Request failed with status 503",
       }),
     ).toBe(false);
+  });
+
+  it("falls back to the Cloud Computer Mapbox token when the copied env omits it", () => {
+    expect(
+      resolveConductorMapboxAccessToken(new Map(), {
+        NEXT_PUBLIC_MAPBOX_TOKEN: " cloud-mapbox-token ",
+      }),
+    ).toBe("cloud-mapbox-token");
   });
 
   it("removes cloud selection and credentials from local Convex processes", () => {
