@@ -58,7 +58,6 @@ import {
   type OperatorClientRelatedLegalEntity,
 } from "./client-company-details";
 import {
-  OperatorClientSettingsTabs,
   parseOperatorClientSection,
   type OperatorClientPageTab,
 } from "./operator-client-tabs";
@@ -300,13 +299,6 @@ function ClientWorkspace({
   return (
     <>
       <main className="w-full space-y-6">
-        {activeTab === "features" || activeTab === "channels" ? (
-          <OperatorClientSettingsTabs
-            clientOrgId={clientOrgId}
-            value={activeTab}
-          />
-        ) : null}
-
         {activeTab === "overview" ? (
           <div className="space-y-5">
             <OperationalPanel aria-labelledby="client-identity-title">
@@ -419,21 +411,6 @@ function ClientWorkspace({
           </div>
         ) : null}
 
-        {activeTab === "features" ? (
-          <section className="space-y-3" aria-label="Beta features">
-            {betaFeatureFlagsForOrgType("client").map((flag) => (
-              <FeatureFlagToggleRow
-                key={flag.id}
-                flag={flag}
-                enabled={isFeatureEnabled(client, flag.id)}
-                onChange={(enabled) => void updateFeatureFlag(flag.id, enabled)}
-                loading={savingFeatureFlagId === flag.id}
-                disabled={savingFeatureFlagId !== null}
-              />
-            ))}
-          </section>
-        ) : null}
-
         {activeTab === "team" ? (
           <TeamSection
             operatorClient={supportDetails}
@@ -447,14 +424,38 @@ function ClientWorkspace({
           />
         ) : null}
 
-        {activeTab === "channels" ? (
-          <AgentChannelsSection
-            clientOrgId={client._id}
-            defaultClientSlug={slackChannelSlug(client)}
-            defaultInviteEmail={client.primaryContactEmail ?? client.adminEmail}
-            defaultInviteUserId={supportDetails.primaryInsuranceContactId}
-            setRightPanel={setRightPanel}
-          />
+        {activeTab === "settings" ? (
+          <div className="space-y-5">
+            <section className="space-y-3" aria-label="Agent channels">
+              <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+                Agent channels
+              </h2>
+                <AgentChannelsSection
+                clientOrgId={client._id}
+                defaultClientSlug={slackChannelSlug(client)}
+                defaultInviteEmail={
+                  client.primaryContactEmail ?? client.adminEmail
+                }
+                defaultInviteUserId={supportDetails.primaryInsuranceContactId}
+                setRightPanel={setRightPanel}
+              />
+            </section>
+            <section className="space-y-3" aria-label="Beta features">
+              <h2 className={`text-foreground ${typeStyle("heading.micro")}`}>
+                Beta features
+              </h2>
+              {betaFeatureFlagsForOrgType("client").map((flag) => (
+                <FeatureFlagToggleRow
+                  key={flag.id}
+                  flag={flag}
+                  enabled={isFeatureEnabled(client, flag.id)}
+                  onChange={(enabled) => void updateFeatureFlag(flag.id, enabled)}
+                  loading={savingFeatureFlagId === flag.id}
+                  disabled={savingFeatureFlagId !== null}
+                />
+              ))}
+            </section>
+          </div>
         ) : null}
       </main>
 
@@ -519,11 +520,7 @@ export default function OperatorClientPage() {
   const client = clients?.find((item) => item._id === clientOrgId) ?? null;
   const activeTab = parseOperatorClientSection(searchParams.get("tab"));
   const breadcrumbSection =
-    activeTab === "team"
-      ? "Team"
-      : activeTab === "features" || activeTab === "channels"
-        ? "Settings"
-        : null;
+    activeTab === "team" ? "Team" : activeTab === "settings" ? "Settings" : null;
 
   return (
     <AppShell

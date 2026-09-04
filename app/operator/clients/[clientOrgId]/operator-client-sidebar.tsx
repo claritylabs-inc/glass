@@ -95,11 +95,7 @@ function activeClientSection({
   }
   if (pathname === basePath || pathname === `${basePath}/`) {
     if (tab === "team") return "team";
-    if (
-      ["features", "channels", "email", "imessage", "slack"].includes(tab ?? "")
-    ) {
-      return "settings";
-    }
+    if (tab === "settings") return "settings";
   }
   return "overview";
 }
@@ -191,7 +187,7 @@ export function OperatorClientSidebar({
             collapsed={collapsed}
           />
           <SidebarMenuItem
-            href={`${basePath}?tab=features`}
+            href={`${basePath}?tab=settings`}
             label="Settings"
             icon={Settings}
             active={active === "settings"}
