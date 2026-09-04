@@ -425,8 +425,6 @@ export function ProcurementListWorkspace({
       title="No procurement requests yet"
       description="Create a request to centralize client requirements, broker outreach, documents, quotes, and forwarded email."
       icon={<FileSearch className="size-6" />}
-      actionLabel={readOnly ? undefined : "New request"}
-      onAction={readOnly ? undefined : openNewRequest}
     />
   ) : (
     <OperationalPanel as="div">
