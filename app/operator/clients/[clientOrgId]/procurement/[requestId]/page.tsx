@@ -43,11 +43,14 @@ export default function OperatorProcurementRequestPage() {
   const title = request?.request.title ?? "Procurement request";
   const requestedView = searchParams.get("view");
   const normalizedView =
-    requestedView === "requirements" ? "packet" : requestedView;
+    requestedView === "requirements"
+      ? "packet"
+      : requestedView === "proposals"
+        ? "market"
+        : requestedView;
   const view =
     normalizedView === "packet" ||
     normalizedView === "market" ||
-    normalizedView === "proposals" ||
     normalizedView === "files" ||
     normalizedView === "email"
       ? normalizedView

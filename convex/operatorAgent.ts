@@ -1553,10 +1553,6 @@ async function executeToolDomain(
   if (toolName === "preview_broker_packet") {
     return await previewBrokerPacket(ctx, {
       requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
-      outreachId: normalizeProcurementOutreachId(
-        ctx,
-        input.procurementOutreachId,
-      ),
     });
   }
 
@@ -2216,12 +2212,6 @@ async function executeToolDomain(
     return await mintPacketLinkForOperator(ctx, {
       operatorUserId: args.operatorUserId,
       requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
-      outreachId: normalizeProcurementOutreachId(
-        ctx,
-        input.procurementOutreachId,
-      ),
-      recipientLabel: normalizedOptionalText(input.recipientLabel) ?? "",
-      recipientEmail: normalizedOptionalText(input.recipientEmail),
       expiresInDays:
         typeof input.expiresInDays === "number"
           ? input.expiresInDays
@@ -2717,27 +2707,6 @@ async function executeToolActionDomain(
           proposalId: String(
             args.input.procurementProposalId,
           ) as Id<"procurementProposals">,
-        },
-      ),
-    };
-  }
-
-  if (args.toolName === "send_broker_packet") {
-    return {
-      result: await ctx.runAction(
-        internal.actions.procurementPacketSend.sendInternal,
-        {
-          operatorUserId: args.operatorUserId,
-          requestId: String(
-            args.input.procurementRequestId,
-          ) as Id<"procurementRequests">,
-          outreachId: String(
-            args.input.procurementOutreachId,
-          ) as Id<"procurementBrokerOutreaches">,
-          expiresInDays:
-            typeof args.input.expiresInDays === "number"
-              ? args.input.expiresInDays
-              : undefined,
         },
       ),
     };
@@ -3359,10 +3328,7 @@ async function expireOperatorConfirmation(
   now: number,
   channel: OperatorChannel,
 ) {
-  if (
-    confirmation.status !== "pending" ||
-    confirmation.expiresAt > now
-  ) {
+  if (confirmation.status !== "pending" || confirmation.expiresAt > now) {
     return false;
   }
 
@@ -4794,9 +4760,9 @@ export const invokeRegisteredToolInternal = internalAction({
         ? `Confirmation required: ${displaySummary}.`
         : outcome.status === "blocked_by_confirmation"
           ? `Blocked: ${invocation.summary}. Resolve the pending confirmation first: ${displaySummary}.`
-        : outcome.status === "succeeded"
-          ? `Completed: ${displaySummary}.`
-          : `Could not complete ${displaySummary}: ${"error" in outcome ? outcome.error : "unknown error"}`;
+          : outcome.status === "succeeded"
+            ? `Completed: ${displaySummary}.`
+            : `Could not complete ${displaySummary}: ${"error" in outcome ? outcome.error : "unknown error"}`;
     if (!invocation.duplicate) {
       await ctx.runMutation(internal.operatorAgent.completeRunInternal, {
         runId: invocation.runId,

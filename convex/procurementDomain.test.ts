@@ -748,16 +748,12 @@ describe("procurement domain boundaries", () => {
     await expect(
       f.operator.mutation(api.procurementPacket.mintLink, {
         requestId: request.requestId,
-        outreachId: outreach.outreachId,
-        recipientLabel: "Dana Reyes",
         expiresAt: dayjs().subtract(1, "minute").valueOf(),
       }),
     ).rejects.toThrow("Packet link expiry must be in the future");
     await expect(
       f.operator.mutation(api.procurementPacket.mintLink, {
         requestId: request.requestId,
-        outreachId: outreach.outreachId,
-        recipientLabel: "Dana Reyes",
         expiresAt: dayjs().add(91, "day").valueOf(),
       }),
     ).rejects.toThrow("Packet links may expire at most 90 days after issue");
@@ -766,8 +762,6 @@ describe("procurement domain boundaries", () => {
     await expect(
       f.operator.mutation(api.procurementPacket.mintLink, {
         requestId: request.requestId,
-        outreachId: outreach.outreachId,
-        recipientLabel: "Dana Reyes",
         expiresAt: dayjs().add(90, "day").add(5, "second").valueOf(),
       }),
     ).rejects.toThrow("Packet links may expire at most 90 days after issue");
@@ -775,24 +769,32 @@ describe("procurement domain boundaries", () => {
       api.procurementPacket.mintLink,
       {
         requestId: request.requestId,
-        outreachId: outreach.outreachId,
-        recipientLabel: "Dana Reyes",
         expiresInDays: 90,
       },
     );
     expect(maximumLifetime.expiresAt).toBeGreaterThan(
       dayjs().add(89, "day").valueOf(),
     );
+    const replacementLink = await f.operator.mutation(
+      api.procurementPacket.mintLink,
+      {
+        requestId: request.requestId,
+        expiresInDays: 7,
+      },
+    );
+    await expect(
+      f.t.query(api.procurementPacket.getByToken, {
+        token: maximumLifetime.token,
+      }),
+    ).resolves.toBeNull();
     await expect(
       f.operator.mutation(api.procurementPacket.mintLink, {
         requestId: request.requestId,
-        outreachId: outreach.outreachId,
-        recipientLabel: "Dana Reyes",
         expiresInDays: 91,
       }),
     ).rejects.toThrow("Packet link lifetime must be between 1 and 90 days");
     await f.operator.mutation(api.procurementPacket.revokeLink, {
-      linkId: maximumLifetime.id,
+      linkId: replacementLink.id,
     });
     await f.t.run((ctx) =>
       upsertPacketSectionByOperator(ctx, {
@@ -878,7 +880,6 @@ describe("procurement domain boundaries", () => {
       api.procurementPacket.preview,
       {
         requestId: request.requestId,
-        outreachId: outreach.outreachId,
       },
     );
     expect(brokerPreview.files.map((file) => file.name)).toEqual([
@@ -886,9 +887,6 @@ describe("procurement domain boundaries", () => {
     ]);
     const issued = await f.operator.mutation(api.procurementPacket.mintLink, {
       requestId: request.requestId,
-      outreachId: outreach.outreachId,
-      recipientLabel: "Dana Reyes",
-      recipientEmail: "dana@example.com",
     });
     const { originalFileId, replacementClientFileId } = await f.t.run(
       async (ctx) => {
@@ -935,7 +933,7 @@ describe("procurement domain boundaries", () => {
       token: issued.token,
     });
     expect(publicView).toMatchObject({
-      recipientLabel: "Dana Reyes",
+      recipientLabel: "All brokers",
       files: [
         expect.objectContaining({
           _id: fileItem.fileItemId,
@@ -1803,11 +1801,6 @@ describe("operator procurement tools", () => {
     expect(getOperatorAgentToolSpec("create_broker_packet_link")).toMatchObject(
       { effect: "access_change", confirmation: "exact" },
     );
-    expect(getOperatorAgentToolSpec("send_broker_packet")).toMatchObject({
-      effect: "external_send",
-      confirmation: "exact",
-      execution: "action",
-    });
     expect(
       getOperatorAgentToolSpec("generate_procurement_proposal_review"),
     ).toMatchObject({ confirmation: "exact", execution: "action" });

@@ -29,7 +29,10 @@ import {
 } from "@/components/client-files/client-files-workspace";
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
-import { PacketWorkspace } from "@/components/procurement/packet-workspace";
+import {
+  PacketSharingWorkspace,
+  PacketWorkspace,
+} from "@/components/procurement/packet-workspace";
 import {
   EmailCategoryBadge,
   FILE_PURPOSE_OPTIONS,
@@ -173,23 +176,6 @@ type RequestDetails = {
   outreaches: Outreach[];
   files: ProcurementFileItem[];
   emailThreads: EmailThread[];
-  timeline: TimelineEntry[];
-};
-
-type TimelineEntry = {
-  key: string;
-  kind: "operator" | "email" | "file" | "proposal" | "outreach";
-  summary: string;
-  detail?: string;
-  createdAt: number;
-};
-
-const TIMELINE_KIND_LABELS: Record<TimelineEntry["kind"], string> = {
-  operator: "Operator",
-  email: "Email",
-  file: "File",
-  proposal: "Proposal",
-  outreach: "Outreach",
 };
 
 type BrokerOption = {
@@ -1475,7 +1461,7 @@ export function ProcurementRequestWorkspace({
   clientOrgId: Id<"organizations">;
   requestId: Id<"procurementRequests">;
   basePath: string;
-  view: "overview" | "packet" | "market" | "proposals" | "files" | "email";
+  view: "overview" | "packet" | "market" | "files" | "email";
   readOnly: boolean;
   onActions?: (node: ReactNode) => void;
   onRightPanel: (node: ReactNode) => void;
@@ -1499,7 +1485,6 @@ export function ProcurementRequestWorkspace({
   });
   const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
   const proposals = useQuery(api.procurementProposals.list, { requestId });
-  const packetForWorkbench = useQuery(api.procurementPacket.get, { requestId });
   const generateProposalReview = useAction(
     api.actions.proposalReview.generateReview,
   );
@@ -1680,15 +1665,20 @@ export function ProcurementRequestWorkspace({
           Edit request
         </PillButton>
       ) : view === "market" ? (
-        <PillButton type="button" onClick={() => openOutreachEditor()}>
-          <Plus className="size-3.5" />
-          Add broker
-        </PillButton>
-      ) : view === "proposals" ? (
-        <PillButton type="button" onClick={openProposalCreate}>
-          <Plus className="size-3.5" />
-          File proposal
-        </PillButton>
+        <>
+          <PillButton
+            type="button"
+            variant="secondary"
+            onClick={() => openOutreachEditor()}
+          >
+            <Plus className="size-3.5" />
+            Add broker
+          </PillButton>
+          <PillButton type="button" onClick={openProposalCreate}>
+            <Plus className="size-3.5" />
+            File proposal
+          </PillButton>
+        </>
       ) : view === "files" ? (
         <>
           <PillButton
@@ -1784,8 +1774,7 @@ export function ProcurementRequestWorkspace({
     clientFilesResult === undefined ||
     requestRows === undefined ||
     brokers === undefined ||
-    proposals === undefined ||
-    packetForWorkbench === undefined
+    proposals === undefined
   ) {
     return (
       <OperationalPanel
@@ -1817,29 +1806,27 @@ export function ProcurementRequestWorkspace({
     (proposal) =>
       proposal.status !== "archived" && proposal.status !== "withdrawn",
   );
-  const extractionExceptions = activeProposals.filter(
-    (proposal) =>
-      proposal.extraction.latest?.stuck ||
-      proposal.extraction.latest?.status === "failed",
+  const proposalOutreachIds = new Set(
+    activeProposals.map((proposal) => String(proposal.outreachId)),
+  );
+  const outreachesWithoutProposal = details.outreaches.filter(
+    (outreach) => !proposalOutreachIds.has(String(outreach._id)),
   );
   const blockers = [
     ...(details.outreaches.length === 0
       ? ["No broker outreach has been added"]
-      : []),
-    ...(packetForWorkbench.gaps.length
-      ? [
-          `${packetForWorkbench.gaps.length} packet section${packetForWorkbench.gaps.length === 1 ? " is" : "s are"} empty`,
-        ]
       : []),
     ...(details.request.outstandingFileCount
       ? [
           `${details.request.outstandingFileCount} requested file${details.request.outstandingFileCount === 1 ? " is" : "s are"} outstanding`,
         ]
       : []),
-    ...(extractionExceptions.length
-      ? [
-          `${extractionExceptions.length} proposal extraction${extractionExceptions.length === 1 ? " needs" : "s need"} attention`,
-        ]
+    ...(activeProposals.filter(
+      (proposal) =>
+        proposal.extraction.latest?.stuck ||
+        proposal.extraction.latest?.status === "failed",
+    ).length
+      ? ["Proposal extraction needs attention"]
       : []),
   ];
   const nextActions = blockers.length
@@ -1870,17 +1857,11 @@ export function ProcurementRequestWorkspace({
         >
           <TabsList variant="pill" aria-label="Procurement request view">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="packet">Packet &amp; sharing</TabsTrigger>
+            <TabsTrigger value="packet">Packet</TabsTrigger>
             <TabsTrigger value="market">
               Market
               <span className="text-muted-foreground/60">
                 {details.outreaches.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="proposals">
-              Proposals
-              <span className="text-muted-foreground/60">
-                {activeProposals.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="files">
@@ -1907,20 +1888,8 @@ export function ProcurementRequestWorkspace({
               value={<RequestStatusTag status={details.request.status} />}
             />
             <OperationalLabelValueRow
-              label="Broker progress"
-              value={`${details.request.brokerCount} contacted · ${details.request.quoteCount} quotes`}
-            />
-            <OperationalLabelValueRow
-              label="Proposals"
-              value={`${activeProposals.length} active${extractionExceptions.length ? ` · ${extractionExceptions.length} extraction exceptions` : ""}`}
-            />
-            <OperationalLabelValueRow
-              label="Packet"
-              value={
-                packetForWorkbench.gaps.length
-                  ? `${packetForWorkbench.gaps.length} empty sections`
-                  : `Revision ${packetForWorkbench.packetRevision} ready`
-              }
+              label="Market"
+              value={`${details.request.brokerCount} brokers · ${activeProposals.length} proposals`}
             />
             <OperationalLabelValueRow
               label="Target effective date"
@@ -1929,37 +1898,8 @@ export function ProcurementRequestWorkspace({
                 "Not set",
               )}
             />
-            <OperationalLabelValueRow
-              label="Replacing"
-              value={details.request.replacingPolicy?.label ?? "No policy"}
-            />
-            <OperationalLabelValueRow
-              label="Resulting policy"
-              value={details.request.resultingPolicy?.label ?? "Not linked"}
-            />
-            <OperationalLabelValueRow
-              label="Updated"
-              value={formatDisplayDate(details.request.updatedAt, "—")}
-            />
+            <OperationalLabelValueRow label="Next" value={nextActions[0]} />
           </OperationalLabelValueList>
-          <OperationalPanel>
-            <OperationalPanelHeader title="Next actions" />
-            <OperationalPanelBody>
-              <ul className="space-y-2">
-                {nextActions.map((action) => (
-                  <li
-                    key={action}
-                    className={`flex gap-2 text-foreground ${typeStyle("body.default")}`}
-                  >
-                    <span className="text-muted-foreground" aria-hidden="true">
-                      —
-                    </span>
-                    {action}
-                  </li>
-                ))}
-              </ul>
-            </OperationalPanelBody>
-          </OperationalPanel>
           <OperationalLabelValueList>
             <OperationalLabelValueRow
               label="What the client asked for"
@@ -1971,51 +1911,6 @@ export function ProcurementRequestWorkspace({
               }
             />
           </OperationalLabelValueList>
-          <OperationalPanel as="section">
-            <OperationalPanelHeader
-              title="Timeline"
-              description="Operator actions, imported email, files, outreach, and proposals"
-            />
-            <OperationalPanelBody>
-              <div className="divide-y divide-border">
-                {details.timeline.length ? (
-                  details.timeline.map((entry) => (
-                    <div
-                      key={entry.key}
-                      className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
-                    >
-                      <span className="flex min-w-0 items-baseline gap-2">
-                        <Badge variant="outline" className="shrink-0">
-                          {TIMELINE_KIND_LABELS[entry.kind]}
-                        </Badge>
-                        <span className={typeStyle("body.default")}>
-                          {entry.summary}
-                          {entry.detail ? (
-                            <span
-                              className={`ml-2 text-muted-foreground ${typeStyle("caption.default")}`}
-                            >
-                              {entry.detail}
-                            </span>
-                          ) : null}
-                        </span>
-                      </span>
-                      <span
-                        className={`shrink-0 text-muted-foreground ${typeStyle("caption.default")}`}
-                      >
-                        {formatDisplayDateTime(entry.createdAt)}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <p
-                    className={`text-muted-foreground ${typeStyle("body.default")}`}
-                  >
-                    Nothing has happened on this request yet.
-                  </p>
-                )}
-              </div>
-            </OperationalPanelBody>
-          </OperationalPanel>
         </div>
       ) : null}
 
@@ -2023,248 +1918,248 @@ export function ProcurementRequestWorkspace({
         <PacketWorkspace
           key={requestId}
           requestId={requestId}
-          outreaches={details.outreaches}
           readOnly={readOnly}
         />
       ) : null}
 
-      {view === "proposals" ? (
-        proposals.length === 0 ? (
-          <EmptyStateCard
-            title="No proposals filed"
-            description="File emailed quote documents against a broker outreach to compare them here."
-          />
-        ) : (
-          <OperationalPanel as="section">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Broker</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Premium</TableHead>
-                  <TableHead>Term</TableHead>
-                  <TableHead>Review</TableHead>
-                  <TableHead>Documents</TableHead>
-                  <TableHead className="w-0" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {proposals.map((proposal) => {
-                  const offer = (proposal.extractedOffer ?? {}) as {
-                    premium?: string;
-                    premiumAmount?: number;
-                    proposedEffectiveDate?: string;
-                    proposedExpirationDate?: string;
-                    coverages?: Array<{ name?: string; limit?: string }>;
-                  };
-                  const review = proposal.reviews[0];
-                  const conclusion = review?.stale
-                    ? undefined
-                    : (review?.staffConclusion ?? review?.modelConclusion);
-                  const latestExtraction = proposal.extraction.latest;
-                  return (
-                    <TableRow key={proposal._id}>
-                      <TableCell>
-                        <button
-                          type="button"
-                          className={`text-left text-foreground underline-offset-4 hover:underline ${typeStyle("body.medium")}`}
-                          onClick={() =>
-                            openProposalReview(proposal as ProposalView)
-                          }
-                        >
-                          {proposal.brokerName ?? "Broker"}
-                        </button>
-                        <p
-                          className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
-                        >
-                          {offer.coverages
-                            ?.slice(0, 2)
-                            .map((coverage) =>
-                              [coverage.name, coverage.limit]
-                                .filter(Boolean)
-                                .join(" "),
-                            )
-                            .filter(Boolean)
-                            .join(" · ") || "No coverage summary"}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        <StatusTag
-                          tone={
-                            proposal.status === "selected"
-                              ? "success"
-                              : proposal.status === "reviewed"
-                                ? "info"
-                                : "neutral"
-                          }
-                        >
-                          {proposal.status.replaceAll("_", " ")}
-                        </StatusTag>
-                        {latestExtraction?.stuck ? (
-                          <p
-                            className={`mt-1 text-warning ${typeStyle("caption.default")}`}
-                          >
-                            Extraction lease expired
-                          </p>
-                        ) : latestExtraction?.status === "failed" ? (
-                          <p
-                            className={`mt-1 max-w-48 truncate text-destructive ${typeStyle("caption.default")}`}
-                            title={latestExtraction.lastError ?? undefined}
-                          >
-                            {latestExtraction.lastError || "Extraction failed"}
-                          </p>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {offer.premium ?? offer.premiumAmount ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {[
-                          offer.proposedEffectiveDate,
-                          offer.proposedExpirationDate,
-                        ]
-                          .filter(Boolean)
-                          .join(" – ") || "—"}
-                      </TableCell>
-                      <TableCell>
-                        {review?.stale ? (
-                          <StatusTag tone="warning">Stale</StatusTag>
-                        ) : conclusion ? (
-                          <StatusTag
-                            tone={
-                              conclusion === "meets_requirements"
-                                ? "success"
-                                : "warning"
+      {view === "market" ? (
+        <div className="space-y-4">
+          <PacketSharingWorkspace requestId={requestId} readOnly={readOnly} />
+          {activeProposals.length ? (
+            <OperationalPanel as="section">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Broker</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Premium</TableHead>
+                    <TableHead>Term</TableHead>
+                    <TableHead>Review</TableHead>
+                    <TableHead>Documents</TableHead>
+                    <TableHead className="w-0" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {activeProposals.map((proposal) => {
+                    const offer = (proposal.extractedOffer ?? {}) as {
+                      premium?: string;
+                      premiumAmount?: number;
+                      proposedEffectiveDate?: string;
+                      proposedExpirationDate?: string;
+                      coverages?: Array<{ name?: string; limit?: string }>;
+                    };
+                    const review = proposal.reviews[0];
+                    const conclusion = review?.stale
+                      ? undefined
+                      : (review?.staffConclusion ?? review?.modelConclusion);
+                    const latestExtraction = proposal.extraction.latest;
+                    return (
+                      <TableRow key={proposal._id}>
+                        <TableCell>
+                          <button
+                            type="button"
+                            className={`text-left text-foreground underline-offset-4 hover:underline ${typeStyle("body.medium")}`}
+                            onClick={() =>
+                              openProposalReview(proposal as ProposalView)
                             }
                           >
-                            {REVIEW_CONCLUSION_LABELS[conclusion]}
+                            {proposal.brokerName ?? "Broker"}
+                          </button>
+                          <p
+                            className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
+                          >
+                            {offer.coverages
+                              ?.slice(0, 2)
+                              .map((coverage) =>
+                                [coverage.name, coverage.limit]
+                                  .filter(Boolean)
+                                  .join(" "),
+                              )
+                              .filter(Boolean)
+                              .join(" · ") || "No coverage summary"}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <StatusTag
+                            tone={
+                              proposal.status === "selected"
+                                ? "success"
+                                : proposal.status === "reviewed"
+                                  ? "info"
+                                  : "neutral"
+                            }
+                          >
+                            {proposal.status.replaceAll("_", " ")}
                           </StatusTag>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            Not reviewed
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {proposal.documents.length}
-                      </TableCell>
-                      <TableCell>
-                        {!readOnly ? (
-                          <div className="flex flex-wrap justify-end gap-2">
-                            {(!review || review.stale) &&
-                            proposal.extractedOffer ? (
-                              <PillButton
-                                size="compact"
-                                variant="secondary"
-                                disabled={reviewingProposalId === proposal._id}
-                                onClick={() =>
-                                  void reviewProposal(proposal._id)
-                                }
-                              >
-                                {reviewingProposalId === proposal._id ? (
-                                  <Loader2 className="size-3.5 animate-spin" />
-                                ) : null}
-                                {review?.stale
-                                  ? "Re-run review"
-                                  : "Generate review"}
-                              </PillButton>
-                            ) : review &&
-                              !review.stale &&
-                              !review.staffConclusion ? (
-                              <PillButton
-                                size="compact"
-                                variant="secondary"
-                                onClick={() =>
-                                  openProposalReview(proposal as ProposalView)
-                                }
-                              >
-                                Review
-                              </PillButton>
-                            ) : proposal.status === "reviewed" &&
-                              conclusion === "meets_requirements" ? (
-                              <PillButton
-                                size="compact"
-                                onClick={() =>
-                                  void selectProposal({
-                                    proposalId: proposal._id,
-                                  })
-                                }
-                              >
-                                Select
-                              </PillButton>
-                            ) : null}
-                            {latestExtraction?.stuck ||
-                            latestExtraction?.status === "failed" ? (
-                              <PillButton
-                                size="compact"
-                                variant="secondary"
-                                disabled={workingProposalAction !== null}
-                                onClick={() =>
-                                  void runProposalMutation(
-                                    `retry:${proposal._id}`,
-                                    () =>
-                                      retryProposalExtraction({
-                                        proposalId: proposal._id,
-                                      }),
-                                    "Proposal extraction queued",
-                                    "Could not retry proposal extraction",
-                                  )
-                                }
-                              >
-                                Retry extraction
-                              </PillButton>
-                            ) : latestExtraction?.status === "pending" ||
-                              latestExtraction?.status === "running" ? (
-                              <PillButton
-                                size="compact"
-                                variant="secondary"
-                                disabled={workingProposalAction !== null}
-                                onClick={() =>
-                                  void runProposalMutation(
-                                    `cancel:${proposal._id}`,
-                                    () =>
-                                      cancelProposalExtraction({
-                                        proposalId: proposal._id,
-                                      }),
-                                    "Proposal extraction cancelled",
-                                    "Could not cancel proposal extraction",
-                                  )
-                                }
-                              >
-                                Cancel extraction
-                              </PillButton>
-                            ) : null}
-                            {proposal.status !== "selected" &&
-                            proposal.status !== "archived" ? (
-                              <PillButton
-                                size="compact"
-                                variant="destructive"
-                                disabled={workingProposalAction !== null}
-                                onClick={() =>
-                                  void runProposalMutation(
-                                    `archive:${proposal._id}`,
-                                    () =>
-                                      archiveProposal({
-                                        proposalId: proposal._id,
-                                      }),
-                                    "Proposal archived",
-                                    "Could not archive the proposal",
-                                  )
-                                }
-                              >
-                                Archive
-                              </PillButton>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </OperationalPanel>
-        )
+                          {latestExtraction?.stuck ? (
+                            <p
+                              className={`mt-1 text-warning ${typeStyle("caption.default")}`}
+                            >
+                              Extraction lease expired
+                            </p>
+                          ) : latestExtraction?.status === "failed" ? (
+                            <p
+                              className={`mt-1 max-w-48 truncate text-destructive ${typeStyle("caption.default")}`}
+                              title={latestExtraction.lastError ?? undefined}
+                            >
+                              {latestExtraction.lastError ||
+                                "Extraction failed"}
+                            </p>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {offer.premium ?? offer.premiumAmount ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {[
+                            offer.proposedEffectiveDate,
+                            offer.proposedExpirationDate,
+                          ]
+                            .filter(Boolean)
+                            .join(" – ") || "—"}
+                        </TableCell>
+                        <TableCell>
+                          {review?.stale ? (
+                            <StatusTag tone="warning">Stale</StatusTag>
+                          ) : conclusion ? (
+                            <StatusTag
+                              tone={
+                                conclusion === "meets_requirements"
+                                  ? "success"
+                                  : "warning"
+                              }
+                            >
+                              {REVIEW_CONCLUSION_LABELS[conclusion]}
+                            </StatusTag>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              Not reviewed
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {proposal.documents.length}
+                        </TableCell>
+                        <TableCell>
+                          {!readOnly ? (
+                            <div className="flex flex-wrap justify-end gap-2">
+                              {(!review || review.stale) &&
+                              proposal.extractedOffer ? (
+                                <PillButton
+                                  size="compact"
+                                  variant="secondary"
+                                  disabled={
+                                    reviewingProposalId === proposal._id
+                                  }
+                                  onClick={() =>
+                                    void reviewProposal(proposal._id)
+                                  }
+                                >
+                                  {reviewingProposalId === proposal._id ? (
+                                    <Loader2 className="size-3.5 animate-spin" />
+                                  ) : null}
+                                  {review?.stale
+                                    ? "Re-run review"
+                                    : "Generate review"}
+                                </PillButton>
+                              ) : review &&
+                                !review.stale &&
+                                !review.staffConclusion ? (
+                                <PillButton
+                                  size="compact"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    openProposalReview(proposal as ProposalView)
+                                  }
+                                >
+                                  Review
+                                </PillButton>
+                              ) : proposal.status === "reviewed" &&
+                                conclusion === "meets_requirements" ? (
+                                <PillButton
+                                  size="compact"
+                                  onClick={() =>
+                                    void selectProposal({
+                                      proposalId: proposal._id,
+                                    })
+                                  }
+                                >
+                                  Select
+                                </PillButton>
+                              ) : null}
+                              {latestExtraction?.stuck ||
+                              latestExtraction?.status === "failed" ? (
+                                <PillButton
+                                  size="compact"
+                                  variant="secondary"
+                                  disabled={workingProposalAction !== null}
+                                  onClick={() =>
+                                    void runProposalMutation(
+                                      `retry:${proposal._id}`,
+                                      () =>
+                                        retryProposalExtraction({
+                                          proposalId: proposal._id,
+                                        }),
+                                      "Proposal extraction queued",
+                                      "Could not retry proposal extraction",
+                                    )
+                                  }
+                                >
+                                  Retry extraction
+                                </PillButton>
+                              ) : latestExtraction?.status === "pending" ||
+                                latestExtraction?.status === "running" ? (
+                                <PillButton
+                                  size="compact"
+                                  variant="secondary"
+                                  disabled={workingProposalAction !== null}
+                                  onClick={() =>
+                                    void runProposalMutation(
+                                      `cancel:${proposal._id}`,
+                                      () =>
+                                        cancelProposalExtraction({
+                                          proposalId: proposal._id,
+                                        }),
+                                      "Proposal extraction cancelled",
+                                      "Could not cancel proposal extraction",
+                                    )
+                                  }
+                                >
+                                  Cancel extraction
+                                </PillButton>
+                              ) : null}
+                              {proposal.status !== "selected" &&
+                              proposal.status !== "archived" ? (
+                                <PillButton
+                                  size="compact"
+                                  variant="destructive"
+                                  disabled={workingProposalAction !== null}
+                                  onClick={() =>
+                                    void runProposalMutation(
+                                      `archive:${proposal._id}`,
+                                      () =>
+                                        archiveProposal({
+                                          proposalId: proposal._id,
+                                        }),
+                                      "Proposal archived",
+                                      "Could not archive the proposal",
+                                    )
+                                  }
+                                >
+                                  Archive
+                                </PillButton>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </OperationalPanel>
+          ) : null}
+        </div>
       ) : null}
 
       {view === "market" ? (
@@ -2273,7 +2168,7 @@ export function ProcurementRequestWorkspace({
             title="No brokers contacted yet"
             description="Add a broker from the network directory and track each response independently."
           />
-        ) : (
+        ) : outreachesWithoutProposal.length ? (
           <OperationalPanel as="section">
             <Table>
               <TableHeader>
@@ -2287,7 +2182,7 @@ export function ProcurementRequestWorkspace({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {details.outreaches.map((outreach) => (
+                {outreachesWithoutProposal.map((outreach) => (
                   <TableRow key={outreach._id}>
                     <TableCell className="min-w-52 whitespace-normal">
                       <p
@@ -2365,7 +2260,7 @@ export function ProcurementRequestWorkspace({
               </TableBody>
             </Table>
           </OperationalPanel>
-        )
+        ) : null
       ) : null}
 
       {view === "files" ? (

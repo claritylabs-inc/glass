@@ -450,9 +450,9 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       `Update company wiki section ${input.key} for organization ${input.orgId}`,
   }),
   lookup_procurement_packet: defineOperatorTool({
-    version: 1,
+    version: 2,
     description:
-      "Read the packet for one exact procurement request: ordered markdown sections, the sections still empty, and one assembled markdown document that opens with the client's company wiki as background before the packet itself.",
+      "Read one procurement request packet as assembled Markdown. Client and broker audiences resolve to the same shared document; operator-only context is never shared.",
     inputSchema: z.object({
       procurementRequestId,
       audience: omittable(packetAudience),
@@ -469,23 +469,20 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       `Read the packet for procurement request ${input.procurementRequestId}`,
   }),
   preview_broker_packet: defineOperatorTool({
-    version: 1,
+    version: 2,
     description:
-      "Preview the exact broker-visible sections and released artifacts for one procurement outreach without creating a magic link or sending email.",
-    inputSchema: z.object({
-      procurementRequestId,
-      procurementOutreachId,
-    }),
+      "Preview the one shared broker-market packet and request-wide released artifacts without creating a magic link.",
+    inputSchema: z.object({ procurementRequestId }),
     capability: "operator.procurement.read",
     effect: "read",
     requiredRole: "operator",
     confirmation: "none",
     target: (input) => ({
-      kind: "procurement_broker_outreach",
-      id: input.procurementOutreachId,
+      kind: "procurement_request",
+      id: input.procurementRequestId,
     }),
     summarize: (input) =>
-      `Preview the broker packet for outreach ${input.procurementOutreachId} on request ${input.procurementRequestId}`,
+      `Preview the shared broker packet for request ${input.procurementRequestId}`,
   }),
   list_broker_packet_links: defineOperatorTool({
     version: 1,
@@ -1110,14 +1107,11 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       `Generate a packet review for procurement proposal ${input.procurementProposalId}`,
   }),
   create_broker_packet_link: defineOperatorTool({
-    version: 1,
+    version: 2,
     description:
-      "Create a revocable, expiring magic link containing an immutable snapshot of the broker-visible packet for one outreach. This does not send email; the returned URL is shown only once.",
+      "Create the single revocable, expiring link for an immutable snapshot of the shared broker-market packet. A new link replaces any active request-wide link; the URL is shown only once.",
     inputSchema: z.object({
       procurementRequestId,
-      procurementOutreachId,
-      recipientLabel: omittable(z.string().max(200)),
-      recipientEmail: omittable(z.string().max(320)),
       expiresInDays: omittable(z.number().int().min(1).max(90)),
     }),
     capability: "operator.procurement.write",
@@ -1125,32 +1119,11 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     requiredRole: "operator",
     confirmation: "exact",
     target: (input) => ({
-      kind: "procurement_broker_outreach",
-      id: input.procurementOutreachId,
+      kind: "procurement_request",
+      id: input.procurementRequestId,
     }),
     summarize: (input) =>
-      `Create a broker packet magic link for outreach ${input.procurementOutreachId}`,
-  }),
-  send_broker_packet: defineOperatorTool({
-    version: 1,
-    description:
-      "Create a snapshot-bound broker packet magic link and send it to the outreach's saved contact email. Returns the exact delivery result and audit identifiers.",
-    inputSchema: z.object({
-      procurementRequestId,
-      procurementOutreachId,
-      expiresInDays: omittable(z.number().int().min(1).max(90)),
-    }),
-    capability: "operator.procurement.write",
-    effect: "external_send",
-    requiredRole: "operator",
-    confirmation: "exact",
-    execution: "action",
-    target: (input) => ({
-      kind: "procurement_broker_outreach",
-      id: input.procurementOutreachId,
-    }),
-    summarize: (input) =>
-      `Send the broker packet for request ${input.procurementRequestId} to outreach ${input.procurementOutreachId}`,
+      `Create the shared broker packet link for request ${input.procurementRequestId}`,
   }),
   rotate_broker_packet_link: defineOperatorTool({
     version: 1,

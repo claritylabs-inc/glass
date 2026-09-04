@@ -3073,7 +3073,9 @@ export default defineSchema({
   procurementPacketLinks: defineTable({
     requestId: v.id("procurementRequests"),
     clientOrgId: v.id("organizations"),
-    outreachId: v.id("procurementBrokerOutreaches"),
+    // New links are request-wide: every broker receives the same packet.
+    // The optional outreach remains only for legacy recipient-scoped links.
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
     tokenHash: v.string(),
     recipientLabel: v.string(),
     recipientEmail: v.optional(v.string()),
@@ -5085,10 +5087,7 @@ export default defineSchema({
   appCardAccessLinks: defineTable({
     orgId: v.id("organizations"),
     tokenHash: v.string(),
-    kind: v.union(
-      v.literal("policy"),
-      v.literal("certificate"),
-    ),
+    kind: v.union(v.literal("policy"), v.literal("certificate")),
     policyId: v.optional(v.id("policies")),
     certificateId: v.optional(v.id("certificates")),
     policyCertificateId: v.optional(v.id("policyCertificates")),
