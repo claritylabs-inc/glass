@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { PillButton } from "@/components/ui/pill-button";
 import { StatusTag } from "@/components/ui/status-tag";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTabParam } from "@/hooks/use-tab-param";
 import { openOAuthTab } from "@/lib/oauth-tab";
 import {
   operatorMcpClientConfig,
@@ -81,6 +82,8 @@ function ChannelDetail({
   );
 }
 
+const CHANNEL_TABS = ["slack", "imessage", "mcp"] as const;
+
 function OperatorChannelTabs({
   children,
   imessageContent,
@@ -96,8 +99,10 @@ function OperatorChannelTabs({
     </ChannelCard>
   );
 
+  const [activeTab, selectTab] = useTabParam(CHANNEL_TABS);
+
   return (
-    <Tabs defaultValue="slack" className="gap-4">
+    <Tabs value={activeTab} onValueChange={selectTab} className="gap-4">
       <div className="-mx-1 overflow-x-auto px-1 scrollbar-hide">
         <TabsList variant="pill" aria-label="Channel">
           <TabsTrigger value="slack">Slack</TabsTrigger>
@@ -662,7 +667,6 @@ function OperatorChannelsContent({
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       rightPanel={rightPanel}
     >
       <main className="w-full">
@@ -835,7 +839,6 @@ export default function OperatorChannelsPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       <main className="w-full">
         <OperatorChannelTabs>

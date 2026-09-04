@@ -13,7 +13,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { FadeIn } from "@/components/ui/fade-in";
-import { Archive, Clock3, Loader2, Plus, RotateCw, X } from "lucide-react";
+import { Archive, Clock3, Loader2, Plus, RotateCw } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import dayjs from "dayjs";
@@ -471,7 +471,6 @@ export function PolicyDetailBody({
   const [showRefreshDialog, setShowRefreshDialog] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [restoring, setRestoring] = useState(false);
-  const [demoBannerDismissed, setDemoBannerDismissed] = useState(false);
   const loggedPipelineEntries = useRef<Set<string>>(new Set());
   const loggedStatus = useRef<string | null>(null);
 
@@ -1128,30 +1127,6 @@ export function PolicyDetailBody({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {!operatorMode && Boolean(p.isDemo) && !demoBannerDismissed && (
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50/60 dark:bg-amber-950/30 mb-4">
-          <p
-            className={`text-amber-700 dark:text-amber-400 flex-1 ${typeStyle("caption.default")}`}
-          >
-            You&apos;re viewing demo data.{" "}
-            <Link
-              href="/profile"
-              className={`underline hover:text-amber-900 ${typeStyle("caption.medium")}`}
-            >
-              Remove demo data
-            </Link>{" "}
-            from Settings when you&apos;re ready.
-          </p>
-          <button
-            type="button"
-            onClick={() => setDemoBannerDismissed(true)}
-            className="text-amber-500 hover:text-amber-700 transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
 
       {!operatorMode ? (
         <PolicyExtractionBanner

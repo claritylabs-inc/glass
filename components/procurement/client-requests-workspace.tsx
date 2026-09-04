@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { FileText, Loader2, Plus, Upload } from "lucide-react";
@@ -56,7 +56,13 @@ function RequestStatus({ status }: { status: ClientRequestStatus }) {
   );
 }
 
-export function ClientRequestsList() {
+export function ClientRequestsList({
+  onActions,
+  onRightPanel,
+}: {
+  onActions: (actions: ReactNode) => void;
+  onRightPanel: (panel: ReactNode) => void;
+}) {
   const rows = useQuery(api.clientProcurementRequests.list, {});
   const create = useMutation(api.clientProcurementRequests.create);
   const [open, setOpen] = useState(false);
@@ -88,57 +94,8 @@ export function ClientRequestsList() {
     }
   }
 
-  return (
-    <>
-      <div className="mb-4 flex justify-end">
-        <PillButton size="compact" onClick={() => setOpen(true)}>
-          <Plus className="size-3.5" />
-          New request
-        </PillButton>
-      </div>
-      {rows === undefined ? (
-        <OperationalPanel className="flex h-40 items-center justify-center">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </OperationalPanel>
-      ) : rows.length === 0 ? (
-        <EmptyStateCard
-          title="No insurance requests"
-          description="Submit a request when you need new coverage or help replacing a policy."
-          actionLabel="New request"
-          onAction={() => setOpen(true)}
-        />
-      ) : (
-        <OperationalPanel as="section">
-          {rows.map((request) => (
-            <OperationalItem key={request._id} className="p-0">
-              <Link
-                href={`/requests/${request._id}`}
-                className="flex w-full items-start justify-between gap-4 px-4 py-3 transition-colors hover:bg-foreground/3"
-              >
-                <div className="min-w-0">
-                  <p
-                    className={`truncate text-foreground ${typeStyle("body.medium")}`}
-                  >
-                    {request.title}
-                  </p>
-                  <p
-                    className={`mt-1 line-clamp-2 text-muted-foreground ${typeStyle("body.default")}`}
-                  >
-                    {request.narrative}
-                  </p>
-                  <p
-                    className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}
-                  >
-                    Updated {formatDisplayDate(request.updatedAt)}
-                  </p>
-                </div>
-                <RequestStatus status={request.status} />
-              </Link>
-            </OperationalItem>
-          ))}
-        </OperationalPanel>
-      )}
-
+  useEffect(() => {
+    onRightPanel(
       <SettingsDrawer
         open={open}
         onOpenChange={setOpen}
@@ -200,14 +157,75 @@ export function ClientRequestsList() {
           </div>
         </form>
       </SettingsDrawer>
+    );
+    return () => onRightPanel(null);
+    // The drawer must be rebuilt as its local form state changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrative, onRightPanel, open, saving, targetEffectiveDate, title]);
+
+  useEffect(() => {
+    onActions(
+      <PillButton type="button" onClick={() => setOpen(true)}>
+        <Plus className="size-3.5" />
+        New request
+      </PillButton>,
+    );
+    return () => onActions(null);
+  }, [onActions]);
+
+  return (
+    <>
+      {rows === undefined ? (
+        <OperationalPanel className="flex h-40 items-center justify-center">
+          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        </OperationalPanel>
+      ) : rows.length === 0 ? (
+        <EmptyStateCard
+          title="No insurance requests"
+          description="Submit a request when you need new coverage or help replacing a policy."
+        />
+      ) : (
+        <OperationalPanel as="section">
+          {rows.map((request) => (
+            <OperationalItem key={request._id} className="p-0">
+              <Link
+                href={`/requests/${request._id}`}
+                className="flex w-full items-start justify-between gap-4 px-4 py-3 transition-colors hover:bg-foreground/3"
+              >
+                <div className="min-w-0">
+                  <p
+                    className={`truncate text-foreground ${typeStyle("body.medium")}`}
+                  >
+                    {request.title}
+                  </p>
+                  <p
+                    className={`mt-1 line-clamp-2 text-muted-foreground ${typeStyle("body.default")}`}
+                  >
+                    {request.narrative}
+                  </p>
+                  <p
+                    className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}
+                  >
+                    Updated {formatDisplayDate(request.updatedAt)}
+                  </p>
+                </div>
+                <RequestStatus status={request.status} />
+              </Link>
+            </OperationalItem>
+          ))}
+        </OperationalPanel>
+      )}
+
     </>
   );
 }
 
 export function ClientRequestDetail({
   requestId,
+  onBreadcrumb,
 }: {
   requestId: Id<"procurementRequests">;
+  onBreadcrumb: (detail: string | null) => void;
 }) {
   const details = useQuery(api.clientProcurementRequests.get, { requestId });
   const generateUploadUrl = useMutation(
@@ -243,6 +261,11 @@ export function ClientRequestDetail({
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    onBreadcrumb(details?.title ?? null);
+    return () => onBreadcrumb(null);
+  }, [details?.title, onBreadcrumb]);
 
   if (details === undefined) {
     return (
@@ -306,27 +329,49 @@ export function ClientRequestDetail({
       </OperationalLabelValueList>
 
       <OperationalPanel>
-        <OperationalPanelHeader title="Your request" />
+        <OperationalPanelHeader title="Submission packet" />
         <OperationalPanelBody>
-          <p
-            className={`whitespace-pre-wrap text-foreground ${typeStyle("prose.default")}`}
-          >
-            {request.narrative}
-          </p>
+          {request.packet.markdown ? (
+            <ProseMarkdown>{request.packet.markdown}</ProseMarkdown>
+          ) : (
+            <p
+              className={`whitespace-pre-wrap text-foreground ${typeStyle("prose.default")}`}
+            >
+              {request.narrative}
+            </p>
+          )}
         </OperationalPanelBody>
       </OperationalPanel>
 
-      {request.packet.markdown ? (
-        <OperationalPanel>
-          <OperationalPanelHeader title="Submission packet" />
-          <OperationalPanelBody>
-            <ProseMarkdown>{request.packet.markdown}</ProseMarkdown>
-          </OperationalPanelBody>
-        </OperationalPanel>
-      ) : null}
-
       <OperationalPanel>
-        <OperationalPanelHeader title="Shared files" />
+        <OperationalPanelHeader
+          title="Shared files"
+          action={
+            <>
+              <PillButton
+                variant="secondary"
+                size="compact"
+                disabled={busy}
+                onClick={() =>
+                  document.getElementById("request-supporting-file")?.click()
+                }
+              >
+                <Upload className="size-3.5" />
+                Add file
+              </PillButton>
+              <input
+                id="request-supporting-file"
+                className="hidden"
+                type="file"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void upload(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </>
+          }
+        />
         {request.files.length === 0 ? (
           <OperationalPanelBody
             className={`text-muted-foreground ${typeStyle("body.default")}`}
@@ -351,30 +396,6 @@ export function ClientRequestDetail({
             </OperationalItem>
           ))
         )}
-        <OperationalPanelBody className="border-t border-border">
-          <div className="flex justify-end">
-            <PillButton
-              variant="secondary"
-              disabled={busy}
-              onClick={() =>
-                document.getElementById("request-supporting-file")?.click()
-              }
-            >
-              <Upload className="size-3.5" />
-              Add file
-            </PillButton>
-            <input
-              id="request-supporting-file"
-              className="hidden"
-              type="file"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void upload(file);
-                event.currentTarget.value = "";
-              }}
-            />
-          </div>
-        </OperationalPanelBody>
       </OperationalPanel>
     </div>
   );

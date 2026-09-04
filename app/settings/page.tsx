@@ -18,8 +18,7 @@ import { TeamSection } from "@/components/settings/team-section";
 import { EmailConnectionsSection } from "@/components/settings/email-connections-section";
 import { ConnectionsSection } from "@/components/settings/connections-section";
 import { CompanyWikiSection } from "@/components/settings/company-wiki-section";
-import { BrokerTeamTab } from "@/components/settings/broker-team-tab";
-import { BrokerAgentTab } from "@/components/settings/broker-agent-tab";
+import { AgentBehaviorSection } from "@/components/settings/agent-behavior-section";
 import { CertificateWorkflowSection } from "@/components/settings/certificate-workflow-section";
 import { BetaFeaturesSection } from "@/components/settings/beta-features-section";
 import { NotificationPreferencesSection } from "@/components/settings/notification-preferences-section";
@@ -34,8 +33,8 @@ export default function SettingsPage() {
   const isBroker = currentOrg?.isBroker ?? false;
   const isStandaloneClient = currentOrg?.orgType === "client";
   const groups = useMemo(
-    () => getSettingsNavigation({ isBroker, isStandaloneClient }),
-    [isBroker, isStandaloneClient],
+    () => getSettingsNavigation({ isStandaloneClient }),
+    [isStandaloneClient],
   );
   const pages = useMemo(() => settingsPages(groups), [groups]);
   const destination = resolveSettingsDestination({
@@ -50,18 +49,17 @@ export default function SettingsPage() {
       router.replace("/broker");
       return;
     }
-    if (
-      searchParams.get("section") === destination.section &&
-      searchParams.get("tab") === destination.tab
-    ) {
-      return;
-    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", destination.section);
-    params.set("tab", destination.tab);
-    router.replace(`/settings?${params.toString()}`);
+    // A single-tab page has nothing to disambiguate, so its tab stays out of the URL.
+    if (destination.page.tabs.length > 1) params.set("tab", destination.tab);
+    else params.delete("tab");
+    const next = params.toString();
+    if (next === searchParams.toString()) return;
+    router.replace(`/settings?${next}`);
   }, [
     currentOrg,
+    destination.page,
     destination.section,
     destination.tab,
     isBroker,
@@ -129,11 +127,7 @@ export default function SettingsPage() {
           </Tabs>
         ) : null}
 
-        <SectionContent
-          section={destination.section}
-          tab={destination.tab}
-          isBroker={isBroker}
-        />
+        <SectionContent section={destination.section} tab={destination.tab} />
       </AppShell>
     </SettingsActionsContext.Provider>
   );
@@ -142,20 +136,16 @@ export default function SettingsPage() {
 function SectionContent({
   section,
   tab,
-  isBroker,
 }: {
   section: SettingsPageId;
   tab: SettingsTabId;
-  isBroker: boolean;
 }) {
   const currentOrg = useCurrentOrg();
 
   if (section === "organization") {
     return <OrganizationSection />;
   }
-  if (section === "team") {
-    return isBroker ? <BrokerTeamTab /> : <TeamSection />;
-  }
+  if (section === "team") return <TeamSection />;
   if (section === "agent") {
     if (tab === "channels") {
       if (currentOrg?.orgId) {
@@ -163,20 +153,20 @@ function SectionContent({
       }
     }
     if (tab === "wiki") return <CompanyWikiSection />;
-    return <BrokerAgentTab />;
+    return <AgentBehaviorSection />;
   }
   if (section === "workflows") {
     if (tab === "notifications" && currentOrg?.orgId) {
       return (
         <NotificationPreferencesSection
           orgId={currentOrg.orgId}
-          orgType={isBroker ? "broker" : "client"}
+          orgType="client"
         />
       );
     }
     return <CertificateWorkflowSection />;
   }
-  if (section === "integrations") return <ConnectionsSection tab={tab} />;
+  if (section === "integrations") return <ConnectionsSection />;
   if (section === "mailboxes") return <EmailConnectionsSection />;
   return <BetaFeaturesSection />;
 }

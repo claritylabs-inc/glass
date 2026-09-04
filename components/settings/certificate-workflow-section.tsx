@@ -6,16 +6,14 @@ import { Loader2 } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { SettingsSwitch } from "@/components/settings/settings-switch";
+import { SettingsToggleRow } from "@/components/settings/settings-toggle-row";
 import {
   OperationalPanel,
   OperationalPanelBody,
-  OperationalPanelHeader,
 } from "@/components/ui/operational-panel";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { AutoSaveStatus } from "@/components/ui/auto-save-status";
 import { useLocalFirstAutoSave } from "@/lib/sync/use-local-first-auto-save";
-import { typeStyle } from "@/lib/typography";
 
 type SettingsDraft = {
   renewalReissueEnabled: boolean;
@@ -36,39 +34,6 @@ function toDraft(value?: Partial<SettingsDraft> | null): SettingsDraft {
     renewalReissueEnabled:
       value?.renewalReissueEnabled ?? DEFAULT_SETTINGS.renewalReissueEnabled,
   };
-}
-
-function ToggleRow({
-  title,
-  description,
-  checked,
-  disabled,
-  label,
-  onToggle,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  label: string;
-  onToggle: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-4">
-      <div className="min-w-0">
-        <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
-        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-          {description}
-        </p>
-      </div>
-      <SettingsSwitch
-        checked={checked}
-        onCheckedChange={disabled ? () => null : onToggle}
-        label={label}
-        className={disabled ? "pointer-events-none opacity-50" : undefined}
-      />
-    </div>
-  );
 }
 
 export function CertificateWorkflowSection() {
@@ -117,22 +82,14 @@ function CertificateWorkflowEditor({ result }: { result: SettingsResult }) {
     <div className="space-y-4">
       {editable ? <AutoSaveStatus status={autoSave.status} /> : null}
       <OperationalPanel>
-        <OperationalPanelHeader
-          title="Certificates"
-          description="Choose whether active certificates should be updated when a renewed policy is uploaded."
-        />
-        <OperationalPanelBody className="space-y-0 divide-y divide-border py-0">
-          <ToggleRow
+        <OperationalPanelBody className="divide-y divide-border px-5 py-2">
+          <SettingsToggleRow
             title="Update certificates on renewal"
             description="When a renewed policy is uploaded, Spot reviews active certificates and prepares updated versions."
             checked={draft.renewalReissueEnabled}
             disabled={!editable}
-            label="Toggle certificate updates on renewal"
-            onToggle={() =>
-              setDraft({
-                ...draft,
-                renewalReissueEnabled: !draft.renewalReissueEnabled,
-              })
+            onCheckedChange={(renewalReissueEnabled) =>
+              setDraft({ ...draft, renewalReissueEnabled })
             }
           />
         </OperationalPanelBody>

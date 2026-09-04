@@ -54,12 +54,10 @@ const PUBLIC_PATHS = [
   "/signup",
   "/operator/login",
   "/oauth/authorize",
-  "/invite",
   "/share/imessage",
   "/share/email",
   "/share/packet",
   "/connect/request",
-  "/connected-orgs/request",
 ];
 const AUTH_AGNOSTIC_PATHS = ["/weather"];
 const ONBOARDING_PATH = "/onboarding";
@@ -133,9 +131,7 @@ function getOperatorActiveSection(pathname: string): OperatorNavSection {
   if (pathname.startsWith("/operator/clients")) return "clients";
   if (pathname.startsWith("/operator/demo-leads")) return "demo-leads";
   if (pathname.startsWith("/operator/channels")) return "channels";
-  if (pathname.startsWith("/operator/models")) return "routing";
   if (pathname.startsWith("/operator/routing")) return "routing";
-  if (pathname.startsWith("/operator/tools")) return "routing";
   if (pathname.startsWith("/operator/profile")) return "profile";
   return "clients";
 }
@@ -153,7 +149,6 @@ function OperatorLoading({ pathname }: { pathname: string }) {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       <div className="space-y-4">
         <Skeleton className="h-10 w-full rounded-lg" />

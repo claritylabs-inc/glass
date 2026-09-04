@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { SiClaude } from "react-icons/si";
@@ -11,6 +11,7 @@ import {
   Globe,
   Loader2,
   Plug,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
@@ -25,7 +26,6 @@ import { PillButton } from "@/components/ui/pill-button";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { useSettingsActions } from "@/components/settings/settings-actions-context";
 import { ModelProviderLogo } from "@/components/model-provider-logo";
-import type { SettingsTabId } from "@/lib/settings-sections";
 import {
   useCachedQuery,
   useUpdateCachedQuery,
@@ -49,19 +49,19 @@ function useMcpUrl() {
   );
 }
 
-function CopyIconButton({
-  copied,
-  label,
-  onClick,
-}: {
-  copied: boolean;
-  label: string;
-  onClick: () => void;
-}) {
+function CopyButton({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    void navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={copy}
       className="shrink-0 rounded p-1.5 transition-colors hover:bg-foreground/5"
       aria-label={label}
     >
@@ -74,22 +74,211 @@ function CopyIconButton({
   );
 }
 
-export function ConnectionsSection({ tab }: { tab: SettingsTabId }) {
+function CodeBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="relative">
+      <pre
+        className={`overflow-x-auto rounded-lg border border-border bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
+      >
+        {value}
+      </pre>
+      <div className="absolute right-2 top-2">
+        <CopyButton label={label} value={value} />
+      </div>
+    </div>
+  );
+}
+
+function ClientSetup({
+  icon,
+  name,
+  action,
+  children,
+}: {
+  icon: ReactNode;
+  name: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <OperationalItem className="grid gap-3 px-5 py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-6">
+      <div className="flex items-center justify-between gap-3 md:block">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
+            {name}
+          </h3>
+        </div>
+        {action}
+      </div>
+      {children}
+    </OperationalItem>
+  );
+}
+
+function SetupSteps({ children }: { children: ReactNode }) {
+  return (
+    <ol
+      className={`list-decimal space-y-1.5 pl-5 text-muted-foreground marker:text-muted-foreground/60 ${typeStyle("body.default")}`}
+    >
+      {children}
+    </ol>
+  );
+}
+
+function Strong({ children }: { children: ReactNode }) {
+  return (
+    <span className={`text-foreground ${typeStyle("body.medium")}`}>
+      {children}
+    </span>
+  );
+}
+
+const CLI_SNIPPET = [
+  "npm install -g @claritylabs/spot-cli",
+  "spot auth:login",
+  "spot auth:whoami",
+  "spot auth:whoami --set-org <orgId>",
+  "spot policies:list",
+].join("\n");
+
+export function ConnectionsSection() {
   const { setActions } = useSettingsActions();
+  const mcpUrl = useMcpUrl();
 
   useEffect(() => {
     setActions(null);
     return () => setActions(null);
   }, [setActions]);
 
-  if (tab === "cli") return <CliSection />;
-  if (tab === "advanced") return <AdvancedSection />;
-  return <McpSection />;
+  const localClientSnippet = JSON.stringify(
+    { mcpServers: { spot: { command: "npx", args: ["-y", "mcp-remote", mcpUrl] } } },
+    null,
+    2,
+  );
+
+  return (
+    <div className="space-y-4">
+      <OperationalPanel>
+        <OperationalPanelHeader
+          title="MCP endpoint"
+          description="Connect Spot to an AI assistant with your existing Spot account."
+          className="px-5 py-3.5"
+        />
+        <OperationalPanelBody className="px-5 py-5">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-foreground/3 p-3">
+            <Globe className="size-4 shrink-0 text-muted-foreground" />
+            <code
+              className={`flex-1 break-all text-foreground ${typeStyle("technical.codeCompact")}`}
+            >
+              {mcpUrl}
+            </code>
+            <CopyButton label="Copy MCP endpoint" value={mcpUrl} />
+          </div>
+        </OperationalPanelBody>
+
+        <ClientSetup
+          name="Claude"
+          icon={
+            <SiClaude aria-hidden="true" className="size-[17px] text-[#D97757]" />
+          }
+          action={
+            <PillButton
+              href="https://claude.ai/new#settings/customize-connectors"
+              target="_blank"
+              rel="noreferrer"
+              variant="secondary"
+              size="compact"
+              className="md:mt-3"
+            >
+              Open Claude
+              <ExternalLink className="size-3.5" />
+            </PillButton>
+          }
+        >
+          <SetupSteps>
+            <li>
+              Open <Strong>Settings → Connectors</Strong>. Team and Enterprise
+              owners should first choose Organization connectors.
+            </li>
+            <li>
+              Select <Strong>Add custom connector</Strong>, name it Spot, and
+              paste the endpoint above.
+            </li>
+            <li>Add the connector, select Connect, and sign in to Spot.</li>
+          </SetupSteps>
+        </ClientSetup>
+
+        <ClientSetup
+          name="ChatGPT"
+          icon={
+            <ModelProviderLogo provider="openai" size={17} className="dark:invert" />
+          }
+          action={
+            <PillButton
+              href="https://chatgpt.com/#settings/Connectors"
+              target="_blank"
+              rel="noreferrer"
+              variant="secondary"
+              size="compact"
+              className="md:mt-3"
+            >
+              Open ChatGPT
+              <ExternalLink className="size-3.5" />
+            </PillButton>
+          }
+        >
+          <SetupSteps>
+            <li>
+              Open <Strong>Settings → Apps → Advanced settings</Strong> and
+              enable Developer mode. Your workspace may require admin access.
+            </li>
+            <li>
+              Return to Apps, select <Strong>Create</Strong>, name the app Spot,
+              and paste the endpoint above.
+            </li>
+            <li>
+              Choose OAuth when prompted, scan the tools, create the app, and
+              sign in to Spot.
+            </li>
+          </SetupSteps>
+        </ClientSetup>
+
+        <ClientSetup
+          name="Local clients"
+          icon={<Terminal className="size-[17px] text-muted-foreground" />}
+        >
+          <div className="space-y-3">
+            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+              Add this server to Claude Code, Cursor, Codex, or any other local
+              MCP client. A browser window opens for Spot sign-in on first use.
+            </p>
+            <CodeBlock
+              label="Copy local MCP configuration"
+              value={localClientSnippet}
+            />
+          </div>
+        </ClientSetup>
+      </OperationalPanel>
+
+      <OperationalPanel>
+        <OperationalPanelHeader
+          title="Command line"
+          description="Use the Spot CLI for terminal workflows, scripts, and local automation."
+          className="px-5 py-3.5"
+        />
+        <OperationalPanelBody className="px-5 py-5">
+          <CodeBlock label="Copy CLI install commands" value={CLI_SNIPPET} />
+        </OperationalPanelBody>
+      </OperationalPanel>
+
+      <ConnectedApps />
+    </div>
+  );
 }
 
-function McpSection() {
+function ConnectedApps() {
   const { setRightPanel } = useSettingsActions();
-  const mcpUrl = useMcpUrl();
   const connectedApps = useCachedQuery(
     "oauth.listConnectedApps",
     api.oauth.listConnectedApps,
@@ -100,7 +289,6 @@ function McpSection() {
     Record<string, never>
   >("oauth.listConnectedApps");
   const revokeApp = useMutation(api.oauth.revokeApp);
-  const [copied, setCopied] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<{
     clientName: string;
     clientId: string;
@@ -146,12 +334,6 @@ function McpSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revokeTarget, revoking]);
 
-  function copyMcpUrl() {
-    void navigator.clipboard.writeText(mcpUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
   async function handleRevokeApp() {
     if (!revokeTarget) return;
     setRevoking(true);
@@ -170,220 +352,58 @@ function McpSection() {
   }
 
   return (
-    <div className="space-y-4">
-      <OperationalPanel>
-        <OperationalPanelHeader
-          title="MCP endpoint"
-          description="Connect Spot to an AI assistant with your existing Spot account."
-          className="px-5 py-3.5"
-        />
-        <OperationalPanelBody className="px-5 py-5">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-foreground/3 p-3">
-            <Globe className="size-4 shrink-0 text-muted-foreground" />
-            <code className={`flex-1 break-all text-foreground ${typeStyle("technical.codeCompact")}`}>
-              {mcpUrl}
-            </code>
-            <CopyIconButton copied={copied} label="Copy MCP endpoint" onClick={copyMcpUrl} />
-          </div>
-        </OperationalPanelBody>
-
-        <OperationalItem className="grid gap-3 px-5 py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-6">
-          <div className="flex items-center justify-between gap-3 md:block">
-            <div className="flex items-center gap-2">
-              <SiClaude aria-hidden="true" className="size-[17px] text-[#D97757]" />
-              <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>Claude</h3>
-            </div>
-            <PillButton
-              href="https://claude.ai/new#settings/customize-connectors"
-              target="_blank"
-              rel="noreferrer"
-              variant="secondary"
-              size="compact"
-              className="md:mt-3"
+    <OperationalPanel>
+      <OperationalPanelHeader title="Connected apps" className="px-5 py-3.5" />
+      {connectedApps === undefined ? (
+        <div className="px-5 py-8 text-center">
+          <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : connectedApps.length === 0 ? (
+        <div className="px-5 py-8 text-center">
+          <Plug className="mx-auto mb-2 size-6 text-muted-foreground/20" />
+          <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
+            No connected apps yet
+          </p>
+          <p
+            className={`mt-0.5 text-muted-foreground/50 ${typeStyle("caption.default")}`}
+          >
+            Apps appear here after they complete the OAuth sign-in.
+          </p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border">
+          {connectedApps.map((app) => (
+            <div
+              key={app.tokenId}
+              className="flex items-center gap-3 px-5 py-3.5"
             >
-              Open Claude
-              <ExternalLink className="size-3.5" />
-            </PillButton>
-          </div>
-          <ol className={`list-decimal space-y-1.5 pl-5 text-muted-foreground marker:text-muted-foreground/60 ${typeStyle("body.default")}`}>
-            <li>
-              Open <span className={`text-foreground ${typeStyle("body.medium")}`}>Settings → Connectors</span>.
-              Team and Enterprise owners should first choose Organization connectors.
-            </li>
-            <li>
-              Select <span className={`text-foreground ${typeStyle("body.medium")}`}>Add custom connector</span>,
-              name it Spot, and paste the endpoint above.
-            </li>
-            <li>Add the connector, select Connect, and sign in to Spot.</li>
-          </ol>
-        </OperationalItem>
-
-        <OperationalItem className="grid gap-3 px-5 py-4 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-6">
-          <div className="flex items-center justify-between gap-3 md:block">
-            <div className="flex items-center gap-2">
-              <ModelProviderLogo provider="openai" size={17} className="dark:invert" />
-              <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>ChatGPT</h3>
-            </div>
-            <PillButton
-              href="https://chatgpt.com/#settings/Connectors"
-              target="_blank"
-              rel="noreferrer"
-              variant="secondary"
-              size="compact"
-              className="md:mt-3"
-            >
-              Open ChatGPT
-              <ExternalLink className="size-3.5" />
-            </PillButton>
-          </div>
-          <ol className={`list-decimal space-y-1.5 pl-5 text-muted-foreground marker:text-muted-foreground/60 ${typeStyle("body.default")}`}>
-            <li>
-              Open <span className={`text-foreground ${typeStyle("body.medium")}`}>Settings → Apps → Advanced settings</span>
-              {" "}and enable Developer mode. Your workspace may require admin access.
-            </li>
-            <li>
-              Return to Apps, select <span className={`text-foreground ${typeStyle("body.medium")}`}>Create</span>,
-              name the app Spot, and paste the endpoint above.
-            </li>
-            <li>Choose OAuth when prompted, scan the tools, create the app, and sign in to Spot.</li>
-          </ol>
-        </OperationalItem>
-      </OperationalPanel>
-
-      <OperationalPanel>
-        <OperationalPanelHeader title="Connected apps" className="px-5 py-3.5" />
-        {connectedApps === undefined ? (
-          <div className="px-5 py-8 text-center">
-            <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : connectedApps.length === 0 ? (
-          <div className="px-5 py-8 text-center">
-            <Plug className="mx-auto mb-2 size-6 text-muted-foreground/20" />
-            <p className={`text-muted-foreground ${typeStyle("body.default")}`}>No connected apps yet</p>
-            <p className={`mt-0.5 text-muted-foreground/50 ${typeStyle("caption.default")}`}>
-              Apps appear here after they complete the OAuth sign-in.
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {connectedApps.map((app) => (
-              <div key={app.tokenId} className="flex items-center gap-3 px-5 py-3.5">
-                <div className="min-w-0 flex-1">
-                  <p className={`text-foreground ${typeStyle("body.medium")}`}>{app.clientName}</p>
-                  <p className={`mt-0.5 text-muted-foreground/50 ${typeStyle("caption.default")}`}>
-                    Connected {formatDisplayDate(app.connectedAt)}
-                  </p>
-                </div>
-                <PillButton
-                  variant="destructive"
-                  size="compact"
-                  onClick={() =>
-                    setRevokeTarget({
-                      clientName: app.clientName,
-                      clientId: app.clientId,
-                    })
-                  }
+              <div className="min-w-0 flex-1">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
+                  {app.clientName}
+                </p>
+                <p
+                  className={`mt-0.5 text-muted-foreground/50 ${typeStyle("caption.default")}`}
                 >
-                  <Trash2 className="size-3.5" />
-                  Revoke
-                </PillButton>
+                  Connected {formatDisplayDate(app.connectedAt)}
+                </p>
               </div>
-            ))}
-          </div>
-        )}
-      </OperationalPanel>
-    </div>
-  );
-}
-
-function CliSection() {
-  const [copied, setCopied] = useState(false);
-  const cliSnippet = [
-    "npm install -g @claritylabs/spot-cli",
-    "spot auth:login",
-    "spot auth:whoami",
-    "spot auth:whoami --set-org <orgId>",
-    "spot policies:list",
-  ].join("\n");
-
-  function copyCliSnippet() {
-    void navigator.clipboard.writeText(cliSnippet);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <OperationalPanel>
-      <OperationalPanelHeader
-        title="Install and sign in"
-        description="Use the Spot CLI for terminal workflows, scripts, and local automation."
-        className="px-5 py-3.5"
-      />
-      <OperationalPanelBody className="px-5 py-5">
-        <div className="relative">
-          <pre className={`overflow-x-auto rounded-lg border border-border bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
-            {cliSnippet}
-          </pre>
-          <div className="absolute right-2 top-2">
-            <CopyIconButton
-              copied={copied}
-              label="Copy CLI install commands"
-              onClick={copyCliSnippet}
-            />
-          </div>
+              <PillButton
+                variant="destructive"
+                size="compact"
+                onClick={() =>
+                  setRevokeTarget({
+                    clientName: app.clientName,
+                    clientId: app.clientId,
+                  })
+                }
+              >
+                <Trash2 className="size-3.5" />
+                Revoke
+              </PillButton>
+            </div>
+          ))}
         </div>
-      </OperationalPanelBody>
-    </OperationalPanel>
-  );
-}
-
-function AdvancedSection() {
-  const mcpUrl = useMcpUrl();
-  const [copiedLocal, setCopiedLocal] = useState(false);
-  const localSnippet = JSON.stringify(
-    {
-      mcpServers: {
-        spot: {
-          command: "npx",
-          args: ["-y", "mcp-remote", mcpUrl],
-        },
-      },
-    },
-    null,
-    2,
-  );
-
-  function copyLocalSnippet() {
-    void navigator.clipboard.writeText(localSnippet);
-    setCopiedLocal(true);
-    setTimeout(() => setCopiedLocal(false), 2000);
-  }
-
-  return (
-    <OperationalPanel>
-      <OperationalPanelHeader
-        title="Local MCP clients"
-        description="Use Spot from Claude Code, Cursor, Codex, or another local MCP client."
-        className="px-5 py-3.5"
-      />
-      <OperationalPanelBody className="space-y-3 px-5 py-5">
-        <p className={`text-muted-foreground ${typeStyle("body.default")}`}>
-          Add this server to your client&apos;s MCP configuration. A browser window opens for
-          Spot sign-in on first use.
-        </p>
-        <div className="relative">
-          <pre className={`overflow-x-auto rounded-lg border border-border bg-foreground/3 p-4 pr-11 text-muted-foreground ${typeStyle("technical.codeCompact")}`}>
-            {localSnippet}
-          </pre>
-          <div className="absolute right-2 top-2">
-            <CopyIconButton
-              copied={copiedLocal}
-              label="Copy local MCP configuration"
-              onClick={copyLocalSnippet}
-            />
-          </div>
-        </div>
-      </OperationalPanelBody>
+      )}
     </OperationalPanel>
   );
 }

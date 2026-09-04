@@ -516,7 +516,7 @@ function PolicyTagList({
   );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState() {
   return (
     <OperationalPanel as="div" className="p-5">
       <p className={`text-foreground ${typeStyle("body.medium")}`}>No coverage requirements yet</p>
@@ -524,10 +524,6 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         Add coverage rules manually or extract them from a lease, client contract, or vendor
         requirement packet.
       </p>
-      <PillButton className="mt-4" onClick={onAdd}>
-        <FileUp className="h-3.5 w-3.5" />
-        Import requirements
-      </PillButton>
     </OperationalPanel>
   );
 }
@@ -551,11 +547,9 @@ function ComplianceMeter({ met, total }: { met: number; total: number }) {
 function OverviewTab({
   requirements,
   onOpenRequirements,
-  onAdd,
 }: {
   requirements: Requirement[];
   onOpenRequirements: (lineOfBusiness: string) => void;
-  onAdd: () => void;
 }) {
   const checked = requirements.filter((requirement) => requirement.complianceCheck);
   const lobGroups = new Map<string, Requirement[]>();
@@ -567,7 +561,7 @@ function OverviewTab({
     a.localeCompare(b),
   );
 
-  if (checked.length === 0) return <EmptyState onAdd={onAdd} />;
+  if (checked.length === 0) return <EmptyState />;
 
   return (
     <div className="flex flex-col gap-4">
@@ -1793,7 +1787,7 @@ function ComplianceWorkspace({
   const currentOrg = orgContext ?? routeOrg;
   useEffect(() => {
     if (!orgContext && currentOrg?.orgType === "broker") {
-      router.replace("/clients");
+      router.replace("/broker");
     }
   }, [currentOrg?.orgType, orgContext, router]);
 
@@ -2708,7 +2702,6 @@ function ComplianceWorkspace({
                 showConnectFeatures ? activeRequirementScope : "requirements",
               );
             }}
-            onAdd={openImportRequirements}
           />
         ) : (
           <>
@@ -2759,7 +2752,7 @@ function ComplianceWorkspace({
               </div>
             ) : null}
             {visibleRequirements.length === 0 ? (
-              <EmptyState onAdd={openImportRequirements} />
+              <EmptyState />
             ) : (
               <RequirementsTable
                 requirements={visibleRequirements}

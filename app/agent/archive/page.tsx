@@ -1,22 +1,19 @@
 "use client";
 
 import { useMutation } from "convex/react";
+import { toast } from "sonner";
+import { ArchiveRestore } from "lucide-react";
 import { api } from "@/convex/_generated/api";
+import { Id } from "@/convex/_generated/dataModel";
 import { AppShell } from "@/components/app-shell";
-import { ActionSurface } from "@/components/ui/action-surface";
+import { ThreadListRow } from "@/components/agent-thread/thread-list-row";
+import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { FadeIn } from "@/components/ui/fade-in";
 import { PillButton } from "@/components/ui/pill-button";
-import { toast } from "sonner";
-import { ArchiveRestore, Mail, MessageCircle } from "lucide-react";
-import { SiSlack } from "react-icons/si";
-import Link from "next/link";
-import { Id } from "@/convex/_generated/dataModel";
 import {
   useArchivedThreadCacheActions,
   useCachedArchivedThreads,
 } from "@/lib/sync/spot-cached-queries";
-import { formatDisplayDateTime } from "@/lib/date-format";
-import { typeStyle } from "@/lib/typography";
 
 export default function ArchivePage() {
   const threads = useCachedArchivedThreads();
@@ -36,60 +33,30 @@ export default function ArchivePage() {
   return (
     <AppShell breadcrumbDetail="Archive">
       <FadeIn when={true} duration={0.12}>
-        {(threads ?? []).length === 0 && (
-          <div className="text-center py-16">
-            <p className={`text-muted-foreground/40 ${typeStyle("body.default")}`}>
-              No archived threads
-            </p>
-          </div>
-        )}
-
-        {(threads ?? []).length > 0 && (
+        {(threads ?? []).length === 0 ? (
+          <EmptyStateCard
+            icon={<ArchiveRestore className="h-5 w-5" />}
+            title="No archived threads"
+            description="Threads you archive from the sidebar are kept here."
+          />
+        ) : (
           <div className="space-y-1">
             {(threads ?? []).map((thread) => (
-              <ActionSurface
+              <ThreadListRow
                 key={thread._id}
-                className="flex items-center gap-3 px-4 py-3 group"
-              >
-                <div className="shrink-0 text-muted-foreground/30">
-                  {thread.originChannel === "imessage" ? (
-                    <MessageCircle className="w-4 h-4" />
-                  ) : thread.originChannel === "slack" ? (
-                    <SiSlack className="w-4 h-4" />
-                  ) : thread.originChannel === "email" ? (
-                    <Mail className="w-4 h-4" />
-                  ) : null}
-                </div>
-                <Link
-                  href={`/agent/thread/${thread._id}`}
-                  className="flex-1 min-w-0"
-                >
-                  <p className={`text-foreground truncate ${typeStyle("body.medium")}`}>
-                    {thread.title}
-                  </p>
-                  <p className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}>
-                    {formatDisplayDateTime(
-                      thread.lastMessageAt ?? thread._creationTime,
-                    )}
-                    {thread.originChannel === "imessage"
-                      ? " · iMessage"
-                      : thread.originChannel === "slack"
-                        ? " · Slack"
-                      : thread.originChannel === "email"
-                        ? " · Email"
-                        : " · Chat"}
-                  </p>
-                </Link>
-                <PillButton
-                  size="compact"
-                  variant="icon"
-                  onClick={() => handleUnarchive(thread._id)}
-                  label="Unarchive"
-                  className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                >
-                  <ArchiveRestore className="w-4 h-4" />
-                </PillButton>
-              </ActionSurface>
+                thread={thread}
+                action={
+                  <PillButton
+                    size="compact"
+                    variant="icon"
+                    onClick={() => handleUnarchive(thread._id)}
+                    label="Unarchive"
+                    className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                  >
+                    <ArchiveRestore className="h-4 w-4" />
+                  </PillButton>
+                }
+              />
             ))}
           </div>
         )}

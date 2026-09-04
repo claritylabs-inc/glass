@@ -64,7 +64,6 @@ export default function OperatorClientFilesPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       <OperatorPageContextRegistration
         context={{

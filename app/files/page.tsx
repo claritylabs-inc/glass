@@ -19,7 +19,7 @@ export default function FilesPage() {
     viewerOrg?.org?.type === "client" ? viewerOrg.org : undefined;
 
   return (
-    <AppShell breadcrumbDetail="Files" rightPanel={rightPanel}>
+    <AppShell rightPanel={rightPanel}>
       {viewerOrg === undefined ? (
         <OperationalPanel as="div" className="flex h-40 items-center justify-center">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />

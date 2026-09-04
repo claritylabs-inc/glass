@@ -108,7 +108,6 @@ function ShellContent({
   storageUserId,
   disablePersistentChat = false,
   disableCommandPalette = false,
-  showBrokerShare = true,
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
@@ -123,7 +122,6 @@ function ShellContent({
   storageUserId?: string;
   disablePersistentChat?: boolean;
   disableCommandPalette?: boolean;
-  showBrokerShare?: boolean;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [customSidebarPreference, setCustomSidebarPreference] = useState(() =>
@@ -262,7 +260,6 @@ function ShellContent({
             }
             breadcrumbDetail={breadcrumbDetail}
             presenceUsers={presenceUsers}
-            showBrokerShare={showBrokerShare}
             onMobileMenuToggle={() => setMobileOpen((v) => !v)}
           />
           <div className="relative min-w-0 flex-1 overflow-hidden">
@@ -385,7 +382,6 @@ export function AppShell({
   customSidebarStorageKey,
   disablePersistentChat,
   disableCommandPalette,
-  showBrokerShare,
 }: {
   children: React.ReactNode;
   actions?: React.ReactNode;
@@ -399,7 +395,6 @@ export function AppShell({
   customSidebarStorageKey?: string;
   disablePersistentChat?: boolean;
   disableCommandPalette?: boolean;
-  showBrokerShare?: boolean;
 }) {
   const { scope } = useSpotSync();
   const customSidebarPreferenceStorageKey = customSidebar
@@ -426,7 +421,6 @@ export function AppShell({
             storageUserId={scope.userId}
             disablePersistentChat={disablePersistentChat}
             disableCommandPalette={disableCommandPalette}
-            showBrokerShare={showBrokerShare}
           >
             {children}
           </ShellContent>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { ManagedClientPolicyWorkspace } from "@/app/clients/[clientOrgId]/policies/managed-client-policy-workspace";
+import { ManagedClientPolicyWorkspace } from "@/components/policies/managed-client-policy-workspace";
 import { AppShell } from "@/components/app-shell";
 import {
   OperationalPanel,
@@ -101,7 +101,6 @@ export default function OperatorClientPoliciesPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       {clients === undefined ? (
         <OperationalPanel>

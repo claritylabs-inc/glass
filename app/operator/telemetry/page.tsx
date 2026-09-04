@@ -33,12 +33,14 @@ import { formatDisplayDateTime } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 import {
   RoutingEventDrawer,
+  actualRouteLabel,
   routeLabel,
   routingEventOutcome,
   routingEventSummary,
   type RoutingEvent,
 } from "../routing/routing-tab";
 import { OperatorSidebar } from "../operator-sidebar";
+import { useTabParam } from "@/hooks/use-tab-param";
 
 type RequirementExtractionRun = {
   _id: string;
@@ -212,7 +214,10 @@ function RequirementExtractionDrawer({
   );
 }
 
+const TELEMETRY_TABS = ["requirement-extractions", "model-routing"] as const;
+
 export default function OperatorTelemetryPage() {
+  const [activeTab, selectTab] = useTabParam(TELEMETRY_TABS);
   const { results, status, loadMore } = usePaginatedQuery(
     api.modelRoutingEvents.listPaginated,
     {},
@@ -294,7 +299,6 @@ export default function OperatorTelemetryPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       actions={
         <InputGroup className="w-44 sm:w-72">
           <InputGroupAddon>
@@ -324,11 +328,12 @@ export default function OperatorTelemetryPage() {
     >
       <main className="w-full">
         <Tabs
-          defaultValue="requirement-extractions"
+          value={activeTab}
           className="gap-4"
-          onValueChange={() => {
+          onValueChange={(tab) => {
             setSelectedEvent(null);
             setSelectedRequirementRun(null);
+            selectTab(tab);
           }}
         >
           <TabsList variant="pill" aria-label="Telemetry section">
@@ -477,10 +482,9 @@ export default function OperatorTelemetryPage() {
                       <TableHead>Time</TableHead>
                       <TableHead>Result</TableHead>
                       <TableHead>Channel / task</TableHead>
-                      <TableHead>Route</TableHead>
-                      <TableHead>Transport</TableHead>
+                      <TableHead>Actual</TableHead>
+                      <TableHead>Would choose</TableHead>
                       <TableHead>Outcome</TableHead>
-                      <TableHead>Request</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -528,30 +532,15 @@ export default function OperatorTelemetryPage() {
                               <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-active:translate-x-0.5 motion-reduce:transition-none" />
                             </button>
                           </TableCell>
-                          <TableCell>
-                            {routeLabel(
-                              event.provider && event.model
-                                ? {
-                                    provider: event.provider,
-                                    model: event.model,
-                                  }
-                                : undefined,
-                            )}
-                          </TableCell>
+                          <TableCell>{actualRouteLabel(event)}</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {event.transport ?? "—"}
+                            {routeLabel(event.routing?.wouldHaveChosen)}
                           </TableCell>
                           <TableCell
                             className="max-w-80 truncate text-muted-foreground"
                             title={summary}
                           >
                             {summary}
-                          </TableCell>
-                          <TableCell
-                            className={`max-w-48 truncate text-muted-foreground ${typeStyle("technical.codeCompact")}`}
-                            title={event.requestId}
-                          >
-                            {event.requestId ?? "—"}
                           </TableCell>
                         </TableRow>
                       );

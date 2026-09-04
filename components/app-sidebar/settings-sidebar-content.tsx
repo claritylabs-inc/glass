@@ -6,18 +6,16 @@ import { SidebarHeader } from "./sidebar-header";
 
 export function SettingsSidebarContent({
   collapsed,
-  isBroker,
   isStandaloneClient,
   activeSettingsSection,
   onToggleCollapse,
 }: {
   collapsed: boolean;
-  isBroker: boolean;
   isStandaloneClient: boolean;
   activeSettingsSection: string;
   onToggleCollapse: () => void;
 }) {
-  const groups = getSettingsNavigation({ isBroker, isStandaloneClient });
+  const groups = getSettingsNavigation({ isStandaloneClient });
 
   return (
     <div className="flex flex-col h-full">
@@ -36,7 +34,7 @@ export function SettingsSidebarContent({
             {group.pages.map((item) => (
               <SidebarMenuItem
                 key={item.id}
-                href={`/settings?section=${item.id}&tab=${item.tabs[0].id}`}
+                href={`/settings?section=${item.id}`}
                 label={item.label}
                 icon={item.icon}
                 active={item.id === activeSettingsSection}
