@@ -92,6 +92,8 @@ Operator web chat, iMessage, and the internal Slack adapter all enqueue into the
 
 Operator MCP exposes registered read tools to read-scoped operator tokens, registered write tools only to write-scoped tokens, and owner-only tools only to owners. `docs/deployment/operator-mcp.md` covers connecting Claude Code, Codex, and Conductor sessions to it. It adds these lifecycle tools outside the operator-agent registry:
 
+An operator conversation permits one live exact confirmation at a time. A competing registered write returns `blocked_by_confirmation` with the existing confirmation and run IDs instead of an MCP error, and the blocked invocation terminates without executing. Expired confirmations are closed before a later write requests confirmation.
+
 | Tool                      | Purpose                                                                            | Availability        |
 | ------------------------- | ---------------------------------------------------------------------------------- | ------------------- |
 | `run_operator_task`       | Start or continue a durable multi-step operator task, optionally with attachments. | write scope         |

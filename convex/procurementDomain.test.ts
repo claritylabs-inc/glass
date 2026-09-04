@@ -1462,6 +1462,218 @@ describe("procurement domain boundaries", () => {
       }),
     ).resolves.toMatchObject({ outcome: { status: "failed" } });
   });
+
+  test("returns concurrent confirmation contention without leaving the blocked invocation active", async () => {
+    const f = await fixture();
+    const threadId = await f.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId: f.operatorUserId,
+        channel: "mcp",
+        conversationKey: "mcp:confirmation-contention",
+      },
+    );
+    const invoke = (name: string, idempotencyKey: string) =>
+      f.t.action(internal.operatorAgent.invokeRegisteredToolInternal, {
+        operatorUserId: f.operatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "create_client_organization",
+        input: { name },
+        idempotencyKey,
+      });
+
+    const results = await Promise.all([
+      invoke("First pending client", "first-pending-client"),
+      invoke("Second pending client", "second-pending-client"),
+    ]);
+    const first = results.find(
+      (result) => result.outcome.status === "confirmation_required",
+    );
+    const blocked = results.find(
+      (result) => result.outcome.status === "blocked_by_confirmation",
+    );
+    if (
+      !first ||
+      first.outcome.status !== "confirmation_required" ||
+      !first.outcome.confirmationId ||
+      !blocked ||
+      blocked.outcome.status !== "blocked_by_confirmation"
+    ) {
+      throw new Error("Expected one confirmation and one blocked invocation");
+    }
+
+    expect(blocked.outcome).toMatchObject({
+      status: "blocked_by_confirmation",
+      confirmationId: first.outcome.confirmationId,
+      runId: first.runId,
+      summary: first.outcome.summary,
+    });
+    const state = await f.t.run(async (ctx) => ({
+      runs: await ctx.db
+        .query("operatorAgentRuns")
+        .withIndex("thread_status", (query) => query.eq("threadId", threadId))
+        .collect(),
+      confirmations: await ctx.db
+        .query("operatorAgentConfirmations")
+        .withIndex("thread_status", (query) => query.eq("threadId", threadId))
+        .collect(),
+      clients: await ctx.db
+        .query("organizations")
+        .withIndex("type", (query) => query.eq("type", "client"))
+        .collect(),
+    }));
+    expect(state.runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          _id: first.runId,
+          status: "waiting_confirmation",
+        }),
+        expect.objectContaining({ _id: blocked.runId, status: "completed" }),
+      ]),
+    );
+    expect(state.runs.filter((run) => run.status === "running")).toEqual([]);
+    expect(state.confirmations).toEqual([
+      expect.objectContaining({
+        _id: first.outcome.confirmationId,
+        status: "pending",
+      }),
+    ]);
+    expect(
+      state.clients.filter(
+        (client) =>
+          client.name === "First pending client" ||
+          client.name === "Second pending client",
+      ),
+    ).toEqual([]);
+  });
+
+  test("expires stale confirmation state before accepting the next write", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(dayjs("2026-09-04T12:00:00Z").valueOf());
+    const f = await fixture();
+    const threadId = await f.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId: f.operatorUserId,
+        channel: "mcp",
+        conversationKey: "mcp:expired-confirmation",
+      },
+    );
+    const invoke = (name: string, idempotencyKey: string) =>
+      f.t.action(internal.operatorAgent.invokeRegisteredToolInternal, {
+        operatorUserId: f.operatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "create_client_organization",
+        input: { name },
+        idempotencyKey,
+      });
+
+    const expired = await invoke("Expired pending client", "expired-client");
+    if (
+      expired.outcome.status !== "confirmation_required" ||
+      !expired.outcome.confirmationId
+    ) {
+      throw new Error("Expected a confirmation that can expire");
+    }
+    const expiredConfirmationId = expired.outcome.confirmationId;
+    vi.setSystemTime(dayjs().add(11, "minute").valueOf());
+    const current = await invoke("Current pending client", "current-client");
+    if (
+      current.outcome.status !== "confirmation_required" ||
+      !current.outcome.confirmationId
+    ) {
+      throw new Error("Expected a fresh confirmation after expiration");
+    }
+    const currentConfirmationId = current.outcome.confirmationId;
+
+    const state = await f.t.run(async (ctx) => ({
+      expiredConfirmation: await ctx.db.get(expiredConfirmationId),
+      currentConfirmation: await ctx.db.get(currentConfirmationId),
+      expiredRun: await ctx.db.get(expired.runId),
+      currentRun: await ctx.db.get(current.runId),
+      expiredAudit: await ctx.db
+        .query("agentActionAuditEvents")
+        .withIndex("idempotency", (query) =>
+          query
+            .eq("operatorUserId", f.operatorUserId)
+            .eq("idempotencyKey", "expired-client"),
+        )
+        .unique(),
+      pendingConfirmations: await ctx.db
+        .query("operatorAgentConfirmations")
+        .withIndex("thread_status", (query) =>
+          query.eq("threadId", threadId).eq("status", "pending"),
+        )
+        .collect(),
+    }));
+    expect(state.expiredConfirmation).toMatchObject({ status: "expired" });
+    expect(state.expiredAudit).toMatchObject({
+      status: "cancelled",
+      error: "Operator confirmation expired",
+    });
+    expect(state.expiredRun).toMatchObject({
+      status: "completed",
+      checkpoint: { summary: "Operator confirmation expired" },
+    });
+    expect(state.currentConfirmation).toMatchObject({ status: "pending" });
+    expect(state.currentRun).toMatchObject({ status: "waiting_confirmation" });
+    expect(state.pendingConfirmations).toEqual([
+      expect.objectContaining({ _id: currentConfirmationId }),
+    ]);
+  });
+
+  test("closes expired confirmations without requiring another tool call", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(dayjs("2026-09-04T12:00:00Z").valueOf());
+    const f = await fixture();
+    const threadId = await f.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId: f.operatorUserId,
+        channel: "mcp",
+        conversationKey: "mcp:scheduled-confirmation-expiration",
+      },
+    );
+    const requested = await f.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: f.operatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "create_client_organization",
+        input: { name: "Scheduled expiration client" },
+        idempotencyKey: "scheduled-expiration-client",
+      },
+    );
+    if (
+      requested.outcome.status !== "confirmation_required" ||
+      !requested.outcome.confirmationId
+    ) {
+      throw new Error("Expected a scheduled confirmation expiration");
+    }
+    const confirmationId = requested.outcome.confirmationId;
+
+    vi.setSystemTime(dayjs().add(11, "minute").valueOf());
+    await f.t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const state = await f.t.run(async (ctx) => ({
+      confirmation: await ctx.db.get(confirmationId),
+      run: await ctx.db.get(requested.runId),
+      audit: await ctx.db
+        .query("agentActionAuditEvents")
+        .withIndex("idempotency", (query) =>
+          query
+            .eq("operatorUserId", f.operatorUserId)
+            .eq("idempotencyKey", "scheduled-expiration-client"),
+        )
+        .unique(),
+    }));
+    expect(state.confirmation).toMatchObject({ status: "expired" });
+    expect(state.run).toMatchObject({ status: "completed" });
+    expect(state.audit).toMatchObject({ status: "cancelled" });
+  });
 });
 
 describe("operator procurement tools", () => {
