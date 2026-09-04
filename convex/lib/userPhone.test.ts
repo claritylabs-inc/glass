@@ -4,16 +4,12 @@ import { describe, expect, test } from "vitest";
 import schema from "../schema";
 import {
   normalizeAvailableUserPhone,
-  normalizeUserPhone,
   PHONE_IN_USE_MESSAGE,
 } from "./userPhone";
 
 const modules = import.meta.glob("../**/*.ts");
 
 describe("user phone helpers", () => {
-  test("normalizes valid US phone numbers to E.164", () => {
-    expect(normalizeUserPhone("(701) 515-9759")).toBe("+17015159759");
-  });
 
   test("blocks assigning another user's phone number", async () => {
     const t = convexTest(schema, modules);
@@ -35,11 +31,5 @@ describe("user phone helpers", () => {
     });
 
     expect(message).toBe(PHONE_IN_USE_MESSAGE);
-  });
-
-  test("rejects numbers that only match the E.164 shape", () => {
-    expect(() => normalizeUserPhone("+15555550103")).toThrow(
-      "Enter a valid phone number with country code.",
-    );
   });
 });

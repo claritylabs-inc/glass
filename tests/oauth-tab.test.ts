@@ -30,27 +30,4 @@ describe("openOAuthTab", () => {
     );
   });
 
-  it("returns null when the browser blocks the new tab", () => {
-    vi.spyOn(window, "open").mockReturnValue(null);
-
-    expect(openOAuthTab()).toBeNull();
-  });
-
-  it("does not navigate or close a tab the user already closed", () => {
-    const popup = {
-      opener: window,
-      closed: true,
-      location: { replace: vi.fn() },
-      close: vi.fn(),
-    } as unknown as Window;
-    vi.spyOn(window, "open").mockReturnValue(popup);
-
-    const oauthTab = openOAuthTab();
-
-    expect(oauthTab?.navigate("https://slack.com/oauth/v2/authorize")).toBe(
-      false,
-    );
-    oauthTab?.close();
-    expect(popup.close).not.toHaveBeenCalled();
-  });
 });

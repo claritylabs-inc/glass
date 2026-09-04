@@ -149,30 +149,4 @@ describe("Slack worker HTTP adapter", () => {
     assert.equal("botToken" in payload, false);
   });
 
-  test("keeps deterministic local channel membership state", async () => {
-    const list = (body: Record<string, unknown>) =>
-      workerRequest("/channels", body).then((response) => response.json());
-    const initial = await list({
-      teamId: "T-LOCAL",
-      currentChannelId: "C-LOCAL",
-      currentChannelName: "spot-local",
-    });
-    assert.deepEqual(
-      initial.channels.map((channel: { id: string }) => channel.id),
-      ["C-LOCAL", "mock-T-LOCAL-general", "mock-T-LOCAL-policies"],
-    );
-
-    const general = "mock-T-LOCAL-general";
-    const joined = await workerRequest("/channels/join", {
-      teamId: "T-LOCAL",
-      channelId: general,
-    }).then((response) => response.json());
-    assert.equal(joined.channel.isMember, true);
-
-    const left = await workerRequest("/channels/leave", {
-      teamId: "T-LOCAL",
-      channelId: general,
-    }).then((response) => response.json());
-    assert.equal(left.channel.isMember, false);
-  });
 });

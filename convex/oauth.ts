@@ -132,16 +132,6 @@ export const registerClient = internalMutation({
   },
 });
 
-export const getClientByClientId = internalQuery({
-  args: { clientId: v.string() },
-  handler: async (ctx, args) => {
-    return ctx.db
-      .query("oauthClients")
-      .withIndex("client", (q) => q.eq("clientId", args.clientId))
-      .first();
-  },
-});
-
 export const exchangeAuthCode = internalMutation({
   args: {
     codeRaw: v.string(),
@@ -209,57 +199,6 @@ export const exchangeAuthCode = internalMutation({
       token_type: "Bearer",
       expires_in: 3600,
       refresh_token: refreshTokenRaw,
-    };
-  },
-});
-
-export const validateAccessToken = internalQuery({
-  args: { tokenHash: v.string() },
-  handler: async (ctx, args) => {
-    const token = await ctx.db
-      .query("oauthTokens")
-      .withIndex("token", (q) => q.eq("tokenHash", args.tokenHash))
-      .first();
-
-    if (!token) return null;
-    if (token.revokedAt) return null;
-    if (token.expiresAt < dayjs().valueOf()) return null;
-
-    const principalKind = token.principalKind ?? "organization";
-    if (principalKind === "operator") {
-      const [user, profile] = await Promise.all([
-        ctx.db.get(token.userId),
-        ctx.db
-          .query("operatorProfiles")
-          .withIndex("user", (q) => q.eq("userId", token.userId))
-          .first(),
-      ]);
-      if (
-        !user ||
-        user.accountKind !== "operator" ||
-        !profile ||
-        profile.status !== "active"
-      ) {
-        return null;
-      }
-      return {
-        userId: token.userId,
-        orgId: undefined,
-        principalKind,
-        operatorRole: profile.role,
-        resource: token.resource,
-        clientId: token.clientId,
-      };
-    }
-
-    if (!token.orgId) return null;
-
-    return {
-      userId: token.userId,
-      orgId: token.orgId,
-      principalKind,
-      resource: token.resource,
-      clientId: token.clientId,
     };
   },
 });

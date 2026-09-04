@@ -316,46 +316,6 @@ export function assertClientOrg(access: OrgAccess): void {
   }
 }
 
-export function assertPartnerOrg(access: OrgAccess): void {
-  if (access.orgType !== "partner") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "This action is available only in a partner organization.",
-    );
-  }
-}
-
-export function assertCanReadPassport(_access: OrgAccess): void {
-  // Members, operators, and explicitly connected clients can read.
-}
-
-export function assertCanEditPassport(access: OrgAccess): void {
-  if (access.accessType !== "member") {
-    throwUserFacingError(
-      userFacingErrorCodes.readOnlyAccess,
-      "Only members of this organization can edit its profile.",
-    );
-  }
-}
-
-export function assertCanReadEmails(access: OrgAccess): void {
-  if (access.accessType !== "member") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "Email access is restricted to members of this organization.",
-    );
-  }
-}
-
-export function assertCanReadInternalThreads(access: OrgAccess): void {
-  if (access.accessType !== "member") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "Internal conversations are restricted to members of this organization.",
-    );
-  }
-}
-
 export function assertCanUseTenantAgent(access: OrgAccess): void {
   if (access.orgType === "broker") {
     throwUserFacingError(
@@ -432,50 +392,4 @@ async function resolvePolicyAccessForQuery(
   });
   if (!access) return null;
   return { policy, access };
-}
-
-export function assertCanInviteTeammate(access: OrgAccess): void {
-  if (access.role !== "admin") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAdminRequired,
-      "Only an organization admin can invite teammates.",
-    );
-  }
-}
-
-// ── Integration capability helpers ─────────────────────────────────────────
-
-/** Any caller with organization access. */
-export function assertCanReadIntegrationsList(_access: OrgAccess): void {
-  // no restriction beyond having org access
-}
-
-/** member only — creating connections requires being in the client org */
-export function assertCanConnectIntegration(access: OrgAccess): void {
-  if (access.accessType !== "member") {
-    throwUserFacingError(
-      userFacingErrorCodes.readOnlyAccess,
-      "Only members of this organization can connect integrations.",
-    );
-  }
-}
-
-/** member only */
-export function assertCanDisconnectIntegration(access: OrgAccess): void {
-  if (access.accessType !== "member") {
-    throwUserFacingError(
-      userFacingErrorCodes.readOnlyAccess,
-      "Only members of this organization can disconnect integrations.",
-    );
-  }
-}
-
-/** member only — raw integration values are never exposed directly to brokers */
-export function assertCanReadRawIntegrationData(access: OrgAccess): void {
-  if (access.accessType !== "member") {
-    throwUserFacingError(
-      userFacingErrorCodes.orgAccessRequired,
-      "Raw integration data is restricted to members of this organization.",
-    );
-  }
 }

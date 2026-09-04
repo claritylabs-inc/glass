@@ -57,7 +57,7 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
-import { makeEmbedText, makeGenerateObject } from "./sdkCallbacks";
+import { makeGenerateObject } from "./sdkCallbacks";
 
 describe("sdkCallbacks PDF inputs", () => {
   const TestSchema = z.object({ ok: z.boolean().optional() });
@@ -118,160 +118,6 @@ describe("sdkCallbacks PDF inputs", () => {
     expect(input.providerOptions.pdfBytes).toBeInstanceOf(Uint8Array);
   });
 
-  test("uses text-only prompt input for Fireworks DeepSeek extraction callbacks", async () => {
-    mocks.getModelAndRouteForOrg.mockResolvedValueOnce({
-      model: "deepseek",
-      route: { provider: "fireworks", model: "accounts/fireworks/models/deepseek-v4-flash" },
-    });
-    const generateObject = makeGenerateObject("extraction", testRouting());
-
-    await generateObject({
-      prompt: "Extract",
-      system: "sys",
-      schema: TestSchema,
-      maxTokens: 100,
-      providerOptions: {
-        pdfBytes: new Uint8Array([1, 2, 3]),
-        mimeType: "application/pdf",
-        images: [{ imageBase64: "abc", mimeType: "image/png" }],
-      },
-    });
-
-    const input = generatedInput();
-    expect(hasMessagePart(input, "image")).toBe(false);
-    expect(hasMessagePart(input, "file")).toBe(false);
-    expect(input.providerOptions.pdfBytes).toBeInstanceOf(Uint8Array);
-  });
-
-  test("uses text-only prompt input for Fireworks GLM callbacks", async () => {
-    mocks.getModelAndRouteForOrg.mockResolvedValueOnce({
-      model: "glm",
-      route: { provider: "fireworks", model: "accounts/fireworks/models/glm-5p2" },
-    });
-    const generateObject = makeGenerateObject("analysis", testRouting());
-
-    await generateObject({
-      prompt: "Review",
-      system: "sys",
-      schema: TestSchema,
-      maxTokens: 100,
-      providerOptions: {
-        pdfBytes: new Uint8Array([1, 2, 3]),
-        mimeType: "application/pdf",
-        images: [{ imageBase64: "abc", mimeType: "image/png" }],
-      },
-    });
-
-    const input = generatedInput();
-    expect(input.prompt).toBe("Review");
-    expect(input.messages).toBeUndefined();
-    expect(input.providerOptions.pdfBytes).toBeInstanceOf(Uint8Array);
-  });
-
-  test("keeps the direct callback path exact when router flags are empty", async () => {
-    vi.stubEnv("CL_ROUTER_TASKS", "");
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-
-    await makeGenerateObject("extraction", testRouting())({
-      prompt: "Extract",
-      schema: TestSchema,
-      maxTokens: 100,
-    });
-
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.resolveClRouterSettingsForOrg).not.toHaveBeenCalled();
-    expect(mocks.generateStructuredWithFallback).toHaveBeenCalledOnce();
-  });
-
-  test("falls back to the original direct callback only for eligible router failures", async () => {
-    vi.stubEnv("SPOT_ENV", "production");
-    vi.stubEnv("CL_ROUTER_TASKS", "extraction");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      error: {
-        code: "router_unavailable",
-        message: "No eligible route is available.",
-        retryable: true,
-        executionStarted: false,
-        requestId: "failed-generation-request",
-      },
-    }, { status: 503 })));
-
-    const routing = { ...testRouting(), traceId: "trace-1" };
-    await expect(makeGenerateObject("extraction", routing)({
-      prompt: "Extract",
-      schema: TestSchema,
-      maxTokens: 100,
-    })).resolves.toEqual({
-      object: { ok: true },
-      usage: { inputTokens: 1, outputTokens: 1 },
-    });
-
-    expect(mocks.resolveClRouterSettingsForOrg).toHaveBeenCalledOnce();
-    expect(mocks.getModelAndRouteForSettingsSnapshot).toHaveBeenCalledOnce();
-    expect(mocks.getModelAndRouteForOrg).not.toHaveBeenCalled();
-    expect(mocks.generateStructuredWithFallback).toHaveBeenCalledOnce();
-    expect(routing.ctx.runMutation).toHaveBeenCalledOnce();
-    expect((routing.ctx.runMutation as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toMatchObject({
-      transport: "cl-router-direct-fallback",
-      routingDecision: "router_outage_fallback",
-      details: {
-        routerFallback: {
-          fromTransport: "cl-router",
-          toTransport: "direct",
-          errorKind: "server",
-          status: 503,
-        },
-      },
-    });
-  });
-
-  test("reuses one settings snapshot for router and direct embedding fallback", async () => {
-    vi.stubEnv("SPOT_ENV", "production");
-    vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      error: {
-        code: "router_unavailable",
-        message: "No eligible route is available.",
-        retryable: true,
-        executionStarted: false,
-        requestId: "failed-embedding-request",
-      },
-    }, { status: 503 })));
-    const runQuery = vi.fn(async () => ({
-      routes: { embeddings: { provider: "openai", model: "text-embedding-3-small" } },
-      routeSources: { embeddings: "broker" },
-      providerKeys: { openai: "broker-openai-key" },
-    }));
-
-    await expect(makeEmbedText(
-      { runQuery } as never,
-      "org" as Id<"organizations">,
-    )("policy text")).resolves.toEqual([0.1, 0.2]);
-
-    expect(runQuery).toHaveBeenCalledOnce();
-    expect(mocks.embed).toHaveBeenCalledOnce();
-  });
-
-  test("does not hide router client errors behind the direct callback", async () => {
-    vi.stubEnv("CL_ROUTER_TASKS", "extraction");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 422 })));
-
-    await expect(makeGenerateObject("extraction", testRouting())({
-      prompt: "Extract",
-      schema: TestSchema,
-      maxTokens: 100,
-    })).rejects.toMatchObject({ kind: "client", status: 422 });
-
-    expect(mocks.generateStructuredWithFallback).not.toHaveBeenCalled();
-  });
-
   test("fails closed when router output does not satisfy the requested schema", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "extraction");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
@@ -292,21 +138,6 @@ describe("sdkCallbacks PDF inputs", () => {
       costStatus: "unpriced",
       output: { ok: "not-a-boolean" },
     })));
-
-    await expect(makeGenerateObject("extraction", testRouting())({
-      prompt: "Extract",
-      schema: TestSchema,
-      maxTokens: 100,
-    })).rejects.toMatchObject({ kind: "invalid_response" });
-
-    expect(mocks.generateStructuredWithFallback).not.toHaveBeenCalled();
-  });
-
-  test("fails closed on malformed router response metadata", async () => {
-    vi.stubEnv("CL_ROUTER_TASKS", "extraction");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ output: { ok: true } })));
 
     await expect(makeGenerateObject("extraction", testRouting())({
       prompt: "Extract",

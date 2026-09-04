@@ -826,7 +826,7 @@ function hasAutomationResult(outcome: AutomationOutcome) {
   );
 }
 
-export function buildMailboxActivityBody(
+function buildMailboxActivityBody(
   outcomes: AutomationOutcome[],
   attention: AutomationAttention[],
 ) {
@@ -862,7 +862,7 @@ export function buildMailboxActivityBody(
   ].filter((part): part is string => part !== undefined).join("\n");
 }
 
-export function buildEmailReviewNotificationCopy(
+function buildEmailReviewNotificationCopy(
   emailCount: number,
   uncategorizedCount: number,
 ) {

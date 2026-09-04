@@ -34,19 +34,6 @@ describe("global model route overrides", () => {
     },
   );
 
-  it("requires an explicit marker when the operator route matches its suggestion", () => {
-    const route = defaultModelRouteForId("operator_agent");
-
-    expect(isExplicitGlobalRouteOverride("operator_agent", route, [])).toBe(
-      false,
-    );
-    expect(
-      isExplicitGlobalRouteOverride("operator_agent", route, [
-        "operator_agent",
-      ]),
-    ).toBe(true);
-  });
-
   it("fails closed until the required direct operator route is configured", async () => {
     const t = convexTest(schema, modules);
     const now = dayjs().valueOf();

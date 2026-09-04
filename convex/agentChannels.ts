@@ -1287,20 +1287,6 @@ export const markSlackSetupInstallationComplete = internalMutation({
   },
 });
 
-export const markSlackSetupInstallationCompleteByClient = internalMutation({
-  args: { clientOrgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const setup = await slackSetupState(ctx, args.clientOrgId);
-    if (!setup || setup.status !== "in_progress") return null;
-    const now = dayjs().valueOf();
-    await ctx.db.patch(setup._id, {
-      installationCompletedAt: now,
-      updatedAt: now,
-    });
-    return setup._id;
-  },
-});
-
 async function upsertNativeSlackInstallation(
   ctx: MutationCtx,
   args: {

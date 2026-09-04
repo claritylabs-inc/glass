@@ -35,18 +35,6 @@ const audienceValidator = v.union(
   v.literal("client"),
   v.literal("broker"),
 );
-const sourceValidator = v.union(
-  v.literal("manual"),
-  v.literal("client"),
-  v.literal("operator_agent"),
-  v.literal("email"),
-  v.literal("document"),
-);
-const releaseValidator = v.union(
-  v.literal("hidden"),
-  v.literal("listed"),
-  v.literal("attached"),
-);
 const PACKET_LINK_TTL_DAYS = 30;
 const MAX_PACKET_LINK_TTL_DAYS = 90;
 
@@ -443,81 +431,6 @@ export const get = query({
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     return await listPacketSections(ctx, args);
-  },
-});
-
-export const upsertSection = mutation({
-  args: {
-    requestId: v.id("procurementRequests"),
-    key: v.string(),
-    body: v.string(),
-    heading: v.optional(v.string()),
-    audience: v.optional(audienceValidator),
-    source: v.optional(sourceValidator),
-    sourceRefs: v.optional(v.array(v.string())),
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    return upsertPacketSectionByOperator(ctx, {
-      ...args,
-      operatorUserId: operator.userId,
-    });
-  },
-});
-
-export const setAudience = mutation({
-  args: {
-    sectionId: v.id("procurementPacketSections"),
-    audience: audienceValidator,
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    return setPacketSectionAudienceByOperator(ctx, {
-      ...args,
-      operatorUserId: operator.userId,
-    });
-  },
-});
-
-export const setFileRelease = mutation({
-  args: {
-    itemId: v.id("procurementFileItems"),
-    brokerRelease: releaseValidator,
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await directOperator(ctx, operator.userId);
-    const item = await ctx.db.get(args.itemId);
-    if (!item) throw new Error("Packet file item not found");
-    const now = dayjs().valueOf();
-    await ctx.db.patch(item._id, {
-      brokerRelease: args.brokerRelease,
-      updatedByUserId: operator.userId,
-      updatedAt: now,
-    });
-    const request = await ctx.db.get(item.requestId);
-    if (request && args.brokerRelease !== (item.brokerRelease ?? "hidden"))
-      await ctx.db.patch(request._id, {
-        packetRevision: (request.packetRevision ?? 0) + 1,
-        updatedAt: now,
-        updatedByUserId: operator.userId,
-      });
-    if (request && args.brokerRelease !== (item.brokerRelease ?? "hidden"))
-      await writeOperatorAudit(ctx, {
-        operatorUserId: operator.userId,
-        type: "setup_write",
-        targetOrgId: request.clientOrgId,
-        summary: `Changed ${item.label} broker release to ${args.brokerRelease}`,
-        metadata: {
-          domain: "procurement",
-          requestId: request._id,
-          fileItemId: item._id,
-          operation: "set_packet_file_release",
-          previousRelease: item.brokerRelease ?? "hidden",
-          nextRelease: args.brokerRelease,
-        },
-      });
-    return { ok: true };
   },
 });
 
@@ -1176,15 +1089,6 @@ async function recordViewInternalHandler(
   });
   return { ok: true };
 }
-
-export const recordViewInternal = internalMutation({
-  args: {
-    linkId: v.id("procurementPacketLinks"),
-    path: v.string(),
-    userAgent: v.optional(v.string()),
-  },
-  handler: recordViewInternalHandler,
-});
 
 export const sweepExpired = internalMutation({
   args: {},

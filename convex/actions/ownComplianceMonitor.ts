@@ -6,7 +6,7 @@ import type { Id } from "../_generated/dataModel";
 import { internalAction } from "../_generated/server";
 import type { OwnComplianceAssessment, OwnComplianceEvent } from "../compliance";
 
-export function buildOwnComplianceThreadContent(event: OwnComplianceEvent) {
+function buildOwnComplianceThreadContent(event: OwnComplianceEvent) {
   if (event.type === "own_compliance_resolved") {
     return [
       `${event.orgName} now meets every active insurance requirement tracked in Spot.`,

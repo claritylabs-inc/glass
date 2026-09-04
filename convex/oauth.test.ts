@@ -194,25 +194,6 @@ describe("oauth scopes", () => {
     expect(codes).toHaveLength(0);
   });
 
-  test("validates legacy tokens that only stored the scope string", async () => {
-    const { t, orgId, userId, clientId } = await seedOAuthClientAndUser();
-    const rawToken = "prsm_at_legacy";
-    await t.run(async (ctx) => {
-      await ctx.db.insert("oauthTokens", {
-        tokenHash: await sha256Hex(rawToken),
-        clientId,
-        userId,
-        orgId,
-        scope: "read write",
-        expiresAt: dayjs().add(1, "hour").valueOf(),
-        createdAt: dayjs().valueOf(),
-      });
-    });
-
-    const token = await validateRawAccessToken(t, rawToken);
-
-    expect(token?.scopes).toEqual(["read", "write"]);
-  });
 });
 
 describe("operator oauth principals", () => {

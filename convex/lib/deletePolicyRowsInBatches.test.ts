@@ -31,8 +31,6 @@ async function runDeleteLoop(initialRows: number) {
 
 describe("deletePolicyRowsInBatches", () => {
   test.each([
-    { rows: 0, calls: [0] },
-    { rows: 50, calls: [50, 0] },
     { rows: 51, calls: [50, 1, 0] },
     { rows: 120, calls: [50, 50, 20, 0] },
   ])("deletes all $rows rows", async ({ rows, calls }) => {

@@ -4,7 +4,6 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { buildEmailDraftTextSummary } from "../lib/emailDraftSummary";
 import {
   resolveEmailAgentIdentity,
   upsertEmailDraftArtifact,
@@ -232,34 +231,6 @@ export const sendManyForMcp = internalAction({
         failed.length === 0
           ? `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}.`
           : `Sent ${sent.length} email${sent.length === 1 ? "" : "s"}; ${failed.length} failed.`,
-    };
-  },
-});
-
-export const summarizeForMcp = internalAction({
-  args: {
-    orgId: v.id("organizations"),
-    threadId: v.optional(v.id("threads")),
-    showAll: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const drafts = (await ctx.runQuery(
-      internal.pendingEmails.listDraftsInternal,
-      {
-        orgId: args.orgId,
-        threadId: args.threadId,
-      },
-    )) as Array<Doc<"pendingEmails">>;
-    return {
-      summary:
-        drafts.length > 0
-          ? buildEmailDraftTextSummary(drafts, {
-              sampleSize: args.showAll ? drafts.length : 3,
-              includeIds: true,
-              commands: "mcp",
-            })
-          : "No email drafts found.",
-      drafts: drafts.map(serializeDraft),
     };
   },
 });

@@ -426,7 +426,6 @@ export interface PolicyVersionDtoSource {
   policyNumber?: string;
   sourcePolicyFileIds?: DtoId[];
   sourceFileIds?: DtoId[];
-  caseId?: DtoId;
   extractionRunId?: DtoId;
   snapshot?: Jsonish;
   fieldDiffs?: Jsonish[];
@@ -446,7 +445,6 @@ export function toPolicyVersionDto(version: PolicyVersionDtoSource) {
     policy_number: version.policyNumber ?? null,
     source_policy_file_ids: version.sourcePolicyFileIds ?? [],
     source_file_ids: version.sourceFileIds ?? [],
-    case_id: version.caseId ?? null,
     extraction_run_id: version.extractionRunId ?? null,
     snapshot: version.snapshot ?? null,
     field_diffs: version.fieldDiffs ?? [],
@@ -677,21 +675,6 @@ export function toNotificationDto(notif: NotificationDtoSource): NotificationDto
     message: notif.message ?? notif.body,
     read: !!notif.read,
     created_at: notif._creationTime,
-  };
-}
-
-export interface PaginationDto<T> {
-  data: T[];
-  next_cursor?: string;
-}
-
-export function toPaginationDto<T>(
-  data: T[],
-  nextCursor?: string,
-): PaginationDto<T> {
-  return {
-    data,
-    ...(nextCursor && { next_cursor: nextCursor }),
   };
 }
 

@@ -1,11 +1,5 @@
 import { z } from "zod";
 
-export const DEFAULT_CONNECTED_EMAIL_AUTOMATION = {
-  policyImports: false,
-  requirementImports: false,
-  companyMemory: false,
-} as const;
-
 export type ConnectedEmailAutomation = {
   policyImports: boolean;
   requirementImports: boolean;

@@ -1,7 +1,6 @@
 import dayjs from "dayjs";
 import { v } from "convex/values";
 import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
-import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import {
   action,
   internalAction,
@@ -11,7 +10,7 @@ import {
   query,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Doc, Id, TableNames } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { buildEmailShell, escapeHtml } from "./lib/emailTemplate";
 import { getAuthFromAddress, sendResendEmail } from "./lib/resend";
@@ -90,31 +89,6 @@ function normalizeClientUserEmail(value: string) {
   return email;
 }
 
-const REMOVED_PROGRAM_ADMIN_TABLES = [
-  "partnerPrograms",
-  "partnerProgramEmbeddings",
-  "coiTemplates",
-  "standingAuthorizations",
-  "certificateRequests",
-  "certificateApprovals",
-] as const;
-const REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE = 500;
-const REMOVED_POLICY_CHANGE_TABLES = [
-  "policyChangeCases",
-  "pcePackets",
-  "caseMessages",
-  "caseEvidenceLinks",
-  "caseValidationReports",
-] as const;
-const REMOVED_POLICY_CHANGE_LINK_TABLES = [
-  "certificateRequestHolds",
-  "threadMessages",
-  "pendingEmails",
-  "appCardAccessLinks",
-  "policyUpdateRuns",
-] as const;
-const CLEAR_AGENT_MEMORY_CONFIRMATION = "CLEAR_AGENT_MEMORY";
-
 type OperatorSourceNode = Doc<"sourceNodes">;
 
 async function assertNoActiveOperatorImpersonationForPolicyWrite(
@@ -149,120 +123,6 @@ function normalizeWebsiteUrl(value: string | undefined) {
   const trimmed = value?.trim();
   if (!trimmed) return undefined;
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
-function normalizeOptionalContactPhone(value: string | undefined) {
-  const phone = value?.trim();
-  if (!phone) return undefined;
-  const parsed = parsePhoneNumberFromString(phone, "US");
-  if (!parsed || !parsed.isValid()) {
-    throw new Error("Enter a valid contact phone number");
-  }
-  return parsed.number;
-}
-
-function isRemovedProgramAdminOrg(org: Doc<"organizations">) {
-  const raw = org as Record<string, unknown>;
-  return (
-    raw.type === "program_admin" ||
-    raw.type === "mga" ||
-    raw.partnerType === "program_admin" ||
-    raw.partnerType === "mga" ||
-    raw.partnerKind === "program_admin" ||
-    raw.partnerKind === "mga"
-  );
-}
-
-async function deleteUnsafeTableBatch(
-  ctx: MutationCtx,
-  table: string,
-): Promise<{ deleted: number; skipped?: boolean; error?: string }> {
-  try {
-    const rows = await ctx.db
-      .query(table as TableNames)
-      .take(REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE);
-    for (const row of rows) await ctx.db.delete(row._id);
-    return { deleted: rows.length };
-  } catch (error) {
-    return {
-      deleted: 0,
-      skipped: true,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function unsetPolicyChangeLinkBatch(
-  ctx: MutationCtx,
-  table: string,
-): Promise<{ updated: number; skipped?: boolean; error?: string }> {
-  try {
-    const rows = await ctx.db.query(table as TableNames).take(500);
-    let updated = 0;
-    for (const row of rows) {
-      const patch: Record<string, unknown> = {
-        policyChangeCaseId: undefined,
-        caseId: undefined,
-      };
-      await ctx.db.patch(row._id, patch as any);
-      updated += 1;
-    }
-    return { updated };
-  } catch (error) {
-    return {
-      updated: 0,
-      skipped: true,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function deleteRemovedProgramAdminOrgData(
-  ctx: MutationCtx,
-  orgId: Id<"organizations">,
-) {
-  let deleted = 0;
-  const memberships = await ctx.db
-    .query("orgMemberships")
-    .withIndex("organization", (q) => q.eq("orgId", orgId))
-    .collect();
-  const invitations = await ctx.db
-    .query("orgInvitations")
-    .withIndex("organization", (q) => q.eq("orgId", orgId))
-    .collect();
-  for (const row of [...memberships, ...invitations]) {
-    await ctx.db.delete(row._id);
-    deleted += 1;
-  }
-
-  const brokerAssignments = await ctx.db
-    .query("brokerClientAssignments")
-    .withIndex("organization_client", (q) => q.eq("orgId", orgId))
-    .collect();
-  const clientAssignments = await ctx.db
-    .query("brokerClientAssignments")
-    .withIndex("client", (q) => q.eq("clientOrgId", orgId))
-    .collect();
-  for (const assignment of [...brokerAssignments, ...clientAssignments]) {
-    await ctx.db.delete(assignment._id);
-    deleted += 1;
-  }
-
-  const clientRelationships = await ctx.db
-    .query("connectedOrgRelationships")
-    .withIndex("client", (q) => q.eq("clientOrgId", orgId))
-    .collect();
-  const vendorRelationships = await ctx.db
-    .query("connectedOrgRelationships")
-    .withIndex("vendor", (q) => q.eq("vendorOrgId", orgId))
-    .collect();
-  for (const relationship of [...clientRelationships, ...vendorRelationships]) {
-    await ctx.db.delete(relationship._id);
-    deleted += 1;
-  }
-
-  await ctx.db.delete(orgId);
-  return deleted + 1;
 }
 
 async function clearOperatorExtractionQueue(
@@ -580,47 +440,6 @@ export const current = query({
   },
 });
 
-export const clearAllAgentMemory = mutation({
-  args: {
-    confirmation: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    if (args.confirmation !== CLEAR_AGENT_MEMORY_CONFIRMATION) {
-      throw new Error(
-        `Confirmation must be ${CLEAR_AGENT_MEMORY_CONFIRMATION}`,
-      );
-    }
-
-    await ctx.scheduler.runAfter(
-      0,
-      internalApi.memoryMaintenance.clearTableBatch,
-      {
-        table: "orgWikiSections",
-      },
-    );
-    await ctx.scheduler.runAfter(
-      0,
-      internalApi.memoryMaintenance.clearTableBatch,
-      {
-        table: "conversationTurns",
-      },
-    );
-    await writeOperatorAudit(ctx, {
-      operatorUserId: operator.userId,
-      type: "memory_cleared",
-      summary: "Scheduled company wiki and raw conversation memory purge",
-      metadata: {
-        tables: ["orgWikiSections", "conversationTurns"],
-      },
-    });
-
-    return {
-      scheduled: ["orgWikiSections", "conversationTurns"],
-    };
-  },
-});
-
 async function listOperatorClientRows(ctx: QueryCtx) {
   const clients = await ctx.db
     .query("organizations")
@@ -669,14 +488,6 @@ export const getClientSupportDetails = query({
       ...client,
       ...(await orgBrandFields(ctx, client)),
     };
-  },
-});
-
-export const listSoloClients = query({
-  args: {},
-  handler: async (ctx) => {
-    await requireOperator(ctx);
-    return await listOperatorClientRows(ctx);
   },
 });
 
@@ -1311,185 +1122,11 @@ export const stopExtraction = mutation({
   },
 });
 
-export const checkBrokerSetupIdentifiers = query({
-  args: {
-    slug: v.optional(v.string()),
-    ownerOrgId: v.optional(v.id("organizations")),
-  },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    const slug = args.slug ? normalizeSlug(args.slug) : undefined;
-    const slugStatus = slug
-      ? await (async () => {
-          if (slug.length < 3 || slug.length > 40) {
-            return {
-              available: false,
-              normalized: slug,
-              reason: "Slug must be 3-40 characters",
-              mode: "unavailable" as const,
-            };
-          }
-          if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) {
-            return {
-              available: false,
-              normalized: slug,
-              reason: "Slug must start and end with a letter or number",
-              mode: "unavailable" as const,
-            };
-          }
-          const slugOrg = await ctx.db
-            .query("organizations")
-            .withIndex("slug", (q) => q.eq("slug", slug))
-            .first();
-          if (!slugOrg)
-            return {
-              available: true,
-              normalized: slug,
-              mode: "available" as const,
-            };
-          if (args.ownerOrgId) {
-            return slugOrg._id === args.ownerOrgId
-              ? {
-                  available: true,
-                  normalized: slug,
-                  mode: "available" as const,
-                }
-              : {
-                  available: false,
-                  normalized: slug,
-                  reason: "Slug is already taken",
-                  mode: "unavailable" as const,
-                };
-          }
-          if (slugOrg.type === "broker") {
-            return {
-              available: true,
-              normalized: slug,
-              reason: "Existing broker will be updated",
-              mode: "updates_existing" as const,
-            };
-          }
-          return {
-            available: false,
-            normalized: slug,
-            reason: "Slug is already used by a non-broker org",
-            mode: "unavailable" as const,
-          };
-        })()
-      : null;
-
-    return { slug: slugStatus };
-  },
-});
-
-export const checkUserPhoneAvailabilities = query({
-  args: {
-    users: v.array(
-      v.object({
-        email: v.string(),
-        phone: v.string(),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    if (args.users.length > OPERATOR_CLIENT_USER_LIMIT) {
-      throw new Error(
-        `Check at most ${OPERATOR_CLIENT_USER_LIMIT} phone numbers`,
-      );
-    }
-
-    return await Promise.all(
-      args.users.map(async ({ email, phone }) => {
-        let normalized: string | undefined;
-        try {
-          normalized = normalizeUserPhone(phone);
-        } catch {
-          return { phone, available: false, normalized: "" };
-        }
-        if (!normalized) return { phone, available: false, normalized: "" };
-
-        const normalizedEmail = normalizeOperatorEmail(email);
-        const [existing, emailUsers] = await Promise.all([
-          findUserByNormalizedPhone(ctx, normalized),
-          normalizedEmail
-            ? ctx.db
-                .query("users")
-                .withIndex("email", (q) => q.eq("email", normalizedEmail))
-                .take(5)
-            : [],
-        ]);
-        return {
-          phone,
-          available:
-            !existing || emailUsers.some((user) => user._id === existing._id),
-          normalized,
-        };
-      }),
-    );
-  },
-});
-
-export const createBroker = action({
-  args: {
-    name: v.string(),
-    slug: v.optional(v.string()),
-    website: v.optional(v.string()),
-    adminEmail: v.string(),
-    adminName: v.optional(v.string()),
-    adminPhone: v.optional(v.string()),
-  },
-  handler: async (ctx, args): Promise<{ brokerOrgId: Id<"organizations"> }> => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
-      userId,
-    });
-
-    const adminEmail = normalizeOperatorEmail(args.adminEmail);
-    if (!adminEmail || isBootstrapOperatorEmail(adminEmail)) {
-      throw new Error("Broker admin email must be a customer email");
-    }
-    const now = dayjs().valueOf();
-    const account = await createAccount(ctx, {
-      provider: "resend-otp",
-      account: { id: adminEmail },
-      profile: {
-        email: adminEmail,
-        name: args.adminName?.trim() || undefined,
-        accountKind: "customer",
-        emailVerificationTime: now,
-        onboardingComplete: true,
-      },
-      shouldLinkViaEmail: true,
-    });
-    if (!account.user) throw new Error("Could not create broker admin");
-
-    return await ctx.runMutation(internalApi.operator.upsertBrokerInternal, {
-      operatorUserId: userId,
-      adminUserId: account.user._id,
-      adminEmail,
-      adminName: args.adminName,
-      adminPhone: args.adminPhone,
-      broker: {
-        name: args.name,
-        slug: args.slug,
-        website: args.website,
-      },
-    });
-  },
-});
-
 export const createSoloClient = action({
   args: {
     name: v.string(),
     website: v.optional(v.string()),
-    users: v.optional(v.array(operatorClientUserValidator)),
-    // Legacy fields keep an already-open operator UI compatible during rollout.
-    adminEmail: v.optional(v.string()),
-    adminName: v.optional(v.string()),
-    adminPhone: v.optional(v.string()),
-    additionalUsers: v.optional(v.array(operatorClientUserValidator)),
+    users: v.array(operatorClientUserValidator),
   },
   handler: async (ctx, args): Promise<{ clientOrgId: Id<"organizations"> }> => {
     const userId = await getAuthUserId(ctx);
@@ -1498,20 +1135,7 @@ export const createSoloClient = action({
       userId,
     });
 
-    const submittedUsers = args.users ?? [
-      ...(args.adminEmail
-        ? [
-            {
-              email: args.adminEmail,
-              name: args.adminName,
-              phone: args.adminPhone,
-              role: "admin" as const,
-            },
-          ]
-        : []),
-      ...(args.additionalUsers ?? []),
-    ];
-    const users = submittedUsers.map((user) => ({
+    const users = args.users.map((user) => ({
       email: normalizeClientUserEmail(user.email),
       name: user.name?.trim() || undefined,
       phone: user.phone?.trim() || undefined,
@@ -1638,28 +1262,6 @@ export const createClientWithoutUsersForAgentInternal = internalAction({
   },
 });
 
-export const setBrokerStatus = mutation({
-  args: {
-    brokerOrgId: v.id("organizations"),
-    status: brokerStatusValidator,
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    const broker = await ctx.db.get(args.brokerOrgId);
-    if (!broker || broker.type !== "broker")
-      throw new Error("Broker not found");
-    const previous = broker.operatorStatus ?? "live";
-    await ctx.db.patch(args.brokerOrgId, { operatorStatus: args.status });
-    await writeOperatorAudit(ctx, {
-      operatorUserId: operator.userId,
-      type: "broker_status_changed",
-      targetOrgId: args.brokerOrgId,
-      summary: `${broker.name} changed from ${previous} to ${args.status}`,
-      metadata: { previous, next: args.status },
-    });
-  },
-});
-
 export const setSoloClientStatus = mutation({
   args: {
     clientOrgId: v.id("organizations"),
@@ -1757,131 +1359,6 @@ export const updateClientSettings = mutation({
         website: patch.website,
       },
     });
-  },
-});
-
-export const updateBrokerSettings = mutation({
-  args: {
-    brokerOrgId: v.id("organizations"),
-    slug: v.optional(v.string()),
-    website: v.optional(v.string()),
-    adminName: v.optional(v.string()),
-    adminPhone: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    const broker = await ctx.db.get(args.brokerOrgId);
-    if (!broker || broker.type !== "broker")
-      throw new Error("Broker not found");
-
-    const slug = args.slug ? normalizeSlug(args.slug) : undefined;
-    if (slug) {
-      if (slug.length < 3 || slug.length > 40) {
-        throw new Error("Slug must be 3-40 characters");
-      }
-      if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) {
-        throw new Error("Slug must start and end with a letter or number");
-      }
-      const existingBySlug = await ctx.db
-        .query("organizations")
-        .withIndex("slug", (q) => q.eq("slug", slug))
-        .first();
-      if (existingBySlug && existingBySlug._id !== args.brokerOrgId) {
-        throw new Error("Slug is already taken");
-      }
-    }
-
-    const adminPhone = normalizeOptionalContactPhone(args.adminPhone);
-    const admin = await getOrgAdmin(ctx, args.brokerOrgId);
-    if (admin) {
-      await ctx.db.patch(admin._id, {
-        name: args.adminName?.trim() || undefined,
-        phone: adminPhone,
-      });
-    }
-
-    const patch = {
-      slug,
-      website: args.website?.trim() || undefined,
-    };
-
-    await ctx.db.patch(args.brokerOrgId, patch);
-    await writeOperatorAudit(ctx, {
-      operatorUserId: operator.userId,
-      type: "setup_write",
-      targetOrgId: args.brokerOrgId,
-      summary: `Updated broker settings for ${broker.name}`,
-      metadata: {
-        slug,
-        website: patch.website,
-        adminName: args.adminName?.trim() || undefined,
-      },
-    });
-  },
-});
-
-export const launchBroker = action({
-  args: { brokerOrgId: v.id("organizations") },
-  handler: async (ctx, args): Promise<{ loginUrl: string }> => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throwUserFacingError(userFacingErrorCodes.authRequired);
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
-      userId,
-    });
-    const launch: {
-      brokerOrgId: Id<"organizations">;
-      name: string;
-      slug?: string;
-      adminUserId?: Id<"users">;
-      adminEmail?: string;
-      adminName?: string;
-    } | null = await ctx.runQuery(
-      internalApi.operator.getBrokerLaunchContextInternal,
-      args,
-    );
-    if (!launch) throw new Error("Broker launch context not found");
-    if (!launch.adminEmail) throw new Error("Broker has no admin email");
-
-    const siteUrl = getAuthSiteUrl();
-    const loginUrl = `${siteUrl}/login?email=${encodeURIComponent(launch.adminEmail)}`;
-    const subject = `${launch.name} is ready on Spot`;
-    const bodyHtml = `
-<tr><td style="padding:28px 40px 0 40px;">
-  <p class="spot-email-text-secondary" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;color:#374151;line-height:1.6;">
-    Your Spot workspace for <strong>${escapeHtml(launch.name)}</strong> is ready.
-  </p>
-</td></tr>
-<tr><td align="center" style="padding:24px 40px 0 40px;">
-  <a href="${escapeHtml(loginUrl)}" class="spot-email-button" style="display:inline-block;padding:8px 22px;background-color:#000000;color:#ffffff;font-family:-apple-system,sans-serif;font-size:14px;font-weight:500;text-decoration:none;border-radius:999px;line-height:1.4;">Open Spot</a>
-</td></tr>
-<tr><td style="padding:20px 40px 32px 40px;">
-  <p class="spot-email-text-muted" style="margin:0;font-family:-apple-system,sans-serif;font-size:12px;color:#6b7280;line-height:1.6;">
-    Sign in with ${escapeHtml(launch.adminEmail)}. You can also copy this link:<br>
-    <a href="${escapeHtml(loginUrl)}" class="spot-email-link" style="color:#6b7280;word-break:break-all;">${escapeHtml(loginUrl)}</a>
-  </p>
-</td></tr>`;
-    const html = buildEmailShell({ title: subject, bodyHtml, siteUrl });
-    const text = `Your Spot workspace for ${launch.name} is ready.\n\nOpen Spot:\n${loginUrl}\n\nSign in with ${launch.adminEmail}.`;
-    const result = await sendResendEmail(
-      {
-        from: getAuthFromAddress("Spot"),
-        to: launch.adminName
-          ? `${launch.adminName} <${launch.adminEmail}>`
-          : launch.adminEmail,
-        subject,
-        html,
-        text,
-      },
-      { retries: 2 },
-    );
-    if (!result.ok)
-      throw new Error(`Failed to send launch email: ${result.error}`);
-    await ctx.runMutation(internalApi.operator.markBrokerLaunchedInternal, {
-      brokerOrgId: args.brokerOrgId,
-      operatorUserId: userId,
-      adminUserId: launch.adminUserId,
-    });
-    return { loginUrl };
   },
 });
 
@@ -2041,140 +1518,6 @@ export const stopImpersonation = mutation({
         summary: "Stopped operator impersonation",
       });
     }
-  },
-});
-
-export const cleanupRemovedProgramAdminData = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await requireOperator(ctx);
-
-    const tableResults: Record<
-      string,
-      { deleted: number; skipped?: boolean; error?: string }
-    > = {};
-    for (const table of REMOVED_PROGRAM_ADMIN_TABLES) {
-      tableResults[table] = await deleteUnsafeTableBatch(ctx, table);
-      if (
-        tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE
-      ) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.operator.cleanupRemovedProgramAdminDataInternal,
-          { table },
-        );
-      }
-    }
-
-    const orgs = await ctx.db.query("organizations").collect();
-    let deletedProgramAdminOrgs = 0;
-    let deletedRelatedRows = 0;
-    for (const org of orgs) {
-      if (!isRemovedProgramAdminOrg(org)) continue;
-      deletedRelatedRows += await deleteRemovedProgramAdminOrgData(
-        ctx,
-        org._id,
-      );
-      deletedProgramAdminOrgs += 1;
-    }
-
-    return {
-      droppedTables: tableResults,
-      deletedProgramAdminOrgs,
-      deletedRelatedRows,
-    };
-  },
-});
-
-export const cleanupRemovedProgramAdminDataInternal = internalMutation({
-  args: {
-    table: v.union(
-      v.literal("partnerPrograms"),
-      v.literal("partnerProgramEmbeddings"),
-      v.literal("coiTemplates"),
-      v.literal("standingAuthorizations"),
-      v.literal("certificateRequests"),
-      v.literal("certificateApprovals"),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const result = await deleteUnsafeTableBatch(ctx, args.table);
-    if (result.deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.operator.cleanupRemovedProgramAdminDataInternal,
-        { table: args.table },
-      );
-    }
-    return result;
-  },
-});
-
-export const cleanupRemovedPolicyChangeData = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await requireOperator(ctx);
-
-    const tableResults: Record<
-      string,
-      { deleted?: number; updated?: number; skipped?: boolean; error?: string }
-    > = {};
-    for (const table of REMOVED_POLICY_CHANGE_LINK_TABLES) {
-      tableResults[table] = await unsetPolicyChangeLinkBatch(ctx, table);
-      if (tableResults[table].updated === 500) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.operator.cleanupRemovedPolicyChangeDataInternal,
-          { table, mode: "links" },
-        );
-      }
-    }
-    for (const table of REMOVED_POLICY_CHANGE_TABLES) {
-      tableResults[table] = await deleteUnsafeTableBatch(ctx, table);
-      if (
-        tableResults[table].deleted === REMOVED_PROGRAM_ADMIN_CLEANUP_BATCH_SIZE
-      ) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.operator.cleanupRemovedPolicyChangeDataInternal,
-          { table, mode: "tables" },
-        );
-      }
-    }
-    return tableResults;
-  },
-});
-
-export const cleanupRemovedPolicyChangeDataInternal = internalMutation({
-  args: {
-    mode: v.union(v.literal("links"), v.literal("tables")),
-    table: v.union(
-      v.literal("certificateRequestHolds"),
-      v.literal("threadMessages"),
-      v.literal("pendingEmails"),
-      v.literal("appCardAccessLinks"),
-      v.literal("policyUpdateRuns"),
-      v.literal("policyChangeCases"),
-      v.literal("pcePackets"),
-      v.literal("caseMessages"),
-      v.literal("caseEvidenceLinks"),
-      v.literal("caseValidationReports"),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const result =
-      args.mode === "links"
-        ? await unsetPolicyChangeLinkBatch(ctx, args.table)
-        : await deleteUnsafeTableBatch(ctx, args.table);
-    const count = "updated" in result ? result.updated : result.deleted;
-    if (count === 500) {
-      await ctx.scheduler.runAfter(
-        0,
-        internal.operator.cleanupRemovedPolicyChangeDataInternal,
-        args,
-      );
-    }
-    return result;
   },
 });
 

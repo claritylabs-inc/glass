@@ -203,36 +203,6 @@ export function modelMessagesHaveImageInput(history: ModelMessage[]) {
   );
 }
 
-export function withLatestUserAttachmentParts(
-  history: ModelMessage[],
-  parts: AgentAttachmentContentPart[],
-): ModelMessage[] {
-  if (parts.length === 0) return history;
-  let currentIndex = -1;
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    if (history[index]?.role === "user") {
-      currentIndex = index;
-      break;
-    }
-  }
-  if (currentIndex < 0) return history;
-  const current = history[currentIndex];
-  if (current.role !== "user") return history;
-  const text =
-    typeof current.content === "string"
-      ? current.content
-      : current.content
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join("\n");
-  const next = [...history];
-  next[currentIndex] = {
-    role: "user",
-    content: [...parts, { type: "text", text }],
-  };
-  return next;
-}
-
 export async function buildAgentAttachmentParts(
   ctx: Pick<ActionCtx, "storage">,
   attachments: AgentAttachment[],

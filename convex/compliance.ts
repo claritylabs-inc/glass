@@ -13,7 +13,6 @@ import { getOrgAccess, requireAuth, type OrgAccess } from "./lib/access";
 import {
   assessRequirementCompliance,
   formatComplianceReasons,
-  insuredNameMatches,
   policyReadableForCompliance,
   type ComplianceCheckResult,
 } from "./lib/complianceCheck";
@@ -32,7 +31,7 @@ import {
   migrateLegacyComplianceRequirement,
   requirementNeedsLegacyShapeBackfill,
 } from "./lib/complianceRequirementMigration";
-import { isLobCode, lobLabel, policyLobCodes } from "./lib/linesOfBusiness";
+import { isLobCode, policyLobCodes } from "./lib/linesOfBusiness";
 import { notify } from "./lib/notify";
 import {
   assertImpersonatedSetupWrite,
@@ -103,13 +102,6 @@ async function requirementSourceHolders(
     await Promise.all(holderIds.map((holderId) => ctx.db.get(holderId)))
   ).filter((holder): holder is Doc<"certificateHolders"> => Boolean(holder));
 }
-
-const evidenceValidator = v.object({
-  note: v.optional(v.string()),
-  fileId: v.optional(v.id("_storage")),
-  fileName: v.optional(v.string()),
-  validUntil: v.optional(v.string()),
-});
 
 const complianceMonitorCheckValidator = v.object({
   requirementId: v.id("insuranceRequirements"),
@@ -537,25 +529,6 @@ export const listRequirements = query({
     }
     await requireOrgMember(ctx, orgId);
     return await listRequirementsVisibleToOrg(ctx, orgId);
-  },
-});
-
-export const listCertificateRequirements = query({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx, args.orgId, { allowOperator: true });
-    if (access.accessType === "connected_client") {
-      throwUserFacingError(
-        userFacingErrorCodes.readOnlyAccess,
-        "Connected organization access is read-only.",
-      );
-    }
-    const requirements = await listRequirementsVisibleToOrg(ctx, args.orgId);
-    return requirements.filter(
-      (requirement) =>
-        requirement.scope === "own_org" ||
-        "clientRequirementSource" in requirement,
-    );
   },
 });
 
@@ -997,70 +970,6 @@ export const generateRequirementImportUploadUrl = mutation({
   },
 });
 
-export const generateEvidenceUploadUrl = mutation({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    await requireOrgAdminWrite(
-      ctx,
-      args.orgId,
-      "Only an organization admin can verify compliance requirements.",
-    );
-    return await ctx.storage.generateUploadUrl();
-  },
-});
-
-export const verifyRequirement = mutation({
-  args: {
-    orgId: v.id("organizations"),
-    requirementId: v.id("insuranceRequirements"),
-    subjectOrgId: v.optional(v.id("organizations")),
-    relationshipId: v.optional(v.id("connectedOrgRelationships")),
-    status: v.optional(complianceCheckStatusValidator),
-    evidence: v.optional(evidenceValidator),
-  },
-  handler: async (ctx, args) => {
-    const access = await requireOrgAdminWrite(
-      ctx,
-      args.orgId,
-      "Only an organization admin can verify compliance requirements.",
-    );
-    const requirement = await ctx.db.get(args.requirementId);
-    if (!requirement || requirement.orgId !== args.orgId) {
-      throw new Error("Requirement not found");
-    }
-    const now = dayjs().valueOf();
-    const checkId = await ctx.db.insert("complianceChecks", {
-      orgId: args.orgId,
-      requirementId: args.requirementId,
-      subjectOrgId: args.subjectOrgId ?? args.orgId,
-      relationshipId: args.relationshipId,
-      status: args.status ?? "met",
-      reasons: [],
-      matchedPolicyIds: [],
-      matchedSummary: "Verified manually.",
-      evidence: args.evidence
-        ? {
-            note: args.evidence.note?.trim() || undefined,
-            fileId: args.evidence.fileId,
-            fileName: args.evidence.fileName?.trim() || undefined,
-            validUntil: args.evidence.validUntil?.trim() || undefined,
-          }
-        : undefined,
-      checkedAt: now,
-      checkedBy: "user",
-      checkedByUserId: access.userId,
-    });
-    await writeComplianceOperatorAudit(
-      ctx,
-      access,
-      args.orgId,
-      `Verified compliance requirement ${requirement.title}`,
-      { requirementId: args.requirementId, checkId },
-    );
-    return checkId;
-  },
-});
-
 async function vendorComplianceRows(
   ctx: QueryCtx,
   clientOrgId: Id<"organizations">,
@@ -1158,146 +1067,10 @@ export const listVendorCompliance = query({
   },
 });
 
-export const getVendorChecklist = query({
-  args: {
-    vendorOrgId: v.optional(v.id("organizations")),
-    clientOrgId: v.optional(v.id("organizations")),
-  },
-  handler: async (ctx, args) => {
-    const { userId } = await requireAuth(ctx);
-    let vendorOrgId = args.vendorOrgId;
-    if (!vendorOrgId) {
-      const membership = await ctx.db
-        .query("orgMemberships")
-        .withIndex("user", (q) => q.eq("userId", userId))
-        .first();
-      if (!membership) throw new Error("Organization required");
-      vendorOrgId = membership.orgId;
-    }
-    await requireOrgMember(ctx, vendorOrgId);
-    const relationships = args.clientOrgId
-      ? await ctx.db
-          .query("connectedOrgRelationships")
-          .withIndex("client_vendor", (q) =>
-            q
-              .eq("clientOrgId", args.clientOrgId!)
-              .eq("vendorOrgId", vendorOrgId),
-          )
-          .collect()
-      : await ctx.db
-          .query("connectedOrgRelationships")
-          .withIndex("vendor_status", (q) =>
-            q.eq("vendorOrgId", vendorOrgId).eq("status", "active"),
-          )
-          .collect();
-    const [policies, vendorOrg] = await Promise.all([
-      listPoliciesForOrg(ctx, vendorOrgId),
-      ctx.db.get(vendorOrgId),
-    ]);
-    const rows = [];
-    for (const rel of relationships.filter(
-      (relationship) => relationship.status === "active",
-    )) {
-      const clientOrg = await ctx.db.get(rel.clientOrgId);
-      const requirements = requirementsForVendor(
-        rel,
-        await listRequirementsForOrg(ctx, rel.clientOrgId),
-      );
-      const checks = [];
-      for (const requirement of requirements) {
-        checks.push({
-          requirement,
-          ...(await assessForSubject(
-            ctx,
-            requirement,
-            policies,
-            vendorOrgId,
-            vendorOrg,
-            {
-              relationshipId: rel._id,
-            },
-          )),
-        });
-      }
-      rows.push({
-        clientOrg: clientOrg
-          ? {
-              _id: clientOrg._id,
-              name: clientOrg.name,
-              website: clientOrg.website,
-            }
-          : null,
-        checks,
-      });
-    }
-    return rows;
-  },
-});
-
 export const listRequirementsInternal = internalQuery({
   args: { orgId: v.id("organizations") },
   handler: async (ctx, args) =>
     await listRequirementsVisibleToOrg(ctx, args.orgId),
-});
-
-export const planCertificateRequirementsInternal = internalQuery({
-  args: {
-    orgId: v.id("organizations"),
-    requirementIds: v.array(v.id("insuranceRequirements")),
-  },
-  handler: async (ctx, args) => {
-    const [visibleRequirements, policies, org] = await Promise.all([
-      listRequirementsVisibleToOrg(ctx, args.orgId),
-      listPoliciesForOrg(ctx, args.orgId),
-      ctx.db.get(args.orgId),
-    ]);
-    const eligible = visibleRequirements.filter(
-      (requirement) =>
-        requirement.scope === "own_org" ||
-        "clientRequirementSource" in requirement,
-    );
-    const visibleById = new Map(
-      eligible.map((requirement) => [requirement._id, requirement]),
-    );
-    const selected = args.requirementIds.map((requirementId) => {
-      const requirement = visibleById.get(requirementId);
-      if (!requirement) {
-        throw new Error("Certificate requirement not found or not applicable.");
-      }
-      return requirement;
-    });
-
-    return selected.map((requirement) => {
-      const assessment = assessRequirementCompliance(requirement, policies, {
-        expectedInsuredName: org?.name,
-        expectedInsuredNames: orgLegalNames(org),
-        includePreviewPolicies: false,
-      });
-      return {
-        requirementId: requirement._id,
-        status: assessment.status,
-        matchedPolicyIds: assessment.matchedPolicyIds,
-        reasons: assessment.reasons,
-        summary: assessment.matchedSummary,
-        snapshot: {
-          requirementId: requirement._id,
-          title: requirement.title,
-          requirementText: requirement.requirementText,
-          lineOfBusiness: requirement.lineOfBusiness,
-          limits: requirement.limits,
-          maxDeductible: requirement.maxDeductible,
-          coverageForm: requirement.coverageForm,
-          retroactiveDateOnOrBefore: requirement.retroactiveDateOnOrBefore,
-          provisions: requirement.provisions,
-          requiredForms: requirement.requiredForms,
-          sourceDocumentId: requirement.sourceDocumentId,
-          sourceDocumentName: requirement.sourceDocumentName,
-          sourceExcerpt: requirement.sourceExcerpt,
-          updatedAt: requirement.updatedAt,
-        },
-      };
-    });
-  },
 });
 
 export const getCertificateRequirementSourcePlanInternal = internalQuery({
@@ -2487,41 +2260,3 @@ export const archiveNonCoverageRequirementsInternal = internalMutation({
     return { dryRun, scannedCount, archivedCount, samples };
   },
 });
-
-export const wipeComplianceDataInternal = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    let deletedRequirements = 0;
-    for (const row of await ctx.db.query("insuranceRequirements").collect()) {
-      await ctx.db.delete(row._id);
-      deletedRequirements += 1;
-    }
-    let deletedSourceDocuments = 0;
-    for (const row of await ctx.db
-      .query("requirementSourceDocuments")
-      .collect()) {
-      await ctx.db.delete(row._id);
-      deletedSourceDocuments += 1;
-    }
-    let deletedChecks = 0;
-    for (const row of await ctx.db.query("complianceChecks").collect()) {
-      await ctx.db.delete(row._id);
-      deletedChecks += 1;
-    }
-    return { deletedRequirements, deletedSourceDocuments, deletedChecks };
-  },
-});
-
-export function policyMatchesAnyInsuredName(
-  policy: Doc<"policies">,
-  expectedNames: string[],
-) {
-  if (expectedNames.length === 0) return true;
-  return expectedNames.some((expectedName) =>
-    insuredNameMatches(policy.insuredName, expectedName),
-  );
-}
-
-export function lineOfBusinessLabel(value?: string) {
-  return value ? lobLabel(value) : "Coverage";
-}

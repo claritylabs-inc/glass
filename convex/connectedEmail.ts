@@ -266,20 +266,6 @@ export const upsertInternal = internalMutation({
   },
 });
 
-export const markErrorInternal = internalMutation({
-  args: {
-    accountId: v.id("connectedEmailAccounts"),
-    error: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.accountId, {
-      status: "error",
-      lastError: args.error,
-      updatedAt: dayjs().valueOf(),
-    });
-  },
-});
-
 export const updateScope = mutation({
   args: {
     accountId: v.id("connectedEmailAccounts"),

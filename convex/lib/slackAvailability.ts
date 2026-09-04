@@ -33,15 +33,3 @@ export function slackConnectionUnavailableReason(
   }
   return undefined;
 }
-
-export function slackBindingUnavailableReason(
-  binding: SlackBindingAvailability | null | undefined,
-) {
-  if (!binding) return "Slack channel is unavailable";
-  if (binding.status === "archived") return "Slack channel binding is archived";
-  if (binding.status === "unavailable") return "Slack channel is unavailable";
-  if (binding.healthStatus === "degraded") {
-    return "Slack channel health could not be verified";
-  }
-  return undefined;
-}

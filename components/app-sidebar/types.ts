@@ -14,14 +14,3 @@ export type NavItemConfig = {
 };
 
 export type ConversationItem = ThreadConversationItem;
-
-export type ClientThreadItem = {
-  _id: string;
-  _creationTime: number;
-  title: string;
-  lastMessageAt?: number;
-  originChannel?: "chat" | "email" | "imessage" | "slack";
-  threadPhone?: string;
-  slackConversationKind?: "channel" | "direct_message";
-  visibility?: "broker_visible" | "client_internal" | "user_private";
-};

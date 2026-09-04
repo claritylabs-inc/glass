@@ -1,7 +1,4 @@
-import type {
-  UserFacingErrorCode,
-  UserFacingErrorData,
-} from "@/convex/lib/userFacingErrors";
+import type { UserFacingErrorData } from "@/convex/lib/userFacingErrors";
 
 const convexServerErrorPattern =
   /^\[CONVEX [^\]]+\](?: \[Request ID: [^\]]+\])? Server Error(?: Called by client)?/i;
@@ -97,10 +94,4 @@ export function getUserFacingErrorMessage(
   const message = normalizedErrorMessage(error);
   if (!message) return fallback;
   return legacyPermissionMessage(message) ?? message;
-}
-
-export function getUserFacingErrorCode(
-  error: unknown,
-): UserFacingErrorCode | null {
-  return structuredErrorData(error)?.code ?? null;
 }

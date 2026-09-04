@@ -361,30 +361,6 @@ async function topLevelSourceNodes(
   return { root, topLevel };
 }
 
-export const listTopLevelByPolicy = query({
-  args: {
-    policyId: v.id("policies"),
-    allowOperatorAccess: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    if (!await canReadPolicySourceNodes(ctx, args.policyId, args.allowOperatorAccess)) return [];
-
-    const { topLevel } = await topLevelSourceNodes(ctx, args.policyId);
-
-    const hydratedTopLevel = await Promise.all(topLevel.map(async (node) => {
-      if (!likelyHasChildNodes(node) || node.kind === "page") {
-        return publicSourceNode(node, likelyHasChildNodes(node));
-      }
-      return publicSourceNode(
-        node,
-        true,
-        await publicChildNodes(ctx, args.policyId, node.nodeId),
-      );
-    }));
-    return hydratedTopLevel;
-  },
-});
-
 export const listOutlineByPolicy = query({
   args: {
     policyId: v.id("policies"),
@@ -613,13 +589,6 @@ export const get = internalQuery({
   args: { id: v.id("sourceNodes") },
   handler: async (ctx, args) => {
     return ctx.db.get(args.id);
-  },
-});
-
-export const insertNode = internalMutation({
-  args: sourceNodeInsertFields,
-  handler: async (ctx, args) => {
-    return ctx.db.insert("sourceNodes", args);
   },
 });
 

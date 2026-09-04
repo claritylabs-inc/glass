@@ -37,11 +37,6 @@ const jobKindValidator = v.union(
   v.literal("manual_review"),
 );
 
-function cleanOptional(value?: string) {
-  const trimmed = value?.trim();
-  return trimmed || undefined;
-}
-
 function assertCertificateWorkspace(access: OrgAccess) {
   assertCanReadPolicies(access);
   if (access.accessType === "connected_client") {
@@ -50,10 +45,6 @@ function assertCertificateWorkspace(access: OrgAccess) {
       "Connected organization access is read-only. Ask the vendor to manage this certificate workflow.",
     );
   }
-}
-
-function normalizeEmail(value?: string) {
-  return cleanOptional(value)?.toLowerCase();
 }
 
 async function nextVersionNumber(
@@ -293,70 +284,6 @@ export const listForOrgInternal = internalQuery({
         }),
     );
     return enriched.filter((row) => row !== null);
-  },
-});
-
-export const reviewJob = mutation({
-  args: {
-    jobId: v.id("certificateWorkflowJobs"),
-    recipientEmail: v.optional(v.string()),
-    recipientPhone: v.optional(v.string()),
-    reviewNotes: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.jobId);
-    if (!job) throw new Error("Certificate workflow job not found");
-    const access = await getOrgAccess(ctx, job.orgId);
-    assertCertificateWorkspace(access);
-    if (job.status === "sent" || job.status === "cancelled")
-      throw new Error("Completed jobs cannot be reviewed.");
-    const recipientEmail =
-      normalizeEmail(args.recipientEmail) ?? job.recipientEmail;
-    const now = dayjs().valueOf();
-    const status = recipientEmail
-      ? "review_required"
-      : "blocked_missing_contact";
-    await ctx.db.patch(args.jobId, {
-      status,
-      recipientEmail,
-      recipientPhone: cleanOptional(args.recipientPhone) ?? job.recipientPhone,
-      reviewNotes: cleanOptional(args.reviewNotes),
-      reviewedByUserId: access.userId,
-      reviewedAt: now,
-      updatedAt: now,
-    });
-    return { status };
-  },
-});
-
-export const cancelJob = mutation({
-  args: {
-    jobId: v.id("certificateWorkflowJobs"),
-    reason: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.jobId);
-    if (!job) throw new Error("Certificate workflow job not found");
-    const access = await getOrgAccess(ctx, job.orgId);
-    assertCertificateWorkspace(access);
-    if (job.status === "sent")
-      throw new Error("Sent jobs cannot be cancelled.");
-    const now = dayjs().valueOf();
-    await ctx.db.patch(args.jobId, {
-      status: "cancelled",
-      cancelReason: cleanOptional(args.reason),
-      cancelledByUserId: access.userId,
-      cancelledAt: now,
-      updatedAt: now,
-    });
-    if (job.certificateVersionId) {
-      await ctx.db.patch(job.certificateVersionId, {
-        status: "void",
-        voidedAt: now,
-        updatedAt: now,
-      });
-    }
-    return { status: "cancelled" };
   },
 });
 

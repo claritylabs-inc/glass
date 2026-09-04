@@ -1371,14 +1371,3 @@ export const requestHandoffFromAgent = internalMutation({
       : { status: "paused" as const };
   },
 });
-
-export const markRevoked = internalMutation({
-  args: { teamId: v.string() },
-  handler: async (ctx, args) => {
-    await ctx.scheduler.runAfter(
-      0,
-      internalApi.agentChannels.revokeByTeamId,
-      args,
-    );
-  },
-});

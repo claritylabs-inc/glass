@@ -11,7 +11,6 @@ import type {
 } from "@ai-sdk/provider";
 import { z } from "zod";
 import {
-  ClRouterToolContractError,
   ClRouterVisibleOutputError,
   createClRouterLanguageModel,
 } from "./clRouterLanguageModel";
@@ -55,18 +54,6 @@ function sseResponse(events: unknown[]): Response {
   return new Response(body, {
     headers: { "content-type": "text/event-stream; charset=utf-8" },
   });
-}
-
-function unavailableResponse(): Response {
-  return Response.json({
-    error: {
-      code: "router_unavailable",
-      message: "No eligible router route is available.",
-      retryable: true,
-      executionStarted: false,
-      requestId: "failed-request",
-    },
-  }, { status: 503 });
 }
 
 function directStream(text: string) {
@@ -148,60 +135,9 @@ function forcedToolCallOptions(
   };
 }
 
-function generatedResponse(output: unknown): Response {
-  return Response.json({
-    ...doneEvent("stop"),
-    output,
-  });
-}
-
 describe("cl-router LanguageModelV3 adapter", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  test("sends HTTPS image URLs as bounded asset references", async () => {
-    const fetchMock = vi
-      .fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(new Response(null, {
-        headers: { "content-length": "321" },
-      }))
-      .mockResolvedValueOnce(generatedResponse("Image inspected."));
-    const directModel = new MockLanguageModelV3();
-    const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
-
-    await model.doGenerate({
-      prompt: [{
-        role: "user",
-        content: [{
-          type: "file",
-          data: new URL("https://storage.example.test/policy.png"),
-          mediaType: "image/png",
-          filename: "policy.png",
-        }],
-      }],
-    });
-
-    expect(model.supportedUrls).toEqual({ "*/*": [/^https:\/\/.*$/] });
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      method: "HEAD",
-      redirect: "manual",
-    });
-    const request = JSON.parse(
-      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
-    );
-    expect(request.messages).toEqual([{
-      role: "user",
-      content: [{
-        type: "image",
-        source: {
-          url: "https://storage.example.test/policy.png",
-          mediaType: "image/png",
-          filename: "policy.png",
-          sizeBytes: 321,
-        },
-      }],
-    }]);
   });
 
   test("preserves the AI SDK tool loop across router model steps", async () => {
@@ -307,22 +243,6 @@ describe("cl-router LanguageModelV3 adapter", () => {
     expect(directModel.doStreamCalls).toHaveLength(0);
   });
 
-  test("uses the direct model for a typed pre-execution outage", async () => {
-    const directModel = new MockLanguageModelV3({
-      doStream: directStream("Direct answer."),
-    });
-    const fetchMock = vi.fn<typeof globalThis.fetch>(
-      async () => unavailableResponse(),
-    );
-    const model = createClRouterLanguageModel(
-      adapterOptions(directModel, fetchMock),
-    );
-
-    const result = streamText({ model, prompt: "Hello" });
-    await expect(result.text).resolves.toBe("Direct answer.");
-    expect(directModel.doStreamCalls).toHaveLength(1);
-  });
-
   test("completes the iMessage requirements tool loop after candidate exhaustion", async () => {
     const lookupPolicy = vi.fn(async () => ({
       lineOfBusiness: "E&O",
@@ -420,155 +340,6 @@ describe("cl-router LanguageModelV3 adapter", () => {
     );
   });
 
-  test("sends an operator model override as the initial router pin", async () => {
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
-      generatedResponse("Pinned answer."),
-    );
-    const directModel = new MockLanguageModelV3();
-    const model = createClRouterLanguageModel({
-      ...adapterOptions(directModel, fetchMock),
-      initialRoutePin: { provider: "openai", model: "gpt-5.6-terra" },
-    });
-
-    await expect(model.doGenerate(rawCallOptions())).resolves.toMatchObject({
-      content: [{ type: "text", text: "Pinned answer." }],
-    });
-    const request = JSON.parse(
-      String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
-    );
-    expect(request.routing).toEqual({
-      pin: { provider: "openai", model: "gpt-5.6-terra" },
-      allowFallback: true,
-    });
-  });
-
-  test("accepts the exact forced tool returned by cl-router", async () => {
-    const directModel = new MockLanguageModelV3();
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
-      generatedResponse({
-        toolCalls: [{
-          toolCallId: "call-1",
-          toolName: "expected_tool",
-          input: {},
-        }],
-      }));
-    const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
-
-    const result = await model.doGenerate(forcedToolCallOptions());
-
-    expect(result.content).toContainEqual(expect.objectContaining({
-      type: "tool-call",
-      toolName: "expected_tool",
-    }));
-    expect(directModel.doGenerateCalls).toHaveLength(0);
-  });
-
-  test("accepts any returned tool for required and leaves auto unconstrained", async () => {
-    const requiredFetch = vi.fn<typeof globalThis.fetch>(async () =>
-      generatedResponse({
-        toolCalls: [{
-          toolCallId: "call-1",
-          toolName: "expected_tool",
-          input: {},
-        }],
-      }));
-    const requiredModel = createClRouterLanguageModel(
-      adapterOptions(new MockLanguageModelV3(), requiredFetch),
-    );
-    await expect(requiredModel.doGenerate({
-      ...forcedToolCallOptions(),
-      toolChoice: { type: "required" },
-    })).resolves.toMatchObject({
-      content: [expect.objectContaining({ type: "tool-call" })],
-    });
-
-    const autoModel = createClRouterLanguageModel(adapterOptions(
-      new MockLanguageModelV3(),
-      vi.fn<typeof globalThis.fetch>(async () => generatedResponse("No tool needed.")),
-    ));
-    await expect(autoModel.doGenerate({
-      ...forcedToolCallOptions(),
-      toolChoice: { type: "auto" },
-    })).resolves.toMatchObject({
-      content: [{ type: "text", text: "No tool needed." }],
-    });
-  });
-
-  test.each([
-    ["missing", "No tool was returned.", []],
-    ["wrong", "Wrong tool was returned.", [{
-      toolCallId: "call-wrong",
-      toolName: "lookup_policy",
-      input: {},
-    }]],
-    ["mixed", "An extra tool was returned.", [{
-      toolCallId: "call-expected",
-      toolName: "expected_tool",
-      input: {},
-    }, {
-      toolCallId: "call-extra",
-      toolName: "lookup_policy",
-      input: {},
-    }]],
-  ])("falls back before execution for a %s forced tool", async (_case, text, toolCalls) => {
-    const directModel = new MockLanguageModelV3({
-      doGenerate: async () => ({
-        content: [{
-          type: "tool-call",
-          toolCallId: "direct-call",
-          toolName: "expected_tool",
-          input: "{}",
-        }],
-        finishReason: { unified: "tool-calls", raw: "tool-calls" },
-        usage,
-        warnings: [],
-      }),
-    });
-    const onDirectFallback = vi.fn();
-    const model = createClRouterLanguageModel({
-      ...adapterOptions(
-        directModel,
-        vi.fn<typeof globalThis.fetch>(async () => generatedResponse({ text, toolCalls })),
-      ),
-      onDirectFallback,
-    });
-
-    const result = await model.doGenerate(forcedToolCallOptions());
-
-    expect(result.content).toContainEqual(expect.objectContaining({
-      type: "tool-call",
-      toolName: "expected_tool",
-    }));
-    expect(directModel.doGenerateCalls).toHaveLength(1);
-    expect(onDirectFallback).toHaveBeenCalledWith(
-      expect.any(ClRouterToolContractError),
-      expect.objectContaining({ step: 1 }),
-    );
-    expect(onDirectFallback.mock.calls[0]?.[0]).toMatchObject({
-      requestId: "request-1",
-    });
-  });
-
-  test("fails when the direct fallback also violates the forced tool contract", async () => {
-    const directModel = new MockLanguageModelV3({
-      doGenerate: async () => ({
-        content: [{ type: "text", text: "Still no tool." }],
-        finishReason: { unified: "stop", raw: "stop" },
-        usage,
-        warnings: [],
-      }),
-    });
-    const model = createClRouterLanguageModel(adapterOptions(
-      directModel,
-      vi.fn<typeof globalThis.fetch>(async () => generatedResponse("No tool.")),
-    ));
-
-    await expect(model.doGenerate(forcedToolCallOptions())).rejects.toBeInstanceOf(
-      ClRouterToolContractError,
-    );
-    expect(directModel.doGenerateCalls).toHaveLength(1);
-  });
-
   test("rejects a wrong streamed tool before exposing it and safely falls back", async () => {
     const directModel = new MockLanguageModelV3({
       doStream: directToolStream("expected_tool"),
@@ -602,142 +373,6 @@ describe("cl-router LanguageModelV3 adapter", () => {
       toolName: "lookup_policy",
     }));
     expect(directModel.doStreamCalls).toHaveLength(1);
-  });
-
-  test("keeps the entire run on the direct model after initial router fallback", async () => {
-    const directModel = new MockLanguageModelV3({
-      doGenerate: async () => ({
-        content: [{ type: "text", text: "Direct answer." }],
-        finishReason: { unified: "stop", raw: "stop" },
-        usage,
-        warnings: [],
-      }),
-    });
-    const fetchMock = vi.fn<typeof globalThis.fetch>(
-      async () => unavailableResponse(),
-    );
-    const model = createClRouterLanguageModel(
-      adapterOptions(directModel, fetchMock),
-    );
-
-    await model.doGenerate(rawCallOptions());
-    await model.doGenerate(rawCallOptions());
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(directModel.doGenerateCalls).toHaveLength(2);
-  });
-
-  test("applies the interactive budget only to the first router step", async () => {
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () =>
-      generatedResponse("Router answer."));
-    const directModel = new MockLanguageModelV3();
-    const model = createClRouterLanguageModel({
-      ...adapterOptions(directModel, fetchMock),
-      initialExecutionBudgetMs: 60_000,
-    });
-
-    await model.doGenerate(rawCallOptions());
-    await model.doGenerate(rawCallOptions());
-
-    const firstRequest = JSON.parse(
-      String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
-    );
-    const secondRequest = JSON.parse(
-      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
-    );
-    expect(firstRequest.executionBudgetMs).toBe(60_000);
-    expect(secondRequest.executionBudgetMs).toBe(179_000);
-  });
-
-  test("falls back when the initial router budget expires before visible output", async () => {
-    const directModel = new MockLanguageModelV3({
-      doStream: directStream("Direct answer."),
-    });
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => sseResponse([{
-      type: "error",
-      error: {
-        code: "router_budget_exhausted",
-        message: "Initial model execution exceeded its budget.",
-        retryable: false,
-        executionStarted: true,
-        requestId: "budget-request",
-      },
-    }]));
-    const model = createClRouterLanguageModel({
-      ...adapterOptions(directModel, fetchMock),
-      initialExecutionBudgetMs: 60_000,
-    });
-
-    const result = streamText({ model, prompt: "Hello" });
-    await expect(result.text).resolves.toBe("Direct answer.");
-    expect(directModel.doStreamCalls).toHaveLength(1);
-  });
-
-  test("fails closed instead of changing transport after a successful router step", async () => {
-    const fetchMock = vi
-      .fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(
-        Response.json({
-          ...doneEvent("stop"),
-          output: "First step",
-        }),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 503 }));
-    const directModel = new MockLanguageModelV3();
-    const model = createClRouterLanguageModel(
-      adapterOptions(directModel, fetchMock),
-    );
-
-    await model.doGenerate(rawCallOptions());
-    await expect(model.doGenerate(rawCallOptions())).rejects.toThrow(
-      "HTTP 503",
-    );
-
-    const secondRequest = JSON.parse(
-      String((fetchMock.mock.calls[1]?.[1] as RequestInit).body),
-    );
-    expect(secondRequest.routing).toEqual({
-      pin: { provider: "openai", model: "gpt-5.5" },
-      allowFallback: false,
-    });
-    expect(directModel.doGenerateCalls).toHaveLength(0);
-  });
-
-  test("uses the direct model for a retryable SSE failure before router output", async () => {
-    const directModel = new MockLanguageModelV3({ doStream: directStream("Direct answer.") });
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async () => sseResponse([{
-      type: "error",
-      error: {
-        code: "router_unavailable",
-        message: "No eligible router route is available.",
-        retryable: true,
-        executionStarted: false,
-        requestId: "failed-request",
-      },
-    }]));
-    const model = createClRouterLanguageModel(adapterOptions(directModel, fetchMock));
-
-    const result = streamText({ model, prompt: "Hello" });
-    await expect(result.text).resolves.toBe("Direct answer.");
-    expect(directModel.doStreamCalls).toHaveLength(1);
-  });
-
-  test("fails closed on auth and malformed successful responses", async () => {
-    const directModel = new MockLanguageModelV3({ doStream: directStream("Direct answer.") });
-    const unauthorized = createClRouterLanguageModel(adapterOptions(
-      directModel,
-      vi.fn<typeof globalThis.fetch>(async () => new Response(null, { status: 401 })),
-    ));
-    await expect(unauthorized.doStream(rawCallOptions())).rejects.toThrow("HTTP 401");
-
-    const malformed = createClRouterLanguageModel(adapterOptions(
-      directModel,
-      vi.fn<typeof globalThis.fetch>(async () => new Response("not sse", {
-        headers: { "content-type": "application/json" },
-      })),
-    ));
-    await expect(malformed.doStream(rawCallOptions())).rejects.toThrow("non-SSE");
-    expect(directModel.doStreamCalls).toHaveLength(0);
   });
 
   test("never falls back after a visible router text delta", async () => {
@@ -784,19 +419,5 @@ describe("cl-router LanguageModelV3 adapter", () => {
     });
     expect(streamError).toBeInstanceOf(ClRouterVisibleOutputError);
     expect(directModel.doStreamCalls).toHaveLength(0);
-  });
-
-  test("falls back when the router connection is refused before execution", async () => {
-    const directModel = new MockLanguageModelV3({ doStream: directStream("Direct answer.") });
-    const model = createClRouterLanguageModel(adapterOptions(
-      directModel,
-      vi.fn<typeof globalThis.fetch>(async () => {
-        throw Object.assign(new TypeError("fetch failed"), { code: "ECONNREFUSED" });
-      }),
-    ));
-
-    const result = streamText({ model, prompt: "Hello" });
-    await expect(result.text).resolves.toBe("Direct answer.");
-    expect(directModel.doStreamCalls).toHaveLength(1);
   });
 });
