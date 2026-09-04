@@ -40,6 +40,7 @@ import {
   type RoutingEvent,
 } from "../routing/routing-tab";
 import { OperatorSidebar } from "../operator-sidebar";
+import { useTabParam } from "@/hooks/use-tab-param";
 
 type RequirementExtractionRun = {
   _id: string;
@@ -213,7 +214,10 @@ function RequirementExtractionDrawer({
   );
 }
 
+const TELEMETRY_TABS = ["requirement-extractions", "model-routing"] as const;
+
 export default function OperatorTelemetryPage() {
+  const [activeTab, selectTab] = useTabParam(TELEMETRY_TABS);
   const { results, status, loadMore } = usePaginatedQuery(
     api.modelRoutingEvents.listPaginated,
     {},
@@ -324,11 +328,12 @@ export default function OperatorTelemetryPage() {
     >
       <main className="w-full">
         <Tabs
-          defaultValue="requirement-extractions"
+          value={activeTab}
           className="gap-4"
-          onValueChange={() => {
+          onValueChange={(tab) => {
             setSelectedEvent(null);
             setSelectedRequirementRun(null);
+            selectTab(tab);
           }}
         >
           <TabsList variant="pill" aria-label="Telemetry section">

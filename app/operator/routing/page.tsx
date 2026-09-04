@@ -1,9 +1,8 @@
 "use client";
 
 import { Loader2, RefreshCw } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback } from "react";
 import { AppShell } from "@/components/app-shell";
+import { useTabParam } from "@/hooks/use-tab-param";
 import { PillButton } from "@/components/ui/pill-button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-format";
@@ -15,13 +14,6 @@ import { ToolsTab } from "./tools-tab";
 import { typeStyle } from "@/lib/typography";
 
 const ROUTING_PAGE_TABS = ["routing", "models", "tools"] as const;
-type RoutingPageTab = (typeof ROUTING_PAGE_TABS)[number];
-
-function parseRoutingPageTab(value: string | null): RoutingPageTab {
-  return ROUTING_PAGE_TABS.includes(value as RoutingPageTab)
-    ? (value as RoutingPageTab)
-    : "routing";
-}
 
 export default function OperatorRoutingPage() {
   const modelSettings = useCachedOperatorGlobalModelSettings() as
@@ -36,22 +28,7 @@ export default function OperatorRoutingPage() {
     setGlobalFreeze,
   } = useRouterDashboard();
 
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const activeTab = parseRoutingPageTab(searchParams.get("tab"));
-  const selectTab = useCallback(
-    (tab: RoutingPageTab) => {
-      const next = new URLSearchParams(searchParams.toString());
-      if (tab === "routing") next.delete("tab");
-      else next.set("tab", tab);
-      const query = next.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname, {
-        scroll: false,
-      });
-    },
-    [pathname, router, searchParams],
-  );
+  const [activeTab, selectTab] = useTabParam(ROUTING_PAGE_TABS);
 
   const actions =
     activeTab === "routing" ? (
@@ -90,11 +67,7 @@ export default function OperatorRoutingPage() {
       disableCommandPalette
     >
       <main className="flex w-full flex-col">
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => selectTab(parseRoutingPageTab(value))}
-          className="gap-4"
-        >
+        <Tabs value={activeTab} onValueChange={selectTab} className="gap-4">
           <TabsList variant="pill" aria-label="Routing section">
             <TabsTrigger value="routing">Routing</TabsTrigger>
             <TabsTrigger value="models">Models</TabsTrigger>
