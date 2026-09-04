@@ -10,6 +10,10 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/": { label: "Dashboard" },
   "/policies": { label: "Policies" },
   "/requests": { label: "Requests" },
+  "/files": { label: "Files" },
+  "/agent/threads": { label: "Threads" },
+  "/agent/archive": { label: "Threads", href: "/agent/threads" },
+  "/agent/thread": { label: "Threads", href: "/agent/threads" },
   "/broker": { label: "Profile" },
   "/connect": { label: "Connect" },
   "/connect/clients": { label: "Clients", href: "/connect/clients" },
@@ -47,10 +51,11 @@ export function resolveAppBreadcrumb(pathname: string) {
     }
   }
 
-  return {
-    label: crumb?.label ?? "Page",
-    href: crumb?.href ?? matchedPath,
-  };
+  // An unmapped route has no parent to link back to, so the page renders its
+  // own detail alone rather than a placeholder crumb.
+  return crumb
+    ? { label: crumb.label, href: crumb.href ?? matchedPath }
+    : { label: null, href: matchedPath };
 }
 
 export interface PresenceUser {
@@ -122,7 +127,7 @@ export function AppTopBar({
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-        {breadcrumbDetail ? (
+        {breadcrumbDetail && label ? (
           <>
             <Link
               href={href}
@@ -145,7 +150,7 @@ export function AppTopBar({
           <span
             className={`text-foreground truncate ${typeStyle("body.medium")}`}
           >
-            {label}
+            {breadcrumbDetail ?? label}
           </span>
         )}
       </div>
