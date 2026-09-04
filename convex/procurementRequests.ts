@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -28,6 +28,10 @@ import {
   uniqueProcurementEmails,
   type ProcurementEmailCategory,
 } from "./lib/procurement";
+import {
+  requestNarrative,
+  seedNarrativePacketSection,
+} from "./lib/procurementNarrative";
 import { getAgentDomain } from "./lib/resend";
 import {
   throwUserFacingError,
@@ -54,10 +58,6 @@ const requestStatusValidator = v.union(
   v.literal("proposal_review"),
   v.literal("binding"),
   v.literal("completed"),
-  v.literal("quote_review"),
-  v.literal("client_decision"),
-  v.literal("accepted"),
-  v.literal("closed"),
   v.literal("cancelled"),
 );
 
@@ -96,9 +96,28 @@ const emailCategoryValidator = v.union(
 
 type Ctx = QueryCtx | MutationCtx;
 type RequestStatus = Doc<"procurementRequests">["status"];
+type WritableRequestStatus = Infer<typeof requestStatusValidator>;
 type OutreachStatus = Doc<"procurementBrokerOutreaches">["status"];
 type FilePurpose = Doc<"procurementFileItems">["purpose"];
 type FileStatus = Doc<"procurementFileItems">["status"];
+
+export function writableProcurementRequestStatus(
+  value: unknown,
+): WritableRequestStatus | undefined {
+  switch (value) {
+    case "draft":
+    case "submitted":
+    case "gathering_information":
+    case "marketing":
+    case "proposal_review":
+    case "binding":
+    case "completed":
+    case "cancelled":
+      return value;
+    default:
+      return undefined;
+  }
+}
 
 function requiredText(value: string, label: string, maximum = MAX_TEXT) {
   const normalized = value.replace(/\r\n/g, "\n").trim();
@@ -296,7 +315,7 @@ function requestForwardingAddress(request: Doc<"procurementRequests">) {
   return procurementForwardingAddress(request.inboxToken, getAgentDomain());
 }
 
-async function requestSummary(ctx: Ctx, request: Doc<"procurementRequests">) {
+async function requestRow(ctx: Ctx, request: Doc<"procurementRequests">) {
   const [replacingPolicy, resultingPolicy, outreaches, files, emails] =
     await Promise.all([
       requirePolicyForRequest(
@@ -325,6 +344,7 @@ async function requestSummary(ctx: Ctx, request: Doc<"procurementRequests">) {
     ]);
   return {
     ...request,
+    narrative: requestNarrative(request),
     forwardingAddress: requestForwardingAddress(request),
     replacingPolicy: policyLabel(replacingPolicy),
     resultingPolicy: policyLabel(resultingPolicy),
@@ -356,7 +376,7 @@ export async function getProcurementRequestDetails(
     specifications,
     proposals,
   ] = await Promise.all([
-    requestSummary(ctx, request),
+    requestRow(ctx, request),
     ctx.db
       .query("procurementBrokerOutreaches")
       .withIndex("request", (index) => index.eq("requestId", requestId))
@@ -473,13 +493,13 @@ export async function listProcurementRequestSummaries(
   const filtered = rows
     .filter((row) =>
       search
-        ? [row.title, row.requestSummary, row.requirements].some((value) =>
+        ? [row.title, requestNarrative(row)].some((value) =>
             value.toLowerCase().includes(search),
           )
         : true,
     )
     .slice(0, limit);
-  return await Promise.all(filtered.map((row) => requestSummary(ctx, row)));
+  return await Promise.all(filtered.map((row) => requestRow(ctx, row)));
 }
 
 export const list = query({
@@ -537,10 +557,9 @@ type CreateProcurementRequestArgs = {
   operatorUserId: Id<"users">;
   clientOrgId: Id<"organizations">;
   title: string;
-  requestSummary: string;
-  requirements: string;
+  narrative: string;
   targetEffectiveDate?: string;
-  status?: RequestStatus;
+  status?: WritableRequestStatus;
   replacingPolicyId?: Id<"policies">;
   resultingPolicyId?: Id<"policies">;
   clientVisible?: boolean;
@@ -562,8 +581,7 @@ export async function validateProcurementRequestCreateByOperator(
     requirePolicyForRequest(ctx, args.resultingPolicyId, args.clientOrgId),
   ]);
   requiredText(args.title, "Title", 200);
-  requiredText(args.requestSummary, "Client request");
-  requiredText(args.requirements, "Requirements");
+  requiredText(args.narrative, "Client request");
   optionalDate(args.targetEffectiveDate);
   return client;
 }
@@ -575,17 +593,14 @@ export async function createProcurementRequestByOperator(
   const client = await validateProcurementRequestCreateByOperator(ctx, args);
   const now = dayjs().valueOf();
   const inboxToken = await createUniqueInboxToken(ctx);
+  const narrative = requiredText(args.narrative, "Client request");
   const requestId = await ctx.db.insert("procurementRequests", {
     clientOrgId: args.clientOrgId,
     title: requiredText(args.title, "Title", 200),
-    requestSummary: requiredText(args.requestSummary, "Client request"),
-    requirements: requiredText(args.requirements, "Requirements"),
+    narrative,
     targetEffectiveDate: optionalDate(args.targetEffectiveDate),
     status: args.resultingPolicyId ? "completed" : (args.status ?? "draft"),
-    createdBySide: "operator",
     clientVisible: args.clientVisible ?? false,
-    sharedAt: args.clientVisible ? now : undefined,
-    originalNarrative: requiredText(args.requestSummary, "Client request"),
     requirementRevision: 0,
     specificationRevision: 0,
     replacingPolicyId: args.replacingPolicyId,
@@ -595,6 +610,13 @@ export async function createProcurementRequestByOperator(
     updatedByUserId: args.operatorUserId,
     createdAt: now,
     updatedAt: now,
+  });
+  await seedNarrativePacketSection(ctx, {
+    requestId,
+    clientOrgId: args.clientOrgId,
+    narrative,
+    userId: args.operatorUserId,
+    source: args.source === "agent" ? "operator_agent" : "manual",
   });
   await writeOperatorAudit(ctx, {
     operatorUserId: args.operatorUserId,
@@ -614,8 +636,7 @@ export const create = mutation({
   args: {
     clientOrgId: v.id("organizations"),
     title: v.string(),
-    requestSummary: v.string(),
-    requirements: v.string(),
+    narrative: v.string(),
     targetEffectiveDate: v.optional(v.string()),
     status: v.optional(requestStatusValidator),
     replacingPolicyId: v.optional(v.id("policies")),
@@ -638,10 +659,9 @@ export async function updateProcurementRequestByOperator(
     operatorUserId: Id<"users">;
     requestId: Id<"procurementRequests">;
     title?: string;
-    requestSummary?: string;
-    requirements?: string;
+    narrative?: string;
     targetEffectiveDate?: string | null;
-    status?: RequestStatus;
+    status?: WritableRequestStatus;
     replacingPolicyId?: Id<"policies"> | null;
     resultingPolicyId?: Id<"policies"> | null;
     clientVisible?: boolean;
@@ -656,11 +676,8 @@ export async function updateProcurementRequestByOperator(
   };
   if (args.title !== undefined)
     patch.title = requiredText(args.title, "Title", 200);
-  if (args.requestSummary !== undefined) {
-    patch.requestSummary = requiredText(args.requestSummary, "Client request");
-  }
-  if (args.requirements !== undefined) {
-    patch.requirements = requiredText(args.requirements, "Requirements");
+  if (args.narrative !== undefined) {
+    patch.narrative = requiredText(args.narrative, "Client request");
   }
   if (args.targetEffectiveDate !== undefined) {
     patch.targetEffectiveDate =
@@ -685,10 +702,7 @@ export async function updateProcurementRequestByOperator(
     patch.resultingPolicyId = args.resultingPolicyId ?? undefined;
     if (args.resultingPolicyId) patch.status = "completed";
   }
-  if (args.clientVisible !== undefined) {
-    patch.clientVisible = args.clientVisible;
-    patch.sharedAt = args.clientVisible ? dayjs().valueOf() : undefined;
-  }
+  if (args.clientVisible !== undefined) patch.clientVisible = args.clientVisible;
   const changedFields = Object.keys(patch).filter(
     (field) => !["updatedAt", "updatedByUserId"].includes(field),
   );
@@ -713,8 +727,7 @@ export const update = mutation({
   args: {
     requestId: v.id("procurementRequests"),
     title: v.optional(v.string()),
-    requestSummary: v.optional(v.string()),
-    requirements: v.optional(v.string()),
+    narrative: v.optional(v.string()),
     targetEffectiveDate: v.optional(v.union(v.string(), v.null())),
     status: v.optional(requestStatusValidator),
     replacingPolicyId: v.optional(v.union(v.id("policies"), v.null())),

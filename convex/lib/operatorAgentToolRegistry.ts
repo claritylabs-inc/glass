@@ -476,7 +476,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
   list_procurement_requests: defineOperatorTool({
     version: 1,
     description:
-      "List new-policy procurement requests for one exact client organization, including requirements, request-specific forwarding addresses, policy links, broker progress, files, and imported-email counts.",
+      "List new-policy procurement requests for one exact client organization, including the intake narrative, request-specific forwarding addresses, policy links, broker progress, files, and imported-email counts.",
     inputSchema: z.object({
       orgId: organizationId,
       query: omittable(z.string().max(200)),
@@ -810,14 +810,14 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     },
   }),
   create_procurement_request: defineOperatorTool({
-    version: 1,
+    // Invalidates pending confirmations created against the retired fields.
+    version: 2,
     description:
-      "Create a new-policy procurement request for an exact client and generate its unique forwarding address. Resolve exact policy IDs first when linking a policy being replaced or a resulting policy.",
+      "Create a new-policy procurement request for an exact client and generate its unique forwarding address. The narrative is the client's own words and seeds the packet's client-narrative section. Resolve exact policy IDs first when linking a policy being replaced or a resulting policy.",
     inputSchema: z.object({
       orgId: organizationId,
       title: z.string().min(1).max(200),
-      requestSummary: z.string().min(1).max(20_000),
-      requirements: z.string().min(1).max(20_000),
+      narrative: z.string().min(1).max(20_000),
       targetEffectiveDate: omittable(z.string().max(10)),
       status: omittable(procurementRequestStatus),
       clientVisible: omittable(z.boolean()),
@@ -846,15 +846,14 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     },
   }),
   update_procurement_request: defineOperatorTool({
-    version: 1,
+    version: 2,
     description:
       "Update supplied fields on one exact procurement request. Null clears an effective date or policy link; omitted fields stay unchanged.",
     inputSchema: z
       .object({
         procurementRequestId,
         title: omittable(z.string().min(1).max(200)),
-        requestSummary: omittable(z.string().min(1).max(20_000)),
-        requirements: omittable(z.string().min(1).max(20_000)),
+        narrative: omittable(z.string().min(1).max(20_000)),
         targetEffectiveDate: clearable(z.string().max(10)),
         status: omittable(procurementRequestStatus),
         clientVisible: omittable(z.boolean()),

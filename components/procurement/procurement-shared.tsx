@@ -38,17 +38,34 @@ export const REQUEST_STATUS_OPTIONS = [
   },
   { value: "marketing", label: "Marketing", tone: "info" },
   { value: "proposal_review", label: "Proposal review", tone: "info" },
+  { value: "binding", label: "Binding", tone: "info" },
+  { value: "completed", label: "Completed", tone: "success" },
+  { value: "cancelled", label: "Cancelled", tone: "danger" },
+] as const;
+
+const RETIRED_REQUEST_STATUS_OPTIONS = [
   { value: "quote_review", label: "Quote review", tone: "info" },
   { value: "client_decision", label: "Client decision", tone: "warning" },
-  { value: "binding", label: "Binding", tone: "info" },
   { value: "accepted", label: "Accepted", tone: "success" },
-  { value: "completed", label: "Completed", tone: "success" },
   { value: "closed", label: "Closed", tone: "neutral" },
-  { value: "cancelled", label: "Cancelled", tone: "danger" },
 ] as const;
 
 export type ProcurementRequestStatus =
   (typeof REQUEST_STATUS_OPTIONS)[number]["value"];
+
+export type StoredProcurementRequestStatus =
+  | ProcurementRequestStatus
+  | (typeof RETIRED_REQUEST_STATUS_OPTIONS)[number]["value"];
+
+export function writableProcurementRequestStatus(
+  status: StoredProcurementRequestStatus,
+): ProcurementRequestStatus {
+  if (status === "quote_review" || status === "client_decision")
+    return "proposal_review";
+  if (status === "accepted") return "binding";
+  if (status === "closed") return "completed";
+  return status;
+}
 
 export const OUTREACH_STATUS_OPTIONS = [
   { value: "request_sent", label: "Request sent", tone: "info" },
@@ -107,9 +124,11 @@ function optionForValue<T extends readonly { value: string; label: string }[]>(
 export function RequestStatusTag({
   status,
 }: {
-  status: ProcurementRequestStatus;
+  status: StoredProcurementRequestStatus;
 }) {
-  const option = optionForValue(REQUEST_STATUS_OPTIONS, status);
+  const option =
+    optionForValue(REQUEST_STATUS_OPTIONS, status) ??
+    optionForValue(RETIRED_REQUEST_STATUS_OPTIONS, status);
   return (
     <StatusTag tone={option?.tone ?? "neutral"}>
       {procurementRequestStatusLabel(status)}
@@ -141,7 +160,11 @@ export function EmailCategoryBadge({
 }
 
 export function procurementRequestStatusLabel(value: string) {
-  return optionForValue(REQUEST_STATUS_OPTIONS, value)?.label ?? value;
+  return (
+    optionForValue(REQUEST_STATUS_OPTIONS, value)?.label ??
+    optionForValue(RETIRED_REQUEST_STATUS_OPTIONS, value)?.label ??
+    value
+  );
 }
 
 export function procurementOutreachStatusLabel(value: string) {

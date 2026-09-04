@@ -17,6 +17,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
+import { ProseMarkdown } from "@/components/prose-markdown";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Input } from "@/components/ui/input";
@@ -337,36 +338,13 @@ export function ClientRequestDetail({
         </OperationalPanelBody>
       </OperationalPanel>
 
-      {request.requirements.length > 0 ? (
+      {request.packet.markdown ? (
         <OperationalPanel>
-          <OperationalPanelHeader title="Insurance requirements" />
-          {request.requirements.map((requirement) => (
-            <OperationalItem key={requirement._id ?? requirement.title}>
-              <p className={`text-foreground ${typeStyle("body.medium")}`}>
-                {requirement.title}
-              </p>
-              {requirement.requirementText ? (
-                <p
-                  className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
-                >
-                  {requirement.requirementText}
-                </p>
-              ) : null}
-            </OperationalItem>
-          ))}
+          <OperationalPanelHeader title="Submission packet" />
+          <OperationalPanelBody>
+            <ProseMarkdown>{request.packet.markdown}</ProseMarkdown>
+          </OperationalPanelBody>
         </OperationalPanel>
-      ) : null}
-
-      {request.specifications.length > 0 ? (
-        <OperationalLabelValueList>
-          {request.specifications.map((specification) => (
-            <OperationalLabelValueRow
-              key={specification._id ?? specification.label}
-              label={specification.label}
-              value={specification.value}
-            />
-          ))}
-        </OperationalLabelValueList>
       ) : null}
 
       {request.files.length > 0 ? (

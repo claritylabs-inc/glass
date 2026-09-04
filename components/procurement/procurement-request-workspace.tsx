@@ -28,6 +28,8 @@ import {
   type ClientFilePolicyOption,
 } from "@/components/client-files/client-files-workspace";
 import { usePdf } from "@/components/pdf-context";
+import { ProseMarkdown } from "@/components/prose-markdown";
+import { PacketWorkspace } from "@/components/procurement/packet-workspace";
 import {
   EmailCategoryBadge,
   FILE_PURPOSE_OPTIONS,
@@ -41,10 +43,12 @@ import {
   procurementFileStatusLabel,
   procurementOutreachStatusLabel,
   procurementRequestStatusLabel,
+  writableProcurementRequestStatus,
   type ProcurementFilePurpose,
   type ProcurementFileStatus,
   type ProcurementOutreachStatus,
   type ProcurementRequestStatus,
+  type StoredProcurementRequestStatus,
 } from "@/components/procurement/procurement-shared";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
@@ -106,10 +110,9 @@ type RequestSummary = {
   _id: Id<"procurementRequests">;
   clientOrgId: Id<"organizations">;
   title: string;
-  requestSummary: string;
-  requirements: string;
+  narrative: string;
   targetEffectiveDate?: string;
-  status: ProcurementRequestStatus;
+  status: StoredProcurementRequestStatus;
   replacingPolicyId?: Id<"policies">;
   resultingPolicyId?: Id<"policies">;
   forwardingAddress: string;
@@ -281,6 +284,10 @@ function ProposalCreateDrawer({
           </label>
           <Select
             value={outreachId}
+            items={eligible.map((outreach) => ({
+              value: outreach._id,
+              label: outreach.brokerName,
+            }))}
             onValueChange={(value) =>
               setOutreachId((value ?? "") as Id<"procurementBrokerOutreaches">)
             }
@@ -330,6 +337,8 @@ type ProposalView = {
   brokerName?: string;
   status: string;
   extractedOffer?: unknown;
+  proposalMarkdown: string;
+  sectionHeadings: Record<string, string>;
   documents: Array<{
     _id: Id<"procurementProposalDocuments">;
     fileName: string;
@@ -345,9 +354,38 @@ type ProposalView = {
       | "meets_requirements"
       | "has_gaps"
       | "insufficient_evidence";
-    findings: unknown[];
+    stale: boolean;
+    findings: ProposalReviewFinding[];
   }>;
 };
+
+type ProposalReviewFinding = {
+  sectionKey: string;
+  conclusion: "meets" | "has_gap" | "insufficient_evidence";
+  summary: string;
+  evidence: Array<{
+    proposalDocumentId: string;
+    pageStart: number | null;
+  }>;
+};
+
+const FINDING_TONE = {
+  meets: "success",
+  has_gap: "danger",
+  insufficient_evidence: "warning",
+} as const;
+
+const FINDING_LABEL = {
+  meets: "Meets",
+  has_gap: "Gap",
+  insufficient_evidence: "Unverified",
+} as const;
+
+const REVIEW_CONCLUSION_LABELS = {
+  meets_requirements: "Meets requirements",
+  has_gaps: "Has gaps",
+  insufficient_evidence: "Insufficient evidence",
+} as const;
 
 function ProposalReviewDrawer({
   proposal,
@@ -359,18 +397,6 @@ function ProposalReviewDrawer({
   onEvidence: (url: string, page?: number) => void;
 }) {
   const confirmReview = useMutation(api.procurementProposals.confirmReview);
-  const offer = (proposal.extractedOffer ?? {}) as {
-    carrier?: string;
-    quoteNumber?: string;
-    premium?: string;
-    premiumAmount?: number;
-    proposedEffectiveDate?: string;
-    proposedExpirationDate?: string;
-    quoteExpirationDate?: string;
-    coverages?: Array<Record<string, unknown>>;
-    subjectivities?: Array<Record<string, unknown>>;
-    exclusions?: Array<Record<string, unknown>>;
-  };
   const review = proposal.reviews[0];
   const [conclusion, setConclusion] = useState(
     review?.staffConclusion ??
@@ -390,39 +416,20 @@ function ProposalReviewDrawer({
       title={`${proposal.brokerName ?? "Broker"} proposal`}
     >
       <div className="space-y-5">
-        <OperationalLabelValueList>
-          <OperationalLabelValueRow
-            label="Carrier"
-            value={offer.carrier ?? "Not extracted"}
-          />
-          <OperationalLabelValueRow
-            label="Quote number"
-            value={offer.quoteNumber ?? "Not extracted"}
-          />
-          <OperationalLabelValueRow
-            label="Premium"
-            value={
-              offer.premium ??
-              offer.premiumAmount?.toLocaleString() ??
-              "Not extracted"
-            }
-          />
-          <OperationalLabelValueRow
-            label="Proposed term"
-            value={
-              [offer.proposedEffectiveDate, offer.proposedExpirationDate]
-                .filter(Boolean)
-                .join(" – ") || "Not extracted"
-            }
-          />
-          <OperationalLabelValueRow
-            label="Quote valid through"
-            value={offer.quoteExpirationDate ?? "Not extracted"}
-          />
-        </OperationalLabelValueList>
-        <ProposalFactList title="Coverages" rows={offer.coverages} />
-        <ProposalFactList title="Subjectivities" rows={offer.subjectivities} />
-        <ProposalFactList title="Exclusions" rows={offer.exclusions} />
+        <OperationalPanel>
+          <OperationalPanelHeader title="Extracted proposal" />
+          <OperationalPanelBody>
+            {proposal.proposalMarkdown ? (
+              <ProseMarkdown>{proposal.proposalMarkdown}</ProseMarkdown>
+            ) : (
+              <p
+                className={`text-muted-foreground ${typeStyle("body.default")}`}
+              >
+                Nothing has been extracted from this proposal yet.
+              </p>
+            )}
+          </OperationalPanelBody>
+        </OperationalPanel>
         <OperationalPanel>
           <OperationalPanelHeader title="Source documents" />
           <OperationalPanelBody className="space-y-2">
@@ -452,11 +459,14 @@ function ProposalReviewDrawer({
         {review ? (
           <OperationalPanel>
             <OperationalPanelHeader
-              title="Requirement review"
+              title="Packet review"
               action={
-                !review.staffConclusion ? (
+                review.stale ? (
+                  <StatusTag tone="warning">Stale</StatusTag>
+                ) : !review.staffConclusion ? (
                   <Select
                     value={conclusion}
+                    items={REVIEW_CONCLUSION_LABELS}
                     onValueChange={(value) =>
                       setConclusion(value as typeof conclusion)
                     }
@@ -465,13 +475,13 @@ function ProposalReviewDrawer({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="meets_requirements">
-                        Meets requirements
-                      </SelectItem>
-                      <SelectItem value="has_gaps">Has gaps</SelectItem>
-                      <SelectItem value="insufficient_evidence">
-                        Insufficient evidence
-                      </SelectItem>
+                      {Object.entries(REVIEW_CONCLUSION_LABELS).map(
+                        ([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ),
+                      )}
                     </SelectContent>
                   </Select>
                 ) : (
@@ -482,68 +492,64 @@ function ProposalReviewDrawer({
                         : "warning"
                     }
                   >
-                    {review.staffConclusion.replaceAll("_", " ")}
+                    {REVIEW_CONCLUSION_LABELS[review.staffConclusion]}
                   </StatusTag>
                 )
               }
             />
             <OperationalPanelBody className="space-y-3">
-              {review.findings.map((finding, index) => {
-                const value = finding as Record<string, unknown>;
-                const evidence = (
-                  Array.isArray(value.evidence) ? value.evidence[0] : value
-                ) as Record<string, unknown>;
-                const document = documents.get(
-                  String(evidence.proposalDocumentId ?? ""),
-                );
+              {review.findings.map((finding) => {
+                const evidence = finding.evidence[0];
+                const document = evidence
+                  ? documents.get(evidence.proposalDocumentId)
+                  : undefined;
+                const evidenceUrl = document?.url;
                 return (
                   <div
-                    key={index}
+                    key={finding.sectionKey}
                     className="border-b border-border pb-3 last:border-0 last:pb-0"
                   >
-                    <p className={typeStyle("body.medium")}>
-                      {String(
-                        value.title ??
-                          value.requirementTitle ??
-                          value.specificationLabel ??
-                          `Finding ${index + 1}`,
-                      )}
-                    </p>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className={typeStyle("body.medium")}>
+                        {proposal.sectionHeadings[finding.sectionKey] ??
+                          finding.sectionKey}
+                      </p>
+                      <StatusTag tone={FINDING_TONE[finding.conclusion]}>
+                        {FINDING_LABEL[finding.conclusion]}
+                      </StatusTag>
+                    </div>
                     <p
                       className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
                     >
-                      {String(
-                        value.summary ??
-                          value.finding ??
-                          value.reason ??
-                          value.conclusion ??
-                          "Review finding",
-                      )}
+                      {finding.summary}
                     </p>
-                    {document?.url ? (
+                    {evidenceUrl ? (
                       <PillButton
                         className="mt-2"
                         size="compact"
                         variant="secondary"
                         onClick={() =>
                           onEvidence(
-                            document.url!,
-                            typeof evidence.pageStart === "number"
-                              ? evidence.pageStart
-                              : undefined,
+                            evidenceUrl,
+                            evidence?.pageStart ?? undefined,
                           )
                         }
                       >
                         Open evidence
-                        {typeof evidence.pageStart === "number"
-                          ? ` · p. ${evidence.pageStart}`
-                          : ""}
+                        {evidence?.pageStart ? ` · p. ${evidence.pageStart}` : ""}
                       </PillButton>
                     ) : null}
                   </div>
                 );
               })}
-              {!review.staffConclusion ? (
+              {review.stale ? (
+                <p
+                  className={`text-muted-foreground ${typeStyle("body.default")}`}
+                >
+                  The packet changed after this review ran. Re-run it before
+                  confirming.
+                </p>
+              ) : !review.staffConclusion ? (
                 <PillButton
                   disabled={saving}
                   onClick={async () => {
@@ -575,168 +581,6 @@ function ProposalReviewDrawer({
   );
 }
 
-type SpecificationValue = {
-  _id?: Id<"procurementSpecifications">;
-  key: string;
-  label: string;
-  value: string;
-};
-
-function SpecificationEditor({
-  requestId,
-  specifications,
-  onClose,
-}: {
-  requestId: Id<"procurementRequests">;
-  specifications: SpecificationValue[];
-  onClose: () => void;
-}) {
-  const stageDrafts = useMutation(api.procurementRequirements.stageDrafts);
-  const [rows, setRows] = useState<SpecificationValue[]>(
-    specifications.length > 0
-      ? specifications
-      : [{ key: "", label: "", value: "" }],
-  );
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    const valid = rows.filter((row) => row.label.trim() && row.value.trim());
-    if (valid.length === 0) return;
-    setSaving(true);
-    try {
-      await stageDrafts({
-        requestId,
-        requirements: [],
-        specifications: valid.map((row) => ({
-          key: row.key.trim() || row.label.trim(),
-          label: row.label.trim(),
-          value: row.value.trim(),
-        })),
-      });
-      toast.success("Project specifications updated");
-      onClose();
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(
-          error,
-          "Could not update project specifications",
-        ),
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <SettingsDrawer
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title="Edit project specifications"
-      footer={
-        <PillButton
-          onClick={() => void save()}
-          disabled={
-            saving || !rows.some((row) => row.label.trim() && row.value.trim())
-          }
-        >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : null}Save
-          specifications
-        </PillButton>
-      }
-    >
-      <div className="space-y-5">
-        {rows.map((row, index) => (
-          <div
-            key={row._id ?? index}
-            className="space-y-3 border-b border-border pb-5 last:border-0"
-          >
-            <Input
-              aria-label={`Specification ${index + 1} label`}
-              value={row.label}
-              placeholder="Label, such as Annual revenue"
-              onChange={(event) =>
-                setRows((current) =>
-                  current.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? { ...item, label: event.target.value }
-                      : item,
-                  ),
-                )
-              }
-            />
-            <Textarea
-              aria-label={`Specification ${index + 1} value`}
-              value={row.value}
-              placeholder="Value"
-              rows={3}
-              onChange={(event) =>
-                setRows((current) =>
-                  current.map((item, itemIndex) =>
-                    itemIndex === index
-                      ? { ...item, value: event.target.value }
-                      : item,
-                  ),
-                )
-              }
-            />
-          </div>
-        ))}
-        <PillButton
-          variant="secondary"
-          onClick={() =>
-            setRows((current) => [
-              ...current,
-              { key: "", label: "", value: "" },
-            ])
-          }
-        >
-          <Plus className="size-3.5" />
-          Add specification
-        </PillButton>
-      </div>
-    </SettingsDrawer>
-  );
-}
-
-function ProposalFactList({
-  title,
-  rows = [],
-}: {
-  title: string;
-  rows?: Array<Record<string, unknown>>;
-}) {
-  if (rows.length === 0) return null;
-  return (
-    <OperationalPanel>
-      <OperationalPanelHeader title={title} />
-      <OperationalPanelBody className="space-y-3">
-        {rows.map((row, index) => (
-          <div
-            key={index}
-            className="border-b border-border pb-3 last:border-0 last:pb-0"
-          >
-            <p className={typeStyle("body.medium")}>
-              {String(
-                row.name ?? row.description ?? row.line ?? title.slice(0, -1),
-              )}
-            </p>
-            <p
-              className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              {[row.limit, row.deductible, row.amount, row.content]
-                .filter(Boolean)
-                .map(String)
-                .join(" · ") || "Recorded in proposal"}
-            </p>
-          </div>
-        ))}
-      </OperationalPanelBody>
-    </OperationalPanel>
-  );
-}
-
 function RequestEditor({
   request,
   policies,
@@ -748,12 +592,13 @@ function RequestEditor({
 }) {
   const updateRequest = useMutation(api.procurementRequests.update);
   const [title, setTitle] = useState(request.title);
-  const [requestSummary, setRequestSummary] = useState(request.requestSummary);
-  const [requirements, setRequirements] = useState(request.requirements);
+  const [narrative, setNarrative] = useState(request.narrative);
   const [targetEffectiveDate, setTargetEffectiveDate] = useState(
     request.targetEffectiveDate ?? "",
   );
-  const [status, setStatus] = useState(request.status);
+  const [status, setStatus] = useState<ProcurementRequestStatus>(
+    writableProcurementRequestStatus(request.status),
+  );
   const [replacingPolicyId, setReplacingPolicyId] = useState(
     request.replacingPolicyId ?? NONE,
   );
@@ -776,8 +621,7 @@ function RequestEditor({
       await updateRequest({
         requestId: request._id,
         title,
-        requestSummary,
-        requirements,
+        narrative,
         targetEffectiveDate: targetEffectiveDate || null,
         status,
         replacingPolicyId:
@@ -841,20 +685,8 @@ function RequestEditor({
             What the client asked for
           </span>
           <Textarea
-            value={requestSummary}
-            onChange={(event) => setRequestSummary(event.target.value)}
-            className="min-h-24"
-          />
-        </label>
-        <label className="block space-y-1.5">
-          <span
-            className={`text-muted-foreground ${typeStyle("caption.default")}`}
-          >
-            Requirements
-          </span>
-          <Textarea
-            value={requirements}
-            onChange={(event) => setRequirements(event.target.value)}
+            value={narrative}
+            onChange={(event) => setNarrative(event.target.value)}
             className="min-h-36"
           />
         </label>
@@ -1455,7 +1287,7 @@ export function ProcurementRequestWorkspace({
   basePath: string;
   view:
     | "overview"
-    | "requirements"
+    | "packet"
     | "market"
     | "proposals"
     | "activity"
@@ -1483,21 +1315,12 @@ export function ProcurementRequestWorkspace({
     limit: 100,
   });
   const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
-  const requirementData = useQuery(api.procurementRequirements.list, {
-    requestId,
-  });
   const proposals = useQuery(api.procurementProposals.list, { requestId });
-  const extractRequirementDrafts = useAction(
-    api.actions.procurementIntake.extractDrafts,
-  );
   const generateProposalReview = useAction(
     api.actions.proposalReview.generateReview,
   );
   const createFileItem = useMutation(api.procurementRequests.createFileItem);
   const selectProposal = useMutation(api.procurementProposals.select);
-  const confirmRequirementDraft = useMutation(
-    api.procurementRequirements.confirmDraft,
-  );
   const postClientActivity = useMutation(
     api.procurementRequests.postClientActivity,
   );
@@ -1509,7 +1332,6 @@ export function ProcurementRequestWorkspace({
   );
   const [clientReply, setClientReply] = useState("");
   const [sharingWithClient, setSharingWithClient] = useState(false);
-  const [extractingRequirements, setExtractingRequirements] = useState(false);
   const [reviewingProposalId, setReviewingProposalId] =
     useState<Id<"procurementProposals"> | null>(null);
   const { openWithUrl, closePdf } = usePdf();
@@ -1638,17 +1460,6 @@ export function ProcurementRequestWorkspace({
     [closePdf, closeRightPanel, onRightPanel, openWithUrl],
   );
 
-  const openSpecificationEditor = useCallback(() => {
-    if (!requirementData) return;
-    closePdf();
-    onRightPanel(
-      <SpecificationEditor
-        requestId={requestId}
-        specifications={requirementData.specifications as SpecificationValue[]}
-        onClose={closeRightPanel}
-      />,
-    );
-  }, [closePdf, closeRightPanel, onRightPanel, requestId, requirementData]);
 
   const openEmail = useCallback(
     (emailThreadId: Id<"procurementEmailThreads">) => {
@@ -1787,22 +1598,6 @@ export function ProcurementRequestWorkspace({
     }
   }
 
-  async function extractIntake() {
-    setExtractingRequirements(true);
-    try {
-      const result = await extractRequirementDrafts({ requestId });
-      toast.success(
-        `Extracted ${result.draftCount} requirement draft${result.draftCount === 1 ? "" : "s"} and ${result.specificationCount} specification${result.specificationCount === 1 ? "" : "s"}`,
-      );
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(error, "Could not extract the intake"),
-      );
-    } finally {
-      setExtractingRequirements(false);
-    }
-  }
-
   async function reviewProposal(proposalId: Id<"procurementProposals">) {
     setReviewingProposalId(proposalId);
     try {
@@ -1829,7 +1624,6 @@ export function ProcurementRequestWorkspace({
     clientFilesResult === undefined ||
     requestRows === undefined ||
     brokers === undefined ||
-    requirementData === undefined ||
     proposals === undefined
   ) {
     return (
@@ -1875,7 +1669,7 @@ export function ProcurementRequestWorkspace({
         >
           <TabsList variant="pill" aria-label="Procurement request view">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="requirements">Requirements</TabsTrigger>
+            <TabsTrigger value="packet">Packet</TabsTrigger>
             <TabsTrigger value="market">
               Market
               <span className="text-muted-foreground/60">
@@ -1938,149 +1732,16 @@ export function ProcurementRequestWorkspace({
               layout="stacked"
               value={
                 <span className="whitespace-pre-wrap">
-                  {details.request.requestSummary}
+                  {details.request.narrative}
                 </span>
               }
             />
-            {details.request.requirements.trim() &&
-            details.request.requirements.trim() !==
-              details.request.requestSummary.trim() ? (
-              <OperationalLabelValueRow
-                label="Procurement requirements"
-                layout="stacked"
-                value={
-                  <span className="whitespace-pre-wrap">
-                    {details.request.requirements}
-                  </span>
-                }
-              />
-            ) : null}
           </OperationalLabelValueList>
         </div>
       ) : null}
 
-      {view === "requirements" ? (
-        <div className="space-y-4">
-          <OperationalPanel as="section">
-            <OperationalPanelHeader
-              title="Confirmed insurance requirements"
-              action={
-                !readOnly ? (
-                  <div className="flex gap-2">
-                    <PillButton
-                      size="compact"
-                      variant="secondary"
-                      onClick={openSpecificationEditor}
-                    >
-                      <Pencil className="size-3.5" />
-                      Edit specifications
-                    </PillButton>
-                    <PillButton
-                      size="compact"
-                      onClick={() => void extractIntake()}
-                      disabled={extractingRequirements}
-                    >
-                      {extractingRequirements ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : null}
-                      Extract intake
-                    </PillButton>
-                  </div>
-                ) : null
-              }
-            />
-            <OperationalPanelBody className="space-y-4">
-              {requirementData.requirements.length === 0 ? (
-                <p
-                  className={`text-muted-foreground ${typeStyle("body.default")}`}
-                >
-                  No requirements have been confirmed.
-                </p>
-              ) : (
-                requirementData.requirements.map((requirement) =>
-                  requirement ? (
-                    <div
-                      key={requirement._id}
-                      className="border-b border-border pb-4 last:border-0 last:pb-0"
-                    >
-                      <p
-                        className={`text-foreground ${typeStyle("body.medium")}`}
-                      >
-                        {requirement.title}
-                      </p>
-                      <p
-                        className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
-                      >
-                        {requirement.requirementText}
-                      </p>
-                    </div>
-                  ) : null,
-                )
-              )}
-            </OperationalPanelBody>
-          </OperationalPanel>
-          <OperationalLabelValueList>
-            {requirementData.specifications.length === 0 ? (
-              <OperationalLabelValueRow
-                label="Project specifications"
-                value="None recorded"
-              />
-            ) : (
-              requirementData.specifications.map((specification) => (
-                <OperationalLabelValueRow
-                  key={specification._id}
-                  label={specification.label}
-                  value={specification.value}
-                />
-              ))
-            )}
-          </OperationalLabelValueList>
-          {requirementData.drafts.length > 0 ? (
-            <OperationalPanel>
-              <OperationalPanelHeader title="Draft requirements" />
-              <OperationalPanelBody className="space-y-3">
-                {requirementData.drafts.map((draft) => {
-                  const value = draft.proposedRequirement as {
-                    title?: string;
-                    requirementText?: string;
-                  };
-                  return (
-                    <div
-                      key={draft._id}
-                      className="flex items-start justify-between gap-4 border-b border-border pb-3 last:border-0 last:pb-0"
-                    >
-                      <div>
-                        <p className={typeStyle("body.medium")}>
-                          {value.title ?? "Requirement draft"}
-                        </p>
-                        {value.requirementText ? (
-                          <p
-                            className={`mt-1 text-muted-foreground ${typeStyle("body.default")}`}
-                          >
-                            {value.requirementText}
-                          </p>
-                        ) : null}
-                      </div>
-                      {!readOnly ? (
-                        <PillButton
-                          size="compact"
-                          variant="secondary"
-                          onClick={() =>
-                            void confirmRequirementDraft({ draftId: draft._id })
-                          }
-                        >
-                          Confirm
-                        </PillButton>
-                      ) : (
-                        <StatusTag tone="warning">Needs confirmation</StatusTag>
-                      )}
-                    </div>
-                  );
-                })}
-              </OperationalPanelBody>
-            </OperationalPanel>
-          ) : null}
-        </div>
+      {view === "packet" ? (
+        <PacketWorkspace requestId={requestId} readOnly={readOnly} />
       ) : null}
 
       {view === "proposals" ? (
@@ -2113,8 +1774,9 @@ export function ProcurementRequestWorkspace({
                     coverages?: Array<{ name?: string; limit?: string }>;
                   };
                   const review = proposal.reviews[0];
-                  const conclusion =
-                    review?.staffConclusion ?? review?.modelConclusion;
+                  const conclusion = review?.stale
+                    ? undefined
+                    : (review?.staffConclusion ?? review?.modelConclusion);
                   return (
                     <TableRow key={proposal._id}>
                       <TableCell>
@@ -2166,7 +1828,9 @@ export function ProcurementRequestWorkspace({
                           .join(" – ") || "—"}
                       </TableCell>
                       <TableCell>
-                        {conclusion ? (
+                        {review?.stale ? (
+                          <StatusTag tone="warning">Stale</StatusTag>
+                        ) : conclusion ? (
                           <StatusTag
                             tone={
                               conclusion === "meets_requirements"
@@ -2174,7 +1838,7 @@ export function ProcurementRequestWorkspace({
                                 : "warning"
                             }
                           >
-                            {String(conclusion).replaceAll("_", " ")}
+                            {REVIEW_CONCLUSION_LABELS[conclusion]}
                           </StatusTag>
                         ) : (
                           <span className="text-muted-foreground">
@@ -2186,7 +1850,9 @@ export function ProcurementRequestWorkspace({
                         {proposal.documents.length}
                       </TableCell>
                       <TableCell>
-                        {!readOnly && !review && proposal.extractedOffer ? (
+                        {!readOnly &&
+                        (!review || review.stale) &&
+                        proposal.extractedOffer ? (
                           <PillButton
                             size="compact"
                             variant="secondary"
@@ -2196,9 +1862,14 @@ export function ProcurementRequestWorkspace({
                             {reviewingProposalId === proposal._id ? (
                               <Loader2 className="size-3.5 animate-spin" />
                             ) : null}
-                            Generate review
+                            {review?.stale
+                              ? "Re-run review"
+                              : "Generate review"}
                           </PillButton>
-                        ) : !readOnly && review && !review.staffConclusion ? (
+                        ) : !readOnly &&
+                          review &&
+                          !review.stale &&
+                          !review.staffConclusion ? (
                           <PillButton
                             size="compact"
                             variant="secondary"

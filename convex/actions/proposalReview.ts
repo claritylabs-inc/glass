@@ -13,17 +13,12 @@ import {
 
 const internalApi = internal as any;
 const REVIEW_TIMEOUT_MS = 120_000;
+const MAX_DOCUMENT_CHARS = 120_000;
 
-function compact(value: unknown) {
-  return JSON.stringify(
-    value,
-    (_key, item) => {
-      if (typeof item === "string" && item.length > 4000)
-        return `${item.slice(0, 4000)}…`;
-      return item;
-    },
-    2,
-  ).slice(0, 180_000);
+function bounded(value: string) {
+  return value.length > MAX_DOCUMENT_CHARS
+    ? `${value.slice(0, MAX_DOCUMENT_CHARS)}\n\n…truncated…`
+    : value;
 }
 
 export const generateReview = action({
@@ -39,6 +34,14 @@ export const generateReview = action({
       { proposalId: args.proposalId },
     );
     if (!input) throw new Error("Proposal extraction is not ready for review");
+    if (input.sectionKeys.length === 0)
+      throw new Error(
+        "This request has no broker-visible packet sections to review against",
+      );
+    if (!input.proposalMarkdown.trim())
+      throw new Error("The proposal extraction produced no readable content");
+    const packetMarkdown = bounded(input.packetMarkdown);
+    const proposalMarkdown = bounded(input.proposalMarkdown);
 
     const abortSignal = AbortSignal.timeout(REVIEW_TIMEOUT_MS);
     let generated;
@@ -51,18 +54,22 @@ export const generateReview = action({
           schema: proposalReviewSchema,
           abortSignal,
           maxOutputTokens: 8_000,
-          system: `You are a careful commercial-insurance proposal reviewer. Compare a private broker proposal only with the supplied confirmed insurance requirements and request-scoped specifications. Use only the supplied extracted offer and its source references. Never invent a carrier term, limit, deductible, premium, condition, exclusion, source node, source span, page, or document ID.
+          system: `You are a careful commercial-insurance proposal reviewer. You are given two markdown documents: the submission packet the broker was sent, and the offer extracted from the proposal they returned. Compare them section by section using only the supplied text. Never invent a carrier term, limit, deductible, premium, condition, exclusion, or page.
 
-Return exactly one finding for every supplied requirement and specification. A finding is "meets" only when cited proposal evidence clearly satisfies it, "has_gap" when cited evidence clearly conflicts with or falls short of it, and "insufficient_evidence" when the proposal does not establish an answer. The overall conclusion is meets_requirements only when every item meets, has_gaps when at least one item has a supported gap, and insufficient_evidence otherwise.`,
-          prompt: `Review this proposal snapshot.
+Return exactly one finding for every packet section, keyed by the section key printed after "## " in the packet. A finding is "meets" only when cited proposal evidence clearly satisfies what the section asks for, "has_gap" when cited evidence clearly conflicts with or falls short of it, and "insufficient_evidence" when the proposal does not establish an answer. A section that asks for nothing verifiable is insufficient_evidence, not meets.
 
-Requirements and specifications are authoritative only for this review revision. Evidence references must be copied exactly from extractedOffer.evidence or an item's evidence array.
+Cite proposal evidence only by the bracketed tags printed in the proposal document, such as E1 or E7. Every "meets" and "has_gap" finding must cite at least one tag. Never write a tag that does not appear in the proposal document.
 
-${compact({
-  extractedOffer: input.extractedOffer,
-  requirements: input.requirements,
-  specifications: input.specifications,
-})}`,
+The overall conclusion is meets_requirements only when every section meets, has_gaps when at least one section has a supported gap, and insufficient_evidence otherwise.`,
+          prompt: `# Submission packet
+
+${packetMarkdown}
+
+# Extracted proposal
+
+${proposalMarkdown}
+
+Return one finding per packet section, using these exact section keys: ${input.sectionKeys.join(", ")}`,
         },
       );
     } catch (error) {
@@ -71,13 +78,9 @@ ${compact({
       throw error;
     }
     const review = normalizeProposalReview(generated.object, {
-      requirementIds: input.requirements.map((requirement: { _id: string }) =>
-        String(requirement._id),
-      ),
-      specificationIds: input.specifications.map(
-        (specification: { _id: string }) => String(specification._id),
-      ),
-      extractedOffer: input.extractedOffer,
+      sectionKeys: input.sectionKeys,
+      legend: input.evidenceLegend,
+      proposalMarkdown,
     });
     const saved = await ctx.runMutation(
       internalApi.procurementProposals.saveGeneratedReviewInternal,
@@ -85,8 +88,7 @@ ${compact({
         operatorUserId,
         proposalId: input.proposalId,
         extractionFingerprint: input.extractionFingerprint,
-        requirementRevision: input.requirementRevision,
-        specificationRevision: input.specificationRevision,
+        packetRevision: input.packetRevision,
         findings: review.findings,
         conclusion: review.conclusion,
       },

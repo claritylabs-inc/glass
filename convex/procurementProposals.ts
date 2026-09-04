@@ -15,6 +15,8 @@ import {
   requireOperatorForUser,
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
+import { buildProposalMarkdown } from "./lib/proposalMarkdown";
+import { audienceIncludes } from "./lib/procurementPacket";
 
 const conclusionValidator = v.union(
   v.literal("meets_requirements"),
@@ -85,7 +87,7 @@ async function proposalDto(
   ctx: QueryCtx,
   proposal: Doc<"procurementProposals">,
 ) {
-  const [documents, reviews, broker] = await Promise.all([
+  const [documents, reviews, broker, request, sections] = await Promise.all([
     ctx.db
       .query("procurementProposalDocuments")
       .withIndex("proposal", (q) => q.eq("proposalId", proposal._id))
@@ -96,6 +98,11 @@ async function proposalDto(
       .order("desc")
       .collect(),
     ctx.db.get(proposal.brokerOrgId),
+    ctx.db.get(proposal.requestId),
+    ctx.db
+      .query("procurementPacketSections")
+      .withIndex("request", (q) => q.eq("requestId", proposal.requestId))
+      .collect(),
   ]);
   const documentRows = await Promise.all(
     documents.map(async ({ fileId, ...document }) => ({
@@ -103,11 +110,19 @@ async function proposalDto(
       url: await ctx.storage.getUrl(fileId),
     })),
   );
+  const packetRevision = request?.packetRevision ?? 0;
   return {
     ...proposal,
     brokerName: broker?.name,
     documents: documentRows,
-    reviews,
+    proposalMarkdown: buildProposalMarkdown(proposal.extractedOffer).markdown,
+    sectionHeadings: Object.fromEntries(
+      sections.map((section) => [section.key, section.heading]),
+    ),
+    reviews: reviews.map((review) => ({
+      ...review,
+      stale: (review.packetRevision ?? -1) !== packetRevision,
+    })),
   };
 }
 
@@ -319,31 +334,33 @@ export const getReviewInputInternal = internalQuery({
       return null;
     const request = await ctx.db.get(proposal.requestId);
     if (!request) return null;
-    const [links, specifications] = await Promise.all([
-      ctx.db
-        .query("procurementRequestRequirements")
+    const sections = (
+      await ctx.db
+        .query("procurementPacketSections")
         .withIndex("request", (q) => q.eq("requestId", request._id))
-        .collect(),
-      ctx.db
-        .query("procurementSpecifications")
-        .withIndex("request", (q) => q.eq("requestId", request._id))
-        .collect(),
-    ]);
-    const requirements = (
-      await Promise.all(links.map((link) => ctx.db.get(link.requirementId)))
-    ).filter((row): row is Doc<"insuranceRequirements"> =>
-      Boolean(row?.status === "active"),
-    );
+        .collect()
+    )
+      .filter(
+        (section) =>
+          audienceIncludes(section.audience, "broker") && section.body.trim(),
+      )
+      .sort((a, b) => a.order - b.order);
+    const { markdown, legend } = buildProposalMarkdown(proposal.extractedOffer);
     return {
       proposalId: proposal._id,
       requestId: request._id,
       clientOrgId: request.clientOrgId,
-      extractedOffer: proposal.extractedOffer,
       extractionFingerprint: proposal.extractionFingerprint,
-      requirements,
-      specifications,
-      requirementRevision: request.requirementRevision ?? 0,
-      specificationRevision: request.specificationRevision ?? 0,
+      packetRevision: request.packetRevision ?? 0,
+      packetMarkdown: sections
+        .map(
+          (section) =>
+            `## ${section.key} — ${section.heading}\n\n${section.body.trim()}`,
+        )
+        .join("\n\n"),
+      sectionKeys: sections.map((section) => section.key),
+      proposalMarkdown: markdown,
+      evidenceLegend: legend,
     };
   },
 });
@@ -353,8 +370,7 @@ export const saveGeneratedReviewInternal = internalMutation({
     operatorUserId: v.id("users"),
     proposalId: v.id("procurementProposals"),
     extractionFingerprint: v.string(),
-    requirementRevision: v.number(),
-    specificationRevision: v.number(),
+    packetRevision: v.number(),
     findings: v.array(v.any()),
     conclusion: conclusionValidator,
   },
@@ -367,20 +383,15 @@ export const saveGeneratedReviewInternal = internalMutation({
     )
       throw new Error("Stale proposal extraction");
     const request = await ctx.db.get(proposal.requestId);
-    if (
-      !request ||
-      (request.requirementRevision ?? 0) !== args.requirementRevision ||
-      (request.specificationRevision ?? 0) !== args.specificationRevision
-    )
-      throw new Error("Stale procurement requirements");
+    if (!request || (request.packetRevision ?? 0) !== args.packetRevision)
+      throw new Error("Stale procurement packet");
     const now = dayjs().valueOf();
     const reviewId = await ctx.db.insert("procurementProposalReviews", {
       proposalId: proposal._id,
       requestId: request._id,
       clientOrgId: request.clientOrgId,
       extractionFingerprint: args.extractionFingerprint,
-      requirementRevision: args.requirementRevision,
-      specificationRevision: args.specificationRevision,
+      packetRevision: args.packetRevision,
       modelConclusion: args.conclusion,
       findings: args.findings,
       createdAt: now,
@@ -412,8 +423,7 @@ export async function confirmProcurementProposalReviewByOperator(
     proposal.requestId !== request._id ||
     proposal.clientOrgId !== request.clientOrgId ||
     proposal.extractionFingerprint !== review.extractionFingerprint ||
-    (request.requirementRevision ?? 0) !== review.requirementRevision ||
-    (request.specificationRevision ?? 0) !== review.specificationRevision
+    (request.packetRevision ?? 0) !== (review.packetRevision ?? -1)
   )
     throw new Error("Review is stale");
   const now = dayjs().valueOf();
@@ -467,8 +477,7 @@ export async function selectProcurementProposalByOperator(
       review.requestId === request._id &&
       review.clientOrgId === request.clientOrgId &&
       review.extractionFingerprint === proposal.extractionFingerprint &&
-      review.requirementRevision === (request.requirementRevision ?? 0) &&
-      review.specificationRevision === (request.specificationRevision ?? 0),
+      (review.packetRevision ?? -1) === (request.packetRevision ?? 0),
   );
   if (!current) throw new Error("A current staff-confirmed review is required");
   if (current.staffConclusion !== "meets_requirements") {
@@ -476,31 +485,18 @@ export async function selectProcurementProposalByOperator(
       "Only a proposal confirmed to meet every requirement can be selected",
     );
   }
-  const [requirementLinks, specifications] = await Promise.all([
-    ctx.db
-      .query("procurementRequestRequirements")
+  const brokerSections = (
+    await ctx.db
+      .query("procurementPacketSections")
       .withIndex("request", (q) => q.eq("requestId", request._id))
-      .collect(),
-    ctx.db
-      .query("procurementSpecifications")
-      .withIndex("request", (q) => q.eq("requestId", request._id))
-      .collect(),
-  ]);
-  if (requirementLinks.length === 0 && specifications.length === 0) {
-    throw new Error(
-      "Confirm at least one insurance requirement or specification before selecting a proposal",
-    );
-  }
-  const linkedRequirements = await Promise.all(
-    requirementLinks.map((link) => ctx.db.get(link.requirementId)),
+      .collect()
+  ).filter(
+    (section) =>
+      audienceIncludes(section.audience, "broker") && section.body.trim(),
   );
-  if (
-    linkedRequirements.some(
-      (requirement) => !requirement || requirement.status !== "active",
-    )
-  ) {
+  if (brokerSections.length === 0) {
     throw new Error(
-      "All procurement requirements must be active before selecting a proposal",
+      "Share at least one broker-visible packet section before selecting a proposal",
     );
   }
   const selected = await ctx.db

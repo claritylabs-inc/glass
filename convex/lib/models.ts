@@ -909,9 +909,10 @@ export async function transcribeAudioForOrg(
   });
 }
 
-export async function transcribeAudioForPublicTask(
+async function transcribeAudioForGlobalTask(
   ctx: ActionCtx,
   input: AudioTranscriptionInput,
+  traceLabel: string,
 ): Promise<AudioTranscriptionResult> {
   const direct = async (settings?: ClRouterSettingsSnapshot | null) => {
     const resolved =
@@ -929,7 +930,7 @@ export async function transcribeAudioForPublicTask(
           settings,
           audio,
           prompt: input.prompt,
-          trace: { label: "convex.models.transcribeAudioForPublicTask" },
+          trace: { label: traceLabel },
         });
         const text = response.text.trim();
         if (!text) {
@@ -956,6 +957,28 @@ export async function transcribeAudioForPublicTask(
     onFallback: (error) =>
       warnClRouterFallback(AUDIO_TRANSCRIPTION_TASK, error),
   });
+}
+
+export async function transcribeAudioForPublicTask(
+  ctx: ActionCtx,
+  input: AudioTranscriptionInput,
+): Promise<AudioTranscriptionResult> {
+  return transcribeAudioForGlobalTask(
+    ctx,
+    input,
+    "convex.models.transcribeAudioForPublicTask",
+  );
+}
+
+export async function transcribeAudioForOperatorTask(
+  ctx: ActionCtx,
+  input: AudioTranscriptionInput,
+): Promise<AudioTranscriptionResult> {
+  return transcribeAudioForGlobalTask(
+    ctx,
+    input,
+    "convex.models.transcribeAudioForOperatorTask",
+  );
 }
 
 function errorTextForMatching(err: unknown, seen = new Set<unknown>()): string {
@@ -1160,7 +1183,7 @@ export function getModel(task: ModelTask): LanguageModel {
     throw new Error(
       task === "embeddings"
         ? "Embeddings must use makeEmbedText or makeEmbedTexts, not getModel()"
-        : "Voice memo transcription must use transcribeAudioForOrg or transcribeAudioForPublicTask, not getModel()",
+        : "Voice memo transcription must use a dedicated organization, public, or operator transcription helper, not getModel()",
     );
   }
   return modelFromRoute(MODEL_ROUTING[task] ?? MODEL_ROUTING.chat);

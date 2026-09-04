@@ -23,6 +23,7 @@ import {
   repairLocalConvexSelection,
   repoRoot,
   resolveConductorClRouterConfig,
+  resolveConductorMapboxAccessToken,
   workspaceSlug,
   withoutCloudConvexSelection,
 } from "./lib/conductor-workspace.mjs";
@@ -437,9 +438,7 @@ try {
     OPERATOR_OWNER_EMAILS: "terry@claritylabs.inc",
     JWT_PRIVATE_KEY: localAuthKeys.JWT_PRIVATE_KEY,
     JWKS: localAuthKeys.JWKS,
-    MAPBOX_ACCESS_TOKEN:
-      initialRootEnv.get("MAPBOX_ACCESS_TOKEN")?.trim() ||
-      initialRootEnv.get("NEXT_PUBLIC_MAPBOX_TOKEN")?.trim(),
+    MAPBOX_ACCESS_TOKEN: resolveConductorMapboxAccessToken(initialRootEnv),
     ALLOW_DEV_CLEAR: "true",
     EMAIL_DELIVERY_MODE: "capture",
     IMESSAGE_ENABLED: "false",

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev -p 8080",
     "conductor:setup": "node scripts/setup-conductor-workspace.mjs",
+    "conductor:setup:cloud": "node scripts/setup-conductor-cloud.mjs",
     "conductor:archive": "node scripts/archive-conductor-workspace.mjs",
     "conductor:dev": "node scripts/run-conductor-dev.mjs",
     "conductor:spectrum": "node scripts/run-conductor-imessage-terminal.mjs",

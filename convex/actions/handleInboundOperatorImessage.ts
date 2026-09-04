@@ -6,12 +6,12 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   buildInboundImessageEventKey,
-  isImessageAudioAttachment,
   normalizeInboundImessageSender,
   storeImessageAttachments,
 } from "../lib/imessageIngress";
 import { normalizeAgentAttachmentFilename } from "../lib/agentAttachmentLimits";
 import { isOperatorImessageInboundEnabled } from "../lib/imessageConfig";
+import { prepareInboundImessageTurn } from "../lib/imessageAgentContext";
 import {
   handleOperatorChannelConfirmation,
   waitForOperatorAgentRun,
@@ -71,16 +71,22 @@ export const processInbound = internalAction({
     }
     const fromPhone = normalizeInboundImessageSender(identity.phone);
     const chatGuid = args.chatGuid?.trim() || fromPhone;
-    const requestedFilenames = (args.attachments ?? []).map((attachment) =>
-      normalizeAgentAttachmentFilename(attachment.name),
-    );
-    if ((args.attachments ?? []).some(isImessageAudioAttachment)) {
-      throw new Error(
-        "Operator iMessage voice memos are not supported; send text or a supported document or image instead",
-      );
+    const inboundTurn = await prepareInboundImessageTurn(ctx, {
+      scope: { kind: "operator" },
+      messageText: args.messageText,
+      attachments: args.attachments,
+    });
+    if (inboundTurn.failureResponse) {
+      return {
+        response: inboundTurn.failureResponse,
+        sendContactCard: false,
+      };
     }
+    const requestedFilenames = inboundTurn.nonAudioAttachments.map(
+      (attachment) => normalizeAgentAttachmentFilename(attachment.name),
+    );
     const preliminaryContent =
-      args.messageText.trim() ||
+      inboundTurn.messageText.trim() ||
       (requestedFilenames.length > 0
         ? `[Attached ${requestedFilenames.join(", ")}]`
         : "Please help with this.");
@@ -115,11 +121,11 @@ export const processInbound = internalAction({
     });
     const storedAttachments = await storeImessageAttachments(
       ctx,
-      args.attachments,
+      inboundTurn.nonAudioAttachments,
     );
     const filenames = storedAttachments.map(({ filename }) => filename);
     const content =
-      args.messageText.trim() ||
+      inboundTurn.messageText.trim() ||
       (filenames.length > 0
         ? `[Attached ${filenames.join(", ")}]`
         : "Please help with this.");

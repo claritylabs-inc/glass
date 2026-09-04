@@ -43,7 +43,7 @@ import {
   buildRecentImessageTextContext,
   imessageAgentTaskForAttachments,
   isImessageStatusCue,
-  transcribeImessageVoiceMemos,
+  prepareInboundImessageTurn,
   type ImessageHistoryMessage,
 } from "../lib/imessageAgentContext";
 import {
@@ -122,9 +122,6 @@ function appendAttachmentFailureNotice(responseText: string): string {
   if (trimmed.includes(notice)) return trimmed;
   return `${trimmed}\n\n${notice}`;
 }
-
-const VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE =
-  "I couldn't transcribe that voice memo. Please try sending it again or send the request as text.";
 
 const internalApi = internal as any;
 const IMESSAGE_RATING_PROMPT = "Was this helpful? Reply 👍 or 👎.";
@@ -339,26 +336,25 @@ export const processInbound = internalAction({
       });
       shouldSendContactCard = chatSync.shouldSendContactCard;
 
-      const voiceMemoInput = await transcribeImessageVoiceMemos(ctx, {
-        orgId:
-          scope.kind === "no_linked_users" ? undefined : scope.primaryOrgId,
+      const voiceMemoInput = await prepareInboundImessageTurn(ctx, {
+        scope:
+          scope.kind === "no_linked_users"
+            ? { kind: "public" }
+            : { kind: "organization", orgId: scope.primaryOrgId },
         messageText: args.messageText,
         attachments: args.attachments,
       });
       const inboundMessageText = enforceInputLimits(voiceMemoInput.messageText);
 
       if (scope.kind === "no_linked_users") {
-        if (
-          voiceMemoInput.hasVoiceMemos &&
-          voiceMemoInput.transcripts.length === 0
-        ) {
+        if (voiceMemoInput.failureResponse) {
           if (isGroup) {
             await ctx.runMutation(internal.imessageChats.markLeft, {
               chatGuid,
             });
           }
           return await finish(
-            VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
+            voiceMemoInput.failureResponse,
             undefined,
             {
               leaveGroup: isGroup,
@@ -526,23 +522,20 @@ export const processInbound = internalAction({
         surface: "imessage",
       });
 
-      if (
-        voiceMemoInput.hasVoiceMemos &&
-        voiceMemoInput.transcripts.length === 0
-      ) {
+      if (voiceMemoInput.failureResponse) {
         const failureMessageId = await ctx.runMutation(
           internal.threads.insertImessageMessage,
           {
             threadId,
             orgId,
             role: "agent",
-            content: VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
+            content: voiceMemoInput.failureResponse,
             responseMessageId: `${eventKey}:voice-transcription-failed`,
           },
         );
         await scheduleThreadHistoryCompaction(ctx, threadId);
         return await finish(
-          VOICE_MEMO_TRANSCRIPTION_FAILED_MESSAGE,
+          voiceMemoInput.failureResponse,
           undefined,
           { threadMessageId: failureMessageId },
         );

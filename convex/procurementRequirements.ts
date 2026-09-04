@@ -14,6 +14,7 @@ import {
   requireOperatorForUser,
   writeOperatorAudit,
 } from "./lib/operatorIdentity";
+import { requestNarrative } from "./lib/procurementNarrative";
 
 async function request(ctx: MutationCtx, requestId: Id<"procurementRequests">) {
   const row = await ctx.db.get(requestId);
@@ -190,9 +191,7 @@ export const getIntakeExtractionContextInternal = internalQuery({
       requestId: procurementRequest._id,
       clientOrgId: procurementRequest.clientOrgId,
       title: procurementRequest.title,
-      originalNarrative: procurementRequest.originalNarrative,
-      requestSummary: procurementRequest.requestSummary,
-      legacyRequirements: procurementRequest.requirements,
+      narrative: requestNarrative(procurementRequest),
       activeRequirements,
     };
   },

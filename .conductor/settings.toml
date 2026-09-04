@@ -6,7 +6,7 @@ preview_urls = [
 ]
 
 [scripts]
-setup = "npm run conductor:setup"
+setup = "if [ \"$CONDUCTOR_IS_LOCAL\" = \"0\" ]; then npm run conductor:setup:cloud; else npm run conductor:setup; fi"
 archive = "npm run conductor:archive"
 run_mode = "concurrent"
 

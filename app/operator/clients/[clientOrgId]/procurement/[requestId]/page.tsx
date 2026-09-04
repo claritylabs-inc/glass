@@ -42,14 +42,16 @@ export default function OperatorProcurementRequestPage() {
   const basePath = `/operator/clients/${clientOrgId}/procurement`;
   const title = request?.request.title ?? "Procurement request";
   const requestedView = searchParams.get("view");
+  const normalizedView =
+    requestedView === "requirements" ? "packet" : requestedView;
   const view =
-    requestedView === "requirements" ||
-    requestedView === "market" ||
-    requestedView === "proposals" ||
-    requestedView === "activity" ||
-    requestedView === "files" ||
-    requestedView === "email"
-      ? requestedView
+    normalizedView === "packet" ||
+    normalizedView === "market" ||
+    normalizedView === "proposals" ||
+    normalizedView === "activity" ||
+    normalizedView === "files" ||
+    normalizedView === "email"
+      ? normalizedView
       : "overview";
 
   return (

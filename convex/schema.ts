@@ -2805,8 +2805,14 @@ export default defineSchema({
   procurementRequests: defineTable({
     clientOrgId: v.id("organizations"),
     title: v.string(),
-    requestSummary: v.string(),
-    requirements: v.string(),
+    // The single intake narrative. Widening phase: optional until
+    // `migrations:runProcurementNarrativeBackfill` completes, then required.
+    narrative: v.optional(v.string()),
+    // Legacy intake prose superseded by `narrative`. `requirements` never fed
+    // the packet and duplicated `requestSummary` on every client-created row.
+    requestSummary: v.optional(v.string()),
+    requirements: v.optional(v.string()),
+    originalNarrative: v.optional(v.string()),
     targetEffectiveDate: v.optional(v.string()),
     status: v.union(
       v.literal("draft"),
@@ -2816,20 +2822,24 @@ export default defineSchema({
       v.literal("proposal_review"),
       v.literal("binding"),
       v.literal("completed"),
+      v.literal("cancelled"),
+      // Retired by `migrations:migrateProcurementRequestStatuses`, which maps
+      // quote_review/client_decision to proposal_review, accepted to binding,
+      // and closed to completed. Readable only until that migration is
+      // confirmed on every deployment; never writable.
       v.literal("quote_review"),
       v.literal("client_decision"),
       v.literal("accepted"),
       v.literal("closed"),
-      v.literal("cancelled"),
     ),
-    // Widening fields for client collaboration. Legacy rows are operator-only
-    // until explicitly shared or migrated.
+    clientVisible: v.optional(v.boolean()),
+    // Write-only legacy fields: nothing has ever read either one. Purged by
+    // `migrations:runProcurementNarrativeBackfill`, dropped in the narrowing
+    // release.
     createdBySide: v.optional(
       v.union(v.literal("operator"), v.literal("client")),
     ),
-    clientVisible: v.optional(v.boolean()),
     sharedAt: v.optional(v.number()),
-    originalNarrative: v.optional(v.string()),
     requirementRevision: v.optional(v.number()),
     specificationRevision: v.optional(v.number()),
     // Monotonic revision of all client/broker-visible packet content.
@@ -3113,8 +3123,14 @@ export default defineSchema({
     requestId: v.id("procurementRequests"),
     clientOrgId: v.id("organizations"),
     extractionFingerprint: v.string(),
-    requirementRevision: v.number(),
-    specificationRevision: v.number(),
+    // Reviews bind to the broker-visible packet the proposal answered, so a
+    // packet edit invalidates them. Widening phase: optional until
+    // `migrations:runProposalReviewPacketBackfill` completes.
+    packetRevision: v.optional(v.number()),
+    // Legacy staleness counters from the structured requirement/specification
+    // era. Dropped in the narrowing release.
+    requirementRevision: v.optional(v.number()),
+    specificationRevision: v.optional(v.number()),
     modelConclusion: v.union(
       v.literal("meets_requirements"),
       v.literal("has_gaps"),

@@ -1,9 +1,12 @@
 import dayjs from "dayjs";
 
-import type { Doc, Id, TableNames } from "../_generated/dataModel";
+import type { Id, TableNames } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { effectiveExtractionDataStage } from "../backfillDeclarationFacts";
-import { validateProcurementRequestCreateByOperator } from "../procurementRequests";
+import {
+  validateProcurementRequestCreateByOperator,
+  writableProcurementRequestStatus,
+} from "../procurementRequests";
 import { assertFeatureFlagAllowedForOrg } from "./featureFlags";
 import { assertNoOperatorImpersonation } from "./clientFiles";
 import { isCompanyWikiFact, normalizeWikiContent } from "./orgWikiPolicy";
@@ -394,8 +397,7 @@ async function preflightProposalReviewConfirm(
     proposal.requestId !== request._id ||
     proposal.clientOrgId !== request.clientOrgId ||
     proposal.extractionFingerprint !== review.extractionFingerprint ||
-    (request.requirementRevision ?? 0) !== review.requirementRevision ||
-    (request.specificationRevision ?? 0) !== review.specificationRevision
+    (request.packetRevision ?? 0) !== (review.packetRevision ?? -1)
   ) {
     throw new Error("Review is stale");
   }
@@ -627,18 +629,10 @@ export async function preflightOperatorToolConfirmation(
         operatorUserId: args.operatorUserId,
         clientOrgId,
         title: typeof args.input.title === "string" ? args.input.title : "",
-        requestSummary:
-          typeof args.input.requestSummary === "string"
-            ? args.input.requestSummary
-            : "",
-        requirements:
-          typeof args.input.requirements === "string"
-            ? args.input.requirements
-            : "",
+        narrative:
+          typeof args.input.narrative === "string" ? args.input.narrative : "",
         targetEffectiveDate: normalizedText(args.input.targetEffectiveDate),
-        status: args.input.status as
-          | Doc<"procurementRequests">["status"]
-          | undefined,
+        status: writableProcurementRequestStatus(args.input.status),
         replacingPolicyId: optionalProcurementPolicyReference(
           ctx,
           args.input.replacingPolicyId,
