@@ -632,6 +632,8 @@ Outbound emails sent by Spot Agent are centralized in `convex/lib/emailSubagent.
 - `/chat` is retired; threaded assistant surfaces live under `/agent/threads` and `/agent/thread/:id`.
 - Operator DevOps splits router configuration from observability: `/operator/routing` owns router state, task policies, models, and tools, and `/operator/telemetry` owns the paginated, searchable requirement-extraction and model-routing run logs. `modelRoutingEvents` renders in exactly one place — the telemetry Model routing tab — so do not add a second recent-activity table to the routing page.
 - Tab strips are addressable through `?tab=`, via `hooks/use-tab-param.ts` for operator pages and `resolveSettingsDestination` for settings. The first tab is the default and stays out of the URL, so a section with only one tab writes no parameter at all.
+- `/operator/clients/:id` has three sections: `overview`, `?tab=team`, and `?tab=settings`, the last stacking agent channels and beta feature flags on one page.
+- A page header owns its primary action; empty states describe the absence rather than repeating that button. Drawers render through `AppShell`'s `rightPanel`, never inline in the page body — `SettingsDrawer` sizes itself to fill that panel.
 - Retired routes are deleted rather than kept as redirect shims. `/chat`, `/activity`, `/connections`, `/agent`, `/connected-orgs/*`, `/clients`, `/settings/notifications`, `/operator/models`, `/operator/tools`, and the operator client `/memory` path no longer resolve.
 
 ## MCP
