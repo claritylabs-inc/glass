@@ -21,6 +21,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 async function fixture() {
@@ -1464,6 +1465,74 @@ describe("procurement domain boundaries", () => {
 });
 
 describe("operator procurement tools", () => {
+  test("governs operator Slack messages as exact-confirmed external sends", () => {
+    expect(
+      getOperatorAgentToolSpec("send_operator_slack_message"),
+    ).toMatchObject({
+      capability: "operator.channels.write",
+      effect: "external_send",
+      confirmation: "exact",
+      execution: "action",
+    });
+    expect(
+      parseOperatorAgentToolInput("send_operator_slack_message", {
+        recipientEmail: "adyan@spot.insure",
+        message: "Procurement records are updated.",
+      }),
+    ).toEqual({
+      recipientEmail: "adyan@spot.insure",
+      message: "Procurement records are updated.",
+    });
+  });
+
+  test("preflights an operator Slack recipient before requesting confirmation", async () => {
+    vi.stubEnv("SLACK_CLARITY_TEAM_ID", "T-HOST");
+    const f = await fixture();
+    await f.t.run(async (ctx) => {
+      const recipientUserId = await ctx.db.insert("users", {
+        name: "Adyan",
+        email: "adyan@spot.insure",
+        accountKind: "operator",
+      });
+      await ctx.db.insert("operatorProfiles", {
+        userId: recipientUserId,
+        email: "adyan@spot.insure",
+        role: "operator",
+        status: "active",
+        slackTeamId: "T-HOST",
+        slackUserId: "U-ADYAN",
+        createdAt: dayjs().valueOf(),
+        updatedAt: dayjs().valueOf(),
+      });
+    });
+    const threadId = await f.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId: f.operatorUserId,
+        channel: "mcp",
+        conversationKey: "mcp:operator-slack-message",
+      },
+    );
+    const requested = await f.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: f.operatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "send_operator_slack_message",
+        input: {
+          recipientEmail: "adyan@spot.insure",
+          message: "Procurement records are updated.",
+        },
+        idempotencyKey: "operator-slack-message-confirmation",
+      },
+    );
+    expect(requested.outcome).toMatchObject({
+      status: "confirmation_required",
+      summary: "Send a Slack direct message to adyan@spot.insure",
+    });
+  });
+
   test("keeps every browser procurement capability agent-backed or explicitly excepted", () => {
     expect(PROCUREMENT_CAPABILITY_MANIFEST_VERSION).toBe(1);
     expect(PROCUREMENT_CAPABILITY_EXCEPTIONS).toEqual([

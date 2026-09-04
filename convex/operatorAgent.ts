@@ -2611,6 +2611,7 @@ async function executeToolActionDomain(
     toolName: OperatorAgentToolName;
     input: Record<string, unknown>;
     channel: OperatorChannel;
+    idempotencyKey?: string;
   },
 ): Promise<OperatorActionToolResult> {
   if (OPERATOR_RICH_ACTION_TOOLS.has(args.toolName)) {
@@ -2730,6 +2731,23 @@ async function executeToolActionDomain(
             typeof args.input.expiresInDays === "number"
               ? args.input.expiresInDays
               : undefined,
+        },
+      ),
+    };
+  }
+
+  if (args.toolName === "send_operator_slack_message") {
+    if (!args.idempotencyKey) {
+      throw new Error("Operator Slack send requires an idempotency key");
+    }
+    return {
+      result: await ctx.runAction(
+        internal.actions.sendOperatorSlack.sendInternal,
+        {
+          operatorUserId: args.operatorUserId,
+          recipientEmail: String(args.input.recipientEmail),
+          content: String(args.input.message),
+          idempotencyKey: args.idempotencyKey,
         },
       ),
     };
@@ -3709,6 +3727,7 @@ export const validateConfirmedActionToolExecutionInternal = internalQuery({
       threadId: run.threadId,
       toolName: payload.toolName as OperatorAgentToolName,
       input,
+      idempotencyKey: payload.idempotencyKey,
       channel:
         thread.channel === "slack" ||
         thread.channel === "imessage" ||
@@ -4563,6 +4582,7 @@ export const executeUnconfirmedActionToolInternal = internalAction({
         toolName: args.toolName as OperatorAgentToolName,
         input: prepared.input,
         channel: args.channel,
+        idempotencyKey: args.idempotencyKey,
       });
       await ctx.runMutation(
         internal.operatorAgent.finishUnconfirmedActionToolInternal,

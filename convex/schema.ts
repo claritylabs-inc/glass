@@ -4651,6 +4651,29 @@ export default defineSchema({
     .index("connection_status", ["connectionId", "status"])
     .index("retry_schedule", ["connectionId", "status", "nextAttemptAt"]),
 
+  operatorSlackOutboundSends: defineTable({
+    idempotencyKey: v.string(),
+    senderOperatorUserId: v.id("users"),
+    recipientOperatorUserId: v.id("users"),
+    teamId: v.string(),
+    recipientSlackUserId: v.string(),
+    recipientEmail: v.string(),
+    content: v.string(),
+    status: v.union(
+      v.literal("sending"),
+      v.literal("sent"),
+      v.literal("failed"),
+    ),
+    providerMessageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    providerErrorCode: v.optional(v.string()),
+    attemptCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("operator_idempotency", ["senderOperatorUserId", "idempotencyKey"])
+    .index("recipient_status", ["recipientOperatorUserId", "status"]),
+
   slackMessagePresentations: defineTable({
     orgId: v.id("organizations"),
     threadId: v.id("threads"),
