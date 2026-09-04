@@ -350,7 +350,6 @@ export default function OperatorClientsScreen() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       rightPanel={rightPanel}
     >
       <main className="flex w-full flex-col">

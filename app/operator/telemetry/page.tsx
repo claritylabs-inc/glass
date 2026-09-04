@@ -294,7 +294,6 @@ export default function OperatorTelemetryPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       actions={
         <InputGroup className="w-44 sm:w-72">
           <InputGroupAddon>

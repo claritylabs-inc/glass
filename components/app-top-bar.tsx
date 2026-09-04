@@ -14,12 +14,8 @@ const BREADCRUMB_MAP: Record<string, { label: string; href?: string }> = {
   "/connect": { label: "Connect" },
   "/connect/clients": { label: "Clients", href: "/connect/clients" },
   "/connect/vendors": { label: "Vendors", href: "/connect/vendors" },
-  "/connected-orgs": { label: "Connect", href: "/connect" },
   "/compliance": { label: "Compliance" },
-  "/clients": { label: "Clients" },
   "/certificates": { label: "Certificates" },
-  "/connections": { label: "Context" },
-  "/agent": { label: "Agent Threads", href: "/policies" },
   "/settings": { label: "Settings" },
   "/profile": { label: "Profile" },
   "/operator": { label: "Threads", href: "/operator/threads" },
@@ -109,7 +105,6 @@ export function AppTopBar({
   breadcrumbDetail?: React.ReactNode;
   onMobileMenuToggle?: () => void;
   presenceUsers?: PresenceUser[];
-  showBrokerShare?: boolean;
 }) {
   const pathname = usePathname();
   const { label, href } = resolveAppBreadcrumb(pathname);

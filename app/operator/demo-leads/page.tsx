@@ -207,7 +207,6 @@ export default function OperatorDemoLeadsPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       rightPanel={rightPanel}
     >
       <FadeIn when={true} duration={0.12}>

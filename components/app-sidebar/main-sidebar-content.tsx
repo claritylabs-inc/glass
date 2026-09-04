@@ -103,7 +103,6 @@ export function MainSidebarContent({
 }) {
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
-    if (href === "/agent") return pathname === "/agent";
     return pathname.startsWith(href);
   }
 

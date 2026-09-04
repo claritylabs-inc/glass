@@ -46,7 +46,6 @@ function OperatorProfileShell({
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       actions={actions}
       rightPanel={rightPanel}
     >

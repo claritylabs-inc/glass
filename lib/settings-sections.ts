@@ -54,10 +54,8 @@ function SpotStarIcon({ className }: { className?: string }) {
 }
 
 export function getSettingsNavigation({
-  isBroker,
   isStandaloneClient,
 }: {
-  isBroker: boolean;
   isStandaloneClient: boolean;
 }): SettingsNavGroup[] {
   const pages: SettingsPage[] = [
@@ -79,10 +77,10 @@ export function getSettingsNavigation({
       icon: SpotStarIcon,
       tabs: [
         { id: "channels", label: "Channels" },
-        ...(isBroker || isStandaloneClient
+        ...(isStandaloneClient
           ? [{ id: "behavior" as const, label: "Behavior" }]
           : []),
-        ...(!isBroker ? [{ id: "wiki" as const, label: "Company wiki" }] : []),
+        { id: "wiki", label: "Company wiki" },
       ],
     },
     {
@@ -134,23 +132,6 @@ export function settingsPages(groups: SettingsNavGroup[]) {
   return groups.flatMap((group) => group.pages);
 }
 
-const LEGACY_DESTINATIONS: Record<
-  string,
-  { section: SettingsPageId; tab: SettingsTabId }
-> = {
-  organization: { section: "organization", tab: "overview" },
-  team: { section: "team", tab: "team" },
-  agent: { section: "agent", tab: "behavior" },
-  wiki: { section: "agent", tab: "wiki" },
-  // Legacy deep link.
-  memory: { section: "agent", tab: "wiki" },
-  certificates: { section: "workflows", tab: "certificates" },
-  notifications: { section: "workflows", tab: "notifications" },
-  email: { section: "mailboxes", tab: "mailboxes" },
-  connections: { section: "integrations", tab: "mcp" },
-  beta: { section: "beta", tab: "beta" },
-};
-
 export function resolveSettingsDestination({
   requestedSection,
   requestedTab,
@@ -161,21 +142,7 @@ export function resolveSettingsDestination({
   groups: SettingsNavGroup[];
 }) {
   const pages = settingsPages(groups);
-  const requestedPage = pages.find((page) => page.id === requestedSection);
-  const legacy = requestedSection
-    ? LEGACY_DESTINATIONS[requestedSection]
-    : undefined;
-  const page =
-    requestedPage ??
-    pages.find((item) => item.id === legacy?.section) ??
-    pages[0];
-  const desiredTab = requestedPage
-    ? requestedTab === "email" ||
-      requestedTab === "imessage" ||
-      requestedTab === "slack"
-      ? "channels"
-      : requestedTab
-    : legacy?.tab;
-  const tab = page.tabs.find((item) => item.id === desiredTab) ?? page.tabs[0];
+  const page = pages.find((item) => item.id === requestedSection) ?? pages[0];
+  const tab = page.tabs.find((item) => item.id === requestedTab) ?? page.tabs[0];
   return { section: page.id, tab: tab.id, page };
 }

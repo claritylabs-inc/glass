@@ -73,7 +73,6 @@ export default function OperatorClientPolicyDetailPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       {clients === undefined ? (
         <OperationalPanel>

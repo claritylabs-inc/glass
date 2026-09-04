@@ -6,18 +6,16 @@ import { SidebarHeader } from "./sidebar-header";
 
 export function SettingsSidebarContent({
   collapsed,
-  isBroker,
   isStandaloneClient,
   activeSettingsSection,
   onToggleCollapse,
 }: {
   collapsed: boolean;
-  isBroker: boolean;
   isStandaloneClient: boolean;
   activeSettingsSection: string;
   onToggleCollapse: () => void;
 }) {
-  const groups = getSettingsNavigation({ isBroker, isStandaloneClient });
+  const groups = getSettingsNavigation({ isStandaloneClient });
 
   return (
     <div className="flex flex-col h-full">

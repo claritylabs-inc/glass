@@ -95,7 +95,6 @@ export default function OperatorRoutingPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       rightPanel={
         activeTab === "routing" && selectedEvent ? (
           <RoutingEventDrawer

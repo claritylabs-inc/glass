@@ -72,7 +72,6 @@ export default function OperatorClientCompliancePage() {
         customSidebarStorageKey="operator-sidebar"
         disablePersistentChat
         disableCommandPalette
-        showBrokerShare={false}
       >
         <OperationalPanel>
           <div className="flex h-40 items-center justify-center text-muted-foreground">
@@ -91,7 +90,6 @@ export default function OperatorClientCompliancePage() {
         customSidebarStorageKey="operator-sidebar"
         disablePersistentChat
         disableCommandPalette
-        showBrokerShare={false}
       >
         <OperationalPanel>
           <OperationalPanelHeader title="Client not found" />
@@ -139,7 +137,6 @@ export default function OperatorClientCompliancePage() {
           customSidebarStorageKey="operator-sidebar"
           disablePersistentChat
           disableCommandPalette
-          showBrokerShare={false}
         >
           <main className="w-full space-y-6">
             <div className="overflow-x-auto">{toolbar}</div>

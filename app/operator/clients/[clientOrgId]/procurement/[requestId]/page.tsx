@@ -86,7 +86,6 @@ export default function OperatorProcurementRequestPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       <OperatorPageContextRegistration
         context={{

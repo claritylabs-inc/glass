@@ -131,7 +131,6 @@ export default function OperatorThreadsPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       <div className="space-y-4">
         <Tabs

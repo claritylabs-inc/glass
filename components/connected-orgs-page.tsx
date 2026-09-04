@@ -21,7 +21,7 @@ export function ConnectedOrgsPage({
   const [rightPanel, setRightPanel] = useState<ReactNode>(null);
 
   useEffect(() => {
-    if (currentOrg?.isBroker) router.replace("/clients");
+    if (currentOrg?.isBroker) router.replace("/broker");
   }, [currentOrg?.isBroker, router]);
 
   if (currentOrg?.isBroker) return null;

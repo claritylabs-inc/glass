@@ -55,7 +55,7 @@ function AgentSwitchRow({
   );
 }
 
-export function BrokerAgentTab() {
+export function AgentBehaviorSection() {
   const viewerOrg = useCachedViewerOrg();
   const updateOrg = useMutation(api.orgs.updateOrg);
 

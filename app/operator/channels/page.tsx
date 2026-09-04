@@ -662,7 +662,6 @@ function OperatorChannelsContent({
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
       rightPanel={rightPanel}
     >
       <main className="w-full">
@@ -835,7 +834,6 @@ export default function OperatorChannelsPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       <main className="w-full">
         <OperatorChannelTabs>

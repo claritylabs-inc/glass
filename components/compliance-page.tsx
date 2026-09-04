@@ -1793,7 +1793,7 @@ function ComplianceWorkspace({
   const currentOrg = orgContext ?? routeOrg;
   useEffect(() => {
     if (!orgContext && currentOrg?.orgType === "broker") {
-      router.replace("/clients");
+      router.replace("/broker");
     }
   }, [currentOrg?.orgType, orgContext, router]);
 

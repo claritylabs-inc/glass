@@ -75,7 +75,6 @@ export default function OperatorThreadPage() {
       customSidebarStorageKey="operator-sidebar"
       disablePersistentChat
       disableCommandPalette
-      showBrokerShare={false}
     >
       <div className="absolute inset-0 overflow-hidden">
         <OperatorAgentPanel variant="page" threadId={id} showHeader={false} />

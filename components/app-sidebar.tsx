@@ -7,6 +7,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { NavItemConfig } from "@/components/app-sidebar/types";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useOnboardingCache } from "@/hooks/use-onboarding-cache";
 import { NotificationsPanel } from "@/components/notifications-panel";
@@ -14,10 +15,9 @@ import { MainSidebarContent } from "@/components/app-sidebar/main-sidebar-conten
 import { SidebarTooltipProvider } from "@/components/app-sidebar/nav-item";
 import {
   AGENT_DOMAIN,
-  ALL_NAV_ITEMS,
   BROKER_NAV_ITEMS,
   CONNECT_ITEMS,
-  NO_CONNECT_ITEMS,
+  INSURANCE_ITEMS,
   SHORTCUT_PREFIX_KEY,
   SHORTCUT_SEQUENCE_TIMEOUT_MS,
 } from "@/components/app-sidebar/nav-config";
@@ -36,6 +36,8 @@ import {
   getSettingsNavigation,
   resolveSettingsDestination,
 } from "@/lib/settings-sections";
+
+const NO_NAV_ITEMS: NavItemConfig[] = [];
 
 function sidebarHeaderBranding({
   viewerOrg,
@@ -108,9 +110,9 @@ export function AppSidebar({
   );
   const isStandaloneClient = currentOrg?.orgType === "client";
   const canManageSettings = !isBroker && currentOrg?.role === "admin";
-  const navItems = isBroker ? BROKER_NAV_ITEMS : ALL_NAV_ITEMS;
+  const navItems = isBroker ? BROKER_NAV_ITEMS : INSURANCE_ITEMS;
   const connectItems =
-    isBroker || !showConnectFeatures ? NO_CONNECT_ITEMS : CONNECT_ITEMS;
+    isBroker || !showConnectFeatures ? NO_NAV_ITEMS : CONNECT_ITEMS;
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   useEffect(() => {
@@ -281,14 +283,13 @@ export function AppSidebar({
   const activeSettingsSection = resolveSettingsDestination({
     requestedSection: searchParams.get("section"),
     requestedTab: searchParams.get("tab"),
-    groups: getSettingsNavigation({ isBroker, isStandaloneClient }),
+    groups: getSettingsNavigation({ isStandaloneClient }),
   }).section;
 
   function renderSettingsSidebarContent(contentCollapsed: boolean) {
     return (
       <SettingsSidebarContent
         collapsed={contentCollapsed}
-        isBroker={isBroker}
         isStandaloneClient={isStandaloneClient}
         activeSettingsSection={activeSettingsSection}
         onToggleCollapse={toggleCollapse}

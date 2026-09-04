@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import VendorRequestAcceptance from "@/app/connected-orgs/request/[token]/request-acceptance";
+import VendorRequestAcceptance from "./request-acceptance";
 import { typeStyle } from "@/lib/typography";
 
 export default async function ConnectRequestPage({
