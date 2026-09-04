@@ -30,6 +30,10 @@ import {
   type OperatorAgentToolName,
   type OperatorToolRole,
 } from "./lib/operatorAgentToolRegistry";
+import {
+  listOperatorAgentIntents,
+  resolveOperatorAgentIntent,
+} from "./lib/operatorAgentIntentRegistry";
 import { buildOperatorRunCheckpointSummary } from "./lib/operatorAgentContinuation";
 import { lookupMapboxAddress } from "./lib/mapboxAddress";
 import {
@@ -973,6 +977,20 @@ async function requireOperatorThread(
   return thread;
 }
 
+async function findEmptyChatThread(
+  ctx: MutationCtx,
+  threadId: Id<"operatorAgentThreads">,
+  operatorUserId: Id<"users">,
+) {
+  const thread = await requireOperatorThread(ctx, threadId, operatorUserId);
+  if (thread.channel !== "chat") return null;
+  const firstMessage = await ctx.db
+    .query("operatorAgentMessages")
+    .withIndex("thread", (index) => index.eq("threadId", threadId))
+    .first();
+  return firstMessage ? null : thread;
+}
+
 async function insertOperatorThread(
   ctx: MutationCtx,
   args: {
@@ -1095,6 +1113,7 @@ async function enqueueOperatorMessage(
       summary?: string;
     };
     slackThreadContext?: SlackThreadContextSnapshot;
+    toolArtifacts?: Array<{ type: string; data: unknown }>;
     requireUploadIntent?: boolean;
   },
 ) {
@@ -1183,6 +1202,10 @@ async function enqueueOperatorMessage(
 
   const now = dayjs().valueOf();
   const operator = await ctx.db.get(args.operatorUserId);
+  const toolArtifacts = [
+    ...(args.toolArtifacts ?? []),
+    ...(slackThreadContextArtifact ? [slackThreadContextArtifact] : []),
+  ];
   const userMessageId = await ctx.db.insert("operatorAgentMessages", {
     threadId: args.threadId,
     ownerUserId: args.operatorUserId,
@@ -1193,9 +1216,7 @@ async function enqueueOperatorMessage(
     userName: operator?.name ?? operator?.email ?? "Operator",
     content,
     attachments,
-    toolArtifacts: slackThreadContextArtifact
-      ? [slackThreadContextArtifact]
-      : undefined,
+    toolArtifacts: toolArtifacts.length > 0 ? toolArtifacts : undefined,
     createdAt: now,
     updatedAt: now,
   });
@@ -3039,6 +3060,65 @@ export const createThread = mutation({
       channel: "chat",
       initialContext: args.initialContext,
     });
+  },
+});
+
+export const listIntents = query({
+  args: { pageContext: v.optional(pageContextValidator) },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    return listOperatorAgentIntents(
+      normalizeOperatorPageContext(args.pageContext),
+    );
+  },
+});
+
+export const startIntent = mutation({
+  args: {
+    intentId: v.string(),
+    pageContext: v.optional(pageContextValidator),
+    emptyThreadId: v.optional(v.id("operatorAgentThreads")),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    const emptyThread = args.emptyThreadId
+      ? await findEmptyChatThread(ctx, args.emptyThreadId, operator.userId)
+      : null;
+    const pageContext =
+      emptyThread?.initialContext ??
+      normalizeOperatorPageContext(args.pageContext);
+    const intent = resolveOperatorAgentIntent(args.intentId, pageContext);
+
+    let threadId: Id<"operatorAgentThreads">;
+    if (emptyThread) {
+      threadId = emptyThread._id;
+      await ctx.db.patch(threadId, {
+        title: normalizeOperatorThreadTitle(intent.label),
+        updatedAt: dayjs().valueOf(),
+      });
+    } else {
+      threadId = await insertOperatorThread(ctx, {
+        operatorUserId: operator.userId,
+        channel: "chat",
+        title: intent.label,
+        initialContext: pageContext,
+      });
+    }
+
+    const result = await enqueueOperatorMessage(ctx, {
+      operatorUserId: operator.userId,
+      threadId,
+      channel: "chat",
+      content: intent.objective,
+      pageContext,
+      toolArtifacts: [
+        {
+          type: "operator_intent",
+          data: { id: intent.id, version: intent.version },
+        },
+      ],
+    });
+    return { threadId, ...result };
   },
 });
 

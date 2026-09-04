@@ -77,6 +77,12 @@ type GetThreadResult = {
   confirmations: BackendConfirmation[];
 };
 type CreateThreadArgs = { initialContext?: PageContext };
+type ListIntentsArgs = { pageContext?: PageContext };
+type StartIntentArgs = {
+  intentId: string;
+  pageContext?: PageContext;
+  emptyThreadId?: string;
+};
 type SendMessageArgs = {
   threadId: string;
   content: string;
@@ -120,6 +126,8 @@ export type OperatorAgentThread = {
   archivedAt?: number;
 };
 
+export type OperatorAgentIntent = { id: string; label: string };
+
 export type OperatorAgentConfirmation = {
   id: string;
   promptMessageId: string;
@@ -157,6 +165,16 @@ export const operatorAgentApi = {
   createThread: makeFunctionReference<"mutation", CreateThreadArgs, string>(
     "operatorAgent:createThread",
   ),
+  listIntents: makeFunctionReference<
+    "query",
+    ListIntentsArgs,
+    OperatorAgentIntent[]
+  >("operatorAgent:listIntents"),
+  startIntent: makeFunctionReference<
+    "mutation",
+    StartIntentArgs,
+    { threadId: string; messageId: string; runId: string; duplicate: boolean }
+  >("operatorAgent:startIntent"),
   archiveThread: makeFunctionReference<
     "mutation",
     SetThreadArchiveArgs,
