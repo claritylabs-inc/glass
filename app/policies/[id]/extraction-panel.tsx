@@ -1063,14 +1063,12 @@ function ContactCard({
 
 function SupplementaryCard({
   title,
-  icon: _Icon,
   pageNumber,
   content,
   hasStructured,
   children,
 }: {
   title: string;
-  icon?: React.ComponentType<{ className?: string }>;
   pageNumber?: number;
   content: string;
   hasStructured: boolean;
