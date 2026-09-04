@@ -19,6 +19,7 @@ import {
   Mail,
   Pencil,
   Plus,
+  RefreshCw,
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,7 +31,7 @@ import {
 import { usePdf } from "@/components/pdf-context";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import {
-  PacketSharingWorkspace,
+  PacketEditor,
   PacketWorkspace,
 } from "@/components/procurement/packet-workspace";
 import {
@@ -54,8 +55,8 @@ import {
   type StoredProcurementRequestStatus,
 } from "@/components/procurement/procurement-shared";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
-import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { FileDropZone } from "@/components/ui/file-drop";
 import { Input } from "@/components/ui/input";
 import {
   OperationalLabelValueList,
@@ -137,13 +138,7 @@ type Outreach = {
   contactEmail?: string;
   contactPhone?: string;
   status: ProcurementOutreachStatus;
-  applicationUrl?: string;
-  applicationQuestions: string[];
-  notes?: string;
-  quoteSummary?: string;
-  quoteAmount?: number;
-  quoteCurrency?: string;
-  quoteUrl?: string;
+  log: string;
   updatedAt: number;
 };
 
@@ -183,79 +178,59 @@ type BrokerOption = {
   name: string;
 };
 
-type ActiveProposalOption = {
+type ProposalUploadTarget = {
   _id: Id<"procurementProposals">;
-  outreachId: Id<"procurementBrokerOutreaches">;
   status: string;
-  brokerName?: string;
 };
 
-function ProposalCreateDrawer({
+function ProposalDropzone({
   requestId,
-  outreaches,
-  fileItems,
-  activeProposals,
-  onClose,
+  outreach,
+  proposal,
 }: {
   requestId: Id<"procurementRequests">;
-  outreaches: Outreach[];
-  fileItems: ProcurementFileItem[];
-  activeProposals: ActiveProposalOption[];
-  onClose: () => void;
+  outreach: Outreach;
+  proposal?: ProposalUploadTarget;
 }) {
-  const eligible = outreaches.filter((outreach) => outreach.brokerOrgId);
-  const [outreachId, setOutreachId] = useState(eligible[0]?._id ?? "");
-  const [supersede, setSupersede] = useState(true);
-  const [files, setFiles] = useState<File[]>([]);
-  const [selectedFileItemIds, setSelectedFileItemIds] = useState<
-    Id<"procurementFileItems">[]
-  >([]);
-  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const generateUploadUrl = useMutation(
     api.procurementProposals.generateUploadUrl,
   );
   const registerUpload = useMutation(api.procurementProposals.registerUpload);
   const discardUpload = useMutation(api.clientFiles.discardUpload);
   const fileProposal = useMutation(api.procurementProposals.file);
-  const availableFileItems = fileItems.filter(
-    (item) => item.clientFile && item.status !== "requested",
-  );
-  const hasSources = files.length > 0 || selectedFileItemIds.length > 0;
-  // An outreach holds one active proposal at a time. Anything past draft has to
-  // be superseded explicitly, which is what the agent path already does.
-  const activeForOutreach = activeProposals.find(
-    (proposal) => proposal.outreachId === outreachId,
-  );
-  const supersedable =
-    activeForOutreach &&
-    activeForOutreach.status !== "draft" &&
-    activeForOutreach.status !== "selected"
-      ? activeForOutreach
-      : null;
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const outreach = eligible.find((item) => item._id === outreachId);
-    if (!outreach?.brokerOrgId || !hasSources) return;
+  async function upload(files: File[]) {
+    if (
+      uploading ||
+      !outreach.brokerOrgId ||
+      !files.length ||
+      proposal?.status === "selected"
+    )
+      return;
+    if (
+      files.some(
+        (file) =>
+          file.type !== "application/pdf" &&
+          !file.name.toLowerCase().endsWith(".pdf"),
+      )
+    ) {
+      toast.error("Proposal documents must be PDFs");
+      return;
+    }
     const pendingUploads: Array<{
       uploadIntentId: Id<"clientFileUploadIntents">;
       fileId?: Id<"_storage">;
     }> = [];
-    setSaving(true);
+    setUploading(true);
     try {
-      const sources: Array<
-        | { kind: "file_item"; fileItemId: Id<"procurementFileItems"> }
-        | {
-            kind: "upload";
-            fileId: Id<"_storage">;
-            fileName: string;
-            contentType?: string;
-            uploadIntentId: Id<"clientFileUploadIntents">;
-          }
-      > = selectedFileItemIds.map((fileItemId) => ({
-        kind: "file_item",
-        fileItemId,
-      }));
+      const sources: Array<{
+        kind: "upload";
+        fileId: Id<"_storage">;
+        fileName: string;
+        contentType?: string;
+        uploadIntentId: Id<"clientFileUploadIntents">;
+      }> = [];
       for (const file of files) {
         const target = await generateUploadUrl({ requestId });
         const pending: (typeof pendingUploads)[number] = {
@@ -289,11 +264,15 @@ function ProposalCreateDrawer({
         requestId,
         outreachId: outreach._id,
         sources,
+        proposalId: proposal?.status === "draft" ? proposal._id : undefined,
         supersedesProposalId:
-          supersedable && supersede ? supersedable._id : undefined,
+          proposal && proposal.status !== "draft" ? proposal._id : undefined,
       });
-      toast.success("Proposal filed and queued for extraction");
-      onClose();
+      toast.success(
+        proposal && proposal.status !== "draft"
+          ? "Proposal revision filed"
+          : "Proposal filed and queued for extraction",
+      );
     } catch (error) {
       await Promise.allSettled(
         pendingUploads.map((upload) =>
@@ -307,142 +286,29 @@ function ProposalCreateDrawer({
         getUserFacingErrorMessage(error, "Could not file the proposal"),
       );
     } finally {
-      setSaving(false);
+      setUploading(false);
     }
   }
 
   return (
-    <SettingsDrawer
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title="File proposal"
-      footer={
-        <PillButton
-          type="submit"
-          form="proposal-create-form"
-          disabled={saving || !outreachId || !hasSources}
-        >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : null}File
-          proposal
-        </PillButton>
+    <FileDropZone
+      multiple
+      accept="application/pdf,.pdf"
+      disabled={
+        uploading || !outreach.brokerOrgId || proposal?.status === "selected"
       }
-    >
-      <form id="proposal-create-form" className="space-y-5" onSubmit={submit}>
-        <div>
-          <label
-            className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}
-          >
-            Broker outreach
-          </label>
-          <Select
-            value={outreachId}
-            items={eligible.map((outreach) => ({
-              value: outreach._id,
-              label: outreach.brokerName,
-            }))}
-            onValueChange={(value) =>
-              setOutreachId((value ?? "") as Id<"procurementBrokerOutreaches">)
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select broker" />
-            </SelectTrigger>
-            <SelectContent>
-              {eligible.map((outreach) => (
-                <SelectItem key={outreach._id} value={outreach._id}>
-                  {outreach.brokerName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {eligible.length === 0 ? (
-            <p className={`mt-2 text-warning ${typeStyle("body.default")}`}>
-              Add a broker organization to Market before filing a proposal.
-            </p>
-          ) : null}
-          {supersedable ? (
-            <label className="mt-3 flex items-start gap-3 rounded-md border border-border px-3 py-2">
-              <input
-                type="checkbox"
-                className="mt-0.5 size-4"
-                checked={supersede}
-                onChange={(event) => setSupersede(event.target.checked)}
-              />
-              <span className={typeStyle("body.default")}>
-                File as a revision that withdraws the current{" "}
-                {supersedable.status.replaceAll("_", " ")} proposal
-                {supersedable.brokerName
-                  ? ` from ${supersedable.brokerName}`
-                  : ""}
-              </span>
-            </label>
-          ) : activeForOutreach?.status === "selected" ? (
-            <p className={`mt-2 text-warning ${typeStyle("body.default")}`}>
-              This outreach holds the selected proposal. Select another reviewed
-              proposal before filing a revision here.
-            </p>
-          ) : null}
-        </div>
-        <div>
-          <label
-            className={`mb-1.5 block text-muted-foreground ${typeStyle("label.field")}`}
-          >
-            Proposal documents
-          </label>
-          <Input
-            type="file"
-            accept="application/pdf"
-            multiple
-            onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-          />
-          <p
-            className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}
-          >
-            All selected documents are filed atomically as one private proposal.
-          </p>
-        </div>
-        {availableFileItems.length ? (
-          <fieldset className="space-y-2">
-            <legend
-              className={`text-muted-foreground ${typeStyle("label.field")}`}
-            >
-              Existing request files
-            </legend>
-            {availableFileItems.map((item) => (
-              <label
-                key={item._id}
-                className="flex items-start gap-3 rounded-md border border-border px-3 py-2"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-0.5 size-4"
-                  checked={selectedFileItemIds.includes(item._id)}
-                  onChange={(event) =>
-                    setSelectedFileItemIds((current) =>
-                      event.target.checked
-                        ? [...current, item._id]
-                        : current.filter((id) => id !== item._id),
-                    )
-                  }
-                />
-                <span>
-                  <span className={`block ${typeStyle("body.medium")}`}>
-                    {item.label}
-                  </span>
-                  <span
-                    className={`text-muted-foreground ${typeStyle("caption.default")}`}
-                  >
-                    {procurementFilePurposeLabel(item.purpose)}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-        ) : null}
-      </form>
-    </SettingsDrawer>
+      idleLabel={
+        proposal?.status === "selected"
+          ? "Proposal selected"
+          : "Drop proposal PDFs"
+      }
+      activeLabel="Drop to file proposal"
+      busyLabel={uploading ? "Filing proposal…" : undefined}
+      hint={proposal?.status === "selected" ? null : "or click to choose files"}
+      padding="px-3 py-3"
+      className="min-w-48"
+      onFiles={(files) => void upload(files)}
+    />
   );
 }
 
@@ -908,23 +774,7 @@ function OutreachEditor({
   const [status, setStatus] = useState<ProcurementOutreachStatus>(
     outreach?.status ?? "request_sent",
   );
-  const [applicationUrl, setApplicationUrl] = useState(
-    outreach?.applicationUrl ?? "",
-  );
-  const [applicationQuestions, setApplicationQuestions] = useState(
-    outreach?.applicationQuestions.join("\n") ?? "",
-  );
-  const [notes, setNotes] = useState(outreach?.notes ?? "");
-  const [quoteSummary, setQuoteSummary] = useState(
-    outreach?.quoteSummary ?? "",
-  );
-  const [quoteAmount, setQuoteAmount] = useState(
-    outreach?.quoteAmount === undefined ? "" : String(outreach.quoteAmount),
-  );
-  const [quoteCurrency, setQuoteCurrency] = useState(
-    outreach?.quoteCurrency ?? "USD",
-  );
-  const [quoteUrl, setQuoteUrl] = useState(outreach?.quoteUrl ?? "");
+  const [log, setLog] = useState(outreach?.log ?? "");
   const [saving, setSaving] = useState(false);
 
   function chooseBroker(value: string) {
@@ -943,16 +793,7 @@ function OutreachEditor({
       contactEmail: contactEmail || undefined,
       contactPhone: contactPhone || undefined,
       status,
-      applicationUrl: applicationUrl || undefined,
-      applicationQuestions: applicationQuestions
-        .split("\n")
-        .map((question) => question.trim())
-        .filter(Boolean),
-      notes: notes || undefined,
-      quoteSummary: quoteSummary || undefined,
-      quoteAmount: quoteAmount ? Number(quoteAmount) : undefined,
-      quoteCurrency: quoteCurrency || undefined,
-      quoteUrl: quoteUrl || undefined,
+      log: log || undefined,
     };
     setSaving(true);
     try {
@@ -964,12 +805,7 @@ function OutreachEditor({
           contactName: contactName || null,
           contactEmail: contactEmail || null,
           contactPhone: contactPhone || null,
-          applicationUrl: applicationUrl || null,
-          notes: notes || null,
-          quoteSummary: quoteSummary || null,
-          quoteAmount: quoteAmount ? Number(quoteAmount) : null,
-          quoteCurrency: quoteCurrency || null,
-          quoteUrl: quoteUrl || null,
+          log: log || null,
         });
         toast.success("Broker outreach updated");
       } else {
@@ -1063,80 +899,45 @@ function OutreachEditor({
         </section>
 
         <section className="space-y-4 border-t border-border pt-5">
-          <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
-            Workflow
-          </h3>
-          <Select
-            value={status}
-            onValueChange={(value) =>
-              setStatus(value as ProcurementOutreachStatus)
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue>
-                {procurementOutreachStatusLabel(status)}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {OUTREACH_STATUS_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            type="url"
-            value={applicationUrl}
-            onChange={(event) => setApplicationUrl(event.target.value)}
-            placeholder="Application file or form link"
-          />
-          <Textarea
-            value={applicationQuestions}
-            onChange={(event) => setApplicationQuestions(event.target.value)}
-            className="min-h-28"
-            placeholder="Application questions, one per line"
-          />
-          <Textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            className="min-h-24"
-            placeholder="Broker notes and context"
-          />
-        </section>
-
-        <section className="space-y-4 border-t border-border pt-5">
-          <h3 className={`text-foreground ${typeStyle("heading.micro")}`}>
-            Final quote
-          </h3>
-          <Textarea
-            value={quoteSummary}
-            onChange={(event) => setQuoteSummary(event.target.value)}
-            className="min-h-24"
-            placeholder="Quote summary, terms, deductibles, and notable exclusions"
-          />
-          <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-3">
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={quoteAmount}
-              onChange={(event) => setQuoteAmount(event.target.value)}
-              placeholder="Premium"
+          <label className="block space-y-1.5">
+            <span
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
+            >
+              Status
+            </span>
+            <Select
+              value={status}
+              onValueChange={(value) =>
+                setStatus(value as ProcurementOutreachStatus)
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {procurementOutreachStatusLabel(status)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {OUTREACH_STATUS_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="block space-y-1.5">
+            <span
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
+            >
+              Log
+            </span>
+            <Textarea
+              value={log}
+              onChange={(event) => setLog(event.target.value)}
+              className="min-h-64"
+              placeholder="Add outreach updates in Markdown"
             />
-            <Input
-              value={quoteCurrency}
-              onChange={(event) => setQuoteCurrency(event.target.value)}
-              maxLength={3}
-              placeholder="USD"
-            />
-          </div>
-          <Input
-            type="url"
-            value={quoteUrl}
-            onChange={(event) => setQuoteUrl(event.target.value)}
-            placeholder="Quote link"
-          />
+          </label>
         </section>
       </div>
     </SettingsDrawer>
@@ -1485,6 +1286,9 @@ export function ProcurementRequestWorkspace({
   });
   const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
   const proposals = useQuery(api.procurementProposals.list, { requestId });
+  const packetLinks = useQuery(api.procurementPacket.listLinks, { requestId });
+  const mintPacketLink = useMutation(api.procurementPacket.mintLink);
+  const rotatePacketLink = useMutation(api.procurementPacket.rotateLink);
   const generateProposalReview = useAction(
     api.actions.proposalReview.generateReview,
   );
@@ -1502,6 +1306,7 @@ export function ProcurementRequestWorkspace({
   const [workingProposalAction, setWorkingProposalAction] = useState<
     string | null
   >(null);
+  const [regeneratingPacketLink, setRegeneratingPacketLink] = useState(false);
   const { openWithUrl, closePdf } = usePdf();
 
   const details = result as RequestDetails | null | undefined;
@@ -1534,6 +1339,13 @@ export function ProcurementRequestWorkspace({
       />,
     );
   }, [closePdf, closeRightPanel, details, onRightPanel, policyOptions]);
+
+  const openPacketEditor = useCallback(() => {
+    closePdf();
+    onRightPanel(
+      <PacketEditor requestId={requestId} onClose={closeRightPanel} />,
+    );
+  }, [closePdf, closeRightPanel, onRightPanel, requestId]);
 
   const openOutreachEditor = useCallback(
     (outreach?: Outreach) => {
@@ -1599,23 +1411,6 @@ export function ProcurementRequestWorkspace({
     requestId,
   ]);
 
-  const openProposalCreate = useCallback(() => {
-    if (!details) return;
-    closePdf();
-    onRightPanel(
-      <ProposalCreateDrawer
-        requestId={requestId}
-        outreaches={details.outreaches}
-        fileItems={details.files}
-        activeProposals={(proposals ?? []).filter(
-          (proposal) =>
-            proposal.status !== "archived" && proposal.status !== "withdrawn",
-        )}
-        onClose={closeRightPanel}
-      />,
-    );
-  }, [closePdf, closeRightPanel, details, onRightPanel, proposals, requestId]);
-
   const openProposalReview = useCallback(
     (proposal: ProposalView) => {
       closePdf();
@@ -1648,6 +1443,57 @@ export function ProcurementRequestWorkspace({
     [closePdf, closeRightPanel, onRightPanel, readOnly, requestOptions],
   );
 
+  const regeneratePacketLink = useCallback(async () => {
+    const activeLink = packetLinks?.find(
+      (link) => link.outreachId === null && link.state === "active",
+    );
+    setRegeneratingPacketLink(true);
+    try {
+      const result = activeLink
+        ? await rotatePacketLink({ linkId: activeLink.linkId })
+        : await mintPacketLink({ requestId });
+      try {
+        await navigator.clipboard.writeText(result.url);
+        toast.success("Packet link regenerated and copied");
+      } catch {
+        onRightPanel(
+          <SettingsDrawer
+            open
+            onOpenChange={(open) => !open && closeRightPanel()}
+            title="Packet link regenerated"
+          >
+            <label className="block space-y-1.5">
+              <span className={typeStyle("label.field")}>
+                Copy this link to share the packet
+              </span>
+              <Input
+                readOnly
+                value={result.url}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </label>
+          </SettingsDrawer>,
+        );
+      }
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(
+          error,
+          "Could not regenerate the packet link",
+        ),
+      );
+    } finally {
+      setRegeneratingPacketLink(false);
+    }
+  }, [
+    closeRightPanel,
+    mintPacketLink,
+    onRightPanel,
+    packetLinks,
+    requestId,
+    rotatePacketLink,
+  ]);
+
   useEffect(() => {
     if (readOnly) {
       onActions?.(null);
@@ -1664,19 +1510,29 @@ export function ProcurementRequestWorkspace({
           <Pencil className="size-3.5" />
           Edit request
         </PillButton>
+      ) : view === "packet" ? (
+        <PillButton type="button" onClick={openPacketEditor}>
+          <Pencil className="size-3.5" />
+          Edit packet
+        </PillButton>
       ) : view === "market" ? (
         <>
           <PillButton
             type="button"
             variant="secondary"
-            onClick={() => openOutreachEditor()}
+            disabled={regeneratingPacketLink || packetLinks === undefined}
+            onClick={() => void regeneratePacketLink()}
           >
+            {regeneratingPacketLink ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            Regenerate link
+          </PillButton>
+          <PillButton type="button" onClick={() => openOutreachEditor()}>
             <Plus className="size-3.5" />
             Add broker
-          </PillButton>
-          <PillButton type="button" onClick={openProposalCreate}>
-            <Plus className="size-3.5" />
-            File proposal
           </PillButton>
         </>
       ) : view === "files" ? (
@@ -1702,10 +1558,13 @@ export function ProcurementRequestWorkspace({
     onActions,
     openFileEditor,
     openOutreachEditor,
+    openPacketEditor,
     openRequestEditor,
     openUpload,
-    openProposalCreate,
+    packetLinks,
     readOnly,
+    regeneratePacketLink,
+    regeneratingPacketLink,
     view,
   ]);
 
@@ -1924,7 +1783,6 @@ export function ProcurementRequestWorkspace({
 
       {view === "market" ? (
         <div className="space-y-4">
-          <PacketSharingWorkspace requestId={requestId} readOnly={readOnly} />
           {activeProposals.length ? (
             <OperationalPanel as="section">
               <Table>
@@ -1953,6 +1811,9 @@ export function ProcurementRequestWorkspace({
                       ? undefined
                       : (review?.staffConclusion ?? review?.modelConclusion);
                     const latestExtraction = proposal.extraction.latest;
+                    const proposalOutreach = outreachById.get(
+                      proposal.outreachId,
+                    );
                     return (
                       <TableRow key={proposal._id}>
                         <TableCell>
@@ -2037,12 +1898,35 @@ export function ProcurementRequestWorkspace({
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {proposal.documents.length}
+                        <TableCell>
+                          {readOnly || !proposalOutreach ? (
+                            <span className="text-muted-foreground">
+                              {proposal.documents.length}
+                            </span>
+                          ) : (
+                            <ProposalDropzone
+                              requestId={requestId}
+                              outreach={proposalOutreach}
+                              proposal={proposal}
+                            />
+                          )}
                         </TableCell>
                         <TableCell>
                           {!readOnly ? (
                             <div className="flex flex-wrap justify-end gap-2">
+                              {proposalOutreach ? (
+                                <PillButton
+                                  size="compact"
+                                  variant="secondary"
+                                  iconOnly
+                                  label={`Edit ${proposalOutreach.brokerName}`}
+                                  onClick={() =>
+                                    openOutreachEditor(proposalOutreach)
+                                  }
+                                >
+                                  <Pencil className="size-3.5" />
+                                </PillButton>
+                              ) : null}
                               {(!review || review.stale) &&
                               proposal.extractedOffer ? (
                                 <PillButton
@@ -2175,8 +2059,7 @@ export function ProcurementRequestWorkspace({
                 <TableRow>
                   <TableHead>Broker</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Application</TableHead>
-                  <TableHead>Quote</TableHead>
+                  {!readOnly ? <TableHead>Proposal</TableHead> : null}
                   <TableHead>Updated</TableHead>
                   <TableHead className="w-0" />
                 </TableRow>
@@ -2201,44 +2084,14 @@ export function ProcurementRequestWorkspace({
                     <TableCell>
                       <OutreachStatusTag status={outreach.status} />
                     </TableCell>
-                    <TableCell className="min-w-48 whitespace-normal">
-                      {outreach.applicationUrl ? (
-                        <a
-                          href={outreach.applicationUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-foreground underline underline-offset-4"
-                        >
-                          Open application
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">No link</span>
-                      )}
-                      <p
-                        className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
-                      >
-                        {outreach.applicationQuestions.length} questions
-                      </p>
-                    </TableCell>
-                    <TableCell className="min-w-52 whitespace-normal">
-                      <p className="text-foreground">
-                        {outreach.quoteAmount !== undefined
-                          ? `${outreach.quoteCurrency ?? "USD"} ${outreach.quoteAmount.toLocaleString()}`
-                          : outreach.quoteSummary
-                            ? "Quote details saved"
-                            : "Not received"}
-                      </p>
-                      {outreach.quoteUrl ? (
-                        <a
-                          href={outreach.quoteUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={`mt-1 inline-block text-muted-foreground underline underline-offset-4 ${typeStyle("caption.default")}`}
-                        >
-                          Open quote
-                        </a>
-                      ) : null}
-                    </TableCell>
+                    {!readOnly ? (
+                      <TableCell>
+                        <ProposalDropzone
+                          requestId={requestId}
+                          outreach={outreach}
+                        />
+                      </TableCell>
+                    ) : null}
                     <TableCell className="text-muted-foreground">
                       {formatDisplayDate(outreach.updatedAt, "—")}
                     </TableCell>
