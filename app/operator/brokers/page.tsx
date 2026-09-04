@@ -11,6 +11,7 @@ import { TokenListField } from "@/components/broker-network/token-list-field";
 import { OperatorSidebar } from "../operator-sidebar";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import { Input } from "@/components/ui/input";
+import { OrgBrandIcon } from "@/components/ui/org-brand-icon";
 import { OperationalPanel } from "@/components/ui/operational-panel";
 import { PillButton } from "@/components/ui/pill-button";
 import {
@@ -223,16 +224,26 @@ export default function OperatorBrokersPage() {
                     }}
                   >
                     <TableCell className="px-4">
-                      <p
-                        className={`text-foreground ${typeStyle("body.medium")}`}
-                      >
-                        {row.broker.name}
-                      </p>
-                      <p
-                        className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
-                      >
-                        {row.broker.website ?? "No website"}
-                      </p>
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <OrgBrandIcon
+                          name={row.broker.name}
+                          iconUrl={row.broker.iconUrl}
+                          website={row.broker.website}
+                          size="md"
+                        />
+                        <div className="min-w-0">
+                          <p
+                            className={`truncate text-foreground ${typeStyle("body.medium")}`}
+                          >
+                            {row.broker.name}
+                          </p>
+                          <p
+                            className={`mt-1 truncate text-muted-foreground ${typeStyle("caption.default")}`}
+                          >
+                            {row.broker.website ?? "No website"}
+                          </p>
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <StatusTag
