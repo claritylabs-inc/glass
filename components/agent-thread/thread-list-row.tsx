@@ -41,56 +41,34 @@ export function ThreadListRow({
   thread: ThreadDisplayLike;
   action?: ReactNode;
 }) {
-  const body = (
-    <>
-      <div className="shrink-0 text-muted-foreground/30">
-        <ChannelIcon thread={thread} />
-      </div>
-      <div className="min-w-0 flex-1 text-left">
-        <div className="flex items-center gap-2">
-          <p
-            className={`truncate text-foreground ${typeStyle("body.medium")}`}
-          >
-            {getThreadDisplayLabel(thread)}
-          </p>
-          {isPrivateSlackThread(thread) ? (
-            <LockKeyhole
-              className="h-3 w-3 shrink-0 text-muted-foreground/35"
-              aria-label="Private Slack thread"
-            />
-          ) : null}
-        </div>
-        <p
-          className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}
-        >
-          {formatDisplayDateTime(thread.lastMessageAt ?? thread._creationTime)} ·{" "}
-          {channelLabel(thread)}
-        </p>
-      </div>
-    </>
-  );
-
-  const href = `/agent/thread/${thread._id}`;
-  if (!action) {
-    return (
-      <ActionSurfaceLink
-        href={href}
-        className="flex items-center gap-3 px-4 py-3"
-      >
-        {body}
-      </ActionSurfaceLink>
-    );
-  }
-
   return (
-    <ActionSurface className="group flex items-center gap-3 px-4 py-3">
+    <ActionSurface className="group flex items-center">
       <ActionSurfaceLink
-        href={href}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-none border-0 bg-transparent hover:bg-transparent"
+        href={`/agent/thread/${thread._id}`}
+        className="flex min-w-0 flex-1 items-center gap-3 border-0 bg-transparent px-4 py-3 hover:bg-transparent"
       >
-        {body}
+        <div className="shrink-0 text-muted-foreground/30">
+          <ChannelIcon thread={thread} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className={`truncate text-foreground ${typeStyle("body.medium")}`}>
+              {getThreadDisplayLabel(thread)}
+            </p>
+            {isPrivateSlackThread(thread) ? (
+              <LockKeyhole
+                className="h-3 w-3 shrink-0 text-muted-foreground/35"
+                aria-label="Private Slack thread"
+              />
+            ) : null}
+          </div>
+          <p className={`text-muted-foreground/40 ${typeStyle("caption.default")}`}>
+            {formatDisplayDateTime(thread.lastMessageAt ?? thread._creationTime)}{" "}
+            · {channelLabel(thread)}
+          </p>
+        </div>
       </ActionSurfaceLink>
-      {action}
+      {action ? <div className="shrink-0 pr-4">{action}</div> : null}
     </ActionSurface>
   );
 }
