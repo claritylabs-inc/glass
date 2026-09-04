@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import dayjs from "dayjs";
 import { describe, expect, test } from "vitest";
 
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { composeRequestMarkdown } from "./lib/procurementPacket";
 import schema from "./schema";
 
@@ -68,6 +68,266 @@ describe("composeRequestMarkdown", () => {
 });
 
 describe("request packet composition", () => {
+  test("issues immutable broker snapshots and revokes packet and file access", async () => {
+    const f = await fixture();
+    const brokerOrgId = await f.t.run((ctx) =>
+      ctx.db.insert("organizations", {
+        name: "Montgomery Risk",
+        type: "broker",
+      }),
+    );
+    const request = await f.operator.mutation(api.procurementRequests.create, {
+      clientOrgId: f.clientOrgId,
+      title: "Property placement",
+      narrative: "Insure the Carroll Avenue property",
+    });
+    const outreach = await f.operator.mutation(
+      api.procurementRequests.createOutreach,
+      {
+        requestId: request.requestId,
+        brokerOrgId,
+        contactName: "Dana Reyes",
+        contactEmail: "dana@example.com",
+      },
+    );
+    const otherOutreach = await f.operator.mutation(
+      api.procurementRequests.createOutreach,
+      {
+        requestId: request.requestId,
+        brokerOrgId,
+        contactName: "Alex Morgan",
+        contactEmail: "alex@example.com",
+      },
+    );
+    await expect(
+      f.operator.mutation(api.procurementPacket.mintLink, {
+        requestId: request.requestId,
+        outreachId: outreach.outreachId,
+        recipientLabel: "Dana Reyes",
+        expiresAt: dayjs().subtract(1, "minute").valueOf(),
+      }),
+    ).rejects.toThrow("Packet link expiry must be in the future");
+    await expect(
+      f.operator.mutation(api.procurementPacket.mintLink, {
+        requestId: request.requestId,
+        outreachId: outreach.outreachId,
+        recipientLabel: "Dana Reyes",
+        expiresAt: dayjs().add(91, "day").valueOf(),
+      }),
+    ).rejects.toThrow("Packet links may expire at most 90 days after issue");
+    await f.operator.mutation(api.procurementPacket.upsertSection, {
+      requestId: request.requestId,
+      key: "summary",
+      body: "Original broker submission.",
+      audience: "broker",
+    });
+    const clientFileId = await f.t.run(async (ctx) => {
+      const now = dayjs().valueOf();
+      const fileId = await ctx.storage.store(
+        new Blob(["application"], { type: "application/pdf" }),
+      );
+      return await ctx.db.insert("clientFiles", {
+        orgId: f.clientOrgId,
+        fileId,
+        name: "Application.pdf",
+        originalName: "Application.pdf",
+        contentType: "application/pdf",
+        size: 11,
+        clientVisible: false,
+        uploadedByUserId: f.operatorUserId,
+        uploadedBySide: "operator",
+        nameSource: "original",
+        nameStatus: "ready",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const fileItem = await f.operator.mutation(
+      api.procurementRequests.createFileItem,
+      {
+        requestId: request.requestId,
+        clientFileId,
+        purpose: "application",
+        label: "Broker application",
+        status: "available",
+      },
+    );
+    await f.operator.mutation(api.procurementPacket.setFileRelease, {
+      itemId: fileItem.fileItemId,
+      brokerRelease: "attached",
+    });
+    const otherFileItemId = await f.t.run(async (ctx) => {
+      const now = dayjs().valueOf();
+      const fileId = await ctx.storage.store(
+        new Blob(["other broker"], { type: "application/pdf" }),
+      );
+      const clientFileId = await ctx.db.insert("clientFiles", {
+        orgId: f.clientOrgId,
+        fileId,
+        name: "Other-broker-only.pdf",
+        originalName: "Other-broker-only.pdf",
+        contentType: "application/pdf",
+        size: 12,
+        clientVisible: false,
+        uploadedByUserId: f.operatorUserId,
+        uploadedBySide: "operator",
+        nameSource: "original",
+        nameStatus: "ready",
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await ctx.db.insert("procurementFileItems", {
+        requestId: request.requestId,
+        clientOrgId: f.clientOrgId,
+        outreachId: otherOutreach.outreachId,
+        clientFileId,
+        purpose: "application",
+        label: "Other broker only",
+        status: "available",
+        brokerRelease: "attached",
+        clientVisible: false,
+        createdByUserId: f.operatorUserId,
+        updatedByUserId: f.operatorUserId,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const brokerPreview = await f.operator.query(
+      api.procurementPacket.preview,
+      {
+        requestId: request.requestId,
+        outreachId: outreach.outreachId,
+      },
+    );
+    expect(brokerPreview.files.map((file) => file.name)).toEqual([
+      "Broker application",
+    ]);
+    const issued = await f.operator.mutation(api.procurementPacket.mintLink, {
+      requestId: request.requestId,
+      outreachId: outreach.outreachId,
+      recipientLabel: "Dana Reyes",
+      recipientEmail: "dana@example.com",
+    });
+    const { originalFileId, replacementClientFileId } = await f.t.run(
+      async (ctx) => {
+        const original = await ctx.db.get(clientFileId);
+        if (!original) throw new Error("Expected original client file");
+        const now = dayjs().valueOf();
+        const replacementFileId = await ctx.storage.store(
+          new Blob(["replacement"], { type: "application/pdf" }),
+        );
+        const replacementClientFileId = await ctx.db.insert("clientFiles", {
+          orgId: f.clientOrgId,
+          fileId: replacementFileId,
+          name: "Replacement.pdf",
+          originalName: "Replacement.pdf",
+          contentType: "application/pdf",
+          size: 11,
+          clientVisible: false,
+          uploadedByUserId: f.operatorUserId,
+          uploadedBySide: "operator",
+          nameSource: "original",
+          nameStatus: "ready",
+          createdAt: now,
+          updatedAt: now,
+        });
+        return { originalFileId: original.fileId, replacementClientFileId };
+      },
+    );
+
+    await f.operator.mutation(api.procurementPacket.upsertSection, {
+      requestId: request.requestId,
+      key: "summary",
+      body: "Updated after issue.",
+      audience: "broker",
+    });
+    await f.operator.mutation(api.procurementRequests.updateFileItem, {
+      fileItemId: fileItem.fileItemId,
+      clientFileId: replacementClientFileId,
+      label: "Replacement application",
+    });
+    const publicView = await f.t.query(api.procurementPacket.getByToken, {
+      token: issued.token,
+    });
+    expect(publicView).toMatchObject({
+      recipientLabel: "Dana Reyes",
+      files: [
+        expect.objectContaining({
+          _id: fileItem.fileItemId,
+          name: "Broker application",
+          brokerRelease: "attached",
+        }),
+      ],
+    });
+    expect(publicView?.markdown).toContain("Original broker submission");
+    expect(publicView?.markdown).not.toContain("Updated after issue");
+    expect(publicView?.files).toHaveLength(1);
+    expect(publicView?.files[0]?.downloadUrl).toContain("packet-file");
+    await expect(
+      f.t.query(internal.procurementPacket.getFileByTokenInternal, {
+        token: issued.token,
+        item: otherFileItemId,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      f.t.query(internal.procurementPacket.getFileByTokenInternal, {
+        token: issued.token,
+        item: fileItem.fileItemId,
+      }),
+    ).resolves.toMatchObject({
+      fileId: originalFileId,
+      name: "Broker application",
+    });
+
+    await f.operator.mutation(api.procurementPacket.setFileRelease, {
+      itemId: fileItem.fileItemId,
+      brokerRelease: "listed",
+    });
+    const narrowedView = await f.t.query(api.procurementPacket.getByToken, {
+      token: issued.token,
+    });
+    expect(narrowedView?.files[0]).toMatchObject({
+      name: "Broker application",
+      brokerRelease: "listed",
+      downloadUrl: null,
+    });
+    await expect(
+      f.t.query(internal.procurementPacket.getFileByTokenInternal, {
+        token: issued.token,
+        item: fileItem.fileItemId,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      f.t.mutation(api.procurementPacket.recordView, {
+        token: "wrong-token",
+      }),
+    ).resolves.toEqual({ ok: false });
+    await expect(
+      f.t.mutation(api.procurementPacket.recordView, {
+        token: issued.token,
+        userAgent: "packet-test",
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    await f.operator.mutation(api.procurementPacket.revokeLink, {
+      linkId: issued.id,
+    });
+    await expect(
+      f.t.query(api.procurementPacket.getByToken, { token: issued.token }),
+    ).resolves.toBeNull();
+    const links = await f.operator.query(api.procurementPacket.listLinks, {
+      requestId: request.requestId,
+    });
+    expect(links[0]).toMatchObject({
+      linkId: issued.id,
+      state: "revoked",
+      stale: true,
+      sectionCount: expect.any(Number),
+      fileCount: 1,
+      viewCount: 1,
+    });
+  });
+
   test("composes the client wiki ahead of the request packet for an operator", async () => {
     const f = await fixture();
     const request = await f.operator.mutation(api.procurementRequests.create, {

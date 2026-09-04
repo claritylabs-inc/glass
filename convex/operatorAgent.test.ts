@@ -1289,10 +1289,17 @@ describe("operator agent boundary", () => {
         },
       },
       {
-        toolName: "create_procurement_proposal",
+        toolName: "file_procurement_proposal",
         input: {
           procurementRequestId: invalidResourceReference,
-          brokerOrgId: fixture.orgId,
+          procurementOutreachId: invalidResourceReference,
+          clientFileIds: [invalidResourceReference],
+        },
+      },
+      {
+        toolName: "file_procurement_email_quote",
+        input: {
+          procurementEmailThreadId: invalidResourceReference,
           procurementOutreachId: invalidResourceReference,
         },
       },
@@ -1381,6 +1388,73 @@ describe("operator agent boundary", () => {
         .collect(),
     );
     expect(confirmations).toEqual([]);
+  });
+
+  test("creates a standalone client through the exact-confirmed shared registry", async () => {
+    vi.useFakeTimers();
+    const fixture = await seedOperatorAgentFixture();
+    const threadId = await fixture.t.mutation(
+      internal.operatorAgent.createOrGetChannelThreadInternal,
+      {
+        operatorUserId: fixture.firstOperatorUserId,
+        channel: "mcp",
+        conversationKey: "mcp:create-procurement-client",
+      },
+    );
+    const invoke = () =>
+      fixture.t.action(internal.operatorAgent.invokeRegisteredToolInternal, {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "create_client_organization",
+        input: { name: "Agent-created client" },
+        idempotencyKey: "create-agent-client-once",
+      });
+    const requested = await invoke();
+    if (
+      requested.outcome.status !== "confirmation_required" ||
+      !requested.outcome.confirmationId
+    )
+      throw new Error("Expected exact client-creation confirmation");
+    await expect(
+      fixture.t.mutation(internal.operatorAgent.confirmActionInternal, {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        confirmationId: requested.outcome.confirmationId,
+        decision: "approve",
+        channel: "mcp",
+      }),
+    ).resolves.toMatchObject({ status: "queued" });
+    await fixture.t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const clients = await fixture.t.run((ctx) =>
+      ctx.db
+        .query("organizations")
+        .withIndex("type", (query) => query.eq("type", "client"))
+        .collect(),
+    );
+    expect(clients).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Agent-created client",
+          operatorStatus: "onboarding",
+          allowedEmails: [],
+        }),
+      ]),
+    );
+    expect(await invoke()).toMatchObject({
+      outcome: { status: "succeeded", idempotent: true },
+    });
+    await expect(
+      fixture.t.action(internal.operatorAgent.invokeRegisteredToolInternal, {
+        operatorUserId: fixture.firstOperatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "create_client_organization",
+        input: { name: "Agent-created client" },
+        idempotencyKey: "create-agent-client-duplicate",
+      }),
+    ).resolves.toMatchObject({ outcome: { status: "failed" } });
   });
 
   test("requests confirmation for every exact-confirmed resource tool with valid references", async () => {

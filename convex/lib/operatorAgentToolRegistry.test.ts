@@ -4,6 +4,11 @@ import { normalizeOperatorCoiBatch } from "../operatorAgent";
 import { generateCoiInputSchema, lookupAddressInputSchema } from "./chatTools";
 import { OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES } from "./operatorAgentConfirmationPreflight";
 import {
+  PROCUREMENT_CAPABILITIES,
+  PROCUREMENT_CAPABILITY_EXCEPTIONS,
+  PROCUREMENT_CAPABILITY_MANIFEST_VERSION,
+} from "./procurementCapabilities";
+import {
   getOperatorAgentToolSpec,
   operatorAgentToolCatalog,
   parseOperatorAgentToolInput,
@@ -94,6 +99,20 @@ describe("operator certificate tools", () => {
 });
 
 describe("operator procurement tools", () => {
+  test("keeps every browser procurement capability agent-backed or explicitly excepted", () => {
+    expect(PROCUREMENT_CAPABILITY_MANIFEST_VERSION).toBe(1);
+    expect(PROCUREMENT_CAPABILITY_EXCEPTIONS).toEqual([
+      expect.objectContaining({ id: "packet.resolve_generated_change" }),
+    ]);
+    for (const capability of PROCUREMENT_CAPABILITIES) {
+      if (!("agentTools" in capability)) continue;
+      expect(capability.agentTools.length, capability.id).toBeGreaterThan(0);
+      for (const toolName of capability.agentTools) {
+        expect(getOperatorAgentToolSpec(toolName), capability.id).toBeTruthy();
+      }
+    }
+  });
+
   test("keeps procurement reads unconfirmed and every write exact-confirmed", () => {
     for (const name of [
       "list_procurement_requests",
@@ -101,7 +120,10 @@ describe("operator procurement tools", () => {
       "get_procurement_forwarding_address",
       "list_procurement_email_threads",
       "get_procurement_email_thread",
+      "preview_procurement_email_reconciliation",
       "lookup_procurement_packet",
+      "preview_broker_packet",
+      "list_broker_packet_links",
     ]) {
       expect(getOperatorAgentToolSpec(name)).toMatchObject({
         capability: "operator.procurement.read",
@@ -120,6 +142,9 @@ describe("operator procurement tools", () => {
       "update_procurement_file_item",
       "update_procurement_email_thread",
       "update_procurement_packet_section",
+      "file_procurement_proposal",
+      "file_procurement_email_quote",
+      "archive_procurement_proposal",
     ]) {
       expect(getOperatorAgentToolSpec(name)).toMatchObject({
         capability: "operator.procurement.write",
@@ -128,6 +153,70 @@ describe("operator procurement tools", () => {
         execution: "mutation",
       });
     }
+
+    expect(getOperatorAgentToolSpec("create_broker_packet_link")).toMatchObject(
+      { effect: "access_change", confirmation: "exact" },
+    );
+    expect(getOperatorAgentToolSpec("send_broker_packet")).toMatchObject({
+      effect: "external_send",
+      confirmation: "exact",
+      execution: "action",
+    });
+    expect(
+      getOperatorAgentToolSpec("generate_procurement_proposal_review"),
+    ).toMatchObject({ confirmation: "exact", execution: "action" });
+    expect(
+      getOperatorAgentToolSpec("create_client_organization"),
+    ).toMatchObject({
+      capability: "operator.organizations.write",
+      effect: "reversible_write",
+      confirmation: "exact",
+      execution: "action",
+    });
+    for (const name of [
+      "retry_procurement_proposal_extraction",
+      "cancel_procurement_proposal_extraction",
+    ] as const) {
+      expect(getOperatorAgentToolSpec(name)).toMatchObject({
+        capability: "operator.extractions.write",
+        effect: "reversible_write",
+        confirmation: "exact",
+        execution: "mutation",
+      });
+    }
+  });
+
+  test("files proposals as one artifact-backed command", () => {
+    const input = parseOperatorAgentToolInput("file_procurement_proposal", {
+      procurementRequestId: "request-1",
+      procurementOutreachId: "outreach-1",
+      clientFileIds: ["client-file-1"],
+      procurementFileItemIds: ["file-item-1"],
+      attachmentFileIds: ["quote.pdf"],
+    });
+    expect(input).toMatchObject({
+      procurementRequestId: "request-1",
+      procurementOutreachId: "outreach-1",
+      attachmentFileIds: ["quote.pdf"],
+    });
+    expect(() =>
+      parseOperatorAgentToolInput("file_procurement_proposal", {
+        procurementRequestId: "request-1",
+        procurementOutreachId: "outreach-1",
+      }),
+    ).toThrow("At least one proposal artifact");
+  });
+
+  test("files an imported email quote only from exact thread and outreach references", () => {
+    expect(
+      parseOperatorAgentToolInput("file_procurement_email_quote", {
+        procurementEmailThreadId: "email-thread-1",
+        procurementOutreachId: "outreach-1",
+      }),
+    ).toEqual({
+      procurementEmailThreadId: "email-thread-1",
+      procurementOutreachId: "outreach-1",
+    });
   });
 
   test("supports filing a thread attachment into a procurement request", () => {

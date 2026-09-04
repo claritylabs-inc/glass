@@ -25,7 +25,16 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "update_procurement_request",
   "create_procurement_broker_outreach",
   "update_procurement_broker_outreach",
-  "create_procurement_proposal",
+  "file_procurement_proposal",
+  "file_procurement_email_quote",
+  "archive_procurement_proposal",
+  "retry_procurement_proposal_extraction",
+  "cancel_procurement_proposal_extraction",
+  "generate_procurement_proposal_review",
+  "create_broker_packet_link",
+  "send_broker_packet",
+  "rotate_broker_packet_link",
+  "revoke_broker_packet_link",
   "confirm_procurement_proposal_review",
   "select_procurement_proposal",
   "create_broker_network_profile",
@@ -33,6 +42,7 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "create_procurement_file_item",
   "update_procurement_file_item",
   "update_procurement_email_thread",
+  "create_client_organization",
   "update_organization_profile",
   "set_organization_status",
   "set_client_feature_flag",
@@ -345,15 +355,15 @@ async function preflightOutreachUpdate(
   validateOptionalUrl(input.quoteUrl);
 }
 
-async function preflightProposalCreate(
+async function preflightProposalFile(
   ctx: MutationCtx,
+  threadId: Id<"operatorAgentThreads">,
   input: Record<string, unknown>,
 ) {
   const request = await requireProcurementRequest(
     ctx,
     input.procurementRequestId,
   );
-  const broker = await requireBrokerOrganization(ctx, input.brokerOrgId);
   const outreach = await requireDocument(
     ctx,
     "procurementBrokerOutreaches",
@@ -362,8 +372,71 @@ async function preflightProposalCreate(
   );
   if (outreach.requestId !== request._id)
     throw new Error("Outreach does not belong to this request");
-  if (!broker || outreach.brokerOrgId !== broker._id)
-    throw new Error("Proposal broker must match its outreach");
+  const clientFileIds = Array.isArray(input.clientFileIds)
+    ? input.clientFileIds
+    : [];
+  for (const value of clientFileIds) {
+    const file = await requireDocument(
+      ctx,
+      "clientFiles",
+      value,
+      "Client file",
+    );
+    if (file.orgId !== request.clientOrgId || file.archivedAt || file.deletedAt)
+      throw new Error("Client file does not belong to this request's client");
+  }
+  const fileItemIds = Array.isArray(input.procurementFileItemIds)
+    ? input.procurementFileItemIds
+    : [];
+  for (const value of fileItemIds) {
+    const item = await requireDocument(
+      ctx,
+      "procurementFileItems",
+      value,
+      "Procurement file item",
+    );
+    if (item.requestId !== request._id || !item.clientFileId)
+      throw new Error(
+        "Proposal file item must belong to this request and reference an available client file",
+      );
+  }
+  const attachmentReferences = Array.isArray(input.attachmentFileIds)
+    ? input.attachmentFileIds.filter(
+        (value): value is string => typeof value === "string",
+      )
+    : [];
+  if (attachmentReferences.length) {
+    const attachments = await ctx.db
+      .query("operatorAgentAttachments")
+      .withIndex("thread_file", (query) => query.eq("threadId", threadId))
+      .take(50);
+    for (const reference of attachmentReferences) {
+      const storageId = ctx.db.system.normalizeId("_storage", reference);
+      const matches = attachments.filter(
+        (attachment) =>
+          (storageId && attachment.fileId === storageId) ||
+          attachment.filename.trim().toLowerCase() ===
+            reference.trim().toLowerCase(),
+      );
+      if (matches.length !== 1)
+        throw new Error(
+          `Proposal attachment ${reference} must resolve to one file in this Spot-agent conversation`,
+        );
+    }
+  }
+  if (input.procurementProposalId != null) {
+    const proposal = await requireDocument(
+      ctx,
+      "procurementProposals",
+      input.procurementProposalId,
+      "Proposal",
+    );
+    if (
+      proposal.outreachId !== outreach._id ||
+      proposal.requestId !== request._id
+    )
+      throw new Error("Proposal does not belong to this outreach");
+  }
   if (input.supersedesProposalId != null) {
     const superseded = await requireDocument(
       ctx,
@@ -371,9 +444,149 @@ async function preflightProposalCreate(
       input.supersedesProposalId,
       "Proposal",
     );
-    if (superseded.requestId !== request._id)
-      throw new Error("Superseded proposal must belong to this request");
+    if (superseded.outreachId !== outreach._id)
+      throw new Error("Superseded proposal must belong to this outreach");
   }
+}
+
+async function preflightProcurementEmailQuote(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const thread = await requireDocument(
+    ctx,
+    "procurementEmailThreads",
+    input.procurementEmailThreadId,
+    "Procurement email thread",
+  );
+  if (thread.deletedAt || thread.archivedAt)
+    throw new Error("Procurement email thread not found");
+  const request = await requireProcurementRequest(ctx, thread.requestId);
+  const outreach = await requireDocument(
+    ctx,
+    "procurementBrokerOutreaches",
+    input.procurementOutreachId,
+    "Broker outreach",
+  );
+  if (outreach.requestId !== request._id)
+    throw new Error("Outreach does not belong to this email thread's request");
+  const messages = await ctx.db
+    .query("procurementEmailMessages")
+    .withIndex("thread", (query) => query.eq("threadId", thread._id))
+    .collect();
+  const clientFileIds = [
+    ...new Set(messages.flatMap((message) => message.clientFileIds)),
+  ];
+  let activeAttachmentCount = 0;
+  for (const clientFileId of clientFileIds) {
+    const file = await ctx.db.get(clientFileId);
+    if (
+      file &&
+      file.orgId === request.clientOrgId &&
+      !file.archivedAt &&
+      !file.deletedAt
+    )
+      activeAttachmentCount += 1;
+  }
+  if (activeAttachmentCount === 0)
+    throw new Error("This email thread has no active file attachments to file");
+  if (input.supersedesProposalId != null) {
+    const superseded = await requireDocument(
+      ctx,
+      "procurementProposals",
+      input.supersedesProposalId,
+      "Proposal",
+    );
+    if (superseded.outreachId !== outreach._id)
+      throw new Error("Superseded proposal must belong to this outreach");
+  }
+}
+
+async function preflightProposalLifecycle(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const proposal = await requireDocument(
+    ctx,
+    "procurementProposals",
+    input.procurementProposalId,
+    "Proposal",
+  );
+  await requireProcurementRequest(ctx, proposal.requestId);
+  if (proposal.status === "selected")
+    throw new Error(
+      "A selected proposal must be replaced before it can be archived or changed",
+    );
+  return proposal;
+}
+
+async function preflightProposalExtraction(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+  operation: "retry" | "cancel" | "review",
+) {
+  const proposal = await requireDocument(
+    ctx,
+    "procurementProposals",
+    input.procurementProposalId,
+    "Proposal",
+  );
+  await requireProcurementRequest(ctx, proposal.requestId);
+  if (
+    operation === "retry" &&
+    !["draft", "extracting", "review_ready"].includes(proposal.status)
+  )
+    throw new Error(
+      `Proposal ${proposal._id} cannot be re-extracted from ${proposal.status}`,
+    );
+  if (operation === "review" && proposal.status !== "review_ready")
+    throw new Error("Proposal extraction is not ready for review");
+  return proposal;
+}
+
+async function preflightPacketLinkCreate(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+  send: boolean,
+) {
+  const request = await requireProcurementRequest(
+    ctx,
+    input.procurementRequestId,
+  );
+  const outreach = await requireDocument(
+    ctx,
+    "procurementBrokerOutreaches",
+    input.procurementOutreachId,
+    "Broker outreach",
+  );
+  if (outreach.requestId !== request._id)
+    throw new Error("Outreach does not belong to this request");
+  validateOptionalEmail(input.recipientEmail);
+  if (input.expiresAt !== undefined) {
+    if (
+      typeof input.expiresAt !== "number" ||
+      !Number.isFinite(input.expiresAt) ||
+      !dayjs(input.expiresAt).isAfter(dayjs())
+    )
+      throw new Error("Packet link expiry must be in the future");
+    if (dayjs(input.expiresAt).isAfter(dayjs().add(90, "day")))
+      throw new Error("Packet links may expire at most 90 days after issue");
+  }
+  if (send && !outreach.contactEmail?.trim())
+    throw new Error("Add a broker contact email before sending the packet");
+}
+
+async function preflightPacketLinkChange(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const link = await requireDocument(
+    ctx,
+    "procurementPacketLinks",
+    input.procurementPacketLinkId,
+    "Packet link",
+  );
+  await requireProcurementRequest(ctx, link.requestId);
 }
 
 async function preflightProposalReviewConfirm(
@@ -444,6 +657,26 @@ async function preflightBrokerProfileCreate(
       `Broker ${duplicate.name} is already registered as ${duplicate._id}; update that profile instead`,
     );
   }
+}
+
+async function preflightClientOrganizationCreate(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const name = normalizedText(input.name);
+  if (!name) throw new Error("Client name is required");
+  validateOptionalUrl(input.website);
+  const clients = await ctx.db
+    .query("organizations")
+    .withIndex("type", (query) => query.eq("type", "client"))
+    .collect();
+  const duplicate = clients.find(
+    (client) => client.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (duplicate)
+    throw new Error(
+      `Client ${duplicate.name} already exists as ${duplicate._id}`,
+    );
 }
 
 async function preflightProcurementFileCreate(
@@ -655,8 +888,33 @@ export async function preflightOperatorToolConfirmation(
     case "update_procurement_broker_outreach":
       await preflightOutreachUpdate(ctx, args.input);
       return;
-    case "create_procurement_proposal":
-      await preflightProposalCreate(ctx, args.input);
+    case "file_procurement_proposal":
+      await preflightProposalFile(ctx, args.threadId, args.input);
+      return;
+    case "file_procurement_email_quote":
+      await preflightProcurementEmailQuote(ctx, args.input);
+      return;
+    case "archive_procurement_proposal":
+      await preflightProposalLifecycle(ctx, args.input);
+      return;
+    case "retry_procurement_proposal_extraction":
+      await preflightProposalExtraction(ctx, args.input, "retry");
+      return;
+    case "cancel_procurement_proposal_extraction":
+      await preflightProposalExtraction(ctx, args.input, "cancel");
+      return;
+    case "generate_procurement_proposal_review":
+      await preflightProposalExtraction(ctx, args.input, "review");
+      return;
+    case "create_broker_packet_link":
+      await preflightPacketLinkCreate(ctx, args.input, false);
+      return;
+    case "send_broker_packet":
+      await preflightPacketLinkCreate(ctx, args.input, true);
+      return;
+    case "rotate_broker_packet_link":
+    case "revoke_broker_packet_link":
+      await preflightPacketLinkChange(ctx, args.input);
       return;
     case "confirm_procurement_proposal_review":
       await preflightProposalReviewConfirm(ctx, args.input);
@@ -700,6 +958,9 @@ export async function preflightOperatorToolConfirmation(
       }
       return;
     }
+    case "create_client_organization":
+      await preflightClientOrganizationCreate(ctx, args.input);
+      return;
     case "update_organization_profile":
     case "set_organization_status":
       await requireDocument(

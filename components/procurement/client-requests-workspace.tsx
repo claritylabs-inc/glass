@@ -3,18 +3,11 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
-import {
-  FileText,
-  Loader2,
-  MessageSquare,
-  Plus,
-  Send,
-  Upload,
-} from "lucide-react";
+import { FileText, Loader2, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-format";
+import { formatDisplayDate } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { ProseMarkdown } from "@/components/prose-markdown";
@@ -217,26 +210,11 @@ export function ClientRequestDetail({
   requestId: Id<"procurementRequests">;
 }) {
   const details = useQuery(api.clientProcurementRequests.get, { requestId });
-  const postMessage = useMutation(api.clientProcurementRequests.postMessage);
   const generateUploadUrl = useMutation(
     api.clientProcurementRequests.generateUploadUrl,
   );
   const attachFile = useMutation(api.clientProcurementRequests.attachFile);
-  const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
-
-  async function sendMessage() {
-    if (!body.trim()) return;
-    setBusy(true);
-    try {
-      await postMessage({ requestId, body: body.trim() });
-      setBody("");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Could not post the reply"));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function upload(file: File) {
     setBusy(true);
@@ -347,10 +325,16 @@ export function ClientRequestDetail({
         </OperationalPanel>
       ) : null}
 
-      {request.files.length > 0 ? (
-        <OperationalPanel>
-          <OperationalPanelHeader title="Shared files" />
-          {request.files.map((file) => (
+      <OperationalPanel>
+        <OperationalPanelHeader title="Shared files" />
+        {request.files.length === 0 ? (
+          <OperationalPanelBody
+            className={`text-muted-foreground ${typeStyle("body.default")}`}
+          >
+            No supporting files have been shared yet.
+          </OperationalPanelBody>
+        ) : (
+          request.files.map((file) => (
             <OperationalItem key={file._id} className="flex items-center gap-3">
               <FileText className="size-4 text-muted-foreground" />
               {file.url ? (
@@ -365,60 +349,10 @@ export function ClientRequestDetail({
                 <span className={typeStyle("body.medium")}>{file.name}</span>
               )}
             </OperationalItem>
-          ))}
-        </OperationalPanel>
-      ) : null}
-
-      <OperationalPanel>
-        <OperationalPanelHeader title="Activity" />
-        {details.activity.length === 0 ? (
-          <OperationalPanelBody
-            className={`text-muted-foreground ${typeStyle("body.default")}`}
-          >
-            No activity yet.
-          </OperationalPanelBody>
-        ) : (
-          request.activity.map((item) => (
-            <OperationalItem key={item._id} className="flex items-start gap-3">
-              {item.kind === "document" ? (
-                <FileText className="mt-0.5 size-4 text-muted-foreground" />
-              ) : (
-                <MessageSquare className="mt-0.5 size-4 text-muted-foreground" />
-              )}
-              <div className="min-w-0 flex-1">
-                {item.fileUrl ? (
-                  <a
-                    href={item.fileUrl}
-                    download
-                    className={`text-foreground underline underline-offset-4 ${typeStyle("body.medium")}`}
-                  >
-                    {item.fileName ?? "Download file"}
-                  </a>
-                ) : (
-                  <p
-                    className={`whitespace-pre-wrap text-foreground ${typeStyle("body.default")}`}
-                  >
-                    {item.body}
-                  </p>
-                )}
-                <p
-                  className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
-                >
-                  {item.authorSide === "client" ? "You" : "Spot"} ·{" "}
-                  {formatDisplayDateTime(item.createdAt)}
-                </p>
-              </div>
-            </OperationalItem>
           ))
         )}
-        <OperationalPanelBody className="space-y-3 border-t border-border">
-          <Textarea
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            rows={4}
-            placeholder="Reply to the team"
-          />
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
+        <OperationalPanelBody className="border-t border-border">
+          <div className="flex justify-end">
             <PillButton
               variant="secondary"
               disabled={busy}
@@ -439,13 +373,6 @@ export function ClientRequestDetail({
                 event.currentTarget.value = "";
               }}
             />
-            <PillButton
-              disabled={busy || !body.trim()}
-              onClick={() => void sendMessage()}
-            >
-              <Send className="size-3.5" />
-              Post reply
-            </PillButton>
           </div>
         </OperationalPanelBody>
       </OperationalPanel>

@@ -370,4 +370,263 @@ describe("procurement requests", () => {
       messageCount: 2,
     });
   });
+
+  test("reuses one canonical client file for identical forwarded attachments", async () => {
+    const fixture = await seedProcurementFixture();
+    const request = await createRequest(fixture, "Forwarded quote");
+    const { firstStorageId, replayStorageId } = await fixture.t.run(
+      async (ctx) => ({
+        firstStorageId: await ctx.storage.store(
+          new Blob(["same forwarded quote"], { type: "application/pdf" }),
+        ),
+        replayStorageId: await ctx.storage.store(
+          new Blob(["same forwarded quote"], { type: "application/pdf" }),
+        ),
+      }),
+    );
+    const ingest = (input: {
+      resendEmailId: string;
+      messageId: string;
+      fileId: Id<"_storage">;
+      receivedAt: number;
+    }) =>
+      fixture.t.mutation(internal.procurementRequests.ingestEmailInternal, {
+        addressedRequestId: request.requestId,
+        resendEmailId: input.resendEmailId,
+        messageId: input.messageId,
+        references: [],
+        subject: "Property quote",
+        fromEmail: "broker@example.com",
+        toAddresses: [],
+        ccAddresses: [],
+        bccAddresses: [],
+        currentText: "Attached quote",
+        participantEmails: ["broker@example.com"],
+        attachments: [
+          {
+            fileId: input.fileId,
+            filename: "quote.pdf",
+            contentType: "application/pdf",
+            size: 20,
+          },
+        ],
+        receivedAt: input.receivedAt,
+      });
+
+    const first = await ingest({
+      resendEmailId: "forwarded-quote-1",
+      messageId: "<forwarded-quote-1@example.com>",
+      fileId: firstStorageId,
+      receivedAt: 1,
+    });
+    const replay = await ingest({
+      resendEmailId: "forwarded-quote-2",
+      messageId: "<forwarded-quote-2@example.com>",
+      fileId: replayStorageId,
+      receivedAt: 2,
+    });
+
+    expect(first.duplicate).toBe(false);
+    expect(replay.duplicate).toBe(false);
+    if (first.duplicate || replay.duplicate) {
+      throw new Error("Expected distinct messages to be ingested");
+    }
+    expect(replay.clientFileIds).toEqual(first.clientFileIds);
+    const state = await fixture.t.run(async (ctx) => ({
+      clientFiles: await ctx.db
+        .query("clientFiles")
+        .withIndex("organization", (query) =>
+          query.eq("orgId", fixture.clientOrgId),
+        )
+        .collect(),
+      messages: await ctx.db.query("procurementEmailMessages").collect(),
+      fileItems: await ctx.db.query("procurementFileItems").collect(),
+      replayBlob: await ctx.storage.get(replayStorageId),
+    }));
+    expect(state.clientFiles).toHaveLength(1);
+    expect(state.messages).toHaveLength(2);
+    expect(state.fileItems).toHaveLength(2);
+    expect(state.fileItems.map((item) => item.clientFileId)).toEqual([
+      first.clientFileIds[0],
+      first.clientFileIds[0],
+    ]);
+    expect(state.replayBlob).toBeNull();
+  });
+
+  test("reconciles and atomically files forwarded quote attachments", async () => {
+    const fixture = await seedProcurementFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.operatorUserId}|session`,
+    });
+    const request = await createRequest(fixture, "Forwarded broker quote");
+    const outreach = await operator.mutation(
+      api.procurementRequests.createOutreach,
+      {
+        requestId: request.requestId,
+        brokerOrgId: fixture.brokerOrgId,
+        contactEmail: "broker@example.com",
+      },
+    );
+    const otherOutreach = await operator.mutation(
+      api.procurementRequests.createOutreach,
+      {
+        requestId: request.requestId,
+        brokerOrgId: fixture.brokerOrgId,
+        contactEmail: "other-broker@example.com",
+      },
+    );
+    const bytes = new TextEncoder().encode("source-backed quote");
+    const storageId = await fixture.t.run((ctx) =>
+      ctx.storage.store(new Blob([bytes], { type: "application/pdf" })),
+    );
+    const imported = await fixture.t.mutation(
+      internal.procurementRequests.ingestEmailInternal,
+      {
+        addressedRequestId: request.requestId,
+        resendEmailId: "reconcile-quote-1",
+        messageId: "<reconcile-quote-1@example.com>",
+        references: [],
+        subject: "Quote attached",
+        fromEmail: "broker@example.com",
+        toAddresses: [],
+        ccAddresses: [],
+        bccAddresses: [],
+        currentText: "Please review our quote",
+        participantEmails: ["broker@example.com"],
+        attachments: [
+          {
+            fileId: storageId,
+            filename: "broker-quote.pdf",
+            contentType: "application/pdf",
+            size: bytes.byteLength,
+          },
+        ],
+        receivedAt: 1,
+      },
+    );
+    if (imported.duplicate) throw new Error("Expected email import");
+    const emailThreadId = imported.threadId as Id<"procurementEmailThreads">;
+
+    const threadId = await operator.mutation(
+      api.operatorAgent.createThread,
+      {},
+    );
+    const agentPreview = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: fixture.operatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "preview_procurement_email_reconciliation",
+        input: { procurementEmailThreadId: emailThreadId },
+        idempotencyKey: "preview-forwarded-broker-quote",
+      },
+    );
+    expect(agentPreview.outcome).toMatchObject({
+      status: "succeeded",
+      result: {
+        requestId: request.requestId,
+        unfiledFiles: [{ name: "broker-quote.pdf" }],
+        outreachInference: {
+          status: "exact",
+          candidates: [{ outreachId: outreach.outreachId }],
+        },
+        nextActions: [
+          {
+            tool: "file_procurement_email_quote",
+            input: { procurementOutreachId: outreach.outreachId },
+          },
+        ],
+      },
+    });
+
+    const requested = await fixture.t.action(
+      internal.operatorAgent.invokeRegisteredToolInternal,
+      {
+        operatorUserId: fixture.operatorUserId,
+        threadId,
+        channel: "mcp",
+        toolName: "file_procurement_email_quote",
+        input: {
+          procurementEmailThreadId: emailThreadId,
+          procurementOutreachId: outreach.outreachId,
+        },
+        idempotencyKey: "file-forwarded-broker-quote",
+      },
+    );
+    if (
+      requested.outcome.status !== "confirmation_required" ||
+      !requested.outcome.confirmationId
+    )
+      throw new Error("Expected exact proposal-filing confirmation");
+    await expect(
+      fixture.t.mutation(internal.operatorAgent.confirmActionInternal, {
+        operatorUserId: fixture.operatorUserId,
+        threadId,
+        confirmationId: requested.outcome.confirmationId,
+        decision: "approve",
+        channel: "mcp",
+      }),
+    ).resolves.toMatchObject({ status: "completed" });
+    const state = await fixture.t.run(async (ctx) => {
+      const proposals = await ctx.db
+        .query("procurementProposals")
+        .withIndex("request", (query) =>
+          query.eq("requestId", request.requestId),
+        )
+        .collect();
+      const documents = await ctx.db
+        .query("procurementProposalDocuments")
+        .collect();
+      const jobs = await ctx.db
+        .query("procurementProposalExtractionJobs")
+        .collect();
+      return { proposals, documents, jobs };
+    });
+    expect(state.proposals).toHaveLength(1);
+    expect(state.documents).toMatchObject([
+      {
+        proposalId: state.proposals[0]._id,
+        clientFileId: imported.clientFileIds[0],
+        fileName: "broker-quote.pdf",
+      },
+    ]);
+    expect(state.jobs).toHaveLength(1);
+
+    const replay = await operator.mutation(
+      api.procurementProposals.fileEmailQuote,
+      { emailThreadId, outreachId: outreach.outreachId },
+    );
+    expect(replay).toMatchObject({
+      proposalId: state.proposals[0]._id,
+      status: "already_filed",
+      extraction: { jobId: state.jobs[0]._id, reused: true },
+    });
+
+    const [after, otherOutreachPreview, details] = await Promise.all([
+      operator.query(api.procurementRequests.previewEmailReconciliation, {
+        emailThreadId,
+      }),
+      operator.query(api.procurementRequests.previewEmailReconciliation, {
+        emailThreadId,
+        outreachId: otherOutreach.outreachId,
+      }),
+      operator.query(api.procurementRequests.get, {
+        requestId: request.requestId,
+      }),
+    ]);
+    expect(after.unfiledFiles).toEqual([]);
+    expect(after.nextActions).toEqual([]);
+    expect(otherOutreachPreview.unfiledFiles).toMatchObject([
+      { clientFileId: imported.clientFileIds[0], name: "broker-quote.pdf" },
+    ]);
+    expect(otherOutreachPreview.nextActions).toEqual([]);
+    expect(details.auditEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          summary: "Filed proposal from Broker One for Forwarded broker quote",
+        }),
+      ]),
+    );
+  });
 });

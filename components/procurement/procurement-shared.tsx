@@ -188,6 +188,13 @@ type ProcurementRequestOption = {
   title: string;
 };
 
+type ProcurementOutreachOption = {
+  _id: Id<"procurementBrokerOutreaches">;
+  brokerName: string;
+  contactName?: string;
+  contactEmail?: string;
+};
+
 type ForwardedMailbox = { name?: string; address?: string };
 type ForwardedEmail = {
   email?: {
@@ -217,24 +224,36 @@ function mailboxList(mailboxes: ForwardedMailbox[] | undefined) {
 export function ProcurementEmailDrawer({
   emailThreadId,
   requests,
+  outreaches,
   readOnly,
   onClose,
 }: {
   emailThreadId: Id<"procurementEmailThreads">;
   requests: ProcurementRequestOption[];
+  outreaches: ProcurementOutreachOption[];
   readOnly: boolean;
   onClose: () => void;
 }) {
   const result = useQuery(api.procurementRequests.getEmailThread, {
     emailThreadId,
   });
+  const inference = useQuery(
+    api.procurementRequests.previewEmailReconciliation,
+    { emailThreadId },
+  );
   const updateThread = useMutation(api.procurementRequests.updateEmailThread);
+  const fileEmailQuote = useMutation(api.procurementProposals.fileEmailQuote);
   const [draft, setDraft] = useState<{
     emailThreadId: Id<"procurementEmailThreads">;
     category: ProcurementEmailCategory;
     requestId: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [filing, setFiling] = useState(false);
+  const [outreachSelection, setOutreachSelection] = useState<{
+    emailThreadId: Id<"procurementEmailThreads">;
+    outreachId: string;
+  } | null>(null);
   const activeDraft = draft?.emailThreadId === emailThreadId ? draft : null;
   const category = activeDraft?.category ?? result?.thread.category ?? "";
   const requestId = activeDraft?.requestId ?? result?.thread.requestId ?? "";
@@ -248,6 +267,33 @@ export function ProcurementEmailDrawer({
     () =>
       requests.map((request) => ({ value: request._id, label: request.title })),
     [requests],
+  );
+  const outreachOptions = useMemo(
+    () =>
+      outreaches.map((outreach) => ({
+        value: outreach._id,
+        label: outreach.contactName
+          ? `${outreach.brokerName} · ${outreach.contactName}`
+          : outreach.brokerName,
+      })),
+    [outreaches],
+  );
+  const inferredOutreachId =
+    inference?.outreachInference.status === "exact"
+      ? inference.outreachInference.candidates[0]?.outreachId
+      : undefined;
+  const selectedOutreachId =
+    outreachSelection?.emailThreadId === emailThreadId
+      ? outreachSelection.outreachId
+      : (inferredOutreachId ?? "");
+  const reconciliation = useQuery(
+    api.procurementRequests.previewEmailReconciliation,
+    selectedOutreachId
+      ? {
+          emailThreadId,
+          outreachId: selectedOutreachId as Id<"procurementBrokerOutreaches">,
+        }
+      : { emailThreadId },
   );
 
   async function save() {
@@ -270,6 +316,28 @@ export function ProcurementEmailDrawer({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function fileQuote() {
+    if (!selectedOutreachId || !reconciliation?.unfiledFiles.length) return;
+    setFiling(true);
+    try {
+      const filed = await fileEmailQuote({
+        emailThreadId,
+        outreachId: selectedOutreachId as Id<"procurementBrokerOutreaches">,
+      });
+      toast.success(
+        filed.status === "already_filed"
+          ? "Email attachments were already filed"
+          : "Email quote filed and extraction queued",
+      );
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Failed to file email quote"),
+      );
+    } finally {
+      setFiling(false);
     }
   }
 
@@ -389,6 +457,80 @@ export function ProcurementEmailDrawer({
                   {result.addressedRequest.forwardingAddress}
                 </p>
               </div>
+            </OperationalPanelBody>
+          </OperationalPanel>
+
+          <OperationalPanel as="div">
+            <OperationalPanelHeader
+              title="Quote reconciliation"
+              description={
+                reconciliation === undefined
+                  ? "Checking attachments and outreach contacts"
+                  : reconciliation.files.length === 0
+                    ? "This email has no active attachments"
+                    : reconciliation.unfiledFiles.length === 0
+                      ? "Every active attachment is already filed in a proposal"
+                      : inference?.outreachInference.status === "exact"
+                        ? "Matched from an exact outreach contact email"
+                        : "Choose the outreach that sent these attachments"
+              }
+            />
+            <OperationalPanelBody className="space-y-4">
+              {reconciliation === undefined ? (
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              ) : (
+                <>
+                  <div>
+                    <p
+                      className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                    >
+                      Unfiled attachments
+                    </p>
+                    <p
+                      className={`mt-1 text-foreground ${typeStyle("body.default")}`}
+                    >
+                      {reconciliation.unfiledFiles.length
+                        ? reconciliation.unfiledFiles
+                            .map((file) => file.name)
+                            .join(", ")
+                        : "None"}
+                    </p>
+                  </div>
+                  {reconciliation.unfiledFiles.length > 0 ? (
+                    <>
+                      <label className="block space-y-1.5">
+                        <span
+                          className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                        >
+                          Broker outreach
+                        </span>
+                        <SearchableSelect
+                          value={selectedOutreachId}
+                          options={outreachOptions}
+                          onChange={(value) =>
+                            setOutreachSelection({
+                              emailThreadId,
+                              outreachId: value,
+                            })
+                          }
+                          disabled={readOnly || filing}
+                          placeholder="Choose outreach"
+                        />
+                      </label>
+                      <PillButton
+                        type="button"
+                        onClick={fileQuote}
+                        disabled={readOnly || filing || !selectedOutreachId}
+                      >
+                        {filing ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : null}
+                        File quote
+                      </PillButton>
+                    </>
+                  ) : null}
+                </>
+              )}
             </OperationalPanelBody>
           </OperationalPanel>
 

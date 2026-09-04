@@ -4,6 +4,7 @@ import { createAccount, getAuthUserId } from "@convex-dev/auth/server";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import {
   action,
+  internalAction,
   internalMutation,
   internalQuery,
   mutation,
@@ -1598,6 +1599,45 @@ export const createSoloClient = action({
   },
 });
 
+export const createClientWithoutUsersForAgentInternal = internalAction({
+  args: {
+    operatorUserId: v.id("users"),
+    name: v.string(),
+    website: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
+      userId: args.operatorUserId,
+    });
+    const website = normalizeWebsiteUrl(args.website);
+    const result = await ctx.runMutation(
+      internalApi.operator.createSoloClientInternal,
+      {
+        operatorUserId: args.operatorUserId,
+        users: [],
+        client: { name: args.name, website },
+      },
+    );
+    if (website)
+      await ctx.scheduler.runAfter(
+        0,
+        internal.actions.extractCompanyInfo.extractCompanyInfoForOrgInternal,
+        { orgId: result.clientOrgId, url: website },
+      );
+    return {
+      ...result,
+      deepLink: `/operator/clients/${result.clientOrgId}`,
+      nextActions: [
+        {
+          tool: "create_procurement_request" as const,
+          why: "Create the procurement request against this exact standalone client",
+          input: { orgId: result.clientOrgId },
+        },
+      ],
+    };
+  },
+});
+
 export const setBrokerStatus = mutation({
   args: {
     brokerOrgId: v.id("organizations"),
@@ -2365,6 +2405,14 @@ export const createSoloClientInternal = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
+    const operator = await requireOperatorForUser(ctx, args.operatorUserId);
+    const activeImpersonation = await ctx.db
+      .query("operatorImpersonationSessions")
+      .withIndex("operator_status", (query) =>
+        query.eq("operatorUserId", operator.userId).eq("status", "active"),
+      )
+      .first();
+    if (activeImpersonation) throw new Error("IMPERSONATION_READ_ONLY");
     if (args.users.length > OPERATOR_CLIENT_USER_LIMIT) {
       throw new Error("Client team size is invalid");
     }
@@ -2374,6 +2422,17 @@ export const createSoloClientInternal = internalMutation({
     }
     const clientName = args.client.name.trim();
     if (!clientName) throw new Error("Client name is required");
+    const existingClients = await ctx.db
+      .query("organizations")
+      .withIndex("type", (query) => query.eq("type", "client"))
+      .collect();
+    const duplicate = existingClients.find(
+      (client) => client.name.trim().toLowerCase() === clientName.toLowerCase(),
+    );
+    if (duplicate)
+      throw new Error(
+        `Client ${duplicate.name} already exists as ${duplicate._id}`,
+      );
     const seenUserIds = new Set<Id<"users">>();
     const seenEmails = new Set<string>();
     const seenPhones = new Set<string>();

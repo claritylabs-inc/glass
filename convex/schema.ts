@@ -828,12 +828,14 @@ export default defineSchema({
     ),
     targetOrgId: v.optional(v.id("organizations")),
     targetUserId: v.optional(v.id("users")),
+    requestId: v.optional(v.id("procurementRequests")),
     summary: v.string(),
     metadata: v.optional(v.any()),
     createdAt: v.number(),
   })
     .index("operator_created", ["operatorUserId", "createdAt"])
-    .index("target_created", ["targetOrgId", "createdAt"]),
+    .index("target_created", ["targetOrgId", "createdAt"])
+    .index("request_created", ["requestId", "createdAt"]),
 
   modelRoutingEvents: defineTable({
     kind: v.union(
@@ -2787,12 +2789,14 @@ export default defineSchema({
     originalName: v.string(),
     contentType: v.string(),
     size: v.number(),
+    sha256: v.optional(v.string()),
     clientVisible: v.boolean(),
     policyId: v.optional(v.id("policies")),
     uploadedByUserId: v.optional(v.id("users")),
     uploadedBySide: v.union(
       v.literal("operator"),
       v.literal("procurement_email"),
+      v.literal("client"),
     ),
     nameSource: v.union(
       v.literal("original"),
@@ -2817,6 +2821,7 @@ export default defineSchema({
     .index("organization_archived", ["orgId", "archivedAt", "createdAt"])
     .index("visibility", ["orgId", "clientVisible", "createdAt"])
     .index("storage", ["fileId"])
+    .index("content", ["orgId", "sha256"])
     .index("policy", ["policyId", "createdAt"]),
 
   clientFileUploadIntents: defineTable({
@@ -3066,9 +3071,42 @@ export default defineSchema({
     recipientEmail: v.optional(v.string()),
     expiresAt: v.number(),
     revokedAt: v.optional(v.number()),
+    revokedByUserId: v.optional(v.id("users")),
     packetRevisionAtIssue: v.number(),
+    // New links are immutable snapshots of the broker projection. Legacy links
+    // without snapshots continue to resolve against the current packet until
+    // they are rotated or revoked. Current release state may only narrow a
+    // snapshot's artifact access.
+    sectionSnapshot: v.optional(
+      v.array(
+        v.object({
+          key: v.string(),
+          heading: v.string(),
+          body: v.string(),
+          order: v.number(),
+        }),
+      ),
+    ),
+    artifactSnapshot: v.optional(
+      v.array(
+        v.object({
+          fileItemId: v.id("procurementFileItems"),
+          clientFileId: v.id("clientFiles"),
+          name: v.string(),
+          release: v.union(v.literal("listed"), v.literal("attached")),
+        }),
+      ),
+    ),
+    includedFileItemIds: v.optional(v.array(v.id("procurementFileItems"))),
     lastViewedAt: v.optional(v.number()),
     viewCount: v.number(),
+    // Email delivery of this exact link. Absent when the link was only minted
+    // for copying or preview.
+    deliveryStatus: v.optional(
+      v.union(v.literal("pending"), v.literal("sent"), v.literal("failed")),
+    ),
+    deliveryError: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
     createdByUserId: v.id("users"),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -3120,6 +3158,9 @@ export default defineSchema({
     extractedOffer: v.optional(v.any()),
     selectedAt: v.optional(v.number()),
     selectedByUserId: v.optional(v.id("users")),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.id("users")),
+    archiveReason: v.optional(v.string()),
     createdByUserId: v.id("users"),
     updatedByUserId: v.id("users"),
     createdAt: v.number(),
@@ -3139,6 +3180,9 @@ export default defineSchema({
     contentType: v.string(),
     size: v.number(),
     sha256: v.string(),
+    // Canonical artifact this document was filed from. The blob is shared, not
+    // copied; the client file carries provenance and visibility.
+    clientFileId: v.optional(v.id("clientFiles")),
     createdByUserId: v.id("users"),
     createdAt: v.number(),
   })

@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import {
   normalizeAgentAttachmentContentType,
@@ -12,11 +12,72 @@ import {
   requireOperatorForUser,
   writeOperatorAudit,
 } from "./operatorIdentity";
-import {
-  throwUserFacingError,
-  userFacingErrorCodes,
-} from "./userFacingErrors";
+import { throwUserFacingError, userFacingErrorCodes } from "./userFacingErrors";
 import { scheduleClientFileCompanyInformation } from "../companyInformation";
+
+export function normalizeClientFileSha256(value: string) {
+  const trimmed = value.trim();
+  if (/^[0-9a-f]{64}$/i.test(trimmed)) return trimmed.toLowerCase();
+  try {
+    const binary = atob(trimmed);
+    let hex = "";
+    for (let index = 0; index < binary.length; index += 1)
+      hex += binary.charCodeAt(index).toString(16).padStart(2, "0");
+    if (hex.length === 64) return hex;
+  } catch {
+    // Retain a stable normalized value for storage providers using another form.
+  }
+  return trimmed.toLowerCase();
+}
+
+export async function findReusableClientFileByContent(
+  ctx: QueryCtx | MutationCtx,
+  args: {
+    orgId: Id<"organizations">;
+    sha256: string;
+    policyId?: Id<"policies">;
+  },
+): Promise<Doc<"clientFiles"> | null> {
+  const matches = await ctx.db
+    .query("clientFiles")
+    .withIndex("content", (query) =>
+      query.eq("orgId", args.orgId).eq("sha256", args.sha256),
+    )
+    .take(100);
+  return (
+    matches.find(
+      (file) =>
+        !file.archivedAt &&
+        !file.deletedAt &&
+        (!args.policyId || !file.policyId || file.policyId === args.policyId),
+    ) ?? null
+  );
+}
+
+export async function repointOperatorAttachmentBlob(
+  ctx: MutationCtx,
+  previousFileId: Id<"_storage">,
+  canonicalFileId: Id<"_storage">,
+) {
+  const attachments = await ctx.db
+    .query("operatorAgentAttachments")
+    .withIndex("file", (query) => query.eq("fileId", previousFileId))
+    .collect();
+  for (const attachment of attachments)
+    await ctx.db.patch(attachment._id, { fileId: canonicalFileId });
+  for (const messageId of new Set(attachments.map((row) => row.messageId))) {
+    const message = await ctx.db.get(messageId);
+    if (!message?.attachments) continue;
+    await ctx.db.patch(message._id, {
+      attachments: message.attachments.map((attachment) =>
+        attachment.fileId === previousFileId
+          ? { ...attachment, fileId: canonicalFileId }
+          : attachment,
+      ),
+    });
+  }
+  await ctx.storage.delete(previousFileId);
+}
 
 type ClientFilePatch = {
   name?: string;
@@ -160,9 +221,7 @@ export async function createClientFileFromOperatorAttachment(
   const attachment = await ctx.db
     .query("operatorAgentAttachments")
     .withIndex("thread_file", (index) =>
-      index
-        .eq("threadId", args.threadId)
-        .eq("fileId", args.attachmentFileId),
+      index.eq("threadId", args.threadId).eq("fileId", args.attachmentFileId),
     )
     .first();
   if (!attachment || attachment.operatorUserId !== args.operatorUserId) {
@@ -170,13 +229,13 @@ export async function createClientFileFromOperatorAttachment(
   }
   const existing = await ctx.db
     .query("clientFiles")
-    .withIndex("storage", (index) =>
-      index.eq("fileId", args.attachmentFileId),
-    )
+    .withIndex("storage", (index) => index.eq("fileId", args.attachmentFileId))
     .first();
   if (existing) {
     if (existing.orgId !== args.orgId) {
-      throw new Error("Operator attachment is already filed for another client");
+      throw new Error(
+        "Operator attachment is already filed for another client",
+      );
     }
     return {
       clientFileId: existing._id,
@@ -187,6 +246,43 @@ export async function createClientFileFromOperatorAttachment(
   const metadata = await ctx.db.system.get("_storage", args.attachmentFileId);
   if (!metadata) throw new Error("Operator attachment file is unavailable");
   const now = dayjs().valueOf();
+  const sha256 = normalizeClientFileSha256(metadata.sha256);
+  const contentMatch = await findReusableClientFileByContent(ctx, {
+    orgId: args.orgId,
+    sha256,
+    policyId: args.policyId,
+  });
+  if (contentMatch) {
+    await repointOperatorAttachmentBlob(
+      ctx,
+      args.attachmentFileId,
+      contentMatch.fileId,
+    );
+    if (args.policyId && !contentMatch.policyId)
+      await ctx.db.patch(contentMatch._id, {
+        policyId: args.policyId,
+        updatedAt: now,
+      });
+    await writeOperatorAudit(ctx, {
+      operatorUserId: args.operatorUserId,
+      type: "setup_write",
+      targetOrgId: args.orgId,
+      summary: `Reused ${contentMatch.name} for ${organization.name}`,
+      metadata: {
+        domain: "client_files",
+        source: "operator_agent",
+        clientFileId: contentMatch._id,
+        policyId: args.policyId ?? contentMatch.policyId,
+        clientVisible: false,
+        deduplicatedAttachment: true,
+      },
+    });
+    return {
+      clientFileId: contentMatch._id,
+      status: "already_filed" as const,
+      name: contentMatch.name,
+    };
+  }
   const originalName = normalizeAgentAttachmentFilename(attachment.filename);
   const name = buildClientFileName(args.name, originalName);
   const clientFileId = await ctx.db.insert("clientFiles", {
@@ -196,6 +292,7 @@ export async function createClientFileFromOperatorAttachment(
     originalName,
     contentType: normalizeAgentAttachmentContentType(attachment.contentType),
     size: metadata.size,
+    sha256,
     clientVisible: false,
     policyId: args.policyId,
     uploadedByUserId: args.operatorUserId,
@@ -250,6 +347,22 @@ export async function createClientFileFromProcurementEmail(
     };
   }
 
+  const metadata = await ctx.db.system.get("_storage", args.fileId);
+  if (!metadata) throw new Error("Procurement attachment is unavailable");
+  const sha256 = normalizeClientFileSha256(metadata.sha256);
+  const contentMatch = await findReusableClientFileByContent(ctx, {
+    orgId: args.orgId,
+    sha256,
+  });
+  if (contentMatch) {
+    await ctx.storage.delete(args.fileId);
+    return {
+      clientFileId: contentMatch._id,
+      created: false as const,
+      expectedUpdatedAt: contentMatch.updatedAt,
+    };
+  }
+
   const originalName = normalizeAgentAttachmentFilename(args.originalName);
   const contentType = normalizeAgentAttachmentContentType(args.contentType);
   const now = dayjs().valueOf();
@@ -259,7 +372,8 @@ export async function createClientFileFromProcurementEmail(
     name: buildClientFileName(originalName, originalName),
     originalName,
     contentType,
-    size: args.size,
+    size: metadata.size,
+    sha256,
     clientVisible: false,
     uploadedBySide: "procurement_email",
     nameSource: "original",

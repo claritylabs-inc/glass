@@ -2,7 +2,8 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 
-const MAX_ATTEMPTS = 3;
+export const PROPOSAL_EXTRACTION_MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = PROPOSAL_EXTRACTION_MAX_ATTEMPTS;
 
 function matchesActiveLease(
   job: {

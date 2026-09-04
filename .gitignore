@@ -47,6 +47,9 @@
 !/docs/deployment/environments.md
 !/docs/deployment/slack.md
 !/docs/deployment/operator-mcp.md
+!/docs/procurement/
+/docs/procurement/*
+!/docs/procurement/data-inventory.md
 !/docs/testing/
 /docs/testing/*
 !/docs/testing/README.md
