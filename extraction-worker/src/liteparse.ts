@@ -24,6 +24,7 @@ export type LiteParseConversionMetadata = {
   parsedAt: number;
   parsingMs: number;
   pageCount: number;
+  ocrRetried: boolean;
 };
 
 export type LiteParseConversionResult = {
@@ -41,6 +42,9 @@ export type PageScreenshot = {
   width: number;
   height: number;
 };
+
+type LiteParseParser = Pick<LiteParse, "parse" | "screenshot">;
+type LiteParseResult = Awaited<ReturnType<LiteParseParser["parse"]>>;
 
 type PositionedCell = {
   text: string;
@@ -653,8 +657,44 @@ function buildLiteParseSourceSpans(params: {
   return sourceSpans;
 }
 
+export async function parsePdfWithOcrRetry(params: {
+  pdfBytes: Uint8Array;
+  documentId: string;
+  sourceKind: SourceKindInput;
+  ocrEnabled: boolean;
+  createParser: (ocrEnabled: boolean) => LiteParseParser;
+}): Promise<{
+  parser: LiteParseParser;
+  parsed: LiteParseResult;
+  sourceSpans: SourceSpan[];
+  ocrRetried: boolean;
+}> {
+  let parser = params.createParser(params.ocrEnabled);
+  let parsed = await parser.parse(Buffer.from(params.pdfBytes));
+  let sourceSpans = buildLiteParseSourceSpans({
+    pages: parsed.pages,
+    text: parsed.text,
+    documentId: params.documentId,
+    sourceKind: params.sourceKind,
+  });
+
+  if (sourceSpans.length > 0 || params.ocrEnabled) {
+    return { parser, parsed, sourceSpans, ocrRetried: false };
+  }
+
+  parser = params.createParser(true);
+  parsed = await parser.parse(Buffer.from(params.pdfBytes));
+  sourceSpans = buildLiteParseSourceSpans({
+    pages: parsed.pages,
+    text: parsed.text,
+    documentId: params.documentId,
+    sourceKind: params.sourceKind,
+  });
+  return { parser, parsed, sourceSpans, ocrRetried: true };
+}
+
 async function buildPageScreenshots(params: {
-  parser: LiteParse;
+  parser: Pick<LiteParse, "screenshot">;
   pdfBytes: Uint8Array;
   pages: ParsedPage[];
 }): Promise<PageScreenshot[]> {
@@ -695,38 +735,41 @@ export async function convertPdfWithLiteParse(params: {
   return withSerializedLiteParse(async () => {
     const startedAt = dayjs().valueOf();
     const { LiteParse } = await import("@llamaindex/liteparse");
-    const parser = new LiteParse({
-      ocrEnabled: readBooleanEnv("LITEPARSE_OCR_ENABLED", false),
-      ocrLanguage: process.env.LITEPARSE_OCR_LANGUAGE ?? "eng",
-      maxPages: params.maxPages ?? readBoundedIntEnv("LITEPARSE_MAX_PAGES", 1000, 1, 5000),
-      dpi: readBoundedIntEnv("LITEPARSE_DPI", 150, 72, 600),
-      quiet: true,
-      numWorkers: readBoundedIntEnv("LITEPARSE_NUM_WORKERS", 4, 1, 32),
-    });
-    const parsed = await parser.parse(Buffer.from(params.pdfBytes));
-    const sourceSpans = buildLiteParseSourceSpans({
-      pages: parsed.pages,
-      text: parsed.text,
+    const configuredOcrEnabled = readBooleanEnv("LITEPARSE_OCR_ENABLED", false);
+    const tessdataPath = process.env.LITEPARSE_TESSDATA_PATH?.trim();
+    const parsedSource = await parsePdfWithOcrRetry({
+      pdfBytes: params.pdfBytes,
       documentId: params.documentId,
       sourceKind: params.sourceKind ?? "policy_pdf",
+      ocrEnabled: configuredOcrEnabled,
+      createParser: (ocrEnabled) => new LiteParse({
+        ocrEnabled,
+        ocrLanguage: process.env.LITEPARSE_OCR_LANGUAGE ?? "eng",
+        ...(tessdataPath ? { tessdataPath } : {}),
+        maxPages: params.maxPages ?? readBoundedIntEnv("LITEPARSE_MAX_PAGES", 1000, 1, 5000),
+        dpi: readBoundedIntEnv("LITEPARSE_DPI", 150, 72, 600),
+        quiet: true,
+        numWorkers: readBoundedIntEnv("LITEPARSE_NUM_WORKERS", 4, 1, 32),
+      }),
     });
     const pageScreenshots = await buildPageScreenshots({
-      parser,
+      parser: parsedSource.parser,
       pdfBytes: params.pdfBytes,
-      pages: parsed.pages,
+      pages: parsedSource.parsed.pages,
     });
 
     return {
-      text: parsed.text,
-      sourceSpans,
-      sourceChunks: chunkSourceSpans(sourceSpans),
+      text: parsedSource.parsed.text,
+      sourceSpans: parsedSource.sourceSpans,
+      sourceChunks: chunkSourceSpans(parsedSource.sourceSpans),
       pageScreenshots,
       metadata: {
         parserBackend: "liteparse",
         parserVersion: LITEPARSE_VERSION,
         parsedAt: dayjs().valueOf(),
         parsingMs: dayjs().valueOf() - startedAt,
-        pageCount: parsed.pages.length,
+        pageCount: parsedSource.parsed.pages.length,
+        ocrRetried: parsedSource.ocrRetried,
       },
     };
   }, {
