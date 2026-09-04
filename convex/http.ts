@@ -28,6 +28,7 @@ import {
   parseSlackLifecyclePayload,
 } from "./lib/slackPayload";
 import { verifySlackRequest } from "./lib/slackSecurity";
+import { quoBrokerWebhook } from "./quoBrokerWebhook";
 import {
   operatorSlackConfirmationDecision,
   parseSlackInteraction,
@@ -63,6 +64,12 @@ import { buildOperatorMcpToolCatalog } from "./lib/operatorMcpToolCatalog";
 const http = httpRouter();
 const internalApi = internal as any;
 const JSON_HEADERS = { "Content-Type": "application/json" };
+
+http.route({
+  path: "/quo-brokers/webhook",
+  method: "POST",
+  handler: quoBrokerWebhook,
+});
 
 // Public, revocable packet-file delivery. The token is re-resolved on every
 // request so a revoked packet immediately invalidates previously copied URLs.

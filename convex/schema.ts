@@ -2913,6 +2913,40 @@ export default defineSchema({
     .index("organization", ["clientOrgId", "updatedAt"])
     .index("broker", ["brokerOrgId", "updatedAt"]),
 
+  // Provider events for the operator's Quo broker-outreach number. These stay
+  // outside customer channels and never enter the customer agent pipeline.
+  procurementSmsEvents: defineTable({
+    providerEventId: v.string(),
+    providerMessageId: v.string(),
+    eventType: v.union(
+      v.literal("message.received"),
+      v.literal("message.delivered"),
+    ),
+    phoneNumberId: v.string(),
+    conversationId: v.optional(v.string()),
+    counterpartyPhone: v.string(),
+    direction: v.union(v.literal("incoming"), v.literal("outgoing")),
+    from: v.string(),
+    to: v.array(v.string()),
+    body: v.string(),
+    status: v.optional(v.string()),
+    contactIds: v.optional(v.array(v.string())),
+    media: v.optional(
+      v.array(
+        v.object({
+          url: v.string(),
+          type: v.optional(v.string()),
+        }),
+      ),
+    ),
+    providerCreatedAt: v.string(),
+    messageCreatedAt: v.optional(v.string()),
+    receivedAt: v.number(),
+  })
+    .index("provider_event", ["providerEventId"])
+    .index("provider_message", ["providerMessageId", "receivedAt"])
+    .index("counterparty", ["counterpartyPhone", "receivedAt"]),
+
   procurementRequirementDrafts: defineTable({
     requestId: v.id("procurementRequests"),
     clientOrgId: v.id("organizations"),
