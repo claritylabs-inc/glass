@@ -385,6 +385,95 @@ describe("procurement domain boundaries", () => {
     });
   });
 
+  test("drops retried, cancelled, and archived proposals from extraction diagnostics", async () => {
+    const f = await fixture();
+    const request = await f.operator.mutation(api.procurementRequests.create, {
+      clientOrgId: f.clientOrgId,
+      title: "Stale diagnostics",
+      narrative: "Only live proposals are extraction issues",
+    });
+    const [retried, cancelled, archived] = await Promise.all(
+      ["Retried", "Cancelled", "Archived"].map(async (label) => {
+        const brokerOrgId = await f.t.run((ctx) =>
+          ctx.db.insert("organizations", {
+            name: `${label} broker`,
+            type: "broker" as const,
+          }),
+        );
+        const outreach = await f.operator.mutation(
+          api.procurementRequests.createOutreach,
+          { requestId: request.requestId, brokerOrgId },
+        );
+        const clientFileId = await seedProposalFile(
+          f,
+          `${label.toLowerCase()}-quote.pdf`,
+        );
+        return await f.operator.mutation(api.procurementProposals.file, {
+          requestId: request.requestId,
+          outreachId: outreach.outreachId,
+          sources: [{ kind: "client_file", clientFileId }],
+        });
+      }),
+    );
+
+    // The retried and archived proposals start from a failed extraction job;
+    // the cancelled one keeps the live job an operator can still stop.
+    await f.t.run(async (ctx) => {
+      for (const filed of [retried, archived])
+        await ctx.db.patch(filed.extraction.jobId, {
+          status: "failed",
+          lastError: "Worker crashed",
+          attempts: 1,
+        });
+      await ctx.db.patch(retried.proposalId, { status: "draft" });
+    });
+
+    const threadId = await f.operator.mutation(
+      api.operatorAgent.createThread,
+      {},
+    );
+    const diagnose = async (idempotencyKey: string) =>
+      await f.t.action(internal.operatorAgent.invokeRegisteredToolInternal, {
+        operatorUserId: f.operatorUserId,
+        threadId,
+        channel: "mcp" as const,
+        toolName: "list_extraction_issues",
+        input: { domain: "proposal", status: "error" },
+        idempotencyKey,
+      });
+
+    const before = await diagnose("list-failed-proposal-extractions");
+    expect(before.outcome.status).toBe("succeeded");
+    expect(
+      (
+        before.outcome as { result: { issues: Array<{ proposalId: string }> } }
+      ).result.issues
+        .map((issue) => String(issue.proposalId))
+        .sort(),
+    ).toEqual([retried.proposalId, archived.proposalId].map(String).sort());
+
+    const requeued = await f.operator.mutation(
+      api.procurementProposals.retryExtraction,
+      { proposalId: retried.proposalId },
+    );
+    await f.t.run(async (ctx) => {
+      await ctx.db.patch(requeued.jobId, { status: "complete" });
+      await ctx.db.patch(retried.proposalId, { status: "review_ready" });
+    });
+    await f.operator.mutation(api.procurementProposals.cancelExtraction, {
+      proposalId: cancelled.proposalId,
+    });
+    await f.operator.mutation(api.procurementProposals.archive, {
+      proposalId: archived.proposalId,
+    });
+
+    const after = await diagnose("list-failed-proposal-extractions-after");
+    expect(after.outcome).toMatchObject({
+      status: "succeeded",
+      result: { issues: [] },
+    });
+  });
+
   test("lets clients collaborate through an allowlisted request DTO without exposing private proposals", async () => {
     const f = await fixture();
     const created = await f.client.mutation(

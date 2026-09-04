@@ -115,6 +115,39 @@ describe("request packet composition", () => {
         expiresAt: dayjs().add(91, "day").valueOf(),
       }),
     ).rejects.toThrow("Packet links may expire at most 90 days after issue");
+    // A browser clock a few seconds ahead must not lose the maximum lifetime,
+    // so callers name days and the server dates them.
+    await expect(
+      f.operator.mutation(api.procurementPacket.mintLink, {
+        requestId: request.requestId,
+        outreachId: outreach.outreachId,
+        recipientLabel: "Dana Reyes",
+        expiresAt: dayjs().add(90, "day").add(5, "second").valueOf(),
+      }),
+    ).rejects.toThrow("Packet links may expire at most 90 days after issue");
+    const maximumLifetime = await f.operator.mutation(
+      api.procurementPacket.mintLink,
+      {
+        requestId: request.requestId,
+        outreachId: outreach.outreachId,
+        recipientLabel: "Dana Reyes",
+        expiresInDays: 90,
+      },
+    );
+    expect(maximumLifetime.expiresAt).toBeGreaterThan(
+      dayjs().add(89, "day").valueOf(),
+    );
+    await expect(
+      f.operator.mutation(api.procurementPacket.mintLink, {
+        requestId: request.requestId,
+        outreachId: outreach.outreachId,
+        recipientLabel: "Dana Reyes",
+        expiresInDays: 91,
+      }),
+    ).rejects.toThrow("Packet link lifetime must be between 1 and 90 days");
+    await f.operator.mutation(api.procurementPacket.revokeLink, {
+      linkId: maximumLifetime.id,
+    });
     await f.operator.mutation(api.procurementPacket.upsertSection, {
       requestId: request.requestId,
       key: "summary",

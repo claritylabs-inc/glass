@@ -367,6 +367,83 @@ async function requestRow(ctx: Ctx, request: Doc<"procurementRequests">) {
   };
 }
 
+const TIMELINE_LIMIT = 40;
+
+export type ProcurementTimelineEntry = {
+  key: string;
+  kind: "operator" | "email" | "file" | "proposal" | "outreach";
+  summary: string;
+  detail?: string;
+  createdAt: number;
+};
+
+/** One request-scoped stream over every surface an operator has to reconcile:
+ * operator writes, imported email, request files, outreach, and proposals.
+ * Each entry is a stored record's own timestamp, never a reconstructed one. */
+function buildRequestTimeline(args: {
+  auditEvents: Array<{ _id: string; summary: string; createdAt: number }>;
+  emailThreads: Doc<"procurementEmailThreads">[];
+  fileItems: Array<{
+    _id: Id<"procurementFileItems">;
+    label: string;
+    status: string;
+    updatedAt: number;
+    clientFile: { uploadedBySide?: string } | null;
+  }>;
+  outreaches: Doc<"procurementBrokerOutreaches">[];
+  proposals: Doc<"procurementProposals">[];
+}): ProcurementTimelineEntry[] {
+  const brokerNameByOutreach = new Map(
+    args.outreaches.map((outreach) => [
+      String(outreach._id),
+      outreach.brokerName,
+    ]),
+  );
+  const readable = (value: string) => value.replaceAll("_", " ");
+  const entries: ProcurementTimelineEntry[] = [
+    ...args.auditEvents.map((event) => ({
+      key: `operator:${event._id}`,
+      kind: "operator" as const,
+      summary: event.summary,
+      createdAt: event.createdAt,
+    })),
+    ...args.emailThreads.map((thread) => ({
+      key: `email:${thread._id}`,
+      kind: "email" as const,
+      summary: thread.subject,
+      detail: `${thread.messageCount} ${thread.messageCount === 1 ? "message" : "messages"} · ${readable(thread.category)}`,
+      createdAt: thread.latestMessageAt,
+    })),
+    ...args.fileItems.map((item) => ({
+      key: `file:${item._id}`,
+      kind: "file" as const,
+      summary:
+        item.status === "requested"
+          ? `Requested ${item.label}`
+          : item.clientFile?.uploadedBySide === "client"
+            ? `Client provided ${item.label}`
+            : `${item.label} ${readable(item.status)}`,
+      createdAt: item.updatedAt,
+    })),
+    ...args.outreaches.map((outreach) => ({
+      key: `outreach:${outreach._id}`,
+      kind: "outreach" as const,
+      summary: `${outreach.brokerName} outreach ${readable(outreach.status)}`,
+      detail: outreach.contactName ?? outreach.contactEmail ?? undefined,
+      createdAt: outreach.updatedAt,
+    })),
+    ...args.proposals.map((proposal) => ({
+      key: `proposal:${proposal._id}`,
+      kind: "proposal" as const,
+      summary: `${brokerNameByOutreach.get(String(proposal.outreachId)) ?? "Broker"} proposal ${readable(proposal.status)}`,
+      createdAt: proposal.updatedAt,
+    })),
+  ];
+  return entries
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, TIMELINE_LIMIT);
+}
+
 export async function getProcurementRequestDetails(
   ctx: Ctx,
   requestId: Id<"procurementRequests">,
@@ -474,15 +551,23 @@ export async function getProcurementRequestDetails(
       type: event.type,
       createdAt: event.createdAt,
     }));
+  const activeEmailThreads = emailThreads.filter(activeEmailThread);
   return {
     request: summary,
     outreaches,
     files,
-    emailThreads: emailThreads.filter(activeEmailThread),
+    emailThreads: activeEmailThreads,
     confirmedRequirements,
     specifications,
     proposals,
     auditEvents,
+    timeline: buildRequestTimeline({
+      auditEvents,
+      emailThreads: activeEmailThreads,
+      fileItems: files,
+      outreaches,
+      proposals,
+    }),
   };
 }
 
@@ -1471,8 +1556,12 @@ export async function previewProcurementEmailReconciliation(
   const unfiledFiles = files.filter(
     (file) => !proposedClientFileIds.has(String(file.clientFileId)),
   );
+  // `fileEmailQuote` refuses archived threads, so the preview must not offer
+  // filing from one either.
+  const filable = !thread.archivedAt;
   return {
     emailThreadId: thread._id,
+    filable,
     requestId: request._id,
     requestTitle: request.title,
     deepLink: `/operator/clients/${request.clientOrgId}/procurement/${request._id}?view=email`,
@@ -1482,6 +1571,14 @@ export async function previewProcurementEmailReconciliation(
     files,
     unfiledFiles,
     selectedOutreachId: selectedOutreach?._id ?? null,
+    // Every outreach on the thread's current request, so a client that moved
+    // the thread can rebuild its picker instead of trusting a stale snapshot.
+    outreaches: outreaches.map((outreach) => ({
+      outreachId: outreach._id,
+      brokerName: outreach.brokerName,
+      contactName: outreach.contactName ?? null,
+      contactEmail: outreach.contactEmail ?? null,
+    })),
     outreachInference: {
       status:
         matchingOutreaches.length === 1
@@ -1498,7 +1595,7 @@ export async function previewProcurementEmailReconciliation(
       })),
     },
     nextActions:
-      !selectedOutreachId && suggestedOutreach && unfiledFiles.length
+      filable && !selectedOutreachId && suggestedOutreach && unfiledFiles.length
         ? [
             {
               tool: "file_procurement_email_quote" as const,

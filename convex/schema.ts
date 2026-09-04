@@ -3241,6 +3241,9 @@ export default defineSchema({
     workerId: v.optional(v.string()),
     completionPayloadStorageId: v.optional(v.id("_storage")),
     lastError: v.optional(v.string()),
+    // Set when an operator stopped the job (cancel or archive). The row is
+    // still `failed`, but it is a deliberate stop, not an extraction issue.
+    cancelledAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

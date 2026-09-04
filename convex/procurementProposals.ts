@@ -185,8 +185,12 @@ async function recentJobs(
 }
 
 function proposalNextActions(
-  proposal: Pick<Doc<"procurementProposals">, "_id" | "status">,
+  proposal: Pick<
+    Doc<"procurementProposals">,
+    "_id" | "status" | "requestId" | "outreachId"
+  >,
   latest: ProposalExtractionJobSummary | null,
+  documentCount: number,
 ) {
   const proposalId = proposal._id;
   const actions: Array<{
@@ -209,11 +213,25 @@ function proposalNextActions(
       input: { procurementProposalId: proposalId },
     });
   } else if (proposal.status === "draft") {
-    actions.push({
-      tool: "file_procurement_proposal",
-      why: "Draft has no queued extraction; file its documents to start one",
-      input: { procurementProposalId: proposalId },
-    });
+    actions.push(
+      documentCount > 0
+        ? {
+            tool: "retry_procurement_proposal_extraction",
+            why: "Draft has documents but no queued extraction; queue one",
+            input: { procurementProposalId: proposalId },
+          }
+        : {
+            // Sources cannot be guessed here, so the hint carries the routing
+            // ids and names the argument the caller still has to choose.
+            tool: "file_procurement_proposal",
+            why: "Draft has no documents; file at least one clientFileId, procurementFileItemId, or attachmentFileId onto this proposal",
+            input: {
+              procurementRequestId: proposal.requestId,
+              procurementOutreachId: proposal.outreachId,
+              procurementProposalId: proposalId,
+            },
+          },
+    );
   } else if (proposal.status === "review_ready") {
     actions.push({
       tool: "run_operator_task",
@@ -273,7 +291,7 @@ async function proposalDto(
       stale: (review.packetRevision ?? -1) !== packetRevision,
     })),
     extraction: { latest, jobs: jobRows },
-    nextActions: proposalNextActions(proposal, latest),
+    nextActions: proposalNextActions(proposal, latest, documents.length),
   };
 }
 
@@ -819,6 +837,7 @@ export async function fileProcurementProposalByOperator(
     nextActions: proposalNextActions(
       final,
       latestJob ? jobSummary(latestJob, final, now) : null,
+      (await proposalDocuments(ctx, final._id)).length,
     ),
   };
 }
@@ -829,6 +848,9 @@ export async function fileProcurementEmailQuoteByOperator(
     operatorUserId: Id<"users">;
     emailThreadId: Id<"procurementEmailThreads">;
     outreachId: Id<"procurementBrokerOutreaches">;
+    /** Files the whole thread when omitted. Narrow it to skip signature images
+     * and logos that arrive as attachments alongside the quote. */
+    clientFileIds?: Id<"clientFiles">[];
     supersedesProposalId?: Id<"procurementProposals">;
   },
 ) {
@@ -856,11 +878,21 @@ export async function fileProcurementEmailQuoteByOperator(
   }
   if (!activeClientFileIds.length)
     throw new Error("This email thread has no active file attachments to file");
+  let selectedClientFileIds = activeClientFileIds;
+  if (args.clientFileIds?.length) {
+    const active = new Set(activeClientFileIds.map(String));
+    for (const clientFileId of args.clientFileIds)
+      if (!active.has(String(clientFileId)))
+        throw new Error(
+          `Attachment ${clientFileId} is not an active file on this email thread`,
+        );
+    selectedClientFileIds = [...new Set(args.clientFileIds)];
+  }
   const result = await fileProcurementProposalByOperator(ctx, {
     operatorUserId: args.operatorUserId,
     requestId: thread.requestId,
     outreachId: args.outreachId,
-    sources: activeClientFileIds.map((clientFileId) => ({
+    sources: selectedClientFileIds.map((clientFileId) => ({
       kind: "client_file",
       clientFileId,
     })),
@@ -874,6 +906,7 @@ export const fileEmailQuote = mutation({
   args: {
     emailThreadId: v.id("procurementEmailThreads"),
     outreachId: v.id("procurementBrokerOutreaches"),
+    clientFileIds: v.optional(v.array(v.id("clientFiles"))),
     supersedesProposalId: v.optional(v.id("procurementProposals")),
   },
   handler: async (ctx, args) => {
@@ -1022,6 +1055,7 @@ export async function archiveProcurementProposalByOperator(
           leaseId: undefined,
           leaseExpiresAt: undefined,
           lastError: "Proposal archived by operator",
+          cancelledAt: now,
           updatedAt: now,
         });
     await ctx.db.patch(proposal._id, {
@@ -1140,6 +1174,7 @@ export async function cancelProcurementProposalExtractionByOperator(
         leaseId: undefined,
         leaseExpiresAt: undefined,
         lastError: "Cancelled by operator",
+        cancelledAt: now,
         updatedAt: now,
       });
       cancelled.push(job._id);
@@ -1234,20 +1269,41 @@ export async function listProposalExtractionIssues(
     .sort((left, right) => right.job.updatedAt - left.job.updatedAt);
   const seen = new Set<string>();
   const issues = [];
+  let bounded = false;
   for (const { job, unified } of rows) {
-    if (issues.length >= args.limit) break;
+    if (issues.length >= args.limit) {
+      bounded = true;
+      break;
+    }
     if (seen.has(String(job.proposalId))) continue;
     seen.add(String(job.proposalId));
-    const [proposal, request, organization] = await Promise.all([
-      ctx.db.get(job.proposalId),
+    const proposal = await ctx.db.get(job.proposalId);
+    // A proposal is only an open issue while it is still live: archiving fails
+    // its pending jobs, and a withdrawn proposal has no recovery worth naming.
+    if (
+      !proposal ||
+      proposal.status === "archived" ||
+      proposal.status === "withdrawn"
+    )
+      continue;
+    // Only the newest job speaks for the proposal. A completed retry supersedes
+    // the failure that preceded it, and a cancelled job is not an error either.
+    const latestJob = await ctx.db
+      .query("procurementProposalExtractionJobs")
+      .withIndex("proposal", (q) => q.eq("proposalId", job.proposalId))
+      .order("desc")
+      .first();
+    if (!latestJob || latestJob._id !== job._id) continue;
+    if (job.cancelledAt) continue;
+    const [request, organization, broker] = await Promise.all([
       ctx.db.get(job.requestId),
       ctx.db.get(job.clientOrgId),
+      ctx.db.get(proposal.brokerOrgId),
     ]);
-    const broker = proposal ? await ctx.db.get(proposal.brokerOrgId) : null;
     issues.push({
       domain: "proposal" as const,
       proposalId: job.proposalId,
-      proposalStatus: proposal?.status ?? null,
+      proposalStatus: proposal.status,
       requestId: job.requestId,
       requestTitle: request?.title ?? null,
       orgId: job.clientOrgId,
@@ -1266,7 +1322,7 @@ export async function listProposalExtractionIssues(
           : null,
     });
   }
-  return { issues, bounded: rows.length > issues.length };
+  return { issues, bounded };
 }
 
 export const getReviewInputInternal = internalQuery({

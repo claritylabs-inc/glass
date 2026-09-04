@@ -696,6 +696,7 @@ export const mintLink = mutation({
     recipientLabel: v.string(),
     recipientEmail: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);
@@ -707,6 +708,24 @@ export const mintLink = mutation({
   },
 });
 
+/** Callers name a lifetime in days and let the server date it. A raw
+ * `expiresAt` from a browser whose clock runs ahead would trip the maximum. */
+function requestedPacketLinkExpiry(
+  now: number,
+  args: { expiresAt?: number; expiresInDays?: number },
+) {
+  if (args.expiresInDays === undefined) return args.expiresAt;
+  if (
+    !Number.isInteger(args.expiresInDays) ||
+    args.expiresInDays < 1 ||
+    args.expiresInDays > MAX_PACKET_LINK_TTL_DAYS
+  )
+    throw new Error(
+      `Packet link lifetime must be between 1 and ${MAX_PACKET_LINK_TTL_DAYS} days`,
+    );
+  return dayjs(now).add(args.expiresInDays, "day").valueOf();
+}
+
 export async function mintPacketLinkForOperator(
   ctx: MutationCtx,
   args: {
@@ -716,6 +735,7 @@ export async function mintPacketLinkForOperator(
     recipientLabel: string;
     recipientEmail?: string;
     expiresAt?: number;
+    expiresInDays?: number;
   },
 ) {
   await directOperator(ctx, args.operatorUserId);
@@ -732,15 +752,18 @@ export async function mintPacketLinkForOperator(
   const maximumExpiry = dayjs(now)
     .add(MAX_PACKET_LINK_TTL_DAYS, "day")
     .valueOf();
+  const requestedExpiry = requestedPacketLinkExpiry(now, args);
   if (
-    args.expiresAt !== undefined &&
-    (!Number.isFinite(args.expiresAt) || args.expiresAt <= now)
+    requestedExpiry !== undefined &&
+    (!Number.isFinite(requestedExpiry) || requestedExpiry <= now)
   )
     throw new Error("Packet link expiry must be in the future");
-  if (args.expiresAt !== undefined && args.expiresAt > maximumExpiry)
-    throw new Error("Packet links may expire at most 90 days after issue");
+  if (requestedExpiry !== undefined && requestedExpiry > maximumExpiry)
+    throw new Error(
+      `Packet links may expire at most ${MAX_PACKET_LINK_TTL_DAYS} days after issue`,
+    );
   const expiresAt =
-    args.expiresAt ?? dayjs(now).add(PACKET_LINK_TTL_DAYS, "day").valueOf();
+    requestedExpiry ?? dayjs(now).add(PACKET_LINK_TTL_DAYS, "day").valueOf();
   const id = await ctx.db.insert("procurementPacketLinks", {
     requestId: request._id,
     clientOrgId: request.clientOrgId,
@@ -812,6 +835,7 @@ export const mintLinkInternal = internalMutation({
     recipientLabel: v.string(),
     recipientEmail: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
   },
   handler: async (ctx, args) => mintPacketLinkForOperator(ctx, args),
 });
@@ -873,6 +897,7 @@ export async function rotatePacketLinkByOperator(
     operatorUserId: Id<"users">;
     linkId: Id<"procurementPacketLinks">;
     expiresAt?: number;
+    expiresInDays?: number;
   },
 ) {
   await directOperator(ctx, args.operatorUserId);
@@ -886,6 +911,7 @@ export async function rotatePacketLinkByOperator(
     recipientLabel: current.recipientLabel,
     recipientEmail: current.recipientEmail,
     expiresAt: args.expiresAt,
+    expiresInDays: args.expiresInDays,
   });
 }
 
@@ -893,6 +919,7 @@ export const rotateLink = mutation({
   args: {
     linkId: v.id("procurementPacketLinks"),
     expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const operator = await requireOperator(ctx);

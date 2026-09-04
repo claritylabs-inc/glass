@@ -188,13 +188,6 @@ type ProcurementRequestOption = {
   title: string;
 };
 
-type ProcurementOutreachOption = {
-  _id: Id<"procurementBrokerOutreaches">;
-  brokerName: string;
-  contactName?: string;
-  contactEmail?: string;
-};
-
 type ForwardedMailbox = { name?: string; address?: string };
 type ForwardedEmail = {
   email?: {
@@ -224,13 +217,11 @@ function mailboxList(mailboxes: ForwardedMailbox[] | undefined) {
 export function ProcurementEmailDrawer({
   emailThreadId,
   requests,
-  outreaches,
   readOnly,
   onClose,
 }: {
   emailThreadId: Id<"procurementEmailThreads">;
   requests: ProcurementRequestOption[];
-  outreaches: ProcurementOutreachOption[];
   readOnly: boolean;
   onClose: () => void;
 }) {
@@ -254,6 +245,9 @@ export function ProcurementEmailDrawer({
     emailThreadId: Id<"procurementEmailThreads">;
     outreachId: string;
   } | null>(null);
+  // Attachments the operator excluded from filing, so signature images and
+  // logos do not become proposal documents. Everything else files by default.
+  const [excludedFileIds, setExcludedFileIds] = useState<string[]>([]);
   const activeDraft = draft?.emailThreadId === emailThreadId ? draft : null;
   const category = activeDraft?.category ?? result?.thread.category ?? "";
   const requestId = activeDraft?.requestId ?? result?.thread.requestId ?? "";
@@ -268,24 +262,33 @@ export function ProcurementEmailDrawer({
       requests.map((request) => ({ value: request._id, label: request.title })),
     [requests],
   );
+  // Outreaches follow the thread's current request. Reading them from the
+  // preview keeps the picker correct after the thread moves to another request.
   const outreachOptions = useMemo(
     () =>
-      outreaches.map((outreach) => ({
-        value: outreach._id,
+      (inference?.outreaches ?? []).map((outreach) => ({
+        value: String(outreach.outreachId),
         label: outreach.contactName
           ? `${outreach.brokerName} · ${outreach.contactName}`
           : outreach.brokerName,
       })),
-    [outreaches],
+    [inference],
   );
   const inferredOutreachId =
     inference?.outreachInference.status === "exact"
       ? inference.outreachInference.candidates[0]?.outreachId
       : undefined;
-  const selectedOutreachId =
+  const pendingOutreachId =
     outreachSelection?.emailThreadId === emailThreadId
       ? outreachSelection.outreachId
       : (inferredOutreachId ?? "");
+  // A selection made before the thread moved names an outreach on the old
+  // request; sending it back would make the preview query throw during render.
+  const selectedOutreachId = outreachOptions.some(
+    (option) => option.value === pendingOutreachId,
+  )
+    ? pendingOutreachId
+    : "";
   const reconciliation = useQuery(
     api.procurementRequests.previewEmailReconciliation,
     selectedOutreachId
@@ -294,6 +297,9 @@ export function ProcurementEmailDrawer({
           outreachId: selectedOutreachId as Id<"procurementBrokerOutreaches">,
         }
       : { emailThreadId },
+  );
+  const selectedFiles = (reconciliation?.unfiledFiles ?? []).filter(
+    (file) => !excludedFileIds.includes(String(file.clientFileId)),
   );
 
   async function save() {
@@ -320,12 +326,13 @@ export function ProcurementEmailDrawer({
   }
 
   async function fileQuote() {
-    if (!selectedOutreachId || !reconciliation?.unfiledFiles.length) return;
+    if (!selectedOutreachId || !selectedFiles.length) return;
     setFiling(true);
     try {
       const filed = await fileEmailQuote({
         emailThreadId,
         outreachId: selectedOutreachId as Id<"procurementBrokerOutreaches">,
+        clientFileIds: selectedFiles.map((file) => file.clientFileId),
       });
       toast.success(
         filed.status === "already_filed"
@@ -466,13 +473,15 @@ export function ProcurementEmailDrawer({
               description={
                 reconciliation === undefined
                   ? "Checking attachments and outreach contacts"
-                  : reconciliation.files.length === 0
-                    ? "This email has no active attachments"
-                    : reconciliation.unfiledFiles.length === 0
-                      ? "Every active attachment is already filed in a proposal"
-                      : inference?.outreachInference.status === "exact"
-                        ? "Matched from an exact outreach contact email"
-                        : "Choose the outreach that sent these attachments"
+                  : !reconciliation.filable
+                    ? "This email is archived; restore it to file a quote"
+                    : reconciliation.files.length === 0
+                      ? "This email has no active attachments"
+                      : reconciliation.unfiledFiles.length === 0
+                        ? "Every active attachment is already filed in a proposal"
+                        : inference?.outreachInference.status === "exact"
+                          ? "Matched from an exact outreach contact email"
+                          : "Choose the outreach that sent these attachments"
               }
             />
             <OperationalPanelBody className="space-y-4">
@@ -486,17 +495,51 @@ export function ProcurementEmailDrawer({
                     >
                       Unfiled attachments
                     </p>
-                    <p
-                      className={`mt-1 text-foreground ${typeStyle("body.default")}`}
-                    >
-                      {reconciliation.unfiledFiles.length
-                        ? reconciliation.unfiledFiles
-                            .map((file) => file.name)
-                            .join(", ")
-                        : "None"}
-                    </p>
+                    {reconciliation.unfiledFiles.length ? (
+                      <div className="mt-1.5 space-y-1.5">
+                        {reconciliation.unfiledFiles.map((file) => (
+                          <label
+                            key={String(file.clientFileId)}
+                            className="flex items-center gap-3 rounded-md border border-border px-3 py-2"
+                          >
+                            <input
+                              type="checkbox"
+                              className="size-4"
+                              checked={
+                                !excludedFileIds.includes(
+                                  String(file.clientFileId),
+                                )
+                              }
+                              disabled={readOnly || filing}
+                              onChange={(event) =>
+                                setExcludedFileIds((current) =>
+                                  event.target.checked
+                                    ? current.filter(
+                                        (id) =>
+                                          id !== String(file.clientFileId),
+                                      )
+                                    : [...current, String(file.clientFileId)],
+                                )
+                              }
+                            />
+                            <span
+                              className={`min-w-0 truncate text-foreground ${typeStyle("body.default")}`}
+                            >
+                              {file.name}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <p
+                        className={`mt-1 text-foreground ${typeStyle("body.default")}`}
+                      >
+                        None
+                      </p>
+                    )}
                   </div>
-                  {reconciliation.unfiledFiles.length > 0 ? (
+                  {reconciliation.filable &&
+                  reconciliation.unfiledFiles.length > 0 ? (
                     <>
                       <label className="block space-y-1.5">
                         <span
@@ -520,7 +563,12 @@ export function ProcurementEmailDrawer({
                       <PillButton
                         type="button"
                         onClick={fileQuote}
-                        disabled={readOnly || filing || !selectedOutreachId}
+                        disabled={
+                          readOnly ||
+                          filing ||
+                          !selectedOutreachId ||
+                          !selectedFiles.length
+                        }
                       >
                         {filing ? (
                           <Loader2 className="size-3.5 animate-spin" />

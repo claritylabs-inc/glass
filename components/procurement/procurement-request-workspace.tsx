@@ -51,6 +51,7 @@ import {
   type StoredProcurementRequestStatus,
 } from "@/components/procurement/procurement-shared";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Input } from "@/components/ui/input";
 import {
@@ -172,12 +173,23 @@ type RequestDetails = {
   outreaches: Outreach[];
   files: ProcurementFileItem[];
   emailThreads: EmailThread[];
-  auditEvents: Array<{
-    _id: Id<"operatorAuditEvents">;
-    summary: string;
-    type: string;
-    createdAt: number;
-  }>;
+  timeline: TimelineEntry[];
+};
+
+type TimelineEntry = {
+  key: string;
+  kind: "operator" | "email" | "file" | "proposal" | "outreach";
+  summary: string;
+  detail?: string;
+  createdAt: number;
+};
+
+const TIMELINE_KIND_LABELS: Record<TimelineEntry["kind"], string> = {
+  operator: "Operator",
+  email: "Email",
+  file: "File",
+  proposal: "Proposal",
+  outreach: "Outreach",
 };
 
 type BrokerOption = {
@@ -185,19 +197,29 @@ type BrokerOption = {
   name: string;
 };
 
+type ActiveProposalOption = {
+  _id: Id<"procurementProposals">;
+  outreachId: Id<"procurementBrokerOutreaches">;
+  status: string;
+  brokerName?: string;
+};
+
 function ProposalCreateDrawer({
   requestId,
   outreaches,
   fileItems,
+  activeProposals,
   onClose,
 }: {
   requestId: Id<"procurementRequests">;
   outreaches: Outreach[];
   fileItems: ProcurementFileItem[];
+  activeProposals: ActiveProposalOption[];
   onClose: () => void;
 }) {
   const eligible = outreaches.filter((outreach) => outreach.brokerOrgId);
   const [outreachId, setOutreachId] = useState(eligible[0]?._id ?? "");
+  const [supersede, setSupersede] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
   const [selectedFileItemIds, setSelectedFileItemIds] = useState<
     Id<"procurementFileItems">[]
@@ -213,6 +235,17 @@ function ProposalCreateDrawer({
     (item) => item.clientFile && item.status !== "requested",
   );
   const hasSources = files.length > 0 || selectedFileItemIds.length > 0;
+  // An outreach holds one active proposal at a time. Anything past draft has to
+  // be superseded explicitly, which is what the agent path already does.
+  const activeForOutreach = activeProposals.find(
+    (proposal) => proposal.outreachId === outreachId,
+  );
+  const supersedable =
+    activeForOutreach &&
+    activeForOutreach.status !== "draft" &&
+    activeForOutreach.status !== "selected"
+      ? activeForOutreach
+      : null;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -266,7 +299,13 @@ function ProposalCreateDrawer({
           uploadIntentId: target.uploadIntentId,
         });
       }
-      await fileProposal({ requestId, outreachId: outreach._id, sources });
+      await fileProposal({
+        requestId,
+        outreachId: outreach._id,
+        sources,
+        supersedesProposalId:
+          supersedable && supersede ? supersedable._id : undefined,
+      });
       toast.success("Proposal filed and queued for extraction");
       onClose();
     } catch (error) {
@@ -335,6 +374,28 @@ function ProposalCreateDrawer({
           {eligible.length === 0 ? (
             <p className={`mt-2 text-warning ${typeStyle("body.default")}`}>
               Add a broker organization to Market before filing a proposal.
+            </p>
+          ) : null}
+          {supersedable ? (
+            <label className="mt-3 flex items-start gap-3 rounded-md border border-border px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4"
+                checked={supersede}
+                onChange={(event) => setSupersede(event.target.checked)}
+              />
+              <span className={typeStyle("body.default")}>
+                File as a revision that withdraws the current{" "}
+                {supersedable.status.replaceAll("_", " ")} proposal
+                {supersedable.brokerName
+                  ? ` from ${supersedable.brokerName}`
+                  : ""}
+              </span>
+            </label>
+          ) : activeForOutreach?.status === "selected" ? (
+            <p className={`mt-2 text-warning ${typeStyle("body.default")}`}>
+              This outreach holds the selected proposal. Select another reviewed
+              proposal before filing a revision here.
             </p>
           ) : null}
         </div>
@@ -1561,10 +1622,14 @@ export function ProcurementRequestWorkspace({
         requestId={requestId}
         outreaches={details.outreaches}
         fileItems={details.files}
+        activeProposals={(proposals ?? []).filter(
+          (proposal) =>
+            proposal.status !== "archived" && proposal.status !== "withdrawn",
+        )}
         onClose={closeRightPanel}
       />,
     );
-  }, [closePdf, closeRightPanel, details, onRightPanel, requestId]);
+  }, [closePdf, closeRightPanel, details, onRightPanel, proposals, requestId]);
 
   const openProposalReview = useCallback(
     (proposal: ProposalView) => {
@@ -1590,20 +1655,12 @@ export function ProcurementRequestWorkspace({
         <ProcurementEmailDrawer
           emailThreadId={emailThreadId}
           requests={requestOptions}
-          outreaches={details?.outreaches ?? []}
           readOnly={readOnly}
           onClose={closeRightPanel}
         />,
       );
     },
-    [
-      closePdf,
-      closeRightPanel,
-      details?.outreaches,
-      onRightPanel,
-      readOnly,
-      requestOptions,
-    ],
+    [closePdf, closeRightPanel, onRightPanel, readOnly, requestOptions],
   );
 
   useEffect(() => {
@@ -1823,7 +1880,7 @@ export function ProcurementRequestWorkspace({
             <TabsTrigger value="proposals">
               Proposals
               <span className="text-muted-foreground/60">
-                {proposals.length}
+                {activeProposals.length}
               </span>
             </TabsTrigger>
             <TabsTrigger value="files">
@@ -1915,22 +1972,37 @@ export function ProcurementRequestWorkspace({
             />
           </OperationalLabelValueList>
           <OperationalPanel as="section">
-            <OperationalPanelHeader title="Audit trail" />
+            <OperationalPanelHeader
+              title="Timeline"
+              description="Operator actions, imported email, files, outreach, and proposals"
+            />
             <OperationalPanelBody>
               <div className="divide-y divide-border">
-                {details.auditEvents.length ? (
-                  details.auditEvents.map((event) => (
+                {details.timeline.length ? (
+                  details.timeline.map((entry) => (
                     <div
-                      key={event._id}
+                      key={entry.key}
                       className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
                     >
-                      <span className={typeStyle("body.default")}>
-                        {event.summary}
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <Badge variant="outline" className="shrink-0">
+                          {TIMELINE_KIND_LABELS[entry.kind]}
+                        </Badge>
+                        <span className={typeStyle("body.default")}>
+                          {entry.summary}
+                          {entry.detail ? (
+                            <span
+                              className={`ml-2 text-muted-foreground ${typeStyle("caption.default")}`}
+                            >
+                              {entry.detail}
+                            </span>
+                          ) : null}
+                        </span>
                       </span>
                       <span
                         className={`shrink-0 text-muted-foreground ${typeStyle("caption.default")}`}
                       >
-                        {formatDisplayDateTime(event.createdAt)}
+                        {formatDisplayDateTime(entry.createdAt)}
                       </span>
                     </div>
                   ))
@@ -1938,7 +2010,7 @@ export function ProcurementRequestWorkspace({
                   <p
                     className={`text-muted-foreground ${typeStyle("body.default")}`}
                   >
-                    No operator actions recorded yet.
+                    Nothing has happened on this request yet.
                   </p>
                 )}
               </div>

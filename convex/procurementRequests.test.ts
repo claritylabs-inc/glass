@@ -453,6 +453,139 @@ describe("procurement requests", () => {
     expect(state.replayBlob).toBeNull();
   });
 
+  test("files a chosen attachment subset and stops offering archived threads", async () => {
+    const fixture = await seedProcurementFixture();
+    const operator = fixture.t.withIdentity({
+      subject: `${fixture.operatorUserId}|session`,
+    });
+    const request = await createRequest(fixture, "Subset quote filing");
+    const outreach = await operator.mutation(
+      api.procurementRequests.createOutreach,
+      {
+        requestId: request.requestId,
+        brokerOrgId: fixture.brokerOrgId,
+        contactEmail: "broker@example.com",
+      },
+    );
+    const attachments = await Promise.all(
+      [
+        { filename: "broker-quote.pdf", contentType: "application/pdf" },
+        { filename: "signature.png", contentType: "image/png" },
+      ].map(async (attachment) => {
+        const bytes = new TextEncoder().encode(attachment.filename);
+        const fileId = await fixture.t.run((ctx) =>
+          ctx.storage.store(
+            new Blob([bytes], { type: attachment.contentType }),
+          ),
+        );
+        return { ...attachment, fileId, size: bytes.byteLength };
+      }),
+    );
+    const imported = await fixture.t.mutation(
+      internal.procurementRequests.ingestEmailInternal,
+      {
+        addressedRequestId: request.requestId,
+        resendEmailId: "subset-quote-1",
+        messageId: "<subset-quote-1@example.com>",
+        references: [],
+        subject: "Quote and signature",
+        fromEmail: "broker@example.com",
+        toAddresses: [],
+        ccAddresses: [],
+        bccAddresses: [],
+        currentText: "Quote attached",
+        participantEmails: ["broker@example.com"],
+        attachments,
+        receivedAt: 1,
+      },
+    );
+    if (imported.duplicate) throw new Error("Expected email import");
+    const emailThreadId = imported.threadId as Id<"procurementEmailThreads">;
+    const [quoteFileId, signatureFileId] = imported.clientFileIds;
+
+    const preview = await operator.query(
+      api.procurementRequests.previewEmailReconciliation,
+      { emailThreadId },
+    );
+    expect(preview.filable).toBe(true);
+    expect(preview.unfiledFiles).toHaveLength(2);
+    expect(preview.outreaches).toMatchObject([
+      { outreachId: outreach.outreachId },
+    ]);
+
+    const unrelatedClientFileId = await fixture.t.run(async (ctx) => {
+      const bytes = new TextEncoder().encode("unrelated");
+      const fileId = await ctx.storage.store(
+        new Blob([bytes], { type: "application/pdf" }),
+      );
+      return await ctx.db.insert("clientFiles", {
+        orgId: fixture.clientOrgId,
+        fileId,
+        name: "unrelated.pdf",
+        originalName: "unrelated.pdf",
+        contentType: "application/pdf",
+        size: bytes.byteLength,
+        clientVisible: false,
+        uploadedByUserId: fixture.operatorUserId,
+        uploadedBySide: "operator" as const,
+        nameSource: "original" as const,
+        nameStatus: "ready" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+    });
+    await expect(
+      operator.mutation(api.procurementProposals.fileEmailQuote, {
+        emailThreadId,
+        outreachId: outreach.outreachId,
+        clientFileIds: [unrelatedClientFileId],
+      }),
+    ).rejects.toThrow(/not an active file on this email thread/);
+
+    const filed = await operator.mutation(
+      api.procurementProposals.fileEmailQuote,
+      {
+        emailThreadId,
+        outreachId: outreach.outreachId,
+        clientFileIds: [quoteFileId],
+      },
+    );
+    const documents = await fixture.t.run((ctx) =>
+      ctx.db
+        .query("procurementProposalDocuments")
+        .withIndex("proposal", (index) =>
+          index.eq("proposalId", filed.proposalId),
+        )
+        .collect(),
+    );
+    expect(documents).toMatchObject([{ fileName: "broker-quote.pdf" }]);
+
+    const afterFiling = await operator.query(
+      api.procurementRequests.previewEmailReconciliation,
+      { emailThreadId },
+    );
+    expect(afterFiling.unfiledFiles).toMatchObject([
+      { clientFileId: signatureFileId },
+    ]);
+
+    await operator.mutation(api.procurementRequests.setEmailThreadArchived, {
+      emailThreadId,
+      archived: true,
+    });
+    const archivedPreview = await operator.query(
+      api.procurementRequests.previewEmailReconciliation,
+      { emailThreadId },
+    );
+    expect(archivedPreview.filable).toBe(false);
+    expect(archivedPreview.nextActions).toEqual([]);
+    await expect(
+      operator.mutation(api.procurementProposals.fileEmailQuote, {
+        emailThreadId,
+        outreachId: outreach.outreachId,
+      }),
+    ).rejects.toThrow(/not found/);
+  });
+
   test("reconciles and atomically files forwarded quote attachments", async () => {
     const fixture = await seedProcurementFixture();
     const operator = fixture.t.withIdentity({

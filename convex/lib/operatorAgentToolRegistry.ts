@@ -978,10 +978,18 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
   file_procurement_email_quote: defineOperatorTool({
     version: 1,
     description:
-      "Atomically file the active canonical attachments from one imported procurement email thread as the quote for an exact outreach. The command preserves email provenance, deduplicates artifacts, queues extraction, and converges on replay.",
+      "Atomically file the active canonical attachments from one imported procurement email thread as the quote for an exact outreach, optionally narrowed to chosen attachments. The command preserves email provenance, deduplicates artifacts, queues extraction, and converges on replay.",
     inputSchema: z.object({
       procurementEmailThreadId,
       procurementOutreachId,
+      clientFileIds: omittable(
+        z
+          .array(clientFileId)
+          .max(20)
+          .describe(
+            "Attachments to file. Omit to file every active attachment on the thread; narrow it to skip signatures and logos.",
+          ),
+      ),
       supersedesProposalId: omittable(procurementProposalId),
     }),
     capability: "operator.procurement.write",

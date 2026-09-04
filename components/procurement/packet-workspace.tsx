@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import dayjs from "dayjs";
 import { Copy, Loader2, Mail, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -123,7 +122,7 @@ export function PacketWorkspace({
         recipientLabel:
           selectedOutreach.contactName || selectedOutreach.brokerName,
         recipientEmail: selectedOutreach.contactEmail,
-        expiresAt: dayjs().add(Number(linkLifetimeDays), "day").valueOf(),
+        expiresInDays: Number(linkLifetimeDays),
       });
       setFreshLink({
         id: result.id,
@@ -149,7 +148,7 @@ export function PacketWorkspace({
       const result = await sendPacket({
         requestId,
         outreachId: selectedOutreach._id,
-        expiresAt: dayjs().add(Number(linkLifetimeDays), "day").valueOf(),
+        expiresInDays: Number(linkLifetimeDays),
       });
       setFreshLink({
         id: result.linkId,
@@ -177,7 +176,7 @@ export function PacketWorkspace({
     try {
       const result = await rotateLink({
         linkId,
-        expiresAt: dayjs().add(Number(linkLifetimeDays), "day").valueOf(),
+        expiresInDays: Number(linkLifetimeDays),
       });
       setFreshLink({
         id: result.id,

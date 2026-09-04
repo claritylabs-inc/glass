@@ -8,7 +8,7 @@ import { SpotWordmark } from "@/components/ui/spot-wordmark";
 import { ProseMarkdown } from "@/components/prose-markdown";
 import { PillButton } from "@/components/ui/pill-button";
 import type { PacketView } from "./view";
-import { formatDisplayDateTime } from "@/lib/date-format";
+import { formatDisplayDateTimeUtc } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 
 const getPacket = makeFunctionReference<"query", { token: string }, PacketView>(
@@ -60,7 +60,7 @@ export function Packet({
         <p
           className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
         >
-          Available until {formatDisplayDateTime(view.expiresAt)}
+          Available until {formatDisplayDateTimeUtc(view.expiresAt)}
         </p>
       </header>
       <article className="prose prose-neutral mt-8 max-w-none">

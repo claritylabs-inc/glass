@@ -2143,6 +2143,9 @@ async function executeToolDomain(
         ctx,
         input.procurementOutreachId,
       ),
+      clientFileIds: stringList(input.clientFileIds)?.map((value) =>
+        normalizeClientFileId(ctx, value),
+      ),
       supersedesProposalId: input.supersedesProposalId
         ? normalizeProcurementProposalId(ctx, input.supersedesProposalId)
         : undefined,
@@ -2190,9 +2193,9 @@ async function executeToolDomain(
       ),
       recipientLabel: normalizedOptionalText(input.recipientLabel) ?? "",
       recipientEmail: normalizedOptionalText(input.recipientEmail),
-      expiresAt:
+      expiresInDays:
         typeof input.expiresInDays === "number"
-          ? dayjs().add(input.expiresInDays, "day").valueOf()
+          ? input.expiresInDays
           : undefined,
     });
   }
@@ -2204,9 +2207,9 @@ async function executeToolDomain(
         ctx,
         input.procurementPacketLinkId,
       ),
-      expiresAt:
+      expiresInDays:
         typeof input.expiresInDays === "number"
-          ? dayjs().add(input.expiresInDays, "day").valueOf()
+          ? input.expiresInDays
           : undefined,
     });
   }
@@ -2701,9 +2704,9 @@ async function executeToolActionDomain(
           outreachId: String(
             args.input.procurementOutreachId,
           ) as Id<"procurementBrokerOutreaches">,
-          expiresAt:
+          expiresInDays:
             typeof args.input.expiresInDays === "number"
-              ? dayjs().add(args.input.expiresInDays, "day").valueOf()
+              ? args.input.expiresInDays
               : undefined,
         },
       ),

@@ -11,8 +11,6 @@ import { sendTrackedResendEmail } from "../lib/emailDelivery";
 import { buildEmailShell, escapeHtml } from "../lib/emailTemplate";
 import { getAuthFromAddress } from "../lib/resend";
 
-const internalApi = internal as any;
-
 type PacketSendResult = {
   requestId: Id<"procurementRequests">;
   outreachId: Id<"procurementBrokerOutreaches">;
@@ -41,13 +39,14 @@ async function sendPacket(
     requestId: Id<"procurementRequests">;
     outreachId: Id<"procurementBrokerOutreaches">;
     expiresAt?: number;
+    expiresInDays?: number;
   },
 ): Promise<PacketSendResult> {
   const [request, outreach] = (await Promise.all([
-    ctx.runQuery(internalApi.procurementRequests.getInternal, {
+    ctx.runQuery(internal.procurementRequests.getInternal, {
       requestId: args.requestId,
     }),
-    ctx.runQuery(internalApi.procurementRequests.getOutreachInternal, {
+    ctx.runQuery(internal.procurementRequests.getOutreachInternal, {
       outreachId: args.outreachId,
     }),
   ])) as [
@@ -62,7 +61,7 @@ async function sendPacket(
     throw new Error("Add a broker contact email before sending the packet");
 
   const link = (await ctx.runMutation(
-    internalApi.procurementPacket.mintLinkInternal,
+    internal.procurementPacket.mintLinkInternal,
     {
       operatorUserId: args.operatorUserId,
       requestId: request._id,
@@ -70,6 +69,7 @@ async function sendPacket(
       recipientLabel: outreach.contactName || outreach.brokerName,
       recipientEmail,
       expiresAt: args.expiresAt,
+      expiresInDays: args.expiresInDays,
     },
   )) as {
     id: Id<"procurementPacketLinks">;
@@ -80,7 +80,7 @@ async function sendPacket(
     fileCount: number;
     includedArtifacts: PacketSendResult["includedArtifacts"];
   };
-  await ctx.runMutation(internalApi.procurementPacket.recordDeliveryInternal, {
+  await ctx.runMutation(internal.procurementPacket.recordDeliveryInternal, {
     operatorUserId: args.operatorUserId,
     linkId: link.id,
     status: "pending",
@@ -108,7 +108,7 @@ async function sendPacket(
     },
   });
   const deliveryAudit = (await ctx.runMutation(
-    internalApi.procurementPacket.recordDeliveryInternal,
+    internal.procurementPacket.recordDeliveryInternal,
     {
       operatorUserId: args.operatorUserId,
       linkId: link.id,
@@ -138,11 +138,12 @@ export const send = action({
     requestId: v.id("procurementRequests"),
     outreachId: v.id("procurementBrokerOutreaches"),
     expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const operatorUserId = await getAuthUserId(ctx);
     if (!operatorUserId) throw new Error("Authentication required");
-    await ctx.runQuery(internalApi.operator.requireOperatorForUserInternal, {
+    await ctx.runQuery(internal.operator.requireOperatorForUserInternal, {
       userId: operatorUserId,
     });
     return await sendPacket(ctx, {
@@ -158,6 +159,7 @@ export const sendInternal = internalAction({
     requestId: v.id("procurementRequests"),
     outreachId: v.id("procurementBrokerOutreaches"),
     expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
   },
   handler: sendPacket,
 });
