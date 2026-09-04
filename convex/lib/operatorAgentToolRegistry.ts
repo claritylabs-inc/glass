@@ -111,7 +111,12 @@ const procurementProposalConclusion = z.enum([
   "has_gaps",
   "insufficient_evidence",
 ]);
-const brokerNetworkStatus = z.enum(["prospect", "active", "inactive"]);
+const brokerNetworkStatus = z.enum([
+  "prospect",
+  "active",
+  "inactive",
+  "blacklisted",
+]);
 const brokerOfficeAddress = z.object({
   street1: omittable(z.string().max(300)),
   street2: omittable(z.string().max(300)),

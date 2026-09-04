@@ -627,6 +627,7 @@ export default defineSchema({
       v.literal("prospect"),
       v.literal("active"),
       v.literal("inactive"),
+      v.literal("blacklisted"),
     ),
     officeAddress: v.optional(
       v.object({

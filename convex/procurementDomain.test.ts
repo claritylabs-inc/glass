@@ -668,6 +668,21 @@ describe("procurement domain boundaries", () => {
         }),
       ]),
     );
+    await f.operator.mutation(api.brokerProfiles.upsert, {
+      brokerOrgId: standalone.brokerOrgId,
+      networkStatus: "blacklisted",
+      writingStates: ["CA"],
+      lineOfBusinessCodes: ["CGL"],
+    });
+    const blacklisted = await f.operator.query(api.brokerProfiles.list, {
+      status: "blacklisted",
+    });
+    expect(blacklisted).toEqual([
+      expect.objectContaining({
+        broker: expect.objectContaining({ _id: standalone.brokerOrgId }),
+        profile: expect.objectContaining({ networkStatus: "blacklisted" }),
+      }),
+    ]);
     const request = await f.operator.mutation(api.procurementRequests.create, {
       clientOrgId: f.clientOrgId,
       title: "Network profile privacy",
