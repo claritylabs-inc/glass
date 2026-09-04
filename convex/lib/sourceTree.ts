@@ -1975,33 +1975,6 @@ function repairDeclarationsFromOperationalProfile(
   };
 }
 
-export function sourceTreeToDocumentOutline(sourceTree: DocumentSourceNode[]): Array<Record<string, unknown>> {
-  const byParent = new Map<string | undefined, DocumentSourceNode[]>();
-  for (const node of sourceTree.filter((item) => item.kind !== "document")) {
-    const group = byParent.get(node.parentId) ?? [];
-    group.push(node);
-    byParent.set(node.parentId, group);
-  }
-  for (const group of byParent.values()) group.sort((left, right) => left.order - right.order);
-  const root = sourceTree.find((node) => node.kind === "document");
-  const visit = (node: DocumentSourceNode): Record<string, unknown> => ({
-    id: node.id,
-    title: node.title,
-    type: node.kind,
-    label: node.kind,
-    pageStart: node.pageStart,
-    pageEnd: node.pageEnd,
-    excerpt: node.textExcerpt,
-    content: node.textExcerpt,
-    sourceSpanIds: node.sourceSpanIds,
-    sourceTextHash: node.sourceSpanIds.join(":") || undefined,
-    interpretationLabels: [node.kind],
-    metadata: node.metadata,
-    children: (byParent.get(node.id) ?? []).map(visit),
-  });
-  return (byParent.get(root?.id) ?? byParent.get(undefined) ?? []).map(visit);
-}
-
 function sourceTreeToCompactDocumentOutline(
   sourceTree: DocumentSourceNode[],
 ): Array<Record<string, unknown>> {

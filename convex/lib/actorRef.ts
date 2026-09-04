@@ -10,11 +10,3 @@ export type ActorRef =
     }
   | { kind: "operator"; operatorUserId: Id<"users"> }
   | { kind: "system" };
-
-export function actorAuthorizationKind(
-  actor: ActorRef,
-): "user_membership" | "slack_workspace" | "operator" | "system" {
-  if (actor.kind === "user") return "user_membership";
-  if (actor.kind === "slack") return "slack_workspace";
-  return actor.kind;
-}

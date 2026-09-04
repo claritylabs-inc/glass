@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import { describe, expect, test } from "vitest";
 
 import { api, internal } from "./_generated/api";
+import { upsertPacketSectionByOperator } from "./procurementPacket";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -158,11 +159,14 @@ describe("procurement domain boundaries", () => {
       },
     );
     // The broker answered this packet section, so the review binds to it.
-    await f.operator.mutation(api.procurementPacket.upsertSection, {
-      requestId: request.requestId,
-      key: "coverage_requested",
-      body: "General liability, $1m each occurrence.",
-    });
+    await f.t.run((ctx) =>
+      upsertPacketSectionByOperator(ctx, {
+        operatorUserId: f.operatorUserId,
+        requestId: request.requestId,
+        key: "coverage_requested",
+        body: "General liability, $1m each occurrence.",
+      }),
+    );
     await f.t.run(async (ctx) => {
       await ctx.db.patch(proposal.proposalId, {
         status: "review_ready",
@@ -190,11 +194,14 @@ describe("procurement domain boundaries", () => {
       conclusion: "has_gaps",
     });
     // Editing the packet the broker was sent must invalidate the review.
-    await f.operator.mutation(api.procurementPacket.upsertSection, {
-      requestId: request.requestId,
-      key: "coverage_requested",
-      body: "General liability, $2m each occurrence.",
-    });
+    await f.t.run((ctx) =>
+      upsertPacketSectionByOperator(ctx, {
+        operatorUserId: f.operatorUserId,
+        requestId: request.requestId,
+        key: "coverage_requested",
+        body: "General liability, $2m each occurrence.",
+      }),
+    );
     await expect(
       f.operator.mutation(api.procurementProposals.select, {
         proposalId: proposal.proposalId,

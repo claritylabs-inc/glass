@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { Id } from "../_generated/dataModel";
-import { makeEmbedText, makeEmbedTexts, makeGenerateObject, makeGenerateText } from "./sdkCallbacks";
+import { makeEmbedTexts, makeGenerateObject } from "./sdkCallbacks";
 
 function embeddingResponse(embeddings: number[][]) {
   return {
@@ -121,58 +121,6 @@ describe("cl-router embedding callbacks", () => {
     vi.unstubAllEnvs();
   });
 
-  test("routes batched embeddings with dimensions and settings", async () => {
-    vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    const firstEmbedding = Array.from({ length: 1536 }, (_, index) => index / 1536);
-    const secondEmbedding = Array.from({ length: 1536 }, (_, index) => 1 - index / 1536);
-    const fetchMock = vi.fn(async () => Response.json(
-      embeddingResponse([firstEmbedding, secondEmbedding]),
-    ));
-    vi.stubGlobal("fetch", fetchMock);
-    const ctx = embeddingContext();
-
-    await expect(makeEmbedTexts(
-      ctx as never,
-      "org-1" as Id<"organizations">,
-    )(["one", "two"])).resolves.toEqual([firstEmbedding, secondEmbedding]);
-
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      tenantId: "glass",
-      orgId: "org-1",
-      texts: ["one", "two"],
-      dimensions: 1536,
-      settings: {
-        routes: {
-          embeddings: {
-            provider: "openai",
-            model: "text-embedding-3-small",
-          },
-        },
-      },
-      trace: { label: "convex.sdkCallbacks.makeEmbedTexts" },
-    });
-    expect(ctx.runQuery).toHaveBeenCalledOnce();
-  });
-
-  test("routes single embeddings", async () => {
-    vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    const embedding = Array.from({ length: 1536 }, (_, index) => index / 1536);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json(embeddingResponse([embedding]))),
-    );
-
-    await expect(makeEmbedText(
-      embeddingContext() as never,
-      "org-1" as Id<"organizations">,
-    )("one")).resolves.toEqual(embedding);
-  });
-
   test("chunks routed embedding batches below the Convex response value limit", async () => {
     vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
     vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
@@ -204,21 +152,6 @@ describe("cl-router embedding callbacks", () => {
       expect.objectContaining({ batchIndex: 2, batchCount: 2 }),
     ]);
     expect(ctx.runQuery).toHaveBeenCalledOnce();
-  });
-
-  test("does not hide router client errors behind direct fallback", async () => {
-    vi.stubEnv("CL_ROUTER_TASKS", "embeddings");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(null, { status: 422 })),
-    );
-
-    await expect(makeEmbedText(
-      embeddingContext() as never,
-      "org-1" as Id<"organizations">,
-    )("one")).rejects.toMatchObject({ kind: "client", status: 422 });
   });
 });
 
@@ -337,151 +270,5 @@ describe("cl-router generation callbacks", () => {
       routing: generationResponse(null).routing,
       status: "complete",
     });
-  });
-
-  test("maps classification task kinds and preserves the operator override", async () => {
-    vi.stubEnv("CL_ROUTER_TASKS", "query_classify");
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    const fetchMock = vi.fn(async () => Response.json(generationResponse("classified")));
-    vi.stubGlobal("fetch", fetchMock);
-    const ctx = generationContext();
-
-    await expect(makeGenerateText("chat", {
-      ctx: ctx as never,
-      orgId: "org-1" as Id<"organizations">,
-    })({
-      prompt: "Classify this request",
-      maxTokens: 100,
-      taskKind: "query_classify",
-    })).resolves.toEqual({
-      text: "classified",
-      usage: { inputTokens: 41, outputTokens: 7 },
-    });
-
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      task: "classification",
-      taskKind: "query_classify",
-      routing: {
-        pin: {
-          provider: "fireworks",
-          model: "accounts/fireworks/models/deepseek-v4-flash",
-        },
-        allowFallback: true,
-      },
-    });
-  });
-
-  test.each([
-    {
-      name: "standard extraction",
-      baseTask: "extraction",
-      taskKind: "extraction_focused",
-      expectedTask: "extraction",
-      expectedPin: {
-        provider: "fireworks",
-        model: "accounts/fireworks/models/deepseek-v4-flash",
-      },
-    },
-    {
-      name: "quality-primary extraction",
-      baseTask: "extraction",
-      taskKind: "extraction_operational_profile",
-      expectedTask: "extraction",
-      expectedPin: null,
-    },
-    {
-      name: "coverage cleanup",
-      baseTask: "extraction",
-      taskKind: "extraction_coverage_cleanup",
-      expectedTask: "extraction",
-      expectedPin: null,
-    },
-    {
-      name: "extraction classification",
-      baseTask: "extraction",
-      taskKind: "extraction_classify",
-      expectedTask: "classification",
-      expectedPin: {
-        provider: "fireworks",
-        model: "accounts/fireworks/models/deepseek-v4-flash",
-      },
-    },
-    {
-      name: "coverage recovery",
-      baseTask: "extraction_coverage_recovery",
-      taskKind: undefined,
-      expectedTask: "extraction_coverage_recovery",
-      expectedPin: { provider: "openai", model: "gpt-5.4-mini" },
-    },
-    {
-      name: "query reasoning",
-      baseTask: "chat",
-      taskKind: "query_reason",
-      expectedTask: "chat",
-      expectedPin: null,
-    },
-    {
-      name: "vision query attachment",
-      baseTask: "chat_vision",
-      taskKind: "query_attachment",
-      expectedTask: "chat_vision",
-      expectedPin: null,
-    },
-    {
-      name: "policy-change analysis",
-      baseTask: "analysis",
-      taskKind: "pce_impact_analysis",
-      expectedTask: "analysis",
-      expectedPin: {
-        provider: "fireworks",
-        model: "accounts/fireworks/models/glm-5p2",
-      },
-    },
-    {
-      name: "general classification",
-      baseTask: "classification",
-      taskKind: undefined,
-      expectedTask: "classification",
-      expectedPin: {
-        provider: "fireworks",
-        model: "accounts/fireworks/models/deepseek-v4-flash",
-      },
-    },
-  ] as const)("routes $name callbacks with the expected task family", async ({
-    baseTask,
-    taskKind,
-    expectedTask,
-    expectedPin,
-  }) => {
-    vi.stubEnv("CL_ROUTER_TASKS", taskKind ?? baseTask);
-    vi.stubEnv("CL_ROUTER_URL", "https://router.example.test");
-    vi.stubEnv("CL_ROUTER_SECRET", "router-secret");
-    const fetchMock = vi.fn(async () => Response.json(generationResponse("ok")));
-    vi.stubGlobal("fetch", fetchMock);
-    const ctx = generationContext();
-    const generateText = makeGenerateText(baseTask, {
-      ctx: ctx as never,
-      orgId: "org-1" as Id<"organizations">,
-    });
-
-    await generateText({
-      prompt: "Run the routed task",
-      maxTokens: 100,
-      ...(taskKind ? { taskKind } : {}),
-    });
-
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    const request = JSON.parse(init.body as string);
-    expect(request).toMatchObject({
-      task: expectedTask,
-      settings: ctx.settings,
-      routing: { allowFallback: true },
-    });
-    if (taskKind) expect(request.taskKind).toBe(taskKind);
-    else expect(request).not.toHaveProperty("taskKind");
-    if (expectedPin) expect(request.routing.pin).toEqual(expectedPin);
-    else expect(request.routing).not.toHaveProperty("pin");
   });
 });

@@ -745,5 +745,3 @@ export async function reviewExtractionFields(
   }
   return applied;
 }
-
-export const TEST_FIELD_REVIEW_GROUPS = FIELD_REVIEW_GROUPS;

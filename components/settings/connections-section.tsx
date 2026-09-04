@@ -10,7 +10,6 @@ import {
   ExternalLink,
   Globe,
   Loader2,
-  Network,
   Plug,
   Trash2,
 } from "lucide-react";
@@ -388,5 +387,3 @@ function AdvancedSection() {
     </OperationalPanel>
   );
 }
-
-export const ConnectionsIcon = Network;

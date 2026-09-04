@@ -61,15 +61,6 @@ export function hasRebasedAutoSaveIntent(
   );
 }
 
-export async function waitForStableAutoSaveBarriers(
-  barriers: Array<() => Promise<boolean>>,
-  getRevision: () => number,
-) {
-  const revision = getRevision();
-  const results = await Promise.all(barriers.map((barrier) => barrier()));
-  return results.every(Boolean) && getRevision() === revision;
-}
-
 export function createAutoSaveSequencer(): AutoSaveSequencer {
   let tail = Promise.resolve();
 

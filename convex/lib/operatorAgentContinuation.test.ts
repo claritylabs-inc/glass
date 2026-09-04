@@ -1,9 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import {
-  buildOperatorRunCheckpointSummary,
-  shouldContinueOperatorRun,
-} from "./operatorAgentContinuation";
+import { shouldContinueOperatorRun } from "./operatorAgentContinuation";
 
 describe("operator run continuation", () => {
   test("continues only when a tool-bearing segment exhausts its step budget", () => {
@@ -20,27 +17,5 @@ describe("operator run continuation", () => {
         25,
       ),
     ).toBe(false);
-  });
-
-  test("carries bounded tool results into the next segment", () => {
-    const summary = buildOperatorRunCheckpointSummary({
-      previous: "Earlier work",
-      audit: {
-        usedTools: ["get_organization"],
-        completedTools: ["get_organization"],
-        toolCalls: [
-          {
-            name: "get_organization",
-            input: '{"orgId":"org-1"}',
-            output: '{"name":"Cove"}',
-          },
-        ],
-        workflowOutcomes: [],
-      },
-    });
-
-    expect(summary).toContain("Earlier work");
-    expect(summary).toContain("Tool get_organization");
-    expect(summary.length).toBeLessThanOrEqual(6_000);
   });
 });

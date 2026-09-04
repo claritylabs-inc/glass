@@ -659,7 +659,7 @@ async function runRequirementImport(
   return { createdCount: requirementIds.length, requirementIds, sourceDocumentId };
 }
 
-export function inferRequirementSourceType(fileName?: string) {
+function inferRequirementSourceType(fileName?: string) {
   if (fileName?.toLowerCase().includes("lease")) {
     return "lease_agreement" as const;
   }

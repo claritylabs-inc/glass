@@ -331,7 +331,7 @@ Broker organizations are standalone supplier profiles. The operator Brokers page
 
 ## Team Invitations
 
-Team-member invitations use `orgInvitations` for the pending membership record, but the settings drawer must call `orgs.sendMemberInvitation` rather than the raw `orgs.inviteMember` mutation. The action creates or refreshes the pending invite, sends the auth-domain email through Resend, and rolls back only newly-created invites when delivery fails. Invited users sign in with the invited email address; `AuthGuard` auto-accepts a pending `orgInvitations` row for the authenticated viewer, creates the membership through `orgs.acceptInvitation`, and marks user onboarding complete so invited teammates land directly in the org.
+Team-member invitations use `orgInvitations` for the pending membership record. The settings drawer calls `orgs.sendMemberInvitation`, which creates or refreshes the pending invite, sends the auth-domain email through Resend, and rolls back only newly-created invites when delivery fails. Invited users sign in with the invited email address; `AuthGuard` auto-accepts a pending `orgInvitations` row for the authenticated viewer, creates the membership through `orgs.acceptInvitation`, and marks user onboarding complete so invited teammates land directly in the org.
 
 ## Operator Provisioning
 
@@ -417,9 +417,6 @@ The Spot-specific `cl-sdk` wiring lives under `convex/lib/`.
 - [documentMapping.ts](convex/lib/documentMapping.ts): maps SDK documents to Convex policy records
 - [extractionFieldReview.ts](convex/lib/extractionFieldReview.ts): reusable evidence-backed field review groups for missed or contradicted extracted fields
 - [extractionPostProcess.ts](convex/lib/extractionPostProcess.ts): shared post-extraction quality pipeline before policy persistence
-- [convexDocumentStore.ts](convex/lib/convexDocumentStore.ts): `DocumentStore` adapter
-- [convexMemoryStore.ts](convex/lib/convexMemoryStore.ts): `MemoryStore` adapter
-- [queryAgent.ts](convex/lib/queryAgent.ts): `createQueryAgent()` wrapper
 - [agentPrompts.ts](convex/lib/agentPrompts.ts): SDK prompt exports plus Spot retrieval-backed context builders
 
 ### Callback Contract
@@ -520,14 +517,13 @@ Spot uses vector-backed document/conversation stores plus list-based source evid
 - `lookup_policy` loads fresh structured summaries only when called and accepts search text, up to five exact policy IDs, or `expiringWithinDays`. `lookup_policy_section` owns detailed source retrieval and queues a missing source-tree rebuild on demand.
 - `lookup_policy_section` uses [policyLookup.ts](convex/lib/policyLookup.ts) in web chat, inbound email, iMessage, and MCP chat to return source-node matches with hierarchy path, excerpts, `sourceNodeIds`, `sourceSpanIds`, and PDF location metadata. It still falls back to raw source spans or on-demand PDF parsing for older policies, but source-node evidence is preferred.
 - `confirm_policy_fact` lets agents confirm a concise policy fact after `lookup_policy_section` returns supporting original-PDF `sourceSpanIds`. The tool may patch only a constrained set of top-level policy fields when the cited PDF text directly supports the update, and records policy audit history rather than long-term memory.
-- SDK query-agent wrappers use [convexSourceRetriever.ts](convex/lib/convexSourceRetriever.ts) to lexically search `sourceNodes`, return hierarchy-expanded packets with exact spans, and fall back to source spans only when no source-node evidence exists.
 - `buildConversationMemoryContext()` — intentionally returns no context; raw conversation memory should not steer future answers.
 - Web chat composer steering lives in [components/spot-prompt-input.tsx](components/spot-prompt-input.tsx) and [convex/agentTargets.ts](convex/agentTargets.ts). Typing `@` opens a custom picker for policies and requirements; typing `/` opens accessible connected mailboxes. Selected targets are stored on the user `threadMessages` row as `referencedPolicyIds`, `referencedRequirementIds`, and `referencedMailboxIds`. Policy selections are injected as validated ID-only focus and require a fresh policy-tool call; explicitly selected requirements and mailboxes retain their workflow-local context. Without a current policy selection, [agentPolicyFocus.ts](convex/lib/agentPolicyFocus.ts) may carry only the immediately previous completed response's referenced policy IDs, capped at five and revalidated for scope/archive state; carried IDs are not persisted again unless a tool actually uses them. Selected mailbox IDs are passed into [mailboxCoordinator.ts](convex/actions/mailboxCoordinator.ts), which restricts live IMAP search to those accounts unless the user asks to broaden the search. When a user submits while an agent response is active, the web composer queues that message locally and sends it after activity ends; the queued row's **Send now** action sends immediately, cancels the in-flight agent message, and lets the new message steer the thread.
 - Agent thread UI lives under [components/agent-thread](components/agent-thread). [app/agent/thread/[id]/page.tsx](app/agent/thread/[id]/page.tsx) should stay route/AppShell orchestration only; reusable message rendering belongs in `thread-content.tsx`, shared thread shapes in `types.ts`, and artifact-specific summary cards, right panels, and normalization helpers under `components/agent-thread/artifacts/`. User messages own the avatar, sender, channel, and timestamp identity row; agent messages, thinking states, and confirmations render without an agent identity row.
 
 ## Certificate Holds
 
-Held certificate requests store the reason, requested endorsement kinds, evidence excerpts, and an optional broker `emailDraft` directly on `certificateRequestHolds`. New holds do not create `policyChangeCases` or open a policy-change sidebar. Keep historical link fields schema-compatible until cleanup has removed old rows and references.
+Held certificate requests store the reason, requested endorsement kinds, evidence excerpts, and an optional broker `emailDraft` directly on `certificateRequestHolds`. Spot does not create or track a separate policy-change case lifecycle or open a policy-change sidebar.
 
 [aiUtils.ts](convex/lib/aiUtils.ts) owns shared agent instructions for web chat and email:
 
@@ -675,8 +671,6 @@ OpenAPI spec: `GET /api/v1/openapi.json`
 - `GET /api/v1/policies/:id/certificates` / `POST /api/v1/policies/:id/certificates` (write)
 - `GET /api/v1/notifications`
 - `GET /api/v1/activity`
-
-Write requests are audit-logged to `apiAuditLog`.
 
 ## Documentation Maintenance
 

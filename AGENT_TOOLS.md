@@ -137,8 +137,6 @@ The client Slack adapter accepts direct mentions from any connected-workspace ch
 | `send_connected_vendor_invite`                   | Send a user-authorized connected-vendor invitation.                                 | Direct internal email and MCP chat; other channels use the mailbox coordinator.                                                                          |
 | `extract_policy_attachment`                      | Start extraction for one policy represented by one or more inbound PDF attachments. | Inbound email only.                                                                                                                                      |
 
-`sendEmail` in `convex/lib/chatTools.ts` is a schema definition with no registered executor and is not currently callable as `send_email` on any client-agent surface.
-
 For tenant MCP chat, the OAuth token's write scope filters the actual nested executable catalog. Read-only `ask_spot`/`ask_glass` calls exclude `save_note`, `confirm_policy_fact`, `generate_coi`, iMessage creation, connected-email imports, and vendor invitations. A read-only mailbox coordinator receives only search, message-read, and attachment-read tools; it cannot import, save to a thread, or invite a vendor.
 
 ### Internal client-agent subagents

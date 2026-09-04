@@ -33,11 +33,7 @@ import { makeEmbedText } from "./sdkCallbacks";
 import { formatComplianceRequirementsContext } from "./complianceAgent";
 import { formatDocumentStructureForPrompt } from "./policyDocumentStructure";
 import { formatCoverageBreakdownForPrompt } from "./coverageBreakdown";
-import type { AgentScope } from "./agentScope";
-import { orgLabelForScope } from "./agentScope";
 import { normalizedSearchText, uniqueSearchTerms } from "./searchTokenizer";
-
-export const MAX_DIRECT_DOCUMENT_CONTEXT_POLICIES = 120;
 
 const DOCUMENT_CHUNK_VECTOR_LIMIT = 30;
 export const SOURCE_NODE_CANDIDATE_LIMIT_PER_ORG = 600;
@@ -666,51 +662,4 @@ export function buildConversationMemoryFromList(
 ): string {
   void conversations;
   return "";
-}
-
-export async function buildScopedDocumentContext(
-  ctx: ActionCtx,
-  scope: AgentScope,
-  policiesByOrg: Map<string, Doc<"policies">[]>,
-  queryText: string,
-): Promise<{
-  context: string;
-  relevantPolicyIds: Id<"policies">[];
-}> {
-  const policies = policiesByOrg.get(String(scope.primaryOrgId)) ?? [];
-  return buildDocumentContext(ctx, scope.primaryOrgId, policies, queryText);
-}
-
-export async function buildScopedRequirementsContext(
-  ctx: ActionCtx,
-  scope: AgentScope,
-): Promise<string> {
-  return buildComplianceRequirementsContext(ctx, scope.primaryOrgId);
-}
-
-export async function buildScopedVendorComplianceContext(
-  ctx: ActionCtx,
-  scope: AgentScope,
-): Promise<string> {
-  const ids = [scope.primaryOrgId];
-  const parts: string[] = [];
-  for (const orgId of ids) {
-    const complianceRows = await ctx
-      .runQuery((internal as any).compliance.listVendorComplianceInternal, {
-        clientOrgId: orgId,
-      })
-      .catch(() => []);
-    if (!Array.isArray(complianceRows) || complianceRows.length === 0) continue;
-    parts.push(
-      `\n\nVENDOR COMPLIANCE SNAPSHOT — ${orgLabelForScope(scope, orgId)} (orgId: ${orgId}):\n${complianceRows
-        .map((row: any) => {
-          const failed = (row.checks ?? []).filter(
-            (check: any) => check.status !== "met",
-          );
-          return `- ${row.vendorOrg?.name ?? row.vendorOrgId}: ${failed.length === 0 ? "compliant" : `${failed.length} open issue(s)`}`;
-        })
-        .join("\n")}`,
-    );
-  }
-  return parts.join("");
 }

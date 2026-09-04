@@ -203,16 +203,6 @@ export const listSpansByPolicyInternal = internalQuery({
   },
 });
 
-export const listChunksByPolicy = internalQuery({
-  args: { policyId: v.id("policies") },
-  handler: async (ctx, args) => {
-    return ctx.db
-      .query("sourceChunks")
-      .withIndex("policy", (q) => q.eq("policyId", args.policyId))
-      .collect();
-  },
-});
-
 export const listChunksByOrgInternal = internalQuery({
   args: {
     orgId: v.id("organizations"),
@@ -238,27 +228,6 @@ export const hasChunksForOrg = internalQuery({
   },
 });
 
-export const getSpan = internalQuery({
-  args: { id: v.id("sourceSpans") },
-  handler: async (ctx, args) => {
-    return ctx.db.get(args.id);
-  },
-});
-
-export const getChunk = internalQuery({
-  args: { id: v.id("sourceChunks") },
-  handler: async (ctx, args) => {
-    return ctx.db.get(args.id);
-  },
-});
-
-export const insertSpan = internalMutation({
-  args: sourceSpanInsertFields,
-  handler: async (ctx, args) => {
-    return ctx.db.insert("sourceSpans", args);
-  },
-});
-
 export const insertSpansBatch = internalMutation({
   args: {
     spans: v.array(v.object(sourceSpanInsertFields)),
@@ -269,13 +238,6 @@ export const insertSpansBatch = internalMutation({
       inserted.push(await ctx.db.insert("sourceSpans", span));
     }
     return { inserted: inserted.length };
-  },
-});
-
-export const insertChunk = internalMutation({
-  args: sourceChunkInsertFields,
-  handler: async (ctx, args) => {
-    return ctx.db.insert("sourceChunks", args);
   },
 });
 

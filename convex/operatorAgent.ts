@@ -26,7 +26,6 @@ import {
 } from "./lib/featureFlags";
 import {
   getOperatorAgentToolSpec,
-  operatorAgentToolJsonCatalog,
   parseOperatorAgentToolInput,
   type OperatorAgentToolName,
   type OperatorToolRole,
@@ -4848,8 +4847,3 @@ export const recordImessageAttachmentDeliveryFailureInternal = internalMutation(
     },
   },
 );
-
-export const listToolCatalogInternal = internalQuery({
-  args: {},
-  handler: async () => operatorAgentToolJsonCatalog(),
-});

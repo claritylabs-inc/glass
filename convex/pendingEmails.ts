@@ -68,7 +68,6 @@ export const create = internalMutation({
     scheduledSendTime: v.number(),
     chatMessageId: v.optional(v.id("threadMessages")),
     threadMessageId: v.optional(v.id("threadMessages")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),
     bccAddresses: v.optional(v.array(v.string())),
@@ -148,7 +147,6 @@ export const updateDraftInternal = internalMutation({
     allowMultipleCoiAttachments: v.optional(v.boolean()),
     referencedPolicyIds: v.optional(v.array(v.id("policies"))),
     chatMessageId: v.optional(v.id("threadMessages")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     sendBlockedReason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

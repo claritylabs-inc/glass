@@ -41,41 +41,18 @@ function policyCarrierIdentity(policy: {
   };
 }
 
-function isConvexId(id: string): boolean {
-  return id.length > 0 && !/^\d+$/.test(id);
-}
-
 function extractIdAndType(
   href: string,
 ): { id: string; type: "policy"; page?: number } | null {
   const policyMatch = href.match(/^\/policies\/([a-z0-9]+)/);
-  if (policyMatch && isConvexId(policyMatch[1])) {
-    const page = href.match(/[?&]page=(\d+)/);
-    return {
-      id: policyMatch[1],
-      type: "policy",
-      page: page ? parseInt(page[1]) : undefined,
-    };
-  }
-  return null;
-}
+  if (!policyMatch || /^\d+$/.test(policyMatch[1])) return null;
 
-export function extractEntityRefs(
-  content: string,
-): { type: "policy"; id: string; page?: number }[] {
-  const refs: { type: "policy"; id: string; page?: number }[] = [];
-  const seen = new Set<string>();
-  // Match markdown links and plain URLs
-  const linkRegex = /(?:\[.*?\]\(|)(\/policies\/[a-z0-9]+(?:\?[^)\s]*)?)/g;
-  let match;
-  while ((match = linkRegex.exec(content)) !== null) {
-    const parsed = extractIdAndType(match[1]);
-    if (parsed && !seen.has(`${parsed.type}:${parsed.id}`)) {
-      seen.add(`${parsed.type}:${parsed.id}`);
-      refs.push(parsed);
-    }
-  }
-  return refs;
+  const page = href.match(/[?&]page=(\d+)/);
+  return {
+    id: policyMatch[1],
+    type: "policy",
+    page: page ? parseInt(page[1]) : undefined,
+  };
 }
 
 export function PolicyReferenceCard({

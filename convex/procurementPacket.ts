@@ -34,18 +34,6 @@ const audienceValidator = v.union(
   v.literal("client"),
   v.literal("broker"),
 );
-const sourceValidator = v.union(
-  v.literal("manual"),
-  v.literal("client"),
-  v.literal("operator_agent"),
-  v.literal("email"),
-  v.literal("document"),
-);
-const releaseValidator = v.union(
-  v.literal("hidden"),
-  v.literal("listed"),
-  v.literal("attached"),
-);
 const PACKET_LINK_TTL_DAYS = 30;
 
 async function requestForOperator(
@@ -207,66 +195,6 @@ export const get = query({
   },
 });
 
-export const upsertSection = mutation({
-  args: {
-    requestId: v.id("procurementRequests"),
-    key: v.string(),
-    body: v.string(),
-    heading: v.optional(v.string()),
-    audience: v.optional(audienceValidator),
-    source: v.optional(sourceValidator),
-    sourceRefs: v.optional(v.array(v.string())),
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    return upsertPacketSectionByOperator(ctx, {
-      ...args,
-      operatorUserId: operator.userId,
-    });
-  },
-});
-
-export const setAudience = mutation({
-  args: {
-    sectionId: v.id("procurementPacketSections"),
-    audience: audienceValidator,
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    return setPacketSectionAudienceByOperator(ctx, {
-      ...args,
-      operatorUserId: operator.userId,
-    });
-  },
-});
-
-export const setFileRelease = mutation({
-  args: {
-    itemId: v.id("procurementFileItems"),
-    brokerRelease: releaseValidator,
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await directOperator(ctx, operator.userId);
-    const item = await ctx.db.get(args.itemId);
-    if (!item) throw new Error("Packet file item not found");
-    const now = dayjs().valueOf();
-    await ctx.db.patch(item._id, {
-      brokerRelease: args.brokerRelease,
-      updatedByUserId: operator.userId,
-      updatedAt: now,
-    });
-    const request = await ctx.db.get(item.requestId);
-    if (request && args.brokerRelease !== "hidden")
-      await ctx.db.patch(request._id, {
-        packetRevision: (request.packetRevision ?? 0) + 1,
-        updatedAt: now,
-        updatedByUserId: operator.userId,
-      });
-    return { ok: true };
-  },
-});
-
 /** Apply source-backed machine updates without silently changing a human edit
  * or the projection already visible to a recipient. */
 export const applyAgentUpdateInternal = internalMutation({
@@ -399,24 +327,6 @@ export const rejectProposal = mutation({
   },
 });
 
-export const mintLink = mutation({
-  args: {
-    requestId: v.id("procurementRequests"),
-    outreachId: v.id("procurementBrokerOutreaches"),
-    recipientLabel: v.string(),
-    recipientEmail: v.optional(v.string()),
-    expiresAt: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await directOperator(ctx, operator.userId);
-    return mintPacketLinkForOperator(ctx, {
-      ...args,
-      operatorUserId: operator.userId,
-    });
-  },
-});
-
 export async function mintPacketLinkForOperator(
   ctx: MutationCtx,
   args: {
@@ -476,21 +386,6 @@ export const mintLinkInternal = internalMutation({
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => mintPacketLinkForOperator(ctx, args),
-});
-
-export const revokeLink = mutation({
-  args: { linkId: v.id("procurementPacketLinks") },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await directOperator(ctx, operator.userId);
-    const link = await ctx.db.get(args.linkId);
-    if (!link) throw new Error("Packet link not found");
-    await ctx.db.patch(link._id, {
-      revokedAt: dayjs().valueOf(),
-      updatedAt: dayjs().valueOf(),
-    });
-    return { ok: true };
-  },
 });
 
 export const getByToken = query({
@@ -609,15 +504,6 @@ async function recordViewInternalHandler(
   });
   return { ok: true };
 }
-
-export const recordViewInternal = internalMutation({
-  args: {
-    linkId: v.id("procurementPacketLinks"),
-    path: v.string(),
-    userAgent: v.optional(v.string()),
-  },
-  handler: recordViewInternalHandler,
-});
 
 export const sweepExpired = internalMutation({
   args: {},

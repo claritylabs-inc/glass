@@ -54,8 +54,6 @@ export const CONFIDENCE_LEVEL_META: Record<
 };
 
 const CONFIDENCE_MARKER_OPEN_RE = /\[\[(g|i|u):/;
-const CONFIDENCE_OPEN_PLACEHOLDER = "\uE000";
-const CONFIDENCE_CLOSE_PLACEHOLDER = "\uE001";
 
 function normalizeConfidenceMarkers(text: string): string {
   return text.replace(/\[\[(g|i|u)\]:/g, "[[$1:");
@@ -211,30 +209,6 @@ type MdastNode = {
     hProperties?: Record<string, unknown>;
   };
 };
-
-export function protectConfidenceMarkersForStreaming(text: string): string {
-  return parseConfidenceMarkers(text)
-    .map((segment) =>
-      segment.type === "text"
-        ? segment.value
-        : `${CONFIDENCE_OPEN_PLACEHOLDER}${segment.code}:${segment.value}${CONFIDENCE_CLOSE_PLACEHOLDER}`,
-    )
-    .join("");
-}
-
-export function remarkRestoreStreamingConfidenceMarkers() {
-  return (tree: MdastNode) => {
-    const visit = (node: MdastNode) => {
-      if (node.value) {
-        node.value = node.value
-          .replaceAll(CONFIDENCE_OPEN_PLACEHOLDER, "[[")
-          .replaceAll(CONFIDENCE_CLOSE_PLACEHOLDER, "]]");
-      }
-      node.children?.forEach(visit);
-    };
-    visit(tree);
-  };
-}
 
 function textNode(value: string): MdastNode {
   return { type: "text", value };

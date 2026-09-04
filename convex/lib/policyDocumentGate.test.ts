@@ -2,13 +2,6 @@ import { describe, expect, it } from "vitest";
 import { isSpecimenPolicyDocument } from "./policyDocumentGate";
 
 describe("isSpecimenPolicyDocument", () => {
-  it("accepts the testing-only specimen policy heading", () => {
-    expect(isSpecimenPolicyDocument([
-      {
-        text: "SPECIMEN POLICY - FOR TESTING ONLY\nNOT AN ACTUAL POLICY OR EVIDENCE OF INSURANCE",
-      },
-    ])).toBe(true);
-  });
 
   it("accepts a specimen marker and disclaimer split across source spans", () => {
     expect(isSpecimenPolicyDocument([

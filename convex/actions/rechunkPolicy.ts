@@ -9,8 +9,8 @@
  */
 
 import { v } from "convex/values";
-import { internalAction, action } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internalAction } from "../_generated/server";
+import { internal } from "../_generated/api";
 import { chunkDocument } from "@claritylabs/cl-sdk";
 import type { Doc, Id } from "../_generated/dataModel";
 import { policyToInsuranceDoc } from "../lib/documentMapping";
@@ -112,30 +112,5 @@ export const rechunkAll = internalAction({
 
     console.log(`Re-chunk complete: ${processed} processed, ${totalOld} old → ${totalNew} new chunks`);
     return { processed, totalOld, totalNew };
-  },
-});
-
-/**
- * Public action — re-chunk a single policy (auth-gated).
- */
-export const rechunk = action({
-  args: { policyId: v.id("policies") },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<{ error: string } | { policyId: string; oldChunks: number; newChunks: number }> => {
-    const viewer = await ctx.runQuery(api.users.viewer);
-    if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as { membership: { orgId: string } } | null;
-    if (!orgData) return { error: "No organization" };
-
-    const orgId = orgData.membership.orgId as Id<"organizations">;
-    const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
-    if (!policy || policy.orgId !== orgId) {
-      return { error: "Not found" };
-    }
-
-    return await ctx.runAction(internal.actions.rechunkPolicy.rechunkOne, {
-      policyId: args.policyId,
-      orgId,
-    });
   },
 });

@@ -376,31 +376,6 @@ export const checkHandleAvailability = query({
   },
 });
 
-/** Check if an email has a pending (non-expired) invitation. No auth required. */
-export const checkPendingInvitation = query({
-  args: { email: v.string() },
-  handler: async (ctx, args) => {
-    const email = normalizeEmail(args.email);
-    // Check both original case and lowercase since invitations may be stored either way
-    const byOriginal = await ctx.db
-      .query("orgInvitations")
-      .withIndex("email", (q) => q.eq("email", args.email))
-      .collect();
-    const byLower =
-      args.email !== email
-        ? await ctx.db
-            .query("orgInvitations")
-            .withIndex("email", (q) => q.eq("email", email))
-            .collect()
-        : [];
-    const all = [...byOriginal, ...byLower];
-    const pending = all.find(
-      (i) => i.status === "pending" && i.expiresAt > dayjs().valueOf(),
-    );
-    return { hasPendingInvitation: !!pending };
-  },
-});
-
 /** Get pending invitation details for the current user (with org info). */
 export const pendingInvitationForViewer = query({
   args: {},
@@ -480,31 +455,6 @@ export const createClientOrg = mutation({
     });
 
     return orgId;
-  },
-});
-
-/** Return all org memberships for the authenticated user. */
-export const listAllOrgsForViewer = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return [];
-
-    const memberships = await ctx.db
-      .query("orgMemberships")
-      .withIndex("user", (q) => q.eq("userId", userId))
-      .collect();
-
-    return await Promise.all(
-      memberships.map(async (m) => {
-        const org = await ctx.db.get(m.orgId);
-        if (!org) return null;
-        const iconUrl = org.iconStorageId
-          ? await ctx.storage.getUrl(org.iconStorageId)
-          : null;
-        return { org: { ...org, iconUrl }, membership: m };
-      }),
-    ).then((results) => results.filter(Boolean));
   },
 });
 
@@ -708,42 +658,6 @@ export const setFeatureFlag = mutation({
         args.enabled,
       ),
     });
-  },
-});
-
-export const claimAgentHandle = mutation({
-  args: { handle: v.string() },
-  handler: async (ctx, args) => {
-    const { orgId, org } = await requireOrgAdminWrite(ctx);
-    if (org.type !== "broker")
-      throw new Error("Only broker orgs can claim an agent handle");
-
-    const normalized = args.handle.toLowerCase().replace(/[^a-z0-9-]/g, "");
-    if (normalized.length < 3 || normalized.length > 30) {
-      throw new Error("Handle must be 3-30 characters");
-    }
-    if (org.agentHandle === normalized) return normalized;
-
-    const existingOrg = await ctx.db
-      .query("organizations")
-      .withIndex("handle", (q) => q.eq("agentHandle", normalized))
-      .first();
-    if (existingOrg && existingOrg._id !== orgId)
-      throw new Error("Handle already taken");
-
-    await ctx.db.patch(orgId, { agentHandle: normalized });
-    return normalized;
-  },
-});
-
-export const inviteMember = mutation({
-  args: {
-    email: v.string(),
-    role: v.union(v.literal("admin"), v.literal("member")),
-  },
-  handler: async (ctx, args) => {
-    const result = await createMemberInvitation(ctx, args);
-    return result.invitationId;
   },
 });
 
@@ -1303,16 +1217,6 @@ export const cancelInvitation = mutation({
 
 // ── Internal queries ──
 
-export const getByHandle = internalQuery({
-  args: { handle: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("organizations")
-      .withIndex("handle", (q) => q.eq("agentHandle", args.handle))
-      .first();
-  },
-});
-
 type SenderMatch = "email" | "domain" | "member";
 
 async function senderMatchesOrg(
@@ -1419,16 +1323,6 @@ export const getMembersInternal = internalQuery({
   },
 });
 
-export const getUserMembership = internalQuery({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("orgMemberships")
-      .withIndex("user", (q) => q.eq("userId", args.userId))
-      .first();
-  },
-});
-
 export const getUserMemberships = internalQuery({
   args: { userIds: v.array(v.id("users")) },
   handler: async (ctx, args) => {
@@ -1504,34 +1398,5 @@ export const getById = query({
       return null;
     }
     return ctx.db.get(args.orgId);
-  },
-});
-
-export const listMembersForOrg = query({
-  args: { orgId: v.id("organizations") },
-  handler: async (ctx, args) => {
-    try {
-      await getOrgAccessNew(ctx, args.orgId);
-    } catch {
-      return [];
-    }
-    const memberships = await ctx.db
-      .query("orgMemberships")
-      .withIndex("organization", (q) => q.eq("orgId", args.orgId))
-      .collect();
-    return (
-      await Promise.all(
-        memberships.map(async (m) => {
-          const user = await ctx.db.get(m.userId);
-          if (!user || user.serviceAccountKind) return null;
-          return {
-            userId: m.userId,
-            role: m.role,
-            name: user?.name,
-            email: user?.email,
-          };
-        }),
-      )
-    ).filter((member) => member !== null);
   },
 });

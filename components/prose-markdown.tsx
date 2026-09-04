@@ -2,19 +2,12 @@
 
 import { useMemo } from "react";
 import Markdown, { type Components } from "react-markdown";
-import {
-  Streamdown,
-  defaultRemarkPlugins,
-  type Components as StreamdownComponents,
-} from "streamdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import { cn } from "@/lib/utils";
 import { slackMrkdwnToMarkdown } from "@/lib/slack-mrkdwn";
 import {
   remarkConfidence,
-  protectConfidenceMarkersForStreaming,
-  remarkRestoreStreamingConfidenceMarkers,
   CONFIDENCE_LEVEL_META,
   type ConfidenceLevel,
 } from "@/lib/confidence";
@@ -132,17 +125,6 @@ function makeConfidenceComponents(fullView: boolean): Components {
 
 const COLLAPSED_CONFIDENCE_COMPONENTS = makeConfidenceComponents(false);
 const FULL_CONFIDENCE_COMPONENTS = makeConfidenceComponents(true);
-const STREAMING_ALLOWED_TAGS = { mark: ["className", "dataLevel"] };
-const STREAMING_REMEND_OPTIONS = {
-  handlers: [
-    {
-      name: "spot-confidence",
-      priority: 1,
-      handle: protectConfidenceMarkersForStreaming,
-    },
-  ],
-};
-
 /**
  * Unified markdown renderer used across Spot.
  *
@@ -228,66 +210,4 @@ export function ProseMarkdown({
   );
 }
 
-export function StreamingProseMarkdown({
-  children,
-  className,
-  sourceFormat = "markdown",
-  compact = false,
-  gfm = false,
-  breaks = false,
-  flagConfidence = false,
-  confidenceFullView = false,
-  components,
-}: ProseMarkdownProps) {
-  const source = useMemo(
-    () =>
-      sourceFormat === "slack-mrkdwn"
-        ? slackMrkdwnToMarkdown(children)
-        : children,
-    [children, sourceFormat],
-  );
-  const plugins = useMemo(() => {
-    const next = [];
-    if (gfm) next.push(defaultRemarkPlugins.gfm);
-    next.push(defaultRemarkPlugins.codeMeta);
-    if (breaks) next.push(remarkBreaks);
-    if (flagConfidence) {
-      next.push(remarkRestoreStreamingConfidenceMarkers);
-      next.push(remarkConfidence);
-    }
-    return next;
-  }, [breaks, flagConfidence, gfm]);
-  const mergedComponents = useMarkdownComponents({
-    components,
-    confidenceFullView,
-    flagConfidence,
-    gfm,
-  });
-
-  return (
-    <div
-      className={cn(
-        compact ? COMPACT_STYLES : BASE_STYLES,
-        "min-w-0 wrap-break-word wrap-anywhere",
-        className,
-      )}
-    >
-      <Streamdown
-        mode="streaming"
-        parseIncompleteMarkdown
-        controls={false}
-        className="space-y-0"
-        allowedTags={STREAMING_ALLOWED_TAGS}
-        remend={STREAMING_REMEND_OPTIONS}
-        remarkPlugins={plugins}
-        components={mergedComponents as StreamdownComponents}
-      >
-        {source}
-      </Streamdown>
-    </div>
-  );
-}
-
-/** Style-only class strings for cases that need the wrapper div separate from <Markdown>. */
-export const PROSE_MARKDOWN_STYLES = BASE_STYLES;
 export const PROSE_MARKDOWN_COMPACT_STYLES = COMPACT_STYLES;

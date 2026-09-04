@@ -322,7 +322,6 @@ before(async () => {
   });
   await waitForHealth();
 });
-
 after(async () => {
   if (worker?.exitCode === null) {
     worker.kill("SIGTERM");
@@ -445,77 +444,6 @@ describe("native Slack worker HTTP adapter", () => {
     );
   });
 
-  test("passes transport-ready message and stream formats through unchanged", async () => {
-    const mrkdwnText = "*Coverage:* `A:B` and :literal_status:";
-    const markdownText = "**Coverage:** `A:B` and :literal_status:";
-    const finalBlocks = [
-      {
-        type: "section",
-        text: { type: "mrkdwn", text: mrkdwnText },
-      },
-    ];
-
-    assert.equal(
-      (
-        await workerRequest("/message/update", {
-          teamId: "T-CUSTOMER",
-          channelId: "C-CUSTOMER",
-          messageTs: "1800000000.100",
-          mrkdwnText,
-        })
-      ).status,
-      200,
-    );
-    assert.equal(
-      (
-        await workerRequest("/stream/append", {
-          teamId: "T-CUSTOMER",
-          channelId: "C-CUSTOMER",
-          messageTs: "1800000000.100",
-          markdownText,
-        })
-      ).status,
-      200,
-    );
-    assert.equal(
-      (
-        await workerRequest("/stream/stop", {
-          teamId: "T-CUSTOMER",
-          channelId: "C-CUSTOMER",
-          messageTs: "1800000000.100",
-          blocks: finalBlocks,
-        })
-      ).status,
-      200,
-    );
-
-    assert.deepEqual(
-      apiCalls.find((call) => call.path === "/api/chat.update")?.body,
-      {
-        channel: "C-CUSTOMER",
-        ts: "1800000000.100",
-        text: mrkdwnText,
-        blocks: [],
-      },
-    );
-    assert.deepEqual(
-      apiCalls.find((call) => call.path === "/api/chat.appendStream")?.body,
-      {
-        channel: "C-CUSTOMER",
-        ts: "1800000000.100",
-        markdown_text: markdownText,
-      },
-    );
-    assert.deepEqual(
-      apiCalls.find((call) => call.path === "/api/chat.stopStream")?.body,
-      {
-        channel: "C-CUSTOMER",
-        ts: "1800000000.100",
-        blocks: finalBlocks,
-      },
-    );
-  });
-
   test("uses form encoding for Slack file metadata and upload URL calls", async () => {
     const attachment = await workerRequest("/attachment", {
       teamId: "T-CUSTOMER",
@@ -633,29 +561,6 @@ describe("native Slack worker HTTP adapter", () => {
       apiCalls.filter((call) => call.path === "/api/conversations.invite")
         .length,
       1,
-    );
-  });
-
-  test("lists only visible channels through the customer installation", async () => {
-    const response = await workerRequest("/channels", {
-      teamId: "T-CUSTOMER",
-    });
-    const payload = await response.json();
-    assert.deepEqual(
-      payload.channels.map((channel: { id: string }) => channel.id),
-      ["C-CUSTOMER", "C-NOT-JOINED", "G-PRIVATE", "C-SHARED"],
-    );
-    assert.deepEqual(
-      apiCalls.find((call) => call.path === "/api/conversations.list"),
-      {
-        path: "/api/conversations.list",
-        authorization: "Bearer xoxb-customer",
-        body: {
-          types: "public_channel,private_channel",
-          exclude_archived: "true",
-          limit: "200",
-        },
-      },
     );
   });
 

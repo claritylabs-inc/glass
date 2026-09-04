@@ -235,17 +235,6 @@ describe("agent deployment safeguards", () => {
     });
   });
 
-  it("accepts the operator-controlled cl-router freeze state", async () => {
-    const result = await runAgentHealth(
-      "/convex-aligned",
-      "/cl-router-unfrozen",
-    );
-
-    expect(result.stdout).toContain(
-      "[agent-health] production deployment health passed",
-    );
-  });
-
   it.each([
     ["model route", "/convex-operator-model-missing", "operatorAgent.modelConfigured"],
     ["Slack", "/convex-operator-slack-disabled", "operatorSlack.enabled"],

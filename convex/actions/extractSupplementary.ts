@@ -15,8 +15,8 @@
  */
 
 import { v } from "convex/values";
-import { internalAction, action } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internalAction } from "../_generated/server";
+import { internal } from "../_generated/api";
 import {
   getExtractor,
   toStrictSchema,
@@ -262,32 +262,5 @@ export const extractAll = internalAction({
 
     console.log(`Supplementary backfill complete: ${processed} processed, ${totalFacts} facts, ${skipped} skipped`);
     return { processed, totalFacts, skipped };
-  },
-});
-
-/**
- * Public action — run supplementary extraction on a single policy (auth-gated).
- */
-export const runSupplementary = action({
-  args: {
-    policyId: v.id("policies"),
-    force: v.optional(v.boolean()),
-  },
-  returns: v.any(),
-  handler: async (ctx, args): Promise<unknown> => {
-    const viewer = await ctx.runQuery(api.users.viewer) as { _id: string } | null;
-    if (!viewer) return { error: "Not authenticated" };
-    const orgData = await ctx.runQuery(api.orgs.viewerOrg, {}) as { membership: { orgId: string } } | null;
-    if (!orgData) return { error: "No organization" };
-
-    const policy = await ctx.runQuery(internal.policies.getInternal, { id: args.policyId });
-    if (!policy || policy.orgId !== orgData.membership.orgId) {
-      return { error: "Not found" };
-    }
-
-    return await ctx.runAction(internal.actions.extractSupplementary.extractOne, {
-      policyId: args.policyId,
-      force: args.force,
-    });
   },
 });

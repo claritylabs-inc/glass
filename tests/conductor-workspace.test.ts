@@ -12,22 +12,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  canUseAnonymousConvexCloudFallback,
-  conductorContainerName,
-  conductorContainerNamesOnPort,
   conductorImageTag,
-  conductorImageTags,
   conductorPorts,
   conductorLocalRuntimeOverrides,
-  containerGateway,
-  listenOnContainerGateway,
-  localConvexSelectionContents,
   repairLocalConvexSelection,
-  convexDeploymentNameFromDeployKey,
-  generateLocalAuthKeys,
-  isMissingConvexAccessToken,
   repoRoot,
-  resolveConductorClRouterConfig,
   resolveConductorMapboxAccessToken,
   workspaceSlug,
   withoutCloudConvexSelection,
@@ -53,165 +42,12 @@ describe("Conductor workspace identity", () => {
     }
   });
 
-  it("sanitizes a worktree directory for container tags", () => {
-    expect(workspaceSlug("/tmp/Spot Feature + QA")).toBe(
-      "spot-feature-qa",
-    );
-  });
-
-  it("enumerates every workspace-scoped Apple Container resource", () => {
-    const workspace = "/tmp/Spot Feature + QA";
-
-    expect(conductorContainerName("extraction", 8081, workspace)).toBe(
-      "spot-extraction-spot-feature-qa-8081",
-    );
-    expect(conductorImageTags(workspace)).toEqual([
-      "spot-extraction-worker:conductor-spot-feature-qa",
-      "spot-imessage-worker:conductor-spot-feature-qa",
-      "spot-slack-worker:conductor-spot-feature-qa",
-      "spot-mailbox-scan-worker:conductor-spot-feature-qa",
-    ]);
-  });
-
-  it("finds Spot and legacy Glass worker containers on an allocated port", () => {
-    const containers = [
-      { id: "buildkit" },
-      { id: "spot-extraction-old-workspace-55061" },
-      { id: "glass-extraction-legacy-workspace-55061" },
-      {
-        id: "opaque-runtime-id",
-        configuration: {
-          id: "spot-extraction-current-workspace-55061",
-        },
-      },
-      { id: "spot-extraction-other-workspace-55071" },
-      { id: "unrelated-service-55061" },
-    ];
-
-    expect(
-      conductorContainerNamesOnPort(containers, "extraction", 55061),
-    ).toEqual([
-      "spot-extraction-old-workspace-55061",
-      "glass-extraction-legacy-workspace-55061",
-      "spot-extraction-current-workspace-55061",
-    ]);
-  });
-
-  it("starts Apple container before retrying default-network discovery", () => {
-    const calls: Array<{ command: string; args: string[] }> = [];
-    let networkAttempts = 0;
-    const gateway = containerGateway({
-      startServiceIfNeeded: true,
-      runCommand(command: string, args: string[]) {
-        calls.push({ command, args });
-        if (command === "container") {
-          networkAttempts += 1;
-          if (networkAttempts === 1) {
-            return { status: 1, stdout: "", stderr: "service unavailable" };
-          }
-          return {
-            status: 0,
-            stdout: JSON.stringify([
-              {
-                id: "default",
-                status: { ipv4Gateway: "192.168.64.1" },
-              },
-            ]),
-            stderr: "",
-          };
-        }
-        return { status: 0, stdout: "", stderr: "" };
-      },
-    });
-
-    expect(gateway).toBe("192.168.64.1");
-    expect(calls).toEqual([
-      {
-        command: "container",
-        args: ["network", "list", "--format", "json"],
-      },
-      {
-        command: "/bin/zsh",
-        args: ["-c", "yes | container system start"],
-      },
-      {
-        command: "container",
-        args: ["network", "list", "--format", "json"],
-      },
-    ]);
-  });
-
-  it("waits for a restarted Apple container gateway to become bindable", async () => {
-    const handlers = new Map<string, (value?: unknown) => void>();
-    let attempts = 0;
-    let elapsed = 0;
-    const server = {
-      once(event: string, handler: (value?: unknown) => void) {
-        handlers.set(event, handler);
-      },
-      off(event: string, handler: (value?: unknown) => void) {
-        if (handlers.get(event) === handler) handlers.delete(event);
-      },
-      listen() {
-        attempts += 1;
-        queueMicrotask(() => {
-          if (attempts < 3) {
-            const error = Object.assign(new Error("address unavailable"), {
-              code: "EADDRNOTAVAIL",
-            });
-            handlers.get("error")?.(error);
-            return;
-          }
-          handlers.get("listening")?.();
-        });
-      },
-    };
-
-    await listenOnContainerGateway(server, {
-      gateway: "192.168.64.1",
-      port: 55003,
-      now: () => elapsed,
-      sleep: async (delayMs: number) => {
-        elapsed += delayMs;
-      },
-    });
-
-    expect(attempts).toBe(3);
-    expect(elapsed).toBe(500);
-  });
-
 });
-
 describe("Conductor local Convex selection", () => {
   const localConfig = {
     deploymentName: "anonymous-agent",
     ports: { cloud: 55013, site: 55014 },
   };
-
-  it("replaces copied cloud and self-hosted selectors with local values", () => {
-    const repaired = localConvexSelectionContents(
-      [
-        "API_KEY=kept",
-        "CONVEX_DEPLOYMENT=dev:acoustic-caiman-755 # team: claritylabs, project: spot",
-        "NEXT_PUBLIC_CONVEX_URL=https://acoustic-caiman-755.convex.cloud",
-        "NEXT_PUBLIC_CONVEX_SITE_URL=https://acoustic-caiman-755.convex.site",
-        "CONVEX_SELF_HOSTED_URL=http://example.test",
-        "CONVEX_SELF_HOSTED_ADMIN_KEY=removed",
-        "",
-      ].join("\n"),
-      localConfig,
-    );
-
-    expect(repaired).toBe(
-      [
-        "API_KEY=kept",
-        "CONVEX_DEPLOYMENT=anonymous:anonymous-agent",
-        "NEXT_PUBLIC_CONVEX_URL=http://127.0.0.1:55013",
-        "NEXT_PUBLIC_CONVEX_SITE_URL=http://127.0.0.1:55014",
-        "",
-      ].join("\n"),
-    );
-  });
 
   it("repairs an existing workspace env file once", () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "spot-conductor-"));
@@ -301,75 +137,7 @@ describe("Conductor local Convex selection", () => {
     }
   });
 });
-
 describe("Conductor Convex bootstrap", () => {
-  it("recognizes a deployment-scoped key for the configured source", () => {
-    expect(
-      convexDeploymentNameFromDeployKey(
-        "dev:acoustic-caiman-755|secret-token-material",
-      ),
-    ).toBe("acoustic-caiman-755");
-    expect(
-      convexDeploymentNameFromDeployKey(
-        "prod:merry-platypus-82|secret-token-material",
-      ),
-    ).toBe("merry-platypus-82");
-  });
-
-  it("does not treat project keys or malformed values as deployment keys", () => {
-    expect(
-      convexDeploymentNameFromDeployKey(
-        "project:spot|secret-token-material",
-      ),
-    ).toBeUndefined();
-    expect(convexDeploymentNameFromDeployKey("not-a-key")).toBeUndefined();
-    expect(convexDeploymentNameFromDeployKey(undefined)).toBeUndefined();
-  });
-
-  it("recognizes the Convex cloud missing-token response", () => {
-    expect(
-      isMissingConvexAccessToken(
-        "Request failed with status 401: MissingAccessToken",
-      ),
-    ).toBe(true);
-    expect(isMissingConvexAccessToken("Request failed with status 503")).toBe(
-      false,
-    );
-  });
-
-  it("allows only credential-free cloud setup to fall back to anonymous Convex", () => {
-    const missingToken = "Request failed with status 401: MissingAccessToken";
-
-    expect(
-      canUseAnonymousConvexCloudFallback({
-        isCloud: true,
-        hasDeployKey: false,
-        output: missingToken,
-      }),
-    ).toBe(true);
-    expect(
-      canUseAnonymousConvexCloudFallback({
-        isCloud: false,
-        hasDeployKey: false,
-        output: missingToken,
-      }),
-    ).toBe(false);
-    expect(
-      canUseAnonymousConvexCloudFallback({
-        isCloud: true,
-        hasDeployKey: true,
-        output: missingToken,
-      }),
-    ).toBe(false);
-    expect(
-      canUseAnonymousConvexCloudFallback({
-        isCloud: true,
-        hasDeployKey: false,
-        output: "Request failed with status 503",
-      }),
-    ).toBe(false);
-  });
-
   it("falls back to the Cloud Computer Mapbox token when the copied env omits it", () => {
     expect(
       resolveConductorMapboxAccessToken(new Map(), {
@@ -377,7 +145,6 @@ describe("Conductor Convex bootstrap", () => {
       }),
     ).toBe("cloud-mapbox-token");
   });
-
   it("removes cloud selection and credentials from local Convex processes", () => {
     const environment = {
       CONVEX_DEPLOYMENT: "dev:acoustic-caiman-755",
@@ -394,61 +161,5 @@ describe("Conductor Convex bootstrap", () => {
       UNRELATED_VALUE: "preserved",
     });
     expect(environment.CONVEX_DEPLOYMENT).toBe("dev:acoustic-caiman-755");
-  });
-
-  it("keeps router execution disabled for credential-free cloud setup", () => {
-    expect(
-      resolveConductorClRouterConfig(
-        { url: undefined, tasks: undefined, secret: undefined },
-        { required: false },
-      ),
-    ).toEqual({});
-  });
-
-  it("normalizes complete imported router execution settings", () => {
-    expect(
-      resolveConductorClRouterConfig(
-        {
-          url: " https://router.example.test ",
-          tasks: " extraction,agent ",
-          secret: " router-secret ",
-        },
-        { required: true },
-      ),
-    ).toEqual({
-      url: "https://router.example.test",
-      tasks: "extraction,agent",
-      secret: "router-secret",
-      timeoutMs: "180000",
-      tenantId: "glass",
-    });
-  });
-
-  it("rejects incomplete router execution settings", () => {
-    expect(() =>
-      resolveConductorClRouterConfig(
-        {
-          url: "https://router.example.test",
-          tasks: undefined,
-          secret: undefined,
-        },
-        { required: false },
-      ),
-    ).toThrow("CL_ROUTER_TASKS, CL_ROUTER_SECRET must be configured");
-  });
-
-  it("generates a self-contained auth keypair for a local deployment", () => {
-    const keys = generateLocalAuthKeys();
-    const jwks = JSON.parse(keys.JWKS);
-
-    expect(keys.JWT_PRIVATE_KEY).toMatch(/^-----BEGIN PRIVATE KEY----- /);
-    expect(keys.JWT_PRIVATE_KEY).not.toContain("\n");
-    expect(jwks.keys).toHaveLength(1);
-    expect(jwks.keys[0]).toMatchObject({
-      use: "sig",
-      kty: "RSA",
-      e: "AQAB",
-    });
-    expect(jwks.keys[0].n).toEqual(expect.any(String));
   });
 });

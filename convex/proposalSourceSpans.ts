@@ -1,6 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
-import { requireOperator } from "./lib/operatorIdentity";
+import { internalMutation, internalQuery } from "./_generated/server";
 
 const spanFields = {
   orgId: v.id("organizations"),
@@ -17,65 +16,6 @@ const spanFields = {
   metadata: v.optional(v.any()),
   createdAt: v.number(),
 };
-
-export const listByDocument = query({
-  args: { proposalDocumentId: v.id("procurementProposalDocuments") },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    const document = await ctx.db.get(args.proposalDocumentId);
-    if (!document) return [];
-    const proposal = await ctx.db.get(document.proposalId);
-    if (
-      !proposal?.extractionFingerprint ||
-      !proposal.extractedOffer ||
-      proposal.status === "extracting"
-    )
-      return [];
-    return (
-      await ctx.db
-        .query("proposalSourceSpans")
-        .withIndex("proposal_fingerprint", (q) =>
-          q
-            .eq("proposalId", document.proposalId)
-            .eq("extractionFingerprint", proposal.extractionFingerprint!),
-        )
-        .collect()
-    ).filter((row) => row.proposalDocumentId === args.proposalDocumentId);
-  },
-});
-
-export const listByProposalAndSpanIds = query({
-  args: {
-    proposalId: v.id("procurementProposals"),
-    spanIds: v.array(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    const proposal = await ctx.db.get(args.proposalId);
-    if (
-      !proposal?.extractionFingerprint ||
-      !proposal.extractedOffer ||
-      proposal.status === "extracting"
-    )
-      return [];
-    const wanted = [...new Set(args.spanIds)].slice(0, 256);
-    return (
-      await Promise.all(
-        wanted.map((spanId) =>
-          ctx.db
-            .query("proposalSourceSpans")
-            .withIndex("fingerprint_span", (q) =>
-              q
-                .eq("proposalId", args.proposalId)
-                .eq("extractionFingerprint", proposal.extractionFingerprint!)
-                .eq("spanId", spanId),
-            )
-            .first(),
-        ),
-      )
-    ).filter((item): item is NonNullable<typeof item> => Boolean(item));
-  },
-});
 
 export const listByProposalInternal = internalQuery({
   args: { proposalId: v.id("procurementProposals") },

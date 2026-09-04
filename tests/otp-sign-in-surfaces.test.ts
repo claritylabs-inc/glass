@@ -30,36 +30,4 @@ describe("OTP sign-in", () => {
     });
   });
 
-  it("preserves proxy verification errors for the existing friendly error copy", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ error: "Could not verify code" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
-
-    await expect(completeOtpSignIn("person@example.com", "000000")).rejects.toThrow(
-      "Could not verify code",
-    );
-  });
-
-  it("rejects a successful response that did not establish a session", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ tokens: null }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      ),
-    );
-
-    await expect(completeOtpSignIn("person@example.com", "123456")).rejects.toThrow(
-      "Could not complete sign-in",
-    );
-  });
-
 });

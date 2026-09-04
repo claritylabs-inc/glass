@@ -451,22 +451,6 @@ const policyDeliveryRuleFiltersValidator = v.object({
   linesOfBusiness: v.optional(v.array(v.string())),
 });
 
-const policyChangeStatusValidator = v.union(
-  // Legacy statuses kept during widen-migrate-narrow.
-  v.literal("draft"),
-  v.literal("ready"),
-  v.literal("accepted"),
-  v.literal("needs_info"),
-  v.literal("submitted"),
-  v.literal("declined"),
-  v.literal("cancelled"),
-  // Simplified CLA-28 workflow statuses.
-  v.literal("intake"),
-  v.literal("ready_to_submit"),
-  v.literal("waiting_for_endorsement"),
-  v.literal("completed"),
-);
-
 export default defineSchema({
   ...authTables,
 
@@ -578,13 +562,6 @@ export default defineSchema({
     emailVerification: v.optional(
       v.union(v.literal("strict"), v.literal("domain"), v.literal("open")),
     ),
-    // Legacy ignored certificate settings retained for existing organization records.
-    coiHandling: v.optional(
-      v.union(v.literal("broker"), v.literal("member"), v.literal("ignore")),
-    ),
-    autoGenerateCoi: v.optional(v.boolean()),
-    policyChangeRequestsEnabled: v.optional(v.boolean()),
-    certificateChangeRequestsEnabled: v.optional(v.boolean()),
     // Agent
     agentHandle: v.optional(v.string()),
     // Primary insurance contact for the org
@@ -987,8 +964,6 @@ export default defineSchema({
         extraction_quality: v.optional(modelRouteValidator),
         extraction_form_inventory: v.optional(modelRouteValidator),
         extraction_coverage_cleanup: v.optional(modelRouteValidator),
-        // Legacy deployments may have this deprecated key persisted. Runtime code no longer reads or writes it.
-        extraction_visual_table_repair: v.optional(modelRouteValidator),
         fallback: v.optional(modelRouteValidator),
       }),
     ),
@@ -2517,8 +2492,6 @@ export default defineSchema({
     dismissed: v.optional(v.boolean()),
     // Typed declarations (cl-sdk 1.4+) — line-specific structured data
     declarations: v.optional(v.any()),
-    // AI analysis results (risk notes, observations, key findings)
-    analysis: v.optional(v.any()),
     // cl-sdk 3.0+ fields
     policyTermType: v.optional(v.string()),
     nextReviewDate: v.optional(v.string()),
@@ -3422,7 +3395,6 @@ export default defineSchema({
     policyNumber: v.optional(v.string()),
     sourcePolicyFileIds: v.optional(v.array(v.id("policyFiles"))),
     sourceFileIds: v.optional(v.array(v.id("_storage"))),
-    caseId: v.optional(v.id("policyChangeCases")),
     extractionRunId: v.optional(v.id("policyExtractionRuns")),
     snapshot: v.optional(v.any()),
     fieldDiffs: v.optional(v.array(v.any())),
@@ -3433,8 +3405,7 @@ export default defineSchema({
     .index("organization", ["orgId"])
     .index("policy", ["policyId"])
     .index("policy_version", ["policyId", "versionNumber"])
-    .index("policy_created", ["policyId", "createdAt"])
-    .index("case", ["caseId"]),
+    .index("policy_created", ["policyId", "createdAt"]),
 
   certificateHolders: defineTable({
     orgId: v.id("organizations"),
@@ -3552,7 +3523,6 @@ export default defineSchema({
     generationBatchId: v.optional(v.string()),
     formCode: v.optional(certificateFormCodeValidator),
     requestSignature: v.optional(v.string()),
-    legacyCertificateId: v.optional(v.id("certificates")),
     issuedAt: v.optional(v.number()),
     supersededAt: v.optional(v.number()),
     voidedAt: v.optional(v.number()),
@@ -3694,7 +3664,6 @@ export default defineSchema({
     ),
     status: v.union(
       v.literal("held"),
-      v.literal("policy_change_opened"),
       v.literal("broker_handoff_offered"),
       v.literal("resolved"),
       v.literal("cancelled"),
@@ -3709,7 +3678,6 @@ export default defineSchema({
     requiredChanges: v.array(v.string()),
     evidence: v.optional(v.any()),
     emailDraft: v.optional(certificateEmailDraftValidator),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     pendingEmailId: v.optional(v.id("pendingEmails")),
     createdByUserId: v.optional(v.id("users")),
     createdAt: v.number(),
@@ -3718,7 +3686,6 @@ export default defineSchema({
     .index("organization", ["orgId"])
     .index("policy", ["policyId"])
     .index("source", ["requirementSourceDocumentId"])
-    .index("change", ["policyChangeCaseId"])
     .index("status", ["status"]),
 
   // ── Notifications ──
@@ -3727,10 +3694,6 @@ export default defineSchema({
     orgId: v.id("organizations"),
     userId: v.optional(v.id("users")), // null = org-wide
     type: v.union(
-      // Retired types kept only so historical rows remain schema-compatible.
-      v.literal("merge_suggestion"),
-      v.literal("policy_declaration_discrepancy"),
-      // Active notification types.
       v.literal("coverage_gap"),
       v.literal("renewal_reminder"),
       v.literal("policy_lapsed"),
@@ -3752,8 +3715,6 @@ export default defineSchema({
       v.literal("vendor_compliance_gap"),
       v.literal("vendor_policy_expiring"),
       v.literal("vendor_policy_expired"),
-      v.literal("policy_change_needs_info"),
-      v.literal("policy_change_completed"),
       v.literal("mailbox_attention"),
       v.literal("own_compliance_gap"),
       v.literal("own_compliance_resolved"),
@@ -3958,47 +3919,9 @@ export default defineSchema({
     .index("organization", ["orgId"])
     .index("chunk", ["chunkId"]),
 
-  policyChangeCases: defineTable({
-    orgId: v.id("organizations"),
-    policyId: v.optional(v.id("policies")),
-    requestText: v.string(),
-    sourceKind: v.union(
-      v.literal("chat"),
-      v.literal("email"),
-      v.literal("imessage"),
-      v.literal("slack"),
-      v.literal("mcp"),
-      v.literal("cli"),
-      v.literal("uploaded_document"),
-      v.literal("manual"),
-    ),
-    status: policyChangeStatusValidator,
-    summary: v.optional(v.string()),
-    affectedPolicyIds: v.optional(v.array(v.id("policies"))),
-    pendingQuestions: v.optional(v.array(v.string())),
-    internalPceAnalysis: v.optional(v.any()),
-    brokerSubmission: v.optional(v.any()),
-    completion: v.optional(v.any()),
-    requestDetails: v.optional(v.any()),
-    items: v.optional(v.any()),
-    impacts: v.optional(v.any()),
-    missingInfoQuestions: v.optional(v.any()),
-    validationIssues: v.optional(v.any()),
-    evidenceSourceIds: v.optional(v.array(v.string())),
-    packetId: v.optional(v.id("pcePackets")),
-    stagedPolicyUpdate: v.optional(v.any()),
-    createdByUserId: v.optional(v.id("users")),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("organization", ["orgId"])
-    .index("policy", ["policyId"])
-    .index("organization_status", ["orgId", "status"]),
-
   policyUpdateRuns: defineTable({
     orgId: v.id("organizations"),
     policyId: v.id("policies"),
-    caseId: v.optional(v.id("policyChangeCases")),
     sourcePolicyFileIds: v.optional(v.array(v.id("policyFiles"))),
     sourceFileIds: v.optional(v.array(v.id("_storage"))),
     updateMode: v.union(v.literal("append_to_existing")),
@@ -4019,7 +3942,6 @@ export default defineSchema({
   })
     .index("organization", ["orgId"])
     .index("policy", ["policyId"])
-    .index("case", ["caseId"])
     .index("status", ["status"]),
 
   policyDeclarationFacts: defineTable({
@@ -4054,72 +3976,6 @@ export default defineSchema({
     .index("organization_group", ["orgId", "fieldGroup"])
     .index("policy_active", ["policyId", "active"])
     .index("record", ["recordHash"]),
-
-  pcePackets: defineTable({
-    orgId: v.id("organizations"),
-    caseId: v.id("policyChangeCases"),
-    policyId: v.optional(v.id("policies")),
-    artifacts: v.any(),
-    validationIssues: v.optional(v.any()),
-    createdAt: v.number(),
-    submittedAt: v.optional(v.number()),
-  })
-    .index("organization", ["orgId"])
-    .index("case", ["caseId"])
-    .index("policy", ["policyId"]),
-
-  caseMessages: defineTable({
-    orgId: v.id("organizations"),
-    caseId: v.id("policyChangeCases"),
-    direction: v.union(
-      v.literal("inbound"),
-      v.literal("outbound"),
-      v.literal("system"),
-    ),
-    channel: v.optional(
-      v.union(
-        v.literal("chat"),
-        v.literal("email"),
-        v.literal("imessage"),
-        v.literal("mcp"),
-        v.literal("cli"),
-        v.literal("uploaded_document"),
-        v.literal("manual"),
-      ),
-    ),
-    content: v.string(),
-    sourceSpanIds: v.optional(v.array(v.string())),
-    createdByUserId: v.optional(v.id("users")),
-    createdAt: v.number(),
-  })
-    .index("case", ["caseId"])
-    .index("organization", ["orgId"]),
-
-  caseEvidenceLinks: defineTable({
-    orgId: v.id("organizations"),
-    caseId: v.id("policyChangeCases"),
-    itemId: v.optional(v.string()),
-    sourceSpanId: v.string(),
-    quote: v.optional(v.string()),
-    createdAt: v.number(),
-  })
-    .index("case", ["caseId"])
-    .index("span", ["sourceSpanId"])
-    .index("organization", ["orgId"]),
-
-  caseValidationReports: defineTable({
-    orgId: v.id("organizations"),
-    caseId: v.id("policyChangeCases"),
-    status: v.union(
-      v.literal("passed"),
-      v.literal("warning"),
-      v.literal("failed"),
-    ),
-    issues: v.any(),
-    createdAt: v.number(),
-  })
-    .index("case", ["caseId"])
-    .index("organization", ["orgId"]),
 
   // Conversation turns for cross-thread memory search
   conversationTurns: defineTable({
@@ -4241,7 +4097,6 @@ export default defineSchema({
     orgId: v.id("organizations"),
     title: v.string(),
     threadEmail: v.optional(v.string()),
-    deliveryContactKey: v.optional(v.string()),
     createdBy: v.id("users"),
     clientMutationId: v.optional(v.string()),
     lastMessageAt: v.number(),
@@ -4305,7 +4160,6 @@ export default defineSchema({
     .index("email", ["threadEmail"])
     .index("phone", ["threadPhone"])
     .index("organization_phone", ["orgId", "threadPhone"])
-    .index("organization_delivery", ["orgId", "deliveryContactKey"])
     .index("chat", ["imessageChatGuid"])
     .index("organization_chat", ["orgId", "imessageChatGuid"])
     .index("private_history", [
@@ -4428,7 +4282,6 @@ export default defineSchema({
     agentRunStartedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     pendingEmailId: v.optional(v.id("pendingEmails")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
   })
     .index("thread", ["threadId"])
     .index("organization_mutation", ["orgId", "clientMutationId"])
@@ -5130,13 +4983,11 @@ export default defineSchema({
     kind: v.union(
       v.literal("policy"),
       v.literal("certificate"),
-      v.literal("policy_change"),
     ),
     policyId: v.optional(v.id("policies")),
     certificateId: v.optional(v.id("certificates")),
     policyCertificateId: v.optional(v.id("policyCertificates")),
     certificateVersionId: v.optional(v.id("certificateVersions")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     label: v.optional(v.string()),
     sourceThreadId: v.optional(v.id("threads")),
     sourceThreadMessageId: v.optional(v.id("threadMessages")),
@@ -5149,7 +5000,6 @@ export default defineSchema({
     .index("policy", ["policyId"])
     .index("certificate", ["certificateId"])
     .index("policy_certificate", ["policyCertificateId"])
-    .index("change", ["policyChangeCaseId"])
     .index("thread", ["sourceThreadId"])
     .index("source_message", ["sourceThreadMessageId"]),
 
@@ -5243,7 +5093,6 @@ export default defineSchema({
     // For updating the chat message after send
     chatMessageId: v.optional(v.id("threadMessages")),
     threadMessageId: v.optional(v.id("threadMessages")),
-    policyChangeCaseId: v.optional(v.id("policyChangeCases")),
     // Metadata for the sent email record
     recipientEmail: v.string(),
     ccAddresses: v.optional(v.array(v.string())),
@@ -5357,21 +5206,6 @@ export default defineSchema({
     .index("token", ["tokenHash"])
     .index("refresh_token", ["refreshTokenHash"])
     .index("user", ["userId"]),
-
-  // ── API Audit Log ──
-
-  apiAuditLog: defineTable({
-    requestId: v.string(),
-    timestamp: v.number(),
-    userId: v.id("users"),
-    orgId: v.optional(v.id("organizations")),
-    method: v.string(),
-    path: v.string(),
-    status: v.number(),
-    body: v.optional(v.string()),
-    response: v.optional(v.string()),
-    tokenId: v.id("oauthTokens"),
-  }).index("organization_time", ["orgId", "timestamp"]),
 
   // ── Rate Limit Counters ──
 

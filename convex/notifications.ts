@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { getCurrentOrgAccess as getOrgAccess, requireCurrentOrgAccess as requireOrgAccess } from "./lib/access";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import {
   throwUserFacingError,
   userFacingErrorCodes,
@@ -16,11 +16,7 @@ type NotificationVisibilityRow = {
 };
 
 function isBaseVisibleNotification(notification: { status: string; type: string }) {
-  return (
-    notification.status !== "dismissed" &&
-    notification.type !== "policy_declaration_discrepancy" &&
-    notification.type !== "merge_suggestion"
-  );
+  return notification.status !== "dismissed";
 }
 
 function filterVisibleNotifications<T extends NotificationVisibilityRow>(
@@ -74,54 +70,6 @@ export const listInbox = query({
     );
 
     return enriched;
-  },
-});
-
-// Keep backward-compat list query
-export const list = query({
-  args: {
-    orgId: v.optional(v.id("organizations")),
-    status: v.optional(v.union(
-      v.literal("unread"),
-      v.literal("read"),
-      v.literal("actioned"),
-      v.literal("dismissed"),
-    )),
-    type: v.optional(v.string()),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const access = await getOrgAccess(ctx);
-    if (!access) return [];
-    const { orgId } = access;
-    const effectiveLimit = args.limit ?? 50;
-
-    let results;
-    if (args.status) {
-      results = await ctx.db
-        .query("notifications")
-        .withIndex("organization_status", (idx) =>
-          idx.eq("orgId", orgId).eq("status", args.status!)
-        )
-        .order("desc")
-        .take(effectiveLimit);
-    } else if (args.type) {
-      results = await ctx.db
-        .query("notifications")
-        .withIndex("organization_type", (idx) =>
-          idx.eq("orgId", orgId).eq("type", args.type! as Doc<"notifications">["type"])
-        )
-        .order("desc")
-        .take(effectiveLimit);
-    } else {
-      results = await ctx.db
-        .query("notifications")
-        .withIndex("organization", (idx) => idx.eq("orgId", orgId))
-        .order("desc")
-        .take(effectiveLimit);
-    }
-
-    return filterVisibleNotifications(results, access.userId);
   },
 });
 
@@ -186,36 +134,6 @@ export const markAllRead = mutation({
           ctx.db.patch(notification._id, { status: "read" }),
         ),
     );
-  },
-});
-
-export const dismiss = mutation({
-  args: { id: v.optional(v.id("notifications")), notificationId: v.optional(v.id("notifications")) },
-  handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAccess(ctx);
-    const id = args.id ?? args.notificationId;
-    if (!id) throw new Error("id required");
-    const n = await ctx.db.get(id);
-    if (
-      !n ||
-      n.orgId !== orgId ||
-      (n.userId && n.userId !== userId)
-    ) throw new Error("Not found");
-    await ctx.db.patch(id, { status: "dismissed" });
-  },
-});
-
-export const markActioned = mutation({
-  args: { notificationId: v.id("notifications") },
-  handler: async (ctx, args) => {
-    const { orgId, userId } = await requireOrgAccess(ctx);
-    const n = await ctx.db.get(args.notificationId);
-    if (
-      !n ||
-      n.orgId !== orgId ||
-      (n.userId && n.userId !== userId)
-    ) throw new Error("Not found");
-    await ctx.db.patch(args.notificationId, { status: "actioned" });
   },
 });
 

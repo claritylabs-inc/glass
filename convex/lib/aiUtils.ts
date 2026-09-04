@@ -1,5 +1,4 @@
 "use node";
-import type { ModelMessage } from "ai";
 import { getClientPortalUrl } from "./domains";
 import {
   documentOutlineNodeKind,
@@ -34,42 +33,6 @@ export function stripMarkdown(text: string): string {
 
 export function markdownToHtml(text: string): string {
   return renderAgentMarkdownHtml(text);
-}
-
-/* ── Email signature ── */
-
-export function buildSignature(): { text: string; html: string } {
-  const siteUrl = getClientPortalUrl();
-  const text = "\n\nsent with Spot";
-  const html = `<p style="font-size:12px;color:#999;margin:24px 0 0"><a href="${siteUrl}" style="color:#999;text-decoration:none">sent with Spot</a></p>`;
-  return { text, html };
-}
-
-/* ── Message history ── */
-
-interface ThreadMessage {
-  role: string;
-  content: string;
-  status?: string;
-  userName?: string;
-}
-
-export function buildMessageHistory(messages: ThreadMessage[]): ModelMessage[] {
-  const history: ModelMessage[] = [];
-  for (const msg of messages) {
-    if (msg.status === "processing" || msg.status === "cancelled") continue;
-    if (msg.role === "user") {
-      history.push({
-        role: "user",
-        content: msg.userName
-          ? `[${msg.userName}]: ${msg.content}`
-          : msg.content,
-      });
-    } else if (msg.role === "agent" && msg.content) {
-      history.push({ role: "assistant", content: msg.content });
-    }
-  }
-  return history;
 }
 
 /* ── System prompt ── */

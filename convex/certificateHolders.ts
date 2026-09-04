@@ -3,7 +3,6 @@ import { v } from "convex/values";
 import {
   internalMutation,
   internalQuery,
-  mutation,
   query,
 } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -11,10 +10,8 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
   assertCanReadPolicies,
   getOrgAccess,
-  requireCurrentOrgAccess,
 } from "./lib/access";
 import {
-  certificateHolderDedupeKey,
   normalizeCertificateHolderAddress,
   normalizeCertificateHolderContactName,
   normalizeCertificateHolderEmail,
@@ -40,13 +37,6 @@ const sourceValidator = v.union(
   v.literal("api"),
   v.literal("mcp"),
   v.literal("agent"),
-);
-
-const relationshipKindValidator = v.union(
-  v.literal("additional_insured"),
-  v.literal("loss_payee"),
-  v.literal("mortgagee"),
-  v.literal("allowed_holder"),
 );
 
 type ReadCtx = QueryCtx | MutationCtx;
@@ -148,31 +138,6 @@ export const listForOrgInternal = internalQuery({
         )
       : holders;
     return filtered.sort((a, b) => a.displayName.localeCompare(b.displayName));
-  },
-});
-
-export const upsertForCurrentOrg = mutation({
-  args: {
-    displayName: v.string(),
-    contactName: v.optional(v.string()),
-    email: v.optional(v.string()),
-    phone: v.optional(v.string()),
-    address: v.optional(addressValidator),
-    mapboxFeatureId: v.optional(v.string()),
-    mapboxMetadata: v.optional(v.any()),
-    notes: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const access = await requireCurrentOrgAccess(ctx);
-    assertCanReadPolicies(access);
-    const { orgId, userId } = access;
-    return await upsertCertificateHolder(ctx, {
-      ...args,
-      orgId,
-      source: "manual",
-      createdByUserId: userId,
-      updatedByUserId: userId,
-    });
   },
 });
 
@@ -288,32 +253,6 @@ export const upsertInternal = internalMutation({
   },
 });
 
-export const linkPolicyInternal = internalMutation({
-  args: {
-    orgId: v.id("organizations"),
-    holderId: v.id("certificateHolders"),
-    policyId: v.id("policies"),
-    policyVersionId: v.optional(v.id("policyVersions")),
-    relationshipKind: relationshipKindValidator,
-    status: v.optional(
-      v.union(
-        v.literal("current"),
-        v.literal("historical"),
-        v.literal("review_required"),
-        v.literal("dismissed"),
-      ),
-    ),
-    sourceNodeIds: v.optional(v.array(v.string())),
-    sourceSpanIds: v.optional(v.array(v.string())),
-    sourceSummary: v.optional(v.string()),
-    createdByUserId: v.optional(v.id("users")),
-    updatedByUserId: v.optional(v.id("users")),
-  },
-  handler: async (ctx, args) => {
-    return await upsertPolicyLink(ctx, args);
-  },
-});
-
 async function upsertPolicyLink(
   ctx: MutationCtx,
   args: {
@@ -417,26 +356,5 @@ export const getInternal = internalQuery({
   args: { holderId: v.id("certificateHolders") },
   handler: async (ctx, args) => {
     return await ctx.db.get(args.holderId);
-  },
-});
-
-export const legacyDedupeKey = internalQuery({
-  args: {
-    orgId: v.id("organizations"),
-    displayName: v.string(),
-    email: v.optional(v.string()),
-    address: v.optional(addressValidator),
-  },
-  handler: async (_ctx, args) => {
-    const normalizedEmail = normalizeCertificateHolderEmail(args.email);
-    const normalizedAddressKey = normalizeCertificateHolderAddress(
-      args.address,
-    );
-    return certificateHolderDedupeKey({
-      orgId: String(args.orgId),
-      displayName: args.displayName,
-      normalizedAddressKey,
-      normalizedEmail,
-    });
   },
 });

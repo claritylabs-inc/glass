@@ -39,7 +39,3 @@ export function workflowCommsPlan(args: {
     nextActionLabel: args.nextActionLabel,
   };
 }
-
-export function workflowToolMessage(outcome: WorkflowOutcome, channel: WorkflowChannel = "web") {
-  return renderWorkflowComms(outcome, channel);
-}
