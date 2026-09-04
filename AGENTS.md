@@ -188,6 +188,8 @@ Core layers:
 
 ## Primitive Catalog And Reuse Rules
 
+- Operator confirmation contention: each operator thread permits one live exact confirmation. Competing direct or MCP registered writes return the active confirmation as a structured block and terminate their own runs without executing; expired confirmations atomically close their confirmation, run, and audit state before a later write proceeds.
+
 Before adding a new shared component, backend helper, schema field, workflow, agent tool, or cross-cutting abstraction, search this catalog and the named owner files with `rg`. Extend the existing primitive when the semantics match. Add a new primitive only when the existing one would become unclear or misleading. When creating, deleting, or materially changing a primitive, update this section and the reusable local skill at `.agents/skills/spot-primitives/SKILL.md` in the same change.
 
 - Exact-confirmation preflight: `convex/lib/operatorAgentConfirmationPreflight.ts` validates every exact-confirmed operator tool before a confirmation is requested: exact IDs, client or broker ownership, cross-record links, policy activity, extraction state, source spans, feature-flag eligibility, dates, emails, and URLs. A bad reference fails as a correctable tool error instead of consuming an approval; the write still revalidates the same rules inside its transaction, idempotent replays of completed actions skip the preflight, and a registry test fails when an exact-confirmed tool has no preflight case.
