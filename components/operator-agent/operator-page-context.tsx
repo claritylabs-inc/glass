@@ -64,6 +64,23 @@ export function operatorPageContextFromPathname(
     };
   }
 
+  const clientSectionSummary: Record<string, string> = {
+    policies: "Client policies",
+    compliance: "Client compliance",
+  };
+  if (
+    segments[1] === "clients" &&
+    segments[2] &&
+    segments[3] &&
+    clientSectionSummary[segments[3]]
+  ) {
+    return {
+      pageType: `operator_client_${segments[3]}`,
+      entityId: segments[2],
+      summary: clientSectionSummary[segments[3]],
+    };
+  }
+
   if (segments[1] === "policies" && segments[2]) {
     return {
       pageType: "policy",

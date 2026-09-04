@@ -86,7 +86,11 @@ export default function OperatorClientPolicyDetailPage() {
           <p className={`text-foreground ${typeStyle("body.medium")}`}>
             Client not found
           </p>
-          <PillButton className="mt-4" href="/operator" variant="secondary">
+          <PillButton
+            className="mt-4"
+            href="/operator/clients"
+            variant="secondary"
+          >
             Back to clients
           </PillButton>
         </OperationalPanel>

@@ -160,7 +160,7 @@ export function OperatorSidebar({
         <SectionHeader label="Accounts" collapsed={collapsed} />
         <div className="flex flex-col gap-1">
           <SidebarMenuItem
-            href="/operator"
+            href="/operator/clients"
             label="Clients"
             icon={Users}
             active={active === "clients"}

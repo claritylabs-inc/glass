@@ -48,6 +48,7 @@ export default function OperatorThreadsPage() {
     limit: 100,
     archived: showArchived,
   });
+  const intents = useQuery(operatorAgentApi.listIntents, {});
   const threads = useMemo(
     () => normalizeOperatorAgentThreads(rawThreads),
     [rawThreads],
@@ -55,7 +56,11 @@ export default function OperatorThreadsPage() {
   const createThread = useMutation(operatorAgentApi.createThread);
   const archiveThread = useMutation(operatorAgentApi.archiveThread);
   const unarchiveThread = useMutation(operatorAgentApi.unarchiveThread);
+  const startIntent = useMutation(operatorAgentApi.startIntent);
   const [updatingThreadId, setUpdatingThreadId] = useState<string | null>(null);
+  const [launchingIntentId, setLaunchingIntentId] = useState<string | null>(
+    null,
+  );
 
   async function startThread() {
     try {
@@ -92,6 +97,22 @@ export default function OperatorThreadsPage() {
     }
   }
 
+  async function launchIntent(intentId: string) {
+    if (launchingIntentId) return;
+    setLaunchingIntentId(intentId);
+    try {
+      const result = await startIntent({ intentId });
+      controller?.setActiveThreadId(result.threadId);
+      router.push(`/operator/threads/${result.threadId}`);
+    } catch (error) {
+      toast.error(
+        getUserFacingErrorMessage(error, "Could not start the operator task"),
+      );
+    } finally {
+      setLaunchingIntentId(null);
+    }
+  }
+
   return (
     <AppShell
       actions={
@@ -123,10 +144,29 @@ export default function OperatorThreadsPage() {
             )
           }
         >
-          <TabsList variant="pill">
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="archived">Archived</TabsTrigger>
-          </TabsList>
+          <div className="flex flex-wrap items-center gap-2">
+            <TabsList variant="pill">
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="archived">Archived</TabsTrigger>
+            </TabsList>
+            <div className="flex flex-wrap gap-2 sm:ml-auto">
+              {intents?.map((intent) => (
+                <PillButton
+                  key={intent.id}
+                  type="button"
+                  size="compact"
+                  variant="secondary"
+                  disabled={launchingIntentId !== null}
+                  onClick={() => void launchIntent(intent.id)}
+                >
+                  {launchingIntentId === intent.id ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : null}
+                  {intent.label}
+                </PillButton>
+              ))}
+            </div>
+          </div>
         </Tabs>
 
         {rawThreads === undefined ? (

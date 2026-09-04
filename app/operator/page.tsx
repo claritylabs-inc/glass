@@ -1,3 +1,5 @@
-import OperatorClientsPage from "./clients/operator-clients-page";
+import { redirect } from "next/navigation";
 
-export default OperatorClientsPage;
+export default function OperatorPage() {
+  redirect("/operator/threads");
+}

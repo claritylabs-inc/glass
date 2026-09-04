@@ -48,12 +48,14 @@ import {
   operatorAgentApi,
   type OperatorAgentAttachment,
   type OperatorAgentConfirmation,
+  type OperatorAgentIntent,
   type OperatorAgentMessage,
   type OperatorAgentThreadDetail,
 } from "@/lib/operator-agent-api";
 import { formatDisplayDateTime } from "@/lib/date-format";
 import { uploadPromptFiles } from "@/lib/thread-prompt";
 import { typeStyle } from "@/lib/typography";
+import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 import { cn } from "@/lib/utils";
 import {
   operatorPageContextFromPathname,
@@ -63,18 +65,6 @@ import {
 } from "./operator-page-context";
 import { useOptionalOperatorAgent } from "./operator-agent-provider";
 import { OperatorThreadChannelIcon } from "./operator-thread-channel";
-
-const EMPTY_PROMPTS = [
-  "Find an account, policy, or operational issue",
-  "Make a change across the operator portal",
-  "Check system health and recent failures",
-];
-
-const CONTEXT_PROMPTS = [
-  "Summarize this page and flag anything that needs attention",
-  "Update this record from the information I provide",
-  "Show me the most useful next actions",
-];
 
 const OPERATOR_ATTACHMENT_MAX_FILES = 10;
 const OPERATOR_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
@@ -186,19 +176,19 @@ function ConfirmationArtifact({
 }
 
 function EmptyThread({
-  contextual,
+  intents,
+  launchingIntentId,
   onSelect,
 }: {
-  contextual: boolean;
-  onSelect: (prompt: string) => void;
+  intents: OperatorAgentIntent[] | undefined;
+  launchingIntentId: string | null;
+  onSelect: (intentId: string) => void;
 }) {
-  const prompts = contextual ? CONTEXT_PROMPTS : EMPTY_PROMPTS;
-
   return (
     <div className="flex min-h-full flex-col justify-center py-10">
       <LogoIcon className="mb-4 text-muted-foreground" size={24} static />
-      <h2 className={cn("text-foreground", typeStyle("heading.micro"))}>
-        What should I handle?
+      <h2 className={cn("text-foreground", typeStyle("body.medium"))}>
+        What do you need?
       </h2>
       <p
         className={cn(
@@ -206,23 +196,33 @@ function EmptyThread({
           typeStyle("caption.default"),
         )}
       >
-        I can investigate, update records, and run privileged operator tools.
-        You approve sensitive actions before they execute.
+        Pick a task or describe what you need. Sensitive actions still require
+        your approval.
       </p>
       <div className="mt-6 divide-y divide-border border-y border-border">
-        {prompts.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            onClick={() => onSelect(prompt)}
-            className={cn(
-              "w-full py-3 text-left text-muted-foreground transition-colors hover:text-foreground",
-              typeStyle("caption.medium"),
-            )}
-          >
-            {prompt}
-          </button>
-        ))}
+        {intents === undefined ? (
+          <div className="flex h-20 items-center justify-center">
+            <Spinner className="text-muted-foreground" />
+          </div>
+        ) : (
+          intents.map((intent) => (
+            <button
+              key={intent.id}
+              type="button"
+              disabled={launchingIntentId !== null}
+              onClick={() => onSelect(intent.id)}
+              className={cn(
+                "flex w-full items-center gap-2 py-3 text-left text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50",
+                typeStyle("caption.medium"),
+              )}
+            >
+              {launchingIntentId === intent.id ? (
+                <Spinner className="size-3.5" />
+              ) : null}
+              {intent.label}
+            </button>
+          ))
+        )}
       </div>
     </div>
   );
@@ -340,9 +340,7 @@ function OperatorMessageRow({
                 {content}
               </ProseMarkdown>
             ) : (
-              <p className="whitespace-pre-wrap wrap-anywhere">
-                {content}
-              </p>
+              <p className="whitespace-pre-wrap wrap-anywhere">{content}</p>
             )
           ) : null}
           {attachments}
@@ -357,9 +355,10 @@ function OperatorConversation({
   activeThreadId,
   loading,
   detail,
-  contextual,
+  intents,
+  launchingIntentId,
   confirmationBusyId,
-  onSelectPrompt,
+  onSelectIntent,
   onDecision,
   composer,
 }: {
@@ -367,9 +366,10 @@ function OperatorConversation({
   activeThreadId: string | null;
   loading: boolean;
   detail: OperatorAgentThreadDetail;
-  contextual: boolean;
+  intents: OperatorAgentIntent[] | undefined;
+  launchingIntentId: string | null;
   confirmationBusyId: string | null;
-  onSelectPrompt: (prompt: string) => void;
+  onSelectIntent: (intentId: string) => void;
   onDecision: (
     confirmation: OperatorAgentConfirmation,
     decision: "approve" | "reject",
@@ -418,7 +418,11 @@ function OperatorConversation({
               <Spinner className="text-muted-foreground" />
             </div>
           ) : detail.messages.length === 0 ? (
-            <EmptyThread contextual={contextual} onSelect={onSelectPrompt} />
+            <EmptyThread
+              intents={intents}
+              launchingIntentId={launchingIntentId}
+              onSelect={onSelectIntent}
+            />
           ) : (
             detail.messages.map((message) => (
               <Fragment key={message.id}>
@@ -474,6 +478,9 @@ export function OperatorAgentPanel({
   const [confirmationBusyId, setConfirmationBusyId] = useState<string | null>(
     null,
   );
+  const [launchingIntentId, setLaunchingIntentId] = useState<string | null>(
+    null,
+  );
   const rawThreads = useQuery(operatorAgentApi.listThreads, {
     limit: 40,
     archived: false,
@@ -498,6 +505,7 @@ export function OperatorAgentPanel({
   const sendMessage = useMutation(operatorAgentApi.sendMessage);
   const cancelRun = useMutation(operatorAgentApi.cancelRun);
   const confirmAction = useMutation(operatorAgentApi.confirmAction);
+  const startIntent = useMutation(operatorAgentApi.startIntent);
   const fallbackPageContext = useMemo(
     () => operatorPageContextFromPathname(pathname),
     [pathname],
@@ -532,6 +540,10 @@ export function OperatorAgentPanel({
     null;
   const retainedThreadContext = activeThread?.initialContext ?? null;
   const displayedPageContext = retainedThreadContext ?? availablePageContext;
+  const intents = useQuery(
+    operatorAgentApi.listIntents,
+    displayedPageContext ? { pageContext: displayedPageContext } : {},
+  );
   const running = detail.activeRun || submitting;
 
   useEffect(() => {
@@ -564,6 +576,39 @@ export function OperatorAgentPanel({
       );
     }
   }, [startNewThread]);
+
+  const launchIntent = useCallback(
+    async (intentId: string) => {
+      if (!controller || launchingIntentId) return;
+      setLaunchingIntentId(intentId);
+      try {
+        const result = await startIntent({
+          intentId,
+          ...(displayedPageContext
+            ? { pageContext: displayedPageContext }
+            : {}),
+          ...(activeThreadId && detail.messages.length === 0
+            ? { emptyThreadId: activeThreadId }
+            : {}),
+        });
+        controller.setActiveThreadId(result.threadId);
+      } catch (error) {
+        toast.error(
+          getUserFacingErrorMessage(error, "Could not start the operator task"),
+        );
+      } finally {
+        setLaunchingIntentId(null);
+      }
+    },
+    [
+      activeThreadId,
+      controller,
+      detail.messages.length,
+      displayedPageContext,
+      launchingIntentId,
+      startIntent,
+    ],
+  );
 
   const submit = useCallback(
     async (message: PromptInputMessage) => {
@@ -831,9 +876,10 @@ export function OperatorAgentPanel({
         activeThreadId={activeThreadId}
         loading={Boolean(activeThreadId && rawThread === undefined)}
         detail={detail}
-        contextual={Boolean(displayedPageContext)}
+        intents={intents}
+        launchingIntentId={launchingIntentId}
         confirmationBusyId={confirmationBusyId}
-        onSelectPrompt={(prompt) => promptRef.current?.setValueAndFocus(prompt)}
+        onSelectIntent={(intentId) => void launchIntent(intentId)}
         onDecision={(confirmation, decision) =>
           void decide(confirmation, decision)
         }

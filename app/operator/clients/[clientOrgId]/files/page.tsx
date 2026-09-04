@@ -85,7 +85,7 @@ export default function OperatorClientFilesPage() {
         <OperationalPanel>
           <OperationalPanelHeader title="Client not found" />
           <OperationalPanelBody>
-            <PillButton href="/operator" variant="secondary">
+            <PillButton href="/operator/clients" variant="secondary">
               Back to clients
             </PillButton>
           </OperationalPanelBody>

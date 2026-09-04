@@ -141,7 +141,7 @@ export function OperatorClientSidebar({
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
           <SidebarMenuItem
-            href="/operator"
+            href="/operator/clients"
             label="Clients"
             icon={ArrowLeft}
             active={false}
