@@ -840,6 +840,7 @@ function brokerNetworkStatus(value: unknown) {
     case "prospect":
     case "active":
     case "inactive":
+    case "blacklisted":
       return value;
     default:
       return undefined;
@@ -1628,7 +1629,8 @@ async function executeToolDomain(
       status:
         input.status === "prospect" ||
         input.status === "active" ||
-        input.status === "inactive"
+        input.status === "inactive" ||
+        input.status === "blacklisted"
           ? input.status
           : undefined,
       writingState: normalizedOptionalText(input.writingState),

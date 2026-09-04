@@ -20,6 +20,7 @@ const statusValidator = v.union(
   v.literal("prospect"),
   v.literal("active"),
   v.literal("inactive"),
+  v.literal("blacklisted"),
 );
 const addressValidator = v.object({
   street1: v.optional(v.string()),
@@ -199,7 +200,7 @@ export async function listBrokerProfiles(
   ctx: QueryCtx,
   args: {
     search?: string;
-    status?: "prospect" | "active" | "inactive";
+    status?: "prospect" | "active" | "inactive" | "blacklisted";
     writingState?: string;
     lineOfBusinessCode?: string;
     limit?: number;
@@ -238,7 +239,7 @@ export async function updateBrokerProfileByOperator(
   args: {
     operatorUserId: Id<"users">;
     brokerOrgId: Id<"organizations">;
-    networkStatus?: "prospect" | "active" | "inactive";
+    networkStatus?: "prospect" | "active" | "inactive" | "blacklisted";
     officeAddress?: Doc<"brokerProfiles">["officeAddress"];
     writingStates?: string[];
     lineOfBusinessCodes?: string[];
@@ -424,7 +425,7 @@ export async function createStandaloneBrokerByOperator(
     operatorUserId: Id<"users">;
     name: string;
     website?: string;
-    networkStatus?: "prospect" | "active" | "inactive";
+    networkStatus?: "prospect" | "active" | "inactive" | "blacklisted";
     officeAddress?: Doc<"brokerProfiles">["officeAddress"];
     writingStates?: string[];
     lineOfBusinessCodes?: string[];

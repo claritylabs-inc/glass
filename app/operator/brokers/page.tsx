@@ -33,7 +33,7 @@ import { formatDisplayDate } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 import { getUserFacingErrorMessage } from "@/lib/user-facing-error";
 
-type NetworkStatus = "prospect" | "active" | "inactive";
+type NetworkStatus = "prospect" | "active" | "inactive" | "blacklisted";
 type BrokerRow = {
   broker: {
     _id: Id<"organizations">;
@@ -70,6 +70,7 @@ const NETWORK_STATUS_LABELS: Record<NetworkStatus, string> = {
   prospect: "Prospect",
   active: "Active",
   inactive: "Inactive",
+  blacklisted: "Blacklisted",
 };
 
 export default function OperatorBrokersPage() {
@@ -238,9 +239,11 @@ export default function OperatorBrokersPage() {
                         tone={
                           row.profile?.networkStatus === "active"
                             ? "success"
-                            : row.profile?.networkStatus === "inactive"
-                              ? "neutral"
-                              : "warning"
+                            : row.profile?.networkStatus === "blacklisted"
+                              ? "danger"
+                              : row.profile?.networkStatus === "inactive"
+                                ? "neutral"
+                                : "warning"
                         }
                       >
                         {NETWORK_STATUS_LABELS[
