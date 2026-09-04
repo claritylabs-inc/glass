@@ -3234,7 +3234,7 @@ async function processJob(
         prepareLiteParseSource: async (converted) => {
           await logJob(
             job,
-            `LiteParse parsed PDF in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} hierarchical source spans`,
+            `LiteParse parsed PDF${converted.metadata.ocrRetried ? " after OCR retry" : ""} in ${converted.metadata.parsingMs ?? 0}ms; prepared ${converted.sourceSpans.length} hierarchical source spans`,
           );
           const supplementedSource = await supplementPreparedPdfSource(
             pdfBytes,
@@ -3456,8 +3456,14 @@ async function extractProposalDocument(
         maxFileSize: LITEPARSE_MAX_FILE_SIZE,
         priority: "full",
       }),
-    prepareLiteParseSource: async (converted) =>
-      supplementPreparedPdfSource(
+    prepareLiteParseSource: async (converted) => {
+      await logProposalJob(
+        job,
+        `LiteParse parsed ${document.fileName}${converted.metadata.ocrRetried ? " after OCR retry" : ""}; prepared ${converted.sourceSpans.length} hierarchical source spans`,
+        "info",
+        "parse",
+      );
+      return supplementPreparedPdfSource(
         pdfBytes,
         document.proposalDocumentId,
         {
@@ -3465,7 +3471,8 @@ async function extractProposalDocument(
           sourceChunks: converted.sourceChunks,
         },
         "attachment",
-      ),
+      );
+    },
     onLiteParseFailure: (error) =>
       logProposalJob(
         job,
@@ -3814,7 +3821,7 @@ async function processPreviewJob(
       sourceSpans = supplementedSource.sourceSpans;
       await logJob(
         job,
-        `LiteParse prepared ${converted.sourceSpans.length} spans plus ${supplementedSource.supplementCount} Poppler supplement${supplementedSource.supplementCount === 1 ? "" : "s"} for provisional extraction in ${converted.metadata.parsingMs ?? 0}ms`,
+        `LiteParse${converted.metadata.ocrRetried ? " OCR retry" : ""} prepared ${converted.sourceSpans.length} spans plus ${supplementedSource.supplementCount} Poppler supplement${supplementedSource.supplementCount === 1 ? "" : "s"} for provisional extraction in ${converted.metadata.parsingMs ?? 0}ms`,
         "info",
       );
     } catch (error) {

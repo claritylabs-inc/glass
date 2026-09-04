@@ -7,7 +7,15 @@ RUN apt-get update \
     libgl1 \
     libglib2.0-0 \
     poppler-utils \
+    tesseract-ocr-eng \
   && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+  tessdata_file="$(find /usr/share -name eng.traineddata -print -quit)"; \
+  test -n "$tessdata_file"; \
+  tessdata_dir="$(dirname "$tessdata_file")"; \
+  ln -s "$tessdata_dir" /usr/share/liteparse-tessdata
+ENV LITEPARSE_TESSDATA_PATH=/usr/share/liteparse-tessdata
 
 COPY package*.json ./
 RUN npm ci --include=optional --no-audit --no-fund --loglevel=error
