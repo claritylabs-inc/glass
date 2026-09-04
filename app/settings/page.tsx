@@ -49,18 +49,17 @@ export default function SettingsPage() {
       router.replace("/broker");
       return;
     }
-    if (
-      searchParams.get("section") === destination.section &&
-      searchParams.get("tab") === destination.tab
-    ) {
-      return;
-    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", destination.section);
-    params.set("tab", destination.tab);
-    router.replace(`/settings?${params.toString()}`);
+    // A single-tab page has nothing to disambiguate, so its tab stays out of the URL.
+    if (destination.page.tabs.length > 1) params.set("tab", destination.tab);
+    else params.delete("tab");
+    const next = params.toString();
+    if (next === searchParams.toString()) return;
+    router.replace(`/settings?${next}`);
   }, [
     currentOrg,
+    destination.page,
     destination.section,
     destination.tab,
     isBroker,
@@ -167,7 +166,7 @@ function SectionContent({
     }
     return <CertificateWorkflowSection />;
   }
-  if (section === "integrations") return <ConnectionsSection tab={tab} />;
+  if (section === "integrations") return <ConnectionsSection />;
   if (section === "mailboxes") return <EmailConnectionsSection />;
   return <BetaFeaturesSection />;
 }

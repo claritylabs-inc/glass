@@ -34,7 +34,7 @@ export function SettingsSidebarContent({
             {group.pages.map((item) => (
               <SidebarMenuItem
                 key={item.id}
-                href={`/settings?section=${item.id}&tab=${item.tabs[0].id}`}
+                href={`/settings?section=${item.id}`}
                 label={item.label}
                 icon={item.icon}
                 active={item.id === activeSettingsSection}

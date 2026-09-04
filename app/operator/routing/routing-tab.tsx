@@ -2,7 +2,6 @@
 
 import dayjs from "dayjs";
 import { useAction, useQuery } from "convex/react";
-import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
 import {
@@ -88,7 +87,7 @@ export function routeLabel(route: Route | null | undefined) {
   return route ? `${route.provider} / ${route.model}` : "None";
 }
 
-function actualRouteLabel(event: RoutingEvent) {
+export function actualRouteLabel(event: RoutingEvent) {
   if (event.provider && event.model) {
     return routeLabel({ provider: event.provider, model: event.model });
   }
@@ -730,15 +729,10 @@ export function RoutingTab({
   loadError,
   freezeLoading,
   setGlobalFreeze,
-  selectedEventId,
-  onSelectEvent,
 }: Pick<
   RouterDashboardState,
   "dashboard" | "loading" | "loadError" | "freezeLoading" | "setGlobalFreeze"
-> & {
-  selectedEventId?: string;
-  onSelectEvent: (event: RoutingEvent) => void;
-}) {
+>) {
   const events = useQuery(api.modelRoutingEvents.listRecent, { limit: 200 });
 
   const policies = useMemo(() => {
@@ -749,23 +743,11 @@ export function RoutingTab({
       .sort((left, right) => left.taskFamily.localeCompare(right.taskFamily));
   }, [dashboard?.policy.data]);
 
-  const recentEvents = useMemo(
-    () =>
-      (events ?? [])
-        .filter(
-          (event) =>
-            event.kind !== "run" ||
-            event.status === "error" ||
-            event.status === "incomplete",
-        )
-        .slice(0, 50),
-    [events],
-  );
   const recentRuns = useMemo(
     () => (events ?? []).filter((event) => event.kind === "run"),
     [events],
   );
-  const shadowMode = recentEvents.find(
+  const shadowMode = (events ?? []).find(
     (event) => event.routing?.shadowMode !== undefined,
   )?.routing?.shadowMode;
   const health = dashboard?.health.data;
@@ -1256,122 +1238,6 @@ export function RoutingTab({
         </>
       )}
 
-      <OperationalPanel>
-        <OperationalPanelHeader
-          title="Recent model activity"
-          description="Succeeded calls, incomplete responses, direct fallbacks, and run errors. Select a call to inspect its routing and usage."
-        />
-        {events === undefined ? (
-          <OperationalPanelBody className="flex h-24 items-center justify-center text-muted-foreground">
-            <Loader2 className="size-5 animate-spin" />
-          </OperationalPanelBody>
-        ) : recentEvents.length === 0 ? (
-          <OperationalPanelBody
-            className={`text-muted-foreground ${typeStyle("body.default")}`}
-          >
-            No routed model steps recorded yet.
-          </OperationalPanelBody>
-        ) : (
-          <div className="table-scrollbar overflow-x-auto">
-            <table
-              className={`w-full min-w-[1040px] text-left ${typeStyle("body.default")}`}
-            >
-              <thead
-                className={`border-b border-border text-muted-foreground ${typeStyle("label.table")}`}
-              >
-                <tr>
-                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
-                    Time
-                  </th>
-                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
-                    Result
-                  </th>
-                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
-                    Task / surface
-                  </th>
-                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
-                    Actual
-                  </th>
-                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
-                    Would choose
-                  </th>
-                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
-                    Request
-                  </th>
-                  <th className={`px-4 py-2.5 ${typeStyle("caption.default")}`}>
-                    Outcome
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {recentEvents.map((event) => {
-                  const outcome = routingEventOutcome(event);
-                  const summary = routingEventSummary(event);
-                  return (
-                    <tr
-                      key={event._id}
-                      className={cn(
-                        "transition-colors",
-                        selectedEventId === event._id && "bg-foreground/[0.03]",
-                      )}
-                    >
-                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                        {formatDisplayDateTime(event.timestamp)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <StatusTag tone={outcome.tone}>
-                          {outcome.label}
-                        </StatusTag>
-                      </td>
-                      <td className="px-4 py-2">
-                        <button
-                          type="button"
-                          aria-label={`Open ${event.task} call details`}
-                          onClick={() => onSelectEvent(event)}
-                          className="group flex w-full min-w-0 items-center justify-between gap-3 rounded-md px-2 py-1 text-left outline-none transition-colors hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-foreground/20"
-                        >
-                          <span className="min-w-0">
-                            <span
-                              className={`block truncate text-foreground ${typeStyle("body.medium")}`}
-                            >
-                              {event.task}
-                            </span>
-                            <span
-                              className={`block truncate text-muted-foreground ${typeStyle("caption.default")}`}
-                            >
-                              {event.channel}
-                              {event.step ? ` · step ${event.step}` : ""}
-                            </span>
-                          </span>
-                          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-active:translate-x-0.5 motion-reduce:transition-none" />
-                        </button>
-                      </td>
-                      <td className="px-4 py-3">
-                        {actualRouteLabel(event)}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {routeLabel(event.routing?.wouldHaveChosen)}
-                      </td>
-                      <td
-                        className={`max-w-48 truncate px-4 py-3 text-muted-foreground ${typeStyle("technical.codeCompact")}`}
-                        title={event.requestId}
-                      >
-                        {event.requestId ?? "—"}
-                      </td>
-                      <td
-                        className="max-w-64 truncate px-4 py-3 text-muted-foreground"
-                        title={summary}
-                      >
-                        {summary}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </OperationalPanel>
     </div>
   );
 }

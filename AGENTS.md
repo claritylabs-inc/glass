@@ -623,13 +623,15 @@ Outbound emails sent by Spot Agent are centralized in `convex/lib/emailSubagent.
 
 - `/policies` — list, detail, upload, re-extract, and generated certificate history.
 - Policy detail **Breakdown** includes save-on-change editing for key extracted fields, premium breakdown rows, taxes/fees, and coverage limit/deductible rows. Policy mutations are operator-managed; client members and connected vendor access remain read-only. Edits write through `policies.updateExtractedFields` and record `manual_policy_update` audit entries.
-- `/chat` — threaded assistant.
 - `/agent/thread/:id` — renders unified `threads` records. Legacy `webChats`, `webChatMessages`, and `agentConversations` backend tables/functions have been removed after migration to `threads` + `threadMessages`.
 - Proactive features that create a chat thread use `threads.createProactiveInternal` so the thread starts with an agent message explaining why Spot created it, what evidence or trigger was found, and what the user should do next. Proactive email drafts attach to that agent message via `pendingEmailId`, so the chat context and email card render together.
 - Chat artifact cards such as email drafts should keep meaningful visual presence. Sources and tool calls should stay compact and consistent in the message footer row: inline policy citations are small chips, footer source chips open the right-side preview, and tool call parameters expand only on demand.
 - Web chat email artifacts are visually attached to the assistant message that created them, not rendered as a separate standalone chat turn. Sent email artifacts use `View sent email` instead of draft language.
 - Automatic chat title generation lives in `convex/actions/threadTitle.ts`. It should use the initial user message plus `threads.initialContext` and attachments, prefer the user's work intent/deliverable, and avoid recipient names, email domains, usernames, or file IDs.
-- `/settings` — org settings, branding, members, and an **Integrations** section rendered as a coming-soon grid. The Merge.dev backend and all integration sync tables/actions have been removed; only the static grid remains.
+- `/settings` — one page per audience-neutral section (`?section=`), driven by `lib/settings-sections.ts`. Brokers redirect to `/broker` before render, so settings navigation models client orgs only. A section writes `?tab=` into the URL only when it has more than one tab. **Integrations** is a single page covering the MCP endpoint, Claude/ChatGPT/local-client setup, the CLI, and connected OAuth apps.
+- `/chat` is retired; threaded assistant surfaces live under `/agent/threads` and `/agent/thread/:id`.
+- Operator DevOps splits router configuration from observability: `/operator/routing` owns router state, task policies, models, and tools, and `/operator/telemetry` owns the paginated, searchable requirement-extraction and model-routing run logs. `modelRoutingEvents` renders in exactly one place — the telemetry Model routing tab — so do not add a second recent-activity table to the routing page.
+- Retired routes are deleted rather than kept as redirect shims. `/chat`, `/activity`, `/connections`, `/agent`, `/connected-orgs/*`, `/clients`, `/settings/notifications`, `/operator/models`, `/operator/tools`, and the operator client `/memory` path no longer resolve.
 
 ## MCP
 

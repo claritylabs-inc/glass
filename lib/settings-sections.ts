@@ -27,9 +27,7 @@ export type SettingsTabId =
   | "certificates"
   | "notifications"
   | "mailboxes"
-  | "mcp"
-  | "cli"
-  | "advanced"
+  | "integrations"
   | "beta";
 
 export type SettingsTab = {
@@ -96,11 +94,7 @@ export function getSettingsNavigation({
       id: "integrations",
       label: "Integrations",
       icon: Network,
-      tabs: [
-        { id: "mcp", label: "MCP" },
-        { id: "cli", label: "CLI" },
-        { id: "advanced", label: "Advanced" },
-      ],
+      tabs: [{ id: "integrations", label: "Integrations" }],
     },
     {
       id: "mailboxes",

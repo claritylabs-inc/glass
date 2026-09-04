@@ -33,6 +33,7 @@ import { formatDisplayDateTime } from "@/lib/date-format";
 import { typeStyle } from "@/lib/typography";
 import {
   RoutingEventDrawer,
+  actualRouteLabel,
   routeLabel,
   routingEventOutcome,
   routingEventSummary,
@@ -476,10 +477,9 @@ export default function OperatorTelemetryPage() {
                       <TableHead>Time</TableHead>
                       <TableHead>Result</TableHead>
                       <TableHead>Channel / task</TableHead>
-                      <TableHead>Route</TableHead>
-                      <TableHead>Transport</TableHead>
+                      <TableHead>Actual</TableHead>
+                      <TableHead>Would choose</TableHead>
                       <TableHead>Outcome</TableHead>
-                      <TableHead>Request</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -527,30 +527,15 @@ export default function OperatorTelemetryPage() {
                               <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-active:translate-x-0.5 motion-reduce:transition-none" />
                             </button>
                           </TableCell>
-                          <TableCell>
-                            {routeLabel(
-                              event.provider && event.model
-                                ? {
-                                    provider: event.provider,
-                                    model: event.model,
-                                  }
-                                : undefined,
-                            )}
-                          </TableCell>
+                          <TableCell>{actualRouteLabel(event)}</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {event.transport ?? "—"}
+                            {routeLabel(event.routing?.wouldHaveChosen)}
                           </TableCell>
                           <TableCell
                             className="max-w-80 truncate text-muted-foreground"
                             title={summary}
                           >
                             {summary}
-                          </TableCell>
-                          <TableCell
-                            className={`max-w-48 truncate text-muted-foreground ${typeStyle("technical.codeCompact")}`}
-                            title={event.requestId}
-                          >
-                            {event.requestId ?? "—"}
                           </TableCell>
                         </TableRow>
                       );
