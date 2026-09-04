@@ -121,11 +121,21 @@ export async function writeOperatorAudit(
     metadata?: unknown;
   },
 ) {
-  await ctx.db.insert("operatorAuditEvents", {
+  const metadata =
+    args.metadata && typeof args.metadata === "object"
+      ? (args.metadata as Record<string, unknown>)
+      : null;
+  const requestId =
+    typeof metadata?.requestId === "string"
+      ? (ctx.db.normalizeId("procurementRequests", metadata.requestId) ??
+        undefined)
+      : undefined;
+  return await ctx.db.insert("operatorAuditEvents", {
     operatorUserId: args.operatorUserId,
     type: args.type,
     targetOrgId: args.targetOrgId,
     targetUserId: args.targetUserId,
+    requestId,
     summary: args.summary,
     metadata: args.metadata,
     createdAt: dayjs().valueOf(),

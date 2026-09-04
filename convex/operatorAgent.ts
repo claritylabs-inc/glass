@@ -49,6 +49,7 @@ import {
   getProcurementRequestDetails,
   listProcurementEmailThreads,
   listProcurementRequestSummaries,
+  previewProcurementEmailReconciliation,
   updateProcurementEmailThreadByOperator,
   updateProcurementFileItemByOperator,
   updateProcurementOutreachByOperator,
@@ -56,10 +57,15 @@ import {
   writableProcurementRequestStatus,
 } from "./procurementRequests";
 import {
+  archiveProcurementProposalByOperator,
+  cancelProcurementProposalExtractionByOperator,
   confirmProcurementProposalReviewByOperator,
-  createProcurementProposalByOperator,
+  fileProcurementEmailQuoteByOperator,
+  fileProcurementProposalByOperator,
   getProcurementProposalDetails,
+  listProposalExtractionIssues,
   listProcurementProposals,
+  retryProcurementProposalExtractionByOperator,
   selectProcurementProposalByOperator,
 } from "./procurementProposals";
 import {
@@ -70,7 +76,12 @@ import {
 } from "./brokerProfiles";
 import { readOrgWiki, upsertOrgWikiSectionByOperator } from "./orgWiki";
 import {
+  listPacketLinksForOperator,
   listPacketSections,
+  mintPacketLinkForOperator,
+  previewBrokerPacket,
+  revokePacketLinkByOperator,
+  rotatePacketLinkByOperator,
   upsertPacketSectionByOperator,
 } from "./procurementPacket";
 import type { PacketAudience } from "./lib/procurementPacket";
@@ -794,6 +805,18 @@ function normalizeProcurementProposalReviewId(
   return id;
 }
 
+function normalizeProcurementPacketLinkId(
+  ctx: QueryCtx | MutationCtx,
+  value: unknown,
+) {
+  if (typeof value !== "string") {
+    throw new Error("Procurement packet link ID is required");
+  }
+  const id = ctx.db.normalizeId("procurementPacketLinks", value);
+  if (!id) throw new Error("Invalid procurement packet link ID");
+  return id;
+}
+
 function procurementOutreachStatus(value: unknown) {
   switch (value) {
     case "request_sent":
@@ -851,6 +874,17 @@ function procurementFileStatus(value: unknown) {
   }
 }
 
+function procurementFileBrokerRelease(value: unknown) {
+  switch (value) {
+    case "hidden":
+    case "listed":
+    case "attached":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
 function procurementEmailCategory(value: unknown) {
   switch (value) {
     case "broker":
@@ -880,25 +914,28 @@ function packetAudience(value: unknown): PacketAudience | undefined {
 
 const MAX_RESOLVABLE_THREAD_ATTACHMENTS = 50;
 
-async function resolveThreadAttachmentFileId(
+async function resolveThreadAttachment(
   ctx: MutationCtx,
   threadId: Id<"operatorAgentThreads">,
   value: unknown,
 ) {
   const reference = typeof value === "string" ? value.trim() : "";
-  const exact = reference
-    ? ctx.db.system.normalizeId("_storage", reference)
-    : null;
-  if (exact) return exact;
   const attachments = await ctx.db
     .query("operatorAgentAttachments")
     .withIndex("thread_file", (index) => index.eq("threadId", threadId))
     .take(MAX_RESOLVABLE_THREAD_ATTACHMENTS);
+  const exact = reference
+    ? ctx.db.system.normalizeId("_storage", reference)
+    : null;
+  if (exact) {
+    const match = attachments.find((attachment) => attachment.fileId === exact);
+    if (match) return match;
+  }
   const matches = attachments.filter(
     (attachment) =>
       attachment.filename.trim().toLowerCase() === reference.toLowerCase(),
   );
-  if (matches.length === 1) return matches[0]!.fileId;
+  if (matches.length === 1) return matches[0]!;
   const available = attachments
     .map((attachment) => attachment.filename)
     .join(", ");
@@ -907,6 +944,14 @@ async function resolveThreadAttachmentFileId(
       available ? `. This thread holds: ${available}` : ""
     }`,
   );
+}
+
+async function resolveThreadAttachmentFileId(
+  ctx: MutationCtx,
+  threadId: Id<"operatorAgentThreads">,
+  value: unknown,
+) {
+  return (await resolveThreadAttachment(ctx, threadId, value)).fileId;
 }
 
 async function requireOperatorThread(
@@ -1476,6 +1521,26 @@ async function executeToolDomain(
     });
   }
 
+  if (toolName === "preview_broker_packet") {
+    return await previewBrokerPacket(ctx, {
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      outreachId: normalizeProcurementOutreachId(
+        ctx,
+        input.procurementOutreachId,
+      ),
+    });
+  }
+
+  if (toolName === "list_broker_packet_links") {
+    return {
+      links: await listPacketLinksForOperator(
+        ctx,
+        normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      ),
+      secretsIncluded: false,
+    };
+  }
+
   if (toolName === "update_procurement_packet_section") {
     return await upsertPacketSectionByOperator(ctx, {
       operatorUserId: args.operatorUserId,
@@ -1590,6 +1655,13 @@ async function executeToolDomain(
     return thread;
   }
 
+  if (toolName === "preview_procurement_email_reconciliation") {
+    return await previewProcurementEmailReconciliation(
+      ctx,
+      normalizeProcurementEmailThreadId(ctx, input.procurementEmailThreadId),
+    );
+  }
+
   if (toolName === "list_extraction_issues") {
     const orgId = input.orgId
       ? normalizeOrganizationId(ctx, input.orgId)
@@ -1597,12 +1669,17 @@ async function executeToolDomain(
     if (orgId && !(await ctx.db.get(orgId))) {
       throw new Error("Organization not found");
     }
+    const requestedDomain =
+      input.domain === "policy" || input.domain === "proposal"
+        ? input.domain
+        : undefined;
     const requestedStatus =
       input.status === "error" ||
       input.status === "paused" ||
       input.status === "running" ||
       input.status === "queued" ||
-      input.status === "leased"
+      input.status === "leased" ||
+      input.status === "stuck"
         ? input.status
         : undefined;
     const limit = typeof input.limit === "number" ? input.limit : 15;
@@ -1619,45 +1696,75 @@ async function executeToolDomain(
           ? []
           : ["error", "paused"];
     const candidateLimit = Math.min(100, limit * 5);
-    const [pipelineRuns, queueRows] = await Promise.all([
-      Promise.all(
-        pipelineStatuses.map((status) =>
-          ctx.db
-            .query("policyExtractionRuns")
-            .withIndex("status_updated", (index) =>
-              index.eq("pipelineStatus", status),
-            )
-            .order("desc")
-            .take(candidateLimit),
-        ),
-      ),
-      queueStatus
-        ? ctx.db
-            .query("policyExtractionQueue")
-            .withIndex("status_updated", (index) =>
-              index.eq("status", queueStatus),
-            )
-            .order("desc")
-            .take(candidateLimit)
-        : requestedStatus
-          ? Promise.resolve([])
-          : Promise.all([
+    const inspectPolicies = requestedDomain !== "proposal";
+    const inspectProposals = requestedDomain !== "policy";
+    const [pipelineRuns, queueRows, proposalResult] = await Promise.all([
+      inspectPolicies
+        ? Promise.all(
+            pipelineStatuses.map((status) =>
               ctx.db
-                .query("policyExtractionQueue")
+                .query("policyExtractionRuns")
                 .withIndex("status_updated", (index) =>
-                  index.eq("status", "queued"),
+                  index.eq("pipelineStatus", status),
                 )
                 .order("desc")
                 .take(candidateLimit),
-              ctx.db
+            ),
+          )
+        : Promise.resolve([]),
+      inspectPolicies
+        ? requestedStatus === "stuck"
+          ? ctx.db
+              .query("policyExtractionQueue")
+              .withIndex("status_updated", (index) =>
+                index.eq("status", "leased"),
+              )
+              .order("desc")
+              .take(candidateLimit)
+          : queueStatus
+            ? ctx.db
                 .query("policyExtractionQueue")
                 .withIndex("status_updated", (index) =>
-                  index.eq("status", "leased"),
+                  index.eq("status", queueStatus),
                 )
                 .order("desc")
-                .take(candidateLimit),
-            ]).then((rows) => rows.flat()),
+                .take(candidateLimit)
+            : requestedStatus
+              ? Promise.resolve([])
+              : Promise.all([
+                  ctx.db
+                    .query("policyExtractionQueue")
+                    .withIndex("status_updated", (index) =>
+                      index.eq("status", "queued"),
+                    )
+                    .order("desc")
+                    .take(candidateLimit),
+                  ctx.db
+                    .query("policyExtractionQueue")
+                    .withIndex("status_updated", (index) =>
+                      index.eq("status", "leased"),
+                    )
+                    .order("desc")
+                    .take(candidateLimit),
+                ]).then((rows) => rows.flat())
+        : Promise.resolve([]),
+      inspectProposals &&
+      requestedStatus !== "paused" &&
+      requestedStatus !== "leased"
+        ? listProposalExtractionIssues(ctx, {
+            orgId,
+            status:
+              requestedStatus === "error" ||
+              requestedStatus === "queued" ||
+              requestedStatus === "running" ||
+              requestedStatus === "stuck"
+                ? requestedStatus
+                : undefined,
+            limit,
+          })
+        : Promise.resolve({ issues: [], bounded: false }),
     ]);
+    const now = dayjs().valueOf();
     const candidates = [
       ...pipelineRuns.flat().map((run) => ({
         policyId: run.policyId,
@@ -1672,12 +1779,21 @@ async function executeToolDomain(
       ...queueRows.map((row) => ({
         policyId: row.policyId,
         runId: row.runId,
-        status: row.status,
+        status:
+          row.status === "leased" &&
+          (row.leaseExpiresAt ?? Number.MAX_SAFE_INTEGER) <= now
+            ? ("stuck" as const)
+            : row.status,
         error: undefined,
         updatedAt: row.updatedAt,
         queue: { status: row.status, leaseExpiresAt: row.leaseExpiresAt },
       })),
-    ].sort((left, right) => right.updatedAt - left.updatedAt);
+    ]
+      .filter(
+        (candidate) =>
+          requestedStatus !== "stuck" || candidate.status === "stuck",
+      )
+      .sort((left, right) => right.updatedAt - left.updatedAt);
     const results = [];
     const seen = new Set<string>();
     for (const candidate of candidates) {
@@ -1688,6 +1804,7 @@ async function executeToolDomain(
       seen.add(String(candidate.policyId));
       const organization = policy.orgId ? await ctx.db.get(policy.orgId) : null;
       results.push({
+        domain: "policy" as const,
         policyId: policy._id,
         runId: candidate.runId,
         orgId: policy.orgId,
@@ -1699,9 +1816,26 @@ async function executeToolDomain(
         error: candidate.error,
         queue: candidate.queue,
         updatedAt: candidate.updatedAt,
+        recovery:
+          candidate.status === "error" || candidate.status === "stuck"
+            ? ("retry_failed_policy_extraction" as const)
+            : null,
       });
     }
-    return { issues: results, bounded: candidates.length > results.length };
+    const issues = [...results, ...proposalResult.issues]
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, limit);
+    return {
+      issues,
+      checkedDomains: [
+        ...(inspectPolicies ? (["policy"] as const) : []),
+        ...(inspectProposals ? (["proposal"] as const) : []),
+      ],
+      bounded:
+        candidates.length > results.length ||
+        proposalResult.bounded ||
+        results.length + proposalResult.issues.length > limit,
+    };
   }
 
   if (toolName === "get_routing_status") {
@@ -1949,18 +2083,143 @@ async function executeToolDomain(
     });
   }
 
-  if (toolName === "create_procurement_proposal") {
-    return await createProcurementProposalByOperator(ctx, {
+  if (toolName === "file_procurement_proposal") {
+    const clientFileIds = (stringList(input.clientFileIds) ?? []).map(
+      (value) => {
+        const id = ctx.db.normalizeId("clientFiles", value);
+        if (!id) throw new Error(`Invalid client file ID: ${value}`);
+        return id;
+      },
+    );
+    const fileItemIds = (stringList(input.procurementFileItemIds) ?? []).map(
+      (value) => normalizeProcurementFileItemId(ctx, value),
+    );
+    const attachments = await Promise.all(
+      (stringList(input.attachmentFileIds) ?? []).map((value) =>
+        resolveThreadAttachment(ctx, args.threadId, value),
+      ),
+    );
+    return await fileProcurementProposalByOperator(ctx, {
       operatorUserId: args.operatorUserId,
       requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
-      brokerOrgId: normalizeOrganizationId(ctx, input.brokerOrgId),
       outreachId: normalizeProcurementOutreachId(
         ctx,
         input.procurementOutreachId,
       ),
+      sources: [
+        ...clientFileIds.map((clientFileId) => ({
+          kind: "client_file" as const,
+          clientFileId,
+        })),
+        ...fileItemIds.map((fileItemId) => ({
+          kind: "file_item" as const,
+          fileItemId,
+        })),
+        ...attachments.map((attachment) => ({
+          kind: "thread_attachment" as const,
+          fileId: attachment.fileId,
+          fileName: attachment.filename,
+          contentType: attachment.contentType,
+        })),
+      ],
+      proposalId: input.procurementProposalId
+        ? normalizeProcurementProposalId(ctx, input.procurementProposalId)
+        : undefined,
       supersedesProposalId: input.supersedesProposalId
         ? normalizeProcurementProposalId(ctx, input.supersedesProposalId)
         : undefined,
+    });
+  }
+
+  if (toolName === "file_procurement_email_quote") {
+    return await fileProcurementEmailQuoteByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      emailThreadId: normalizeProcurementEmailThreadId(
+        ctx,
+        input.procurementEmailThreadId,
+      ),
+      outreachId: normalizeProcurementOutreachId(
+        ctx,
+        input.procurementOutreachId,
+      ),
+      clientFileIds: stringList(input.clientFileIds)?.map((value) =>
+        normalizeClientFileId(ctx, value),
+      ),
+      supersedesProposalId: input.supersedesProposalId
+        ? normalizeProcurementProposalId(ctx, input.supersedesProposalId)
+        : undefined,
+    });
+  }
+
+  if (toolName === "archive_procurement_proposal") {
+    return await archiveProcurementProposalByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      proposalId: normalizeProcurementProposalId(
+        ctx,
+        input.procurementProposalId,
+      ),
+      reason: normalizedOptionalText(input.reason),
+    });
+  }
+
+  if (toolName === "retry_procurement_proposal_extraction") {
+    return await retryProcurementProposalExtractionByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      proposalId: normalizeProcurementProposalId(
+        ctx,
+        input.procurementProposalId,
+      ),
+    });
+  }
+
+  if (toolName === "cancel_procurement_proposal_extraction") {
+    return await cancelProcurementProposalExtractionByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      proposalId: normalizeProcurementProposalId(
+        ctx,
+        input.procurementProposalId,
+      ),
+    });
+  }
+
+  if (toolName === "create_broker_packet_link") {
+    return await mintPacketLinkForOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      requestId: normalizeProcurementRequestId(ctx, input.procurementRequestId),
+      outreachId: normalizeProcurementOutreachId(
+        ctx,
+        input.procurementOutreachId,
+      ),
+      recipientLabel: normalizedOptionalText(input.recipientLabel) ?? "",
+      recipientEmail: normalizedOptionalText(input.recipientEmail),
+      expiresInDays:
+        typeof input.expiresInDays === "number"
+          ? input.expiresInDays
+          : undefined,
+    });
+  }
+
+  if (toolName === "rotate_broker_packet_link") {
+    return await rotatePacketLinkByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      linkId: normalizeProcurementPacketLinkId(
+        ctx,
+        input.procurementPacketLinkId,
+      ),
+      expiresInDays:
+        typeof input.expiresInDays === "number"
+          ? input.expiresInDays
+          : undefined,
+    });
+  }
+
+  if (toolName === "revoke_broker_packet_link") {
+    return await revokePacketLinkByOperator(ctx, {
+      operatorUserId: args.operatorUserId,
+      linkId: normalizeProcurementPacketLinkId(
+        ctx,
+        input.procurementPacketLinkId,
+      ),
     });
   }
 
@@ -2090,6 +2349,11 @@ async function executeToolDomain(
       purpose: procurementFilePurpose(input.purpose),
       label: typeof input.label === "string" ? input.label : "",
       status: procurementFileStatus(input.status),
+      brokerRelease: procurementFileBrokerRelease(input.brokerRelease),
+      clientVisible:
+        typeof input.clientVisible === "boolean"
+          ? input.clientVisible
+          : undefined,
       notes: normalizedOptionalText(input.notes),
       source: "agent",
     });
@@ -2120,6 +2384,11 @@ async function executeToolDomain(
           : procurementFilePurpose(input.purpose),
       label: typeof input.label === "string" ? input.label : undefined,
       status: procurementFileStatus(input.status),
+      brokerRelease: procurementFileBrokerRelease(input.brokerRelease),
+      clientVisible:
+        typeof input.clientVisible === "boolean"
+          ? input.clientVisible
+          : undefined,
       notes: input.notes === null ? null : normalizedOptionalText(input.notes),
       source: "agent",
     });
@@ -2406,6 +2675,54 @@ async function executeToolActionDomain(
       },
     );
     return normalizeOperatorCoiBatch(batch);
+  }
+
+  if (args.toolName === "generate_procurement_proposal_review") {
+    return {
+      result: await ctx.runAction(
+        internal.actions.proposalReview.generateReviewInternal,
+        {
+          operatorUserId: args.operatorUserId,
+          proposalId: String(
+            args.input.procurementProposalId,
+          ) as Id<"procurementProposals">,
+        },
+      ),
+    };
+  }
+
+  if (args.toolName === "send_broker_packet") {
+    return {
+      result: await ctx.runAction(
+        internal.actions.procurementPacketSend.sendInternal,
+        {
+          operatorUserId: args.operatorUserId,
+          requestId: String(
+            args.input.procurementRequestId,
+          ) as Id<"procurementRequests">,
+          outreachId: String(
+            args.input.procurementOutreachId,
+          ) as Id<"procurementBrokerOutreaches">,
+          expiresInDays:
+            typeof args.input.expiresInDays === "number"
+              ? args.input.expiresInDays
+              : undefined,
+        },
+      ),
+    };
+  }
+
+  if (args.toolName === "create_client_organization") {
+    return {
+      result: await ctx.runAction(
+        internal.operator.createClientWithoutUsersForAgentInternal,
+        {
+          operatorUserId: args.operatorUserId,
+          name: String(args.input.name),
+          website: normalizedOptionalText(args.input.website),
+        },
+      ),
+    };
   }
 
   throw new Error(`Unsupported operator action tool: ${args.toolName}`);

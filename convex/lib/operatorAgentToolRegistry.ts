@@ -92,6 +92,10 @@ const procurementProposalReviewId = z
   .string()
   .min(1)
   .describe("Exact procurement proposal review ID");
+const procurementPacketLinkId = z
+  .string()
+  .min(1)
+  .describe("Exact broker packet magic-link ID");
 const procurementRequestStatus = z.enum([
   "draft",
   "submitted",
@@ -138,6 +142,7 @@ const procurementFileStatus = z.enum([
   "sent",
   "received",
 ]);
+const procurementFileBrokerRelease = z.enum(["hidden", "listed", "attached"]);
 const procurementEmailCategory = z.enum([
   "broker",
   "client",
@@ -452,6 +457,41 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) =>
       `Read the packet for procurement request ${input.procurementRequestId}`,
   }),
+  preview_broker_packet: defineOperatorTool({
+    version: 1,
+    description:
+      "Preview the exact broker-visible sections and released artifacts for one procurement outreach without creating a magic link or sending email.",
+    inputSchema: z.object({
+      procurementRequestId,
+      procurementOutreachId,
+    }),
+    capability: "operator.procurement.read",
+    effect: "read",
+    requiredRole: "operator",
+    confirmation: "none",
+    target: (input) => ({
+      kind: "procurement_broker_outreach",
+      id: input.procurementOutreachId,
+    }),
+    summarize: (input) =>
+      `Preview the broker packet for outreach ${input.procurementOutreachId} on request ${input.procurementRequestId}`,
+  }),
+  list_broker_packet_links: defineOperatorTool({
+    version: 1,
+    description:
+      "List broker packet magic links for one procurement request, including recipient, snapshot counts, expiry, revocation, delivery, staleness, and view activity. Link secrets are never returned after creation.",
+    inputSchema: z.object({ procurementRequestId }),
+    capability: "operator.procurement.read",
+    effect: "read",
+    requiredRole: "operator",
+    confirmation: "none",
+    target: (input) => ({
+      kind: "procurement_request",
+      id: input.procurementRequestId,
+    }),
+    summarize: (input) =>
+      `List broker packet links for request ${input.procurementRequestId}`,
+  }),
   update_procurement_packet_section: defineOperatorTool({
     version: 1,
     description:
@@ -621,6 +661,22 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) =>
       `Read procurement email thread ${input.procurementEmailThreadId}`,
   }),
+  preview_procurement_email_reconciliation: defineOperatorTool({
+    version: 1,
+    description:
+      "Preview how one imported procurement email thread maps to its request, canonical attachments, and broker outreach contacts. Returns only an exact filing next action when one contact match is unambiguous; it never files a proposal by itself.",
+    inputSchema: z.object({ procurementEmailThreadId }),
+    capability: "operator.procurement.read",
+    effect: "read",
+    requiredRole: "operator",
+    confirmation: "none",
+    target: (input) => ({
+      kind: "procurement_email_thread",
+      id: input.procurementEmailThreadId,
+    }),
+    summarize: (input) =>
+      `Preview reconciliation for procurement email thread ${input.procurementEmailThreadId}`,
+  }),
   get_policy_status: defineOperatorTool({
     version: 1,
     description:
@@ -646,13 +702,14 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) => `Validate address ${JSON.stringify(input.query)}`,
   }),
   list_extraction_issues: defineOperatorTool({
-    version: 1,
+    version: 2,
     description:
-      "List bounded policy extraction failures, paused runs, or active queue work, optionally scoped to one exact organization.",
+      "List bounded policy and procurement-proposal extraction failures, paused work, expired leases, or active queue work. The response identifies every checked extraction domain.",
     inputSchema: z.object({
       orgId: omittable(organizationId),
+      domain: omittable(z.enum(["policy", "proposal"])),
       status: omittable(
-        z.enum(["error", "paused", "running", "queued", "leased"]),
+        z.enum(["error", "paused", "running", "queued", "leased", "stuck"]),
       ),
       limit: omittable(z.number().int().min(1).max(25)),
     }),
@@ -665,7 +722,7 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
         ? { kind: "organization", id: input.orgId }
         : { kind: "platform", id: "extractions" },
     summarize: (input) =>
-      `List ${input.status ?? "problematic"} extraction work${input.orgId ? ` for organization ${input.orgId}` : ""}`,
+      `List ${input.status ?? "problematic"} ${input.domain ?? "all-domain"} extraction work${input.orgId ? ` for organization ${input.orgId}` : ""}`,
   }),
   get_routing_status: defineOperatorTool({
     version: 1,
@@ -876,16 +933,37 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) =>
       `Update procurement request ${input.procurementRequestId}`,
   }),
-  create_procurement_proposal: defineOperatorTool({
+  file_procurement_proposal: defineOperatorTool({
     version: 1,
     description:
-      "Create one operator-private proposal for an exact procurement request, broker organization, and matching outreach. A revision may reference the exact superseded proposal.",
-    inputSchema: z.object({
-      procurementRequestId,
-      brokerOrgId: organizationId,
-      procurementOutreachId,
-      supersedesProposalId: omittable(procurementProposalId),
-    }),
+      "Atomically file one broker quote from existing client artifacts, procurement file items, or attachments in this Spot-agent conversation. The command reuses one active proposal per outreach, deduplicates documents by content, creates canonical artifact associations, queues extraction, and safely converges when replayed.",
+    inputSchema: z
+      .object({
+        procurementRequestId,
+        procurementOutreachId,
+        clientFileIds: omittable(z.array(clientFileId).max(20)),
+        procurementFileItemIds: omittable(
+          z.array(procurementFileItemId).max(20),
+        ),
+        attachmentFileIds: omittable(
+          z
+            .array(z.string().min(1))
+            .max(20)
+            .describe(
+              "Exact storage IDs or filenames of attachments in this Spot-agent conversation",
+            ),
+        ),
+        procurementProposalId: omittable(procurementProposalId),
+        supersedesProposalId: omittable(procurementProposalId),
+      })
+      .refine(
+        (input) =>
+          (input.clientFileIds?.length ?? 0) +
+            (input.procurementFileItemIds?.length ?? 0) +
+            (input.attachmentFileIds?.length ?? 0) >
+          0,
+        "At least one proposal artifact or conversation attachment is required",
+      ),
     capability: "operator.procurement.write",
     effect: "reversible_write",
     requiredRole: "operator",
@@ -895,7 +973,181 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       id: input.procurementRequestId,
     }),
     summarize: (input) =>
-      `Create a private proposal for procurement request ${input.procurementRequestId} from broker ${input.brokerOrgId}`,
+      `File a private proposal for outreach ${input.procurementOutreachId} on request ${input.procurementRequestId}`,
+  }),
+  file_procurement_email_quote: defineOperatorTool({
+    version: 1,
+    description:
+      "Atomically file the active canonical attachments from one imported procurement email thread as the quote for an exact outreach, optionally narrowed to chosen attachments. The command preserves email provenance, deduplicates artifacts, queues extraction, and converges on replay.",
+    inputSchema: z.object({
+      procurementEmailThreadId,
+      procurementOutreachId,
+      clientFileIds: omittable(
+        z
+          .array(clientFileId)
+          .max(20)
+          .describe(
+            "Attachments to file. Omit to file every active attachment on the thread; narrow it to skip signatures and logos.",
+          ),
+      ),
+      supersedesProposalId: omittable(procurementProposalId),
+    }),
+    capability: "operator.procurement.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_email_thread",
+      id: input.procurementEmailThreadId,
+    }),
+    summarize: (input) =>
+      `File attachments from procurement email thread ${input.procurementEmailThreadId} for outreach ${input.procurementOutreachId}`,
+  }),
+  archive_procurement_proposal: defineOperatorTool({
+    version: 1,
+    description:
+      "Archive one private procurement proposal, or delete it when it is an empty draft with no extraction history. Selected proposals must be deselected by selecting another reviewed proposal first.",
+    inputSchema: z.object({
+      procurementProposalId,
+      reason: omittable(z.string().max(1_000)),
+    }),
+    capability: "operator.procurement.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_proposal",
+      id: input.procurementProposalId,
+    }),
+    summarize: (input) =>
+      `Archive procurement proposal ${input.procurementProposalId}`,
+  }),
+  retry_procurement_proposal_extraction: defineOperatorTool({
+    version: 1,
+    description:
+      "Queue a fresh extraction job for one draft, failed, stuck, or review-ready procurement proposal, preserving prior attempt history.",
+    inputSchema: z.object({ procurementProposalId }),
+    capability: "operator.extractions.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_proposal",
+      id: input.procurementProposalId,
+    }),
+    summarize: (input) =>
+      `Retry extraction for procurement proposal ${input.procurementProposalId}`,
+  }),
+  cancel_procurement_proposal_extraction: defineOperatorTool({
+    version: 1,
+    description:
+      "Cancel pending or running extraction jobs for one procurement proposal and return it to draft for a later retry.",
+    inputSchema: z.object({ procurementProposalId }),
+    capability: "operator.extractions.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_proposal",
+      id: input.procurementProposalId,
+    }),
+    summarize: (input) =>
+      `Cancel extraction for procurement proposal ${input.procurementProposalId}`,
+  }),
+  generate_procurement_proposal_review: defineOperatorTool({
+    version: 1,
+    description:
+      "Generate and save a source-backed review of one extracted procurement proposal against the exact current broker-visible packet.",
+    inputSchema: z.object({ procurementProposalId }),
+    capability: "operator.procurement.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    execution: "action",
+    target: (input) => ({
+      kind: "procurement_proposal",
+      id: input.procurementProposalId,
+    }),
+    summarize: (input) =>
+      `Generate a packet review for procurement proposal ${input.procurementProposalId}`,
+  }),
+  create_broker_packet_link: defineOperatorTool({
+    version: 1,
+    description:
+      "Create a revocable, expiring magic link containing an immutable snapshot of the broker-visible packet for one outreach. This does not send email; the returned URL is shown only once.",
+    inputSchema: z.object({
+      procurementRequestId,
+      procurementOutreachId,
+      recipientLabel: omittable(z.string().max(200)),
+      recipientEmail: omittable(z.string().max(320)),
+      expiresInDays: omittable(z.number().int().min(1).max(90)),
+    }),
+    capability: "operator.procurement.write",
+    effect: "access_change",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_broker_outreach",
+      id: input.procurementOutreachId,
+    }),
+    summarize: (input) =>
+      `Create a broker packet magic link for outreach ${input.procurementOutreachId}`,
+  }),
+  send_broker_packet: defineOperatorTool({
+    version: 1,
+    description:
+      "Create a snapshot-bound broker packet magic link and send it to the outreach's saved contact email. Returns the exact delivery result and audit identifiers.",
+    inputSchema: z.object({
+      procurementRequestId,
+      procurementOutreachId,
+      expiresInDays: omittable(z.number().int().min(1).max(90)),
+    }),
+    capability: "operator.procurement.write",
+    effect: "external_send",
+    requiredRole: "operator",
+    confirmation: "exact",
+    execution: "action",
+    target: (input) => ({
+      kind: "procurement_broker_outreach",
+      id: input.procurementOutreachId,
+    }),
+    summarize: (input) =>
+      `Send the broker packet for request ${input.procurementRequestId} to outreach ${input.procurementOutreachId}`,
+  }),
+  rotate_broker_packet_link: defineOperatorTool({
+    version: 1,
+    description:
+      "Revoke one broker packet magic link and create a replacement snapshot-bound link. The new URL is shown only once and is not emailed.",
+    inputSchema: z.object({
+      procurementPacketLinkId,
+      expiresInDays: omittable(z.number().int().min(1).max(90)),
+    }),
+    capability: "operator.procurement.write",
+    effect: "access_change",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_packet_link",
+      id: input.procurementPacketLinkId,
+    }),
+    summarize: (input) =>
+      `Rotate broker packet link ${input.procurementPacketLinkId}`,
+  }),
+  revoke_broker_packet_link: defineOperatorTool({
+    version: 1,
+    description:
+      "Immediately revoke one exact broker packet magic link. Every packet and attachment request revalidates revocation.",
+    inputSchema: z.object({ procurementPacketLinkId }),
+    capability: "operator.procurement.write",
+    effect: "access_change",
+    requiredRole: "operator",
+    confirmation: "exact",
+    target: (input) => ({
+      kind: "procurement_packet_link",
+      id: input.procurementPacketLinkId,
+    }),
+    summarize: (input) =>
+      `Revoke broker packet link ${input.procurementPacketLinkId}`,
   }),
   confirm_procurement_proposal_review: defineOperatorTool({
     version: 1,
@@ -1054,6 +1306,8 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
       purpose: procurementFilePurpose,
       label: z.string().min(1).max(300),
       status: omittable(procurementFileStatus),
+      brokerRelease: omittable(procurementFileBrokerRelease),
+      clientVisible: omittable(z.boolean()),
       notes: omittable(z.string().max(20_000)),
     }),
     capability: "operator.procurement.write",
@@ -1079,6 +1333,8 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
         purpose: omittable(procurementFilePurpose),
         label: omittable(z.string().min(1).max(300)),
         status: omittable(procurementFileStatus),
+        brokerRelease: omittable(procurementFileBrokerRelease),
+        clientVisible: omittable(z.boolean()),
         notes: clearable(z.string().max(20_000)),
       })
       .refine(
@@ -1123,6 +1379,23 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     }),
     summarize: (input) =>
       `Update procurement email thread ${input.procurementEmailThreadId}`,
+  }),
+  create_client_organization: defineOperatorTool({
+    version: 1,
+    description:
+      "Create one standalone client organization without provisioning users. Use the returned exact organization ID to create its procurement request. Exact-name duplicates are rejected.",
+    inputSchema: z.object({
+      name: z.string().min(1).max(200),
+      website: omittable(z.string().max(500)),
+    }),
+    capability: "operator.organizations.write",
+    effect: "reversible_write",
+    requiredRole: "operator",
+    confirmation: "exact",
+    execution: "action",
+    target: () => ({ kind: "platform", id: "clients" }),
+    summarize: (input) =>
+      `Create standalone client ${JSON.stringify(input.name)}`,
   }),
   update_organization_profile: defineOperatorTool({
     version: 1,

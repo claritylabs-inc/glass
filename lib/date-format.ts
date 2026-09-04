@@ -78,3 +78,27 @@ export function formatDisplayDateTimeWithSeconds(
 ) {
   return formatDisplayValue(value, DISPLAY_DATE_TIME_SECONDS_FORMAT, fallback);
 }
+
+const UTC_DATE_TIME_PARTS = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+  timeZone: "UTC",
+});
+
+/** Same shape as {@link formatDisplayDateTime} but pinned to UTC, so a value
+ * rendered on the server and rehydrated in the browser reads identically. */
+export function formatDisplayDateTimeUtc(
+  value: DisplayDateValue,
+  fallback = "",
+) {
+  const parsed = parseDisplayDate(value);
+  if (!parsed) return fallback;
+  const parts = UTC_DATE_TIME_PARTS.formatToParts(parsed.valueOf());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+  return `${part("month")} ${part("day")}, ${part("year")} at ${part("hour")}:${part("minute")} ${part("dayPeriod")} UTC`;
+}

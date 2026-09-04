@@ -21,6 +21,8 @@ import {
 } from "./lib/clientFileNames";
 import {
   assertNoOperatorImpersonation,
+  findReusableClientFileByContent,
+  normalizeClientFileSha256,
   requireClientOrganization,
   requireDirectOperatorClientWrite,
   requirePolicyForClient,
@@ -343,6 +345,41 @@ export const registerUpload = mutation({
       args.contentType || metadata.contentType || "application/octet-stream",
     );
     const now = dayjs().valueOf();
+    const sha256 = normalizeClientFileSha256(metadata.sha256);
+    const contentMatch = await findReusableClientFileByContent(ctx, {
+      orgId: organization._id,
+      sha256,
+      policyId: args.policyId,
+    });
+    if (contentMatch) {
+      await ctx.storage.delete(args.fileId);
+      await ctx.db.delete(intent._id);
+      const clientVisible = contentMatch.clientVisible || args.clientVisible;
+      const policyId = contentMatch.policyId ?? args.policyId;
+      if (
+        clientVisible !== contentMatch.clientVisible ||
+        policyId !== contentMatch.policyId
+      )
+        await ctx.db.patch(contentMatch._id, {
+          clientVisible,
+          policyId,
+          updatedAt: now,
+        });
+      await writeOperatorAudit(ctx, {
+        operatorUserId: operator.userId,
+        type: "setup_write",
+        targetOrgId: organization._id,
+        summary: `Reused ${contentMatch.name} for ${organization.name}`,
+        metadata: {
+          domain: "client_files",
+          clientFileId: contentMatch._id,
+          deduplicatedUpload: true,
+          policyId,
+          clientVisible,
+        },
+      });
+      return { clientFileId: contentMatch._id, status: "reused" as const };
+    }
     const clientFileId = await ctx.db.insert("clientFiles", {
       orgId: organization._id,
       fileId: args.fileId,
@@ -350,6 +387,7 @@ export const registerUpload = mutation({
       originalName,
       contentType,
       size: metadata.size,
+      sha256,
       clientVisible: args.clientVisible,
       policyId: args.policyId,
       uploadedByUserId: operator.userId,
@@ -378,7 +416,7 @@ export const registerUpload = mutation({
         clientVisible: args.clientVisible,
       },
     });
-    return { clientFileId };
+    return { clientFileId, status: "created" as const };
   },
 });
 

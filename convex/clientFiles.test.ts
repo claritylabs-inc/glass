@@ -203,6 +203,43 @@ describe("client files", () => {
     await expect(
       fixture.t.run((ctx) => ctx.db.get(upload.uploadIntentId)),
     ).resolves.toBeNull();
+
+    const replayFileId = await fixture.t.run((ctx) =>
+      ctx.storage.store(
+        new Blob(["Roof inspection report for 123 Main Street"], {
+          type: "text/plain",
+        }),
+      ),
+    );
+    const replayUpload = await operator.mutation(
+      api.clientFiles.generateUploadUrl,
+      { clientOrgId: fixture.clientOrgId },
+    );
+    const replay = await operator.mutation(api.clientFiles.registerUpload, {
+      uploadIntentId: replayUpload.uploadIntentId,
+      fileId: replayFileId,
+      originalName: "duplicate-roof-report.txt",
+      contentType: "text/plain",
+      clientVisible: false,
+      policyId: fixture.policyId,
+    });
+    expect(replay).toEqual({
+      clientFileId: registered.clientFileId,
+      status: "reused",
+    });
+    await expect(
+      fixture.t.run((ctx) => ctx.storage.get(replayFileId)),
+    ).resolves.toBeNull();
+    await expect(
+      fixture.t.run((ctx) =>
+        ctx.db
+          .query("clientFiles")
+          .withIndex("organization", (query) =>
+            query.eq("orgId", fixture.clientOrgId),
+          )
+          .collect(),
+      ),
+    ).resolves.toHaveLength(1);
   });
 
   test("shows private files only to operators and protects their URLs", async () => {

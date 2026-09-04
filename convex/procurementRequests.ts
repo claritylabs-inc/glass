@@ -86,6 +86,12 @@ const fileStatusValidator = v.union(
   v.literal("received"),
 );
 
+const releaseValidator = v.union(
+  v.literal("hidden"),
+  v.literal("listed"),
+  v.literal("attached"),
+);
+
 const emailCategoryValidator = v.union(
   v.literal("broker"),
   v.literal("client"),
@@ -360,6 +366,83 @@ async function requestRow(ctx: Ctx, request: Doc<"procurementRequests">) {
   };
 }
 
+const TIMELINE_LIMIT = 40;
+
+export type ProcurementTimelineEntry = {
+  key: string;
+  kind: "operator" | "email" | "file" | "proposal" | "outreach";
+  summary: string;
+  detail?: string;
+  createdAt: number;
+};
+
+/** One request-scoped stream over every surface an operator has to reconcile:
+ * operator writes, imported email, request files, outreach, and proposals.
+ * Each entry is a stored record's own timestamp, never a reconstructed one. */
+function buildRequestTimeline(args: {
+  auditEvents: Array<{ _id: string; summary: string; createdAt: number }>;
+  emailThreads: Doc<"procurementEmailThreads">[];
+  fileItems: Array<{
+    _id: Id<"procurementFileItems">;
+    label: string;
+    status: string;
+    updatedAt: number;
+    clientFile: { uploadedBySide?: string } | null;
+  }>;
+  outreaches: Doc<"procurementBrokerOutreaches">[];
+  proposals: Doc<"procurementProposals">[];
+}): ProcurementTimelineEntry[] {
+  const brokerNameByOutreach = new Map(
+    args.outreaches.map((outreach) => [
+      String(outreach._id),
+      outreach.brokerName,
+    ]),
+  );
+  const readable = (value: string) => value.replaceAll("_", " ");
+  const entries: ProcurementTimelineEntry[] = [
+    ...args.auditEvents.map((event) => ({
+      key: `operator:${event._id}`,
+      kind: "operator" as const,
+      summary: event.summary,
+      createdAt: event.createdAt,
+    })),
+    ...args.emailThreads.map((thread) => ({
+      key: `email:${thread._id}`,
+      kind: "email" as const,
+      summary: thread.subject,
+      detail: `${thread.messageCount} ${thread.messageCount === 1 ? "message" : "messages"} · ${readable(thread.category)}`,
+      createdAt: thread.latestMessageAt,
+    })),
+    ...args.fileItems.map((item) => ({
+      key: `file:${item._id}`,
+      kind: "file" as const,
+      summary:
+        item.status === "requested"
+          ? `Requested ${item.label}`
+          : item.clientFile?.uploadedBySide === "client"
+            ? `Client provided ${item.label}`
+            : `${item.label} ${readable(item.status)}`,
+      createdAt: item.updatedAt,
+    })),
+    ...args.outreaches.map((outreach) => ({
+      key: `outreach:${outreach._id}`,
+      kind: "outreach" as const,
+      summary: `${outreach.brokerName} outreach ${readable(outreach.status)}`,
+      detail: outreach.contactName ?? outreach.contactEmail ?? undefined,
+      createdAt: outreach.updatedAt,
+    })),
+    ...args.proposals.map((proposal) => ({
+      key: `proposal:${proposal._id}`,
+      kind: "proposal" as const,
+      summary: `${brokerNameByOutreach.get(String(proposal.outreachId)) ?? "Broker"} proposal ${readable(proposal.status)}`,
+      createdAt: proposal.updatedAt,
+    })),
+  ];
+  return entries
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, TIMELINE_LIMIT);
+}
+
 export async function getProcurementRequestDetails(
   ctx: Ctx,
   requestId: Id<"procurementRequests">,
@@ -370,11 +453,11 @@ export async function getProcurementRequestDetails(
     outreaches,
     fileItems,
     emailThreads,
-    clientActivity,
-    requestDocuments,
     requirementLinks,
     specifications,
     proposals,
+    requestAudits,
+    legacyOperatorAudits,
   ] = await Promise.all([
     requestRow(ctx, request),
     ctx.db
@@ -393,14 +476,6 @@ export async function getProcurementRequestDetails(
       .order("desc")
       .take(50),
     ctx.db
-      .query("procurementRequestActivities")
-      .withIndex("request", (q) => q.eq("requestId", requestId))
-      .collect(),
-    ctx.db
-      .query("procurementRequestDocuments")
-      .withIndex("request", (q) => q.eq("requestId", requestId))
-      .collect(),
-    ctx.db
       .query("procurementRequestRequirements")
       .withIndex("request", (q) => q.eq("requestId", requestId))
       .collect(),
@@ -412,18 +487,24 @@ export async function getProcurementRequestDetails(
       .query("procurementProposals")
       .withIndex("request", (q) => q.eq("requestId", requestId))
       .collect(),
+    ctx.db
+      .query("operatorAuditEvents")
+      .withIndex("request_created", (query) => query.eq("requestId", requestId))
+      .order("desc")
+      .take(25),
+    ctx.db
+      .query("operatorAuditEvents")
+      .withIndex("target_created", (query) =>
+        query.eq("targetOrgId", request.clientOrgId),
+      )
+      .order("desc")
+      .take(250),
   ]);
   const confirmedRequirements = (
     await Promise.all(
       requirementLinks.map((link) => ctx.db.get(link.requirementId)),
     )
   ).filter(Boolean);
-  const requestDocumentRows = await Promise.all(
-    requestDocuments.map(async ({ fileId, ...document }) => ({
-      ...document,
-      url: await ctx.storage.getUrl(fileId),
-    })),
-  );
   const files = await Promise.all(
     fileItems.map(async (item) => {
       const file = item.clientFileId
@@ -449,16 +530,43 @@ export async function getProcurementRequestDetails(
       };
     }),
   );
+  const legacyAuditEvents = legacyOperatorAudits
+    .filter((event) => {
+      const metadata =
+        event.metadata && typeof event.metadata === "object"
+          ? (event.metadata as Record<string, unknown>)
+          : null;
+      return String(metadata?.requestId ?? "") === String(requestId);
+    })
+    .filter(
+      (event) => !requestAudits.some((current) => current._id === event._id),
+    );
+  const auditEvents = [...requestAudits, ...legacyAuditEvents]
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, 25)
+    .map((event) => ({
+      _id: event._id,
+      summary: event.summary,
+      type: event.type,
+      createdAt: event.createdAt,
+    }));
+  const activeEmailThreads = emailThreads.filter(activeEmailThread);
   return {
     request: summary,
     outreaches,
     files,
-    emailThreads: emailThreads.filter(activeEmailThread),
-    clientActivity,
-    requestDocuments: requestDocumentRows,
+    emailThreads: activeEmailThreads,
     confirmedRequirements,
     specifications,
     proposals,
+    auditEvents,
+    timeline: buildRequestTimeline({
+      auditEvents,
+      emailThreads: activeEmailThreads,
+      fileItems: files,
+      outreaches,
+      proposals,
+    }),
   };
 }
 
@@ -626,9 +734,25 @@ export async function createProcurementRequestByOperator(
     metadata: { domain: "procurement", requestId, source: args.source },
   });
   const request = await ctx.db.get(requestId);
+  const forwardingAddress = request
+    ? requestForwardingAddress(request)
+    : undefined;
   return {
     requestId,
-    forwardingAddress: request ? requestForwardingAddress(request) : undefined,
+    forwardingAddress,
+    deepLink: `/operator/clients/${args.clientOrgId}/procurement/${requestId}`,
+    nextActions: [
+      {
+        action: "forward_correspondence",
+        why: "Forward the relevant client or broker thread so Spot can preserve the correspondence and associate its attachments with this request",
+        forwardingAddress,
+      },
+      {
+        tool: "update_procurement_packet_section",
+        why: "Complete and verify the broker-visible packet before sharing it",
+        input: { procurementRequestId: requestId },
+      },
+    ],
   };
 }
 
@@ -702,7 +826,8 @@ export async function updateProcurementRequestByOperator(
     patch.resultingPolicyId = args.resultingPolicyId ?? undefined;
     if (args.resultingPolicyId) patch.status = "completed";
   }
-  if (args.clientVisible !== undefined) patch.clientVisible = args.clientVisible;
+  if (args.clientVisible !== undefined)
+    patch.clientVisible = args.clientVisible;
   const changedFields = Object.keys(patch).filter(
     (field) => !["updatedAt", "updatedByUserId"].includes(field),
   );
@@ -741,80 +866,6 @@ export const update = mutation({
       ...args,
       source: "operator",
     });
-  },
-});
-
-export const postClientActivity = mutation({
-  args: { requestId: v.id("procurementRequests"), body: v.string() },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await requireDirectOperatorWrite(ctx, operator.userId);
-    const request = await requireRequest(ctx, args.requestId);
-    const body = requiredText(args.body, "Message");
-    const createdAt = dayjs().valueOf();
-    const activityId = await ctx.db.insert("procurementRequestActivities", {
-      requestId: request._id,
-      clientOrgId: request.clientOrgId,
-      authorUserId: operator.userId,
-      authorSide: "operator",
-      kind: "message",
-      body,
-      clientVisible: true,
-      createdAt,
-    });
-    return { activityId };
-  },
-});
-
-export const generateRequestUploadUrl = mutation({
-  args: { requestId: v.id("procurementRequests") },
-  handler: async (ctx, args) => {
-    await requireOperator(ctx);
-    await requireRequest(ctx, args.requestId);
-    return await ctx.storage.generateUploadUrl();
-  },
-});
-
-export const attachRequestDocument = mutation({
-  args: {
-    requestId: v.id("procurementRequests"),
-    storageId: v.id("_storage"),
-    fileName: v.string(),
-    contentType: v.string(),
-    size: v.number(),
-    clientVisible: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const operator = await requireOperator(ctx);
-    await requireDirectOperatorWrite(ctx, operator.userId);
-    const request = await requireRequest(ctx, args.requestId);
-    if (!(await ctx.storage.getMetadata(args.storageId)))
-      throw new Error("Uploaded file not found");
-    const createdAt = dayjs().valueOf();
-    const documentId = await ctx.db.insert("procurementRequestDocuments", {
-      requestId: request._id,
-      clientOrgId: request.clientOrgId,
-      fileId: args.storageId,
-      name: requiredText(args.fileName, "File name", 300),
-      contentType: args.contentType,
-      size: args.size,
-      clientVisible: args.clientVisible,
-      uploadedByUserId: operator.userId,
-      uploadedBySide: "operator",
-      createdAt,
-    });
-    if (args.clientVisible)
-      await ctx.db.insert("procurementRequestActivities", {
-        requestId: request._id,
-        clientOrgId: request.clientOrgId,
-        authorUserId: operator.userId,
-        authorSide: "operator",
-        kind: "document",
-        documentId,
-        clientVisible: true,
-        createdAt,
-      });
-    return { documentId };
   },
 });
 
@@ -1089,6 +1140,8 @@ export async function createProcurementFileItemByOperator(
     purpose: FilePurpose;
     label: string;
     status?: FileStatus;
+    brokerRelease?: "hidden" | "listed" | "attached";
+    clientVisible?: boolean;
     notes?: string;
     source: "operator" | "agent";
   },
@@ -1103,10 +1156,21 @@ export async function createProcurementFileItemByOperator(
   }
   if (args.clientFileId) {
     const file = await ctx.db.get(args.clientFileId);
-    if (!file || file.orgId !== request.clientOrgId) {
+    if (
+      !file ||
+      file.archivedAt ||
+      file.deletedAt ||
+      file.orgId !== request.clientOrgId
+    ) {
       throw new Error("Client file does not belong to this request's client");
     }
   }
+  if (
+    (args.clientVisible ||
+      (args.brokerRelease && args.brokerRelease !== "hidden")) &&
+    !args.clientFileId
+  )
+    throw new Error("A visible procurement item must reference a client file");
   const now = dayjs().valueOf();
   const fileItemId = await ctx.db.insert("procurementFileItems", {
     requestId: request._id,
@@ -1116,6 +1180,8 @@ export async function createProcurementFileItemByOperator(
     purpose: args.purpose,
     label: requiredText(args.label, "File label", 300),
     status: args.status ?? (args.clientFileId ? "available" : "requested"),
+    brokerRelease: args.brokerRelease ?? "hidden",
+    clientVisible: args.clientVisible ?? false,
     notes: optionalText(args.notes),
     createdByUserId: args.operatorUserId,
     updatedByUserId: args.operatorUserId,
@@ -1125,6 +1191,12 @@ export async function createProcurementFileItemByOperator(
   if (args.clientFileId) {
     await scheduleClientFileCompanyInformation(ctx, args.clientFileId);
   }
+  if (args.brokerRelease && args.brokerRelease !== "hidden")
+    await ctx.db.patch(request._id, {
+      packetRevision: (request.packetRevision ?? 0) + 1,
+      updatedByUserId: args.operatorUserId,
+      updatedAt: now,
+    });
   await writeOperatorAudit(ctx, {
     operatorUserId: args.operatorUserId,
     type: "setup_write",
@@ -1148,6 +1220,8 @@ export const createFileItem = mutation({
     purpose: filePurposeValidator,
     label: v.string(),
     status: v.optional(fileStatusValidator),
+    brokerRelease: v.optional(releaseValidator),
+    clientVisible: v.optional(v.boolean()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -1170,6 +1244,8 @@ export async function updateProcurementFileItemByOperator(
     purpose?: FilePurpose;
     label?: string;
     status?: FileStatus;
+    brokerRelease?: "hidden" | "listed" | "attached";
+    clientVisible?: boolean;
     notes?: string | null;
     source: "operator" | "agent";
   },
@@ -1194,7 +1270,12 @@ export async function updateProcurementFileItemByOperator(
   if (args.clientFileId !== undefined) {
     if (args.clientFileId) {
       const file = await ctx.db.get(args.clientFileId);
-      if (!file || file.orgId !== request.clientOrgId) {
+      if (
+        !file ||
+        file.archivedAt ||
+        file.deletedAt ||
+        file.orgId !== request.clientOrgId
+      ) {
         throw new Error("Client file does not belong to this request's client");
       }
     }
@@ -1204,12 +1285,42 @@ export async function updateProcurementFileItemByOperator(
   if (args.label !== undefined)
     patch.label = requiredText(args.label, "File label", 300);
   if (args.status !== undefined) patch.status = args.status;
+  if (args.brokerRelease !== undefined)
+    patch.brokerRelease = args.brokerRelease;
+  if (args.clientVisible !== undefined)
+    patch.clientVisible = args.clientVisible;
+  const effectiveClientFileId =
+    args.clientFileId === undefined
+      ? item.clientFileId
+      : (args.clientFileId ?? undefined);
+  const effectiveBrokerRelease =
+    args.brokerRelease ?? item.brokerRelease ?? "hidden";
+  const effectiveClientVisible =
+    args.clientVisible ?? item.clientVisible ?? false;
+  if (
+    (effectiveClientVisible || effectiveBrokerRelease !== "hidden") &&
+    !effectiveClientFileId
+  )
+    throw new Error("A visible procurement item must reference a client file");
   if (args.notes !== undefined) patch.notes = optionalText(args.notes);
   const fields = Object.keys(patch).filter(
     (field) => !["updatedAt", "updatedByUserId"].includes(field),
   );
   if (fields.length === 0) throw new Error("No file fields changed");
   await ctx.db.patch(item._id, patch);
+  const brokerProjectionChanged =
+    (args.brokerRelease !== undefined &&
+      args.brokerRelease !== (item.brokerRelease ?? "hidden")) ||
+    (effectiveBrokerRelease !== "hidden" &&
+      ((args.clientFileId !== undefined &&
+        args.clientFileId !== item.clientFileId) ||
+        (patch.label !== undefined && patch.label !== item.label)));
+  if (brokerProjectionChanged)
+    await ctx.db.patch(request._id, {
+      packetRevision: (request.packetRevision ?? 0) + 1,
+      updatedByUserId: args.operatorUserId,
+      updatedAt: dayjs().valueOf(),
+    });
   if (args.clientFileId !== undefined) {
     for (const clientFileId of new Set(
       [item.clientFileId, args.clientFileId ?? undefined].filter(
@@ -1245,6 +1356,8 @@ export const updateFileItem = mutation({
     purpose: v.optional(filePurposeValidator),
     label: v.optional(v.string()),
     status: v.optional(fileStatusValidator),
+    brokerRelease: v.optional(releaseValidator),
+    clientVisible: v.optional(v.boolean()),
     notes: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
@@ -1334,11 +1447,176 @@ export async function getProcurementEmailThreadDetails(
   };
 }
 
+export async function previewProcurementEmailReconciliation(
+  ctx: Ctx,
+  emailThreadId: Id<"procurementEmailThreads">,
+  selectedOutreachId?: Id<"procurementBrokerOutreaches">,
+) {
+  const thread = await ctx.db.get(emailThreadId);
+  if (!thread || thread.deletedAt)
+    throw new Error("Procurement email thread not found");
+  const [request, messages, outreaches, proposals] = await Promise.all([
+    requireRequest(ctx, thread.requestId),
+    ctx.db
+      .query("procurementEmailMessages")
+      .withIndex("thread", (query) => query.eq("threadId", thread._id))
+      .collect(),
+    ctx.db
+      .query("procurementBrokerOutreaches")
+      .withIndex("request", (query) => query.eq("requestId", thread.requestId))
+      .collect(),
+    ctx.db
+      .query("procurementProposals")
+      .withIndex("request", (query) => query.eq("requestId", thread.requestId))
+      .collect(),
+  ]);
+  const clientFileIds = [
+    ...new Set(messages.flatMap((message) => message.clientFileIds)),
+  ];
+  const files = (
+    await Promise.all(
+      clientFileIds.map(async (clientFileId) => {
+        const file = await ctx.db.get(clientFileId);
+        return file && !file.archivedAt && !file.deletedAt
+          ? {
+              clientFileId: file._id,
+              name: file.name,
+              contentType: file.contentType,
+              size: file.size,
+            }
+          : null;
+      }),
+    )
+  ).filter((file): file is NonNullable<typeof file> => file !== null);
+  const proposalDocuments = (
+    await Promise.all(
+      proposals
+        .filter(
+          (proposal) =>
+            proposal.status !== "archived" && proposal.status !== "withdrawn",
+        )
+        .map((proposal) =>
+          ctx.db
+            .query("procurementProposalDocuments")
+            .withIndex("proposal", (query) =>
+              query.eq("proposalId", proposal._id),
+            )
+            .collect(),
+        ),
+    )
+  ).flat();
+  const participantEmails = new Set(
+    thread.participantEmails.map(normalizeProcurementEmail),
+  );
+  const matchingOutreaches = outreaches.filter(
+    (outreach) =>
+      outreach.contactEmail &&
+      participantEmails.has(normalizeProcurementEmail(outreach.contactEmail)),
+  );
+  const suggestedOutreach =
+    matchingOutreaches.length === 1 ? matchingOutreaches[0] : null;
+  const selectedOutreach = selectedOutreachId
+    ? outreaches.find((outreach) => outreach._id === selectedOutreachId)
+    : suggestedOutreach;
+  if (selectedOutreachId && !selectedOutreach) {
+    throw new Error("Selected outreach does not belong to this request");
+  }
+  const selectedProposalIds = new Set(
+    proposals
+      .filter(
+        (proposal) =>
+          selectedOutreach &&
+          proposal.outreachId === selectedOutreach._id &&
+          proposal.status !== "archived" &&
+          proposal.status !== "withdrawn",
+      )
+      .map((proposal) => String(proposal._id)),
+  );
+  const proposedClientFileIds = new Set(
+    proposalDocuments.flatMap((document) =>
+      selectedProposalIds.has(String(document.proposalId)) &&
+      document.clientFileId
+        ? [String(document.clientFileId)]
+        : [],
+    ),
+  );
+  const unfiledFiles = files.filter(
+    (file) => !proposedClientFileIds.has(String(file.clientFileId)),
+  );
+  // `fileEmailQuote` refuses archived threads, so the preview must not offer
+  // filing from one either.
+  const filable = !thread.archivedAt;
+  return {
+    emailThreadId: thread._id,
+    filable,
+    requestId: request._id,
+    requestTitle: request.title,
+    deepLink: `/operator/clients/${request.clientOrgId}/procurement/${request._id}?view=email`,
+    category: thread.category,
+    participantEmails: thread.participantEmails,
+    messageCount: messages.length,
+    files,
+    unfiledFiles,
+    selectedOutreachId: selectedOutreach?._id ?? null,
+    // Every outreach on the thread's current request, so a client that moved
+    // the thread can rebuild its picker instead of trusting a stale snapshot.
+    outreaches: outreaches.map((outreach) => ({
+      outreachId: outreach._id,
+      brokerName: outreach.brokerName,
+      contactName: outreach.contactName ?? null,
+      contactEmail: outreach.contactEmail ?? null,
+    })),
+    outreachInference: {
+      status:
+        matchingOutreaches.length === 1
+          ? ("exact" as const)
+          : matchingOutreaches.length > 1
+            ? ("ambiguous" as const)
+            : ("none" as const),
+      candidates: matchingOutreaches.map((outreach) => ({
+        outreachId: outreach._id,
+        brokerOrgId: outreach.brokerOrgId ?? null,
+        brokerName: outreach.brokerName,
+        contactName: outreach.contactName ?? null,
+        contactEmail: outreach.contactEmail ?? null,
+      })),
+    },
+    nextActions:
+      filable && !selectedOutreachId && suggestedOutreach && unfiledFiles.length
+        ? [
+            {
+              tool: "file_procurement_email_quote" as const,
+              why: `One outreach contact matches this thread and ${unfiledFiles.length} attachment${unfiledFiles.length === 1 ? " is" : "s are"} not yet filed in a proposal`,
+              input: {
+                procurementEmailThreadId: thread._id,
+                procurementOutreachId: suggestedOutreach._id,
+              },
+            },
+          ]
+        : [],
+  };
+}
+
 export const getEmailThread = query({
   args: { emailThreadId: v.id("procurementEmailThreads") },
   handler: async (ctx, args) => {
     await requireOperator(ctx);
     return await getProcurementEmailThreadDetails(ctx, args.emailThreadId);
+  },
+});
+
+export const previewEmailReconciliation = query({
+  args: {
+    emailThreadId: v.id("procurementEmailThreads"),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    return await previewProcurementEmailReconciliation(
+      ctx,
+      args.emailThreadId,
+      args.outreachId,
+    );
   },
 });
 
@@ -1412,6 +1690,7 @@ export async function updateProcurementEmailThreadByOperator(
     summary: `Updated procurement email thread ${thread.subject}`,
     metadata: {
       domain: "procurement",
+      requestId: patch.requestId ?? currentRequest._id,
       emailThreadId: thread._id,
       previousRequestId: currentRequest._id,
       nextRequestId: patch.requestId ?? currentRequest._id,

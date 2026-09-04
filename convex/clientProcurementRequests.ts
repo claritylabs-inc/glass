@@ -9,6 +9,10 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { getCurrentOrgAccess } from "./lib/access";
+import {
+  findReusableClientFileByContent,
+  normalizeClientFileSha256,
+} from "./lib/clientFiles";
 import { createProcurementInboxToken } from "./lib/procurement";
 import {
   requestNarrative,
@@ -83,38 +87,35 @@ async function requireVisibleRequest(
 }
 
 async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
-  const [activities, documents, resultingPolicy, packetSections] =
-    await Promise.all([
-      ctx.db
-        .query("procurementRequestActivities")
-        .withIndex("client_visible", (q) =>
-          q.eq("requestId", request._id).eq("clientVisible", true),
-        )
-        .collect(),
-      ctx.db
-        .query("procurementRequestDocuments")
-        .withIndex("client_visible", (q) =>
-          q.eq("requestId", request._id).eq("clientVisible", true),
-        )
-        .collect(),
-      request.resultingPolicyId ? ctx.db.get(request.resultingPolicyId) : null,
-      ctx.db
-        .query("procurementPacketSections")
-        .withIndex("request", (q) => q.eq("requestId", request._id))
-        .collect(),
-    ]);
+  const [fileItems, resultingPolicy, packetSections] = await Promise.all([
+    ctx.db
+      .query("procurementFileItems")
+      .withIndex("request", (q) => q.eq("requestId", request._id))
+      .collect(),
+    request.resultingPolicyId ? ctx.db.get(request.resultingPolicyId) : null,
+    ctx.db
+      .query("procurementPacketSections")
+      .withIndex("request", (q) => q.eq("requestId", request._id))
+      .collect(),
+  ]);
   const files = await Promise.all(
-    documents.map(async (document) => ({
-      _id: document._id,
-      name: document.name,
-      contentType: document.contentType,
-      size: document.size,
-      uploadedBySide: document.uploadedBySide,
-      createdAt: document.createdAt,
-      url: await ctx.storage.getUrl(document.fileId),
-    })),
+    fileItems
+      .filter((item) => item.clientVisible === true && item.clientFileId)
+      .map(async (item) => {
+        const file = await ctx.db.get(item.clientFileId!);
+        if (!file || file.archivedAt || file.deletedAt) return null;
+        return {
+          _id: item._id,
+          clientFileId: file._id,
+          name: item.label || file.name,
+          contentType: file.contentType,
+          size: file.size,
+          uploadedBySide: file.uploadedBySide,
+          createdAt: item.createdAt,
+          url: await ctx.storage.getUrl(file.fileId),
+        };
+      }),
   );
-  const filesById = new Map(files.map((file) => [String(file._id), file]));
   return {
     _id: request._id,
     title: request.title,
@@ -134,22 +135,7 @@ async function requestDto(ctx: QueryCtx, request: Doc<"procurementRequests">) {
             policyNumber: resultingPolicy.policyNumber,
           }
         : undefined,
-    activity: activities.map((item) => {
-      const file = item.documentId
-        ? filesById.get(String(item.documentId))
-        : undefined;
-      return {
-        _id: item._id,
-        kind: item.kind,
-        body: item.body,
-        authorSide: item.authorSide,
-        documentId: item.documentId,
-        fileName: file?.name,
-        fileUrl: file?.url,
-        createdAt: item.createdAt,
-      };
-    }),
-    files,
+    files: files.filter((file): file is NonNullable<typeof file> => !!file),
   };
 }
 
@@ -211,40 +197,7 @@ export const create = mutation({
       userId: access.userId,
       source: "client",
     });
-    await ctx.db.insert("procurementRequestActivities", {
-      requestId,
-      clientOrgId: access.orgId,
-      authorUserId: access.userId,
-      authorSide: "client",
-      kind: "message",
-      body: narrative,
-      clientVisible: true,
-      createdAt: now,
-    });
     return { requestId };
-  },
-});
-
-export const postMessage = mutation({
-  args: { requestId: v.id("procurementRequests"), body: v.string() },
-  handler: async (ctx, args) => {
-    const { access, request } = await requireVisibleRequest(
-      ctx,
-      args.requestId,
-    );
-    const body = args.body.trim();
-    if (!body) throw new Error("Message is required");
-    const createdAt = dayjs().valueOf();
-    return await ctx.db.insert("procurementRequestActivities", {
-      requestId: request._id,
-      clientOrgId: request.clientOrgId,
-      authorUserId: access.userId,
-      authorSide: "client",
-      kind: "message",
-      body,
-      clientVisible: true,
-      createdAt,
-    });
   },
 });
 
@@ -269,31 +222,62 @@ export const attachFile = mutation({
       ctx,
       args.requestId,
     );
-    if (!(await ctx.storage.getMetadata(args.storageId)))
-      throw new Error("Uploaded file not found");
+    const metadata = await ctx.db.system.get("_storage", args.storageId);
+    if (!metadata) throw new Error("Uploaded file not found");
     const createdAt = dayjs().valueOf();
-    const documentId = await ctx.db.insert("procurementRequestDocuments", {
+    const fileName = args.fileName.trim() || "Document";
+    const sha256 = normalizeClientFileSha256(metadata.sha256);
+    const reusableFile = await findReusableClientFileByContent(ctx, {
+      orgId: request.clientOrgId,
+      sha256,
+    });
+    const clientFileId = reusableFile
+      ? reusableFile._id
+      : await ctx.db.insert("clientFiles", {
+          orgId: request.clientOrgId,
+          fileId: args.storageId,
+          name: fileName,
+          originalName: fileName,
+          contentType: metadata.contentType || args.contentType,
+          size: metadata.size,
+          sha256,
+          clientVisible: true,
+          uploadedByUserId: access.userId,
+          uploadedBySide: "client",
+          nameSource: "original",
+          nameStatus: "ready",
+          createdAt,
+          updatedAt: createdAt,
+        });
+    if (reusableFile) {
+      await ctx.storage.delete(args.storageId);
+      if (!reusableFile.clientVisible)
+        await ctx.db.patch(reusableFile._id, {
+          clientVisible: true,
+          updatedAt: createdAt,
+        });
+    }
+    const existingItems = await ctx.db
+      .query("procurementFileItems")
+      .withIndex("file", (query) => query.eq("clientFileId", clientFileId))
+      .collect();
+    const existingItem = existingItems.find(
+      (item) => item.requestId === request._id && item.clientVisible === true,
+    );
+    if (existingItem) return { clientFileId, fileItemId: existingItem._id };
+    const fileItemId = await ctx.db.insert("procurementFileItems", {
       requestId: request._id,
       clientOrgId: request.clientOrgId,
-      fileId: args.storageId,
-      name: args.fileName.trim() || "Document",
-      contentType: args.contentType,
-      size: args.size,
+      clientFileId,
+      purpose: "other",
+      label: fileName,
+      status: "available",
       clientVisible: true,
-      uploadedByUserId: access.userId,
-      uploadedBySide: "client",
+      createdByUserId: access.userId,
+      updatedByUserId: access.userId,
       createdAt,
+      updatedAt: createdAt,
     });
-    await ctx.db.insert("procurementRequestActivities", {
-      requestId: request._id,
-      clientOrgId: request.clientOrgId,
-      authorUserId: access.userId,
-      authorSide: "client",
-      kind: "document",
-      documentId,
-      clientVisible: true,
-      createdAt,
-    });
-    return { documentId };
+    return { clientFileId, fileItemId };
   },
 });

@@ -51,6 +51,7 @@ import {
   type StoredProcurementRequestStatus,
 } from "@/components/procurement/procurement-shared";
 import { SettingsDrawer } from "@/components/settings/settings-drawer";
+import { Badge } from "@/components/ui/badge";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { Input } from "@/components/ui/input";
 import {
@@ -103,7 +104,7 @@ type ClientFileOption = {
   contentType: string;
   size: number;
   url: string | null;
-  uploadedBySide: "operator" | "procurement_email";
+  uploadedBySide: "operator" | "procurement_email" | "client";
 };
 
 type RequestSummary = {
@@ -116,6 +117,10 @@ type RequestSummary = {
   replacingPolicyId?: Id<"policies">;
   resultingPolicyId?: Id<"policies">;
   forwardingAddress: string;
+  brokerCount: number;
+  quoteCount: number;
+  outstandingFileCount: number;
+  emailThreadCount: number;
   replacingPolicy: { policyId: Id<"policies">; label: string } | null;
   resultingPolicy: { policyId: Id<"policies">; label: string } | null;
   updatedAt: number;
@@ -147,6 +152,8 @@ type ProcurementFileItem = {
   purpose: ProcurementFilePurpose;
   label: string;
   status: ProcurementFileStatus;
+  brokerRelease?: "hidden" | "listed" | "attached";
+  clientVisible?: boolean;
   notes?: string;
   updatedAt: number;
   clientFile: ClientFileOption | null;
@@ -166,20 +173,23 @@ type RequestDetails = {
   outreaches: Outreach[];
   files: ProcurementFileItem[];
   emailThreads: EmailThread[];
-  clientActivity?: Array<{
-    _id: string;
-    kind: string;
-    body?: string;
-    authorSide?: string;
-    createdAt: number;
-  }>;
-  requestDocuments?: Array<{
-    _id: string;
-    name: string;
-    url: string | null;
-    clientVisible: boolean;
-    createdAt: number;
-  }>;
+  timeline: TimelineEntry[];
+};
+
+type TimelineEntry = {
+  key: string;
+  kind: "operator" | "email" | "file" | "proposal" | "outreach";
+  summary: string;
+  detail?: string;
+  createdAt: number;
+};
+
+const TIMELINE_KIND_LABELS: Record<TimelineEntry["kind"], string> = {
+  operator: "Operator",
+  email: "Email",
+  file: "File",
+  proposal: "Proposal",
+  outreach: "Outreach",
 };
 
 type BrokerOption = {
@@ -187,40 +197,86 @@ type BrokerOption = {
   name: string;
 };
 
+type ActiveProposalOption = {
+  _id: Id<"procurementProposals">;
+  outreachId: Id<"procurementBrokerOutreaches">;
+  status: string;
+  brokerName?: string;
+};
+
 function ProposalCreateDrawer({
   requestId,
   outreaches,
+  fileItems,
+  activeProposals,
   onClose,
 }: {
   requestId: Id<"procurementRequests">;
   outreaches: Outreach[];
+  fileItems: ProcurementFileItem[];
+  activeProposals: ActiveProposalOption[];
   onClose: () => void;
 }) {
   const eligible = outreaches.filter((outreach) => outreach.brokerOrgId);
   const [outreachId, setOutreachId] = useState(eligible[0]?._id ?? "");
+  const [supersede, setSupersede] = useState(true);
   const [files, setFiles] = useState<File[]>([]);
+  const [selectedFileItemIds, setSelectedFileItemIds] = useState<
+    Id<"procurementFileItems">[]
+  >([]);
   const [saving, setSaving] = useState(false);
-  const createProposal = useMutation(api.procurementProposals.create);
   const generateUploadUrl = useMutation(
     api.procurementProposals.generateUploadUrl,
   );
-  const addDocument = useMutation(api.procurementProposals.addDocument);
-  const queueExtraction = useMutation(api.procurementProposals.queueExtraction);
+  const registerUpload = useMutation(api.procurementProposals.registerUpload);
+  const discardUpload = useMutation(api.clientFiles.discardUpload);
+  const fileProposal = useMutation(api.procurementProposals.file);
+  const availableFileItems = fileItems.filter(
+    (item) => item.clientFile && item.status !== "requested",
+  );
+  const hasSources = files.length > 0 || selectedFileItemIds.length > 0;
+  // An outreach holds one active proposal at a time. Anything past draft has to
+  // be superseded explicitly, which is what the agent path already does.
+  const activeForOutreach = activeProposals.find(
+    (proposal) => proposal.outreachId === outreachId,
+  );
+  const supersedable =
+    activeForOutreach &&
+    activeForOutreach.status !== "draft" &&
+    activeForOutreach.status !== "selected"
+      ? activeForOutreach
+      : null;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const outreach = eligible.find((item) => item._id === outreachId);
-    if (!outreach?.brokerOrgId || files.length === 0) return;
+    if (!outreach?.brokerOrgId || !hasSources) return;
+    const pendingUploads: Array<{
+      uploadIntentId: Id<"clientFileUploadIntents">;
+      fileId?: Id<"_storage">;
+    }> = [];
     setSaving(true);
     try {
-      const { proposalId } = await createProposal({
-        requestId,
-        outreachId: outreach._id,
-        brokerOrgId: outreach.brokerOrgId,
-      });
+      const sources: Array<
+        | { kind: "file_item"; fileItemId: Id<"procurementFileItems"> }
+        | {
+            kind: "upload";
+            fileId: Id<"_storage">;
+            fileName: string;
+            contentType?: string;
+            uploadIntentId: Id<"clientFileUploadIntents">;
+          }
+      > = selectedFileItemIds.map((fileItemId) => ({
+        kind: "file_item",
+        fileItemId,
+      }));
       for (const file of files) {
-        const uploadUrl = await generateUploadUrl({ proposalId });
-        const response = await fetch(uploadUrl, {
+        const target = await generateUploadUrl({ requestId });
+        const pending: (typeof pendingUploads)[number] = {
+          uploadIntentId: target.uploadIntentId,
+        };
+        pendingUploads.push(pending);
+        const response = await fetch(target.uploadUrl, {
           method: "POST",
           headers: { "Content-Type": file.type || "application/pdf" },
           body: file,
@@ -229,26 +285,38 @@ function ProposalCreateDrawer({
         const { storageId } = (await response.json()) as {
           storageId: Id<"_storage">;
         };
-        const digest = await crypto.subtle.digest(
-          "SHA-256",
-          await file.arrayBuffer(),
-        );
-        const sha256 = Array.from(new Uint8Array(digest), (byte) =>
-          byte.toString(16).padStart(2, "0"),
-        ).join("");
-        await addDocument({
-          proposalId,
+        pending.fileId = storageId;
+        await registerUpload({
+          requestId,
+          uploadIntentId: target.uploadIntentId,
+          fileId: storageId,
+        });
+        sources.push({
+          kind: "upload",
           fileId: storageId,
           fileName: file.name,
           contentType: file.type || "application/pdf",
-          size: file.size,
-          sha256,
+          uploadIntentId: target.uploadIntentId,
         });
       }
-      await queueExtraction({ proposalId });
+      await fileProposal({
+        requestId,
+        outreachId: outreach._id,
+        sources,
+        supersedesProposalId:
+          supersedable && supersede ? supersedable._id : undefined,
+      });
       toast.success("Proposal filed and queued for extraction");
       onClose();
     } catch (error) {
+      await Promise.allSettled(
+        pendingUploads.map((upload) =>
+          discardUpload({
+            uploadIntentId: upload.uploadIntentId,
+            fileId: upload.fileId,
+          }),
+        ),
+      );
       toast.error(
         getUserFacingErrorMessage(error, "Could not file the proposal"),
       );
@@ -268,7 +336,7 @@ function ProposalCreateDrawer({
         <PillButton
           type="submit"
           form="proposal-create-form"
-          disabled={saving || !outreachId || files.length === 0}
+          disabled={saving || !outreachId || !hasSources}
         >
           {saving ? <Loader2 className="size-4 animate-spin" /> : null}File
           proposal
@@ -308,6 +376,28 @@ function ProposalCreateDrawer({
               Add a broker organization to Market before filing a proposal.
             </p>
           ) : null}
+          {supersedable ? (
+            <label className="mt-3 flex items-start gap-3 rounded-md border border-border px-3 py-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4"
+                checked={supersede}
+                onChange={(event) => setSupersede(event.target.checked)}
+              />
+              <span className={typeStyle("body.default")}>
+                File as a revision that withdraws the current{" "}
+                {supersedable.status.replaceAll("_", " ")} proposal
+                {supersedable.brokerName
+                  ? ` from ${supersedable.brokerName}`
+                  : ""}
+              </span>
+            </label>
+          ) : activeForOutreach?.status === "selected" ? (
+            <p className={`mt-2 text-warning ${typeStyle("body.default")}`}>
+              This outreach holds the selected proposal. Select another reviewed
+              proposal before filing a revision here.
+            </p>
+          ) : null}
         </div>
         <div>
           <label
@@ -324,9 +414,47 @@ function ProposalCreateDrawer({
           <p
             className={`mt-2 text-muted-foreground ${typeStyle("caption.default")}`}
           >
-            All selected documents are bundled into one private proposal.
+            All selected documents are filed atomically as one private proposal.
           </p>
         </div>
+        {availableFileItems.length ? (
+          <fieldset className="space-y-2">
+            <legend
+              className={`text-muted-foreground ${typeStyle("label.field")}`}
+            >
+              Existing request files
+            </legend>
+            {availableFileItems.map((item) => (
+              <label
+                key={item._id}
+                className="flex items-start gap-3 rounded-md border border-border px-3 py-2"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 size-4"
+                  checked={selectedFileItemIds.includes(item._id)}
+                  onChange={(event) =>
+                    setSelectedFileItemIds((current) =>
+                      event.target.checked
+                        ? [...current, item._id]
+                        : current.filter((id) => id !== item._id),
+                    )
+                  }
+                />
+                <span>
+                  <span className={`block ${typeStyle("body.medium")}`}>
+                    {item.label}
+                  </span>
+                  <span
+                    className={`text-muted-foreground ${typeStyle("caption.default")}`}
+                  >
+                    {procurementFilePurposeLabel(item.purpose)}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
       </form>
     </SettingsDrawer>
   );
@@ -357,6 +485,15 @@ type ProposalView = {
     stale: boolean;
     findings: ProposalReviewFinding[];
   }>;
+  extraction: {
+    latest: {
+      status: "pending" | "running" | "complete" | "failed";
+      stuck: boolean;
+      attempts: number;
+      maxAttempts: number;
+      lastError: string | null;
+    } | null;
+  };
 };
 
 type ProposalReviewFinding = {
@@ -536,7 +673,9 @@ function ProposalReviewDrawer({
                         }
                       >
                         Open evidence
-                        {evidence?.pageStart ? ` · p. ${evidence.pageStart}` : ""}
+                        {evidence?.pageStart
+                          ? ` · p. ${evidence.pageStart}`
+                          : ""}
                       </PillButton>
                     ) : null}
                   </div>
@@ -1045,6 +1184,12 @@ function ProcurementFileEditor({
     fileItem?.clientFileId ?? NONE,
   );
   const [notes, setNotes] = useState(fileItem?.notes ?? "");
+  const [brokerRelease, setBrokerRelease] = useState<
+    "hidden" | "listed" | "attached"
+  >(fileItem?.brokerRelease ?? "hidden");
+  const [clientVisible, setClientVisible] = useState(
+    fileItem?.clientVisible ?? false,
+  );
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -1066,6 +1211,8 @@ function ProcurementFileEditor({
               : (outreachId as Id<"procurementBrokerOutreaches">),
           clientFileId:
             clientFileId === NONE ? null : (clientFileId as Id<"clientFiles">),
+          brokerRelease,
+          clientVisible,
           notes: notes || null,
         });
         toast.success("Procurement file updated");
@@ -1083,6 +1230,8 @@ function ProcurementFileEditor({
             clientFileId === NONE
               ? undefined
               : (clientFileId as Id<"clientFiles">),
+          brokerRelease,
+          clientVisible,
           notes: notes || undefined,
         });
         toast.success("Procurement file added");
@@ -1199,6 +1348,47 @@ function ProcurementFileEditor({
             ]}
           />
         </label>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="block space-y-1.5">
+            <span
+              className={`text-muted-foreground ${typeStyle("caption.default")}`}
+            >
+              Broker packet
+            </span>
+            <Select
+              value={brokerRelease}
+              onValueChange={(value) =>
+                setBrokerRelease(value as "hidden" | "listed" | "attached")
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {brokerRelease === "hidden"
+                    ? "Hidden"
+                    : brokerRelease === "listed"
+                      ? "List name only"
+                      : "Attach file"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="hidden">Hidden</SelectItem>
+                <SelectItem value="listed">List name only</SelectItem>
+                <SelectItem value="attached">Attach file</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex items-center gap-3 self-end rounded-md border border-border px-3 py-2">
+            <input
+              type="checkbox"
+              className="size-4"
+              checked={clientVisible}
+              onChange={(event) => setClientVisible(event.target.checked)}
+            />
+            <span className={typeStyle("body.default")}>
+              Show in client request
+            </span>
+          </label>
+        </div>
         <label className="block space-y-1.5">
           <span
             className={`text-muted-foreground ${typeStyle("caption.default")}`}
@@ -1285,14 +1475,7 @@ export function ProcurementRequestWorkspace({
   clientOrgId: Id<"organizations">;
   requestId: Id<"procurementRequests">;
   basePath: string;
-  view:
-    | "overview"
-    | "packet"
-    | "market"
-    | "proposals"
-    | "activity"
-    | "files"
-    | "email";
+  view: "overview" | "packet" | "market" | "proposals" | "files" | "email";
   readOnly: boolean;
   onActions?: (node: ReactNode) => void;
   onRightPanel: (node: ReactNode) => void;
@@ -1316,24 +1499,24 @@ export function ProcurementRequestWorkspace({
   });
   const brokers = useCachedOperatorBrokers() as BrokerOption[] | undefined;
   const proposals = useQuery(api.procurementProposals.list, { requestId });
+  const packetForWorkbench = useQuery(api.procurementPacket.get, { requestId });
   const generateProposalReview = useAction(
     api.actions.proposalReview.generateReview,
   );
   const createFileItem = useMutation(api.procurementRequests.createFileItem);
   const selectProposal = useMutation(api.procurementProposals.select);
-  const postClientActivity = useMutation(
-    api.procurementRequests.postClientActivity,
+  const archiveProposal = useMutation(api.procurementProposals.archive);
+  const retryProposalExtraction = useMutation(
+    api.procurementProposals.retryExtraction,
   );
-  const generateRequestUploadUrl = useMutation(
-    api.procurementRequests.generateRequestUploadUrl,
+  const cancelProposalExtraction = useMutation(
+    api.procurementProposals.cancelExtraction,
   );
-  const attachRequestDocument = useMutation(
-    api.procurementRequests.attachRequestDocument,
-  );
-  const [clientReply, setClientReply] = useState("");
-  const [sharingWithClient, setSharingWithClient] = useState(false);
   const [reviewingProposalId, setReviewingProposalId] =
     useState<Id<"procurementProposals"> | null>(null);
+  const [workingProposalAction, setWorkingProposalAction] = useState<
+    string | null
+  >(null);
   const { openWithUrl, closePdf } = usePdf();
 
   const details = result as RequestDetails | null | undefined;
@@ -1390,7 +1573,7 @@ export function ProcurementRequestWorkspace({
         <ProcurementFileEditor
           requestId={requestId}
           fileItem={fileItem}
-          outreaches={details.outreaches}
+          outreaches={details?.outreaches ?? []}
           clientFiles={clientFiles}
           onClose={closeRightPanel}
         />,
@@ -1438,10 +1621,15 @@ export function ProcurementRequestWorkspace({
       <ProposalCreateDrawer
         requestId={requestId}
         outreaches={details.outreaches}
+        fileItems={details.files}
+        activeProposals={(proposals ?? []).filter(
+          (proposal) =>
+            proposal.status !== "archived" && proposal.status !== "withdrawn",
+        )}
         onClose={closeRightPanel}
       />,
     );
-  }, [closePdf, closeRightPanel, details, onRightPanel, requestId]);
+  }, [closePdf, closeRightPanel, details, onRightPanel, proposals, requestId]);
 
   const openProposalReview = useCallback(
     (proposal: ProposalView) => {
@@ -1459,7 +1647,6 @@ export function ProcurementRequestWorkspace({
     },
     [closePdf, closeRightPanel, onRightPanel, openWithUrl],
   );
-
 
   const openEmail = useCallback(
     (emailThreadId: Id<"procurementEmailThreads">) => {
@@ -1554,50 +1741,6 @@ export function ProcurementRequestWorkspace({
     }
   }
 
-  async function shareClientReply() {
-    if (!clientReply.trim()) return;
-    setSharingWithClient(true);
-    try {
-      await postClientActivity({ requestId, body: clientReply.trim() });
-      setClientReply("");
-    } catch (error) {
-      toast.error(
-        getUserFacingErrorMessage(error, "Could not post the client update"),
-      );
-    } finally {
-      setSharingWithClient(false);
-    }
-  }
-
-  async function shareRequestDocument(file: File) {
-    setSharingWithClient(true);
-    try {
-      const uploadUrl = await generateRequestUploadUrl({ requestId });
-      const response = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-      if (!response.ok) throw new Error("Upload failed");
-      const { storageId } = (await response.json()) as {
-        storageId: Id<"_storage">;
-      };
-      await attachRequestDocument({
-        requestId,
-        storageId,
-        fileName: file.name,
-        contentType: file.type || "application/octet-stream",
-        size: file.size,
-        clientVisible: true,
-      });
-      toast.success("File shared with client");
-    } catch (error) {
-      toast.error(getUserFacingErrorMessage(error, "Could not share the file"));
-    } finally {
-      setSharingWithClient(false);
-    }
-  }
-
   async function reviewProposal(proposalId: Id<"procurementProposals">) {
     setReviewingProposalId(proposalId);
     try {
@@ -1617,6 +1760,23 @@ export function ProcurementRequestWorkspace({
     }
   }
 
+  async function runProposalMutation(
+    key: string,
+    action: () => Promise<unknown>,
+    success: string,
+    failure: string,
+  ) {
+    setWorkingProposalAction(key);
+    try {
+      await action();
+      toast.success(success);
+    } catch (error) {
+      toast.error(getUserFacingErrorMessage(error, failure));
+    } finally {
+      setWorkingProposalAction(null);
+    }
+  }
+
   if (
     result === undefined ||
     policies === undefined ||
@@ -1624,7 +1784,8 @@ export function ProcurementRequestWorkspace({
     clientFilesResult === undefined ||
     requestRows === undefined ||
     brokers === undefined ||
-    proposals === undefined
+    proposals === undefined ||
+    packetForWorkbench === undefined
   ) {
     return (
       <OperationalPanel
@@ -1652,6 +1813,46 @@ export function ProcurementRequestWorkspace({
   const outreachById = new Map(
     details.outreaches.map((outreach) => [outreach._id, outreach]),
   );
+  const activeProposals = proposals.filter(
+    (proposal) =>
+      proposal.status !== "archived" && proposal.status !== "withdrawn",
+  );
+  const extractionExceptions = activeProposals.filter(
+    (proposal) =>
+      proposal.extraction.latest?.stuck ||
+      proposal.extraction.latest?.status === "failed",
+  );
+  const blockers = [
+    ...(details.outreaches.length === 0
+      ? ["No broker outreach has been added"]
+      : []),
+    ...(packetForWorkbench.gaps.length
+      ? [
+          `${packetForWorkbench.gaps.length} packet section${packetForWorkbench.gaps.length === 1 ? " is" : "s are"} empty`,
+        ]
+      : []),
+    ...(details.request.outstandingFileCount
+      ? [
+          `${details.request.outstandingFileCount} requested file${details.request.outstandingFileCount === 1 ? " is" : "s are"} outstanding`,
+        ]
+      : []),
+    ...(extractionExceptions.length
+      ? [
+          `${extractionExceptions.length} proposal extraction${extractionExceptions.length === 1 ? " needs" : "s need"} attention`,
+        ]
+      : []),
+  ];
+  const nextActions = blockers.length
+    ? blockers
+    : activeProposals.some((proposal) => proposal.status === "review_ready")
+      ? ["Review extracted proposals against the broker packet"]
+      : details.outreaches.some(
+            (outreach) => outreach.status === "quote_received",
+          ) && activeProposals.length === 0
+        ? ["File received quote documents as proposals"]
+        : [
+            "Continue broker follow-up and import replies at the forwarding address",
+          ];
   const requestPath = `${basePath}/${requestId}`;
 
   return (
@@ -1669,7 +1870,7 @@ export function ProcurementRequestWorkspace({
         >
           <TabsList variant="pill" aria-label="Procurement request view">
             <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="packet">Packet</TabsTrigger>
+            <TabsTrigger value="packet">Packet &amp; sharing</TabsTrigger>
             <TabsTrigger value="market">
               Market
               <span className="text-muted-foreground/60">
@@ -1679,10 +1880,9 @@ export function ProcurementRequestWorkspace({
             <TabsTrigger value="proposals">
               Proposals
               <span className="text-muted-foreground/60">
-                {proposals.length}
+                {activeProposals.length}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="activity">Client activity</TabsTrigger>
             <TabsTrigger value="files">
               Files
               <span className="text-muted-foreground/60">
@@ -1703,8 +1903,24 @@ export function ProcurementRequestWorkspace({
         <div className="space-y-4">
           <OperationalLabelValueList>
             <OperationalLabelValueRow
-              label="Status"
+              label="Current stage"
               value={<RequestStatusTag status={details.request.status} />}
+            />
+            <OperationalLabelValueRow
+              label="Broker progress"
+              value={`${details.request.brokerCount} contacted · ${details.request.quoteCount} quotes`}
+            />
+            <OperationalLabelValueRow
+              label="Proposals"
+              value={`${activeProposals.length} active${extractionExceptions.length ? ` · ${extractionExceptions.length} extraction exceptions` : ""}`}
+            />
+            <OperationalLabelValueRow
+              label="Packet"
+              value={
+                packetForWorkbench.gaps.length
+                  ? `${packetForWorkbench.gaps.length} empty sections`
+                  : `Revision ${packetForWorkbench.packetRevision} ready`
+              }
             />
             <OperationalLabelValueRow
               label="Target effective date"
@@ -1726,6 +1942,24 @@ export function ProcurementRequestWorkspace({
               value={formatDisplayDate(details.request.updatedAt, "—")}
             />
           </OperationalLabelValueList>
+          <OperationalPanel>
+            <OperationalPanelHeader title="Next actions" />
+            <OperationalPanelBody>
+              <ul className="space-y-2">
+                {nextActions.map((action) => (
+                  <li
+                    key={action}
+                    className={`flex gap-2 text-foreground ${typeStyle("body.default")}`}
+                  >
+                    <span className="text-muted-foreground" aria-hidden="true">
+                      —
+                    </span>
+                    {action}
+                  </li>
+                ))}
+              </ul>
+            </OperationalPanelBody>
+          </OperationalPanel>
           <OperationalLabelValueList>
             <OperationalLabelValueRow
               label="What the client asked for"
@@ -1737,11 +1971,61 @@ export function ProcurementRequestWorkspace({
               }
             />
           </OperationalLabelValueList>
+          <OperationalPanel as="section">
+            <OperationalPanelHeader
+              title="Timeline"
+              description="Operator actions, imported email, files, outreach, and proposals"
+            />
+            <OperationalPanelBody>
+              <div className="divide-y divide-border">
+                {details.timeline.length ? (
+                  details.timeline.map((entry) => (
+                    <div
+                      key={entry.key}
+                      className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4"
+                    >
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <Badge variant="outline" className="shrink-0">
+                          {TIMELINE_KIND_LABELS[entry.kind]}
+                        </Badge>
+                        <span className={typeStyle("body.default")}>
+                          {entry.summary}
+                          {entry.detail ? (
+                            <span
+                              className={`ml-2 text-muted-foreground ${typeStyle("caption.default")}`}
+                            >
+                              {entry.detail}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                      <span
+                        className={`shrink-0 text-muted-foreground ${typeStyle("caption.default")}`}
+                      >
+                        {formatDisplayDateTime(entry.createdAt)}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p
+                    className={`text-muted-foreground ${typeStyle("body.default")}`}
+                  >
+                    Nothing has happened on this request yet.
+                  </p>
+                )}
+              </div>
+            </OperationalPanelBody>
+          </OperationalPanel>
         </div>
       ) : null}
 
       {view === "packet" ? (
-        <PacketWorkspace requestId={requestId} readOnly={readOnly} />
+        <PacketWorkspace
+          key={requestId}
+          requestId={requestId}
+          outreaches={details.outreaches}
+          readOnly={readOnly}
+        />
       ) : null}
 
       {view === "proposals" ? (
@@ -1777,6 +2061,7 @@ export function ProcurementRequestWorkspace({
                   const conclusion = review?.stale
                     ? undefined
                     : (review?.staffConclusion ?? review?.modelConclusion);
+                  const latestExtraction = proposal.extraction.latest;
                   return (
                     <TableRow key={proposal._id}>
                       <TableCell>
@@ -1815,6 +2100,20 @@ export function ProcurementRequestWorkspace({
                         >
                           {proposal.status.replaceAll("_", " ")}
                         </StatusTag>
+                        {latestExtraction?.stuck ? (
+                          <p
+                            className={`mt-1 text-warning ${typeStyle("caption.default")}`}
+                          >
+                            Extraction lease expired
+                          </p>
+                        ) : latestExtraction?.status === "failed" ? (
+                          <p
+                            className={`mt-1 max-w-48 truncate text-destructive ${typeStyle("caption.default")}`}
+                            title={latestExtraction.lastError ?? undefined}
+                          >
+                            {latestExtraction.lastError || "Extraction failed"}
+                          </p>
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {offer.premium ?? offer.premiumAmount ?? "—"}
@@ -1850,46 +2149,113 @@ export function ProcurementRequestWorkspace({
                         {proposal.documents.length}
                       </TableCell>
                       <TableCell>
-                        {!readOnly &&
-                        (!review || review.stale) &&
-                        proposal.extractedOffer ? (
-                          <PillButton
-                            size="compact"
-                            variant="secondary"
-                            disabled={reviewingProposalId === proposal._id}
-                            onClick={() => void reviewProposal(proposal._id)}
-                          >
-                            {reviewingProposalId === proposal._id ? (
-                              <Loader2 className="size-3.5 animate-spin" />
+                        {!readOnly ? (
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {(!review || review.stale) &&
+                            proposal.extractedOffer ? (
+                              <PillButton
+                                size="compact"
+                                variant="secondary"
+                                disabled={reviewingProposalId === proposal._id}
+                                onClick={() =>
+                                  void reviewProposal(proposal._id)
+                                }
+                              >
+                                {reviewingProposalId === proposal._id ? (
+                                  <Loader2 className="size-3.5 animate-spin" />
+                                ) : null}
+                                {review?.stale
+                                  ? "Re-run review"
+                                  : "Generate review"}
+                              </PillButton>
+                            ) : review &&
+                              !review.stale &&
+                              !review.staffConclusion ? (
+                              <PillButton
+                                size="compact"
+                                variant="secondary"
+                                onClick={() =>
+                                  openProposalReview(proposal as ProposalView)
+                                }
+                              >
+                                Review
+                              </PillButton>
+                            ) : proposal.status === "reviewed" &&
+                              conclusion === "meets_requirements" ? (
+                              <PillButton
+                                size="compact"
+                                onClick={() =>
+                                  void selectProposal({
+                                    proposalId: proposal._id,
+                                  })
+                                }
+                              >
+                                Select
+                              </PillButton>
                             ) : null}
-                            {review?.stale
-                              ? "Re-run review"
-                              : "Generate review"}
-                          </PillButton>
-                        ) : !readOnly &&
-                          review &&
-                          !review.stale &&
-                          !review.staffConclusion ? (
-                          <PillButton
-                            size="compact"
-                            variant="secondary"
-                            onClick={() =>
-                              openProposalReview(proposal as ProposalView)
-                            }
-                          >
-                            Review
-                          </PillButton>
-                        ) : !readOnly &&
-                          proposal.status === "reviewed" &&
-                          conclusion === "meets_requirements" ? (
-                          <PillButton
-                            size="compact"
-                            onClick={() =>
-                              void selectProposal({ proposalId: proposal._id })
-                            }
-                          >
-                            Select
-                          </PillButton>
+                            {latestExtraction?.stuck ||
+                            latestExtraction?.status === "failed" ? (
+                              <PillButton
+                                size="compact"
+                                variant="secondary"
+                                disabled={workingProposalAction !== null}
+                                onClick={() =>
+                                  void runProposalMutation(
+                                    `retry:${proposal._id}`,
+                                    () =>
+                                      retryProposalExtraction({
+                                        proposalId: proposal._id,
+                                      }),
+                                    "Proposal extraction queued",
+                                    "Could not retry proposal extraction",
+                                  )
+                                }
+                              >
+                                Retry extraction
+                              </PillButton>
+                            ) : latestExtraction?.status === "pending" ||
+                              latestExtraction?.status === "running" ? (
+                              <PillButton
+                                size="compact"
+                                variant="secondary"
+                                disabled={workingProposalAction !== null}
+                                onClick={() =>
+                                  void runProposalMutation(
+                                    `cancel:${proposal._id}`,
+                                    () =>
+                                      cancelProposalExtraction({
+                                        proposalId: proposal._id,
+                                      }),
+                                    "Proposal extraction cancelled",
+                                    "Could not cancel proposal extraction",
+                                  )
+                                }
+                              >
+                                Cancel extraction
+                              </PillButton>
+                            ) : null}
+                            {proposal.status !== "selected" &&
+                            proposal.status !== "archived" ? (
+                              <PillButton
+                                size="compact"
+                                variant="destructive"
+                                disabled={workingProposalAction !== null}
+                                onClick={() =>
+                                  void runProposalMutation(
+                                    `archive:${proposal._id}`,
+                                    () =>
+                                      archiveProposal({
+                                        proposalId: proposal._id,
+                                      }),
+                                    "Proposal archived",
+                                    "Could not archive the proposal",
+                                  )
+                                }
+                              >
+                                Archive
+                              </PillButton>
+                            ) : null}
+                          </div>
                         ) : null}
                       </TableCell>
                     </TableRow>
@@ -1899,100 +2265,6 @@ export function ProcurementRequestWorkspace({
             </Table>
           </OperationalPanel>
         )
-      ) : null}
-
-      {view === "activity" ? (
-        <OperationalPanel>
-          {(details.clientActivity ?? []).length === 0 ? (
-            <OperationalPanelBody
-              className={`text-muted-foreground ${typeStyle("body.default")}`}
-            >
-              No shared client activity yet.
-            </OperationalPanelBody>
-          ) : (
-            (details.clientActivity ?? []).map((item) => (
-              <div
-                key={item._id}
-                className="border-b border-border px-4 py-3 last:border-0"
-              >
-                <p
-                  className={`whitespace-pre-wrap text-foreground ${typeStyle("body.default")}`}
-                >
-                  {item.body ?? "Shared document"}
-                </p>
-                <p
-                  className={`mt-1 text-muted-foreground ${typeStyle("caption.default")}`}
-                >
-                  {item.authorSide === "client" ? "Client" : "Staff"} ·{" "}
-                  {formatDisplayDateTime(item.createdAt)}
-                </p>
-              </div>
-            ))
-          )}
-          {(details.requestDocuments ?? [])
-            .filter((document) => document.clientVisible)
-            .map((document) => (
-              <div
-                key={document._id}
-                className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-0"
-              >
-                <FileText className="size-4 text-muted-foreground" />
-                {document.url ? (
-                  <a
-                    href={document.url}
-                    download
-                    className={`text-foreground underline underline-offset-4 ${typeStyle("body.medium")}`}
-                  >
-                    {document.name}
-                  </a>
-                ) : (
-                  <span className={typeStyle("body.medium")}>
-                    {document.name}
-                  </span>
-                )}
-              </div>
-            ))}
-          {!readOnly ? (
-            <OperationalPanelBody className="space-y-3 border-t border-border">
-              <Textarea
-                value={clientReply}
-                onChange={(event) => setClientReply(event.target.value)}
-                rows={4}
-                placeholder="Post an update the client can see"
-              />
-              <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-                <PillButton
-                  variant="secondary"
-                  disabled={sharingWithClient}
-                  onClick={() =>
-                    document
-                      .getElementById("operator-request-client-file")
-                      ?.click()
-                  }
-                >
-                  <Upload className="size-3.5" />
-                  Share file
-                </PillButton>
-                <input
-                  id="operator-request-client-file"
-                  type="file"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void shareRequestDocument(file);
-                    event.currentTarget.value = "";
-                  }}
-                />
-                <PillButton
-                  disabled={sharingWithClient || !clientReply.trim()}
-                  onClick={() => void shareClientReply()}
-                >
-                  Post update
-                </PillButton>
-              </div>
-            </OperationalPanelBody>
-          ) : null}
-        </OperationalPanel>
       ) : null}
 
       {view === "market" ? (
@@ -2111,6 +2383,7 @@ export function ProcurementRequestWorkspace({
                   <TableHead>Purpose</TableHead>
                   <TableHead>Broker</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Access</TableHead>
                   <TableHead>Updated</TableHead>
                   <TableHead className="w-0" />
                 </TableRow>
@@ -2190,6 +2463,18 @@ export function ProcurementRequestWorkspace({
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {procurementFileStatusLabel(item.status)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {[
+                          item.clientVisible ? "Client" : null,
+                          item.brokerRelease === "attached"
+                            ? "Broker attachment"
+                            : item.brokerRelease === "listed"
+                              ? "Broker list"
+                              : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ") || "Private"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatDisplayDate(item.updatedAt, "—")}

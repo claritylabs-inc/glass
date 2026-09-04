@@ -17,6 +17,7 @@ import {
 import {
   requireOperator,
   requireOperatorForUser,
+  writeOperatorAudit,
 } from "./lib/operatorIdentity";
 import { requireDirectOperatorWrite } from "./procurementRequests";
 import { readOrgWiki } from "./orgWiki";
@@ -35,6 +36,49 @@ const audienceValidator = v.union(
   v.literal("broker"),
 );
 const PACKET_LINK_TTL_DAYS = 30;
+const MAX_PACKET_LINK_TTL_DAYS = 90;
+
+function brokerSectionProjectionChanged(
+  previous: Pick<
+    Doc<"procurementPacketSections">,
+    "audience" | "heading" | "body" | "order"
+  > | null,
+  next: Pick<
+    Doc<"procurementPacketSections">,
+    "audience" | "heading" | "body" | "order"
+  >,
+) {
+  const wasVisible = previous
+    ? audienceIncludes(previous.audience, "broker")
+    : false;
+  const isVisible = audienceIncludes(next.audience, "broker");
+  return (
+    wasVisible !== isVisible ||
+    (isVisible &&
+      (!previous ||
+        previous.heading !== next.heading ||
+        previous.body !== next.body ||
+        previous.order !== next.order))
+  );
+}
+
+function packetLinkStatus(
+  link: Pick<
+    Doc<"procurementPacketLinks">,
+    "revokedAt" | "expiresAt" | "packetRevisionAtIssue"
+  >,
+  packetRevision: number,
+  now: number,
+) {
+  return {
+    state: link.revokedAt
+      ? ("revoked" as const)
+      : link.expiresAt <= now
+        ? ("expired" as const)
+        : ("active" as const),
+    stale: link.packetRevisionAtIssue !== packetRevision,
+  };
+}
 
 async function requestForOperator(
   ctx: QueryCtx | MutationCtx,
@@ -97,13 +141,27 @@ export async function upsertPacketSectionByOperator(
   const id =
     existing?._id ?? (await ctx.db.insert("procurementPacketSections", values));
   if (existing) await ctx.db.patch(existing._id, values);
-  if (audience !== "operator")
+  if (brokerSectionProjectionChanged(existing, values))
     await ctx.db.patch(request._id, {
       packetRevision: (request.packetRevision ?? 0) + 1,
       updatedAt: now,
       updatedByUserId: args.operatorUserId,
     });
-  return { id };
+  const auditEventId = await writeOperatorAudit(ctx, {
+    operatorUserId: args.operatorUserId,
+    type: "setup_write",
+    targetOrgId: request.clientOrgId,
+    summary: `${existing ? "Updated" : "Created"} packet section ${values.heading} on ${request.title}`,
+    metadata: {
+      domain: "procurement",
+      requestId: request._id,
+      packetSectionId: id,
+      operation: existing ? "update_packet_section" : "create_packet_section",
+      audience,
+      source: values.source,
+    },
+  });
+  return { id, auditEventId };
 }
 
 export async function setPacketSectionAudienceByOperator(
@@ -132,11 +190,32 @@ export async function setPacketSectionAudienceByOperator(
       updatedAt: now,
     });
     const request = await ctx.db.get(section.requestId);
-    if (request && args.audience !== "operator")
+    if (
+      request &&
+      brokerSectionProjectionChanged(section, {
+        ...section,
+        audience: args.audience,
+      })
+    )
       await ctx.db.patch(request._id, {
         packetRevision: (request.packetRevision ?? 0) + 1,
         updatedAt: now,
         updatedByUserId: args.operatorUserId,
+      });
+    if (request && args.audience !== section.audience)
+      await writeOperatorAudit(ctx, {
+        operatorUserId: args.operatorUserId,
+        type: "setup_write",
+        targetOrgId: request.clientOrgId,
+        summary: `Changed packet section ${section.heading} audience to ${args.audience}`,
+        metadata: {
+          domain: "procurement",
+          requestId: request._id,
+          packetSectionId: section._id,
+          operation: "set_packet_section_audience",
+          previousAudience: section.audience,
+          nextAudience: args.audience,
+        },
       });
   }
   return { ok: true };
@@ -183,6 +262,166 @@ export async function listPacketSections(
     ).map(([key, heading]) => ({ key, heading })),
   };
 }
+
+async function brokerPacketProjection(
+  ctx: QueryCtx | MutationCtx,
+  args: {
+    requestId: Id<"procurementRequests">;
+    outreachId: Id<"procurementBrokerOutreaches">;
+  },
+) {
+  const request = await requestForOperator(ctx, args.requestId);
+  const outreach = await ctx.db.get(args.outreachId);
+  if (!outreach || outreach.requestId !== request._id)
+    throw new Error("Outreach does not belong to this request");
+  const [sections, fileItems] = await Promise.all([
+    ctx.db
+      .query("procurementPacketSections")
+      .withIndex("request", (q) => q.eq("requestId", request._id))
+      .collect(),
+    ctx.db
+      .query("procurementFileItems")
+      .withIndex("request", (q) => q.eq("requestId", request._id))
+      .collect(),
+  ]);
+  const visibleSections = sections
+    .filter((section) => audienceIncludes(section.audience, "broker"))
+    .sort((left, right) => left.order - right.order)
+    .map(({ key, heading, body, order }) => ({ key, heading, body, order }));
+  const files = (
+    await Promise.all(
+      fileItems
+        .filter(
+          (item) =>
+            (!item.outreachId || item.outreachId === outreach._id) &&
+            (item.brokerRelease === "listed" ||
+              item.brokerRelease === "attached"),
+        )
+        .map(async (item) => {
+          const file = item.clientFileId
+            ? await ctx.db.get(item.clientFileId)
+            : null;
+          if (
+            !file ||
+            file.orgId !== request.clientOrgId ||
+            file.deletedAt ||
+            file.archivedAt
+          )
+            return null;
+          return {
+            fileItemId: item._id,
+            clientFileId: file._id,
+            name: item.label || file.name,
+            contentType: file.contentType,
+            size: file.size,
+            purpose: item.purpose,
+            release: item.brokerRelease as "listed" | "attached",
+          };
+        }),
+    )
+  ).filter((file): file is NonNullable<typeof file> => file !== null);
+  return {
+    request: {
+      requestId: request._id,
+      title: request.title,
+      packetRevision: request.packetRevision ?? 0,
+    },
+    outreach: {
+      outreachId: outreach._id,
+      brokerOrgId: outreach.brokerOrgId ?? null,
+      brokerName: outreach.brokerName,
+      recipientLabel: outreach.contactName || outreach.brokerName,
+      recipientEmail: outreach.contactEmail ?? null,
+    },
+    sections: visibleSections,
+    markdown: assemblePacketMarkdown(
+      visibleSections.map((section) => ({ ...section, audience: "broker" })),
+      { audience: "broker" },
+    ),
+    files,
+    gaps: PACKET_SECTIONS.filter(
+      ([key, , defaultAudience]) =>
+        audienceIncludes(defaultAudience, "broker") &&
+        !visibleSections.some(
+          (section) => section.key === key && section.body.trim(),
+        ),
+    ).map(([key, heading]) => ({ key, heading })),
+  };
+}
+
+export async function previewBrokerPacket(
+  ctx: QueryCtx | MutationCtx,
+  args: {
+    requestId: Id<"procurementRequests">;
+    outreachId: Id<"procurementBrokerOutreaches">;
+  },
+) {
+  return await brokerPacketProjection(ctx, args);
+}
+
+export const preview = query({
+  args: {
+    requestId: v.id("procurementRequests"),
+    outreachId: v.id("procurementBrokerOutreaches"),
+  },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    return await previewBrokerPacket(ctx, args);
+  },
+});
+
+export async function listPacketLinksForOperator(
+  ctx: QueryCtx | MutationCtx,
+  requestId: Id<"procurementRequests">,
+) {
+  const request = await requestForOperator(ctx, requestId);
+  const links = await ctx.db
+    .query("procurementPacketLinks")
+    .withIndex("request", (q) => q.eq("requestId", request._id))
+    .order("desc")
+    .collect();
+  const now = dayjs().valueOf();
+  return await Promise.all(
+    links.map(async (link) => {
+      const outreach = await ctx.db.get(link.outreachId);
+      return {
+        linkId: link._id,
+        outreachId: link.outreachId,
+        brokerName: outreach?.brokerName ?? "Unknown broker",
+        recipientLabel: link.recipientLabel,
+        recipientEmail: link.recipientEmail ?? null,
+        expiresAt: link.expiresAt,
+        revokedAt: link.revokedAt ?? null,
+        packetRevisionAtIssue: link.packetRevisionAtIssue,
+        sectionCount: link.sectionSnapshot?.length ?? null,
+        fileCount:
+          link.artifactSnapshot?.length ??
+          link.includedFileItemIds?.length ??
+          null,
+        includedFileItemIds:
+          link.artifactSnapshot?.map((file) => file.fileItemId) ??
+          link.includedFileItemIds ??
+          null,
+        includedArtifacts: link.artifactSnapshot ?? null,
+        deliveryStatus: link.deliveryStatus ?? "not_sent",
+        deliveryError: link.deliveryError ?? null,
+        sentAt: link.sentAt ?? null,
+        lastViewedAt: link.lastViewedAt ?? null,
+        viewCount: link.viewCount,
+        createdAt: link.createdAt,
+        ...packetLinkStatus(link, request.packetRevision ?? 0, now),
+      };
+    }),
+  );
+}
+
+export const listLinks = query({
+  args: { requestId: v.id("procurementRequests") },
+  handler: async (ctx, args) => {
+    await requireOperator(ctx);
+    return await listPacketLinksForOperator(ctx, args.requestId);
+  },
+});
 
 export const get = query({
   args: {
@@ -299,13 +538,34 @@ export const acceptProposal = mutation({
       updatedByUserId: operator.userId,
     });
     const request = await ctx.db.get(section.requestId);
-    if (request && nextAudience !== "operator")
+    if (
+      request &&
+      brokerSectionProjectionChanged(section, {
+        ...section,
+        body: section.proposedBody ?? section.body,
+        audience: nextAudience,
+      })
+    )
       await ctx.db.patch(request._id, {
         packetRevision: (request.packetRevision ?? 0) + 1,
         updatedAt: now,
         updatedByUserId: operator.userId,
       });
-    return { ok: true };
+    const auditEventId = request
+      ? await writeOperatorAudit(ctx, {
+          operatorUserId: operator.userId,
+          type: "setup_write",
+          targetOrgId: request.clientOrgId,
+          summary: `Accepted proposed changes to packet section ${section.heading}`,
+          metadata: {
+            domain: "procurement",
+            requestId: request._id,
+            packetSectionId: section._id,
+            operation: "accept_packet_section_proposal",
+          },
+        })
+      : null;
+    return { ok: true, auditEventId };
   },
 });
 
@@ -316,6 +576,7 @@ export const rejectProposal = mutation({
     await directOperator(ctx, operator.userId);
     const section = await ctx.db.get(args.sectionId);
     if (!section) throw new Error("Packet section not found");
+    const request = await ctx.db.get(section.requestId);
     await ctx.db.patch(section._id, {
       proposedBody: undefined,
       audienceProposed: undefined,
@@ -323,9 +584,60 @@ export const rejectProposal = mutation({
       updatedAt: dayjs().valueOf(),
       updatedByUserId: operator.userId,
     });
-    return { ok: true };
+    const auditEventId = request
+      ? await writeOperatorAudit(ctx, {
+          operatorUserId: operator.userId,
+          type: "setup_write",
+          targetOrgId: request.clientOrgId,
+          summary: `Rejected proposed changes to packet section ${section.heading}`,
+          metadata: {
+            domain: "procurement",
+            requestId: request._id,
+            packetSectionId: section._id,
+            operation: "reject_packet_section_proposal",
+          },
+        })
+      : null;
+    return { ok: true, auditEventId };
   },
 });
+
+export const mintLink = mutation({
+  args: {
+    requestId: v.id("procurementRequests"),
+    outreachId: v.id("procurementBrokerOutreaches"),
+    recipientLabel: v.string(),
+    recipientEmail: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    await directOperator(ctx, operator.userId);
+    return mintPacketLinkForOperator(ctx, {
+      ...args,
+      operatorUserId: operator.userId,
+    });
+  },
+});
+
+/** Callers name a lifetime in days and let the server date it. A raw
+ * `expiresAt` from a browser whose clock runs ahead would trip the maximum. */
+function requestedPacketLinkExpiry(
+  now: number,
+  args: { expiresAt?: number; expiresInDays?: number },
+) {
+  if (args.expiresInDays === undefined) return args.expiresAt;
+  if (
+    !Number.isInteger(args.expiresInDays) ||
+    args.expiresInDays < 1 ||
+    args.expiresInDays > MAX_PACKET_LINK_TTL_DAYS
+  )
+    throw new Error(
+      `Packet link lifetime must be between 1 and ${MAX_PACKET_LINK_TTL_DAYS} days`,
+    );
+  return dayjs(now).add(args.expiresInDays, "day").valueOf();
+}
 
 export async function mintPacketLinkForOperator(
   ctx: MutationCtx,
@@ -336,6 +648,7 @@ export async function mintPacketLinkForOperator(
     recipientLabel: string;
     recipientEmail?: string;
     expiresAt?: number;
+    expiresInDays?: number;
   },
 ) {
   await directOperator(ctx, args.operatorUserId);
@@ -344,20 +657,43 @@ export async function mintPacketLinkForOperator(
   if (!outreach || outreach.requestId !== request._id)
     throw new Error("Outreach does not belong to this request");
   const now = dayjs().valueOf();
+  const preview = await brokerPacketProjection(ctx, {
+    requestId: request._id,
+    outreachId: outreach._id,
+  });
   const token = createMagicLinkToken();
+  const maximumExpiry = dayjs(now)
+    .add(MAX_PACKET_LINK_TTL_DAYS, "day")
+    .valueOf();
+  const requestedExpiry = requestedPacketLinkExpiry(now, args);
+  if (
+    requestedExpiry !== undefined &&
+    (!Number.isFinite(requestedExpiry) || requestedExpiry <= now)
+  )
+    throw new Error("Packet link expiry must be in the future");
+  if (requestedExpiry !== undefined && requestedExpiry > maximumExpiry)
+    throw new Error(
+      `Packet links may expire at most ${MAX_PACKET_LINK_TTL_DAYS} days after issue`,
+    );
   const expiresAt =
-    args.expiresAt && args.expiresAt > now
-      ? args.expiresAt
-      : dayjs(now).add(PACKET_LINK_TTL_DAYS, "day").valueOf();
+    requestedExpiry ?? dayjs(now).add(PACKET_LINK_TTL_DAYS, "day").valueOf();
   const id = await ctx.db.insert("procurementPacketLinks", {
     requestId: request._id,
     clientOrgId: request.clientOrgId,
     outreachId: outreach._id,
     tokenHash: await hashMagicLinkToken(token),
-    recipientLabel: args.recipientLabel.trim(),
+    recipientLabel: args.recipientLabel.trim() || outreach.brokerName,
     recipientEmail: args.recipientEmail?.trim().toLowerCase(),
     expiresAt,
     packetRevisionAtIssue: request.packetRevision ?? 0,
+    sectionSnapshot: preview.sections,
+    artifactSnapshot: preview.files.map((file) => ({
+      fileItemId: file.fileItemId,
+      clientFileId: file.clientFileId,
+      name: file.name,
+      release: file.release,
+    })),
+    includedFileItemIds: preview.files.map((file) => file.fileItemId),
     viewCount: 0,
     createdByUserId: args.operatorUserId,
     createdAt: now,
@@ -368,11 +704,39 @@ export async function mintPacketLinkForOperator(
     updatedAt: now,
     updatedByUserId: args.operatorUserId,
   });
+  const auditEventId = await writeOperatorAudit(ctx, {
+    operatorUserId: args.operatorUserId,
+    type: "setup_write",
+    targetOrgId: request.clientOrgId,
+    summary: `Created broker packet link for ${outreach.brokerName}`,
+    metadata: {
+      domain: "procurement",
+      operation: "create_packet_link",
+      requestId: request._id,
+      outreachId: outreach._id,
+      linkId: id,
+      expiresAt,
+      packetRevisionAtIssue: request.packetRevision ?? 0,
+      sectionCount: preview.sections.length,
+      fileCount: preview.files.length,
+    },
+  });
   return {
     id,
     token,
     url: `${getClientPortalUrl()}/share/packet/${token}`,
     expiresAt,
+    audience: "broker" as const,
+    packetRevisionAtIssue: request.packetRevision ?? 0,
+    sectionCount: preview.sections.length,
+    fileCount: preview.files.length,
+    includedArtifacts: preview.files.map((file) => ({
+      fileItemId: file.fileItemId,
+      clientFileId: file.clientFileId,
+      name: file.name,
+      release: file.release,
+    })),
+    auditEventId,
   };
 }
 
@@ -384,8 +748,151 @@ export const mintLinkInternal = internalMutation({
     recipientLabel: v.string(),
     recipientEmail: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
   },
   handler: async (ctx, args) => mintPacketLinkForOperator(ctx, args),
+});
+
+export async function revokePacketLinkByOperator(
+  ctx: MutationCtx,
+  args: {
+    operatorUserId: Id<"users">;
+    linkId: Id<"procurementPacketLinks">;
+  },
+) {
+  await directOperator(ctx, args.operatorUserId);
+  const link = await ctx.db.get(args.linkId);
+  if (!link) throw new Error("Packet link not found");
+  const now = dayjs().valueOf();
+  if (!link.revokedAt)
+    await ctx.db.patch(link._id, {
+      revokedAt: now,
+      revokedByUserId: args.operatorUserId,
+      updatedAt: now,
+    });
+  const auditEventId = !link.revokedAt
+    ? await writeOperatorAudit(ctx, {
+        operatorUserId: args.operatorUserId,
+        type: "setup_write",
+        targetOrgId: link.clientOrgId,
+        summary: `Revoked broker packet link for ${link.recipientLabel}`,
+        metadata: {
+          domain: "procurement",
+          operation: "revoke_packet_link",
+          requestId: link.requestId,
+          outreachId: link.outreachId,
+          linkId: link._id,
+        },
+      })
+    : null;
+  return {
+    linkId: link._id,
+    revoked: !link.revokedAt,
+    revokedAt: link.revokedAt ?? now,
+    auditEventId,
+  };
+}
+
+export const revokeLink = mutation({
+  args: { linkId: v.id("procurementPacketLinks") },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    return await revokePacketLinkByOperator(ctx, {
+      operatorUserId: operator.userId,
+      linkId: args.linkId,
+    });
+  },
+});
+
+export async function rotatePacketLinkByOperator(
+  ctx: MutationCtx,
+  args: {
+    operatorUserId: Id<"users">;
+    linkId: Id<"procurementPacketLinks">;
+    expiresAt?: number;
+    expiresInDays?: number;
+  },
+) {
+  await directOperator(ctx, args.operatorUserId);
+  const current = await ctx.db.get(args.linkId);
+  if (!current) throw new Error("Packet link not found");
+  await revokePacketLinkByOperator(ctx, args);
+  return await mintPacketLinkForOperator(ctx, {
+    operatorUserId: args.operatorUserId,
+    requestId: current.requestId,
+    outreachId: current.outreachId,
+    recipientLabel: current.recipientLabel,
+    recipientEmail: current.recipientEmail,
+    expiresAt: args.expiresAt,
+    expiresInDays: args.expiresInDays,
+  });
+}
+
+export const rotateLink = mutation({
+  args: {
+    linkId: v.id("procurementPacketLinks"),
+    expiresAt: v.optional(v.number()),
+    expiresInDays: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const operator = await requireOperator(ctx);
+    return await rotatePacketLinkByOperator(ctx, {
+      operatorUserId: operator.userId,
+      ...args,
+    });
+  },
+});
+
+export const recordDeliveryInternal = internalMutation({
+  args: {
+    operatorUserId: v.id("users"),
+    linkId: v.id("procurementPacketLinks"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("sent"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const link = await ctx.db.get(args.linkId);
+    if (!link) throw new Error("Packet link not found");
+    const now = dayjs().valueOf();
+    await ctx.db.patch(link._id, {
+      deliveryStatus: args.status,
+      deliveryError: args.error,
+      sentAt: args.status === "sent" ? now : link.sentAt,
+      updatedAt: now,
+    });
+    if (args.status === "sent") {
+      const outreach = await ctx.db.get(link.outreachId);
+      if (outreach)
+        await ctx.db.patch(outreach._id, {
+          sentAt: now,
+          updatedByUserId: args.operatorUserId,
+          updatedAt: now,
+        });
+    }
+    const auditEventId =
+      args.status !== "pending"
+        ? await writeOperatorAudit(ctx, {
+            operatorUserId: args.operatorUserId,
+            type: "setup_write",
+            targetOrgId: link.clientOrgId,
+            summary: `${args.status === "sent" ? "Sent" : "Failed to send"} broker packet to ${link.recipientLabel}`,
+            metadata: {
+              domain: "procurement",
+              operation: "send_packet",
+              requestId: link.requestId,
+              outreachId: link.outreachId,
+              linkId: link._id,
+              status: args.status,
+              error: args.error,
+            },
+          })
+        : null;
+    return { auditEventId };
+  },
 });
 
 export const getByToken = query({
@@ -408,32 +915,82 @@ export const getByToken = query({
       .query("procurementPacketSections")
       .withIndex("request", (q) => q.eq("requestId", request._id))
       .collect();
-    const visible = sections
-      .filter((section) => audienceIncludes(section.audience, "broker"))
-      .sort((a, b) => a.order - b.order);
+    const visible = link.sectionSnapshot
+      ? link.sectionSnapshot
+      : sections
+          .filter((section) => audienceIncludes(section.audience, "broker"))
+          .sort((a, b) => a.order - b.order);
     const fileItems = await ctx.db
       .query("procurementFileItems")
       .withIndex("request", (q) => q.eq("requestId", request._id))
       .collect();
-    const files = fileItems
-      .filter(
-        (item) =>
-          item.brokerRelease === "listed" || item.brokerRelease === "attached",
+    const currentItems = new Map(
+      fileItems.map((item) => [String(item._id), item] as const),
+    );
+    const artifactSnapshot =
+      link.artifactSnapshot ??
+      fileItems
+        .filter(
+          (item) =>
+            (!link.includedFileItemIds ||
+              link.includedFileItemIds.includes(item._id)) &&
+            (!item.outreachId || item.outreachId === link.outreachId) &&
+            item.clientFileId &&
+            (item.brokerRelease === "listed" ||
+              item.brokerRelease === "attached"),
+        )
+        .map((item) => ({
+          fileItemId: item._id,
+          clientFileId: item.clientFileId!,
+          name: item.label,
+          release: item.brokerRelease as "listed" | "attached",
+        }));
+    const files = (
+      await Promise.all(
+        artifactSnapshot.map(async (snapshot) => {
+          const item = currentItems.get(String(snapshot.fileItemId));
+          if (
+            !item ||
+            item.requestId !== request._id ||
+            (item.outreachId && item.outreachId !== link.outreachId) ||
+            (item.brokerRelease !== "listed" &&
+              item.brokerRelease !== "attached")
+          )
+            return null;
+          const file = await ctx.db.get(snapshot.clientFileId);
+          if (
+            !file ||
+            file.orgId !== link.clientOrgId ||
+            file.deletedAt ||
+            file.archivedAt
+          )
+            return null;
+          const release: "listed" | "attached" =
+            snapshot.release === "attached" && item.brokerRelease === "attached"
+              ? "attached"
+              : "listed";
+          const siteUrl =
+            process.env.CONVEX_SITE_URL?.trim() || getClientPortalUrl();
+          const downloadUrl = new URL("/packet-file", siteUrl);
+          downloadUrl.searchParams.set("token", token);
+          downloadUrl.searchParams.set("item", snapshot.fileItemId);
+          return {
+            _id: snapshot.fileItemId,
+            name: snapshot.name,
+            brokerRelease: release,
+            downloadUrl: release === "attached" ? downloadUrl.toString() : null,
+          };
+        }),
       )
-      .map((item) => ({
-        _id: item._id,
-        name: item.label,
-        brokerRelease: item.brokerRelease as "listed" | "attached",
-      }));
+    ).filter((file): file is NonNullable<typeof file> => file !== null);
     return {
       state: "ready" as const,
-      linkId: link._id,
-      requestId: request._id,
       recipientLabel: link.recipientLabel,
       expiresAt: link.expiresAt,
-      packetRevisionAtIssue: link.packetRevisionAtIssue,
-      sections: visible,
-      markdown: assemblePacketMarkdown(visible, { audience: "broker" }),
+      markdown: assemblePacketMarkdown(
+        visible.map((section) => ({ ...section, audience: "broker" })),
+        { audience: "broker" },
+      ),
       files,
     };
   },
@@ -452,30 +1009,58 @@ export const getFileByTokenInternal = internalQuery({
     const itemId = ctx.db.normalizeId("procurementFileItems", args.item);
     if (!itemId) return null;
     const item = await ctx.db.get(itemId);
+    const snapshot = link.artifactSnapshot?.find(
+      (candidate) => candidate.fileItemId === itemId,
+    );
     if (
       !item ||
       item.requestId !== link.requestId ||
+      (item.outreachId && item.outreachId !== link.outreachId) ||
+      (link.artifactSnapshot && !snapshot) ||
+      (!link.artifactSnapshot &&
+        link.includedFileItemIds &&
+        !link.includedFileItemIds.includes(item._id)) ||
       item.brokerRelease !== "attached" ||
-      !item.clientFileId
+      (snapshot && snapshot.release !== "attached") ||
+      (!snapshot && !item.clientFileId)
     )
       return null;
-    const file = await ctx.db.get(item.clientFileId);
-    if (!file || file.deletedAt || file.archivedAt) return null;
+    const clientFileId = snapshot?.clientFileId ?? item.clientFileId;
+    if (!clientFileId) return null;
+    const file = await ctx.db.get(clientFileId);
+    if (
+      !file ||
+      file.orgId !== link.clientOrgId ||
+      file.deletedAt ||
+      file.archivedAt
+    )
+      return null;
     return {
       fileId: file.fileId,
       contentType: file.contentType,
-      name: file.name,
+      name: snapshot?.name ?? item.label,
     };
   },
 });
 
 export const recordView = mutation({
   args: {
-    linkId: v.id("procurementPacketLinks"),
-    path: v.string(),
+    token: v.string(),
     userAgent: v.optional(v.string()),
   },
-  handler: async (ctx, args) => recordViewInternalHandler(ctx, args),
+  handler: async (ctx, args) => {
+    const tokenHash = await hashMagicLinkToken(args.token.trim());
+    const link = await ctx.db
+      .query("procurementPacketLinks")
+      .withIndex("token", (query) => query.eq("tokenHash", tokenHash))
+      .unique();
+    if (!link) return { ok: false };
+    return await recordViewInternalHandler(ctx, {
+      linkId: link._id,
+      path: "/share/packet/[token]",
+      userAgent: args.userAgent,
+    });
+  },
 });
 
 async function recordViewInternalHandler(
@@ -494,8 +1079,8 @@ async function recordViewInternalHandler(
     linkId: link._id,
     requestId: link.requestId,
     at: now,
-    path: args.path,
-    userAgent: args.userAgent,
+    path: args.path.slice(0, 500),
+    userAgent: args.userAgent?.slice(0, 1_000),
   });
   await ctx.db.patch(link._id, {
     lastViewedAt: now,
