@@ -765,6 +765,35 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     summarize: (input) =>
       `Read channel health${input.orgId ? ` for organization ${input.orgId}` : ""}`,
   }),
+  send_operator_slack_message: defineOperatorTool({
+    version: 1,
+    description:
+      "Send one direct Slack message from Spot to an active operator whose exact email is linked to the configured host workspace. Use this only for a concrete operator-requested communication; delivery is externally visible and requires exact confirmation.",
+    inputSchema: z.object({
+      recipientEmail: z
+        .string()
+        .email()
+        .max(320)
+        .describe("Exact email of the active Spot operator to message"),
+      message: z
+        .string()
+        .trim()
+        .min(1)
+        .max(4_000)
+        .describe("Complete Slack message in mrkdwn"),
+    }),
+    capability: "operator.channels.write",
+    effect: "external_send",
+    requiredRole: "operator",
+    confirmation: "exact",
+    execution: "action",
+    target: (input) => ({
+      kind: "operator_slack_recipient",
+      id: input.recipientEmail,
+    }),
+    summarize: (input) =>
+      `Send a Slack direct message to ${input.recipientEmail}`,
+  }),
   retry_failed_policy_extraction: defineOperatorTool({
     version: 1,
     description:

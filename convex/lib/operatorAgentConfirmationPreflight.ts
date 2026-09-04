@@ -46,6 +46,7 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "update_organization_profile",
   "set_organization_status",
   "set_client_feature_flag",
+  "send_operator_slack_message",
   "clear_all_agent_memory",
 ] as const satisfies readonly OperatorAgentToolName[];
 
@@ -174,6 +175,31 @@ function validateOptionalEmail(value: unknown) {
   const email = normalizedText(value)?.toLowerCase();
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error("Enter a valid email address");
+  }
+}
+
+async function preflightOperatorSlackMessage(
+  ctx: MutationCtx,
+  input: Record<string, unknown>,
+) {
+  const recipientEmail = normalizedText(input.recipientEmail)?.toLowerCase();
+  if (!recipientEmail) throw new Error("Recipient email is required");
+  const recipient = await ctx.db
+    .query("operatorProfiles")
+    .withIndex("email", (query) => query.eq("email", recipientEmail))
+    .unique();
+  if (!recipient || recipient.status !== "active") {
+    throw new Error("Active Spot operator not found for recipient email");
+  }
+  const hostTeamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
+  if (
+    !hostTeamId ||
+    recipient.slackTeamId !== hostTeamId ||
+    !recipient.slackUserId?.trim()
+  ) {
+    throw new Error(
+      "Recipient is not linked to the configured operator Slack workspace",
+    );
   }
 }
 
@@ -986,6 +1012,9 @@ export async function preflightOperatorToolConfirmation(
       assertFeatureFlagAllowedForOrg(flagId, organization);
       return;
     }
+    case "send_operator_slack_message":
+      await preflightOperatorSlackMessage(ctx, args.input);
+      return;
     default:
       throw new Error(
         `Missing confirmation preflight for exact-confirmed tool ${args.toolName}`,

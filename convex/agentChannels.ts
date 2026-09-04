@@ -853,6 +853,38 @@ export const listOperatorSlackIdentities = query({
   },
 });
 
+export const getOperatorSlackRecipientForAction = internalQuery({
+  args: { recipientEmail: v.string() },
+  handler: async (ctx, args) => {
+    const recipientEmail = args.recipientEmail.trim().toLowerCase();
+    const profile = await ctx.db
+      .query("operatorProfiles")
+      .withIndex("email", (query) => query.eq("email", recipientEmail))
+      .unique();
+    if (!profile || profile.status !== "active") {
+      throw new Error("Active Spot operator not found for recipient email");
+    }
+    const hostTeamId = process.env.SLACK_CLARITY_TEAM_ID?.trim();
+    if (
+      !hostTeamId ||
+      profile.slackTeamId !== hostTeamId ||
+      !profile.slackUserId?.trim()
+    ) {
+      throw new Error(
+        "Recipient is not linked to the configured operator Slack workspace",
+      );
+    }
+    const user = await ctx.db.get(profile.userId);
+    return {
+      operatorUserId: profile.userId,
+      name: user?.name?.trim() || profile.email,
+      email: profile.email,
+      teamId: hostTeamId,
+      slackUserId: profile.slackUserId,
+    };
+  },
+});
+
 async function upsertSettings(
   ctx: MutationCtx,
   clientOrgId: Id<"organizations">,

@@ -351,3 +351,105 @@ export const getSendTarget = internalQuery({
     return await resolveSendTarget(ctx, args.connectionId, args.channelId);
   },
 });
+
+export const claimOperatorDirectMessage = internalMutation({
+  args: {
+    idempotencyKey: v.string(),
+    senderOperatorUserId: v.id("users"),
+    recipientOperatorUserId: v.id("users"),
+    teamId: v.string(),
+    recipientSlackUserId: v.string(),
+    recipientEmail: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("operatorSlackOutboundSends")
+      .withIndex("operator_idempotency", (query) =>
+        query
+          .eq("senderOperatorUserId", args.senderOperatorUserId)
+          .eq("idempotencyKey", args.idempotencyKey),
+      )
+      .unique();
+    const now = dayjs().valueOf();
+    if (existing) {
+      if (
+        existing.status === "sent" ||
+        existing.attemptCount >= 3 ||
+        (existing.status === "sending" &&
+          now - existing.updatedAt < STALE_SENDING_MS)
+      ) {
+        return { send: false, row: existing };
+      }
+      await ctx.db.patch(existing._id, {
+        status: "sending",
+        error: undefined,
+        providerErrorCode: undefined,
+        attemptCount: existing.attemptCount + 1,
+        updatedAt: now,
+      });
+      return {
+        send: true,
+        row: {
+          ...existing,
+          status: "sending" as const,
+          error: undefined,
+          providerErrorCode: undefined,
+          attemptCount: existing.attemptCount + 1,
+          updatedAt: now,
+        },
+      };
+    }
+    const id = await ctx.db.insert("operatorSlackOutboundSends", {
+      ...args,
+      status: "sending",
+      attemptCount: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const row = await ctx.db.get(id);
+    if (!row) {
+      throw new Error("Could not create operator Slack outbound ledger row");
+    }
+    return { send: true, row };
+  },
+});
+
+export const markOperatorDirectMessageSent = internalMutation({
+  args: {
+    id: v.id("operatorSlackOutboundSends"),
+    providerMessageId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!(await ctx.db.get(args.id))) return;
+    await ctx.db.patch(args.id, {
+      status: "sent",
+      providerMessageId: args.providerMessageId,
+      error: undefined,
+      providerErrorCode: undefined,
+      updatedAt: dayjs().valueOf(),
+    });
+  },
+});
+
+export const markOperatorDirectMessageFailed = internalMutation({
+  args: {
+    id: v.id("operatorSlackOutboundSends"),
+    error: v.string(),
+    providerErrorCode: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (!(await ctx.db.get(args.id))) return;
+    await ctx.db.patch(args.id, {
+      status: "failed",
+      error: args.error.slice(0, 1_000),
+      providerErrorCode: args.providerErrorCode,
+      updatedAt: dayjs().valueOf(),
+    });
+  },
+});
+
+export const getOperatorDirectMessage = internalQuery({
+  args: { id: v.id("operatorSlackOutboundSends") },
+  handler: async (ctx, args) => await ctx.db.get(args.id),
+});

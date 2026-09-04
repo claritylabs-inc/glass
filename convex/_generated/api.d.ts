@@ -61,6 +61,7 @@ import type * as actions_sendIntroImessage from "../actions/sendIntroImessage.js
 import type * as actions_sendNotificationEmail from "../actions/sendNotificationEmail.js";
 import type * as actions_sendNotificationImessage from "../actions/sendNotificationImessage.js";
 import type * as actions_sendNotificationSlack from "../actions/sendNotificationSlack.js";
+import type * as actions_sendOperatorSlack from "../actions/sendOperatorSlack.js";
 import type * as actions_sendPendingEmail from "../actions/sendPendingEmail.js";
 import type * as actions_sendSlack from "../actions/sendSlack.js";
 import type * as actions_slackCredentials from "../actions/slackCredentials.js";
@@ -411,6 +412,7 @@ declare const fullApi: ApiFromModules<{
   "actions/sendNotificationEmail": typeof actions_sendNotificationEmail;
   "actions/sendNotificationImessage": typeof actions_sendNotificationImessage;
   "actions/sendNotificationSlack": typeof actions_sendNotificationSlack;
+  "actions/sendOperatorSlack": typeof actions_sendOperatorSlack;
   "actions/sendPendingEmail": typeof actions_sendPendingEmail;
   "actions/sendSlack": typeof actions_sendSlack;
   "actions/slackCredentials": typeof actions_slackCredentials;
