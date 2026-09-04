@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Loader2 } from "lucide-react";
-import { SettingsSwitch } from "@/components/settings/settings-switch";
+import { SettingsToggleRow } from "@/components/settings/settings-toggle-row";
 import {
   OperationalPanel,
   OperationalPanelBody,
@@ -23,37 +23,6 @@ type AgentSettingsArgs = {
   bccRequesterOnAgentEmails: boolean;
   emailSendDelay: number;
 };
-
-function AgentSwitchRow({
-  title,
-  description,
-  checked,
-  onCheckedChange,
-  label,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  onCheckedChange: () => void;
-  label: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <div>
-        <p className={`text-foreground ${typeStyle("body.medium")}`}>{title}</p>
-        <p className={`mt-0.5 max-w-md text-muted-foreground/60 ${typeStyle("caption.default")}`}>
-          {description}
-        </p>
-      </div>
-      <SettingsSwitch
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        label={label}
-        className="ml-4"
-      />
-    </div>
-  );
-}
 
 export function AgentBehaviorSection() {
   const viewerOrg = useCachedViewerOrg();
@@ -132,52 +101,48 @@ export function AgentBehaviorSection() {
       <OperationalPanel>
         <OperationalPanelHeader title="Email behavior" />
         <OperationalPanelBody className="divide-y divide-border px-5 py-2">
-          <AgentSwitchRow
+          <SettingsToggleRow
             title="Email notifications for chat responses"
             description="Send the requesting team member an email copy when the agent replies in chat."
             checked={chatEmailNotifications}
-            onCheckedChange={() => setChatEmailNotifications((v) => !v)}
-            label="Toggle email notifications for chat responses"
+            onCheckedChange={setChatEmailNotifications}
           />
-          <AgentSwitchRow
+          <SettingsToggleRow
             title="BCC requester"
             description="Blind copy the team member who asked the agent to send an email."
             checked={bccRequesterOnAgentEmails}
-            onCheckedChange={() => setBccRequesterOnAgentEmails((v) => !v)}
-            label="Toggle BCC requester"
+            onCheckedChange={setBccRequesterOnAgentEmails}
           />
-        </OperationalPanelBody>
-      </OperationalPanel>
-
-      <OperationalPanel>
-        <OperationalPanelHeader title="Send delay" />
-        <OperationalPanelBody className="px-5 py-5">
-          <div>
-            <label className={`text-muted-foreground block mb-1.5 ${typeStyle("label.field")}`}>
-              Email send delay (seconds)
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {delayOptions.map((value) => {
-                const selected = emailSendDelay === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setEmailSendDelay(value)}
-                    className={`rounded-lg border px-3 py-1.5 transition-colors ${typeStyle("control.button")} ${
-                      selected
-                        ? "border-border-focus bg-foreground/3 text-foreground"
-                        : "border-input bg-popover text-muted-foreground hover:border-border-hover"
-                    }`}
-                  >
-                    {value === 0 ? "Off" : `${value}s`}
-                  </button>
-                );
-              })}
+          <div className="py-3.5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="min-w-0">
+                <p className={`text-foreground ${typeStyle("body.medium")}`}>
+                  Send delay
+                </p>
+                <p className={`mt-0.5 max-w-md text-muted-foreground/60 ${typeStyle("caption.default")}`}>
+                  Undo window before outgoing emails are sent.
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2 sm:ml-4">
+                {delayOptions.map((value) => {
+                  const selected = emailSendDelay === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setEmailSendDelay(value)}
+                      className={`rounded-lg border px-3 py-1.5 transition-colors ${typeStyle("control.button")} ${
+                        selected
+                          ? "border-border-focus bg-foreground/3 text-foreground"
+                          : "border-input bg-popover text-muted-foreground hover:border-border-hover"
+                      }`}
+                    >
+                      {value === 0 ? "Off" : `${value}s`}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <p className={`text-muted-foreground/60 mt-2 ${typeStyle("caption.default")}`}>
-              Undo window before outgoing emails are sent.
-            </p>
           </div>
         </OperationalPanelBody>
       </OperationalPanel>
