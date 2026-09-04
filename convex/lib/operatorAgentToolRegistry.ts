@@ -96,6 +96,12 @@ const procurementPacketLinkId = z
   .string()
   .min(1)
   .describe("Exact broker packet magic-link ID");
+const emailAddress = z
+  .string()
+  .trim()
+  .min(3)
+  .max(320)
+  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Enter a valid email address");
 const procurementRequestStatus = z.enum([
   "draft",
   "submitted",
@@ -770,11 +776,9 @@ export const OPERATOR_AGENT_TOOL_REGISTRY = {
     description:
       "Send one direct Slack message from Spot to an active operator whose exact email is linked to the configured host workspace. Use this only for a concrete operator-requested communication; delivery is externally visible and requires exact confirmation.",
     inputSchema: z.object({
-      recipientEmail: z
-        .string()
-        .email()
-        .max(320)
-        .describe("Exact email of the active Spot operator to message"),
+      recipientEmail: emailAddress.describe(
+        "Exact email of the active Spot operator to message",
+      ),
       message: z
         .string()
         .trim()

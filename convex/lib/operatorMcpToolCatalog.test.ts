@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
 
+import {
+  operatorAgentToolJsonCatalog,
+  parseOperatorAgentToolInput,
+} from "./operatorAgentToolRegistry";
 import { buildOperatorMcpToolCatalog } from "./operatorMcpToolCatalog";
 
 describe("operator MCP tool catalog", () => {
@@ -31,5 +35,24 @@ describe("operator MCP tool catalog", () => {
     expect(tools.every(({ annotations }) => annotations.readOnlyHint)).toBe(
       true,
     );
+  });
+
+  test("keeps model-callable schemas free of unsupported regex lookaround", () => {
+    const catalog = operatorAgentToolJsonCatalog();
+    const schemaJson = JSON.stringify(catalog.map((tool) => tool.inputSchema));
+
+    expect(schemaJson).not.toMatch(/\(\?(?:[=!]|<[=!])/);
+    expect(() =>
+      parseOperatorAgentToolInput("send_operator_slack_message", {
+        recipientEmail: "not-an-email",
+        message: "Status update",
+      }),
+    ).toThrow("Enter a valid email address");
+    expect(
+      parseOperatorAgentToolInput("send_operator_slack_message", {
+        recipientEmail: " adyan@spot.insure ",
+        message: "Status update",
+      }).recipientEmail,
+    ).toBe("adyan@spot.insure");
   });
 });
