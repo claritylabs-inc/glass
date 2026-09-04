@@ -49,9 +49,9 @@ function brokerSectionProjectionChanged(
   >,
 ) {
   const wasVisible = previous
-    ? audienceIncludes(previous.audience, "broker")
+    ? audienceIncludes(previous.audience, "client")
     : false;
-  const isVisible = audienceIncludes(next.audience, "broker");
+  const isVisible = audienceIncludes(next.audience, "client");
   return (
     wasVisible !== isVisible ||
     (isVisible &&
@@ -267,12 +267,12 @@ async function brokerPacketProjection(
   ctx: QueryCtx | MutationCtx,
   args: {
     requestId: Id<"procurementRequests">;
-    outreachId: Id<"procurementBrokerOutreaches">;
+    outreachId?: Id<"procurementBrokerOutreaches">;
   },
 ) {
   const request = await requestForOperator(ctx, args.requestId);
-  const outreach = await ctx.db.get(args.outreachId);
-  if (!outreach || outreach.requestId !== request._id)
+  const outreach = args.outreachId ? await ctx.db.get(args.outreachId) : null;
+  if (args.outreachId && (!outreach || outreach.requestId !== request._id))
     throw new Error("Outreach does not belong to this request");
   const [sections, fileItems] = await Promise.all([
     ctx.db
@@ -285,7 +285,9 @@ async function brokerPacketProjection(
       .collect(),
   ]);
   const visibleSections = sections
-    .filter((section) => audienceIncludes(section.audience, "broker"))
+    // Client and broker views are intentionally the same shared document.
+    // "operator" remains the only private section audience.
+    .filter((section) => audienceIncludes(section.audience, "client"))
     .sort((left, right) => left.order - right.order)
     .map(({ key, heading, body, order }) => ({ key, heading, body, order }));
   const files = (
@@ -293,7 +295,8 @@ async function brokerPacketProjection(
       fileItems
         .filter(
           (item) =>
-            (!item.outreachId || item.outreachId === outreach._id) &&
+            (!item.outreachId ||
+              (outreach !== null && item.outreachId === outreach._id)) &&
             (item.brokerRelease === "listed" ||
               item.brokerRelease === "attached"),
         )
@@ -326,13 +329,15 @@ async function brokerPacketProjection(
       title: request.title,
       packetRevision: request.packetRevision ?? 0,
     },
-    outreach: {
-      outreachId: outreach._id,
-      brokerOrgId: outreach.brokerOrgId ?? null,
-      brokerName: outreach.brokerName,
-      recipientLabel: outreach.contactName || outreach.brokerName,
-      recipientEmail: outreach.contactEmail ?? null,
-    },
+    outreach: outreach
+      ? {
+          outreachId: outreach._id,
+          brokerOrgId: outreach.brokerOrgId ?? null,
+          brokerName: outreach.brokerName,
+          recipientLabel: outreach.contactName || outreach.brokerName,
+          recipientEmail: outreach.contactEmail ?? null,
+        }
+      : null,
     sections: visibleSections,
     markdown: assemblePacketMarkdown(
       visibleSections.map((section) => ({ ...section, audience: "broker" })),
@@ -341,7 +346,7 @@ async function brokerPacketProjection(
     files,
     gaps: PACKET_SECTIONS.filter(
       ([key, , defaultAudience]) =>
-        audienceIncludes(defaultAudience, "broker") &&
+        audienceIncludes(defaultAudience, "client") &&
         !visibleSections.some(
           (section) => section.key === key && section.body.trim(),
         ),
@@ -353,7 +358,7 @@ export async function previewBrokerPacket(
   ctx: QueryCtx | MutationCtx,
   args: {
     requestId: Id<"procurementRequests">;
-    outreachId: Id<"procurementBrokerOutreaches">;
+    outreachId?: Id<"procurementBrokerOutreaches">;
   },
 ) {
   return await brokerPacketProjection(ctx, args);
@@ -362,7 +367,7 @@ export async function previewBrokerPacket(
 export const preview = query({
   args: {
     requestId: v.id("procurementRequests"),
-    outreachId: v.id("procurementBrokerOutreaches"),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
   },
   handler: async (ctx, args) => {
     await requireOperator(ctx);
@@ -383,11 +388,13 @@ export async function listPacketLinksForOperator(
   const now = dayjs().valueOf();
   return await Promise.all(
     links.map(async (link) => {
-      const outreach = await ctx.db.get(link.outreachId);
+      const outreach = link.outreachId
+        ? await ctx.db.get(link.outreachId)
+        : null;
       return {
         linkId: link._id,
-        outreachId: link.outreachId,
-        brokerName: outreach?.brokerName ?? "Unknown broker",
+        outreachId: link.outreachId ?? null,
+        brokerName: outreach?.brokerName ?? "All brokers",
         recipientLabel: link.recipientLabel,
         recipientEmail: link.recipientEmail ?? null,
         expiresAt: link.expiresAt,
@@ -605,9 +612,6 @@ export const rejectProposal = mutation({
 export const mintLink = mutation({
   args: {
     requestId: v.id("procurementRequests"),
-    outreachId: v.id("procurementBrokerOutreaches"),
-    recipientLabel: v.string(),
-    recipientEmail: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
     expiresInDays: v.optional(v.number()),
   },
@@ -644,8 +648,8 @@ export async function mintPacketLinkForOperator(
   args: {
     operatorUserId: Id<"users">;
     requestId: Id<"procurementRequests">;
-    outreachId: Id<"procurementBrokerOutreaches">;
-    recipientLabel: string;
+    outreachId?: Id<"procurementBrokerOutreaches">;
+    recipientLabel?: string;
     recipientEmail?: string;
     expiresAt?: number;
     expiresInDays?: number;
@@ -653,13 +657,13 @@ export async function mintPacketLinkForOperator(
 ) {
   await directOperator(ctx, args.operatorUserId);
   const request = await requestForOperator(ctx, args.requestId);
-  const outreach = await ctx.db.get(args.outreachId);
-  if (!outreach || outreach.requestId !== request._id)
+  const outreach = args.outreachId ? await ctx.db.get(args.outreachId) : null;
+  if (args.outreachId && (!outreach || outreach.requestId !== request._id))
     throw new Error("Outreach does not belong to this request");
   const now = dayjs().valueOf();
   const preview = await brokerPacketProjection(ctx, {
     requestId: request._id,
-    outreachId: outreach._id,
+    outreachId: outreach?._id,
   });
   const token = createMagicLinkToken();
   const maximumExpiry = dayjs(now)
@@ -677,12 +681,29 @@ export async function mintPacketLinkForOperator(
     );
   const expiresAt =
     requestedExpiry ?? dayjs(now).add(PACKET_LINK_TTL_DAYS, "day").valueOf();
+  const replacedLinkIds: Id<"procurementPacketLinks">[] = [];
+  if (!outreach) {
+    const currentRequestLinks = await ctx.db
+      .query("procurementPacketLinks")
+      .withIndex("request", (q) => q.eq("requestId", request._id))
+      .collect();
+    for (const link of currentRequestLinks) {
+      if (link.outreachId || link.revokedAt || link.expiresAt <= now) continue;
+      await ctx.db.patch(link._id, {
+        revokedAt: now,
+        revokedByUserId: args.operatorUserId,
+        updatedAt: now,
+      });
+      replacedLinkIds.push(link._id);
+    }
+  }
   const id = await ctx.db.insert("procurementPacketLinks", {
     requestId: request._id,
     clientOrgId: request.clientOrgId,
-    outreachId: outreach._id,
+    outreachId: outreach?._id,
     tokenHash: await hashMagicLinkToken(token),
-    recipientLabel: args.recipientLabel.trim() || outreach.brokerName,
+    recipientLabel:
+      args.recipientLabel?.trim() || outreach?.brokerName || "All brokers",
     recipientEmail: args.recipientEmail?.trim().toLowerCase(),
     expiresAt,
     packetRevisionAtIssue: request.packetRevision ?? 0,
@@ -699,22 +720,28 @@ export async function mintPacketLinkForOperator(
     createdAt: now,
     updatedAt: now,
   });
-  await ctx.db.patch(outreach._id, {
-    packetRevisionAtIssue: request.packetRevision ?? 0,
-    updatedAt: now,
-    updatedByUserId: args.operatorUserId,
-  });
+  if (outreach)
+    await ctx.db.patch(outreach._id, {
+      packetRevisionAtIssue: request.packetRevision ?? 0,
+      updatedAt: now,
+      updatedByUserId: args.operatorUserId,
+    });
   const auditEventId = await writeOperatorAudit(ctx, {
     operatorUserId: args.operatorUserId,
     type: "setup_write",
     targetOrgId: request.clientOrgId,
-    summary: `Created broker packet link for ${outreach.brokerName}`,
+    summary: outreach
+      ? `Created broker packet link for ${outreach.brokerName}`
+      : replacedLinkIds.length
+        ? "Replaced shared broker packet link"
+        : "Created shared broker packet link",
     metadata: {
       domain: "procurement",
       operation: "create_packet_link",
       requestId: request._id,
-      outreachId: outreach._id,
+      outreachId: outreach?._id,
       linkId: id,
+      replacedLinkIds,
       expiresAt,
       packetRevisionAtIssue: request.packetRevision ?? 0,
       sectionCount: preview.sections.length,
@@ -744,8 +771,8 @@ export const mintLinkInternal = internalMutation({
   args: {
     operatorUserId: v.id("users"),
     requestId: v.id("procurementRequests"),
-    outreachId: v.id("procurementBrokerOutreaches"),
-    recipientLabel: v.string(),
+    outreachId: v.optional(v.id("procurementBrokerOutreaches")),
+    recipientLabel: v.optional(v.string()),
     recipientEmail: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
     expiresInDays: v.optional(v.number()),
@@ -865,7 +892,9 @@ export const recordDeliveryInternal = internalMutation({
       updatedAt: now,
     });
     if (args.status === "sent") {
-      const outreach = await ctx.db.get(link.outreachId);
+      const outreach = link.outreachId
+        ? await ctx.db.get(link.outreachId)
+        : null;
       if (outreach)
         await ctx.db.patch(outreach._id, {
           sentAt: now,
@@ -908,8 +937,11 @@ export const getByToken = query({
     const now = dayjs().valueOf();
     if (!link || link.revokedAt || link.expiresAt <= now) return null;
     const request = await ctx.db.get(link.requestId);
-    const outreach = await ctx.db.get(link.outreachId);
-    if (!request || !outreach || outreach.requestId !== request._id)
+    const outreach = link.outreachId ? await ctx.db.get(link.outreachId) : null;
+    if (
+      !request ||
+      (link.outreachId && (!outreach || outreach.requestId !== request._id))
+    )
       return null;
     const sections = await ctx.db
       .query("procurementPacketSections")
@@ -918,7 +950,7 @@ export const getByToken = query({
     const visible = link.sectionSnapshot
       ? link.sectionSnapshot
       : sections
-          .filter((section) => audienceIncludes(section.audience, "broker"))
+          .filter((section) => audienceIncludes(section.audience, "client"))
           .sort((a, b) => a.order - b.order);
     const fileItems = await ctx.db
       .query("procurementFileItems")
@@ -934,7 +966,9 @@ export const getByToken = query({
           (item) =>
             (!link.includedFileItemIds ||
               link.includedFileItemIds.includes(item._id)) &&
-            (!item.outreachId || item.outreachId === link.outreachId) &&
+            (!item.outreachId ||
+              (link.outreachId !== undefined &&
+                item.outreachId === link.outreachId)) &&
             item.clientFileId &&
             (item.brokerRelease === "listed" ||
               item.brokerRelease === "attached"),

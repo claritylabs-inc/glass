@@ -32,7 +32,6 @@ export const OPERATOR_CONFIRMATION_PREFLIGHT_TOOL_NAMES = [
   "cancel_procurement_proposal_extraction",
   "generate_procurement_proposal_review",
   "create_broker_packet_link",
-  "send_broker_packet",
   "rotate_broker_packet_link",
   "revoke_broker_packet_link",
   "confirm_procurement_proposal_review",
@@ -573,21 +572,8 @@ async function preflightProposalExtraction(
 async function preflightPacketLinkCreate(
   ctx: MutationCtx,
   input: Record<string, unknown>,
-  send: boolean,
 ) {
-  const request = await requireProcurementRequest(
-    ctx,
-    input.procurementRequestId,
-  );
-  const outreach = await requireDocument(
-    ctx,
-    "procurementBrokerOutreaches",
-    input.procurementOutreachId,
-    "Broker outreach",
-  );
-  if (outreach.requestId !== request._id)
-    throw new Error("Outreach does not belong to this request");
-  validateOptionalEmail(input.recipientEmail);
+  await requireProcurementRequest(ctx, input.procurementRequestId);
   if (input.expiresAt !== undefined) {
     if (
       typeof input.expiresAt !== "number" ||
@@ -598,8 +584,6 @@ async function preflightPacketLinkCreate(
     if (dayjs(input.expiresAt).isAfter(dayjs().add(90, "day")))
       throw new Error("Packet links may expire at most 90 days after issue");
   }
-  if (send && !outreach.contactEmail?.trim())
-    throw new Error("Add a broker contact email before sending the packet");
 }
 
 async function preflightPacketLinkChange(
@@ -933,10 +917,7 @@ export async function preflightOperatorToolConfirmation(
       await preflightProposalExtraction(ctx, args.input, "review");
       return;
     case "create_broker_packet_link":
-      await preflightPacketLinkCreate(ctx, args.input, false);
-      return;
-    case "send_broker_packet":
-      await preflightPacketLinkCreate(ctx, args.input, true);
+      await preflightPacketLinkCreate(ctx, args.input);
       return;
     case "rotate_broker_packet_link":
     case "revoke_broker_packet_link":

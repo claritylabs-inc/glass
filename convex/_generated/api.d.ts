@@ -46,7 +46,6 @@ import type * as actions_ownComplianceMonitor from "../actions/ownComplianceMoni
 import type * as actions_policyExtraction from "../actions/policyExtraction.js";
 import type * as actions_processThreadChat from "../actions/processThreadChat.js";
 import type * as actions_procurementIntake from "../actions/procurementIntake.js";
-import type * as actions_procurementPacketSend from "../actions/procurementPacketSend.js";
 import type * as actions_procurementPacketUpdate from "../actions/procurementPacketUpdate.js";
 import type * as actions_proposalExtraction from "../actions/proposalExtraction.js";
 import type * as actions_proposalReview from "../actions/proposalReview.js";
@@ -397,7 +396,6 @@ declare const fullApi: ApiFromModules<{
   "actions/policyExtraction": typeof actions_policyExtraction;
   "actions/processThreadChat": typeof actions_processThreadChat;
   "actions/procurementIntake": typeof actions_procurementIntake;
-  "actions/procurementPacketSend": typeof actions_procurementPacketSend;
   "actions/procurementPacketUpdate": typeof actions_procurementPacketUpdate;
   "actions/proposalExtraction": typeof actions_proposalExtraction;
   "actions/proposalReview": typeof actions_proposalReview;

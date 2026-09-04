@@ -57,11 +57,10 @@ export const PROCUREMENT_CAPABILITIES = [
   },
   {
     id: "packet.share",
-    browserSurface: "packet broker-sharing console",
+    browserSurface: "market shared-packet controls",
     agentTools: [
       "preview_broker_packet",
       "create_broker_packet_link",
-      "send_broker_packet",
       "list_broker_packet_links",
       "rotate_broker_packet_link",
       "revoke_broker_packet_link",

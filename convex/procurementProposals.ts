@@ -1341,7 +1341,7 @@ export const getReviewInputInternal = internalQuery({
     )
       .filter(
         (section) =>
-          audienceIncludes(section.audience, "broker") && section.body.trim(),
+          audienceIncludes(section.audience, "client") && section.body.trim(),
       )
       .sort((a, b) => a.order - b.order);
     const { markdown, legend } = buildProposalMarkdown(proposal.extractedOffer);
@@ -1518,7 +1518,7 @@ export async function selectProcurementProposalByOperator(
       .collect()
   ).filter(
     (section) =>
-      audienceIncludes(section.audience, "broker") && section.body.trim(),
+      audienceIncludes(section.audience, "client") && section.body.trim(),
   );
   if (brokerSections.length === 0) {
     throw new Error(
